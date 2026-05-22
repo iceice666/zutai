@@ -30,6 +30,9 @@ dependencies = [
 [[package]]
 name = "zutai-cli"
 version = "0.1.0"
+dependencies = [
+ "zutai-im-syntax",
+]
 
 [[package]]
 name = "zutai-im-simd"
