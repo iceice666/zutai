@@ -1,0 +1,7 @@
+[package]
+name = "zutai-im-syntax"
+description = "Parser and AST definitions for Zutai immediate mode (.zti)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]

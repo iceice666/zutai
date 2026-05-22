@@ -1,0 +1,13 @@
+[workspace]
+members = [
+  "crates/cli",
+  "crates/general/*",
+  "crates/immediate/*",
+  "crates/types",
+]
+default-members = ["crates/cli"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"

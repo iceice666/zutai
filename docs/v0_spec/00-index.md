@@ -1,0 +1,37 @@
+# Zutai Language Specification v0
+
+This specification is split into multiple files.
+
+## Sections
+
+1. [Design goals](01-design-goals.md)
+2. [File modes](02-file-modes.md)
+3. [Lexical conventions](03-lexical-conventions.md)
+4. [Immediate mode `.zti`](04-immediate-mode-zti.md)
+5. [General mode `.zt`](05-general-mode-zt.md)
+6. [General-mode values](06-general-mode-values.md)
+7. [Imports](07-imports.md)
+8. [Functions](08-functions.md)
+9. [Type system](09-type-system.md)
+10. [Record types](10-record-types.md)
+11. [Lists](11-lists.md)
+12. [Optional values](12-optional-values.md)
+13. [Optional fields](13-optional-fields.md)
+14. [Field access and optional chaining](14-field-access-and-optional-chaining.md)
+15. [Defaulting operator](15-defaulting-operator.md)
+16. [Union types](16-union-types.md)
+17. [Tagged unions](17-tagged-unions.md)
+18. [Polymorphism](18-polymorphism.md)
+19. [Pattern matching](19-pattern-matching.md)
+20. [Conditionals](20-conditionals.md)
+21. [Equality](21-equality.md)
+22. [Laziness and purity](22-laziness-and-purity.md)
+23. [Type-level computation](23-type-level-computation.md)
+24. [Metaprogramming](24-metaprogramming.md)
+25. [Modules](25-modules.md)
+26. [Serialization boundary](26-serialization-boundary.md)
+27. [Operator precedence](27-operator-precedence.md)
+28. [Error model](28-error-model.md)
+29. [Complete example](29-complete-example.md)
+30. [Core grammar sketch](30-core-grammar-sketch.md)
+31. [Final design statement](31-final-design-statement.md)

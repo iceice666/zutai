@@ -1,0 +1,7 @@
+[package]
+name = "zutai-im-simd"
+description = "The SIMD-accelerated parser for Zutai immediate mode."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
