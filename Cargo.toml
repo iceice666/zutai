@@ -1,8 +1,9 @@
 [workspace]
 members = [
   "crates/cli",
-  "crates/general/*",
-  "crates/immediate/*",
+  "crates/general/syntax",
+  "crates/immediate/simd",
+  "crates/immediate/syntax",
   "crates/types",
 ]
 default-members = ["crates/cli"]

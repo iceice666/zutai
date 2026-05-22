@@ -1,0 +1,538 @@
+{
+  app = {
+    name = "Zutai Edge Service";
+    slug = "zutai-edge";
+    version = 4;
+    patch = 0.11;
+    build = {
+      revision = "2026.05.22";
+      compiler = {
+        name = "zti-compiler";
+        target = "x86_64-unknown-linux-gnu";
+        incremental = true;
+        optimize = false;
+        optimization-level = 3;
+        features = [
+          #fast-path;
+          #arena-alloc;
+          #inline-caches;
+          #simd;
+        ];
+        flags = [
+          "--deny=warnings";
+          "--cap-lto=thin";
+          "--codegen=unicode\nenabled";
+          "json:\"log\"";
+          none;
+        ];
+        metrics = {
+          enabled = true;
+          sample-rate = 0.015;
+          thresholds = [
+            0.75;
+            1.5e3;
+            2E-2;
+            4.0;
+          ];
+        };
+      };
+      artifact = {
+        format = #binary;
+        outputs = [
+          {
+            path = "dist/zutai-edge.bin";
+            size-bytes = 1048576;
+            checksum = "sha256:3b1f4d...";
+            compressed = true;
+          };
+          {
+            path = "dist/zutai-edge.wasm";
+            size-bytes = 81920;
+            checksum = "sha256:91ab2e...";
+            compressed = false;
+          };
+        ];
+      };
+    };
+    runtime = {
+      service = {
+        name = #api-gateway;
+        protocol = #http;
+        host = "127.0.0.1";
+        port = 8080;
+        backlog = 1024;
+        keepalive-seconds = 75;
+        tls = {
+          enabled = true;
+          min-version = "TLSv1.3";
+          cert = "/etc/zutai/certs/server.crt";
+          key = "/etc/zutai/certs/server.key";
+          cipher-suites = [
+            "TLS_AES_256_GCM_SHA384";
+            "TLS_CHACHA20_POLY1305_SHA256";
+            "TLS_AES_128_GCM_SHA256";
+          ];
+          next-protocols = [
+            #h2;
+            #http1-1;
+          ];
+        };
+        endpoints = [
+          {
+            name = "status";
+            path = "/status";
+            method = #get;
+            auth = false;
+            response = "ok";
+            tags = [#internal; #health;];
+          };
+          {
+            name = "submit";
+            path = "/v1/submit";
+            method = #post;
+            auth = true;
+            rate-limits = [
+              120;
+              10e0;
+            ];
+            response = {
+              schema = #submission-result;
+              cacheable = false;
+              fields = [
+                #id;
+                #status;
+                #created-at;
+              ];
+            };
+          };
+        ];
+      };
+      storage = {
+        primary = {
+          backend = #postgres;
+          host = "db.internal";
+          port = 5432;
+          pool-size = 32;
+          timeout-seconds = 2.5;
+          credentials = {
+            username = "service";
+            password = "********";
+            ssl-mode = #prefer;
+          };
+          shards = [
+            {
+              id = 0;
+              host = "shard-0.db";
+              region = #us-east-1;
+              replica = false;
+            };
+            {
+              id = 1;
+              host = "shard-1.db";
+              region = #us-west-1;
+              replica = true;
+            };
+            {
+              id = 2;
+              host = "shard-2.db";
+              region = #eu-west-1;
+              replica = true;
+            };
+          ];
+        };
+        cache = {
+          backend = #redis;
+          nodes = [
+            {
+              host = "cache-a";
+              port = 6379;
+              role = #primary;
+              weight = 1.0;
+            };
+            {
+              host = "cache-b";
+              port = 6379;
+              role = #replica;
+              weight = 0.6;
+            };
+          ];
+          policies = {
+            ttl-seconds = 3600;
+            max-memory-gb = 4.0;
+            eviction = #allkeys-lru;
+            retry = [
+              true;
+              false;
+              none;
+            ];
+          };
+        };
+      };
+      observability = {
+        logging = {
+          level = "debug";
+          format = #json;
+          output = {
+            streams = [
+              {
+                destination = "stdout";
+                encoder = "structured";
+                include-trace = true;
+              };
+              {
+                destination = "udp://logs.internal:5514";
+                encoder = "rfc5424";
+                include-trace = false;
+              };
+            ];
+          };
+          redaction = {
+            enabled = true;
+            fields = [
+              #password;
+              #token;
+              #api-key;
+            ];
+          };
+        };
+        tracing = {
+          enabled = true;
+          exporter = #opentelemetry;
+          sampling-rate = 0.2;
+          spans = [
+            #ingress;
+            #processing;
+            #egress;
+          ];
+          exporters = [
+            {
+              type = #otlp;
+              endpoint = "http://otel-collector:4317";
+              headers = [
+                "authorization=Bearer TOKEN";
+                "x-tenant=core";
+              ];
+            };
+          ];
+        };
+        metrics = {
+          endpoint = "/metrics";
+          scrape-interval-seconds = 15;
+          collect = {
+            counters = [
+              #requests;
+              #errors;
+              #timeouts;
+            ];
+            gauges = [
+              #inflight;
+              #queue-depth;
+            ];
+            histograms = [
+              #latency-ms;
+              #payload-size;
+            ];
+          };
+        };
+      };
+    };
+    scheduler = {
+      enabled = true;
+      tick-ms = 250;
+      backlog-limit = 4096;
+      workers = [
+        {
+          name = #ingestion;
+          concurrency = 8;
+          queues = [
+            {
+              name = "ingest.incoming";
+              partitions = 16;
+              max-attempts = 5;
+              backoff-ms = [
+                100;
+                250;
+                500;
+              ];
+            };
+            {
+              name = "ingest.dead";
+              partitions = 4;
+              max-attempts = 3;
+              backoff-ms = [
+                50;
+                100;
+                200;
+              ];
+            };
+          ];
+          alerts = {
+            enabled = true;
+            thresholds = {
+              latency-ms = 1200.5;
+              retry-ratio = 0.02;
+              error-rate = 0.01;
+            };
+            contacts = [
+              #oncall;
+              #platform;
+            ];
+          };
+        };
+        {
+          name = #maintenance;
+          concurrency = 2;
+          queues = [
+            {
+              name = "maint.clean";
+              partitions = 1;
+              max-attempts = 1;
+              backoff-ms = [
+                10;
+              ];
+            };
+          ];
+          alerts = {
+            enabled = false;
+            thresholds = {
+              latency-ms = 2500;
+              retry-ratio = 0.0;
+              error-rate = 0.0;
+            };
+            contacts = [#ops;];
+          };
+        };
+      ];
+    };
+    security = {
+      auth = {
+        providers = [
+          {
+            type = #jwt;
+            issuer = "https://auth.example.com";
+            audiences = [
+              #core;
+              #edge;
+            ];
+            keys = [
+              {
+                kid = "k1";
+                algorithm = #RS256;
+                active = true;
+              };
+              {
+                kid = "k2";
+                algorithm = #ES256;
+                active = false;
+              };
+            ];
+            token-lifetime-seconds = 3600;
+          };
+          {
+            type = #api-key;
+            storage = "vault";
+            header-name = "X-API-KEY";
+            rotation-days = 30;
+          };
+        ];
+        rbac = {
+          roles = [
+            #admin;
+            #editor;
+            #viewer;
+          ];
+          allow-default-deny = true;
+          bindings = [
+            {
+              principal = #admin;
+              permissions = [
+                #read;
+                #write;
+                #deploy;
+              ];
+            };
+            {
+              principal = #viewer;
+              permissions = [
+                #read;
+              ];
+            };
+          ];
+        };
+      };
+      network = {
+        ingress = [
+          #allow-metrics;
+          #allow-health;
+          #allow-admin;
+        ];
+        policy = {
+          ip-whitelist = [
+            "10.0.0.0/8";
+            "192.168.1.0/24";
+            "127.0.0.1/32";
+          ];
+          port-whitelist = [
+            22;
+            80;
+            443;
+          ];
+        };
+      };
+    };
+    metadata = {
+      created-at = "2026-05-22T20:00:00Z";
+      owner = #team-runtime;
+      contributors = [
+        #alice;
+        #bob;
+        #carol;
+        #david;
+      ];
+      tags = [
+        #backend;
+        #rust;
+        #parser;
+      ];
+      notes = "Line1\\nLine2\nLine3";
+      summary = "Unicode and escapes: \u0048\u0065\u006c\u006c\u006f\u0020\ud83d\ude80";
+      flags = {
+        experimental = [
+          #serde;
+          #fuzzy;
+        ];
+        deprecated = none;
+        sunset = false;
+      };
+    };
+    canary = {
+      enabled = false;
+      fraction = 0.05;
+      rollout-steps = [
+        0.1;
+        0.25;
+        0.5;
+        1.0;
+      ];
+      cohorts = [
+        {
+          id = "control";
+          weight = 0.5;
+          rules = [
+            #sticky;
+            #geo-match;
+          ];
+        };
+        {
+          id = "test";
+          weight = 0.5;
+          rules = [
+            #sticky;
+            #feature-flag;
+          ];
+        };
+      ];
+    };
+    environments = [
+      {
+        name = "dev";
+        endpoint = "https://dev.zutai.internal";
+        replicas = 1;
+        cpu-cores = 1.5;
+        memory-gb = 1.0;
+        enabled-features = [
+          #debug;
+          #tracing;
+        ];
+        secrets = [
+          #dev-key-0;
+          #dev-key-1;
+        ];
+      };
+      {
+        name = "staging";
+        endpoint = "https://staging.zutai.internal";
+        replicas = 3;
+        cpu-cores = 2.0;
+        memory-gb = 3.5;
+        enabled-features = [
+          #performance;
+          #tracing;
+        ];
+        secrets = [
+          #staging-key-0;
+          #staging-key-1;
+        ];
+      };
+      {
+        name = "prod";
+        endpoint = "https://api.zutai.example";
+        replicas = 12;
+        cpu-cores = 4.0;
+        memory-gb = 8.0;
+        enabled-features = [
+          #performance;
+          #hardening;
+          #high-availability;
+        ];
+        secrets = [
+          #prod-key-0;
+          #prod-key-1;
+          #prod-key-2;
+        ];
+      };
+    ];
+    experiments = [
+      {
+        id = "EX-12";
+        title = "Streaming parser hot path";
+        state = #running;
+        rollout = 0.35;
+      };
+      {
+        id = "EX-13";
+        title = "SIMD input scanning";
+        state = #queued;
+        rollout = 0.00;
+      };
+      {
+        id = "EX-14";
+        title = "Schema-first validation";
+        state = #completed;
+        rollout = 1.0;
+      };
+    ];
+    diagnostics = {
+      checks = [
+        {
+          name = "schema-valid";
+          level = #info;
+          result = true;
+          details = [
+            #blocks-checked;
+            #values-typed;
+          ];
+          duration-ms = 12;
+        };
+        {
+          name = "latency-smoke";
+          level = #warn;
+          result = false;
+          details = [
+            #p95-breach;
+          ];
+          duration-ms = 153;
+        };
+      ];
+      history = [
+        1700000000;
+        1700003600;
+        1700007200;
+        none;
+      ];
+    };
+  };
+  schema-version = "0.4";
+  checksum = "sha256:deadbeef";
+  validated = true;
+}
