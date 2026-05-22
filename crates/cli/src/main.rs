@@ -24,11 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn parse_general(_input: &mut &str) -> Result<zutai_im_syntax::ast::Block, Box<dyn Error>> {
+fn parse_general(_input: &mut &str) -> Result<zutai_types::Block, Box<dyn Error>> {
     unimplemented!("General mode parser is intentionally unimplemented")
 }
 
-fn parse_immediate(input: &mut &str) -> Result<zutai_im_syntax::ast::Block, Box<dyn Error>> {
+fn parse_immediate(input: &mut &str) -> Result<zutai_types::Block, Box<dyn Error>> {
     zutai_im_syntax::parser::parse(input)
         .map_err(|err| format!("Failed to parse .zti: {err:?}").into())
 }

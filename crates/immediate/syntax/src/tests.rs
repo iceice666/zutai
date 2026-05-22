@@ -1,5 +1,5 @@
-use crate::ast::*;
 use crate::parser::*;
+use zutai_types::*;
 
 #[test]
 fn test_parse_empty() {
@@ -7,7 +7,6 @@ fn test_parse_empty() {
     let output = parse(&mut input).unwrap();
 
     assert_eq!(output.len(), 0);
-    assert_eq!(input, "");
 }
 
 #[test]

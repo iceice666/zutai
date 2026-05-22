@@ -1,0 +1,7 @@
+[package]
+name = "zutai-types"
+description = "Shared AST types for Zutai immediate mode (`.zti`)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
