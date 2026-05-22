@@ -7,7 +7,7 @@ use winnow::ascii::multispace0;
 use winnow::combinator::{alt, delimited, eof, fail, not, opt, peek, preceded, repeat, terminated};
 use winnow::token::{one_of, take, take_till, take_while};
 
-use crate::ast::{Block, Pair, Value};
+use zutai_types::{Block, Pair, Value};
 
 pub fn parse(input: &mut &str) -> Result<Block> {
     let block = (multispace0, parse_block, multispace0, eof)

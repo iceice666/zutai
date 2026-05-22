@@ -17,7 +17,7 @@ crates/
   immediate/
     syntax/            Parser and AST definitions for immediate mode (`.zti`)
     simd/              SIMD-accelerated parser for immediate mode (`.zti`)
-  types/               Shared types
+    types/             Shared types
 docs/
   README.md            Documentation index
   v0_spec/             Zutai v0 language specification

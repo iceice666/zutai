@@ -4,7 +4,7 @@ members = [
   "crates/general/syntax",
   "crates/immediate/simd",
   "crates/immediate/syntax",
-  "crates/types",
+  "crates/immediate/types",
 ]
 default-members = ["crates/cli"]
 resolver = "2"
