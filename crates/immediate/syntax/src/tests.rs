@@ -296,3 +296,43 @@ fn test_parse_duplicate_field_names_error() {
     let mut input = "{a = 1; a = 2;}";
     assert!(parse(&mut input).is_err());
 }
+
+#[test]
+fn test_block_display_tree() {
+    let mut input = "{name = \"localhost\"; nested = {port = 8080;};}";
+    let parsed = parse(&mut input).unwrap();
+
+    assert_eq!(
+        parsed.to_string(),
+        "Block\n├─ name = String(\"localhost\")\n└─ nested = Block\n    └─ port = Integer(8080)\n"
+    );
+}
+
+#[test]
+fn test_block_display_string_escaping() {
+    let block = Block(vec![Pair {
+        field_name: "notes".to_string(),
+        value: Value::String("line1\nline2\"slash\\backslash".to_string()),
+    }]);
+
+    assert_eq!(
+        block.to_string(),
+        "Block\n└─ notes = String(\"line1\\nline2\\\"slash\\\\backslash\")\n"
+    );
+}
+
+#[test]
+fn test_block_display_nested_block_in_array() {
+    let block = Block(vec![Pair {
+        field_name: "items".to_string(),
+        value: Value::Array(vec![Value::Block(Block(vec![Pair {
+            field_name: "kind".to_string(),
+            value: Value::Atom("leaf".to_string()),
+        }]))]),
+    }]);
+
+    assert_eq!(
+        block.to_string(),
+        "Block\n└─ items = Array[1]\n    └─ [0] = Block\n        └─ kind = Atom(leaf)\n"
+    );
+}

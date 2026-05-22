@@ -5,6 +5,7 @@
 //! format: it parses records, lists, atoms, strings, numbers, booleans, and
 //! `none` without imports, name resolution, functions, or evaluation.
 pub mod ast;
+mod display;
 pub mod parser;
 
 #[cfg(test)]
