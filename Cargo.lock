@@ -35,6 +35,8 @@ dependencies = [
 name = "zutai-im-simd"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash",
+ "zutai-im-syntax",
  "zutai-types",
 ]
 
