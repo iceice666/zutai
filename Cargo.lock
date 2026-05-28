@@ -610,6 +610,15 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 name = "zutai-cli"
 version = "0.1.0"
 dependencies = [
+ "zutai-im",
+ "zutai-types",
+]
+
+[[package]]
+name = "zutai-im"
+version = "0.1.0"
+dependencies = [
+ "zutai-im-simd",
  "zutai-im-syntax",
  "zutai-types",
 ]
@@ -640,3 +649,7 @@ version = "0.1.0"
 [[package]]
 name = "zutai-types"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]

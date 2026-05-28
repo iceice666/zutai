@@ -2,6 +2,7 @@
 members = [
   "crates/cli",
   "crates/general/syntax",
+  "crates/immediate/core",
   "crates/immediate/simd",
   "crates/immediate/syntax",
   "crates/immediate/types",
