@@ -1,0 +1,19 @@
+a |> f <| b
+
+1 |> (\x => x + 1) <| 2
+
+x |> g <| y
+
+f |> g <| h <| i
+
+a |> b |> c <| d
+
+a <| b |> c
+
+x |> f <| g <| y
+
+1 |> (\x => x) <| (\y => y) <| 0
+
+value |> transform <| default
+
+input |> validate <| fallback

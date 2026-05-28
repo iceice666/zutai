@@ -470,6 +470,26 @@ mod tests {
     }
 
     #[test]
+    fn lossless_final_boss_fixtures() {
+        let fixtures = [
+            include_str!("../../../fixtures/valid/deep_nesting.zt"),
+            include_str!("../../../fixtures/valid/optional_chains.zt"),
+            include_str!("../../../fixtures/valid/lexical_torture.zt"),
+            include_str!("../../../fixtures/invalid/sigil_swaps.zt"),
+            include_str!("../../../fixtures/invalid/separator_swaps.zt"),
+            include_str!("../../../fixtures/invalid/comparison_chaining.zt"),
+            include_str!("../../../fixtures/invalid/pipeline_ambiguity.zt"),
+            include_str!("../../../fixtures/invalid/keyword_misuse.zt"),
+            include_str!("../../../fixtures/invalid/no_unary_operator.zt"),
+            include_str!("../../../fixtures/invalid/atom_and_comment_traps.zt"),
+            include_str!("../../../fixtures/invalid/string_number_lexical.zt"),
+        ];
+        for src in fixtures {
+            assert_lossless(src);
+        }
+    }
+
+    #[test]
     fn no_panic_on_arbitrary_ascii() {
         // The lexer must not panic on any input.
         for b in 0u8..=127 {

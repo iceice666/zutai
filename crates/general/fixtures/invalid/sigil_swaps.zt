@@ -1,0 +1,38 @@
+{ host : "localhost"; port : 8080; }
+
+{ required : true; optional-value : none; tls : false; }
+
+{ a : 1; b : 2; c : 3; }
+
+type { host = Text; port = Int; }
+
+type { name = Text; age = Int; active = Bool; }
+
+type { x = Int; y = Int; z = Int; }
+
+(#circle, radius : 5.0)
+
+(#rect, width : 4.0, height : 3.0)
+
+(#tagged, field : "value", other : 42)
+
+(#circle, radius = Float)
+
+(#ok, value = Int)
+
+(#pair, fst = Text, snd = Int)
+
+type [
+  (#circle, radius = Float);
+  (#square, length = Float);
+]
+
+match shape {
+  (#circle, radius : r) => r;
+}
+
+match p {
+  (#pair, fst : a, snd : b) => a + b;
+}
+
+{ score : 100; grade : "A"; passed : true; }

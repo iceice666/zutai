@@ -66,6 +66,9 @@ mod tests {
             "a := b + c; d",
             "::= -> ?? |> <|",
             include_str!("../../fixtures/cursed.zt"),
+            include_str!("../../fixtures/valid/deep_nesting.zt"),
+            include_str!("../../fixtures/valid/optional_chains.zt"),
+            include_str!("../../fixtures/valid/lexical_torture.zt"),
         ];
         for src in cases {
             assert_round_trips(src);

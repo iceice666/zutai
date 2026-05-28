@@ -1,0 +1,95 @@
+Cfg :: type { target-triple : Text; opt-level : Int; debug-mode : Bool; host-cpu : Text; }
+
+Node :: type { node-id : Int; next-hop? : Text; load-factor : Float; }
+
+Link :: type { from-node : Int; to-node : Int; link-weight : Float; }
+
+mk::Int->Int->Int
+   ::a->b{a+b}
+
+sub::Int->Int->Int
+    ::a->b{a + (b * -1)}
+
+fib::Int->Int
+    ::0{0}
+    ::1{1}
+    ::n{fib(n+(-1))+fib(n+(-2))}
+
+make_node::Int->Text->Float->Node
+          ::nid->nh->lf{{node-id=nid;next-hop=nh;load-factor=lf;}}
+
+make_link::Int->Int->Float->Link
+          ::f->t->w{{from-node=f;to-node=t;link-weight=w;}}
+
+read_opt_level :: Cfg -> Int
+               :: cfg { cfg.opt-level }
+
+read_triple :: Cfg -> Text
+            :: cfg { cfg.target-triple }
+
+read_host :: Cfg -> Text
+          :: cfg { cfg.host-cpu }
+
+field_vs_sub_explicit :: Cfg -> Int
+                      :: cfg { (cfg.opt-level) - 1 }
+
+field_hyphenated :: Cfg -> Text
+                 :: cfg { cfg.target-triple }
+
+node_hop_default :: Node -> Text
+                 :: n { n.next-hop ?? "unreachable" }
+
+pipeline_tight :: Int -> Int
+               :: n { n|>(\x=>x+1)|>(\x=>x*2)|>(\x=>x+(-100))|>(\x=>if x<0 then 0 else x) }
+
+nested_fn_app :: (Int -> Int -> Int) -> (Int -> Int) -> Int -> Int
+              :: f -> g -> x { f (g x) (g (x + 1)) }
+
+atoms_with_hyphens : [#x86_64-linux; #aarch64-darwin; #riscv64-none; #wasm32-unknown;] = #x86_64-linux
+
+atoms_with_underscores : [#foo_bar; #baz_quux; #hello_world;] = #foo_bar
+
+tight_record : { a : Int; b : Text; c : Bool; } = {a=1;b="hi";c=true;}
+
+tight_list : List Int = [1;2;3;4;5;6;7;8;9;10;]
+
+fn_type_parens : (Int -> Int -> Int) -> (Int -> Int) -> Int -> Int = \f => \g => \x => f (g x) (g (x + 1))
+
+long_default_chain := \a => \b => \c => \d => \e => a ?? b ?? c ?? d ?? e ?? 0
+
+juxtaposition_vs_field := \f => \x => f x.node-id
+
+optional_chain_tight := \n => n?.next-hop ?? "none"
+
+multi_app := \f => \a => \b => \c => f a b c
+
+back_pipe_chain := \f => \g => \x => f <| (g <| x)
+
+apply_twice := \f => \x => f (f x)
+
+cfg_val : Cfg = {target-triple="x86_64-unknown-linux-gnu";opt-level=2;debug-mode=false;host-cpu="znver3";}
+
+n1 : Node = {node-id=1;next-hop="10.0.0.2";load-factor=0.5;}
+n2 : Node = {node-id=2;load-factor=0.0;}
+
+l1 : Link = {from-node=1;to-node=2;link-weight=1.5;}
+
+precedence_demo := \x => x * 2 + 3 * 4 + -1
+
+comparison_in_if := \x => \y => if x == y then #equal else if x > y then #gt else #lt
+
+nested_optional_in_if := \m => \fallback => if (m ?? 0) > 0 then m ?? 0 else fallback
+
+{
+  opt       = read_opt_level cfg_val;
+  triple    = read_triple cfg_val;
+  host      = read_host cfg_val;
+  pipe      = pipeline_tight 42;
+  n1_hop    = node_hop_default n1;
+  n2_hop    = node_hop_default n2;
+  fib5      = fib 5;
+  mk5       = mk 2 3;
+  sub5      = sub 10 5;
+  opt_tight = n1.next-hop ?? "none";
+  field_sub = (cfg_val.opt-level) - 1;
+}

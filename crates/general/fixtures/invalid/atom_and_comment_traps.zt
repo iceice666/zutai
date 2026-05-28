@@ -1,0 +1,51 @@
+#
+
+# this looks like a comment but is not
+
+# foo bar baz
+
+#1foo
+
+#1
+
+#-foo
+
+#-bar-baz
+
+##foo
+
+##
+
+# 123
+
+// this is not a comment
+
+// comment style from many languages
+
+/* block comment attempt */
+
+/* multi
+   line
+   block */
+
+-- haskell style comment
+
+-- another line
+
+-- this is not valid either
+
+# old shell comment style
+
+# combined with atom trap: #
+
+#.foo
+
+#foo.bar
+
+{ x = 1; } // trailing comment attempt
+
+{ y = 2; } -- another attempt
+
+{ z = 3; } /* inline block */
+
+# should be atom but space makes it invalid
