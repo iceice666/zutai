@@ -9,10 +9,12 @@ From highest to lowest:
 |          3 | `*`, `/`                                                                 | left                      |
 |          4 | `+`, `-`                                                                 | left                      |
 |          5 | comparison `==`, `!=`, `<`, `<=`, `>`, `>=`                              | non-associative           |
-|          6 | defaulting `??`                                                          | right                     |
-|          7 | pipeline `|>`, `<|`                                                      | `|>` left, `<|` right     |
-|          8 | function type `->`                                                       | right                     |
-|          9 | `if`, `match`, `\`, `select` bodies                                      | syntax-delimited          |
+|          6 | `&&`                                                                     | left                      |
+|          7 | `\|\|`                                                                   | left                      |
+|          8 | defaulting `??`                                                          | right                     |
+|          9 | pipeline `|>`, `<|`                                                      | `|>` left, `<|` right     |
+|         10 | function type `->`                                                       | right                     |
+|         11 | `if`, `match`, `\` bodies                                                | syntax-delimited          |
 
 v0 has no unary operators: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
