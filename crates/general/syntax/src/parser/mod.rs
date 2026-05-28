@@ -1,4 +1,5 @@
 mod event;
+mod grammar;
 mod input;
 
 use std::cell::Cell;
@@ -18,19 +19,9 @@ pub(crate) fn parse(src: &str) -> (GreenNode, Vec<SyntaxError>) {
     let raw = tokenize(src);
     let tokens = Tokens::from_raw(&raw);
     let mut p = Parser::new(tokens);
-    file(&mut p);
+    grammar::file(&mut p);
     let events = p.into_events();
     event::process(events, &raw, src)
-}
-
-// ── Placeholder grammar ───────────────────────────────────────────────────────
-
-fn file(p: &mut Parser) {
-    let m = p.start();
-    while !p.at_eof() {
-        p.bump_any();
-    }
-    m.complete(p, SyntaxKind::FILE);
 }
 
 // ── Parser ────────────────────────────────────────────────────────────────────
@@ -87,6 +78,18 @@ impl Parser {
     /// True when the non-trivia tokens at `pos` and `pos+1` are raw-adjacent (no trivia between).
     pub(crate) fn raw_adjacent(&self) -> bool {
         self.tokens.is_raw_adjacent(self.pos)
+    }
+
+    /// True when the non-trivia tokens at `pos-1` and `pos` are raw-adjacent.
+    /// Used after a `bump` to check if the token just consumed was adjacent to the current one.
+    pub(crate) fn prev_raw_adjacent(&self) -> bool {
+        self.pos > 0 && self.tokens.is_raw_adjacent(self.pos - 1)
+    }
+
+    /// True when the non-trivia tokens at `pos+offset` and `pos+offset+1` are raw-adjacent.
+    /// Used for bounded lookahead adjacency checks (e.g. brace disambiguation, M8 field names).
+    pub(crate) fn raw_adjacent_at(&self, offset: usize) -> bool {
+        self.tokens.is_raw_adjacent(self.pos + offset)
     }
 
     // ── Consuming ─────────────────────────────────────────────────────────────
