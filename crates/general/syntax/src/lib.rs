@@ -391,6 +391,272 @@ mod tests {
         assert_eq!(t.matches("LAMBDA_EXPR").count(), 3);
     }
 
+    // ── M5 type expression tests ──────────────────────────────────────────────
+
+    #[test]
+    fn m5_type_record_snapshot() {
+        // Pin exact tree shape for a simple type record.
+        assert_round_trips("type { x : Int; }");
+        let t = tree("type { x : Int; }");
+        expect![[r#"
+            FILE@0..17
+              TYPE_FORM@0..17
+                KW_TYPE@0..4 "type"
+                TYPE_RECORD@4..17
+                  WHITESPACE@4..5 " "
+                  L_BRACE@5..6 "{"
+                  TYPE_FIELD@6..15
+                    FIELD_NAME@6..8
+                      WHITESPACE@6..7 " "
+                      IDENT@7..8 "x"
+                    WHITESPACE@8..9 " "
+                    COLON@9..10 ":"
+                    LITERAL@10..14
+                      WHITESPACE@10..11 " "
+                      IDENT@11..14 "Int"
+                    SEMI@14..15 ";"
+                  WHITESPACE@15..16 " "
+                  R_BRACE@16..17 "}"
+        "#]]
+        .assert_eq(&t);
+    }
+
+    #[test]
+    fn m5_type_record_optional_field() {
+        // `host? : Text` — `?` on the field name marks it as optional-presence.
+        assert_round_trips("type { host? : Text; }");
+        let t = tree("type { host? : Text; }");
+        assert!(t.contains("TYPE_RECORD"));
+        assert!(t.contains("TYPE_FIELD"));
+        assert!(t.contains("FIELD_NAME"));
+        assert!(t.contains("QUESTION"));
+    }
+
+    #[test]
+    fn m5_type_record_hyphenated_field() {
+        assert_round_trips("type { target-triple : Text; }");
+        let t = tree("type { target-triple : Text; }");
+        assert!(t.contains("TYPE_RECORD"));
+        assert!(t.contains("FIELD_NAME"));
+    }
+
+    #[test]
+    fn m5_type_record_empty() {
+        assert_round_trips("type {}");
+        let t = tree("type {}");
+        assert!(t.contains("TYPE_FORM"));
+        assert!(t.contains("TYPE_RECORD"));
+    }
+
+    #[test]
+    fn m5_optional_type() {
+        assert_round_trips("type { x : Int?; }");
+        let t = tree("type { x : Int?; }");
+        assert!(t.contains("OPTIONAL_TYPE"));
+    }
+
+    #[test]
+    fn m5_double_optional_type() {
+        // `Abyss??` — lexes as QUESTION_QUESTION, treated as double-optional in type position.
+        assert_round_trips("type { deep : Abyss??; }");
+        let t = tree("type { deep : Abyss??; }");
+        assert!(t.contains("OPTIONAL_TYPE"));
+        assert!(
+            t.contains("QUESTION_QUESTION"),
+            "expected ?? token in double-optional"
+        );
+    }
+
+    #[test]
+    fn m5_function_type_right_assoc() {
+        // `Int -> Int -> Int` = `Int -> (Int -> Int)`.
+        assert_round_trips("type { f : Int -> Int -> Int; }");
+        let t = tree("type { f : Int -> Int -> Int; }");
+        assert_eq!(
+            t.matches("FUNCTION_TYPE").count(),
+            2,
+            "expected two FUNCTION_TYPE nodes for right-assoc ->"
+        );
+    }
+
+    #[test]
+    fn m5_paren_optional_fn_type() {
+        // `(Int -> Bool)?` — parens group the fn type, then postfix `?`.
+        assert_round_trips("type { f? : (Int -> Bool)?; }");
+        let t = tree("type { f? : (Int -> Bool)?; }");
+        assert!(t.contains("OPTIONAL_TYPE"));
+        assert!(t.contains("FUNCTION_TYPE"));
+        assert!(t.contains("PAREN_EXPR"), "paren group wraps fn type");
+    }
+
+    #[test]
+    fn m5_type_union_empty() {
+        assert_round_trips("type []");
+        let t = tree("type []");
+        assert!(t.contains("TYPE_FORM"));
+        assert!(t.contains("TYPE_UNION"));
+    }
+
+    #[test]
+    fn m5_type_union_singletons() {
+        // Singleton union from the spec — reserved literals and atoms.
+        let src = "type [ none; true; false; #none; #true; #false; ]";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_UNION"));
+        assert_eq!(t.matches("TYPE_UNION_ITEM").count(), 6);
+    }
+
+    #[test]
+    fn m5_type_union_variant_tag_only() {
+        // `(#just)` — variant with tag and no fields.
+        assert_round_trips("type [ (#just); ]");
+        let t = tree("type [ (#just); ]");
+        assert!(t.contains("TYPE_UNION"));
+        assert!(t.contains("VARIANT_TYPE"));
+    }
+
+    #[test]
+    fn m5_type_union_variant_with_fields() {
+        assert_round_trips("type [ (#just-value, value : Int); ]");
+        let t = tree("type [ (#just-value, value : Int); ]");
+        assert!(t.contains("VARIANT_TYPE"));
+        assert!(t.contains("VARIANT_FIELD"));
+        assert!(t.contains("FIELD_NAME"));
+    }
+
+    #[test]
+    fn m5_variant_type_multiple_fields() {
+        assert_round_trips("type [ (#both, a : Bool, b : Int); ]");
+        let t = tree("type [ (#both, a : Bool, b : Int); ]");
+        assert_eq!(t.matches("VARIANT_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m5_inline_union_in_record_field() {
+        // Inline union as the type of a record field (no outer `type` keyword).
+        assert_round_trips("type { env : [#a; #b; #c;]; }");
+        let t = tree("type { env : [#a; #b; #c;]; }");
+        assert!(t.contains("TYPE_RECORD"));
+        assert!(t.contains("TYPE_UNION"));
+        assert_eq!(t.matches("TYPE_UNION_ITEM").count(), 3);
+    }
+
+    #[test]
+    fn m5_optional_union_in_record_field() {
+        // `[#x; #y; none;]?` — union literal with postfix optional.
+        assert_round_trips("type { env? : [#x; #y; none;]?; }");
+        let t = tree("type { env? : [#x; #y; none;]?; }");
+        assert!(t.contains("OPTIONAL_TYPE"));
+        assert!(t.contains("TYPE_UNION"));
+    }
+
+    #[test]
+    fn m5_type_application() {
+        // `List Int` in type position — reuses CALL_EXPR (no separate type-application node).
+        assert_round_trips("type { xs : List Int; }");
+        let t = tree("type { xs : List Int; }");
+        assert!(
+            t.contains("CALL_EXPR"),
+            "type application produces CALL_EXPR"
+        );
+    }
+
+    #[test]
+    fn m5_tuple_type() {
+        // `(A, B)` in type position — reuses TUPLE_EXPR.
+        assert_round_trips("type { pair : (Bool, Int); }");
+        let t = tree("type { pair : (Bool, Int); }");
+        assert!(t.contains("TUPLE_EXPR"));
+    }
+
+    #[test]
+    fn m5_nested_type_record() {
+        // Nested `{ host : Text; }` inside a field (no repeated `type` keyword).
+        assert_round_trips("type { server : { host : Text; port : Int; }; }");
+        let t = tree("type { server : { host : Text; port : Int; }; }");
+        assert_eq!(t.matches("TYPE_RECORD").count(), 2);
+        assert_eq!(t.matches("TYPE_FIELD").count(), 3);
+    }
+
+    // ── M5 acceptance: cursed.zt type bodies ─────────────────────────────────
+
+    #[test]
+    fn m5_abyss_round_trip() {
+        let src = "type {\n  into? : Abyss?;\n  depth : Int;\n}";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_RECORD"));
+        assert!(t.contains("OPTIONAL_TYPE"));
+        assert_eq!(t.matches("TYPE_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m5_shadows_round_trip() {
+        let src = "type [\n  none;\n  true;\n  false;\n  #none;\n  #true;\n  #false;\n]";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_UNION"));
+        assert_eq!(t.matches("TYPE_UNION_ITEM").count(), 6);
+    }
+
+    #[test]
+    fn m5_unholy_round_trip() {
+        let src = concat!(
+            "type [\n",
+            "  (#just);\n",
+            "  (#just-value, value : Int);\n",
+            "  (#just-maybe, maybe-value : Int?);\n",
+            "  (#just-abyss, deep : Abyss??);\n",
+            "  (#both-things, a : Bool, b : Bool);\n",
+            "  #nothing;\n",
+            "  none;\n",
+            "  true;\n",
+            "  false;\n",
+            "]"
+        );
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_UNION"));
+        assert_eq!(
+            t.matches("VARIANT_TYPE").count(),
+            5,
+            "expected 5 variant items"
+        );
+        assert!(
+            t.contains("OPTIONAL_TYPE"),
+            "should have optional field types"
+        );
+    }
+
+    #[test]
+    fn m5_nightmare_record_round_trip() {
+        let src = concat!(
+            "type {\n",
+            "  required           : Bool;\n",
+            "  optional-value     : Bool?;\n",
+            "  optional-field?    : Bool;\n",
+            "  both-optional?     : Bool?;\n",
+            "  deep-optional?     : Abyss??;\n",
+            "  inline-union       : [#a; #b; #c;];\n",
+            "  inline-fn          : Int -> Int -> Int;\n",
+            "  optional-fn?       : (Int -> Bool)?;\n",
+            "  optional-union?    : [#x; #y; none;]?;\n",
+            "}"
+        );
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_RECORD"));
+        assert_eq!(t.matches("TYPE_FIELD").count(), 9);
+        assert!(t.contains("TYPE_UNION"), "should have inline union types");
+        assert_eq!(
+            t.matches("FUNCTION_TYPE").count(),
+            3,
+            "inline-fn needs 2 FUNCTION_TYPE, optional-fn needs 1"
+        );
+        assert!(t.contains("OPTIONAL_TYPE"));
+    }
+
     #[test]
     fn no_panic_round_trip() {
         for b in 0u8..=127u8 {
