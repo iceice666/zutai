@@ -103,4 +103,3 @@ Inline form is also valid:
 ```
 
 ---
-

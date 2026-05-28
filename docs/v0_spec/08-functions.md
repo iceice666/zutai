@@ -1,19 +1,32 @@
 ## 8. Functions
 
-### 8.1 Function expressions
+### 8.1 Named function definitions
 
-Function values use `fn` and `=>`:
+Named functions use `::` for both the type signature and implementation clauses. The type signature line gives the full type; each clause line gives patterns and a body block.
 
 ```zt
-let add =
-  fn x y => x + y
+add :: Int -> Int -> Int
+    :: a -> b { a + b }
 ```
 
-Annotated:
+The `->` between clause patterns corresponds to the `->` in the type signature — one pattern per arrow.
+
+Multi-clause definitions provide pattern matching directly in the function:
 
 ```zt
-let add: Int -> Int -> Int =
-  fn x y => x + y
+factorial :: Int -> Int
+          :: 0 { 1 }
+          :: n { n * factorial (n - 1) }
+
+describe :: Bool -> Text
+         :: true  { "yes" }
+         :: false { "no" }
+```
+
+The type signature is optional when the type can be inferred:
+
+```zt
+negate :: x { x * -1 }
 ```
 
 ### 8.2 Curried functions
@@ -21,23 +34,25 @@ let add: Int -> Int -> Int =
 Functions are curried by default.
 
 ```zt
-let add: Int -> Int -> Int =
-  fn x y => x + y
+add :: Int -> Int -> Int
+    :: a -> b { a + b }
 ```
 
-means `add` takes one `Int` and returns a function that takes another `Int`.
+`add` takes one `Int` and returns a function `Int -> Int`. Partial application:
+
+```zt
+add5 := add 5
+```
 
 ### 8.3 Function application
 
-Function application uses whitespace:
+Function application uses whitespace and is left-associative:
 
 ```zt
 add 1 2
 normalizeServer raw.server
 Pair Text Int
 ```
-
-Application is left-associative:
 
 ```zt
 f x y
@@ -51,19 +66,13 @@ means:
 
 ### 8.4 Function types
 
-Function types use `->`:
+Function types use `->` and are right-associative:
 
 ```zt
 Int -> Int -> Int
+{ port : Int; ...; } -> Int
+forall A. A -> A
 ```
-
-The operands of `->` are type-context expressions, so record and union type literals can be written without a repeated `type` prefix:
-
-```zt
-{ port = Int; ...; } -> Int
-```
-
-Function types are right-associative:
 
 ```zt
 A -> B -> C
@@ -75,11 +84,39 @@ means:
 A -> (B -> C)
 ```
 
-Function expressions use `=>`.
+In type-context positions, `{ ... }` and `[ ... ]` are parsed as record and union type literals without repeating the `type` keyword.
 
+Function expressions use `=>` or `{}`.
 Function types use `->`.
 
-### 8.5 Pipeline operators
+### 8.5 Anonymous functions
+
+Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
+
+```zt
+\x => x * 2
+\x y => x + y
+```
+
+Block form with `{}` when the body needs local bindings:
+
+```zt
+\x { x * 2 }
+\acc x {
+  doubled := acc * 2;
+  doubled + x
+}
+```
+
+Examples:
+
+```zt
+map    (\x => x * 2) items
+filter (\x => x > 0) items
+fold   (\acc x => acc + x) 0 items
+```
+
+### 8.6 Pipeline operators
 
 General mode supports pipeline operators as syntax for ordinary function application.
 
@@ -145,7 +182,7 @@ f x a
 To place a value in a non-final position, use an explicit function:
 
 ```zt
-x |> fn v => f v a
+x |> \v => f v a
 ```
 
 or choose argument order so that ordinary currying and `<|` compose naturally:
@@ -160,7 +197,7 @@ means:
 f a x
 ```
 
-### 8.6 No method-call rewrite in v0
+### 8.7 No method-call rewrite in v0
 
 The expression:
 

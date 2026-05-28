@@ -17,61 +17,57 @@
 ### 29.2 `app.zt`
 
 ```zt
-let Profile: Type = type [
+Profile :: type [
   #dev;
   #test;
   #prod;
 ]
 
-let RawServer: Type = type {
-  host? = Text;
-  port? = Int;
-  tls? = Bool;
+RawServer :: type {
+  host? : Text;
+  port? : Int;
+  tls?  : Bool;
 }
 
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls  : Bool;
 }
 
-let RawConfig: Type = type {
-  name = Text;
-  profile = Profile;
-  server = RawServer;
+RawConfig :: type {
+  name    : Text;
+  profile : Profile;
+  server  : RawServer;
 }
 
-let Config: Type = type {
-  name = Text;
-  profile = Profile;
-  server = Server;
+Config :: type {
+  name    : Text;
+  profile : Profile;
+  server  : Server;
 }
 
-let raw: RawConfig = import "app.zti"
+raw : RawConfig = import "app.zti"
 
-let normalizeServer: RawServer -> Server =
-  fn server => {
-    host = server.host ?? "127.0.0.1";
-    port = server.port ?? 8080;
-    tls = server.tls ?? false;
-  }
+normalizeServer :: RawServer -> Server
+               :: s {
+                 {
+                   host = s.host ?? "127.0.0.1";
+                   port = s.port ?? 8080;
+                   tls  = s.tls  ?? false;
+                 }
+               }
 
-let config: Config = {
-  name = raw.name;
+config : Config = {
+  name    = raw.name;
   profile = raw.profile;
-  server = normalizeServer raw.server;
+  server  = normalizeServer raw.server;
 }
 
 config
 ```
 
-The final expression:
-
-```zt
-config
-```
-
-is the file output.
+The final expression `config` is the file output.
 
 ### 29.3 Optional chaining example
 
@@ -88,14 +84,14 @@ is the file output.
 `nested.zt`:
 
 ```zt
-let RawConfig: Type = type {
-  server? = {
-    host? = Text;
-    port? = Int;
+RawConfig :: type {
+  server? : {
+    host? : Text;
+    port? : Int;
   };
 }
 
-let raw: RawConfig = import "nested.zti"
+raw : RawConfig = import "nested.zti"
 
 {
   host = raw.server?.host ?? "127.0.0.1";
@@ -103,5 +99,27 @@ let raw: RawConfig = import "nested.zti"
 }
 ```
 
----
+### 29.4 Tagged union and pattern matching example
 
+```zt
+Shape :: type [
+  (#circle, radius : Float);
+  (#square, length : Float);
+  (#rect,   width  : Float, height : Float);
+]
+
+area :: Shape -> Float
+     :: (#circle, radius = r)          { r * r * 3.14159 }
+     :: (#square, length = l)          { l * l }
+     :: (#rect, width = w, height = h) { w * h }
+
+shapes : List Shape = [
+  (#circle, radius = 1.0);
+  (#square, length = 2.0);
+  (#rect, width = 3.0, height = 4.0);
+]
+
+total_area := fold (\acc s => acc + area s) 0.0 shapes
+```
+
+---

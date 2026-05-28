@@ -139,8 +139,6 @@ ident ::= [A-Za-z_][A-Za-z0-9_]*
 Syntactic keywords and reserved literals cannot be used as identifiers. This includes:
 
 ```zt
-let
-fn
 type
 forall
 match
@@ -166,16 +164,16 @@ Config
 Type-valued bindings should be capitalized:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
+Server :: type {
+  host : Text;
+  port : Int;
 }
 ```
 
 Runtime value bindings should be lowercase:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
 }
@@ -220,6 +218,42 @@ If subtraction is intended, write:
 ```zt
 (cfg.target) - triple
 ```
+
+### 3.8 Symbols and operators
+
+This is the canonical list of every symbol and operator in the language. Binding-precedence
+and associativity for the infix/postfix forms are defined in
+[Operator precedence](27-operator-precedence.md).
+
+The two field sigils are kept strictly separate: **`:` annotates a type, `=` binds a value
+or pattern**. They never overlap.
+
+| Symbol           | Meaning                                                                    |
+| ---------------- | -------------------------------------------------------------------------- |
+| `:=`             | inferred value binding (`name := expr`)                                    |
+| `:`              | type annotation ("has type"): annotated bindings, type-record/variant type fields, optional-field marker |
+| `::`             | function/type definition: signature line and pattern-clause lines          |
+| `=`              | value/pattern field binding: value records, variant construction, all patterns |
+| `->`             | function type arrow; also separates clause parameter patterns              |
+| `=>`             | anonymous-function body (short form) and `match` arm body                  |
+| `\`              | anonymous function (lambda) introducer                                     |
+| `.`              | field and module-member access                                             |
+| `?.`             | optional chaining                                                          |
+| `?`              | postfix optional type (`T?`) and optional-field marker (`field? : T`)      |
+| `??`             | defaulting operator                                                        |
+| `\|>` / `<\|`    | forward / backward pipeline                                                |
+| `#`              | atom prefix                                                                |
+| `+` `-` `*` `/`  | arithmetic operators                                                       |
+| `==` `!=` `<` `<=` `>` `>=` | comparison operators                                            |
+| `...`            | open row tail in record/union types (anonymous `...;` or named `...Rest;`) |
+| `;`              | terminator for fields, list items, clauses, and match arms                 |
+| `,`              | separator between tuple/variant fields                                     |
+| `{` `}`          | value record, record type, or block body                                   |
+| `[` `]`          | list value or union type                                                   |
+| `(` `)`          | tuple/variant, grouping, and the empty tuple                               |
+| `_`              | wildcard pattern                                                           |
+
+There is no unary operator in v0: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
 ---
 

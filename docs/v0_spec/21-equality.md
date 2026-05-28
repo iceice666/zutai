@@ -26,9 +26,8 @@ Type values are not comparable in user code unless a future reflection API expli
 Invalid:
 
 ```zt
-(fn x => x) == (fn x => x)
+(\x => x) == (\x => x)
 Text == Text
 ```
 
 ---
-

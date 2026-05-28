@@ -38,10 +38,10 @@ type [
 Example:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool?;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool?;
 }
 ```
 
@@ -50,7 +50,7 @@ This means the `tls` field is required, but its value may be either `Bool` or `n
 Valid:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
   tls = true;
@@ -60,7 +60,7 @@ let server: Server = {
 Also valid:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
   tls = none;
@@ -70,7 +70,7 @@ let server: Server = {
 Invalid:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
 }
@@ -79,4 +79,3 @@ let server: Server = {
 because `tls` is required.
 
 ---
-

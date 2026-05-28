@@ -26,4 +26,3 @@ If `raw.port` is `none`, the result is `8080`.
 Otherwise, the result is the value of `raw.port`.
 
 ---
-
