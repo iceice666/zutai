@@ -1,4 +1,5 @@
 pub(super) mod exprs;
+mod patterns;
 mod primary;
 mod types;
 

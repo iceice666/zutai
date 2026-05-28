@@ -259,9 +259,12 @@ fn list_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
 fn lambda_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
     let m = p.start();
     p.bump(SyntaxKind::BACKSLASH);
-    // Consume space-separated simple patterns until `=>` or `{`.
+    // Consume space-separated patterns until `=>` or `{`.
+    // The `!p.at(L_BRACE)` guard is kept intentionally: it lets `\x { … }` (block body) work
+    // without trying to parse `{` as a record pattern. A record pattern as the first lambda
+    // param is grammatically ambiguous with the block-body form and is not used in any fixture.
     while !p.at_eof() && !p.at(SyntaxKind::FAT_ARROW) && !p.at(SyntaxKind::L_BRACE) {
-        if simple_pattern(p).is_none() {
+        if super::patterns::pattern(p).is_none() {
             break;
         }
     }
@@ -275,65 +278,6 @@ fn lambda_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
         p.error("expected '=>' or '{' in lambda expression");
     }
     m.complete(p, SyntaxKind::LAMBDA_EXPR)
-}
-
-/// Parse a simple pattern (no struct/tuple decomposition beyond parentheses).
-/// Used in match cases and lambda parameter lists.
-pub(crate) fn simple_pattern(p: &mut Parser) -> Option<CompletedMarker> {
-    match p.current() {
-        SyntaxKind::UNDERSCORE => {
-            let m = p.start();
-            p.bump_any();
-            Some(m.complete(p, SyntaxKind::WILDCARD_PATTERN))
-        }
-        SyntaxKind::INT
-        | SyntaxKind::FLOAT
-        | SyntaxKind::STRING
-        | SyntaxKind::ATOM
-        | SyntaxKind::KW_TRUE
-        | SyntaxKind::KW_FALSE
-        | SyntaxKind::KW_NONE
-        | SyntaxKind::IDENT => {
-            let m = p.start();
-            p.bump_any();
-            Some(m.complete(p, SyntaxKind::LITERAL))
-        }
-        SyntaxKind::MINUS
-            if p.raw_adjacent() && matches!(p.nth(1), SyntaxKind::INT | SyntaxKind::FLOAT) =>
-        {
-            let m = p.start();
-            p.bump(SyntaxKind::MINUS);
-            p.bump_any();
-            Some(m.complete(p, SyntaxKind::LITERAL))
-        }
-        // Parenthesised pattern: covers single-atom variants `(#tag)` and
-        // multi-field variants `(#tag, field = pat)` needed by M6.
-        SyntaxKind::L_PAREN => {
-            let m = p.start();
-            p.bump(SyntaxKind::L_PAREN);
-            while !p.at_eof() && !p.at(SyntaxKind::R_PAREN) {
-                if p.at(SyntaxKind::IDENT) && p.nth_at(1, SyntaxKind::EQ) {
-                    // Named field: IDENT = pattern
-                    let fm = p.start();
-                    p.bump(SyntaxKind::IDENT);
-                    p.bump(SyntaxKind::EQ);
-                    if simple_pattern(p).is_none() {
-                        p.error("expected pattern after '='");
-                    }
-                    fm.complete(p, SyntaxKind::PATTERN_FIELD);
-                } else if simple_pattern(p).is_none() {
-                    p.error(format!("unexpected token in pattern: {:?}", p.current()));
-                    p.bump_any();
-                }
-                if !p.eat(SyntaxKind::COMMA) {
-                    break;
-                }
-            }
-            p.expect(SyntaxKind::R_PAREN);
-            Some(m.complete(p, SyntaxKind::TUPLE_PATTERN))
-        }
-        _ => None,
-    }
 }
 
 // ── If expression ─────────────────────────────────────────────────────────────
@@ -373,7 +317,7 @@ fn match_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
 
 fn match_case(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
     let m = p.start();
-    if simple_pattern(p).is_none() {
+    if super::patterns::pattern(p).is_none() {
         p.error(format!(
             "expected pattern in match case, got {:?}",
             p.current()
