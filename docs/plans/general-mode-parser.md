@@ -179,8 +179,8 @@ field (error). Non-assoc-comparison and pipeline-mix stay in the parser (they af
 - [x] **M0 Scaffolding** — add deps; `SyntaxKind` + `rowan::Language` + `T!`; `parse()` stub returns empty `FILE`. Test: empty input round-trips.
 - [x] **M1 Lexer** — port scalar helpers; maximal-munch tokenizer + trivia + keywords + negative-number hook + `ERROR`. Lexer unit tests.
 - [x] **M2 Event/marker/builder spine** — `Tokens` view, `Event`, markers + `precede`, `bump`/`at`/`expect`, `process` w/ trivia reattachment. Test: token-soup round-trip.
-- [ ] **M3 Expression Pratt core** — primary, full 9-level ladder, juxtaposition, non-assoc + pipeline-mix, negative-literal fold. Precedence snapshots (the operator-precedence.md examples).
-- [ ] **M4 Composite exprs** — records/lists/tuples/lambda/match/if/import + brace disambiguation.
+- [x] **M3 Expression Pratt core** — primary, full 9-level ladder, juxtaposition, non-assoc + pipeline-mix, negative-literal fold. Precedence snapshots (the operator-precedence.md examples).
+- [x] **M4 Composite exprs** — records/lists/tuples/lambda/match/if/import + brace disambiguation.
 - [ ] **M5 Types** — `parse_type` via shared Pratt; record/union/variant/optional/fn types; contextual `{`/`[`. Snapshots of `Abyss`/`Shadows`/`Unholy`/`NightmareRecord`.
 - [ ] **M6 Patterns** — incl. nested; tested against `unholy_match` clause patterns.
 - [ ] **M7 TopDecls/Clauses/Block** — 4 forms, hard case C, guards, blocks. Bulk of `cursed.zt` parses.
