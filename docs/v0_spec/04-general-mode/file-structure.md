@@ -89,8 +89,8 @@ Pattern-matching multi-clause example:
 
 ```zt
 unwrap_or_default :: [T] T? -> T -> T
-                  :: (#some, v) -> _ { v }
-                  :: #none -> d      { d }
+                  :: none -> d { d }
+                  :: v    -> _ { v }
 ```
 
 The type signature is optional when the type can be inferred:

@@ -250,6 +250,7 @@ or pattern**. They never overlap.
 | `#`              | atom prefix                                                                |
 | `+` `-` `*` `/`  | arithmetic operators                                                       |
 | `==` `!=` `<` `<=` `>` `>=` | comparison operators                                            |
+| `&&` `\|\|`      | logical AND / OR (short-circuit); operands and result are `Bool`           |
 | `...`            | open row tail in record/union types — v1 feature, reserved |
 | `;`              | terminator for fields, list items, clauses, and match arms                 |
 | `,`              | separator between tuple/variant fields                                     |

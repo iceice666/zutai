@@ -93,7 +93,7 @@ If `U` is already optional, `U?` is flattened to `U`.
 So:
 
 ```zt
-Server??
+(Server?)?
 ```
 
 normalizes to:
@@ -101,5 +101,7 @@ normalizes to:
 ```zt
 Server?
 ```
+
+Note: `??` is always the defaulting token, so double-postfix optional must be parenthesized as `(T?)?`.
 
 ---
