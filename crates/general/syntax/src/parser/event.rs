@@ -1,9 +1,9 @@
 use std::mem;
 
 use rowan::GreenNodeBuilder;
-use text_size::TextSize;
+use text_size::{TextRange, TextSize};
 
-use crate::{SyntaxError, SyntaxKind, lexer::Token};
+use crate::{SyntaxKind, diag::Diagnostic, lexer::Token};
 
 /// An entry in the flat event stream emitted by the parser.
 pub(crate) enum Event {
@@ -40,7 +40,7 @@ pub(crate) fn process(
     mut events: Vec<Event>,
     raw: &[Token],
     src: &str,
-) -> (rowan::GreenNode, Vec<SyntaxError>) {
+) -> (rowan::GreenNode, Vec<Diagnostic>) {
     let mut builder = Builder {
         inner: GreenNodeBuilder::new(),
         raw,
@@ -112,7 +112,7 @@ struct Builder<'raw, 'src> {
     raw_pos: usize,
     text_pos: usize,
     depth: usize,
-    errors: Vec<SyntaxError>,
+    errors: Vec<Diagnostic>,
 }
 
 impl Builder<'_, '_> {
@@ -139,6 +139,18 @@ impl Builder<'_, '_> {
             );
             let len = tok.len as usize;
             let text = &self.src[self.text_pos..self.text_pos + len];
+
+            // Emit a lexical diagnostic for ERROR tokens from the lexer.
+            if kind == SyntaxKind::ERROR {
+                let start = TextSize::new(self.text_pos as u32);
+                let end = TextSize::new((self.text_pos + len) as u32);
+                let range = TextRange::new(start, end);
+                self.lexical_error(
+                    range,
+                    format!("lexical error: unexpected character sequence {:?}", text),
+                );
+            }
+
             self.inner.token(kind.into(), text);
             self.raw_pos += 1;
             self.text_pos += len;
@@ -160,9 +172,11 @@ impl Builder<'_, '_> {
     }
 
     fn error(&mut self, msg: String) {
-        self.errors.push(SyntaxError {
-            message: msg,
-            offset: TextSize::new(self.text_pos as u32),
-        });
+        let offset = TextSize::new(self.text_pos as u32);
+        self.errors.push(Diagnostic::parse_error(offset, msg));
+    }
+
+    fn lexical_error(&mut self, range: TextRange, msg: String) {
+        self.errors.push(Diagnostic::lexical_error(range, msg));
     }
 }

@@ -6,7 +6,7 @@ use std::cell::Cell;
 
 use rowan::GreenNode;
 
-use crate::{SyntaxError, SyntaxKind, lexer::tokenize, token_set::TokenSet};
+use crate::{SyntaxKind, diag::Diagnostic, lexer::tokenize, token_set::TokenSet};
 
 use event::Event;
 use input::Tokens;
@@ -15,7 +15,7 @@ const STEP_LIMIT: u32 = 10_000_000;
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-pub(crate) fn parse(src: &str) -> (GreenNode, Vec<SyntaxError>) {
+pub(crate) fn parse(src: &str) -> (GreenNode, Vec<Diagnostic>) {
     let raw = tokenize(src);
     let tokens = Tokens::from_raw(&raw);
     let mut p = Parser::new(tokens);
