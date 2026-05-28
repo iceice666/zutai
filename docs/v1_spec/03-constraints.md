@@ -78,7 +78,7 @@ A witness provides implementations for a constraint on a specific type. The `@T`
 
 ```zt
 Eq @Int :: {
-  eq = \a b => a == b
+  eq = \a b => a == b;
 }
 ```
 
@@ -86,11 +86,11 @@ Operator methods use the same parenthesised names as in the constraint definitio
 
 ```zt
 Ord @Int :: {
-  compare = \a b => ...
-  (<)     = \a b => a < b
-  (<=)    = \a b => a <= b
-  (>)     = \a b => a > b
-  (>=)    = \a b => a >= b
+  compare = \a b => ...;
+  (<)     = \a b => a < b;
+  (<=)    = \a b => a <= b;
+  (>)     = \a b => a > b;
+  (>=)    = \a b => a >= b;
 }
 ```
 
@@ -98,7 +98,7 @@ Methods with defaults may be omitted:
 
 ```zt
 Ord @Int :: {
-  compare = \a b => ...
+  compare = \a b => ...;
   -- max, min use the defaults derived from compare via >=, <=
 }
 ```
@@ -111,11 +111,11 @@ A witness for a parameterised type may require constraints on its type arguments
 
 ```zt
 Eq @(List A) :: [A: Eq] {
-  eq = \xs ys => ...
+  eq = \xs ys => ...;
 }
 
 Ord @(List A) :: [A: Ord] {
-  compare = \xs ys => ...
+  compare = \xs ys => ...;
 }
 ```
 
@@ -191,11 +191,11 @@ Witnesses target the type constructor without arguments:
 
 ```zt
 Functor @List :: {
-  map = \f -> xs => ...
+  map = \f xs => ...;
 }
 
 Foldable @List :: {
-  fold = \f -> z -> xs => ...
+  fold = \f z xs => ...;
 }
 ```
 
@@ -206,10 +206,10 @@ Partial type application is allowed in witness targets. A type constructor of ki
 -- Result E :: Type -> Type for fixed E
 
 Functor @(Result E) :: [E] {
-  map = \f -> r => match r {
+  map = \f r => match r {
     (#ok,  value = v) => (#ok,  value = f v);
     (#err, error = e) => (#err, error = e);
-  }
+  };
 }
 ```
 
@@ -257,7 +257,7 @@ The compiler synthesizes the witness body from the type's structure. This fails 
 For **record types**, derivation proceeds field by field. `eq` on `Server` becomes:
 
 ```zt
-eq = \a b => (eq a.host b.host) && (eq a.port b.port)
+eq = \a b => (eq a.host b.host) && (eq a.port b.port);
 ```
 
 where each field's `eq` is resolved from the in-scope witness for that field's type.
@@ -270,7 +270,7 @@ eq = \a b => match (a, b) {
   (#active, #active)                                    => true;
   ((#suspended, reason = r1), (#suspended, reason = r2)) => eq r1 r2;
   _                                                     => false;
-}
+};
 ```
 
 User-defined derive recipes are post-v1. In v1 the compiler supplies the structural recipe for any constraint marked `derive`. Future versions will allow constraints to supply their own compile-time recipe using `fields` and witness reflection.
