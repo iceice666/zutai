@@ -5,14 +5,14 @@ Imports are expressions.
 Canonical form:
 
 ```zt
-let cfg = import "config.zti"
-let lib = import "server.zt"
+cfg := import "config.zti"
+lib := import "server.zt"
 ```
 
 A shorthand unquoted import path may be accepted by implementations:
 
 ```zt
-let cfg = import config.zti
+cfg := import config.zti
 ```
 
 However, the canonical syntax is the string form.
@@ -59,4 +59,3 @@ Imports are:
 Re-importing the same resolved file path returns the same value.
 
 ---
-

@@ -39,7 +39,7 @@ It is an inert serialized data tree.
 A `.zt` file contains pure lazy computation:
 
 ```zt
-let cfg = import "app.zti"
+cfg := import "app.zti"
 
 {
   name = cfg.name;
@@ -47,11 +47,11 @@ let cfg = import "app.zti"
 }
 ```
 
-A `.zt` file consists of zero or more `let` bindings followed by one final expression:
+A `.zt` file consists of zero or more declarations followed by one final expression:
 
 ```zt
-let binding = expr
-let binding: TypeExpr = expr
+name := expr
+name : TypeExpr = expr
 
 final_expr
 ```
@@ -63,4 +63,3 @@ If a `.zt` file is imported by another `.zt` file, its final value may contain r
 If a `.zt` file is rendered as `.zti`, JSON, or another data format, its final value must be serializable.
 
 ---
-

@@ -3,10 +3,10 @@
 Optional fields use `?` on the field name:
 
 ```zt
-let RawServer: Type = type {
-  host? = Text;
-  port? = Int;
-  tls? = Bool;
+RawServer :: type {
+  host? : Text;
+  port? : Int;
+  tls? : Bool;
 }
 ```
 
@@ -15,7 +15,7 @@ This means the field may be absent.
 Valid:
 
 ```zt
-let raw: RawServer = {
+raw : RawServer = {
   host = "localhost";
 }
 ```
@@ -31,22 +31,21 @@ raw.port ?? 8080
 These are different:
 
 ```zt
-tls = Bool?;
+tls : Bool?;
 ```
 
 means the field must exist, but may contain `none`.
 
 ```zt
-tls? = Bool;
+tls? : Bool;
 ```
 
 means the field may be absent.
 
 ```zt
-tls? = Bool?;
+tls? : Bool?;
 ```
 
 means the field may be absent, and if present may be `Bool` or `none`.
 
 ---
-

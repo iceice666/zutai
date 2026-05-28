@@ -5,24 +5,24 @@ A `.zt` file can return a record containing values, functions, and types.
 Example `server.zt`:
 
 ```zt
-let RawServer: Type = type {
-  host? = Text;
-  port? = Int;
-  tls? = Bool;
+RawServer :: type {
+  host? : Text;
+  port? : Int;
+  tls? : Bool;
 }
 
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool;
 }
 
-let normalize: RawServer -> Server =
-  fn raw => {
+normalize :: RawServer -> Server
+   :: raw { {
     host = raw.host ?? "127.0.0.1";
     port = raw.port ?? 8080;
     tls = raw.tls ?? false;
-  }
+  } }
 
 {
   RawServer = RawServer;
@@ -34,11 +34,10 @@ let normalize: RawServer -> Server =
 Another file:
 
 ```zt
-let serverLib = import "server.zt"
-let raw = import "server.zti"
+serverLib := import "server.zt"
+raw := import "server.zti"
 
-let server: serverLib.Server =
-  serverLib.normalize raw
+server : serverLib.Server = serverLib.normalize raw
 
 server
 ```
@@ -48,4 +47,3 @@ This works because imported `.zt` modules can contain non-serializable values li
 Only rendering requires serializability.
 
 ---
-

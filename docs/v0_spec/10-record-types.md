@@ -4,24 +4,24 @@ Record types use:
 
 ```zt
 type {
-  field = TypeExpr;
+  field : TypeExpr;
 }
 ```
 
 Example:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool;
 }
 ```
 
 Value:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
   tls = true;
@@ -41,8 +41,8 @@ is a value record.
 
 ```zt
 type {
-  host = Text;
-  port = Int;
+  host : Text;
+  port : Int;
 }
 ```
 
@@ -54,9 +54,9 @@ Inside a type context, such as a type annotation or a field inside a type record
 
 ```zt
 type {
-  server = {
-    host = Text;
-    port = Int;
+  server : {
+    host : Text;
+    port : Int;
   };
 }
 ```
@@ -68,16 +68,16 @@ Record types are closed by default.
 Given:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
+Server :: type {
+  host : Text;
+  port : Int;
 }
 ```
 
 This is valid:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
 }
@@ -86,7 +86,7 @@ let server: Server = {
 This is invalid:
 
 ```zt
-let server: Server = {
+server : Server = {
   host = "localhost";
   port = 8080;
   tls = true;
@@ -101,7 +101,7 @@ An open record type, also called a view type, uses an anonymous row tail:
 
 ```zt
 type {
-  host = Text;
+  host : Text;
   ...;
 }
 ```
@@ -113,8 +113,8 @@ This means:
 Example:
 
 ```zt
-let getHost: { host = Text; ...; } -> Text =
-  fn x => x.host
+getHost :: { host : Text; ...; } -> Text
+    :: x { x.host }
 ```
 
 The function accepts all of these values:
@@ -133,7 +133,7 @@ A named row tail preserves information about the rest of a record:
 
 ```zt
 type {
-  host = Text;
+  host : Text;
   ...Rest;
 }
 ```
@@ -143,9 +143,9 @@ type {
 Example:
 
 ```zt
-let identityHostRecord:
-  forall Rest. { host = Text; ...Rest; } -> { host = Text; ...Rest; } =
-  fn x => x
+identityHostRecord ::
+  forall Rest. { host : Text; ...Rest; } -> { host : Text; ...Rest; }
+    :: x { x }
 ```
 
 This function returns a record with exactly the same additional fields it received.
@@ -154,7 +154,7 @@ Row tails must not overlap explicitly declared fields. For example, in:
 
 ```zt
 type {
-  host = Text;
+  host : Text;
   ...Rest;
 }
 ```
@@ -166,16 +166,16 @@ type {
 A function that only reads a field can be typed with a view type:
 
 ```zt
-let portOrDefault: { port = Int?; ...; } -> Int =
-  fn x => x.port ?? 8080
+portOrDefault :: { port : Int?; ...; } -> Int
+    :: x { x.port ?? 8080 }
 ```
 
 A function that must preserve extra fields should use a named row tail:
 
 ```zt
-let keep:
-  forall Rest. { port = Int; ...Rest; } -> { port = Int; ...Rest; } =
-  fn x => x
+keep ::
+  forall Rest. { port : Int; ...Rest; } -> { port : Int; ...Rest; }
+    :: x { x }
 ```
 
 Implementations may infer simple row-polymorphic types for local expressions, but exported or top-level polymorphic APIs should use explicit annotations.
@@ -209,8 +209,8 @@ returns the closed record type:
 
 ```zt
 type {
-  host = Text;
-  port = Int;
+  host : Text;
+  port : Int;
 }
 ```
 
@@ -219,7 +219,7 @@ assuming `Server` is a record type with those fields.
 Selection is explicit projection. It is different from a view type:
 
 ```zt
-type { host = Text; port = Int; ...; }
+type { host : Text; port : Int; ...; }
 ```
 
 which accepts records with at least those fields, without discarding extra fields at runtime.

@@ -57,13 +57,13 @@ match x {
 Example:
 
 ```zt
-let raw: {
-  server? = {
-    port? = Int;
+raw : {
+  server? : {
+    port? : Int;
   };
 } = import "app.zti"
 
-let port = raw.server?.port ?? 8080
+port := raw.server?.port ?? 8080
 ```
 
 If `raw.server` is absent, `raw.server` evaluates to `none`, then `?.port` also evaluates to `none`, and `?? 8080` supplies the default.
@@ -103,4 +103,3 @@ Server?
 ```
 
 ---
-

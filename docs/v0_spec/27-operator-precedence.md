@@ -6,14 +6,15 @@ From highest to lowest:
 | ---------: | ------------------------------------------------------------------------ | ------------------------- |
 |          1 | field access `x.y`, optional chaining `x?.y`, postfix optional type `T?` | left / postfix            |
 |          2 | function application `f x`                                               | left                      |
-|          3 | unary operators                                                          | right                     |
-|          4 | `*`, `/`                                                                 | left                      |
-|          5 | `+`, `-`                                                                 | left                      |
-|          6 | comparison `==`, `!=`, `<`, `<=`, `>`, `>=`                              | non-associative           |
-|          7 | defaulting `??`                                                          | right                     |
-|          8 | pipeline `|>`, `<|`                                                      | `|>` left, `<|` right     |
-|          9 | function type `->`                                                       | right                     |
-|         10 | `if`, `match`, `fn`, `select` bodies                                     | syntax-delimited          |
+|          3 | `*`, `/`                                                                 | left                      |
+|          4 | `+`, `-`                                                                 | left                      |
+|          5 | comparison `==`, `!=`, `<`, `<=`, `>`, `>=`                              | non-associative           |
+|          6 | defaulting `??`                                                          | right                     |
+|          7 | pipeline `|>`, `<|`                                                      | `|>` left, `<|` right     |
+|          8 | function type `->`                                                       | right                     |
+|          9 | `if`, `match`, `\`, `select` bodies                                      | syntax-delimited          |
+
+v0 has no unary operators: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
 Examples:
 

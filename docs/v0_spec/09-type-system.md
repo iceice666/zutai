@@ -28,7 +28,7 @@ but they are not required for the v0 core.
 Type annotations are type expressions that evaluate to types:
 
 ```zt
-let port: Int = 8080
+port : Int = 8080
 ```
 
 The grammar is:
@@ -42,20 +42,20 @@ A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It
 Example:
 
 ```zt
-let getPort: { port = Int; ...; } -> Int =
-  fn server => server.port
+getPort :: { port : Int; ...; } -> Int
+    :: server { server.port }
 ```
 
 Example:
 
 ```zt
-let Response: Type -> Type =
-  fn Body => type {
-    status = Int;
-    body = Body?;
-  }
+Response :: Type -> Type
+    :: Body { type {
+    status : Int;
+    body : Body?;
+  } }
 
-let value: Response Text = {
+value : Response Text = {
   status = 200;
   body = "ok";
 }
@@ -66,36 +66,36 @@ let value: Response Text = {
 Types are first-class compile-time values.
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
+Server :: type {
+  host : Text;
+  port : Int;
 }
 ```
 
-Type aliases are ordinary `let` bindings:
+Type aliases are ordinary bindings:
 
 ```zt
-let Host: Type = Text
-let Port: Type = Int
-let UserId: Type = Text
+Host :: type Text
+Port :: type Int
+UserId :: type Text
 ```
 
 Type constructors are functions that return `Type`:
 
 ```zt
-let Pair: Type -> Type -> Type =
-  fn A B => type {
-    first = A;
-    second = B;
-  }
+Pair :: Type -> Type -> Type
+    :: A -> B { type {
+    first : A;
+    second : B;
+  } }
 ```
 
 Usage:
 
 ```zt
-let TextIntPair: Type = Pair Text Int
+TextIntPair :: type Pair Text Int
 
-let pair: TextIntPair = {
+pair : TextIntPair = {
   first = "hello";
   second = 42;
 }
@@ -136,4 +136,3 @@ Type2 : Type3
 The user normally writes only `Type`.
 
 ---
-

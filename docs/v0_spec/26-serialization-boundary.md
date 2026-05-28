@@ -16,7 +16,7 @@ false
 Non-serializable final values:
 
 ```zt
-fn x => x
+\x => x
 Type
 Server
 Text -> Text
@@ -66,4 +66,3 @@ Rendered `.zti`:
 ```
 
 ---
-

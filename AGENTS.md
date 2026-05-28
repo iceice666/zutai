@@ -19,10 +19,10 @@ crates/
   general/syntax/      Parser and AST definitions for general mode (`.zt`)
   immediate/syntax/    Parser and AST definitions for immediate mode (`.zti`)
   immediate/simd/      SIMD-accelerated parser for immediate mode (`.zti`)
-  types/               Shared types
+  immediate/types/     Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
-  v0_spec/             Zutai v0 language specification
+  v0_spec/             Zutai v0 language specification (31 sections, source of truth)
   stdlib/              Standard-library notes
 ```
 

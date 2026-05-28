@@ -3,22 +3,22 @@
 Zutai uses explicit `forall` for polymorphic types.
 
 ```zt
-let id: forall A. A -> A =
-  fn x => x
+id :: forall A. A -> A
+   :: x { x }
 ```
 
 Multiple type parameters:
 
 ```zt
-let const: forall A B. A -> B -> A =
-  fn x y => x
+const :: forall A B. A -> B -> A
+      :: x -> _ { x }
 ```
 
 Example with optionals:
 
 ```zt
-let unwrapOr: forall T. T? -> T -> T =
-  fn value fallback => value ?? fallback
+unwrapOr :: forall T. T? -> T -> T
+         :: value -> fallback { value ?? fallback }
 ```
 
 Type variables are capitalized:
@@ -54,8 +54,8 @@ Polymorphic functions are implicitly instantiated at call sites.
 Given:
 
 ```zt
-let id: forall A. A -> A =
-  fn x => x
+id :: forall A. A -> A
+   :: x { x }
 ```
 
 these calls instantiate `A` differently:
@@ -75,7 +75,7 @@ Implementations may generalize let-bound expressions when all free type variable
 For example, an implementation may infer:
 
 ```zt
-let id = fn x => x
+id :: x { x }
 ```
 
 as:
@@ -87,8 +87,8 @@ forall A. A -> A
 However, public APIs, exported module fields, and complex polymorphic functions should be annotated explicitly:
 
 ```zt
-let mapList: forall A B. (A -> B) -> List A -> List B =
-  fn f xs => ...
+mapList :: forall A B. (A -> B) -> List A -> List B
+        :: f -> xs { ... }
 ```
 
 ### 18.4 Predicativity and rank
@@ -108,14 +108,14 @@ Type annotations are type expressions that evaluate to types. A type expression 
 Example:
 
 ```zt
-let Response: Type -> Type =
-  fn Body => type {
-    status = Int;
-    body = Body?;
-  }
+Response :: Type -> Type
+         :: Body { type {
+             status : Int;
+             body : Body?;
+           } }
 
-let A: Type = Response Text
-let B: Type = type { status = Int; body = Text?; }
+A : Type = Response Text
+B :: type { status : Int; body : Text?; }
 ```
 
 `A` and `B` are the same type after type-level evaluation.
@@ -130,7 +130,7 @@ An anonymous row tail creates an open record/view type:
 
 ```zt
 type {
-  host = Text;
+  host : Text;
   ...;
 }
 ```
@@ -141,7 +141,7 @@ A named row tail preserves the rest of the record:
 
 ```zt
 type {
-  host = Text;
+  host : Text;
   ...Rest;
 }
 ```
@@ -149,18 +149,38 @@ type {
 Example:
 
 ```zt
-let getHost: forall Rest. { host = Text; ...Rest; } -> Text =
-  fn x => x.host
+getHost :: forall Rest. { host : Text; ...Rest; } -> Text
+        :: x { x.host }
 ```
 
 If the rest of the row does not need to be named, the shorter view type is preferred:
 
 ```zt
-let getHost: { host = Text; ...; } -> Text =
-  fn x => x.host
+getHost :: { host : Text; ...; } -> Text
+        :: x { x.host }
 ```
 
 Row variables range over fields. They must not duplicate fields explicitly listed in the same record type.
+
+Row polymorphism also applies to union types. An anonymous union tail creates an open union:
+
+```zt
+type [
+  #dev;
+  ...;
+]
+```
+
+A named union tail:
+
+```zt
+type [
+  #dev;
+  ...Rest;
+]
+```
+
+See [Union types §16.4](16-union-types.md) for open union examples.
 
 ### 18.7 Inference limits
 

@@ -5,17 +5,17 @@ Metaprogramming is based on type values, type functions, reflection, and schema 
 ### 24.1 Type functions
 
 ```zt
-let WithId: Type -> Type =
-  fn T => type {
-    id = Text;
-    value = T;
-  }
+WithId :: Type -> Type
+   :: T { type {
+    id : Text;
+    value : T;
+  } }
 ```
 
 Usage:
 
 ```zt
-let NamedText: Type = WithId Text
+NamedText : Type = WithId Text
 ```
 
 ### 24.2 Reflection
@@ -23,7 +23,7 @@ let NamedText: Type = WithId Text
 Reflection inspects types at compile time:
 
 ```zt
-let serverFields = fields Server
+serverFields := fields Server
 ```
 
 A conceptual result:
@@ -51,7 +51,7 @@ This result may contain `Type` values, so it is useful for metaprogramming but n
 To produce serializable data, use explicit schema conversion:
 
 ```zt
-let serverSchema = schema Server
+serverSchema := schema Server
 
 serverSchema
 ```
@@ -92,4 +92,3 @@ schema Server
 is serializable schema data.
 
 ---
-

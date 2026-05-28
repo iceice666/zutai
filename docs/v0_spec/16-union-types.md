@@ -14,7 +14,7 @@ Each item is a type-context expression: syntactically it may be any expression, 
 Example:
 
 ```zt
-let Profile: Type = type [
+Profile :: type [
   #dev;
   #test;
   #prod;
@@ -36,8 +36,8 @@ inside a type expression means:
 The same singleton-literal rule applies to `true`, `false`, and `none`:
 
 ```zt
-let Enabled: Type = type [ true; false; ]
-let MaybeProd: Type = type [ #prod; none; ]
+Enabled :: type [ true; false; ]
+MaybeProd :: type [ #prod; none; ]
 ```
 
 These literals are singleton-capable, but only `#`-prefixed literals are atoms.
@@ -45,7 +45,7 @@ These literals are singleton-capable, but only `#`-prefixed literals are atoms.
 Therefore:
 
 ```zt
-let Profile: Type = type [
+Profile :: type [
   #dev;
   #test;
   #prod;
@@ -63,16 +63,68 @@ means a value of `Profile` must be exactly one of:
 Example:
 
 ```zt
-let profile: Profile = #prod
+profile : Profile = #prod
 ```
 
 Invalid:
 
 ```zt
-let profile: Profile = #staging
+profile : Profile = #staging
 ```
 
 because `#staging` is not a member of the union.
 
----
+### 16.4 Open union types
 
+Analogous to open record types, a union type may have an anonymous or named row tail to accept additional variants.
+
+An anonymous union tail:
+
+```zt
+type [
+  #dev;
+  #test;
+  ...;
+]
+```
+
+means any union that includes at least `#dev` and `#test` as members.
+
+A named union tail preserves the extra variants in the result type:
+
+```zt
+type [
+  #dev;
+  #test;
+  ...Rest;
+]
+```
+
+Example:
+
+```zt
+handle_env :: forall Rest. [ #dev; #test; ...Rest; ] -> Text -> Text
+           :: #dev -> msg { "dev: " }
+           :: #test -> msg { "test: " }
+           :: _ -> msg { msg }
+```
+
+Union tails also work with variant constructors:
+
+```zt
+type [
+  (#circle, radius : Float);
+  ...Rest;
+]
+```
+
+Union extension — extend an existing union with new variants:
+
+```zt
+Shape3D :: type [
+  ...Shape;
+  (#sphere, radius : Float);
+]
+```
+
+---

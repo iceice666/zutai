@@ -5,14 +5,14 @@
 A `.zt` file is:
 
 ```ebnf
-file ::= let_binding* expr
+file ::= top_decl* expr
 ```
 
 Example:
 
 ```zt
-let cfg = import "app.zti"
-let name = cfg.name
+cfg := import "app.zti"
+name := cfg.name
 
 {
   name = name;
@@ -22,81 +22,154 @@ let name = cfg.name
 
 The final expression is the file output.
 
-### 5.2 One declaration form
+### 5.2 Declaration forms
 
-There is exactly one declaration form:
+There are three declaration forms.
+
+**Inferred value binding** — type is inferred:
 
 ```zt
-let name = expr
-let name: TypeExpr = expr
+name := expr
+```
+
+**Annotated value binding** — explicit type annotation, `:=` is shorthand for `: <type> =` with the type omitted:
+
+```zt
+name : TypeExpr = expr
+```
+
+**Function or type definition** — uses `::` for the type signature and one or more `::` clauses for implementation:
+
+```zt
+name :: TypeSignature
+     :: pattern₁ -> pattern₂ { body }
 ```
 
 Examples:
 
 ```zt
-let x = 42
+x := 42
 
-let port: Int = 8080
+port : Int = 8080
 
-let add: Int -> Int -> Int =
-  fn x y => x + y
+add :: Int -> Int -> Int
+    :: a -> b { a + b }
 
-let Server: Type = type {
-  host = Text;
-  port = Int;
-}
+Server :: type { host : Text; port : Int; }
 ```
 
 There is no separate syntax for:
 
 ```zt
 type Server = ...
-fn add ...
 def add ...
 class Server ...
 ```
 
-Everything is a `let` binding.
+Everything is one of the three declaration forms.
 
-### 5.3 One namespace
+### 5.3 Function definitions
+
+A named function consists of a type signature line followed by one or more implementation clauses. Both use `::`. The `->` between clause patterns mirrors the `->` in the type signature — one pattern per arrow:
+
+```zt
+factorial :: Int -> Int
+          :: 0 { 1 }
+          :: n { n * factorial (n - 1) }
+```
+
+Multi-argument curried functions:
+
+```zt
+add :: Int -> Int -> Int
+    :: a -> b { a + b }
+```
+
+Pattern-matching multi-clause example:
+
+```zt
+unwrap_or_default :: forall T. T? -> T -> T
+                  :: (#some, v) -> _ { v }
+                  :: #none -> d      { d }
+```
+
+The type signature is optional when the type can be inferred:
+
+```zt
+double :: a { a * 2 }
+```
+
+### 5.4 Anonymous functions
+
+Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
+
+```zt
+map (\x => x * 2) items
+fold (\acc x => acc + x) 0 items
+```
+
+Block form uses `{}` when the body needs local bindings:
+
+```zt
+\x { x * 2 }
+\acc x {
+  doubled := acc * 2;
+  doubled + x
+}
+```
+
+### 5.5 One namespace
 
 Zutai has one namespace.
 
 The following is invalid:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-}
+Server :: type { host : Text; }
 
-let Server = 123
+Server := 123
 ```
 
 The name `Server` is already bound.
 
 Types, functions, modules, and runtime values all share the same namespace.
 
-### 5.4 Binding scope
+### 5.6 Binding scope
 
-Top-level `let` bindings in a `.zt` file are in one recursive scope.
+Top-level declarations in a `.zt` file are in one recursive scope.
 
 This allows functions to refer to themselves:
 
 ```zt
-let factorial: Int -> Int =
-  fn n =>
-    if n <= 1 then 1 else n * factorial (n - 1)
+factorial :: Int -> Int
+          :: 0 { 1 }
+          :: n { n * factorial (n - 1) }
 
 factorial 5
 ```
 
 It also allows mutually recursive top-level bindings, subject to type-checking and evaluation limits.
 
-### 5.5 Immutability
+### 5.7 Local bindings
 
-Bindings are immutable.
+Inside function bodies, `:=` introduces a local immutable binding:
+
+```zt
+normalize :: RawServer -> Server
+          :: raw {
+            host := raw.host ?? "127.0.0.1";
+            port := raw.port ?? 8080;
+            tls  := raw.tls ?? false;
+            { host = host; port = port; tls = tls; }
+          }
+```
+
+A local binding is scoped to the remainder of the block.
+
+### 5.8 Immutability
+
+All bindings are immutable.
 
 There is no assignment statement and no mutation in the core language.
 
 ---
-

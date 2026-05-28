@@ -5,7 +5,7 @@ General mode is pure and lazy.
 Bindings are immutable:
 
 ```zt
-let expensive = computeHugeThing cfg
+expensive := computeHugeThing cfg
 
 {
   name = cfg.name;
@@ -33,10 +33,9 @@ env "HOME"
 External data enters through explicit imports, usually as `.zti`:
 
 ```zt
-let env = import "env.zti"
-let args = import "args.zti"
-let cfg = import "config.zti"
+env  := import "env.zti"
+args := import "args.zti"
+cfg  := import "config.zti"
 ```
 
 ---
-
