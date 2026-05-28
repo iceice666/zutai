@@ -1,3 +1,4 @@
+mod decls;
 pub(super) mod exprs;
 mod patterns;
 mod primary;
@@ -16,16 +17,21 @@ pub(crate) enum Ctx {
 }
 
 /// Entry point: parse a complete `.zt` file (`TopDecl* Expr`).
-/// M3: treats the file as a sequence of expressions, recovering over unknown
-/// tokens. M7 will add proper top-level declaration dispatch.
 pub(super) fn file(p: &mut Parser) {
     let m = p.start();
     while !p.at_eof() {
-        if exprs::expr(p).is_none() {
-            // Unknown token in non-expression position — wrap in ERROR_NODE and
-            // continue so the round-trip invariant holds.
+        // Top-level declaration: `IDENT` followed by `:=`, `:`, or `::`.
+        if p.is_decl_start() {
+            decls::top_decl(p);
+        } else if exprs::expr(p).is_some() {
+            // Parsed an expression (the trailing file-output expression, or an
+            // error-recovery expression). Keep looping — if there are tokens
+            // remaining they are errors and will be consumed by the next iteration.
+        } else {
+            // Nothing matched: consume one token into an ERROR_NODE so the loop
+            // always makes forward progress.
             let err_m = p.start();
-            p.error(format!("unexpected token: {:?}", p.current()));
+            p.error(format!("unexpected token at top level: {:?}", p.current()));
             p.bump_any();
             err_m.complete(p, SyntaxKind::ERROR_NODE);
         }

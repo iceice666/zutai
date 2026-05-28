@@ -1,10 +1,17 @@
-use crate::SyntaxKind;
+use crate::{SyntaxKind, token_set::TokenSet};
 
 use super::{
     super::{CompletedMarker, Parser},
     exprs::type_expr,
     primary::field_name,
 };
+
+// Recovery set shared by both type_field and variant_field.
+const TYPE_FIELD_RECOVERY: TokenSet =
+    TokenSet::new(&[SyntaxKind::SEMI, SyntaxKind::R_BRACE, SyntaxKind::EOF]);
+
+const TYPE_UNION_ITEM_RECOVERY: TokenSet =
+    TokenSet::new(&[SyntaxKind::SEMI, SyntaxKind::R_BRACK, SyntaxKind::EOF]);
 
 // ── Entry: `type { … }` / `type [ … ]` ───────────────────────────────────────
 
@@ -51,7 +58,12 @@ fn type_field(p: &mut Parser) {
     if type_expr(p).is_none() {
         p.error("expected type expression for field type");
     }
-    p.expect(SyntaxKind::SEMI);
+    // Ensure progress: skip to the next `;` or `}` if we didn't find a `;`.
+    // Without this, mismatched sigils (e.g. `field = Type`) loop forever.
+    if !p.eat(SyntaxKind::SEMI) {
+        p.err_recover("expected ';' after type field", TYPE_FIELD_RECOVERY);
+        p.eat(SyntaxKind::SEMI);
+    }
     m.complete(p, SyntaxKind::TYPE_FIELD);
 }
 
@@ -67,16 +79,19 @@ pub(super) fn type_union_inner(p: &mut Parser) -> CompletedMarker {
         if p.at(SyntaxKind::L_PAREN) && p.nth_at(1, SyntaxKind::ATOM) {
             variant_type_inner(p);
         } else if type_expr(p).is_none() {
-            p.error("expected type expression in union");
             im.abandon(p);
-            // Skip to next `;` or `]` to resync.
-            while !p.at_eof() && !p.at(SyntaxKind::SEMI) && !p.at(SyntaxKind::R_BRACK) {
-                p.bump_any();
-            }
+            p.err_recover(
+                format!("expected type expression in union, got {:?}", p.current()),
+                TYPE_UNION_ITEM_RECOVERY,
+            );
             p.eat(SyntaxKind::SEMI);
             continue;
         }
-        p.expect(SyntaxKind::SEMI);
+        // Ensure progress for comma-separated (wrong separator) unions.
+        if !p.eat(SyntaxKind::SEMI) {
+            p.err_recover("expected ';' after union item", TYPE_UNION_ITEM_RECOVERY);
+            p.eat(SyntaxKind::SEMI);
+        }
         im.complete(p, SyntaxKind::TYPE_UNION_ITEM);
     }
     p.expect(SyntaxKind::R_BRACK);
