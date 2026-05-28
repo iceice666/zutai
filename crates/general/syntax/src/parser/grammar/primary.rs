@@ -34,20 +34,32 @@ pub(super) fn primary(p: &mut Parser, ctx: Ctx) -> Option<CompletedMarker> {
             p.bump_any();
             Some(m.complete(p, SyntaxKind::LITERAL))
         }
-        SyntaxKind::L_PAREN => Some(paren_or_tuple(p, ctx)),
-        SyntaxKind::L_BRACE => Some(brace_expr(p, ctx)),
-        SyntaxKind::L_BRACK => Some(list_expr(p, ctx)),
+        SyntaxKind::L_PAREN => {
+            if ctx == Ctx::Type && p.nth_at(1, SyntaxKind::ATOM) {
+                Some(super::types::variant_type_inner(p))
+            } else {
+                Some(paren_or_tuple(p, ctx))
+            }
+        }
+        SyntaxKind::L_BRACE => {
+            if ctx == Ctx::Type {
+                Some(super::types::type_record_inner(p))
+            } else {
+                Some(brace_expr(p, ctx))
+            }
+        }
+        SyntaxKind::L_BRACK => {
+            if ctx == Ctx::Type {
+                Some(super::types::type_union_inner(p))
+            } else {
+                Some(list_expr(p, ctx))
+            }
+        }
         SyntaxKind::BACKSLASH => Some(lambda_expr(p, ctx)),
         SyntaxKind::KW_IF => Some(if_expr(p, ctx)),
         SyntaxKind::KW_MATCH => Some(match_expr(p, ctx)),
         SyntaxKind::KW_IMPORT => Some(import_expr(p)),
-        // KW_TYPE: type-definition forms are M5 (type records/unions).
-        SyntaxKind::KW_TYPE => {
-            let m = p.start();
-            p.error("type form not yet implemented (M5)");
-            p.bump_any();
-            Some(m.complete(p, SyntaxKind::ERROR_NODE))
-        }
+        SyntaxKind::KW_TYPE => Some(super::types::type_form(p)),
         _ => None,
     }
 }
@@ -168,7 +180,7 @@ fn value_field(p: &mut Parser) -> CompletedMarker {
 
 /// Parse a field name: `IDENT (MINUS IDENT)*` where all tokens are raw-adjacent.
 /// Produces a FIELD_NAME node. Emits an error if no IDENT is present.
-fn field_name(p: &mut Parser) -> Option<CompletedMarker> {
+pub(super) fn field_name(p: &mut Parser) -> Option<CompletedMarker> {
     if !p.at(SyntaxKind::IDENT) {
         p.error("expected field name");
         return None;

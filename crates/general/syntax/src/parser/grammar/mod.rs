@@ -1,5 +1,6 @@
 pub(super) mod exprs;
 mod primary;
+mod types;
 
 use super::Parser;
 use crate::SyntaxKind;

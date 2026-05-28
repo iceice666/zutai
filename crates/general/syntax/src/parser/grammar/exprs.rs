@@ -99,6 +99,19 @@ pub(crate) fn expr_bp(p: &mut Parser, min_bp: u8, ctx: Ctx) -> Option<CompletedM
             continue;
         }
 
+        // `??` in type position means double-optional (`T??` = `(T?)?`).
+        // The token is a single QUESTION_QUESTION due to maximal munch; it cannot
+        // be split, so one OPTIONAL_TYPE node wraps the lhs and holds the `??` token.
+        if cur == SyntaxKind::QUESTION_QUESTION && ctx == Ctx::Type {
+            if BP_POSTFIX < min_bp {
+                break;
+            }
+            let m = lhs.precede(p);
+            p.bump(SyntaxKind::QUESTION_QUESTION);
+            lhs = m.complete(p, SyntaxKind::OPTIONAL_TYPE);
+            continue;
+        }
+
         // ── Application by juxtaposition (prec 2) ────────────────────────────
         if BP_APP_L >= min_bp && is_app_start(p) {
             let m = lhs.precede(p);
@@ -132,10 +145,10 @@ pub(crate) fn expr_bp(p: &mut Parser, min_bp: u8, ctx: Ctx) -> Option<CompletedM
         // Pipeline-direction mix ban.
         if cur == SyntaxKind::PIPE_ARROW || cur == SyntaxKind::ARROW_PIPE {
             let dir = cur == SyntaxKind::PIPE_ARROW;
-            if let Some(prev) = pipe_dir {
-                if prev != dir {
-                    p.error("mixing |> and <| in one pipeline chain is ambiguous; use parentheses");
-                }
+            if let Some(prev) = pipe_dir
+                && prev != dir
+            {
+                p.error("mixing |> and <| in one pipeline chain is ambiguous; use parentheses");
             }
             pipe_dir = Some(dir);
         }
