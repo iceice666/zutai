@@ -1,0 +1,16 @@
+[package]
+name = "zutai-im"
+description = "Immediate-mode (`.zti`) facade: unified parse over feature-selected backends."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-types = { path = "../types" }
+zutai-im-syntax = { path = "../syntax", optional = true }
+zutai-im-simd = { path = "../simd", optional = true }
+
+[features]
+default = ["syntax"]
+syntax = ["dep:zutai-im-syntax"]
+simd = ["dep:zutai-im-simd"]
+serde = ["zutai-types/serde"]
