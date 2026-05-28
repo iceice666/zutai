@@ -181,7 +181,7 @@ field (error). Non-assoc-comparison and pipeline-mix stay in the parser (they af
 - [x] **M2 Event/marker/builder spine** — `Tokens` view, `Event`, markers + `precede`, `bump`/`at`/`expect`, `process` w/ trivia reattachment. Test: token-soup round-trip.
 - [x] **M3 Expression Pratt core** — primary, full 9-level ladder, juxtaposition, non-assoc + pipeline-mix, negative-literal fold. Precedence snapshots (the operator-precedence.md examples).
 - [x] **M4 Composite exprs** — records/lists/tuples/lambda/match/if/import + brace disambiguation.
-- [ ] **M5 Types** — `parse_type` via shared Pratt; record/union/variant/optional/fn types; contextual `{`/`[`. Snapshots of `Abyss`/`Shadows`/`Unholy`/`NightmareRecord`.
+- [x] **M5 Types** — `parse_type` via shared Pratt; record/union/variant/optional/fn types; contextual `{`/`[`. Snapshots of `Abyss`/`Shadows`/`Unholy`/`NightmareRecord`.
 - [ ] **M6 Patterns** — incl. nested; tested against `unholy_match` clause patterns.
 - [ ] **M7 TopDecls/Clauses/Block** — 4 forms, hard case C, guards, blocks. Bulk of `cursed.zt` parses.
 - [ ] **M8 Hyphenated field names** — `FIELD_NAME` reassembly everywhere; `target-triple` tests.
