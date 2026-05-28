@@ -1,0 +1,47 @@
+-x
+
+- x
+
+-foo
+
+- foo
+
+! true
+
+!true
+
+! false
+
+!false
+
+! (x == y)
+
+!(x == y)
+
++5
+
++ 5
+
++x
+
++ x
+
+--3
+
+--x
+
+- -x
+
+!!true
+
+! ! false
+
+- (x + 1)
+
+!(a == b)
+
+- n
+
++n
+
+!n

@@ -1,0 +1,39 @@
+type := 1
+
+match := 2
+
+if := 3
+
+then := 4
+
+else := 5
+
+import := 6
+
+forall x { x }
+
+forall := \x => x
+
+select := [#a; #b;]
+
+select field from record
+
+def add a b { a + b }
+
+class Server { host : Text; port : Int; }
+
+type Server = { host : Text; port : Int; }
+
+let x = 1 in x + 2
+
+fn x => x + 1
+
+fun add x y = x + y
+
+var count := 0
+
+type x = Int
+
+where x := 5
+
+match := \x => x
