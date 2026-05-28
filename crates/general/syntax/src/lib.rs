@@ -1,25 +1,18 @@
 //! Syntax support for Zutai general mode (`.zt`): lossless CST with error recovery.
 
+pub mod diag;
 pub mod lexer;
 mod parser;
 mod syntax_kind;
 pub(crate) mod token_set;
 
+pub use diag::Diagnostic;
 pub use syntax_kind::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, ZutaiLanguage};
-
-/// A parse error recorded at a byte offset in the source.
-///
-/// This is a minimal placeholder; the full `diag/` module (M10) will supersede it with
-/// severity codes, multi-span labels, and ariadne rendering.
-pub struct SyntaxError {
-    pub message: String,
-    pub offset: text_size::TextSize,
-}
 
 /// The result of parsing a `.zt` source file.
 pub struct Parse {
     pub green: rowan::GreenNode,
-    pub diagnostics: Vec<SyntaxError>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl Parse {
