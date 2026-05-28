@@ -64,7 +64,7 @@ serverSchema
 
 That can output plain data:
 
-```zt
+```zti
 {
   kind = #record;
   fields = [
