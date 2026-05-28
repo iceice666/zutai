@@ -22,7 +22,7 @@ crates/
   immediate/types/     Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
-  v0_spec/             Zutai v0 language specification (31 sections, source of truth)
+  v0_spec/             Zutai v0 language specification (8 chapters, source of truth)
   stdlib/              Standard-library notes
 ```
 

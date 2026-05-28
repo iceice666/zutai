@@ -30,7 +30,7 @@ Start with the documentation index:
 
 - [docs/README.md](docs/README.md)
 - [Zutai v0 language specification](docs/v0_spec/00-index.md)
-- [Final design statement](docs/v0_spec/31-final-design-statement.md)
+- [Final design statement](docs/v0_spec/01-overview/final-design-statement.md)
 
 ## Development
 
