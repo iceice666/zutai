@@ -68,7 +68,7 @@ pub(crate) fn expr_bp(p: &mut Parser, min_bp: u8, ctx: Ctx) -> Option<CompletedM
             }
             let m = lhs.precede(p);
             p.bump(SyntaxKind::DOT);
-            if !p.eat(SyntaxKind::IDENT) {
+            if super::primary::field_name(p).is_none() {
                 p.error("expected field name after '.'");
             }
             lhs = m.complete(p, SyntaxKind::ACCESS_EXPR);
@@ -81,7 +81,7 @@ pub(crate) fn expr_bp(p: &mut Parser, min_bp: u8, ctx: Ctx) -> Option<CompletedM
             }
             let m = lhs.precede(p);
             p.bump(SyntaxKind::OPTIONAL_DOT);
-            if !p.eat(SyntaxKind::IDENT) {
+            if super::primary::field_name(p).is_none() {
                 p.error("expected field name after '?.'");
             }
             lhs = m.complete(p, SyntaxKind::OPTIONAL_ACCESS_EXPR);
@@ -201,8 +201,17 @@ fn is_comparison(kind: SyntaxKind) -> bool {
 /// `{` is intentionally excluded: it appears as a match/clause body and including
 /// it would cause `match scrutinee { ... }` to swallow the case block as an arg.
 /// Records as arguments must be wrapped in parentheses.
+///
+/// Top-level declarations (`IDENT :=`, `IDENT :`, `IDENT ::`) are also excluded:
+/// they terminate the current expression so each declaration's RHS stays bounded.
 fn is_app_start(p: &Parser) -> bool {
     use SyntaxKind::*;
+    // An IDENT followed by `:=`, `:`, or `::` starts a new top-level declaration,
+    // not an argument. Without this guard, `make_adder 5\nadd_neg :=` would
+    // incorrectly parse as `make_adder 5 add_neg`.
+    if p.is_decl_start() {
+        return false;
+    }
     match p.current() {
         IDENT | UNDERSCORE | INT | FLOAT | STRING | ATOM | KW_TRUE | KW_FALSE | KW_NONE
         | L_PAREN | L_BRACK | BACKSLASH | KW_IF | KW_MATCH | KW_IMPORT => true,

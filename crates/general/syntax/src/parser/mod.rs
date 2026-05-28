@@ -6,7 +6,7 @@ use std::cell::Cell;
 
 use rowan::GreenNode;
 
-use crate::{SyntaxError, SyntaxKind, lexer::tokenize};
+use crate::{SyntaxError, SyntaxKind, lexer::tokenize, token_set::TokenSet};
 
 use event::Event;
 use input::Tokens;
@@ -142,6 +142,39 @@ impl Parser {
     /// Emit an error event (does not consume any token).
     pub(crate) fn error(&mut self, msg: impl Into<String>) {
         self.events.push(Event::Error { msg: msg.into() });
+    }
+
+    /// Error recovery: emit a diagnostic, then consume stray tokens into an
+    /// `ERROR_NODE` until a token in `recovery` or a declaration-start is seen.
+    /// Always bumps at least one token (unless at EOF) so the loop makes progress.
+    pub(crate) fn err_recover(&mut self, msg: impl Into<String>, recovery: TokenSet) {
+        if self.at_eof() {
+            self.error(msg);
+            return;
+        }
+        // If we're already at a recovery point, emit a zero-width error and stop.
+        if recovery.contains(self.current()) {
+            self.error(msg);
+            return;
+        }
+        let err_m = self.start();
+        self.error(msg.into());
+        // Consume at least one token, then stop at recovery / decl-start.
+        self.bump_any();
+        while !self.at_eof() && !recovery.contains(self.current()) && !self.is_decl_start() {
+            self.bump_any();
+        }
+        err_m.complete(self, SyntaxKind::ERROR_NODE);
+    }
+
+    /// True when the current token is an `IDENT` whose next significant token is
+    /// one of `:=`, `:`, or `::` — i.e. the start of a top-level declaration.
+    pub(crate) fn is_decl_start(&self) -> bool {
+        self.at(SyntaxKind::IDENT)
+            && matches!(
+                self.nth(1),
+                SyntaxKind::COLON_EQ | SyntaxKind::COLON | SyntaxKind::COLON_COLON
+            )
     }
 
     // ── Markers ───────────────────────────────────────────────────────────────

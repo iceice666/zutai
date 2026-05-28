@@ -3,6 +3,7 @@
 pub mod lexer;
 mod parser;
 mod syntax_kind;
+pub(crate) mod token_set;
 
 pub use syntax_kind::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, ZutaiLanguage};
 
@@ -128,7 +129,8 @@ mod tests {
                     WHITESPACE@1..2 " "
                     IDENT@2..3 "x"
                   DOT@3..4 "."
-                  IDENT@4..5 "y"
+                  FIELD_NAME@4..5
+                    IDENT@4..5 "y"
         "#]]
         .assert_eq(&tree("f x.y"));
     }
@@ -855,5 +857,322 @@ mod tests {
                 assert_round_trips(s);
             }
         }
+    }
+
+    // ── M7 top-level declaration tests ───────────────────────────────────────
+
+    #[test]
+    fn m7_inferred_binding() {
+        let src = "x := 42";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("INFERRED_BINDING"));
+        assert!(t.contains("LITERAL"));
+    }
+
+    #[test]
+    fn m7_annotated_binding() {
+        let src = "x : Int = 42";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("ANNOTATED_BINDING"));
+    }
+
+    #[test]
+    fn m7_annotated_binding_complex_type() {
+        let src = "items : List Int = []";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("ANNOTATED_BINDING"));
+    }
+
+    #[test]
+    fn m7_type_definition_record() {
+        let src = "Point :: type { x : Int; y : Int; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert!(t.contains("TYPE_FORM"));
+        assert!(t.contains("TYPE_RECORD"));
+        assert_eq!(t.matches("TYPE_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m7_type_definition_union() {
+        let src = "Color :: type [ #red; #green; #blue; ]";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert!(t.contains("TYPE_FORM"));
+        assert!(t.contains("TYPE_UNION"));
+    }
+
+    #[test]
+    fn m7_func_decl_with_sig_single_clause() {
+        let src = "id :: Int -> Int :: x { x }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert!(t.contains("FUNCTION_TYPE"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+        assert!(t.contains("BLOCK"));
+    }
+
+    #[test]
+    fn m7_func_decl_multiple_clauses() {
+        let src =
+            "classify :: Int -> [#neg; #zero; #pos;]\n         :: 0 { #zero }\n         :: n { n }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(t.matches("CLAUSE").count(), 2);
+    }
+
+    #[test]
+    fn m7_func_decl_type_params() {
+        let src = "id :: [A] A -> A :: x { x }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert!(t.contains("TYPE_PARAM_LIST"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+    }
+
+    #[test]
+    fn m7_func_decl_multi_type_params() {
+        let src = "const :: [A, B] A -> B -> A :: x -> _ { x }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TYPE_PARAM_LIST"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+    }
+
+    #[test]
+    fn m7_func_decl_multi_arg_clause() {
+        let src = "flip :: [A, B, C] (A -> B -> C) -> B -> A -> C :: f -> b -> a { f a b }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+    }
+
+    #[test]
+    fn m7_func_decl_clauses_only() {
+        // No type signature, clauses only (type inferred).
+        let src = "succ :: n { n + 1 }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+        // No FUNCTION_TYPE since no signature.
+        assert!(!t.contains("FUNCTION_TYPE"), "should have no type sig");
+    }
+
+    #[test]
+    fn m7_func_decl_guard() {
+        let src = "safe :: Int :: n if n > 0 { n }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("GUARD"));
+        assert_eq!(t.matches("CLAUSE").count(), 1);
+    }
+
+    #[test]
+    fn m7_multiple_decls() {
+        let src = "x := 1\ny := 2\nz := x + y\nz";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(t.matches("INFERRED_BINDING").count(), 3);
+        assert!(t.contains("BINARY_EXPR"), "output expression present");
+    }
+
+    #[test]
+    fn m7_block_with_local_bindings() {
+        let src = "f :: Int :: n {\n  a := n + 1;\n  b := a * 2;\n  b\n}";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("FUNC_DECL"));
+        assert!(t.contains("BLOCK"));
+        assert_eq!(t.matches("LOCAL_BINDING").count(), 2);
+    }
+
+    #[test]
+    fn m7_hyphenated_field_access_in_decl() {
+        let src = "get :: Cfg :: cfg { cfg.target-triple }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("ACCESS_EXPR"));
+        assert!(t.contains("FIELD_NAME"), "hyphenated field name in access");
+    }
+
+    #[test]
+    fn m7_cursed_zt_zero_diagnostics() {
+        let p = parse(include_str!("../../fixtures/cursed.zt"));
+        assert!(
+            p.diagnostics.is_empty(),
+            "cursed.zt produced {} diagnostic(s): {:?}",
+            p.diagnostics.len(),
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_round_trips(include_str!("../../fixtures/cursed.zt"));
+    }
+
+    #[test]
+    fn m7_deep_nesting_zero_diagnostics() {
+        let src = include_str!("../../fixtures/valid/deep_nesting.zt");
+        let p = parse(src);
+        assert!(
+            p.diagnostics.is_empty(),
+            "deep_nesting.zt: {} diagnostic(s): {:?}",
+            p.diagnostics.len(),
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_round_trips(src);
+    }
+
+    #[test]
+    fn m7_optional_chains_zero_diagnostics() {
+        let src = include_str!("../../fixtures/valid/optional_chains.zt");
+        let p = parse(src);
+        assert!(
+            p.diagnostics.is_empty(),
+            "optional_chains.zt: {} diagnostic(s): {:?}",
+            p.diagnostics.len(),
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_round_trips(src);
+    }
+
+    #[test]
+    fn m7_lexical_torture_zero_diagnostics() {
+        let src = include_str!("../../fixtures/valid/lexical_torture.zt");
+        let p = parse(src);
+        assert!(
+            p.diagnostics.is_empty(),
+            "lexical_torture.zt: {} diagnostic(s): {:?}",
+            p.diagnostics.len(),
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_round_trips(src);
+    }
+
+    // M9: invalid fixtures must round-trip and produce ≥1 diagnostic
+    #[test]
+    fn m9_sigil_swaps() {
+        let src = include_str!("../../fixtures/invalid/sigil_swaps.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_separator_swaps() {
+        let src = include_str!("../../fixtures/invalid/separator_swaps.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_keyword_misuse() {
+        let src = include_str!("../../fixtures/invalid/keyword_misuse.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_no_unary_operator() {
+        let src = include_str!("../../fixtures/invalid/no_unary_operator.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_atom_and_comment_traps() {
+        let src = include_str!("../../fixtures/invalid/atom_and_comment_traps.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_string_number_lexical() {
+        let src = include_str!("../../fixtures/invalid/string_number_lexical.zt");
+        let p = parse(src);
+        assert!(!p.diagnostics.is_empty());
+        assert_round_trips(src);
+    }
+    #[test]
+    fn m9_comparison_chaining_has_diagnostic() {
+        let src = include_str!("../../fixtures/invalid/comparison_chaining.zt");
+        let p = parse(src);
+        assert!(
+            !p.diagnostics.is_empty(),
+            "comparison_chaining.zt should have diagnostics"
+        );
+        assert_round_trips(src);
+    }
+
+    #[test]
+    fn m9_pipeline_ambiguity_has_diagnostic() {
+        let src = include_str!("../../fixtures/invalid/pipeline_ambiguity.zt");
+        let p = parse(src);
+        assert!(
+            !p.diagnostics.is_empty(),
+            "pipeline_ambiguity.zt should have diagnostics"
+        );
+        assert_round_trips(src);
+    }
+
+    #[test]
+    fn m9_invalid_fixtures_round_trip() {
+        let invalid = [
+            include_str!("../../fixtures/invalid/sigil_swaps.zt"),
+            include_str!("../../fixtures/invalid/separator_swaps.zt"),
+            include_str!("../../fixtures/invalid/keyword_misuse.zt"),
+            include_str!("../../fixtures/invalid/no_unary_operator.zt"),
+            include_str!("../../fixtures/invalid/atom_and_comment_traps.zt"),
+            include_str!("../../fixtures/invalid/string_number_lexical.zt"),
+        ];
+        for (i, src) in invalid.iter().enumerate() {
+            // Must not panic and must round-trip losslessly.
+            let p = parse(src);
+            assert_eq!(
+                p.syntax().text().to_string(),
+                *src,
+                "invalid fixture #{i} failed round-trip"
+            );
+            // Must produce at least one diagnostic.
+            assert!(
+                !p.diagnostics.is_empty(),
+                "invalid fixture #{i} should have diagnostics"
+            );
+        }
+    }
+
+    // M8: hyphenated field names in access position
+    #[test]
+    fn m8_field_access_hyphenated() {
+        let src = "cfg.target-triple";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("ACCESS_EXPR"));
+        assert!(t.contains("FIELD_NAME"));
+    }
+
+    #[test]
+    fn m8_optional_field_access_hyphenated() {
+        let src = "n?.next-hop";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("OPTIONAL_ACCESS_EXPR"));
+        assert!(t.contains("FIELD_NAME"));
+    }
+
+    #[test]
+    fn m8_field_vs_subtraction() {
+        // With parens, `-` becomes subtraction, not field separator.
+        let src = "(cfg.opt) - triple";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("BINARY_EXPR"), "should be subtraction");
+        // The field name inside the paren is plain (single IDENT)
+        assert!(t.contains("ACCESS_EXPR"));
     }
 }
