@@ -88,7 +88,7 @@ add :: Int -> Int -> Int
 Pattern-matching multi-clause example:
 
 ```zt
-unwrap_or_default :: forall T. T? -> T -> T
+unwrap_or_default :: [T] T? -> T -> T
                   :: (#some, v) -> _ { v }
                   :: #none -> d      { d }
 ```

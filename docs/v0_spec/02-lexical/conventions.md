@@ -140,16 +140,21 @@ Syntactic keywords and reserved literals cannot be used as identifiers. This inc
 
 ```zt
 type
-forall
 match
 if
 then
 else
 import
-select
 true
 false
 none
+```
+
+The following identifiers are reserved for future versions but not used in v0:
+
+```zt
+forall
+select
 ```
 
 Examples:
@@ -223,7 +228,7 @@ If subtraction is intended, write:
 
 This is the canonical list of every symbol and operator in the language. Binding-precedence
 and associativity for the infix/postfix forms are defined in
-[Operator precedence](27-operator-precedence.md).
+[Operator precedence](operator-precedence.md).
 
 The two field sigils are kept strictly separate: **`:` annotates a type, `=` binds a value
 or pattern**. They never overlap.
@@ -245,7 +250,7 @@ or pattern**. They never overlap.
 | `#`              | atom prefix                                                                |
 | `+` `-` `*` `/`  | arithmetic operators                                                       |
 | `==` `!=` `<` `<=` `>` `>=` | comparison operators                                            |
-| `...`            | open row tail in record/union types (anonymous `...;` or named `...Rest;`) |
+| `...`            | open row tail in record/union types — v1 feature, reserved |
 | `;`              | terminator for fields, list items, clauses, and match arms                 |
 | `,`              | separator between tuple/variant fields                                     |
 | `{` `}`          | value record, record type, or block body                                   |

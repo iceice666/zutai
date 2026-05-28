@@ -1,37 +1,61 @@
 # Zutai Language Specification v0
 
-This specification is split into multiple files.
+This specification is split into multiple files, grouped by chapter.
 
-## Sections
+## Chapter 1 — Overview
 
-1. [Design goals](01-design-goals.md)
-2. [File modes](02-file-modes.md)
-3. [Lexical conventions](03-lexical-conventions.md)
-4. [Immediate mode `.zti`](04-immediate-mode-zti.md)
-5. [General mode `.zt`](05-general-mode-zt.md)
-6. [General-mode values](06-general-mode-values.md)
-7. [Imports](07-imports.md)
-8. [Functions](08-functions.md)
-9. [Type system](09-type-system.md)
-10. [Record types](10-record-types.md)
-11. [Lists](11-lists.md)
-12. [Optional values](12-optional-values.md)
-13. [Optional fields](13-optional-fields.md)
-14. [Field access and optional chaining](14-field-access-and-optional-chaining.md)
-15. [Defaulting operator](15-defaulting-operator.md)
-16. [Union types](16-union-types.md)
-17. [Tagged unions](17-tagged-unions.md)
-18. [Polymorphism](18-polymorphism.md)
-19. [Pattern matching](19-pattern-matching.md)
-20. [Conditionals](20-conditionals.md)
-21. [Equality](21-equality.md)
-22. [Laziness and purity](22-laziness-and-purity.md)
-23. [Type-level computation](23-type-level-computation.md)
-24. [Metaprogramming](24-metaprogramming.md)
-25. [Modules](25-modules.md)
-26. [Serialization boundary](26-serialization-boundary.md)
-27. [Operator precedence](27-operator-precedence.md)
-28. [Error model](28-error-model.md)
-29. [Complete example](29-complete-example.md)
-30. [Core grammar sketch](30-core-grammar-sketch.md)
-31. [Final design statement](31-final-design-statement.md)
+- [Design goals](01-overview/design-goals.md)
+- [File modes](01-overview/file-modes.md)
+- [Final design statement](01-overview/final-design-statement.md)
+
+## Chapter 2 — Lexical Conventions
+
+- [Lexical conventions](02-lexical/conventions.md)
+- [Operator precedence](02-lexical/operator-precedence.md)
+- [Core grammar sketch](02-lexical/grammar-sketch.md)
+
+## Chapter 3 — Immediate Mode
+
+- [Immediate mode `.zti`](03-immediate-mode/immediate-mode.md)
+
+## Chapter 4 — General Mode
+
+- [File structure](04-general-mode/file-structure.md)
+- [Values](04-general-mode/values.md)
+- [Imports](04-general-mode/imports.md)
+- [Functions](04-general-mode/functions.md)
+- [Conditionals](04-general-mode/conditionals.md)
+- [Laziness and purity](04-general-mode/laziness-and-purity.md)
+
+## Chapter 5 — Type System
+
+- [Overview](05-type-system/overview.md)
+- [Record types](05-type-system/records.md)
+- [Lists](05-type-system/lists.md)
+- [Optional values](05-type-system/optional-values.md)
+- [Optional fields](05-type-system/optional-fields.md)
+- [Field access and optional chaining](05-type-system/field-access.md)
+- [Defaulting operator](05-type-system/defaulting-operator.md)
+- [Union types](05-type-system/unions.md)
+- [Tagged unions](05-type-system/tagged-unions.md)
+- [Equality](05-type-system/equality.md)
+
+## Chapter 6 — Polymorphism
+
+- [Polymorphism](06-polymorphism/polymorphism.md)
+- [Pattern matching](06-polymorphism/pattern-matching.md)
+
+## Chapter 7 — Modules
+
+- [Modules](07-modules/modules.md)
+- [Serialization boundary](07-modules/serialization-boundary.md)
+
+## Chapter 8 — Reference
+
+- [Error model](08-reference/error-model.md)
+- [Complete example](08-reference/complete-example.md)
+
+---
+
+Features deferred to v1: row polymorphism, type-level computation, constraint system, metaprogramming.
+See [v1 spec index](../v1_spec/00-index.md).
