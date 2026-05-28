@@ -68,12 +68,15 @@ pub(crate) fn process(
             } => {
                 // Walk the forward_parent chain to collect all ancestor kinds. Each ancestor is
                 // `mem::replace`d with a tombstone so the outer loop skips it when we reach it.
+                // IMPORTANT: `delta` is relative to the *current node's* position, not to `i`.
+                // We advance `cur_idx` through the chain (matching rust-analyzer's approach).
                 let mut kinds = Vec::new();
                 kinds.push(kind);
+                let mut cur_idx = i;
                 let mut fp = forward_parent;
                 while let Some(delta) = fp {
-                    let anc_idx = i + delta as usize;
-                    let ancestor = mem::replace(&mut events[anc_idx], Event::tombstone());
+                    cur_idx += delta as usize;
+                    let ancestor = mem::replace(&mut events[cur_idx], Event::tombstone());
                     match ancestor {
                         Event::Start {
                             kind: ak,
