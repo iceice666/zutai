@@ -183,12 +183,12 @@ field (error). Non-assoc-comparison and pipeline-mix stay in the parser (they af
 - [x] **M4 Composite exprs** — records/lists/tuples/lambda/match/if/import + brace disambiguation.
 - [x] **M5 Types** — `parse_type` via shared Pratt; record/union/variant/optional/fn types; contextual `{`/`[`. Snapshots of `Abyss`/`Shadows`/`Unholy`/`NightmareRecord`.
 - [x] **M6 Patterns** — incl. nested; tested against `unholy_match` clause patterns.
-- [ ] **M7 TopDecls/Clauses/Block** — 4 forms, hard case C, guards, blocks. Bulk of `cursed.zt` parses.
-- [ ] **M8 Hyphenated field names** — `FIELD_NAME` reassembly everywhere; `target-triple` tests.
-- [ ] **M9 Error recovery** — recovery sets, `err_recover`, delimiter stack, unclosed handling, top-level resync, multi-diagnostic tests.
-- [ ] **M10 Diagnostics rendering** — ariadne behind `render`; wire into `crates/cli`; snapshot rendered output.
-- [ ] **M11 Typed AST + validation** — `AstNode` wrappers, typed tokens, lints.
-- [ ] **M12 Acceptance** — `cursed.zt`: zero diagnostics, lossless round-trip, structural snapshot; never-panic property test.
+- [x] **M7 TopDecls/Clauses/Block** — 4 forms, hard case C, guards, blocks. Bulk of `cursed.zt` parses.
+- [x] **M8 Hyphenated field names** — `FIELD_NAME` reassembly everywhere; `target-triple` tests.
+- [x] **M9 Error recovery** — recovery sets, `err_recover`, delimiter stack, unclosed handling, top-level resync, multi-diagnostic tests.
+- [x] **M10 Diagnostics rendering** — ariadne behind `render`; wire into `crates/cli`; snapshot rendered output.
+- [x] **M11 Typed AST + validation** — `AstNode` wrappers, typed tokens, lints.
+- [x] **M12 Acceptance** — `cursed.zt`: zero diagnostics, lossless round-trip, structural snapshot; never-panic property test.
 
 ## Verification
 
