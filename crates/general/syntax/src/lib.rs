@@ -1,10 +1,12 @@
 //! Syntax support for Zutai general mode (`.zt`): lossless CST with error recovery.
 
+pub mod ast;
 pub mod diag;
 pub mod lexer;
 mod parser;
 mod syntax_kind;
 pub(crate) mod token_set;
+pub mod validation;
 
 pub use diag::Diagnostic;
 pub use syntax_kind::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, ZutaiLanguage};
@@ -22,9 +24,12 @@ impl Parse {
     }
 }
 
-/// Parse a `.zt` source string into a lossless green tree.
+/// Parse a `.zt` source string into a lossless green tree, then run the
+/// validation pass to collect capitalization / reserved-name / duplicate lints.
 pub fn parse(src: &str) -> Parse {
-    let (green, diagnostics) = parser::parse(src);
+    let (green, mut diagnostics) = parser::parse(src);
+    let root = SyntaxNode::new_root(green.clone());
+    validation::validate(&root, &mut diagnostics);
     Parse { green, diagnostics }
 }
 
@@ -1167,5 +1172,161 @@ mod tests {
         assert!(t.contains("BINARY_EXPR"), "should be subtraction");
         // The field name inside the paren is plain (single IDENT)
         assert!(t.contains("ACCESS_EXPR"));
+    }
+
+    // ── M11 typed AST tests ───────────────────────────────────────────────────
+
+    use ast::{AstNode, nodes::*, support};
+
+    #[test]
+    fn m11_ast_inferred_binding_name() {
+        let p = parse("add5 := 42");
+        let file = File::cast(p.syntax()).expect("File node");
+        let decl = file.decls().next().expect("one decl");
+        match decl {
+            TopDecl::Inferred(b) => assert_eq!(b.name().as_deref(), Some("add5")),
+            _ => panic!("expected inferred binding"),
+        }
+    }
+
+    #[test]
+    fn m11_ast_func_decl_clauses() {
+        let p = parse("id :: Int -> Int :: x { x }");
+        let file = File::cast(p.syntax()).expect("File node");
+        let decl = file.decls().next().expect("one decl");
+        match decl {
+            TopDecl::Func(f) => {
+                assert_eq!(f.name().as_deref(), Some("id"));
+                assert_eq!(f.clauses().count(), 1);
+            }
+            _ => panic!("expected func decl"),
+        }
+    }
+
+    #[test]
+    fn m11_ast_func_decl_type_params() {
+        let p = parse("const :: [A, B] A -> B -> A :: x -> _ { x }");
+        let file = File::cast(p.syntax()).expect("File node");
+        let decl = file.decls().next().expect("one decl");
+        match decl {
+            TopDecl::Func(f) => {
+                let params = f.type_params().expect("type params");
+                let names: Vec<_> = params.params().map(|t| t.text().to_owned()).collect();
+                assert_eq!(names, ["A", "B"]);
+            }
+            _ => panic!("expected func decl"),
+        }
+    }
+
+    #[test]
+    fn m11_ast_field_name_text() {
+        // FieldName::text() should concatenate IDENT-MINUS-IDENT.
+        let p = parse("{ target-triple = \"x86\"; }");
+        let root = p.syntax();
+        let field_name_node = root
+            .descendants()
+            .find(|n| n.kind() == SyntaxKind::FIELD_NAME)
+            .expect("FIELD_NAME node");
+        let fname = ast::tokens::FieldName::cast(field_name_node).expect("FieldName");
+        assert_eq!(fname.text(), "target-triple");
+    }
+
+    #[test]
+    fn m11_ast_token_decoders() {
+        // Int decode
+        let p = parse("x := 42");
+        let root = p.syntax();
+        let int_tok = root
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+            .find(|t| t.kind() == SyntaxKind::INT)
+            .expect("INT token");
+        assert_eq!(ast::tokens::decode_int(&int_tok), Some(42));
+
+        // Atom decode
+        let p = parse("#just-value");
+        let root = p.syntax();
+        let atom_tok = root
+            .descendants_with_tokens()
+            .filter_map(|e| e.into_token())
+            .find(|t| t.kind() == SyntaxKind::ATOM)
+            .expect("ATOM token");
+        assert_eq!(ast::tokens::decode_atom(&atom_tok), "just-value");
+    }
+
+    // ── M11 validation tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn m11_validation_reserved_name_error() {
+        // `forall` is reserved but lexes as IDENT → validation catches it.
+        let p = parse("forall := 1");
+        assert!(
+            p.diagnostics.iter().any(|d| d.message.contains("reserved")),
+            "expected reserved-name diagnostic, got: {:?}",
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m11_validation_duplicate_binding_error() {
+        let p = parse("x := 1\nx := 2\nx");
+        assert!(
+            p.diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate")),
+            "expected duplicate-binding diagnostic"
+        );
+    }
+
+    #[test]
+    fn m11_validation_duplicate_field_error() {
+        let p = parse("{ a = 1; a = 2; }");
+        assert!(
+            p.diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate field")),
+            "expected duplicate-field diagnostic"
+        );
+    }
+
+    #[test]
+    fn m11_validation_type_def_capitalization_warn() {
+        // Lowercase type definition name should trigger a capitalization warning.
+        let p = parse("myType :: type { x : Int; }");
+        assert!(
+            p.diagnostics.iter().any(|d| {
+                d.message.contains("uppercase") || d.message.contains("capitalization")
+            }),
+            "expected capitalization warning"
+        );
+    }
+
+    #[test]
+    fn m11_validation_no_false_positives_cursed_zt() {
+        // cursed.zt must still produce zero diagnostics after the validation pass.
+        let p = parse(include_str!("../../fixtures/cursed.zt"));
+        assert!(
+            p.diagnostics.is_empty(),
+            "cursed.zt should have zero diagnostics after validation, got: {:?}",
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m11_validation_no_false_positives_valid_fixtures() {
+        let valid = [
+            include_str!("../../fixtures/valid/deep_nesting.zt"),
+            include_str!("../../fixtures/valid/optional_chains.zt"),
+            include_str!("../../fixtures/valid/lexical_torture.zt"),
+        ];
+        for (i, src) in valid.iter().enumerate() {
+            let p = parse(src);
+            assert!(
+                p.diagnostics.is_empty(),
+                "valid fixture #{i} produced {} diagnostic(s): {:?}",
+                p.diagnostics.len(),
+                p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+            );
+        }
     }
 }
