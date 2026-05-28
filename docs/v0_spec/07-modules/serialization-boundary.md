@@ -33,18 +33,6 @@ This is valid as an imported module:
 
 but invalid if rendered directly as `.zti` or JSON, because it contains a type and a function.
 
-To render type information, use:
-
-```zt
-schema Server
-```
-
-not:
-
-```zt
-Server
-```
-
 ### 26.1 Rendering atoms
 
 When a `.zt` value containing atoms is rendered as `.zti`, the `#` prefix is preserved.

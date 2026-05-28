@@ -70,8 +70,8 @@ Function types use `->` and are right-associative:
 
 ```zt
 Int -> Int -> Int
-{ port : Int; ...; } -> Int
-forall A. A -> A
+{ port : Int } -> Int
+[A] A -> A
 ```
 
 ```zt

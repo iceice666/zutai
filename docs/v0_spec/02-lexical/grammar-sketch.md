@@ -7,10 +7,10 @@ File
   ::= TopDecl* Expr
 
 TopDecl
-  ::= Ident ":=" Expr                         (* inferred value binding *)
-   | Ident ":" TypeExpr "=" Expr              (* annotated value binding *)
-   | Ident "::" TypeExpr ("::" Clause)+       (* function: sig + clauses *)
-   | Ident "::" Clause+                       (* function: clauses only, type inferred *)
+  ::= Ident ":=" Expr                                          (* inferred value binding *)
+   | Ident ":" TypeExpr "=" Expr                              (* annotated value binding *)
+   | Ident "::" TypeParamList? TypeExpr ("::" Clause)+        (* function: sig + clauses *)
+   | Ident "::" Clause+                                       (* function: clauses only, type inferred *)
 
 Clause
   ::= Pattern ("->" Pattern)* "{" Block "}"
@@ -33,12 +33,10 @@ Expr
    | Call
    | Access
    | OptionalAccess
-   | Select
    | Binary
    | Pipeline
    | OptionalType
    | FunctionType
-   | Forall
 
 Literal
   ::= "none"
@@ -104,23 +102,14 @@ TypeExpr
    | VariantType
    | OptionalType
    | FunctionType
-   | Forall
    | Expr
 
 TypeRecord
-  ::= "{" TypeRecordItem* "}"
-
-TypeRecordItem
-  ::= TypeField
-   | TypeRowTail
+  ::= "{" TypeField* "}"
 
 TypeField
   ::= FieldName ":" TypeExpr ";"
    | FieldName "?" ":" TypeExpr ";"
-
-TypeRowTail
-  ::= "..." ";"
-   | "..." TypeVar ";"
 
 TypeUnion
   ::= "[" TypeUnionItem* "]"
@@ -128,11 +117,6 @@ TypeUnion
 TypeUnionItem
   ::= VariantType ";"
    | TypeExpr ";"
-   | TypeUnionRowTail
-
-TypeUnionRowTail
-  ::= "..." ";"
-   | "..." TypeVar ";"
 
 VariantType
   ::= "(" Atom ("," VariantField)* ")"
@@ -148,12 +132,6 @@ Access
 
 OptionalAccess
   ::= Expr "?." FieldName
-
-Select
-  ::= "select" Expr "{" SelectField* "}"
-
-SelectField
-  ::= FieldName ";"
 
 Call
   ::= Expr Expr
@@ -203,24 +181,22 @@ RecordPattern
 If
   ::= "if" Expr "then" Expr "else" Expr
 
-Forall
-  ::= "forall" TypeVar+ "." TypeExpr
+TypeParamList
+  ::= "[" TypeVar ("," TypeVar)* "]"
 ```
 
 Important grammar interpretation:
 
-`TypeExpr` is a contextual grammar category used wherever the surrounding syntax expects a type: type annotations, `forall` bodies, function-type operands, optional-type operands, type-record fields, and type-union items. It can still be an arbitrary expression checked to evaluate to `Type`, but if it starts with `{` it is parsed as a record type literal and if it starts with `[` as a union type literal, rather than as a value record or value list.
+`TypeExpr` is a contextual grammar category used wherever the surrounding syntax expects a type: function-type operands, optional-type operands, type-record fields, and type-union items.
+
+A `[` appearing immediately after `::` in a `TopDecl` is parsed as a `TypeParamList`, not a union type literal. The two are syntactically unambiguous: `TypeParamList` items are separated by `,` and have no trailing `;`, while `TypeUnion` items are terminated by `;`. `[A]` is therefore always a single-parameter type param list; `[A;]` is a single-variant union type.
 
 The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), variant type fields (`(#circle, radius : Float)`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), variant construction (`(#circle, radius = 5.0)`), and all patterns (record `{ host = h; }`, tuple/variant `(#circle, radius = r)`). This makes a `{ }` block unambiguous: a `:` inside it means a type record, a field `=` means a value record.
 
 Block disambiguation: a `{` following a `->` return type in a `::` clause is a block body. A `{` in expression position is a value record if followed by `ident =`, and a block expression otherwise.
 
-The forms `|>`, `<|`, `->`, `??`, application, field access, and postfix `?` are parsed by the precedence rules in [Operator precedence](27-operator-precedence.md).
+The forms `|>`, `<|`, `->`, `??`, application, field access, and postfix `?` are parsed by the precedence rules in [Operator precedence](operator-precedence.md).
 
-The form:
+---
 
-```zt
-select x { a; b; }
-```
-
-is value projection when `x` is a record value and type projection when `x` is a record type value.
+v1 grammar extensions (not in v0): row tails (`...;`, `...Rest;`) in record and union types; `select` projection; constraint declarations (`ConstraintDecl`); witness declarations (`WitnessDecl`); constrained/kinded type parameters. See [v1 spec](../../v1_spec/00-index.md).
