@@ -391,6 +391,189 @@ mod tests {
         assert_eq!(t.matches("LAMBDA_EXPR").count(), 3);
     }
 
+    // ── M6 pattern tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn m6_pattern_variant_snapshot() {
+        // Pin key structural nodes for a single-field variant pattern.
+        // (A raw-string snapshot would be terminated early by "#atom" tokens.)
+        let src = "match x { (#just-value, value = v) => v; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("MATCH_EXPR"));
+        assert!(t.contains("MATCH_CASE"));
+        assert!(t.contains("TUPLE_PATTERN"));
+        assert!(t.contains("PATTERN_FIELD"));
+        assert!(t.contains("FIELD_NAME"));
+        assert_eq!(t.matches("MATCH_CASE").count(), 1);
+        assert_eq!(t.matches("PATTERN_FIELD").count(), 1);
+    }
+
+    #[test]
+    fn m6_pattern_wildcard() {
+        assert_round_trips("match x { _ => 0; }");
+        let t = tree("match x { _ => 0; }");
+        assert!(t.contains("WILDCARD_PATTERN"));
+    }
+
+    #[test]
+    fn m6_pattern_literal_keywords() {
+        let src = "match x { none => 0; true => 1; false => 2; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(t.matches("MATCH_CASE").count(), 3);
+        assert_eq!(
+            t.matches("LITERAL").count(),
+            7,
+            "scrutinee + 3 pattern literals + 3 body literals"
+        );
+    }
+
+    #[test]
+    fn m6_pattern_int_literal() {
+        assert_round_trips("match x { 0 => #zero; 1 => #one; }");
+        let t = tree("match x { 0 => #zero; 1 => #one; }");
+        assert_eq!(t.matches("MATCH_CASE").count(), 2);
+    }
+
+    #[test]
+    fn m6_pattern_negative_literal() {
+        assert_round_trips("match x { -1 => #neg; 0 => #zero; }");
+        let t = tree("match x { -1 => #neg; 0 => #zero; }");
+        assert!(t.contains("MINUS"), "negative literal contains MINUS token");
+        assert_eq!(t.matches("MATCH_CASE").count(), 2);
+    }
+
+    #[test]
+    fn m6_pattern_binding() {
+        assert_round_trips("match x { n => n; }");
+        let t = tree("match x { n => n; }");
+        assert!(t.contains("LITERAL"), "binding pattern is a LITERAL node");
+    }
+
+    #[test]
+    fn m6_pattern_atom() {
+        assert_round_trips("match x { #nothing => 0; }");
+        let t = tree("match x { #nothing => 0; }");
+        assert!(t.contains("LITERAL"), "atom pattern is a LITERAL node");
+    }
+
+    #[test]
+    fn m6_pattern_variant_tag_only() {
+        assert_round_trips("match x { (#just) => 0; }");
+        let t = tree("match x { (#just) => 0; }");
+        assert!(t.contains("TUPLE_PATTERN"));
+    }
+
+    #[test]
+    fn m6_pattern_variant_empty_paren() {
+        // `()` — empty tuple pattern (nullary form with no tag).
+        assert_round_trips("match x { () => 0; }");
+        let t = tree("match x { () => 0; }");
+        assert!(t.contains("TUPLE_PATTERN"));
+    }
+
+    #[test]
+    fn m6_pattern_variant_hyphenated_field() {
+        // Hyphenated field name in pattern field.
+        let src = "match x { (#just-maybe, maybe-value = none) => -1; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TUPLE_PATTERN"));
+        assert!(
+            t.contains("FIELD_NAME"),
+            "hyphenated field name produces FIELD_NAME node"
+        );
+        assert!(t.contains("PATTERN_FIELD"));
+    }
+
+    #[test]
+    fn m6_pattern_variant_multi_field() {
+        let src = "match x { (#both-things, a = none, b = none) => -4; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("TUPLE_PATTERN"));
+        assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m6_pattern_variant_wildcard_fields() {
+        let src = "match x { (#both-things, a = _, b = _) => -5; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(t.matches("WILDCARD_PATTERN").count(), 2);
+        assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m6_pattern_variant_nested() {
+        // Variant inside a variant field: (#ok, body = (#circle, radius = r))
+        let src = "match x { (#ok, body = (#circle, radius = r)) => r; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(
+            t.matches("TUPLE_PATTERN").count(),
+            2,
+            "outer and inner variant pattern"
+        );
+        assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m6_pattern_record() {
+        // Record pattern: { profile = #prod; }
+        let src = "match x { { profile = #prod; } => 1; { profile = _; } => 0; }";
+        assert_round_trips(src);
+        let t = tree(src);
+        assert_eq!(t.matches("RECORD_PATTERN").count(), 2);
+        assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
+    }
+
+    #[test]
+    fn m6_lambda_wildcard_param() {
+        assert_round_trips("\\_ => 0");
+        let t = tree("\\_ => 0");
+        assert!(t.contains("LAMBDA_EXPR"));
+        assert!(t.contains("WILDCARD_PATTERN"));
+    }
+
+    #[test]
+    fn m6_lambda_multi_params() {
+        assert_round_trips("\\a b => a + b");
+        let t = tree("\\a b => a + b");
+        assert!(t.contains("LAMBDA_EXPR"));
+        assert!(t.contains("BINARY_EXPR"));
+    }
+
+    #[test]
+    fn m6_unholy_match_patterns() {
+        // All 12 patterns from unholy_match (cursed.zt:113-124) in a synthesized match.
+        let src = concat!(
+            "match u {\n",
+            "  (#just)                           => 0;\n",
+            "  (#just-value, value = v)          => v;\n",
+            "  (#just-maybe, maybe-value = none) => -1;\n",
+            "  (#just-maybe, maybe-value = v)    => v;\n",
+            "  (#just-abyss, deep = none)        => -3;\n",
+            "  (#just-abyss, deep = a)           => a;\n",
+            "  (#both-things, a = none, b = none) => -4;\n",
+            "  (#both-things, a = _, b = _)       => -5;\n",
+            "  #nothing                          => -6;\n",
+            "  none                              => -7;\n",
+            "  true                              => 1;\n",
+            "  false                             => 0;\n",
+            "}"
+        );
+        assert_round_trips(src);
+        let t = tree(src);
+        assert!(t.contains("MATCH_EXPR"));
+        assert_eq!(t.matches("MATCH_CASE").count(), 12);
+        assert!(t.contains("TUPLE_PATTERN"), "variant patterns present");
+        assert!(t.contains("WILDCARD_PATTERN"), "wildcard pattern present");
+        assert!(t.contains("PATTERN_FIELD"), "pattern fields present");
+        assert!(t.contains("FIELD_NAME"), "hyphenated field names present");
+    }
+
     // ── M5 type expression tests ──────────────────────────────────────────────
 
     #[test]
