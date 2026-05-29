@@ -140,15 +140,27 @@ impl Builder<'_, '_> {
             let len = tok.len as usize;
             let text = &self.src[self.text_pos..self.text_pos + len];
 
-            // Emit a lexical diagnostic for ERROR tokens from the lexer.
-            if kind == SyntaxKind::ERROR {
-                let start = TextSize::new(self.text_pos as u32);
-                let end = TextSize::new((self.text_pos + len) as u32);
-                let range = TextRange::new(start, end);
-                self.lexical_error(
-                    range,
-                    format!("lexical error: unexpected character sequence {:?}", text),
-                );
+            let start = TextSize::new(self.text_pos as u32);
+            let end = TextSize::new((self.text_pos + len) as u32);
+            let range = TextRange::new(start, end);
+            match kind {
+                SyntaxKind::ERROR => {
+                    self.lexical_error(
+                        range,
+                        format!("lexical error: unexpected character sequence {:?}", text),
+                    );
+                }
+                SyntaxKind::STRING => {
+                    if let Some(msg) = crate::lexer::validate_string(text) {
+                        self.lexical_error(range, format!("lexical error: {msg}"));
+                    }
+                }
+                SyntaxKind::INT | SyntaxKind::FLOAT => {
+                    if let Some(msg) = crate::lexer::validate_number(text) {
+                        self.lexical_error(range, format!("lexical error: {msg}"));
+                    }
+                }
+                _ => {}
             }
 
             self.inner.token(kind.into(), text);

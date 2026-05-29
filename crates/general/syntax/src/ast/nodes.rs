@@ -111,8 +111,23 @@ impl AnnotatedBinding {
     pub fn name(&self) -> Option<String> {
         self.name_token().map(|t| t.text().to_owned())
     }
-    pub fn value(&self) -> Option<Expr> {
+    pub fn ty(&self) -> Option<Expr> {
         support::child(self.syntax())
+    }
+    pub fn value(&self) -> Option<Expr> {
+        let mut seen_eq = false;
+        for el in self.syntax().children_with_tokens() {
+            if let Some(tok) = el.as_token() {
+                if tok.kind() == SyntaxKind::EQ {
+                    seen_eq = true;
+                }
+            } else if seen_eq {
+                if let Some(expr) = el.as_node().cloned().and_then(Expr::cast) {
+                    return Some(expr);
+                }
+            }
+        }
+        None
     }
 }
 

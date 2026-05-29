@@ -5,6 +5,7 @@ mod scalars;
 use classify::{is_atom_continue, is_ident_continue, is_ident_start, is_whitespace, keyword_kind};
 use cursor::Cursor;
 use scalars::{scan_number, scan_string};
+pub(crate) use scalars::{validate_number, validate_string};
 
 use crate::SyntaxKind;
 
