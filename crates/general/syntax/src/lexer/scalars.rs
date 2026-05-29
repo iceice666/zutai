@@ -2,18 +2,19 @@ use super::cursor::Cursor;
 use crate::SyntaxKind;
 
 /// Advance past a complete string literal (cursor must be at `"`).
-/// Returns whether the string was well-formed. Always advances past all
-/// consumed bytes so the token is lossless even on error.
-pub(crate) fn scan_string(cursor: &mut Cursor<'_>) -> bool {
+/// Returns the first error message encountered, or `None` if well-formed.
+/// Always advances past all consumed bytes so the token is lossless even on error.
+pub(crate) fn scan_string(cursor: &mut Cursor<'_>) -> Option<&'static str> {
     debug_assert_eq!(cursor.peek(), Some(b'"'));
     cursor.bump(); // opening quote
 
+    let mut error: Option<&'static str> = None;
     loop {
         match cursor.peek() {
-            None => return false, // unclosed string
+            None => return error.or(Some("unterminated string literal")),
             Some(b'"') => {
                 cursor.bump();
-                return true;
+                return error;
             }
             Some(b'\\') => {
                 cursor.bump();
@@ -24,24 +25,20 @@ pub(crate) fn scan_string(cursor: &mut Cursor<'_>) -> bool {
                     Some(b'u') => {
                         cursor.bump();
                         if !scan_u16_hex(cursor) {
-                            // Invalid \uXXXX but keep scanning until closing quote
-                            // to preserve losslessness; the real diagnostic comes later.
-                        } else {
-                            // High surrogate: expect \uXXXX continuation
-                            // (simplified: skip surrogate-pair validation for lexer)
+                            error.get_or_insert("invalid unicode escape sequence");
                         }
                     }
-                    None => return false,
+                    None => return error.or(Some("unterminated string literal")),
                     _ => {
                         cursor.bump();
-                        // Invalid escape sequence; keep scanning.
+                        error.get_or_insert("invalid escape sequence");
                     }
                 }
             }
+            // Control character terminates the string (newlines cannot span a literal).
             Some(b) if b < 0x20 => {
-                // Unescaped control character — advance and flag as malformed.
                 cursor.bump();
-                return false;
+                return error.or(Some("control character in string literal"));
             }
             Some(b) if b.is_ascii() => {
                 cursor.bump();
@@ -51,6 +48,12 @@ pub(crate) fn scan_string(cursor: &mut Cursor<'_>) -> bool {
             }
         }
     }
+}
+
+/// Re-validate the text of an already-tokenized STRING token.
+/// Returns the first error message, or `None` if well-formed.
+pub(crate) fn validate_string(text: &str) -> Option<&'static str> {
+    scan_string(&mut Cursor::new(text))
 }
 
 fn scan_u16_hex(cursor: &mut Cursor<'_>) -> bool {
@@ -65,15 +68,11 @@ fn scan_u16_hex(cursor: &mut Cursor<'_>) -> bool {
     true
 }
 
-/// Advance past an integer or float literal (cursor must be at an ASCII digit).
-/// Returns `INT` or `FLOAT`. Never fails; leading-zero validation is left to
-/// the parser/validator.
-pub(crate) fn scan_number(cursor: &mut Cursor<'_>) -> SyntaxKind {
-    debug_assert!(cursor.peek().is_some_and(|b| b.is_ascii_digit()));
-
+fn scan_number_core(cursor: &mut Cursor<'_>) -> (SyntaxKind, Option<&'static str>) {
     cursor.eat_while(|b| b.is_ascii_digit());
 
     let mut is_float = false;
+    let mut error: Option<&'static str> = None;
 
     // Fractional part: only consume `.` if followed by a digit to avoid
     // stealing the `.` in `1.foo` (field access) or `1..` (two DOT tokens).
@@ -90,12 +89,31 @@ pub(crate) fn scan_number(cursor: &mut Cursor<'_>) -> SyntaxKind {
         if matches!(cursor.peek(), Some(b'+' | b'-')) {
             cursor.bump();
         }
+        let exp_start = cursor.pos();
         cursor.eat_while(|b| b.is_ascii_digit());
+        if cursor.pos() == exp_start {
+            error = Some("exponent has no digits");
+        }
     }
 
-    if is_float {
+    let kind = if is_float {
         SyntaxKind::FLOAT
     } else {
         SyntaxKind::INT
-    }
+    };
+    (kind, error)
+}
+
+/// Advance past an integer or float literal (cursor must be at an ASCII digit).
+/// Returns `INT` or `FLOAT`. Never fails; leading-zero validation is left to
+/// the parser/validator.
+pub(crate) fn scan_number(cursor: &mut Cursor<'_>) -> SyntaxKind {
+    debug_assert!(cursor.peek().is_some_and(|b| b.is_ascii_digit()));
+    scan_number_core(cursor).0
+}
+
+/// Re-validate the text of an already-tokenized INT or FLOAT token.
+/// Returns an error message if malformed, or `None` if well-formed.
+pub(crate) fn validate_number(text: &str) -> Option<&'static str> {
+    scan_number_core(&mut Cursor::new(text)).1
 }

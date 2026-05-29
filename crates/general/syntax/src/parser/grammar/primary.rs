@@ -401,6 +401,14 @@ fn match_case(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
             MATCH_CASE_RECOVERY,
         );
     }
+    if p.at(SyntaxKind::KW_IF) {
+        let gm = p.start();
+        p.bump(SyntaxKind::KW_IF);
+        if super::exprs::expr(p).is_none() {
+            p.error("expected expression in match guard");
+        }
+        gm.complete(p, SyntaxKind::GUARD);
+    }
     p.expect(SyntaxKind::FAT_ARROW);
     if super::exprs::expr_bp(p, 0, ctx).is_none() {
         p.error("expected expression in match arm");
