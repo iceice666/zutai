@@ -1,0 +1,22 @@
+-- Spec-invalid: atom value used outside its declared union set (unions §16).
+-- The parser has no type system, so these parse clean today.
+-- When semantic analysis lands, move to invalid/ and flip to assert_parses_with_error.
+
+Env :: type [#dev; #test; #prod;]
+
+-- #staging is not in [#dev; #test; #prod;]
+bad_env : Env = #staging
+
+-- #production is also not a member
+also_bad : Env = #production
+
+-- Passing a non-member to a function expecting Env
+greet :: Env -> Text
+      :: #dev { "dev" }
+      :: #test { "test" }
+      :: #prod { "prod" }
+
+-- calling greet with an atom not in Env
+result := greet #staging
+
+result

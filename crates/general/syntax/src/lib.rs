@@ -69,6 +69,9 @@ mod tests {
             include_str!("../../fixtures/valid/optional_chains.zt"),
             include_str!("../../fixtures/valid/lexical_torture.zt"),
             include_str!("../../fixtures/valid/comments.zt"),
+            include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
+            include_str!("../../fixtures/valid/guards_and_blocks.zt"),
+            include_str!("../../fixtures/valid/type_position_torture.zt"),
         ];
         for src in cases {
             assert_round_trips(src);
@@ -1319,6 +1322,9 @@ mod tests {
             include_str!("../../fixtures/valid/deep_nesting.zt"),
             include_str!("../../fixtures/valid/optional_chains.zt"),
             include_str!("../../fixtures/valid/lexical_torture.zt"),
+            include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
+            include_str!("../../fixtures/valid/guards_and_blocks.zt"),
+            include_str!("../../fixtures/valid/type_position_torture.zt"),
         ];
         for (i, src) in valid.iter().enumerate() {
             let p = parse(src);
