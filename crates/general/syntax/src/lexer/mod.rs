@@ -544,19 +544,11 @@ mod tests {
     }
 
     #[test]
-    fn lossless_final_boss_fixtures() {
+    fn lossless_representative_fixtures() {
+        // Token-length lossless (sum(token.len) == src.len()) is a different invariant from
+        // parser CST round-trip; keep two representative files to exercise it at the lexer layer.
         let fixtures = [
-            include_str!("../../../fixtures/valid/deep_nesting.zt"),
-            include_str!("../../../fixtures/valid/optional_chains.zt"),
             include_str!("../../../fixtures/valid/lexical_torture.zt"),
-            include_str!("../../../fixtures/valid/comments.zt"),
-            include_str!("../../../fixtures/invalid/sigil_swaps.zt"),
-            include_str!("../../../fixtures/invalid/separator_swaps.zt"),
-            include_str!("../../../fixtures/invalid/comparison_chaining.zt"),
-            include_str!("../../../fixtures/invalid/pipeline_ambiguity.zt"),
-            include_str!("../../../fixtures/invalid/keyword_misuse.zt"),
-            include_str!("../../../fixtures/invalid/no_unary_operator.zt"),
-            include_str!("../../../fixtures/invalid/atom_and_comment_traps.zt"),
             include_str!("../../../fixtures/invalid/string_number_lexical.zt"),
         ];
         for src in fixtures {

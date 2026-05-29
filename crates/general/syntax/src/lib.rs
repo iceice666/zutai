@@ -64,14 +64,6 @@ mod tests {
             r#""hello world""#,
             "a := b + c; d",
             "::= -> ?? |> <|",
-            include_str!("../../fixtures/cursed.zt"),
-            include_str!("../../fixtures/valid/deep_nesting.zt"),
-            include_str!("../../fixtures/valid/optional_chains.zt"),
-            include_str!("../../fixtures/valid/lexical_torture.zt"),
-            include_str!("../../fixtures/valid/comments.zt"),
-            include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
-            include_str!("../../fixtures/valid/guards_and_blocks.zt"),
-            include_str!("../../fixtures/valid/type_position_torture.zt"),
         ];
         for src in cases {
             assert_round_trips(src);
@@ -1006,148 +998,6 @@ mod tests {
         assert!(t.contains("FIELD_NAME"), "hyphenated field name in access");
     }
 
-    #[test]
-    fn m7_cursed_zt_zero_diagnostics() {
-        let p = parse(include_str!("../../fixtures/cursed.zt"));
-        assert!(
-            p.diagnostics.is_empty(),
-            "cursed.zt produced {} diagnostic(s): {:?}",
-            p.diagnostics.len(),
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-        assert_round_trips(include_str!("../../fixtures/cursed.zt"));
-    }
-
-    #[test]
-    fn m7_deep_nesting_zero_diagnostics() {
-        let src = include_str!("../../fixtures/valid/deep_nesting.zt");
-        let p = parse(src);
-        assert!(
-            p.diagnostics.is_empty(),
-            "deep_nesting.zt: {} diagnostic(s): {:?}",
-            p.diagnostics.len(),
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-        assert_round_trips(src);
-    }
-
-    #[test]
-    fn m7_optional_chains_zero_diagnostics() {
-        let src = include_str!("../../fixtures/valid/optional_chains.zt");
-        let p = parse(src);
-        assert!(
-            p.diagnostics.is_empty(),
-            "optional_chains.zt: {} diagnostic(s): {:?}",
-            p.diagnostics.len(),
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-        assert_round_trips(src);
-    }
-
-    #[test]
-    fn m7_lexical_torture_zero_diagnostics() {
-        let src = include_str!("../../fixtures/valid/lexical_torture.zt");
-        let p = parse(src);
-        assert!(
-            p.diagnostics.is_empty(),
-            "lexical_torture.zt: {} diagnostic(s): {:?}",
-            p.diagnostics.len(),
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-        assert_round_trips(src);
-    }
-
-    // M9: invalid fixtures must round-trip and produce ≥1 diagnostic
-    #[test]
-    fn m9_sigil_swaps() {
-        let src = include_str!("../../fixtures/invalid/sigil_swaps.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_separator_swaps() {
-        let src = include_str!("../../fixtures/invalid/separator_swaps.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_keyword_misuse() {
-        let src = include_str!("../../fixtures/invalid/keyword_misuse.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_no_unary_operator() {
-        let src = include_str!("../../fixtures/invalid/no_unary_operator.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_atom_and_comment_traps() {
-        let src = include_str!("../../fixtures/invalid/atom_and_comment_traps.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_string_number_lexical() {
-        let src = include_str!("../../fixtures/invalid/string_number_lexical.zt");
-        let p = parse(src);
-        assert!(!p.diagnostics.is_empty());
-        assert_round_trips(src);
-    }
-    #[test]
-    fn m9_comparison_chaining_has_diagnostic() {
-        let src = include_str!("../../fixtures/invalid/comparison_chaining.zt");
-        let p = parse(src);
-        assert!(
-            !p.diagnostics.is_empty(),
-            "comparison_chaining.zt should have diagnostics"
-        );
-        assert_round_trips(src);
-    }
-
-    #[test]
-    fn m9_pipeline_ambiguity_has_diagnostic() {
-        let src = include_str!("../../fixtures/invalid/pipeline_ambiguity.zt");
-        let p = parse(src);
-        assert!(
-            !p.diagnostics.is_empty(),
-            "pipeline_ambiguity.zt should have diagnostics"
-        );
-        assert_round_trips(src);
-    }
-
-    #[test]
-    fn m9_invalid_fixtures_round_trip() {
-        let invalid = [
-            include_str!("../../fixtures/invalid/sigil_swaps.zt"),
-            include_str!("../../fixtures/invalid/separator_swaps.zt"),
-            include_str!("../../fixtures/invalid/keyword_misuse.zt"),
-            include_str!("../../fixtures/invalid/no_unary_operator.zt"),
-            include_str!("../../fixtures/invalid/atom_and_comment_traps.zt"),
-            include_str!("../../fixtures/invalid/string_number_lexical.zt"),
-        ];
-        for (i, src) in invalid.iter().enumerate() {
-            // Must not panic and must round-trip losslessly.
-            let p = parse(src);
-            assert_eq!(
-                p.syntax().text().to_string(),
-                *src,
-                "invalid fixture #{i} failed round-trip"
-            );
-            // Must produce at least one diagnostic.
-            assert!(
-                !p.diagnostics.is_empty(),
-                "invalid fixture #{i} should have diagnostics"
-            );
-        }
-    }
-
     // M8: hyphenated field names in access position
     #[test]
     fn m8_field_access_hyphenated() {
@@ -1305,51 +1155,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn m11_validation_no_false_positives_cursed_zt() {
-        // cursed.zt must still produce zero diagnostics after the validation pass.
-        let p = parse(include_str!("../../fixtures/cursed.zt"));
-        assert!(
-            p.diagnostics.is_empty(),
-            "cursed.zt should have zero diagnostics after validation, got: {:?}",
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn m11_validation_no_false_positives_valid_fixtures() {
-        let valid = [
-            include_str!("../../fixtures/valid/deep_nesting.zt"),
-            include_str!("../../fixtures/valid/optional_chains.zt"),
-            include_str!("../../fixtures/valid/lexical_torture.zt"),
-            include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
-            include_str!("../../fixtures/valid/guards_and_blocks.zt"),
-            include_str!("../../fixtures/valid/type_position_torture.zt"),
-        ];
-        for (i, src) in valid.iter().enumerate() {
-            let p = parse(src);
-            assert!(
-                p.diagnostics.is_empty(),
-                "valid fixture #{i} produced {} diagnostic(s): {:?}",
-                p.diagnostics.len(),
-                p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-            );
-        }
-    }
-
     // ── Comment / node comment / doc tests ───────────────────────────────────────
-
-    #[test]
-    fn comments_fixture_parses_clean() {
-        let src = include_str!("../../fixtures/valid/comments.zt");
-        let p = parse(src);
-        assert!(
-            p.diagnostics.is_empty(),
-            "comments.zt produced diagnostics: {:?}",
-            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
-        assert_round_trips(src);
-    }
 
     #[test]
     fn node_comment_decl_excluded_from_typed_ast() {

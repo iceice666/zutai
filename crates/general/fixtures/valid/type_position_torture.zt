@@ -1,4 +1,6 @@
--- Type-grammar corners: optionals, nested type forms, function types inside types.
+-- Expected: parse-clean (zero diagnostics + lossless round-trip)
+-- Spec: type expressions §11 — optionals, nested records/unions, function types
+-- Type-grammar corners: double-optional `??`, optional fields, nested type forms, fn-types in fields.
 
 -- Double-optional: `T??` in type position is `(T?)?` (single QUESTION_QUESTION token)
 double_opt_ann : Int?? = none

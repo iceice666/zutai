@@ -1,3 +1,7 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: operator-precedence.md — comparisons (==, !=, <, <=, >, >=) are non-associative.
+-- Chaining two comparisons without parentheses is rejected by the Pratt parser at M3.
+
 1 == 2 == 3
 
 0 == 0 == 0

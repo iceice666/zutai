@@ -1,3 +1,7 @@
+-- Expected: parse-clean (zero diagnostics + lossless round-trip)
+-- Spec: conventions §3.1.1 — valid comment forms: `--` line, `--{ }--` block, `--|` doc, `--/` node
+-- Exercises every comment form and their interaction with declarations and trivia round-trip.
+
 -- plain line comment
 
 -- another line comment

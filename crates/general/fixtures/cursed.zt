@@ -1,3 +1,7 @@
+-- Expected: parse-clean (zero diagnostics + lossless round-trip)
+-- All-valid stress fixture: keywords used as variant names, recursive types, deeply nested
+-- forms, all lexical edge cases from the spec — designed to find panics and regressions.
+
 Abyss :: type {
   into? : Abyss?;
   depth : Int;

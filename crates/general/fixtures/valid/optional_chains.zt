@@ -1,3 +1,7 @@
+-- Expected: parse-clean (zero diagnostics + lossless round-trip)
+-- Spec: optional values §8, optional fields §10.3, field access §12, defaulting `??` §7.4
+-- Maximal chains of `?.` optional access, `.` field access, and `??` defaulting operator.
+
 Addr :: type { host : Text; port : Int; }
 
 Conn :: type {

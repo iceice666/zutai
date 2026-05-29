@@ -1,3 +1,8 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: values §6.5/§6.6, records §10.2 — lists/records use `;`, tuples/variants use `,`.
+-- Lists using `,`; records using `,`; tuples using `;`; mixed type-param and union separators.
+-- `record with { ... }` is not a v0 form (records §10.2 — only v1 has record update).
+
 [1, 2, 3]
 
 [true, false, true]
