@@ -1,0 +1,16 @@
+-- Spec-invalid: closed records reject extra fields (records §10.1).
+-- The parser has no type system, so these parse clean today.
+-- When semantic analysis lands, move to invalid/ and flip to assert_parses_with_error.
+
+Server :: type { host : Text; port : Int; }
+
+-- Extra field `tls` not declared in Server
+extra_field : Server = { host = "localhost"; port = 8080; tls = true; }
+
+-- Missing required field `port` — not caught syntactically
+missing_field : Server = { host = "localhost"; }
+
+-- Completely wrong fields
+wrong_fields : Server = { name = "server"; code = 42; }
+
+extra_field

@@ -65,7 +65,63 @@ fn acceptance_valid_lexical_torture() {
     );
 }
 
+#[test]
+fn acceptance_valid_bracket_disambiguation() {
+    assert_parses_clean(
+        include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
+        "valid/bracket_disambiguation.zt",
+    );
+}
+
+#[test]
+fn acceptance_valid_guards_and_blocks() {
+    assert_parses_clean(
+        include_str!("../../fixtures/valid/guards_and_blocks.zt"),
+        "valid/guards_and_blocks.zt",
+    );
+}
+
+#[test]
+fn acceptance_valid_type_position_torture() {
+    assert_parses_clean(
+        include_str!("../../fixtures/valid/type_position_torture.zt"),
+        "valid/type_position_torture.zt",
+    );
+}
+
 // ── Parse-error fixtures ──────────────────────────────────────────────────────
+
+#[test]
+fn acceptance_invalid_bracket_mismatch() {
+    assert_parses_with_error(
+        include_str!("../../fixtures/invalid/bracket_mismatch.zt"),
+        "invalid/bracket_mismatch.zt",
+    );
+}
+
+#[test]
+fn acceptance_invalid_declaration_traps() {
+    assert_parses_with_error(
+        include_str!("../../fixtures/invalid/declaration_traps.zt"),
+        "invalid/declaration_traps.zt",
+    );
+}
+
+#[test]
+fn acceptance_invalid_dangling_operators() {
+    assert_parses_with_error(
+        include_str!("../../fixtures/invalid/dangling_operators.zt"),
+        "invalid/dangling_operators.zt",
+    );
+}
+
+#[test]
+fn acceptance_invalid_duplicate_names() {
+    assert_parses_with_error(
+        include_str!("../../fixtures/invalid/duplicate_names.zt"),
+        "invalid/duplicate_names.zt",
+    );
+}
 
 #[test]
 fn acceptance_invalid_comparison_chaining() {
@@ -214,4 +270,42 @@ fn never_panic_adversarial_sequences() {
             "round-trip failed for {src:?}"
         );
     }
+}
+
+// ── Semantic-gap fixtures ─────────────────────────────────────────────────────
+//
+// These fixtures are spec-invalid per v0 but the parser has no semantic/type
+// pass, so they currently parse clean. When semantic analysis lands, move each
+// to `invalid/` and flip its test to `assert_parses_with_error`.
+
+#[test]
+fn semantic_gap_closed_records() {
+    assert_parses_clean(
+        include_str!("../../fixtures/semantic_invalid/closed_records.zt"),
+        "semantic_invalid/closed_records.zt",
+    );
+}
+
+#[test]
+fn semantic_gap_exhaustiveness() {
+    assert_parses_clean(
+        include_str!("../../fixtures/semantic_invalid/exhaustiveness.zt"),
+        "semantic_invalid/exhaustiveness.zt",
+    );
+}
+
+#[test]
+fn semantic_gap_union_membership() {
+    assert_parses_clean(
+        include_str!("../../fixtures/semantic_invalid/union_membership.zt"),
+        "semantic_invalid/union_membership.zt",
+    );
+}
+
+#[test]
+fn semantic_gap_reserved_tag() {
+    assert_parses_clean(
+        include_str!("../../fixtures/semantic_invalid/reserved_tag.zt"),
+        "semantic_invalid/reserved_tag.zt",
+    );
 }
