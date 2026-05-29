@@ -71,6 +71,13 @@ impl AstNode for TopDecl {
     }
 }
 
+impl TopDecl {
+    /// The concatenated doc-comment block attached to this declaration, if any.
+    pub fn doc(&self) -> Option<String> {
+        super::docs::doc_block(self.syntax())
+    }
+}
+
 /// Return the binding name (the leading `IDENT` token) of any top-level decl.
 pub fn decl_name(decl: &TopDecl) -> Option<crate::SyntaxToken> {
     use crate::SyntaxKind::IDENT;
@@ -179,6 +186,17 @@ impl Block {
 }
 
 ast_node!(LocalBinding, SyntaxKind::LOCAL_BINDING);
+
+// ── Node comment wrapper ─────────────────────────────────────────────────────────
+
+ast_node!(NodeComment, SyntaxKind::NODE_COMMENT_NODE);
+
+impl NodeComment {
+    /// The wrapped (node-commented) item, if any.
+    pub fn inner_decl(&self) -> Option<TopDecl> {
+        support::child(self.syntax())
+    }
+}
 
 impl LocalBinding {
     pub fn name_token(&self) -> Option<crate::SyntaxToken> {

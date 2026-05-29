@@ -1,3 +1,4 @@
+pub mod docs;
 pub mod nodes;
 pub mod operators;
 pub mod tokens;

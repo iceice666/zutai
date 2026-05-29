@@ -124,7 +124,8 @@ Rationale: `.zti` is deterministic data. There is no first-wins or last-wins rul
 
 ### 4.7 Comments
 
-Canonical `.zti` v0 has no comments.
+Canonical `.zti` v0 has no comments. Comments are a `.zt`-only feature
+(see §3.1.1 in [Lexical conventions](../02-lexical/conventions.md)).
 
 Invalid:
 

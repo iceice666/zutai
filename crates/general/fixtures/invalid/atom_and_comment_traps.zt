@@ -28,12 +28,6 @@
    line
    block */
 
--- haskell style comment
-
--- another line
-
--- this is not valid either
-
 # old shell comment style
 
 # combined with atom trap: #
@@ -43,8 +37,6 @@
 #foo.bar
 
 { x = 1; } // trailing comment attempt
-
-{ y = 2; } -- another attempt
 
 { z = 3; } /* inline block */
 

@@ -76,12 +76,12 @@ fn paren_or_tuple(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
         return m.complete(p, SyntaxKind::TUPLE_EXPR);
     }
 
-    tuple_item(p, ctx);
+    maybe_node_comment_tuple_item(p, ctx);
 
     if p.eat(SyntaxKind::COMMA) {
         // More items → this is a tuple.
         while !p.at_eof() && !p.at(SyntaxKind::R_PAREN) {
-            tuple_item(p, ctx);
+            maybe_node_comment_tuple_item(p, ctx);
             if !p.eat(SyntaxKind::COMMA) {
                 break;
             }
@@ -111,6 +111,17 @@ fn tuple_item(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
             p.error("expected expression in tuple");
         }
         m.complete(p, SyntaxKind::TUPLE_ITEM)
+    }
+}
+
+fn maybe_node_comment_tuple_item(p: &mut Parser, ctx: Ctx) {
+    if p.at(SyntaxKind::NODE_COMMENT) {
+        let cm = p.start();
+        p.bump(SyntaxKind::NODE_COMMENT);
+        tuple_item(p, ctx);
+        cm.complete(p, SyntaxKind::NODE_COMMENT_NODE);
+    } else {
+        tuple_item(p, ctx);
     }
 }
 
@@ -158,15 +169,23 @@ fn brace_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
 /// True when the tokens after `{` look like a value record.
 /// Scans through an optional `IDENT (MINUS IDENT)*` field-name prefix
 /// (respecting raw-adjacency for hyphens) and checks for a trailing `=`.
+/// Leading `--/` node comment markers are skipped transparently.
 fn looks_like_record(p: &Parser) -> bool {
     // p.nth(0) = `{`; scan starting at offset 1 (first token inside brace).
-    match p.nth(1) {
+    // Skip any leading node comment markers.
+    let mut off = 1usize;
+    while p.nth_at(off, SyntaxKind::NODE_COMMENT) {
+        off += 1;
+        if off > 8 {
+            return false;
+        }
+    }
+    match p.nth(off) {
         SyntaxKind::R_BRACE => return true,
         SyntaxKind::IDENT => {}
         _ => return false,
     }
     // Scan past MINUS IDENT pairs while raw-adjacent (hyphenated field name).
-    let mut off = 1usize; // currently at the leading IDENT
     while p.raw_adjacent_at(off)          // IDENT at off is adjacent to MINUS at off+1
         && p.nth_at(off + 1, SyntaxKind::MINUS)
         && p.raw_adjacent_at(off + 1)     // MINUS at off+1 is adjacent to IDENT at off+2
@@ -185,7 +204,14 @@ fn record_expr(p: &mut Parser) -> CompletedMarker {
     let m = p.start();
     p.bump(SyntaxKind::L_BRACE);
     while !p.at_eof() && !p.at(SyntaxKind::R_BRACE) {
-        value_field(p);
+        if p.at(SyntaxKind::NODE_COMMENT) {
+            let cm = p.start();
+            p.bump(SyntaxKind::NODE_COMMENT);
+            value_field(p);
+            cm.complete(p, SyntaxKind::NODE_COMMENT_NODE);
+        } else {
+            value_field(p);
+        }
     }
     p.expect(SyntaxKind::R_BRACE);
     m.complete(p, SyntaxKind::RECORD_EXPR)
@@ -275,17 +301,34 @@ fn list_expr(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
     let m = p.start();
     p.bump(SyntaxKind::L_BRACK);
     while !p.at_eof() && !p.at(SyntaxKind::R_BRACK) {
-        let im = p.start();
-        if super::exprs::expr_bp(p, 0, ctx).is_none() {
-            p.error("expected expression in list");
-            im.abandon(p);
+        if p.at(SyntaxKind::NODE_COMMENT) {
+            let cm = p.start();
+            p.bump(SyntaxKind::NODE_COMMENT);
+            if !list_item(p, ctx) {
+                cm.complete(p, SyntaxKind::NODE_COMMENT_NODE);
+                break;
+            }
+            cm.complete(p, SyntaxKind::NODE_COMMENT_NODE);
+        } else if !list_item(p, ctx) {
             break;
         }
-        p.expect(SyntaxKind::SEMI);
-        im.complete(p, SyntaxKind::LIST_ITEM);
     }
     p.expect(SyntaxKind::R_BRACK);
     m.complete(p, SyntaxKind::LIST_EXPR)
+}
+
+/// Returns `true` on success, `false` when no expression could be parsed
+/// (caller should break the enclosing loop to avoid infinite progress stall).
+fn list_item(p: &mut Parser, ctx: Ctx) -> bool {
+    let im = p.start();
+    if super::exprs::expr_bp(p, 0, ctx).is_none() {
+        p.error("expected expression in list");
+        im.abandon(p);
+        return false;
+    }
+    p.expect(SyntaxKind::SEMI);
+    im.complete(p, SyntaxKind::LIST_ITEM);
+    true
 }
 
 // ── Lambda expression ─────────────────────────────────────────────────────────

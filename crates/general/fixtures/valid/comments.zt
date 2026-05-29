@@ -1,0 +1,33 @@
+-- plain line comment
+
+-- another line comment
+
+--{ block comment }--
+
+--{
+  multi-line
+  block comment
+}--
+
+--{ outer --{ nested inner }-- still outer }--
+
+--| Doc comment for a value binding.
+x := 42
+
+--| First line of doc.
+--| Second line of doc.
+port : Int = 8080
+
+-- doc does not attach to the following because this is a plain comment
+y := 99
+
+--/ z := "commented out"
+
+w := "after node comment"
+
+greet :: Text -> Text
+      :: name { "hello " }
+
+--{ comment between declarations }--
+
+result := x

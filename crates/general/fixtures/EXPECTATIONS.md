@@ -22,7 +22,7 @@ Rows marked **(M11+)** require the typed-AST validation pass.
 | invalid/pipeline_ambiguity.zt     | parse-error **(M3)** | operator-precedence — mixing `\|>` and `<\|` without parens is ambiguous |
 | invalid/keyword_misuse.zt         | parse-error (M7+) | conventions 3.6, file-structure 5.2 — keywords and reserved words        |
 | invalid/no_unary_operator.zt      | parse-error (M9+) | conventions 3.8 — v0 has no unary `-`/`!`/`+`; negation is literal-only  |
-| invalid/atom_and_comment_traps.zt | parse-error (M9+) | conventions 3.4–3.5 — atom syntax, no comment form defined for `.zt`     |
+| invalid/atom_and_comment_traps.zt | parse-error (M9+) | conventions 3.4–3.5 — atom syntax; `//` and `/* */` are not valid comment forms in `.zt` |
 | invalid/string_number_lexical.zt  | parse-error (M9+) | conventions 3.2/3.3 — JSON-style strings/numbers; listed forms not in spec|
 
 ## Notes on sigil_swaps.zt
@@ -57,8 +57,9 @@ implementations should reject the expression as ambiguous." This is enforced at 
 ## Notes on no_unary_operator.zt
 
 v0 has no unary operators. Negation is only valid as part of a numeric literal (`-5`, `-2.5e-3`).
-`-x`, `!b`, `+n`, `--3` are not valid expressions. The lexer tokenises `-` as MINUS so round-trip
+`-x`, `!b`, `+n` are not valid expressions. The lexer tokenises `-` as MINUS so round-trip
 works, but the parse / validation pass must reject these. Full detection requires M9+.
+Note: `--x` is now a valid line comment (not a double-minus trap) and has been removed from this fixture.
 
 ## Notes on atom_and_comment_traps.zt
 
@@ -67,14 +68,15 @@ Atom grammar: `atom ::= "#" atom_body` where `atom_body ::= [A-Za-z_][A-Za-z0-9_
 - `# foo` (space after `#`): `#` is not an atom prefix when followed by whitespace.
 - `#1foo`, `#-foo`: atom bodies must start with a letter or `_`.
 - `##foo`: `#` is not a valid atom-body character.
-No comment syntax is defined for `.zt` anywhere in v0_spec. `//`, `/* */`, `--`, `#` lines are
-all unspecified and must be treated as lexical/parse errors by a conforming implementation.
+`//` and `/* */` are not valid comment forms in `.zt` (see §3.1.1 — valid comment forms
+start with `--`). `#`-lines are atom-syntax traps, not shell-style comments.
 
 ## Notes on string_number_lexical.zt
 
 Number grammar is JSON-style (conventions 3.3): `[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?`.
 Not in spec: leading zeros (`007`), lone `.` suffix (`3.`), leading dot (`.5`), incomplete
 exponent (`1e`, `1e+`), double dot (`1.2.3`), hex (`0x...`), binary (`0b...`), underscores
-(`1_000`), double minus (`--5`).
+(`1_000`).
+Note: `--5` is now a valid line comment and has been removed from this fixture.
 String grammar is JSON-style (conventions 3.2). Unterminated strings, bad escapes (`"\q"`),
 and raw (unescaped) newlines inside string literals are invalid.

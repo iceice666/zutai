@@ -7,6 +7,7 @@ pub enum SyntaxKind {
     // ── Trivia ───────────────────────────────────────────────────────────────
     WHITESPACE = 0,
     COMMENT,
+    DOC_COMMENT,
 
     // ── Literals ─────────────────────────────────────────────────────────────
     INT,
@@ -41,6 +42,7 @@ pub enum SyntaxKind {
     EQ,                // =
     BANG_EQ,           // !=
     ARROW,             // ->
+    NODE_COMMENT,      // --/
     MINUS,             // -
     OPTIONAL_DOT,      // ?.
     QUESTION_QUESTION, // ??
@@ -124,6 +126,7 @@ pub enum SyntaxKind {
     CLAUSE,
     GUARD,
     BLOCK,
+    NODE_COMMENT_NODE,
     LOCAL_BINDING,
 
     // ── Internal parser sentinels (never enter the green tree) ────────────────
@@ -133,7 +136,10 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     pub fn is_trivia(self) -> bool {
-        matches!(self, SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
+        matches!(
+            self,
+            SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT
+        )
     }
 }
 
