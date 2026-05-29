@@ -28,12 +28,16 @@ fn parse_zt(path: &str, src: &str) {
     // Print the lossless CST.
     println!("{:#?}", result.syntax());
 
-    // Report diagnostics using ariadne.
-    if result.diagnostics.is_empty() {
-        println!("No diagnostics — parsed successfully.");
+    // Run semantic analysis and merge all diagnostics.
+    let semantic = zutai_semantic::analyze(&result.syntax());
+    let mut all_diags = result.diagnostics;
+    all_diags.extend(semantic.diagnostics);
+
+    if all_diags.is_empty() {
+        println!("No diagnostics — parsed and analyzed successfully.");
     } else {
-        eprintln!("{} diagnostic(s):", result.diagnostics.len());
-        zutai_syntax::diag::render::eprint_diagnostics(&result.diagnostics, path, src);
+        eprintln!("{} diagnostic(s):", all_diags.len());
+        zutai_syntax::diag::render::eprint_diagnostics(&all_diags, path, src);
     }
 }
 
