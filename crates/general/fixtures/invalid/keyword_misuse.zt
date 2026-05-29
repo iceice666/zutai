@@ -1,3 +1,7 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: conventions §3.6, file-structure §5.2 — keywords are reserved and cannot be binding names.
+-- `type`, `match`, `if`, `then`, `else`, `import`, `true`, `false`, `none`, `select` as LHS of `:=`.
+
 type := 1
 
 match := 2

@@ -1,3 +1,8 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: conventions §3.8 — `:` annotates types, `=` binds values; the two never swap.
+-- Value-record fields using `:`, type-record fields using `=`, variant construction using `:`,
+-- and variant type fields using `=` — every swap permutation.
+
 { host : "localhost"; port : 8080; }
 
 { required : true; optional-value : none; tls : false; }

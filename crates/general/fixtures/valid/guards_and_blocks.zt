@@ -1,3 +1,5 @@
+-- Expected: parse-clean (zero diagnostics + lossless round-trip)
+-- Spec: function declarations §5.2, clause guards §5.3, block expressions §6.4
 -- Clause guards (`if` in `::` clauses) and block expressions with local bindings.
 -- Note: match-arm guards are NOT yet implemented; only :: clause guards work.
 

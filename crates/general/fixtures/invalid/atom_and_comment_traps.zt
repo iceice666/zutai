@@ -1,3 +1,9 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: conventions §3.4–3.5 — atom grammar; valid comment forms start with `--`.
+-- Atom grammar: `#[A-Za-z_][A-Za-z0-9_-]*` — bare `#`, `# foo` (space after #), `#1foo`
+-- (digit start), `##foo` (# not valid in body) are all invalid atom forms.
+-- `//` and `/* */` are not valid comment forms in .zt (only `--` variants are).
+
 #
 
 # this looks like a comment but is not

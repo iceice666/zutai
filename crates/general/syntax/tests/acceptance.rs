@@ -1,190 +1,128 @@
-/// M12 acceptance tests: the complete fixture corpus parsed and validated.
+/// Fixture-corpus acceptance tests: data-driven, directory-discovered.
 ///
-/// **Parse-clean** fixtures: must yield zero diagnostics + lossless round-trip.
-/// **Parse-error** fixtures: must yield ≥1 diagnostic + lossless round-trip + no panic.
+/// Each `.zt` file is found at runtime via `read_dir`; the expected outcome is
+/// determined by the subdirectory it lives in:
+///
+///   fixtures root   → parse-clean (zero diagnostics + lossless round-trip)
+///   valid/          → parse-clean
+///   invalid/        → parse-error (≥1 diagnostic + lossless round-trip, no panic)
+///   semantic_invalid/ → parse-clean today (placeholder — when the semantic/type
+///                       pass lands, move each file to invalid/ and this test will
+///                       enforce parse-error automatically; no harness change needed)
+///
+/// Adding a new fixture file is enough to have it tested — no manual wiring required.
 use zutai_syntax::parse;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn assert_parses_clean(src: &str, name: &str) {
+fn fixtures_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../fixtures")
+        .canonicalize()
+        .expect("fixtures directory not found")
+}
+
+/// Collect every `*.zt` file directly inside `dir` (non-recursive), sorted.
+fn read_zt(dir: &std::path::Path) -> Vec<(String, String)> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("read_dir {:?}: {e}", dir))
+        .filter_map(|e| {
+            let e = e.expect("read_dir entry");
+            let path = e.path();
+            if path.is_file() && path.extension().and_then(|x| x.to_str()) == Some("zt") {
+                let name = path
+                    .strip_prefix(fixtures_dir())
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned();
+                let src = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("read {:?}: {e}", path));
+                Some((name, src))
+            } else {
+                None
+            }
+        })
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+fn check_clean(src: &str) -> Result<(), String> {
     let p = parse(src);
-    assert_eq!(
-        p.syntax().text().to_string(),
-        src,
-        "{name}: lossless round-trip failed"
-    );
-    assert!(
-        p.diagnostics.is_empty(),
-        "{name}: expected zero diagnostics, got {}: {:?}",
-        p.diagnostics.len(),
-        p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
-    );
+    let text = p.syntax().text().to_string();
+    if text != src {
+        return Err(format!(
+            "round-trip failed: {:?} ≠ {:?}",
+            &text[..text.len().min(120)],
+            &src[..src.len().min(120)]
+        ));
+    }
+    if !p.diagnostics.is_empty() {
+        return Err(format!(
+            "expected zero diagnostics, got {}: {:?}",
+            p.diagnostics.len(),
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        ));
+    }
+    Ok(())
 }
 
-fn assert_parses_with_error(src: &str, name: &str) {
+fn check_error(src: &str) -> Result<(), String> {
     let p = parse(src);
-    assert_eq!(
-        p.syntax().text().to_string(),
-        src,
-        "{name}: lossless round-trip failed"
-    );
+    let text = p.syntax().text().to_string();
+    if text != src {
+        return Err(format!(
+            "round-trip failed: {:?} ≠ {:?}",
+            &text[..text.len().min(120)],
+            &src[..src.len().min(120)]
+        ));
+    }
+    if p.diagnostics.is_empty() {
+        return Err("expected ≥1 diagnostic, got zero".to_string());
+    }
+    Ok(())
+}
+
+fn run_category<F>(dir: &std::path::Path, check: F)
+where
+    F: Fn(&str) -> Result<(), String>,
+{
+    let files = read_zt(dir);
     assert!(
-        !p.diagnostics.is_empty(),
-        "{name}: expected ≥1 diagnostic, got zero"
+        !files.is_empty(),
+        "no *.zt files found in {:?} — wrong path?",
+        dir
     );
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|(name, src)| check(src).err().map(|e| format!("{name}: {e}")))
+        .collect();
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
 
-// ── Parse-clean fixtures ──────────────────────────────────────────────────────
+// ── Fixture corpus tests ──────────────────────────────────────────────────────
 
 #[test]
-fn acceptance_cursed_zt() {
-    assert_parses_clean(include_str!("../../fixtures/cursed.zt"), "cursed.zt");
-}
-
-#[test]
-fn acceptance_valid_deep_nesting() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/deep_nesting.zt"),
-        "valid/deep_nesting.zt",
-    );
-}
-
-#[test]
-fn acceptance_valid_optional_chains() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/optional_chains.zt"),
-        "valid/optional_chains.zt",
-    );
+fn fixtures_root_parse_clean() {
+    run_category(&fixtures_dir(), check_clean);
 }
 
 #[test]
-fn acceptance_valid_lexical_torture() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/lexical_torture.zt"),
-        "valid/lexical_torture.zt",
-    );
+fn fixtures_valid_parse_clean() {
+    run_category(&fixtures_dir().join("valid"), check_clean);
 }
 
 #[test]
-fn acceptance_valid_bracket_disambiguation() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/bracket_disambiguation.zt"),
-        "valid/bracket_disambiguation.zt",
-    );
+fn fixtures_invalid_parse_error() {
+    run_category(&fixtures_dir().join("invalid"), check_error);
 }
 
 #[test]
-fn acceptance_valid_guards_and_blocks() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/guards_and_blocks.zt"),
-        "valid/guards_and_blocks.zt",
-    );
-}
-
-#[test]
-fn acceptance_valid_type_position_torture() {
-    assert_parses_clean(
-        include_str!("../../fixtures/valid/type_position_torture.zt"),
-        "valid/type_position_torture.zt",
-    );
-}
-
-// ── Parse-error fixtures ──────────────────────────────────────────────────────
-
-#[test]
-fn acceptance_invalid_bracket_mismatch() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/bracket_mismatch.zt"),
-        "invalid/bracket_mismatch.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_declaration_traps() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/declaration_traps.zt"),
-        "invalid/declaration_traps.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_dangling_operators() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/dangling_operators.zt"),
-        "invalid/dangling_operators.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_duplicate_names() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/duplicate_names.zt"),
-        "invalid/duplicate_names.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_comparison_chaining() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/comparison_chaining.zt"),
-        "invalid/comparison_chaining.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_pipeline_ambiguity() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/pipeline_ambiguity.zt"),
-        "invalid/pipeline_ambiguity.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_sigil_swaps() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/sigil_swaps.zt"),
-        "invalid/sigil_swaps.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_separator_swaps() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/separator_swaps.zt"),
-        "invalid/separator_swaps.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_keyword_misuse() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/keyword_misuse.zt"),
-        "invalid/keyword_misuse.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_no_unary_operator() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/no_unary_operator.zt"),
-        "invalid/no_unary_operator.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_atom_and_comment_traps() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/atom_and_comment_traps.zt"),
-        "invalid/atom_and_comment_traps.zt",
-    );
-}
-
-#[test]
-fn acceptance_invalid_string_number_lexical() {
-    assert_parses_with_error(
-        include_str!("../../fixtures/invalid/string_number_lexical.zt"),
-        "invalid/string_number_lexical.zt",
-    );
+fn fixtures_semantic_invalid_parse_clean() {
+    // These fixtures are spec-invalid per v0 but the parser has no semantic/type pass, so
+    // they currently parse clean.  When semantic analysis lands, move each .zt file to
+    // invalid/ — the fixtures_invalid_parse_error test will then cover them automatically.
+    run_category(&fixtures_dir().join("semantic_invalid"), check_clean);
 }
 
 // ── Never-panic property: random bytes ───────────────────────────────────────
@@ -270,42 +208,4 @@ fn never_panic_adversarial_sequences() {
             "round-trip failed for {src:?}"
         );
     }
-}
-
-// ── Semantic-gap fixtures ─────────────────────────────────────────────────────
-//
-// These fixtures are spec-invalid per v0 but the parser has no semantic/type
-// pass, so they currently parse clean. When semantic analysis lands, move each
-// to `invalid/` and flip its test to `assert_parses_with_error`.
-
-#[test]
-fn semantic_gap_closed_records() {
-    assert_parses_clean(
-        include_str!("../../fixtures/semantic_invalid/closed_records.zt"),
-        "semantic_invalid/closed_records.zt",
-    );
-}
-
-#[test]
-fn semantic_gap_exhaustiveness() {
-    assert_parses_clean(
-        include_str!("../../fixtures/semantic_invalid/exhaustiveness.zt"),
-        "semantic_invalid/exhaustiveness.zt",
-    );
-}
-
-#[test]
-fn semantic_gap_union_membership() {
-    assert_parses_clean(
-        include_str!("../../fixtures/semantic_invalid/union_membership.zt"),
-        "semantic_invalid/union_membership.zt",
-    );
-}
-
-#[test]
-fn semantic_gap_reserved_tag() {
-    assert_parses_clean(
-        include_str!("../../fixtures/semantic_invalid/reserved_tag.zt"),
-        "semantic_invalid/reserved_tag.zt",
-    );
 }

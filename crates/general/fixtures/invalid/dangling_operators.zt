@@ -1,3 +1,8 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: expressions §6 — every binary/postfix operator requires a well-formed operand.
+-- Trailing operators (`a ??`, `x +`, `a |>`), leading operators (`?? b`, `* 3`, `<| b`),
+-- and postfix `??` on a type-name expression (`v := Server??`).
+
 a ??
 
 ?? b

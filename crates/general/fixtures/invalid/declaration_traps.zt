@@ -1,3 +1,8 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: declarations §5 — `:=` and `::` require well-formed left- and right-hand sides.
+-- Space inside `:=` (`x : = 5`), dangling `::` with no RHS, numeric clause head (`f :: 0`),
+-- and incomplete arrow pattern (`h :: n ->`).
+
 x : = 5
 
 g ::

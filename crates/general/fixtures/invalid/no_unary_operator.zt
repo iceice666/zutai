@@ -1,3 +1,8 @@
+-- Expected: parse-error (≥1 diagnostic + lossless round-trip)
+-- Spec: conventions §3.8 — v0 has no unary `-`, `!`, or `+`; negation is literal-only.
+-- `-x`, `- x`, `-foo`, `! true`, `+5`, `+x` etc. — unary operators on variables/exprs are invalid.
+-- (Note: `--x` is a valid line comment and is excluded from this fixture.)
+
 -x
 
 - x
