@@ -68,6 +68,7 @@ mod tests {
             include_str!("../../fixtures/valid/deep_nesting.zt"),
             include_str!("../../fixtures/valid/optional_chains.zt"),
             include_str!("../../fixtures/valid/lexical_torture.zt"),
+            include_str!("../../fixtures/valid/comments.zt"),
         ];
         for src in cases {
             assert_round_trips(src);
@@ -1176,7 +1177,7 @@ mod tests {
 
     // ── M11 typed AST tests ───────────────────────────────────────────────────
 
-    use ast::{AstNode, nodes::*, support};
+    use ast::{AstNode, nodes::*};
 
     #[test]
     fn m11_ast_inferred_binding_name() {
@@ -1328,5 +1329,93 @@ mod tests {
                 p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
             );
         }
+    }
+
+    // ── Comment / node comment / doc tests ───────────────────────────────────────
+
+    #[test]
+    fn comments_fixture_parses_clean() {
+        let src = include_str!("../../fixtures/valid/comments.zt");
+        let p = parse(src);
+        assert!(
+            p.diagnostics.is_empty(),
+            "comments.zt produced diagnostics: {:?}",
+            p.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_round_trips(src);
+    }
+
+    #[test]
+    fn node_comment_decl_excluded_from_typed_ast() {
+        // `--/ z := "commented out"` should not appear in File::decls()
+        let src = "--/ z := \"commented out\"\nw := 1";
+        let p = parse(src);
+        assert!(
+            p.diagnostics.is_empty(),
+            "unexpected diagnostics: {:?}",
+            p.diagnostics
+        );
+        let file = ast::nodes::File::cast(p.syntax()).unwrap();
+        let names: Vec<_> = file
+            .decls()
+            .filter_map(|d| ast::nodes::decl_name(&d))
+            .map(|t| t.text().to_owned())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["w"],
+            "node comment decl should be excluded; got {names:?}"
+        );
+    }
+
+    #[test]
+    fn doc_comment_single_line() {
+        let src = "--| The value.\nx := 1";
+        let p = parse(src);
+        assert!(p.diagnostics.is_empty());
+        let file = ast::nodes::File::cast(p.syntax()).unwrap();
+        let decl = file.decls().next().unwrap();
+        assert_eq!(decl.doc().as_deref(), Some("The value."));
+    }
+
+    #[test]
+    fn doc_comment_stacked_lines() {
+        let src = "--| First line.\n--| Second line.\nx := 1";
+        let p = parse(src);
+        assert!(p.diagnostics.is_empty());
+        let file = ast::nodes::File::cast(p.syntax()).unwrap();
+        let decl = file.decls().next().unwrap();
+        assert_eq!(decl.doc().as_deref(), Some("First line.\nSecond line."));
+    }
+
+    #[test]
+    fn plain_comment_does_not_become_doc() {
+        let src = "-- plain comment\nx := 1";
+        let p = parse(src);
+        assert!(p.diagnostics.is_empty());
+        let file = ast::nodes::File::cast(p.syntax()).unwrap();
+        let decl = file.decls().next().unwrap();
+        assert_eq!(decl.doc(), None, "plain comment should not be a doc");
+    }
+
+    #[test]
+    fn node_comment_record_field_excluded() {
+        let src = "r := { --/ hidden = 1; visible = 2; }";
+        let p = parse(src);
+        assert!(p.diagnostics.is_empty(), "unexpected: {:?}", p.diagnostics);
+        assert_round_trips(src);
+        // The tree contains a NODE_COMMENT_NODE node
+        assert!(tree(src).contains("NODE_COMMENT_NODE"));
+        // The tree does NOT contain RECORD_EXPR > VALUE_FIELD for "hidden" at top level
+        // (it's inside NODE_COMMENT_NODE, so semantic accessors skip it)
+    }
+
+    #[test]
+    fn node_comment_list_item_excluded() {
+        let src = "lst := [1; --/ 2; 3;]";
+        let p = parse(src);
+        assert!(p.diagnostics.is_empty(), "unexpected: {:?}", p.diagnostics);
+        assert_round_trips(src);
+        assert!(tree(src).contains("NODE_COMMENT_NODE"));
     }
 }

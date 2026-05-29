@@ -98,6 +98,7 @@ fn next_token(cursor: &mut Cursor<'_>) -> SyntaxKind {
         },
 
         b'-' => match cursor.peek_at(1) {
+            Some(b'-') => scan_comment(cursor),
             Some(b'>') => {
                 cursor.bump();
                 cursor.bump();
@@ -249,6 +250,78 @@ fn next_token(cursor: &mut Cursor<'_>) -> SyntaxKind {
             // Unrecognised byte or non-ASCII outside a string: advance one code point.
             cursor.bump_char();
             SyntaxKind::ERROR
+        }
+    }
+}
+
+/// Scan a comment starting at the first `-` (caller has verified peek(0)=peek(1)=`-`).
+///
+/// Dispatch on the character immediately after `--`:
+///   `/`  → 3-char `--/` NODE_COMMENT marker (does not consume to EOL).
+///   `{`  → nestable block comment `--{ … }--`; returns COMMENT.
+///   `|`  → doc-comment to end of line; returns DOC_COMMENT.
+///   else → plain line comment to end of line; returns COMMENT.
+///
+/// Note: a line comment whose text starts with `/`, `|`, or `{` must use a
+/// leading space to avoid being parsed as node comment / doc / block (`-- /path`).
+fn scan_comment(cursor: &mut Cursor<'_>) -> SyntaxKind {
+    debug_assert_eq!(cursor.peek(), Some(b'-'));
+    debug_assert_eq!(cursor.peek_at(1), Some(b'-'));
+    cursor.bump(); // first `-`
+    cursor.bump(); // second `-`
+
+    match cursor.peek() {
+        Some(b'/') => {
+            cursor.bump();
+            SyntaxKind::NODE_COMMENT
+        }
+        Some(b'{') => {
+            scan_block_comment(cursor);
+            SyntaxKind::COMMENT
+        }
+        Some(b'|') => {
+            // consume to end of line (leave the newline for WHITESPACE)
+            cursor.eat_while(|b| b != b'\n');
+            SyntaxKind::DOC_COMMENT
+        }
+        _ => {
+            cursor.eat_while(|b| b != b'\n');
+            SyntaxKind::COMMENT
+        }
+    }
+}
+
+/// Scan a nestable block comment. Cursor is at `{` (the char after `--`).
+///
+/// Opening: `--{`  Closing: `}--`  Nesting: fully nestable.
+/// On unterminated input (EOF before matching `}--`), consumes all remaining
+/// bytes and returns (lossless; the caller emits COMMENT; diagnostics deferred).
+fn scan_block_comment(cursor: &mut Cursor<'_>) {
+    debug_assert_eq!(cursor.peek(), Some(b'{'));
+    cursor.bump(); // opening `{`
+
+    let mut depth: usize = 1;
+    loop {
+        match cursor.peek() {
+            None => return, // unterminated — lossless, diagnostic deferred
+            Some(b'-') if cursor.peek_at(1) == Some(b'-') && cursor.peek_at(2) == Some(b'{') => {
+                cursor.bump();
+                cursor.bump();
+                cursor.bump();
+                depth += 1;
+            }
+            Some(b'}') if cursor.peek_at(1) == Some(b'-') && cursor.peek_at(2) == Some(b'-') => {
+                cursor.bump();
+                cursor.bump();
+                cursor.bump();
+                depth -= 1;
+                if depth == 0 {
+                    return;
+                }
+            }
+            Some(_) => {
+                cursor.bump_char();
+            }
         }
     }
 }
@@ -475,6 +548,7 @@ mod tests {
             include_str!("../../../fixtures/valid/deep_nesting.zt"),
             include_str!("../../../fixtures/valid/optional_chains.zt"),
             include_str!("../../../fixtures/valid/lexical_torture.zt"),
+            include_str!("../../../fixtures/valid/comments.zt"),
             include_str!("../../../fixtures/invalid/sigil_swaps.zt"),
             include_str!("../../../fixtures/invalid/separator_swaps.zt"),
             include_str!("../../../fixtures/invalid/comparison_chaining.zt"),
@@ -499,5 +573,75 @@ mod tests {
                 assert_lossless(s);
             }
         }
+    }
+
+    // ── Comment lexing ────────────────────────────────────────────────────────
+
+    #[test]
+    fn line_comment() {
+        assert_eq!(kinds("-- hello world"), vec![COMMENT]);
+        assert_eq!(kinds("-- trailing"), vec![COMMENT]);
+        // newline is separate WHITESPACE, not consumed by the comment
+        assert_eq!(kinds("-- foo\nx"), vec![COMMENT, WHITESPACE, IDENT]);
+    }
+
+    #[test]
+    fn doc_comment() {
+        assert_eq!(kinds("--| hello"), vec![DOC_COMMENT]);
+        assert_eq!(
+            kinds("--| line1\n--| line2"),
+            vec![DOC_COMMENT, WHITESPACE, DOC_COMMENT]
+        );
+    }
+
+    #[test]
+    fn node_comment_three_chars() {
+        // --/ is exactly 3 chars; what follows is a separate token
+        assert_eq!(kinds("--/"), vec![NODE_COMMENT]);
+        assert_eq!(kinds("--/ x"), vec![NODE_COMMENT, WHITESPACE, IDENT]);
+        assert_lossless("--/ x := 42");
+    }
+
+    #[test]
+    fn block_comment() {
+        assert_eq!(kinds("--{ body }--"), vec![COMMENT]);
+        assert_lossless("--{ body }--");
+    }
+
+    #[test]
+    fn block_comment_nested() {
+        assert_eq!(kinds("--{ outer --{ inner }-- outer }--"), vec![COMMENT]);
+        assert_lossless("--{ outer --{ inner }-- outer }--");
+    }
+
+    #[test]
+    fn block_comment_unterminated_is_lossless() {
+        // Unterminated block comment must not panic and must cover all bytes.
+        assert_lossless("--{ never closed");
+        assert_eq!(kinds("--{ never closed"), vec![COMMENT]);
+    }
+
+    #[test]
+    fn comment_does_not_steal_arrow() {
+        // `->` must still lex as ARROW, not a comment followed by `>`
+        assert_eq!(kinds("->"), vec![ARROW]);
+        assert_eq!(
+            kinds("a -> b"),
+            vec![IDENT, WHITESPACE, ARROW, WHITESPACE, IDENT]
+        );
+    }
+
+    #[test]
+    fn disambiguation_plain_line_with_slash() {
+        // A line comment starting with a space + slash is NOT node comment
+        assert_eq!(kinds("-- /usr/bin"), vec![COMMENT]);
+        assert_lossless("-- /usr/bin");
+    }
+
+    #[test]
+    fn node_comment_vs_comment() {
+        // --/ (no space) is node comment; -- / (space) is a line comment
+        assert_eq!(kinds("--/"), vec![NODE_COMMENT]);
+        assert_eq!(kinds("-- /"), vec![COMMENT]);
     }
 }

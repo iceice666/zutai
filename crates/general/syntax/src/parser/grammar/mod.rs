@@ -20,8 +20,9 @@ pub(crate) enum Ctx {
 pub(super) fn file(p: &mut Parser) {
     let m = p.start();
     while !p.at_eof() {
-        // Top-level declaration: `IDENT` followed by `:=`, `:`, or `::`.
-        if p.is_decl_start() {
+        if p.at(SyntaxKind::NODE_COMMENT) {
+            node_comment_decl(p);
+        } else if p.is_decl_start() {
             decls::top_decl(p);
         } else if exprs::expr(p).is_some() {
             // Parsed an expression (the trailing file-output expression, or an
@@ -37,4 +38,20 @@ pub(super) fn file(p: &mut Parser) {
         }
     }
     m.complete(p, SyntaxKind::FILE);
+}
+
+/// Wrap a node-commented item (`--/ <item>`) in a NODE_COMMENT_NODE node.
+/// The item is fully parsed into the tree but excluded from typed-AST iterators
+/// because NODE_COMMENT_NODE does not cast to any semantic node type.
+pub(super) fn node_comment_decl(p: &mut Parser) {
+    debug_assert!(p.at(SyntaxKind::NODE_COMMENT));
+    let m = p.start();
+    p.bump(SyntaxKind::NODE_COMMENT);
+    // Parse the following item (decl or expression) into the wrapper.
+    if p.is_decl_start() {
+        decls::top_decl(p);
+    } else if exprs::expr(p).is_none() {
+        p.error("expected declaration or expression after '--/'");
+    }
+    m.complete(p, SyntaxKind::NODE_COMMENT_NODE);
 }

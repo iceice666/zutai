@@ -7,10 +7,11 @@ File
   ::= TopDecl* Expr
 
 TopDecl
-  ::= Ident ":=" Expr                                          (* inferred value binding *)
-   | Ident ":" TypeExpr "=" Expr                              (* annotated value binding *)
-   | Ident "::" TypeParamList? TypeExpr ("::" Clause)+        (* function: sig + clauses *)
-   | Ident "::" Clause+                                       (* function: clauses only, type inferred *)
+  ::= "--/" TopDecl                                           (* node comment: excluded decl *)
+   | Ident ":=" Expr                                          (* inferred value binding *)
+   | Ident ":" TypeExpr "=" Expr                             (* annotated value binding *)
+   | Ident "::" TypeParamList? TypeExpr ("::" Clause)+       (* function: sig + clauses *)
+   | Ident "::" Clause+                                      (* function: clauses only, type inferred *)
 
 Clause
   ::= Pattern ("->" Pattern)* "{" Block "}"
@@ -64,14 +65,16 @@ Record
   ::= "{" ValueField* "}"
 
 ValueField
-  ::= FieldName "=" Expr ";"
+  ::= "--/" ValueField                        (* node comment: excluded field *)
+   | FieldName "=" Expr ";"
 
 Tuple
   ::= "(" TupleItem ("," TupleItem)* ")"
    | "(" ")"
 
 TupleItem
-  ::= Atom                                    (* tagged tuple discriminant *)
+  ::= "--/" TupleItem                         (* node comment: excluded item *)
+   | Atom                                     (* tagged tuple discriminant *)
    | Ident "=" Expr                           (* named field *)
    | Expr                                     (* positional element *)
 
@@ -79,7 +82,8 @@ List
   ::= "[" ListItem* "]"
 
 ListItem
-  ::= Expr ";"
+  ::= "--/" ListItem                          (* node comment: excluded item *)
+   | Expr ";"
 
 Lambda
   ::= "\" Pattern+ "=>" Expr                        (* short form *)
