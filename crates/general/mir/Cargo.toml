@@ -1,0 +1,9 @@
+[package]
+name = "zutai-mir"
+description = "Mid-level IR (block-based CFG) for Zutai general mode (.zt)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-hir = { path = "../hir" }
+zutai-semantic = { path = "../semantic" }

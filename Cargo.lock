@@ -729,6 +729,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zutai-mir"
+version = "0.1.0"
+dependencies = [
+ "zutai-hir",
+ "zutai-semantic",
+]
+
+[[package]]
 name = "zutai-semantic"
 version = "0.1.0"
 dependencies = [
