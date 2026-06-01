@@ -5,6 +5,7 @@
 
 pub mod ast_ext;
 pub mod context;
+pub mod elab;
 pub mod pass;
 pub mod passes;
 pub mod resolution;
@@ -34,10 +35,13 @@ pub struct AnalysisResult {
 /// the two diagnostic vecs before rendering.
 pub fn analyze(root: &SyntaxNode) -> AnalysisResult {
     // Lower CST → HIR (also performs M1 name resolution)
-    let (hir, lower_diags) = zutai_hir::lower_file(root);
+    let (mut hir, lower_diags) = zutai_hir::lower_file(root);
 
     let mut ctx = AnalysisContext::new();
     ctx.diagnostics.extend(lower_diags);
+
+    // Elaborate type annotations: HirType → Ty, write back into Symbol::ty
+    elab::elab_file(&mut hir, &mut ctx.types);
 
     for pass in pass::default_passes() {
         pass.run(root, &mut ctx);

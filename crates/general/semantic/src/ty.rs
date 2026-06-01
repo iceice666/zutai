@@ -2,35 +2,89 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyId(pub u32);
 
+// Pre-interned primitive TyIds — positions MUST match `TyInterner::new()`.
+pub const UNKNOWN_TY: TyId = TyId(0);
+pub const INT_TY: TyId = TyId(1);
+pub const FLOAT_TY: TyId = TyId(2);
+pub const TEXT_TY: TyId = TyId(3);
+pub const BOOL_TY: TyId = TyId(4);
+pub const NONE_TY: TyId = TyId(5);
+
+// ── FieldKind ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldKind {
+    Required,
+    Optional,
+}
+
+// ── RecordField ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordField {
+    pub name: String,
+    pub ty: TyId,
+    pub kind: FieldKind,
+}
+
+// ── Ty ────────────────────────────────────────────────────────────────────────
+
 /// A type in the Zutai v0 type system.
-///
-/// **Currently only `Unknown` is used (M0 skeleton).**
-///
-/// Reserved variants to add as the type-checking pass (M2) lands:
-/// ```text
-/// Int
-/// Float
-/// Text
-/// Bool
-/// Atom(String)            // singleton atom type like #ok
-/// Optional(TyId)          // T?
-/// List(TyId)              // List T
-/// Record(Box<RecordTy>)   // { field : T; ... }
-/// Union(Vec<TyId>)        // [ T; U; ... ]
-/// Function { param: TyId, ret: TyId }
-/// Var(u32)                // unification variable (for HM inference)
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
-    /// Placeholder used before type information is computed.
+    /// Placeholder — not yet inferred or elaboration failed. `TyId(0)` is always `Unknown`.
     Unknown,
+
+    // ── Primitives ────────────────────────────────────────────────────────────
+    Int,
+    Float,
+    Text,
+    Bool,
+    /// The `none` value's type.
+    None,
+
+    // ── Singleton types ───────────────────────────────────────────────────────
+    /// Singleton atom type: `#ok`, `#err`, etc.
+    Atom(String),
+
+    // ── Composite types ───────────────────────────────────────────────────────
+    /// `T?` — optional type.
+    Optional(TyId),
+    /// `List T` — homogeneous list.
+    List(TyId),
+    /// Closed record type: `{ field : T; field? : U }`.
+    Record(Vec<RecordField>),
+    /// Union type: `[ T; U ]`.
+    Union(Vec<TyId>),
+    /// Tagged variant type: `(#tag, field : T)`.
+    /// Full desugaring to Record with a `_tag` field happens in Phase 6.
+    Variant {
+        tag: String,
+        fields: Vec<(String, TyId)>,
+    },
+    /// Function type: `A -> B`.
+    Function {
+        param: TyId,
+        ret: TyId,
+    },
+    /// Unresolved type constructor application (e.g. user-defined `Pair A B`).
+    Apply {
+        ctor: TyId,
+        arg: TyId,
+    },
+
+    // ── Polymorphism ──────────────────────────────────────────────────────────
+    /// Rigid type parameter (from `[A, B]` on a declaration).
+    Param(u32),
 }
 
 // ── TyInterner ────────────────────────────────────────────────────────────────
 
-/// Cheap structural-equality deduplicating arena for [`Ty`] values.
+/// Structural-equality deduplicating arena for [`Ty`] values.
 ///
-/// `TyId(0)` is always the `Unknown` sentinel.
+/// The first six slots are always the pre-interned primitives (see constants
+/// above). `TyId(0)` is always `Unknown`. The ordering of `new()`'s initial
+/// `vec!` MUST match the constant definitions — a unit test guards this.
 pub struct TyInterner {
     types: Vec<Ty>,
 }
@@ -38,13 +92,16 @@ pub struct TyInterner {
 impl TyInterner {
     pub fn new() -> Self {
         Self {
-            types: vec![Ty::Unknown],
+            // Order MUST match UNKNOWN_TY / INT_TY / FLOAT_TY / TEXT_TY / BOOL_TY / NONE_TY.
+            types: vec![
+                Ty::Unknown, // 0
+                Ty::Int,     // 1
+                Ty::Float,   // 2
+                Ty::Text,    // 3
+                Ty::Bool,    // 4
+                Ty::None,    // 5
+            ],
         }
-    }
-
-    /// The `Unknown` type sentinel (always `TyId(0)`).
-    pub fn unknown() -> TyId {
-        TyId(0)
     }
 
     /// Intern a type, returning a stable `TyId`. Deduplicates by structural equality.
@@ -59,6 +116,10 @@ impl TyInterner {
 
     pub fn get(&self, id: TyId) -> &Ty {
         &self.types[id.0 as usize]
+    }
+
+    pub fn is_unknown(&self, id: TyId) -> bool {
+        id == UNKNOWN_TY
     }
 }
 
