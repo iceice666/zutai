@@ -49,12 +49,10 @@ impl AnalysisContext {
             .push(Diagnostic::error(range, code, msg).with_label(label_range, label_msg));
     }
 
-    /// Consume the context and produce the final analysis result.
-    pub fn finish(self) -> AnalysisResult {
-        AnalysisResult {
-            diagnostics: self.diagnostics,
-            resolution: self.resolution,
-        }
+    /// Consume the context and produce the diagnostics and resolution map.
+    /// The caller (`analyze`) is responsible for combining these with the HIR.
+    pub fn finish(self) -> (Vec<zutai_syntax::diag::Diagnostic>, ResolutionMap) {
+        (self.diagnostics, self.resolution)
     }
 }
 
