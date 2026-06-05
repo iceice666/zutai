@@ -2,9 +2,9 @@ use text_size::TextRange;
 
 use zutai_syntax::diag::{Diagnostic, ErrorCode};
 
+use crate::ResolutionMap;
 use crate::scope::ScopeStack;
 use crate::ty::TyInterner;
-use crate::{AnalysisResult, ResolutionMap};
 
 // ── AnalysisContext ───────────────────────────────────────────────────────────
 

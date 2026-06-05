@@ -2,15 +2,14 @@
 //!
 //! ## What this pass does (implement me)
 //!
-//! Verifies that every expression and declaration in the tree is well-typed
+//! Verifies that every expression and declaration in HIR is well-typed
 //! according to the v0 type system (bidirectional type checking + HM-style
 //! let generalisation). Emits `ErrorCode::TypeMismatch` (E0030) and
 //! `ErrorCode::UnknownField` (E0021) for violations.
 //!
-//! **Prerequisite:** the name-resolution pass (M1) must have run first.
-//! Type checking uses `ctx.resolution` to look up what a `NameRef` refers to,
-//! and `ctx.scopes` to retrieve the `Symbol::ty` that was assigned during
-//! or after phase 1.
+//! **Prerequisite:** CST-to-HIR lowering has run. Name references are already
+//! resolved to `HirExprKind::Var(SymbolId)`, and symbols live in the HIR
+//! `SymbolTable`.
 //!
 //! ## Algorithm overview
 //!
@@ -29,15 +28,14 @@
 //!
 //! ### Key rules
 //!
-//! **Annotated binding** `x : T = expr`:
-//! - Infer/elaborate `T` as a type expression (it's parsed as an `Expr` node
-//!   in type position — see CST gap note below).
-//! - Check `expr` against the elaborated type.
-//! - Assign the type to the symbol in `ctx.scopes`.
+//! **Annotated binding** `HirDecl::Value { ty: Some(T), body, .. }`:
+//! - Elaborate `T` into a semantic `TyId`.
+//! - Check `body` against the elaborated type.
+//! - Assign the type to the symbol in `hir.symbols`.
 //!
-//! **Inferred binding** `x := expr`:
-//! - Infer a type for `expr`.
-//! - Assign the inferred type to the symbol in `ctx.scopes`.
+//! **Inferred binding** `HirDecl::Value { ty: None, body, .. }`:
+//! - Infer a type for `body`.
+//! - Assign the inferred type to the symbol in `hir.symbols`.
 //! - HM let-generalisation: if the inferred type contains free type variables,
 //!   generalise them into `∀` quantifiers at the binding boundary (spec §18.3).
 //!
@@ -66,17 +64,10 @@
 //!   through (it currently does not — the grammar rejects `:`-bounded params),
 //!   this pass must emit an error.
 //!
-//! ## CST gap: type position
+//! ## HIR shape
 //!
-//! The type annotation `T` in `x : T = expr` is parsed as an `Expr` node
-//! stored as the `ty()` child of `AnnotatedBinding`. You must *elaborate*
-//! this expression as a type:
-//! - `LITERAL(IDENT)` with an uppercase-initial name → type constructor
-//!   (look it up in `ctx.scopes` as `SymbolKind::TypeDef` or `TypeParam`).
-//! - `CALL_EXPR` → type application (`List Int`, `Pair A B`).
-//! - `TUPLE_EXPR` with a leading `ATOM` → variant type.
-//! - `RECORD_EXPR` in type-position (actually `TYPE_RECORD` node) → record type.
-//! - etc.
+//! Type-position reconstruction already happened during lowering. Type checking
+//! consumes `HirTypeId`, `HirExprId`, `HirDecl`, and `SymbolId` directly.
 //!
 //! ## Fixtures to flip when done
 //!
@@ -89,7 +80,7 @@
 //! - `docs/v0_spec/06-polymorphism/polymorphism.md` §18
 //! - `docs/v0_spec/08-reference/error-model.md` §28 (E0021, E0030)
 
-use zutai_syntax::SyntaxNode;
+use zutai_hir::HirFile;
 
 use crate::context::AnalysisContext;
 use crate::pass::Pass;
@@ -101,8 +92,8 @@ impl Pass for TypeCheck {
         "type-check"
     }
 
-    fn run(&self, _root: &SyntaxNode, _ctx: &mut AnalysisContext) {
+    fn run(&self, _hir: &mut HirFile, _ctx: &mut AnalysisContext) {
         // TODO (M2): implement bidirectional type checking as described above.
-        // Prerequisite: NameResolution (M1) must be complete.
+        // Prerequisite: HIR lowering / M1 name resolution must be complete.
     }
 }

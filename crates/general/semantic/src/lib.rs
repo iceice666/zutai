@@ -44,7 +44,7 @@ pub fn analyze(root: &SyntaxNode) -> AnalysisResult {
     elab::elab_file(&mut hir, &mut ctx.types);
 
     for pass in pass::default_passes() {
-        pass.run(root, &mut ctx);
+        pass.run(&mut hir, &mut ctx);
     }
     let (diagnostics, resolution) = ctx.finish();
     AnalysisResult {
