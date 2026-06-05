@@ -3,16 +3,17 @@
 //! The `zutai-syntax` CST is lossless but not 1:1 with semantics. The most
 //! important gap: **there is no `NameRef` or `Wildcard` node**. A variable
 //! reference, `_`, `42`, `"x"`, `true`, `none`, and `#ok` are all
-//! `LITERAL` nodes. Semantic passes must classify them by looking at the
-//! inner token. This module centralises that classifier so every pass
-//! shares the same logic.
+//! `LITERAL` nodes. CST-facing checks must classify them by looking at the
+//! inner token. This module centralises that classifier for future surface
+//! checks in `zutai-semantic`; HIR lowering has a local copy to avoid a
+//! dependency cycle.
 //!
-//! ## Other CST gaps (do NOT forget these in passes)
+//! ## Other CST gaps (do NOT forget these in CST-facing checks)
 //!
 //! * **Type vs. expression position** is not encoded in the tree.
 //!   `List Int` is a `CALL_EXPR`; `(A, B)` in a type annotation is a
 //!   `TUPLE_EXPR`. Reconstruct position from the parent node kind:
-//!   type child of `ANNOTATED_BINDING`, `TYPE_FIELD`, `VARIANT_FIELD`,
+//!   type child of `ANNOTATED_BINDING`, `TYPE_FIELD`, `TYPE_TUPLE_FIELD`,
 //!   or the RHS of `FUNCTION_TYPE`.
 //!
 //! * **Patterns overlap `LITERAL`** in clause/match-arm position. A binding
@@ -26,7 +27,7 @@
 //!   Check `node.children().any(|c| c.kind() == SyntaxKind::TYPE_FORM)` to
 //!   distinguish a type def from a function def.
 //!
-//! * **`_tag` is reserved/implicit** for tagged-union desugaring (§17.5).
+//! * **`_tag` is reserved/implicit** for tagged-tuple union desugaring (§17.5).
 //!   `(#circle, radius : Float)` desugars to `{ _tag : #circle; radius : Float; }`.
 //!   Users must never write `_tag` explicitly; the `_tag` structural check pass
 //!   (M4) enforces this.
