@@ -287,9 +287,9 @@ or pattern**. They never overlap.
 | `--{` … `}--`   | nestable block comment                                                     |
 | `--/`            | node comment: excludes the immediately following item                     |
 | `:=`             | inferred value binding (`name := expr`)                                    |
-| `:`              | type annotation ("has type"): annotated bindings, type-record/variant type fields, optional-field marker |
+| `:`              | type annotation ("has type"): annotated bindings, type-record/tuple type fields, optional-field marker |
 | `::`             | function/type definition: signature line and pattern-clause lines          |
-| `=`              | value/pattern field binding: value records, variant construction, all patterns |
+| `=`              | value/pattern field binding: value records, tuple values, all patterns |
 | `->`             | function type arrow; also separates clause parameter patterns              |
 | `=>`             | anonymous-function body (short form) and `match` arm body                  |
 | `\`              | anonymous function (lambda) introducer                                     |
@@ -304,13 +304,12 @@ or pattern**. They never overlap.
 | `&&` `\|\|`      | logical AND / OR (short-circuit); operands and result are `Bool`           |
 | `...`            | open row tail in record/union types — v1 feature, reserved |
 | `;`              | terminator for fields, list items, clauses, and match arms                 |
-| `,`              | separator between tuple/variant fields                                     |
+| `,`              | separator between tuple fields                                             |
 | `{` `}`          | value record, record type, or block body                                   |
 | `[` `]`          | list value or union type                                                   |
-| `(` `)`          | tuple/variant, grouping, and the empty tuple                               |
+| `(` `)`          | tuple, grouping, and the empty tuple                                       |
 | `_`              | wildcard pattern                                                           |
 
 There is no unary operator in v0: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
 ---
-
