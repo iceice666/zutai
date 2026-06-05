@@ -93,19 +93,31 @@ pub enum MirInstr {
     /// v1 = Call(f, a)
     /// v2 = Call(v1, b)
     /// ```
-    Call { dest: MirVar, func: MirVar, arg: MirVar },
+    Call {
+        dest: MirVar,
+        func: MirVar,
+        arg: MirVar,
+    },
 
     /// `dest = MakeClosure(func_id, env)` — capture a function + environment.
     ///
     /// `env` is a record-shaped `MirVar` holding all free variables.
     /// See `docs/plans/mir-lowering.md §Closure conversion`.
-    MakeClosure { dest: MirVar, func: MirFuncId, env: MirVar },
+    MakeClosure {
+        dest: MirVar,
+        func: MirFuncId,
+        env: MirVar,
+    },
 
     /// `dest = LoadCapture(closure, index)` — extract a captured variable.
     ///
     /// Generated at the top of a closure body to reconstruct free variables
     /// from the environment parameter.
-    LoadCapture { dest: MirVar, closure: MirVar, index: u32 },
+    LoadCapture {
+        dest: MirVar,
+        closure: MirVar,
+        index: u32,
+    },
     // ── Add more variants here as you implement lowering ──────────────────
 }
 
@@ -155,7 +167,10 @@ pub enum MirTerminator {
     ///
     /// Block params (φ-nodes) are used for values that differ across
     /// predecessors — e.g., the result of an if-then-else.
-    Jump { target: MirBlockId, args: Vec<MirVar> },
+    Jump {
+        target: MirBlockId,
+        args: Vec<MirVar>,
+    },
 
     /// Conditional dispatch on a scrutinee's shape.
     ///
