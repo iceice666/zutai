@@ -104,8 +104,7 @@ pub enum SyntaxKind {
     TYPE_FIELD,
     TYPE_UNION,
     TYPE_UNION_ITEM,
-    VARIANT_TYPE,
-    VARIANT_FIELD,
+    TYPE_TUPLE_FIELD,
     OPTIONAL_TYPE,
     FUNCTION_TYPE,
 
@@ -114,6 +113,7 @@ pub enum SyntaxKind {
 
     // Patterns
     WILDCARD_PATTERN,
+    PAREN_PATTERN,
     TUPLE_PATTERN,
     RECORD_PATTERN,
     PATTERN_FIELD,

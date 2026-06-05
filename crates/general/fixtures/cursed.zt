@@ -1,5 +1,5 @@
 -- Expected: parse-clean (zero diagnostics + lossless round-trip)
--- All-valid stress fixture: keywords used as variant names, recursive types, deeply nested
+-- All-valid stress fixture: keywords used as tag names, recursive types, deeply nested
 -- forms, all lexical edge cases from the spec — designed to find panics and regressions.
 
 Abyss :: type {
@@ -17,7 +17,7 @@ Shadows :: type [
 ]
 
 Unholy :: type [
-  (#just);
+  #just;
   (#just-value, value : Int);
   (#just-maybe, maybe-value : Int?);
   (#just-abyss, deep : Abyss??);
@@ -114,7 +114,7 @@ make_abyss :: Int -> Abyss
            :: n { { into = make_abyss (n * -1 + n + (n * -1 + n)); depth = n; } }
 
 unholy_match :: Unholy -> Int
-             :: (#just)                       { 0 }
+             :: #just                         { 0 }
              :: (#just-value, value = v)      { v }
              :: (#just-maybe, maybe-value = none)  { -1 }
              :: (#just-maybe, maybe-value = v)     { v ?? -2 }
@@ -170,7 +170,7 @@ nightmare : NightmareRecord = {
   optional-union  = none;
 }
 
-u1 : Unholy = (#just)
+u1 : Unholy = #just
 u2 : Unholy = (#just-value, value = 42)
 u3 : Unholy = (#just-maybe, maybe-value = none)
 u4 : Unholy = (#just-maybe, maybe-value = 99)

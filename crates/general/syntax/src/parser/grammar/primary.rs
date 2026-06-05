@@ -34,13 +34,7 @@ pub(super) fn primary(p: &mut Parser, ctx: Ctx) -> Option<CompletedMarker> {
             p.bump_any();
             Some(m.complete(p, SyntaxKind::LITERAL))
         }
-        SyntaxKind::L_PAREN => {
-            if ctx == Ctx::Type && p.nth_at(1, SyntaxKind::ATOM) {
-                Some(super::types::variant_type_inner(p))
-            } else {
-                Some(paren_or_tuple(p, ctx))
-            }
-        }
+        SyntaxKind::L_PAREN => Some(paren_or_tuple(p, ctx)),
         SyntaxKind::L_BRACE => {
             if ctx == Ctx::Type {
                 Some(super::types::type_record_inner(p))
@@ -71,7 +65,6 @@ fn paren_or_tuple(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
     p.bump(SyntaxKind::L_PAREN);
 
     if p.at(SyntaxKind::R_PAREN) {
-        p.error("expected expression");
         p.bump(SyntaxKind::R_PAREN);
         return m.complete(p, SyntaxKind::TUPLE_EXPR);
     }
@@ -94,10 +87,20 @@ fn paren_or_tuple(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
     }
 }
 
-/// One item inside `(...)`: either a named field (`IDENT = expr` or
-/// `field-name = expr` → VALUE_FIELD) or a positional expression (→ TUPLE_ITEM).
+/// One item inside `(...)`: either a value named field (`IDENT = expr` or
+/// `field-name = expr` → VALUE_FIELD), a type named field in type context
+/// (`field-name : Type` → TYPE_TUPLE_FIELD), or a positional item
+/// (→ TUPLE_ITEM).
 fn tuple_item(p: &mut Parser, ctx: Ctx) -> CompletedMarker {
-    if looks_like_named_field(p) {
+    if ctx == Ctx::Type && looks_like_type_named_field(p) {
+        let m = p.start();
+        field_name(p);
+        p.bump(SyntaxKind::COLON);
+        if super::exprs::type_expr(p).is_none() {
+            p.error("expected type expression for tuple field");
+        }
+        m.complete(p, SyntaxKind::TYPE_TUPLE_FIELD)
+    } else if looks_like_named_field(p) {
         let m = p.start();
         field_name(p);
         p.bump(SyntaxKind::EQ);
@@ -131,6 +134,14 @@ fn maybe_node_comment_tuple_item(p: &mut Parser, ctx: Ctx) {
 /// This mirrors `looks_like_record` but scans from offset 0 (the current
 /// IDENT rather than offset 1 inside a `{`).
 fn looks_like_named_field(p: &Parser) -> bool {
+    looks_like_field_with(p, SyntaxKind::EQ)
+}
+
+fn looks_like_type_named_field(p: &Parser) -> bool {
+    looks_like_field_with(p, SyntaxKind::COLON)
+}
+
+fn looks_like_field_with(p: &Parser, delimiter: SyntaxKind) -> bool {
     if !p.at(SyntaxKind::IDENT) {
         return false;
     }
@@ -145,7 +156,7 @@ fn looks_like_named_field(p: &Parser) -> bool {
             return false;
         }
     }
-    p.nth_at(off + 1, SyntaxKind::EQ)
+    p.nth_at(off + 1, delimiter)
 }
 
 // ── Brace expression: value record or block ───────────────────────────────────

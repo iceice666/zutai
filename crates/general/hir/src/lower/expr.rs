@@ -3,7 +3,7 @@ use zutai_syntax::SyntaxNode;
 use zutai_syntax::ast::operators::BinaryOp as SynBinOp;
 use zutai_syntax::ast::tokens::{decode_atom, decode_float, decode_int, decode_string};
 
-use crate::expr::{BinaryOp, HirArm, HirExprId, HirExprKind, ImportKind};
+use crate::expr::{BinaryOp, HirArm, HirExprId, HirExprKind, HirTupleExprElem, ImportKind};
 use crate::symbol::SymbolKind;
 use crate::ty::LitVal;
 
@@ -98,51 +98,37 @@ fn lower_paren(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirExprId {
     }
 }
 
-// ── Tuple / variant construction ──────────────────────────────────────────────
+// ── Tuple construction ────────────────────────────────────────────────────────
 
 fn lower_tuple_expr(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirExprId {
     let range = node.text_range();
-    // First child should be a TUPLE_ITEM containing an atom (the tag).
-    // Subsequent VALUE_FIELD children are named fields.
-    let mut children = node.children();
-    let first = children.next();
-    let Some(first_node) = first else {
-        return ctx.error_expr(range);
-    };
-
-    // Extract the atom tag from the first TUPLE_ITEM
-    let tag = if first_node.kind() == SyntaxKind::TUPLE_ITEM {
-        let atom_tok = first_node
-            .children_with_tokens()
-            .filter_map(|e| e.into_token())
-            .find(|t| t.kind() == SyntaxKind::ATOM);
-        match atom_tok {
-            Some(t) => t.text().trim_start_matches('#').to_string(),
-            None => {
-                // No atom tag — plain tuple without tag; not valid in Zutai v0
-                return ctx.error_expr(range);
+    let mut items = Vec::new();
+    for child in node.children() {
+        let child = skip_node_comment(child);
+        match child.kind() {
+            SyntaxKind::TUPLE_ITEM => {
+                let val_id = child
+                    .children()
+                    .next()
+                    .map(|n| lower_expr(ctx, &n))
+                    .unwrap_or_else(|| ctx.error_expr(child.text_range()));
+                items.push(HirTupleExprElem::Positional(val_id));
             }
-        }
-    } else {
-        return ctx.error_expr(range);
-    };
-
-    // Remaining children are VALUE_FIELD nodes
-    let mut fields = Vec::new();
-    for child in children {
-        if child.kind() == SyntaxKind::VALUE_FIELD {
-            let fname = field_name_text(&child);
-            let val_node = child
-                .children()
-                .find(|c| c.kind() != SyntaxKind::FIELD_NAME);
-            let val_id = match val_node {
-                Some(n) => lower_expr(ctx, &n),
-                None => ctx.error_expr(child.text_range()),
-            };
-            fields.push((fname, val_id));
+            SyntaxKind::VALUE_FIELD => {
+                let fname = field_name_text(&child);
+                let val_node = child
+                    .children()
+                    .find(|c| c.kind() != SyntaxKind::FIELD_NAME);
+                let val_id = match val_node {
+                    Some(n) => lower_expr(ctx, &n),
+                    None => ctx.error_expr(child.text_range()),
+                };
+                items.push(HirTupleExprElem::Named(fname, val_id));
+            }
+            _ => {}
         }
     }
-    ctx.alloc_expr(HirExprKind::Variant { tag, fields }, range)
+    ctx.alloc_expr(HirExprKind::Tuple { items }, range)
 }
 
 // ── Record ────────────────────────────────────────────────────────────────────
@@ -199,7 +185,7 @@ pub(crate) fn lower_lambda(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirExprId {
     for child in node.children() {
         use SyntaxKind::*;
         match child.kind() {
-            WILDCARD_PATTERN | LITERAL | TUPLE_PATTERN | RECORD_PATTERN => {
+            WILDCARD_PATTERN | PAREN_PATTERN | LITERAL | TUPLE_PATTERN | RECORD_PATTERN => {
                 let pat_id = lower_pat(ctx, &child);
                 params.push(pat_id);
             }
@@ -602,7 +588,7 @@ fn is_pat_kind(kind: SyntaxKind) -> bool {
     use SyntaxKind::*;
     matches!(
         kind,
-        WILDCARD_PATTERN | LITERAL | TUPLE_PATTERN | RECORD_PATTERN
+        WILDCARD_PATTERN | PAREN_PATTERN | LITERAL | TUPLE_PATTERN | RECORD_PATTERN
     )
 }
 

@@ -2,7 +2,7 @@ use zutai_syntax::SyntaxKind;
 use zutai_syntax::SyntaxNode;
 use zutai_syntax::ast::{AstNode, nodes::Expr};
 
-use crate::ty::{FieldKind, HirTypeId, HirTypeKind, LitVal};
+use crate::ty::{FieldKind, HirTupleTypeElem, HirTypeId, HirTypeKind, LitVal};
 
 use super::classify_literal;
 use super::ctx::LowerCtx;
@@ -10,7 +10,7 @@ use super::ctx::LowerCtx;
 /// Lower a syntax node in type position to a `HirTypeId`.
 ///
 /// The type node may be any of: TYPE_FORM (wrapper), TYPE_RECORD, TYPE_UNION,
-/// VARIANT_TYPE, OPTIONAL_TYPE, FUNCTION_TYPE, CALL_EXPR (type app), or a LITERAL
+/// TUPLE_EXPR, OPTIONAL_TYPE, FUNCTION_TYPE, CALL_EXPR (type app), or a LITERAL
 /// (named type variable like `Int` or a type param `A`).
 pub(crate) fn lower_type(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
     let range = node.text_range();
@@ -27,8 +27,6 @@ pub(crate) fn lower_type(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
         SyntaxKind::TYPE_RECORD => lower_type_record(ctx, node),
 
         SyntaxKind::TYPE_UNION => lower_type_union(ctx, node),
-
-        SyntaxKind::VARIANT_TYPE => lower_variant_type(ctx, node),
 
         SyntaxKind::OPTIONAL_TYPE => {
             // `T?` — the child is the wrapped type expression
@@ -111,10 +109,7 @@ pub(crate) fn lower_type(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
             }
         }
 
-        SyntaxKind::TUPLE_EXPR => {
-            // `(#tag, field : T, ...)` as a type-position variant
-            lower_variant_type_from_tuple(ctx, node)
-        }
+        SyntaxKind::TUPLE_EXPR => lower_tuple_type(ctx, node),
 
         _ => ctx.error_type(range),
     }
@@ -169,61 +164,32 @@ fn lower_type_union(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
     ctx.alloc_type(HirTypeKind::Union { variants }, range)
 }
 
-fn lower_variant_type(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
+fn lower_tuple_type(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
     let range = node.text_range();
-    // VARIANT_TYPE: L_PAREN ATOM (COMMA VARIANT_FIELD)* R_PAREN
-    let tag = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| t.kind() == SyntaxKind::ATOM)
-        .map(|t| t.text().trim_start_matches('#').to_string())
-        .unwrap_or_default();
-    let mut fields = Vec::new();
+    let mut items = Vec::new();
     for child in node.children() {
-        if child.kind() == SyntaxKind::VARIANT_FIELD {
-            let name = field_name_text(&child);
-            let ty_id = child
-                .children()
-                .find(|c| c.kind() != SyntaxKind::FIELD_NAME)
-                .map(|n| lower_type(ctx, &n))
-                .unwrap_or_else(|| ctx.error_type(range));
-            fields.push((name, ty_id));
-        }
-    }
-    ctx.alloc_type(HirTypeKind::Variant { tag, fields }, range)
-}
-
-fn lower_variant_type_from_tuple(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirTypeId {
-    let range = node.text_range();
-    // Handle `(#tag, field : T, ...)` in a type context (parsed as TUPLE_EXPR)
-    // First TUPLE_ITEM: atom tag; remaining VALUE_FIELDs: named fields.
-    let mut items = node.children();
-    let tag = items
-        .next()
-        .and_then(|n| {
-            if n.kind() == SyntaxKind::TUPLE_ITEM {
-                n.children_with_tokens()
-                    .filter_map(|e| e.into_token())
-                    .find(|t| t.kind() == SyntaxKind::ATOM)
-                    .map(|t| t.text().trim_start_matches('#').to_string())
-            } else {
-                None
+        match child.kind() {
+            SyntaxKind::TUPLE_ITEM => {
+                let ty_id = child
+                    .children()
+                    .next()
+                    .map(|n| lower_type(ctx, &n))
+                    .unwrap_or_else(|| ctx.error_type(child.text_range()));
+                items.push(HirTupleTypeElem::Positional(ty_id));
             }
-        })
-        .unwrap_or_default();
-    let mut fields = Vec::new();
-    for child in items {
-        if child.kind() == SyntaxKind::VALUE_FIELD {
-            let name = field_name_text(&child);
-            let ty_id = child
-                .children()
-                .find(|c| c.kind() != SyntaxKind::FIELD_NAME)
-                .map(|n| lower_type(ctx, &n))
-                .unwrap_or_else(|| ctx.error_type(range));
-            fields.push((name, ty_id));
+            SyntaxKind::TYPE_TUPLE_FIELD => {
+                let name = field_name_text(&child);
+                let ty_id = child
+                    .children()
+                    .find(|c| c.kind() != SyntaxKind::FIELD_NAME)
+                    .map(|n| lower_type(ctx, &n))
+                    .unwrap_or_else(|| ctx.error_type(child.text_range()));
+                items.push(HirTupleTypeElem::Named(name, ty_id));
+            }
+            _ => {}
         }
     }
-    ctx.alloc_type(HirTypeKind::Variant { tag, fields }, range)
+    ctx.alloc_type(HirTypeKind::Tuple { items }, range)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

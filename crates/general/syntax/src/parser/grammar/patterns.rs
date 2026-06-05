@@ -40,28 +40,62 @@ pub(crate) fn pattern(p: &mut Parser) -> Option<CompletedMarker> {
     }
 }
 
-// ── Tuple / variant pattern ───────────────────────────────────────────────────
+// ── Parenthesised pattern / tuple pattern ─────────────────────────────────────
 //
-// Grammar: TuplePattern ::= "(" Atom ("," PatternField)* ")" | "()"
-//
-// A non-empty paren pattern MUST lead with an Atom tag (the variant discriminant).
-// There is no positional-tuple pattern in v0.
+// Grammar:
+//   ParenPattern ::= "(" Pattern ")"
+//   TuplePattern ::= "(" ")" | "(" TuplePatternItem ("," TuplePatternItem)* ")"
+//   TuplePatternItem ::= PatternField | Pattern
 
 fn tuple_pattern(p: &mut Parser) -> CompletedMarker {
     let m = p.start();
     p.bump(SyntaxKind::L_PAREN);
 
-    if !p.at(SyntaxKind::R_PAREN) {
-        if !p.eat(SyntaxKind::ATOM) {
-            p.error("expected atom tag (e.g. #tag) as first element of a variant pattern");
-        }
-        while p.eat(SyntaxKind::COMMA) {
-            pattern_field(p);
-        }
+    if p.at(SyntaxKind::R_PAREN) {
+        p.bump(SyntaxKind::R_PAREN);
+        return m.complete(p, SyntaxKind::TUPLE_PATTERN);
     }
 
-    p.expect(SyntaxKind::R_PAREN);
-    m.complete(p, SyntaxKind::TUPLE_PATTERN)
+    tuple_pattern_item(p);
+    if p.eat(SyntaxKind::COMMA) {
+        while !p.at_eof() && !p.at(SyntaxKind::R_PAREN) {
+            tuple_pattern_item(p);
+            if !p.eat(SyntaxKind::COMMA) {
+                break;
+            }
+        }
+        p.expect(SyntaxKind::R_PAREN);
+        m.complete(p, SyntaxKind::TUPLE_PATTERN)
+    } else {
+        p.expect(SyntaxKind::R_PAREN);
+        m.complete(p, SyntaxKind::PAREN_PATTERN)
+    }
+}
+
+fn tuple_pattern_item(p: &mut Parser) {
+    if looks_like_pattern_field(p) {
+        pattern_field(p);
+    } else if pattern(p).is_none() {
+        p.error("expected pattern in tuple");
+    }
+}
+
+fn looks_like_pattern_field(p: &Parser) -> bool {
+    if !p.at(SyntaxKind::IDENT) {
+        return false;
+    }
+    let mut off = 0usize;
+    while p.raw_adjacent_at(off)
+        && p.nth_at(off + 1, SyntaxKind::MINUS)
+        && p.raw_adjacent_at(off + 1)
+        && p.nth_at(off + 2, SyntaxKind::IDENT)
+    {
+        off += 2;
+        if off > 64 {
+            return false;
+        }
+    }
+    p.nth_at(off + 1, SyntaxKind::EQ)
 }
 
 // ── Record pattern ────────────────────────────────────────────────────────────

@@ -400,6 +400,7 @@ ast_node!(TypeForm, SyntaxKind::TYPE_FORM);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pattern {
     Wildcard(WildcardPattern),
+    Paren(ParenPattern),
     Literal(Literal),
     Tuple(TuplePattern),
     Record(RecordPattern),
@@ -410,6 +411,7 @@ impl AstNode for Pattern {
         matches!(
             kind,
             SyntaxKind::WILDCARD_PATTERN
+                | SyntaxKind::PAREN_PATTERN
                 | SyntaxKind::LITERAL
                 | SyntaxKind::TUPLE_PATTERN
                 | SyntaxKind::RECORD_PATTERN
@@ -418,6 +420,7 @@ impl AstNode for Pattern {
     fn cast(node: SyntaxNode) -> Option<Self> {
         Some(match node.kind() {
             SyntaxKind::WILDCARD_PATTERN => Self::Wildcard(WildcardPattern(node)),
+            SyntaxKind::PAREN_PATTERN => Self::Paren(ParenPattern(node)),
             SyntaxKind::LITERAL => Self::Literal(Literal(node)),
             SyntaxKind::TUPLE_PATTERN => Self::Tuple(TuplePattern(node)),
             SyntaxKind::RECORD_PATTERN => Self::Record(RecordPattern(node)),
@@ -427,6 +430,7 @@ impl AstNode for Pattern {
     fn syntax(&self) -> &SyntaxNode {
         match self {
             Self::Wildcard(n) => &n.0,
+            Self::Paren(n) => &n.0,
             Self::Literal(n) => &n.0,
             Self::Tuple(n) => &n.0,
             Self::Record(n) => &n.0,
@@ -435,5 +439,6 @@ impl AstNode for Pattern {
 }
 
 ast_node!(WildcardPattern, SyntaxKind::WILDCARD_PATTERN);
+ast_node!(ParenPattern, SyntaxKind::PAREN_PATTERN);
 ast_node!(TuplePattern, SyntaxKind::TUPLE_PATTERN);
 ast_node!(RecordPattern, SyntaxKind::RECORD_PATTERN);

@@ -93,11 +93,9 @@ pub enum HirExprKind {
     Record {
         fields: Vec<(String, HirExprId)>,
     },
-    /// Tagged variant construction: `(#tag, field = expr, ...)`.
-    /// Kept distinct from Record; see plan §"Variant vs Record".
-    Variant {
-        tag: String,
-        fields: Vec<(String, HirExprId)>,
+    /// Tuple construction: positional items and optional named fields.
+    Tuple {
+        items: Vec<HirTupleExprElem>,
     },
     List {
         items: Vec<HirExprId>,
@@ -166,4 +164,10 @@ pub enum HirExprKind {
 
     // ── Error sentinel ───────────────────────────────────────────────────────
     Error,
+}
+
+#[derive(Debug, Clone)]
+pub enum HirTupleExprElem {
+    Positional(HirExprId),
+    Named(String, HirExprId),
 }

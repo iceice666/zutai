@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn m4_tuple_named_fields() {
-        // Variant constructor: (#tag, field = value)
+        // Tagged tuple value: (#tag, field = value)
         assert_round_trips("(#just-value, value = 42)");
         let t = tree("(#just-value, value = 42)");
         assert!(t.contains("TUPLE_EXPR"));
@@ -393,8 +393,8 @@ mod tests {
     // ── M6 pattern tests ─────────────────────────────────────────────────────
 
     #[test]
-    fn m6_pattern_variant_snapshot() {
-        // Pin key structural nodes for a single-field variant pattern.
+    fn m6_pattern_tagged_tuple_snapshot() {
+        // Pin key structural nodes for a single-field tagged tuple pattern.
         // (A raw-string snapshot would be terminated early by "#atom" tokens.)
         let src = "match x { (#just-value, value = v) => v; }";
         assert_round_trips(src);
@@ -458,22 +458,23 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_variant_tag_only() {
+    fn m6_pattern_parenthesized_atom() {
         assert_round_trips("match x { (#just) => 0; }");
         let t = tree("match x { (#just) => 0; }");
-        assert!(t.contains("TUPLE_PATTERN"));
+        assert!(t.contains("PAREN_PATTERN"));
+        assert!(!t.contains("TUPLE_PATTERN"));
     }
 
     #[test]
-    fn m6_pattern_variant_empty_paren() {
-        // `()` — empty tuple pattern (nullary form with no tag).
+    fn m6_pattern_tuple_empty_paren() {
+        // `()` — empty tuple pattern.
         assert_round_trips("match x { () => 0; }");
         let t = tree("match x { () => 0; }");
         assert!(t.contains("TUPLE_PATTERN"));
     }
 
     #[test]
-    fn m6_pattern_variant_hyphenated_field() {
+    fn m6_pattern_tagged_tuple_hyphenated_field() {
         // Hyphenated field name in pattern field.
         let src = "match x { (#just-maybe, maybe-value = none) => -1; }";
         assert_round_trips(src);
@@ -487,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_variant_multi_field() {
+    fn m6_pattern_tagged_tuple_multi_field() {
         let src = "match x { (#both-things, a = none, b = none) => -4; }";
         assert_round_trips(src);
         let t = tree(src);
@@ -496,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_variant_wildcard_fields() {
+    fn m6_pattern_tagged_tuple_wildcard_fields() {
         let src = "match x { (#both-things, a = _, b = _) => -5; }";
         assert_round_trips(src);
         let t = tree(src);
@@ -505,15 +506,15 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_variant_nested() {
-        // Variant inside a variant field: (#ok, body = (#circle, radius = r))
+    fn m6_pattern_tagged_tuple_nested() {
+        // Tagged tuple inside a tagged tuple field: (#ok, body = (#circle, radius = r))
         let src = "match x { (#ok, body = (#circle, radius = r)) => r; }";
         assert_round_trips(src);
         let t = tree(src);
         assert_eq!(
             t.matches("TUPLE_PATTERN").count(),
             2,
-            "outer and inner variant pattern"
+            "outer and inner tagged tuple pattern"
         );
         assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
     }
@@ -549,7 +550,7 @@ mod tests {
         // All 12 patterns from unholy_match (cursed.zt:113-124) in a synthesized match.
         let src = concat!(
             "match u {\n",
-            "  (#just)                           => 0;\n",
+            "  #just                             => 0;\n",
             "  (#just-value, value = v)          => v;\n",
             "  (#just-maybe, maybe-value = none) => -1;\n",
             "  (#just-maybe, maybe-value = v)    => v;\n",
@@ -567,7 +568,7 @@ mod tests {
         let t = tree(src);
         assert!(t.contains("MATCH_EXPR"));
         assert_eq!(t.matches("MATCH_CASE").count(), 12);
-        assert!(t.contains("TUPLE_PATTERN"), "variant patterns present");
+        assert!(t.contains("TUPLE_PATTERN"), "tagged tuple patterns present");
         assert!(t.contains("WILDCARD_PATTERN"), "wildcard pattern present");
         assert!(t.contains("PATTERN_FIELD"), "pattern fields present");
         assert!(t.contains("FIELD_NAME"), "hyphenated field names present");
@@ -690,28 +691,28 @@ mod tests {
     }
 
     #[test]
-    fn m5_type_union_variant_tag_only() {
-        // `(#just)` — variant with tag and no fields.
-        assert_round_trips("type [ (#just); ]");
-        let t = tree("type [ (#just); ]");
+    fn m5_type_union_tag_only_atom() {
+        // Tag-only alternatives are bare atom singleton types.
+        assert_round_trips("type [ #just; ]");
+        let t = tree("type [ #just; ]");
         assert!(t.contains("TYPE_UNION"));
-        assert!(t.contains("VARIANT_TYPE"));
+        assert!(!t.contains("TUPLE_EXPR"));
     }
 
     #[test]
-    fn m5_type_union_variant_with_fields() {
+    fn m5_type_union_tagged_tuple_with_fields() {
         assert_round_trips("type [ (#just-value, value : Int); ]");
         let t = tree("type [ (#just-value, value : Int); ]");
-        assert!(t.contains("VARIANT_TYPE"));
-        assert!(t.contains("VARIANT_FIELD"));
+        assert!(t.contains("TUPLE_EXPR"));
+        assert!(t.contains("TYPE_TUPLE_FIELD"));
         assert!(t.contains("FIELD_NAME"));
     }
 
     #[test]
-    fn m5_variant_type_multiple_fields() {
+    fn m5_tagged_tuple_type_multiple_fields() {
         assert_round_trips("type [ (#both, a : Bool, b : Int); ]");
         let t = tree("type [ (#both, a : Bool, b : Int); ]");
-        assert_eq!(t.matches("VARIANT_FIELD").count(), 2);
+        assert_eq!(t.matches("TYPE_TUPLE_FIELD").count(), 2);
     }
 
     #[test]
@@ -786,7 +787,7 @@ mod tests {
     fn m5_unholy_round_trip() {
         let src = concat!(
             "type [\n",
-            "  (#just);\n",
+            "  #just;\n",
             "  (#just-value, value : Int);\n",
             "  (#just-maybe, maybe-value : Int?);\n",
             "  (#just-abyss, deep : Abyss??);\n",
@@ -801,9 +802,9 @@ mod tests {
         let t = tree(src);
         assert!(t.contains("TYPE_UNION"));
         assert_eq!(
-            t.matches("VARIANT_TYPE").count(),
-            5,
-            "expected 5 variant items"
+            t.matches("TUPLE_EXPR").count(),
+            4,
+            "expected 4 tagged tuple items"
         );
         assert!(
             t.contains("OPTIONAL_TYPE"),

@@ -182,7 +182,7 @@ fn is_type_sig_node(node: &SyntaxNode) -> bool {
     use SyntaxKind::*;
     matches!(
         node.kind(),
-        FUNCTION_TYPE | TYPE_FORM | TYPE_RECORD | TYPE_UNION | VARIANT_TYPE | OPTIONAL_TYPE
+        FUNCTION_TYPE | TYPE_FORM | TYPE_RECORD | TYPE_UNION | TUPLE_EXPR | OPTIONAL_TYPE
     )
 }
 

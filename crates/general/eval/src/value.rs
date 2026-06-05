@@ -13,6 +13,7 @@ pub enum EvalValue {
     Text(String),
     Atom(String),
     List(Vec<EvalValue>),
+    Tuple(Vec<TupleElemValue>),
     Record(FxHashMap<String, EvalValue>),
     Closure(ClosureValue),
     Thunk(ThunkValue),
@@ -29,12 +30,19 @@ impl EvalValue {
             EvalValue::Text(_) => "Text",
             EvalValue::Atom(_) => "Atom",
             EvalValue::List(_) => "List",
+            EvalValue::Tuple(_) => "Tuple",
             EvalValue::Record(_) => "Record",
             EvalValue::Closure(_) => "Closure",
             EvalValue::Thunk(_) => "Thunk",
             EvalValue::Type => "Type",
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum TupleElemValue {
+    Positional(EvalValue),
+    Named(String, EvalValue),
 }
 
 /// Captured function value.
@@ -76,6 +84,19 @@ impl fmt::Display for EvalValue {
                     write!(f, "{value}")?;
                 }
                 f.write_str("]")
+            }
+            EvalValue::Tuple(values) => {
+                f.write_str("(")?;
+                for (idx, value) in values.iter().enumerate() {
+                    if idx > 0 {
+                        f.write_str(", ")?;
+                    }
+                    match value {
+                        TupleElemValue::Positional(value) => write!(f, "{value}")?,
+                        TupleElemValue::Named(name, value) => write!(f, "{name} = {value}")?,
+                    }
+                }
+                f.write_str(")")
             }
             EvalValue::Record(fields) => {
                 f.write_str("{ ")?;
