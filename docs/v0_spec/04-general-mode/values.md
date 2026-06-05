@@ -15,6 +15,7 @@ false
   host = "localhost";
   port = 8080;
 }
+(#ok, value = 42)
 ```
 
 ### 6.1 None
@@ -84,7 +85,31 @@ Record values use `.zti`-style fields:
 
 Fields are semicolon-terminated.
 
-### 6.6 Lists
+### 6.6 Tuples
+
+Tuples use comma-separated elements:
+
+```zt
+(1, "alpha")
+(#ok, value = 42)
+()
+```
+
+Tuple elements may be positional or named. Named tuple values use `=`.
+
+A parenthesized single expression is grouping, not a one-element tuple:
+
+```zt
+(#ok)
+```
+
+is the same atom value as:
+
+```zt
+#ok
+```
+
+### 6.7 Lists
 
 Lists use semicolon-terminated elements:
 

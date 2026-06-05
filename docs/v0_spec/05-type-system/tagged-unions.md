@@ -1,8 +1,8 @@
 ## 17. Tagged unions
 
-### 17.1 Variant constructor syntax
+### 17.1 Tagged tuple union arms
 
-Inside `type [ ]`, a variant item may be a **tagged tuple**: `(#atom, field : Type, ...)`. The atom is the implicit discriminant; named fields follow, separated by commas, using `:` for type annotation.
+Inside `type [ ]`, a union item may be a **tagged tuple**: `(#atom, field : Type, ...)`. This is ordinary tuple type syntax whose first positional element is an atom singleton. The atom is interpreted as the implicit discriminant; named fields follow, separated by commas, using `:` for type annotation.
 
 ```zt
 Shape :: type [
@@ -22,11 +22,11 @@ type [
 ]
 ```
 
-The new variant syntax is more concise and makes the discriminant structurally explicit.
+The tagged tuple form is more concise and makes the discriminant structurally explicit without adding a separate variant grammar form.
 
 ### 17.2 Construction
 
-A variant value mirrors the *shape* of the type, but binds each field with `=`
+A tagged tuple value mirrors the *shape* of the type, but binds each named field with `=`
 (the same way value records use `=` while record types use `:`):
 
 ```zt
@@ -35,7 +35,7 @@ s := (#square, length = 10.0)
 r := (#rect, width = 4.0, height = 3.0)
 ```
 
-The atom must match one of the declared variant tags.
+The atom must match one of the declared tagged tuple arms.
 
 ### 17.3 Pattern matching
 
@@ -57,9 +57,9 @@ tag_of :: Shape -> Text
        :: (#rect, width = _, height = _) { "rect" }
 ```
 
-### 17.4 Nested variant patterns
+### 17.4 Nested tagged tuple patterns
 
-Variants can appear nested inside larger patterns:
+Tagged tuple patterns can appear nested inside larger patterns:
 
 ```zt
 Response :: type [
@@ -75,17 +75,17 @@ handle :: Response -> Float
 
 ### 17.5 Desugaring
 
-A variant `(#circle, radius : Float)` desugars internally to a closed record type:
+A tagged tuple union arm `(#circle, radius : Float)` desugars internally to a closed record type:
 
 ```zt
 { _tag : #circle; radius : Float; }
 ```
 
-The `_tag` field is reserved and implicit. Users never write `_tag` directly; the compiler generates it. Pattern matching on a variant never requires matching `_tag` explicitly — the atom in the pattern position serves as the discriminant check.
+The `_tag` field is reserved and implicit. Users never write `_tag` directly; the compiler generates it. Pattern matching on a tagged tuple never requires matching `_tag` explicitly — the atom in the tuple's first position serves as the discriminant check.
 
-### 17.6 Mixing atoms and variants
+### 17.6 Mixing atoms and tagged tuples
 
-A union type may mix plain atom members and variant members:
+A union type may mix plain atom members and tagged tuple members:
 
 ```zt
 Result :: type [
