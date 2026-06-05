@@ -178,10 +178,10 @@ Block-local `:=` is *sequential*. This is implemented in `zutai-hir` lowering:
    - `MatchCase` → push scope per case, define binding patterns, resolve guard + arm, pop.
 
 **Status:** implemented in `crates/general/hir/src/lower/`. The old CST-based semantic
-pass stub has been retired; the remaining M1 work is test coverage for the lowering
+pass stub has been retired; focused HIR lowering tests cover the M1 name-resolution
 behavior.
 
-**Tests still needed:**
+**Covered tests:**
 - unknown expression identifier emits E0020.
 - top-level forward reference/mutual recursion is accepted.
 - block-local forward reference emits E0020 because locals are sequential.
@@ -352,7 +352,7 @@ classify_literal(&SyntaxNode) -> Option<LitClass>
 
 - [x] **M0 Scaffold** — crate, Pass trait, AnalysisContext, ScopeStack, ResolutionMap, TyInterner stub, ast_ext classifier, stubbed passes, CLI wiring, smoke tests.
 - [x] **M1 Name resolution implementation** — implemented during HIR lowering; two-phase top-level collect + sequential locals; E0020.
-- [ ] **M1 test cleanup pass** — add unknown_identifier/forward-reference tests for HIR lowering.
+- [x] **M1 test cleanup pass** — add unknown_identifier/forward-reference tests for HIR lowering.
 - [x] **M2 Type checking pass** — bidirectional checking/inference; Ty variants; closed-record/union checks; E0021/E0030; flipped closed_records + union_membership.
 - [ ] **M3 Exhaustiveness pass** — finite-union coverage; guard fall-through; E0031; flip exhaustiveness.
 - [ ] **M4 Surface structural checks** — `_tag` reserved check outside the HIR pass registry; flip reserved_tag.
