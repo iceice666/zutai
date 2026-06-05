@@ -191,6 +191,10 @@ behavior.
 
 ### M2 — Type checking
 
+**Status:** implemented in `crates/general/semantic/src/passes/type_check.rs`. The pass is
+registered by default, writes inferred/checked types back into HIR symbols, and covers the
+closed-record and union-membership fixtures now moved to `fixtures/invalid/`.
+
 **Goal:** Verify every expression is well-typed; check closed-record conformance.  
 **Emits:** `E0021 UnknownField`, `E0030 TypeMismatch`  
 **Spec:** `docs/v0_spec/05-type-system/`, `06-polymorphism/polymorphism.md` §18  
@@ -229,9 +233,9 @@ behavior.
 `List(TyId)`, `Record(...)`, `Tuple(...)`, `Union(Vec<TyId>)`,
 `Function { param, ret }`, `Var(u32)`, plus `Unknown/Error` for recovery.
 
-**Fixtures to flip:**
-- `semantic_invalid/closed_records.zt` → `invalid/`
-- `semantic_invalid/union_membership.zt` → `invalid/`
+**Flipped fixtures:**
+- `invalid/closed_records.zt`
+- `invalid/union_membership.zt`
 
 ---
 
@@ -349,7 +353,7 @@ classify_literal(&SyntaxNode) -> Option<LitClass>
 - [x] **M0 Scaffold** — crate, Pass trait, AnalysisContext, ScopeStack, ResolutionMap, TyInterner stub, ast_ext classifier, stubbed passes, CLI wiring, smoke tests.
 - [x] **M1 Name resolution implementation** — implemented during HIR lowering; two-phase top-level collect + sequential locals; E0020.
 - [ ] **M1 test cleanup pass** — add unknown_identifier/forward-reference tests for HIR lowering.
-- [ ] **M2 Type checking pass** — bidirectional + HM let-gen; Ty variants; closed-record/union checks; E0021/E0030; flip closed_records + union_membership.
+- [x] **M2 Type checking pass** — bidirectional checking/inference; Ty variants; closed-record/union checks; E0021/E0030; flipped closed_records + union_membership.
 - [ ] **M3 Exhaustiveness pass** — finite-union coverage; guard fall-through; E0031; flip exhaustiveness.
 - [ ] **M4 Surface structural checks** — `_tag` reserved check outside the HIR pass registry; flip reserved_tag.
 - [ ] **M5 Imports + serialization boundary** — E0040; path resolution; cycle detection.

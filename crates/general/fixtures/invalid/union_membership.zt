@@ -1,6 +1,5 @@
--- Spec-invalid: atom value used outside its declared union set (unions §16).
--- The parser has no type system, so these parse clean today.
--- When semantic analysis lands, move to invalid/ and flip to assert_parses_with_error.
+-- Expected: semantic-error (parse-clean + semantic diagnostic)
+-- Spec: unions §16 — atom values must belong to their declared union set.
 
 Env :: type [#dev; #test; #prod;]
 

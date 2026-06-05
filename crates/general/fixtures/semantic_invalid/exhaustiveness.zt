@@ -1,6 +1,6 @@
 -- Spec-invalid: non-exhaustive match over a finite union (pattern-matching §19.1).
 -- The parser has no exhaustiveness checker, so these parse clean today.
--- When semantic analysis lands, move to invalid/ and flip to assert_parses_with_error.
+-- When M3 lands, move to invalid/ and assert the semantic diagnostic.
 
 Status :: type [#ok; #err; #pending;]
 

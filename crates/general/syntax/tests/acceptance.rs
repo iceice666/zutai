@@ -5,10 +5,10 @@
 ///
 ///   fixtures root   → parse-clean (zero diagnostics + lossless round-trip)
 ///   valid/          → parse-clean
-///   invalid/        → parse-error (≥1 diagnostic + lossless round-trip, no panic)
-///   semantic_invalid/ → parse-clean today (placeholder — when the semantic/type
-///                       pass lands, move each file to invalid/ and this test will
-///                       enforce parse-error automatically; no harness change needed)
+///   invalid/        → per-file `-- Expected:` marker:
+///                       `parse-error` means ≥1 parser/validation diagnostic;
+///                       `semantic-error` means parse-clean, semantically invalid
+///   semantic_invalid/ → parse-clean today (placeholder for future semantic passes)
 ///
 /// Adding a new fixture file is enough to have it tested — no manual wiring required.
 use zutai_syntax::parse;
@@ -83,6 +83,21 @@ fn check_error(src: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn expected_kind(src: &str) -> Option<&'static str> {
+    src.lines().find_map(|line| {
+        let line = line.trim();
+        if line == "-- Expected: parse-error (>=1 diagnostic + lossless round-trip)"
+            || line == "-- Expected: parse-error (≥1 diagnostic + lossless round-trip)"
+        {
+            Some("parse-error")
+        } else if line == "-- Expected: semantic-error (parse-clean + semantic diagnostic)" {
+            Some("semantic-error")
+        } else {
+            None
+        }
+    })
+}
+
 fn run_category<F>(dir: &std::path::Path, check: F)
 where
     F: Fn(&str) -> Result<(), String>,
@@ -114,14 +129,29 @@ fn fixtures_valid_parse_clean() {
 
 #[test]
 fn fixtures_invalid_parse_error() {
-    run_category(&fixtures_dir().join("invalid"), check_error);
+    let files = read_zt(&fixtures_dir().join("invalid"));
+    assert!(!files.is_empty(), "no invalid fixtures found");
+
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|(name, src)| {
+            let result = match expected_kind(src) {
+                Some("parse-error") => check_error(src),
+                Some("semantic-error") => check_clean(src),
+                Some(other) => Err(format!("unknown expected fixture kind `{other}`")),
+                None => Err("missing `-- Expected:` fixture marker".to_string()),
+            };
+            result.err().map(|e| format!("{name}: {e}"))
+        })
+        .collect();
+
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
 
 #[test]
 fn fixtures_semantic_invalid_parse_clean() {
-    // These fixtures are spec-invalid per v0 but the parser has no semantic/type pass, so
-    // they currently parse clean.  When semantic analysis lands, move each .zt file to
-    // invalid/ — the fixtures_invalid_parse_error test will then cover them automatically.
+    // These fixtures are spec-invalid per v0 but remain parse-clean until their
+    // corresponding semantic pass lands.
     run_category(&fixtures_dir().join("semantic_invalid"), check_clean);
 }
 
