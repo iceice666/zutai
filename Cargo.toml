@@ -4,6 +4,7 @@ members = [
   "crates/general/syntax",
   "crates/general/hir",
   "crates/general/semantic",
+  "crates/general/eval",
   "crates/general/mir",
   "crates/immediate/core",
   "crates/immediate/simd",

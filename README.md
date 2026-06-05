@@ -14,8 +14,12 @@ crates/
   cli/                 Command-line interface crate
   general/
     syntax/            Parser and AST definitions for general mode (`.zt`)
+    hir/               High-level IR and lowering for general mode (`.zt`)
     semantic/          Semantic analysis framework for general mode (`.zt`)
+    eval/              Pure lazy evaluator scaffold for general mode (`.zt`)
+    mir/               Mid-level IR for general mode (`.zt`)
   immediate/
+    core/              Immediate-mode core APIs
     syntax/            Parser and AST definitions for immediate mode (`.zti`)
     simd/              SIMD-accelerated parser for immediate mode (`.zti`)
     types/             Shared types
