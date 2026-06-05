@@ -43,7 +43,7 @@ crates/general/semantic/src/
   resolution.rs          legacy/use-site TextRange -> def-site TextRange map
                           (currently not populated by HIR lowering)
   ty.rs                  TyId, Ty, TyInterner for semantic types
-  ast_ext.rs             LitClass + classify_literal() — the #1 CST-gap bridge
+  ast_ext.rs             LitClass + classify_literal() for future CST-facing checks
   surface_checks.rs      CST-only semantic/surface checks run before HIR passes
   passes/
     type_check.rs        TypeCheck: Pass        (M2)
@@ -150,7 +150,7 @@ Each pass depends on the output of all prior passes. Do not skip ahead.
 ### M1 — Name resolution
 
 **Goal:** Resolve every `NameRef` to a definition during HIR lowering; lower references
-to `HirExprKind::Var(SymbolId)`.  
+to `HirExprKind::Var(SymbolId)`.
 **Emits:** `E0020 UnknownIdentifier`  
 **Spec:** `04-general-mode/file-structure.md` §5.2–5.8
 
@@ -177,8 +177,9 @@ Block-local `:=` is *sequential*. This is implemented in `zutai-hir` lowering:
      *binding* patterns, resolve guard + body, pop.
    - `MatchCase` → push scope per case, define binding patterns, resolve guard + arm, pop.
 
-**Status:** implemented in `crates/general/hir/src/lower/`. The remaining M1 work is
-test coverage and removal/retirement of the stale `semantic::passes::NameResolution` stub.
+**Status:** implemented in `crates/general/hir/src/lower/`. The old CST-based semantic
+pass stub has been retired; the remaining M1 work is test coverage for the lowering
+behavior.
 
 **Tests still needed:**
 - unknown expression identifier emits E0020.
@@ -194,10 +195,10 @@ test coverage and removal/retirement of the stale `semantic::passes::NameResolut
 **Emits:** `E0021 UnknownField`, `E0030 TypeMismatch`  
 **Spec:** `docs/v0_spec/05-type-system/`, `06-polymorphism/polymorphism.md` §18  
 **Prerequisite:** HIR lowering/M1 complete (type checking reads `HirExprKind::Var(SymbolId)`,
-`HirDecl`, `HirType`, and `SymbolTable`, not `ctx.resolution`).
+`HirDecl`, `HirType`, and `SymbolTable`, not the legacy source-range resolution map).
 
 **Implementation shape:**
-- Update `Pass::run` to receive `(&mut HirFile, &mut AnalysisContext)`.
+- `Pass::run` already receives `(&mut HirFile, &mut AnalysisContext)`.
 - Register `TypeCheck` in `pass::default_passes()` after any HIR-only checks that do not
   depend on types.
 - Implement `TypeCheck::run` as a thin wrapper around internal HIR helpers such as
@@ -225,7 +226,7 @@ test coverage and removal/retirement of the stale `semantic::passes::NameResolut
 
 **Grow `semantic/src/ty.rs`:** align semantic `Ty` with HIR's existing shape:
 `Int`, `Float`, `Text`, `Bool`, `None`, `Atom(String)`, `Optional(TyId)`,
-`List(TyId)`, `Record(...)`, `Variant { tag, fields }`, `Union(Vec<TyId>)`,
+`List(TyId)`, `Record(...)`, `Tuple(...)`, `Union(Vec<TyId>)`,
 `Function { param, ret }`, `Var(u32)`, plus `Unknown/Error` for recovery.
 
 **Fixtures to flip:**
@@ -347,7 +348,7 @@ classify_literal(&SyntaxNode) -> Option<LitClass>
 
 - [x] **M0 Scaffold** — crate, Pass trait, AnalysisContext, ScopeStack, ResolutionMap, TyInterner stub, ast_ext classifier, stubbed passes, CLI wiring, smoke tests.
 - [x] **M1 Name resolution implementation** — implemented during HIR lowering; two-phase top-level collect + sequential locals; E0020.
-- [ ] **M1 test/API cleanup pass** — add unknown_identifier/forward-reference tests; update `Pass::run` to HIR-only; remove or retire the stale CST `NameResolution` pass.
+- [ ] **M1 test cleanup pass** — add unknown_identifier/forward-reference tests for HIR lowering.
 - [ ] **M2 Type checking pass** — bidirectional + HM let-gen; Ty variants; closed-record/union checks; E0021/E0030; flip closed_records + union_membership.
 - [ ] **M3 Exhaustiveness pass** — finite-union coverage; guard fall-through; E0031; flip exhaustiveness.
 - [ ] **M4 Surface structural checks** — `_tag` reserved check outside the HIR pass registry; flip reserved_tag.

@@ -6,8 +6,11 @@ use text_size::TextRange;
 /// Maps each resolved use-site (the `TextRange` of a `NameRef` token) to the
 /// `TextRange` of the definition it refers to.
 ///
-/// Populated by the name-resolution pass (M1). Consumed by the type-checking
-/// pass (M2) and any tooling that wants "go to definition" / hover information.
+/// This is retained for editor/tooling consumers that want "go to definition"
+/// information keyed by source ranges. The active semantic pipeline resolves
+/// names during `zutai_hir` lowering and type checking reads `HirExprKind::Var`
+/// plus the HIR `SymbolTable`; this map is not currently populated by
+/// `analyze`.
 #[derive(Default)]
 pub struct ResolutionMap {
     refs: FxHashMap<TextRange, TextRange>,
