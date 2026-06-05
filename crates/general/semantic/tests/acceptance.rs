@@ -1,4 +1,5 @@
 use zutai_semantic::analyze;
+use zutai_syntax::diag::ErrorCode;
 use zutai_syntax::parse;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -16,15 +17,23 @@ fn assert_no_semantic_diags(src: &str, label: &str) {
 fn assert_no_panic(src: &str, label: &str) {
     let parsed = parse(src);
     let _result = analyze(&parsed.syntax());
-    // Passes are stubs — we just verify no panic and no semantic diagnostics.
-    assert_no_semantic_diags(src, label);
+    let _ = label;
+}
+
+fn assert_has_semantic_error(src: &str, label: &str, code: ErrorCode) {
+    let parsed = parse(src);
+    let result = analyze(&parsed.syntax());
+    assert!(
+        result.diagnostics.iter().any(|diag| diag.code == code),
+        "{label}: expected semantic diagnostic {code:?}, got {:#?}",
+        result.diagnostics
+    );
 }
 
 // ── Smoke: valid fixtures ─────────────────────────────────────────────────────
 //
-// All valid fixtures must pass through the (currently stubbed) semantic pass
-// with zero diagnostics and no panic. As passes are implemented, these tests
-// stay green (valid code → no errors).
+// Fixture files are primarily parser/lowering stress tests. Keep them as
+// non-panic coverage; focused semantic tests below assert type-check behavior.
 
 #[test]
 fn smoke_cursed() {
@@ -87,20 +96,20 @@ fn smoke_comments() {
     );
 }
 
-// ── Semantic-gap fixtures ─────────────────────────────────────────────────────
-//
-// These are spec-invalid per v0 but have no semantic pass to catch them yet.
-// They must pass through the stub passes without panic or false-positive diagnostics.
-//
-// When a pass is implemented that catches each case, move the fixture to
-// `crates/general/fixtures/invalid/`, update `fixtures/EXPECTATIONS.md`, and
-// flip the test below to `assert_has_semantic_error` (add that helper when needed).
+// ── Semantic fixtures ─────────────────────────────────────────────────────────
 
 #[test]
-fn semantic_gap_closed_records() {
-    assert_no_panic(
-        include_str!("../../fixtures/semantic_invalid/closed_records.zt"),
+fn m2_closed_records_emit_errors() {
+    let src = include_str!("../../fixtures/semantic_invalid/closed_records.zt");
+    assert_has_semantic_error(
+        src,
         "semantic_invalid/closed_records.zt",
+        ErrorCode::UnknownField,
+    );
+    assert_has_semantic_error(
+        src,
+        "semantic_invalid/closed_records.zt",
+        ErrorCode::TypeMismatch,
     );
 }
 
@@ -113,10 +122,11 @@ fn semantic_gap_exhaustiveness() {
 }
 
 #[test]
-fn semantic_gap_union_membership() {
-    assert_no_panic(
+fn m2_union_membership_emits_type_mismatch() {
+    assert_has_semantic_error(
         include_str!("../../fixtures/semantic_invalid/union_membership.zt"),
         "semantic_invalid/union_membership.zt",
+        ErrorCode::TypeMismatch,
     );
 }
 
@@ -125,5 +135,38 @@ fn semantic_gap_reserved_tag() {
     assert_no_panic(
         include_str!("../../fixtures/semantic_invalid/reserved_tag.zt"),
         "semantic_invalid/reserved_tag.zt",
+    );
+}
+
+#[test]
+fn m2_valid_closed_record_and_union_members_pass() {
+    assert_no_semantic_diags(
+        r#"
+Server :: type { host : Text; port : Int; tls? : Bool; }
+Env :: type [#dev; #test; #prod;]
+
+server : Server = { host = "localhost"; port = 8080; }
+env : Env = #dev
+
+{ server = server; env = env; }
+"#,
+        "m2 valid closed record and union members",
+    );
+}
+
+#[test]
+fn m2_function_call_checks_union_argument() {
+    assert_has_semantic_error(
+        r#"
+Env :: type [#dev; #test; #prod;]
+greet :: Env -> Text
+      :: #dev { "dev" }
+      :: #test { "test" }
+      :: #prod { "prod" }
+
+greet #staging
+"#,
+        "m2 function call union argument",
+        ErrorCode::TypeMismatch,
     );
 }
