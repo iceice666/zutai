@@ -1,6 +1,6 @@
-//! Type checking pass (M2 — **stub**).
+//! Type checking pass (M2).
 //!
-//! ## What this pass does (implement me)
+//! ## What this pass does
 //!
 //! Verifies that every expression and declaration in HIR is well-typed
 //! according to the v0 type system (bidirectional type checking + HM-style
@@ -69,11 +69,6 @@
 //! Type-position reconstruction already happened during lowering. Type checking
 //! consumes `HirTypeId`, `HirExprId`, `HirDecl`, and `SymbolId` directly.
 //!
-//! ## Fixtures to flip when done
-//!
-//! - `crates/general/fixtures/semantic_invalid/closed_records.zt` → `invalid/`
-//! - `crates/general/fixtures/semantic_invalid/union_membership.zt` → `invalid/`
-//!
 //! ## Spec refs
 //!
 //! - `docs/v0_spec/05-type-system/` (all files)
@@ -101,9 +96,6 @@ impl Pass for TypeCheck {
     }
 
     fn run(&self, hir: &mut HirFile, ctx: &mut AnalysisContext) {
-        // TODO (M2): implement bidirectional type checking as described above.
-        // Prerequisite: HIR lowering / M1 name resolution must be complete.
-
         let mut checker = TypeChecker { hir, ctx };
         checker.check_file();
     }

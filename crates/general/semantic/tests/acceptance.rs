@@ -100,17 +100,9 @@ fn smoke_comments() {
 
 #[test]
 fn m2_closed_records_emit_errors() {
-    let src = include_str!("../../fixtures/semantic_invalid/closed_records.zt");
-    assert_has_semantic_error(
-        src,
-        "semantic_invalid/closed_records.zt",
-        ErrorCode::UnknownField,
-    );
-    assert_has_semantic_error(
-        src,
-        "semantic_invalid/closed_records.zt",
-        ErrorCode::TypeMismatch,
-    );
+    let src = include_str!("../../fixtures/invalid/closed_records.zt");
+    assert_has_semantic_error(src, "invalid/closed_records.zt", ErrorCode::UnknownField);
+    assert_has_semantic_error(src, "invalid/closed_records.zt", ErrorCode::TypeMismatch);
 }
 
 #[test]
@@ -124,8 +116,8 @@ fn semantic_gap_exhaustiveness() {
 #[test]
 fn m2_union_membership_emits_type_mismatch() {
     assert_has_semantic_error(
-        include_str!("../../fixtures/semantic_invalid/union_membership.zt"),
-        "semantic_invalid/union_membership.zt",
+        include_str!("../../fixtures/invalid/union_membership.zt"),
+        "invalid/union_membership.zt",
         ErrorCode::TypeMismatch,
     );
 }

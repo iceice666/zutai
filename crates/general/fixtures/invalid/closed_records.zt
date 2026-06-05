@@ -1,6 +1,5 @@
--- Spec-invalid: closed records reject extra fields (records §10.1).
--- The parser has no type system, so these parse clean today.
--- When semantic analysis lands, move to invalid/ and flip to assert_parses_with_error.
+-- Expected: semantic-error (parse-clean + semantic diagnostic)
+-- Spec: records §10.1 — closed records reject extra and missing required fields.
 
 Server :: type { host : Text; port : Int; }
 
