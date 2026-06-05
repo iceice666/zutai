@@ -86,11 +86,10 @@ fn unknown_type_ref_gives_unknown_not_panic() {
 }
 
 #[test]
-fn unannotated_binding_has_no_ty() {
+fn unannotated_binding_gets_typecheck_writeback() {
     let ty_ref = first_decl_sym_ty("x := 42\nx");
-    assert_eq!(
-        ty_ref,
-        Option::None,
-        "inferred binding with no annotation should have no ty"
+    assert!(
+        ty_ref.is_some(),
+        "M2 should write back inferred binding types"
     );
 }
