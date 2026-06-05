@@ -24,14 +24,18 @@ pub enum HirPatKind {
     Bind(SymbolId),
     /// Literal value pattern: `none`, `true`, `42`, `"hello"`, `#ok`.
     Literal(LitVal),
+    /// Parenthesized pattern; semantically identical to its inner pattern.
+    Paren(HirPatId),
     /// Closed record pattern: `{ field = pat; ... }`.
     Record { fields: Vec<(String, HirPatId)> },
-    /// Tagged variant pattern: `(#tag, field = pat, ...)`.
-    /// Kept distinct from Record (see plan §"Variant vs Record").
-    Variant {
-        tag: String,
-        fields: Vec<(String, HirPatId)>,
-    },
+    /// Tuple pattern: positional items and optional named fields.
+    Tuple { items: Vec<HirTuplePatElem> },
     /// Placeholder when pattern lowering fails.
     Error,
+}
+
+#[derive(Debug, Clone)]
+pub enum HirTuplePatElem {
+    Positional(HirPatId),
+    Named(String, HirPatId),
 }

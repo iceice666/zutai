@@ -2,8 +2,7 @@ use zutai_syntax::SyntaxKind;
 use zutai_syntax::SyntaxNode;
 use zutai_syntax::ast::tokens::{decode_atom, decode_float, decode_int, decode_string};
 
-use crate::pat::HirPatId;
-use crate::pat::HirPatKind;
+use crate::pat::{HirPatId, HirPatKind, HirTuplePatElem};
 use crate::symbol::SymbolKind;
 use crate::ty::LitVal;
 
@@ -20,11 +19,25 @@ pub(crate) fn lower_pat(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirPatId {
 
         SyntaxKind::LITERAL => lower_literal_pat(ctx, node),
 
+        SyntaxKind::PAREN_PATTERN => lower_paren_pat(ctx, node),
+
         SyntaxKind::TUPLE_PATTERN => lower_tuple_pat(ctx, node),
 
         SyntaxKind::RECORD_PATTERN => lower_record_pat(ctx, node),
 
         _ => ctx.error_pat(range),
+    }
+}
+
+fn lower_paren_pat(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirPatId {
+    let range = node.text_range();
+    let inner = node.children().find(|c| is_pat_kind(c.kind()));
+    match inner {
+        Some(inner) => {
+            let inner_id = lower_pat(ctx, &inner);
+            ctx.alloc_pat(HirPatKind::Paren(inner_id), range)
+        }
+        None => ctx.error_pat(range),
     }
 }
 
@@ -67,26 +80,25 @@ fn lower_literal_pat(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirPatId {
 
 fn lower_tuple_pat(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirPatId {
     let range = node.text_range();
-    // TUPLE_PATTERN: L_PAREN ATOM (COMMA PATTERN_FIELD)* R_PAREN
-    let tag = node
-        .children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .find(|t| t.kind() == SyntaxKind::ATOM)
-        .map(|t| t.text().trim_start_matches('#').to_string())
-        .unwrap_or_default();
-    let mut fields = Vec::new();
+    let mut items = Vec::new();
     for child in node.children() {
-        if child.kind() == SyntaxKind::PATTERN_FIELD {
-            let fname = field_name_text(&child);
-            let pat_id = child
-                .children()
-                .find(|c| c.kind() != SyntaxKind::FIELD_NAME)
-                .map(|n| lower_pat(ctx, &n))
-                .unwrap_or_else(|| ctx.error_pat(range));
-            fields.push((fname, pat_id));
+        match child.kind() {
+            SyntaxKind::PATTERN_FIELD => {
+                let fname = field_name_text(&child);
+                let pat_id = child
+                    .children()
+                    .find(|c| c.kind() != SyntaxKind::FIELD_NAME)
+                    .map(|n| lower_pat(ctx, &n))
+                    .unwrap_or_else(|| ctx.error_pat(range));
+                items.push(HirTuplePatElem::Named(fname, pat_id));
+            }
+            kind if is_pat_kind(kind) => {
+                items.push(HirTuplePatElem::Positional(lower_pat(ctx, &child)));
+            }
+            _ => {}
         }
     }
-    ctx.alloc_pat(HirPatKind::Variant { tag, fields }, range)
+    ctx.alloc_pat(HirPatKind::Tuple { items }, range)
 }
 
 fn lower_record_pat(ctx: &mut LowerCtx, node: &SyntaxNode) -> HirPatId {
@@ -165,4 +177,15 @@ fn field_name_text(node: &SyntaxNode) -> String {
         .find(|c| c.kind() == SyntaxKind::FIELD_NAME)
         .map(|n| n.text().to_string())
         .unwrap_or_default()
+}
+
+fn is_pat_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::WILDCARD_PATTERN
+            | SyntaxKind::PAREN_PATTERN
+            | SyntaxKind::LITERAL
+            | SyntaxKind::TUPLE_PATTERN
+            | SyntaxKind::RECORD_PATTERN
+    )
 }

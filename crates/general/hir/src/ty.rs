@@ -50,12 +50,8 @@ pub enum HirTypeKind {
     },
     /// Union type: `[ T; U; ]`.
     Union { variants: Vec<HirTypeId> },
-    /// Tagged variant type: `(#tag, field : T)`.
-    /// Kept distinct from Record intentionally (see plan §"Variant vs Record").
-    Variant {
-        tag: String,
-        fields: Vec<(String, HirTypeId)>,
-    },
+    /// Tuple type: positional items and optional named fields.
+    Tuple { items: Vec<HirTupleTypeElem> },
     /// Optional type sugar: `T?`. Normalized to `Union([T, none])` by M2.
     Optional(HirTypeId),
     /// Singleton atom type: `#ok`.
@@ -64,6 +60,12 @@ pub enum HirTypeKind {
     SingletonLit(LitVal),
     /// Placeholder when type elaboration fails.
     Error,
+}
+
+#[derive(Debug, Clone)]
+pub enum HirTupleTypeElem {
+    Positional(HirTypeId),
+    Named(String, HirTypeId),
 }
 
 // ── LitVal ────────────────────────────────────────────────────────────────────

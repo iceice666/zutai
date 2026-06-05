@@ -27,6 +27,14 @@ pub struct RecordField {
     pub kind: FieldKind,
 }
 
+// ── TupleElem ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TupleElem {
+    Positional(TyId),
+    Named(String, TyId),
+}
+
 // ── Ty ────────────────────────────────────────────────────────────────────────
 
 /// A type in the Zutai v0 type system.
@@ -56,12 +64,8 @@ pub enum Ty {
     Record(Vec<RecordField>),
     /// Union type: `[ T; U ]`.
     Union(Vec<TyId>),
-    /// Tagged variant type: `(#tag, field : T)`.
-    /// Full desugaring to Record with a `_tag` field happens in Phase 6.
-    Variant {
-        tag: String,
-        fields: Vec<(String, TyId)>,
-    },
+    /// Tuple type: `(A, B)` or `(#tag, field : T)`.
+    Tuple(Vec<TupleElem>),
     /// Function type: `A -> B`.
     Function {
         param: TyId,
@@ -76,6 +80,27 @@ pub enum Ty {
     // ── Polymorphism ──────────────────────────────────────────────────────────
     /// Rigid type parameter (from `[A, B]` on a declaration).
     Param(u32),
+}
+
+impl Ty {
+    /// If this tuple starts with a singleton atom, return that tag and the
+    /// remaining payload elements. Union and pattern analysis use this as the
+    /// semantic tagged-tuple recognizer.
+    pub fn as_tagged_tuple<'a>(
+        &'a self,
+        interner: &'a TyInterner,
+    ) -> Option<(&'a str, &'a [TupleElem])> {
+        let Ty::Tuple(items) = self else {
+            return None;
+        };
+        let Some(TupleElem::Positional(first)) = items.first() else {
+            return None;
+        };
+        let Ty::Atom(tag) = interner.get(*first) else {
+            return None;
+        };
+        Some((tag.as_str(), &items[1..]))
+    }
 }
 
 // ── TyInterner ────────────────────────────────────────────────────────────────
