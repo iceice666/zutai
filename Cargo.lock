@@ -691,6 +691,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zutai-eval"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash 2.1.2",
+ "zutai-hir",
+ "zutai-semantic",
+ "zutai-syntax",
+ "zutai-types",
+]
+
+[[package]]
 name = "zutai-hir"
 version = "0.1.0"
 dependencies = [
