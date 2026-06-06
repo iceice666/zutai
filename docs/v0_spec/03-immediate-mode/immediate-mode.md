@@ -143,7 +143,7 @@ The following are invalid in `.zti`:
 ```zti
 {
   x = 1 + 2;
-  y = \a => a;
+  y = \a. a;
   z = import "foo.zti";
   a = if cond then x else y;
 }

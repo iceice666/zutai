@@ -14,7 +14,7 @@ Server?
 The optional type is an ordinary generic union type:
 
 ```zt
-Optional :: [T] type [
+Optional :: <T> type [
   #none;
   (#some, value : T);
 ]
@@ -49,7 +49,7 @@ This means the `tls` field is required, but its value must be either `#none` or 
 Valid:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
   tls = (#some, value = true);
@@ -59,7 +59,7 @@ server : Server = {
 Also valid:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
   tls = #none;
@@ -69,7 +69,7 @@ server : Server = {
 Invalid:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
 }
