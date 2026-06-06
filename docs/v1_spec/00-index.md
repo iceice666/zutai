@@ -17,3 +17,7 @@ These features build on the v0 language and are planned beyond the v0 core.
 ## Metaprogramming
 
 - [Metaprogramming](04-metaprogramming.md) — compile-time reflection, schema reification
+
+## Algebraic Effects
+
+- [Algebraic effects](05-effects.md) — typed effect rows, `perform`, `handle`, `with`, `resume`, and explicit capabilities
