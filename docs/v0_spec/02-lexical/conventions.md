@@ -154,6 +154,10 @@ The following identifiers are reserved for future versions but not used in v0:
 
 ```zt
 select
+perform
+handle
+with
+resume
 ```
 
 Examples:
