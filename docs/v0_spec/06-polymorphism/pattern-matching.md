@@ -123,22 +123,24 @@ match config {
 
 ### Pattern matching in function clauses
 
-Multi-clause function definitions use the same pattern language in `|` clauses:
+Multi-clause function definitions use the same `| pat => expr;` form inside a `{ }` block:
 
 ```zt
-describe_shape :: Shape -> Text
-              | (#circle, radius = _)          => "circle"
-              | (#square, length = _)          => "square"
-              | (#rect, width = _, height = _) => "rect"
+describe_shape :: Shape -> Text {
+  | (#circle, radius = _)          => "circle";
+  | (#square, length = _)          => "square";
+  | (#rect, width = _, height = _) => "rect";
+}
 ```
 
 Guards in clauses:
 
 ```zt
-classify :: Int -> Text
-         | n if n > 0 => "positive"
-         | n if n < 0 => "negative"
-         | _          => "zero"
+classify :: Int -> Text {
+  | n if n > 0 => "positive";
+  | n if n < 0 => "negative";
+  | _          => "zero";
+}
 ```
 
 ---

@@ -2,46 +2,51 @@
 
 ### Named function definitions
 
-Named functions use `::` for the type signature and `|` for each implementation clause. The function name appears once; clauses are indented under the signature.
+Named functions use `::` for the type signature and a `{ }` block containing `|` clauses for each implementation.
 
 ```zt
-add :: Int -> Int -> Int
-    | a b => a + b
+add :: Int -> Int -> Int {
+  | a b => a + b;
+}
 ```
 
 Multi-clause definitions provide pattern matching directly in the function:
 
 ```zt
-factorial :: Int -> Int
-          | 0 => 1
-          | n => n * factorial (n - 1)
+factorial :: Int -> Int {
+  | 0 => 1;
+  | n => n * factorial (n - 1);
+}
 
-describe :: Bool -> Text
-         | true  => "yes"
-         | false => "no"
+describe :: Bool -> Text {
+  | true  => "yes";
+  | false => "no";
+}
 ```
 
-The type signature is required when using `|` clauses. Without a signature, write a single no-sig definition instead (see below).
+The type signature is required when using a clause block. Without a signature, write a single no-sig definition instead (see below).
 
 Guard conditions use `if` between the pattern and `=>`:
 
 ```zt
-classify :: Int -> Text
-         | n if n > 0 => "positive"
-         | n if n < 0 => "negative"
-         | _          => "zero"
+classify :: Int -> Text {
+  | n if n > 0 => "positive";
+  | n if n < 0 => "negative";
+  | _          => "zero";
+}
 ```
 
-When the body requires local bindings, use a block expression `{ stmts; expr }`:
+When a clause body requires local bindings, use a block expression `{ stmts; expr }` as the clause value:
 
 ```zt
-normalizeServer :: RawServer -> Server
-               | s => {
-                 host := s.host ?? "127.0.0.1";
-                 port := s.port ?? 8080;
-                 tls  := s.tls  ?? false;
-                 { host = host; port = port; tls = tls; }
-               }
+normalizeServer :: RawServer -> Server {
+  | s => {
+    host := s.host ?? "127.0.0.1";
+    port := s.port ?? 8080;
+    tls  := s.tls  ?? false;
+    { host = host; port = port; tls = tls; }
+  };
+}
 ```
 
 ### No-sig single definitions
@@ -53,7 +58,7 @@ add a b = a + b
 double x = x * 2
 ```
 
-This form does not support multiple clauses or guards. For those, write a `::` signature and use `|` clauses.
+This form does not support multiple clauses or guards. For those, write a `::` signature and use a clause block.
 
 ### Typed constants
 
@@ -75,8 +80,9 @@ port := 8080
 Functions are curried by default.
 
 ```zt
-add :: Int -> Int -> Int
-    | a b => a + b
+add :: Int -> Int -> Int {
+  | a b => a + b;
+}
 ```
 
 `add` takes one `Int` and returns a function `Int -> Int`. Partial application:
@@ -109,8 +115,9 @@ Int -> Int -> Int
 Polymorphic signatures put the type parameter list `<...>` immediately after `::`:
 
 ```zt
-id :: <A> A -> A
-   | x => x
+id :: <A> A -> A {
+  | x => x;
+}
 ```
 
 `A -> B -> C` means `A -> (B -> C)`.

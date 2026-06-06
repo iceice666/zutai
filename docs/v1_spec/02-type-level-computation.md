@@ -18,11 +18,12 @@ Server :: type {
 Type constructors are functions that return `Type`:
 
 ```zt
-Pair :: Type -> Type -> Type
-    | A B => type {
+Pair :: Type -> Type -> Type {
+  | A B => type {
     first : A;
     second : B;
-  }
+  };
+}
 ```
 
 Usage:
@@ -53,11 +54,12 @@ A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It
 Example:
 
 ```zt
-Response :: Type -> Type
-    | Body => type {
+Response :: Type -> Type {
+  | Body => type {
     status : Int;
     body : Body?;
-  }
+  };
+}
 
 value : Response Text = {
   status = 200;
@@ -74,11 +76,12 @@ Type-level computation uses the same pure expression language.
 Example:
 
 ```zt
-Response :: Type -> Type
-   | Body => type {
+Response :: Type -> Type {
+  | Body => type {
     status : Int;
     body : Body?;
-  }
+  };
+}
 
 User :: type {
   id : Text;
@@ -95,8 +98,9 @@ Instead, it uses pragmatic compile-time evaluation with deterministic evaluator 
 This is syntactically allowed:
 
 ```zt
-Loop :: Type -> Type
-   | T => Loop T
+Loop :: Type -> Type {
+  | T => Loop T;
+}
 
 Bad : Type = Loop Int
 ```
@@ -118,11 +122,12 @@ Type annotations are type expressions that evaluate to types. A type expression 
 Example:
 
 ```zt
-Response :: Type -> Type
-         | Body => type {
-             status : Int;
-             body : Body?;
-           }
+Response :: Type -> Type {
+  | Body => type {
+    status : Int;
+    body : Body?;
+  };
+}
 
 A : Type = Response Text
 B :: type { status : Int; body : Text?; }

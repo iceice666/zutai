@@ -241,7 +241,7 @@ or pattern**. They never overlap.
 | `:=`             | inferred value binding (`name := expr`)                                    |
 | `:`              | type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
 | `::`             | typed binding, function signature, and type definition                     |
-| `\|`             | function clause introducer (after a `::` signature line) and `match` arm introducer |
+| `\|`             | clause introducer inside `{ }` blocks — both function bodies and `match` bodies |
 | `=`              | value/pattern field binding: value records, named tuple fields, and all patterns |
 | `->`             | function type arrow                                                        |
 | `=>`             | function clause and `match` arm body separator                             |

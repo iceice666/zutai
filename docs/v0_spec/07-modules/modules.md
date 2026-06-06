@@ -17,12 +17,13 @@ Server :: type {
   tls : Bool;
 }
 
-normalize :: RawServer -> Server
-          | raw => {
-            host = raw.host ?? "127.0.0.1";
-            port = raw.port ?? 8080;
-            tls = raw.tls ?? false;
-          }
+normalize :: RawServer -> Server {
+  | raw => {
+    host = raw.host ?? "127.0.0.1";
+    port = raw.port ?? 8080;
+    tls = raw.tls ?? false;
+  };
+}
 
 {
   RawServer = RawServer;

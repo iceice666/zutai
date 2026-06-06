@@ -49,12 +49,13 @@ Config :: type {
 
 raw :: RawConfig = import "app.zti"
 
-normalizeServer :: RawServer -> Server
-               | s => {
-                 host = s.host ?? "127.0.0.1";
-                 port = s.port ?? 8080;
-                 tls  = s.tls  ?? false;
-               }
+normalizeServer :: RawServer -> Server {
+  | s => {
+    host = s.host ?? "127.0.0.1";
+    port = s.port ?? 8080;
+    tls  = s.tls  ?? false;
+  };
+}
 
 config :: Config = {
   name    = raw.name;
@@ -106,10 +107,11 @@ Shape :: type [
   (#rect,   width  : Float, height : Float);
 ]
 
-area :: Shape -> Float
-     | (#circle, radius = r)          => r * r * 3.14159
-     | (#square, length = l)          => l * l
-     | (#rect, width = w, height = h) => w * h
+area :: Shape -> Float {
+  | (#circle, radius = r)          => r * r * 3.14159;
+  | (#square, length = l)          => l * l;
+  | (#rect, width = w, height = h) => w * h;
+}
 
 shapes :: List Shape = [
   (#circle, radius = 1.0);
