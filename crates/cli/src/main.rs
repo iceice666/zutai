@@ -8,23 +8,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ext = extension_or_error(&path)?;
     let contents = fs::read_to_string(&path)?;
 
-    let ast = match ext.as_str() {
-        "zti" => parse_immediate(&contents),
-        "zt" => parse_general(&contents),
+    match ext.as_str() {
+        "zti" => {
+            let ast =
+                zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
+            print_ast("zti", &ast);
+        }
+        "zt" => {
+            let ast = zutai_syntax::parse(&contents).map_err(format_zt_errors)?;
+            print_ast("zt", &ast);
+        }
         other => return Err(format!("Unsupported extension: {other}").into()),
-    }?;
-
-    print_ast(&ext, &ast);
+    }
 
     Ok(())
 }
 
-fn parse_general(_input: &str) -> Result<zutai_types::Block, Box<dyn Error>> {
-    unimplemented!("General mode parser is intentionally unimplemented")
-}
-
-fn parse_immediate(input: &str) -> Result<zutai_types::Block, Box<dyn Error>> {
-    zutai_im::parse(input).map_err(|err| format!("Failed to parse .zti: {err}").into())
+fn format_zt_errors(errs: Vec<zutai_syntax::ParseError>) -> Box<dyn Error> {
+    let mut s = String::from("Failed to parse .zt:");
+    for e in errs {
+        s.push_str(&format!("\n  {e}"));
+    }
+    s.into()
 }
 
 fn parse_file_arg() -> Result<String, Box<dyn Error>> {

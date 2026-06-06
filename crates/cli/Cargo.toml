@@ -5,4 +5,5 @@ version.workspace = true
 
 [dependencies]
 zutai-im = { path = "../immediate/core" }
+zutai-syntax = { path = "../general/syntax" }
 zutai-types = { path = "../immediate/types" }
