@@ -27,9 +27,9 @@ Idiomatic Zutai code processes batches of data through pipelines:
 
 ```zt
 items
-  |> filter (\x => x > 0)
-  |> map (\x => x * 2)
-  |> fold (\acc x => acc + x) 0
+  |> filter (\x. x > 0)
+  |> map (\x. x * 2)
+  |> fold (\acc x. acc + x) 0
 ```
 
 ### Functional design

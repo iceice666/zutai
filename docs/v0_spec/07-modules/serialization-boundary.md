@@ -16,7 +16,7 @@ false
 Non-serializable final values:
 
 ```zt
-\x => x
+\x. x
 Type
 Server
 Text -> Text

@@ -29,7 +29,7 @@ Type values are not comparable in user code unless a future reflection API expli
 Invalid:
 
 ```zt
-(\x => x) == (\x => x)
+(\x. x) == (\x. x)
 Text == Text
 ```
 
