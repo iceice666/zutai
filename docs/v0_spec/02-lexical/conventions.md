@@ -4,53 +4,6 @@
 
 Whitespace separates tokens but is otherwise insignificant outside strings.
 
-### 3.1.1 Comments
-
-Comments are a `.zt`-only feature. Immediate-mode `.zti` files are comment-free (see §4.7).
-
-All comment forms share the `--` sigil. The character **immediately** after `--`
-determines the form; there must be no space between the two dashes and the
-disambiguator character.
-
-| Form | Syntax | Description |
-| ---- | ------ | ----------- |
-| Line | `-- text` | Ignored from `--` to end of line. |
-| Doc  | `--\| text` | Like a line comment, but attaches to the following declaration as documentation. Stacked `--\|` lines concatenate into one doc block. The body is a Markdown subset. |
-| Block | `--{ … }--` | Spans multiple lines; fully nestable (`--{ … --{ … }-- … }--`). Ignored entirely. |
-| Node comment | `--/` | Comments out the immediately following item (top-level declaration, record field, list item, or tuple item). The item is parsed but excluded from the semantic view of the file. |
-
-Because the disambiguator is the character immediately after `--`, a plain line
-comment whose text begins with `/`, `|`, or `{` requires a leading space:
-
-```zt
--- /usr/local/bin    -- ok: plain line comment
---/                  -- error: node comment marker (expected item to follow)
-```
-
-Doc-comment blocks:
-
-```zt
---| The HTTP port the server binds to.
---| Accepts values 1–65535.
-port : Int = 8080
-```
-
-Block comment (nestable):
-
-```zt
---{
-  Disabled until the v1 type-class system lands.
-  --{ nested inner note }--
-}--
-```
-
-Node comment — comments out the following item:
-
-```zt
---/ old-field = "deprecated";    -- inside a record
---/ x := 42                      -- top-level declaration
-```
-
 ### 3.2 Strings
 
 Strings are double-quoted and JSON-like:
@@ -282,14 +235,10 @@ or pattern**. They never overlap.
 
 | Symbol           | Meaning                                                                    |
 | ---------------- | -------------------------------------------------------------------------- |
-| `--`             | line comment (to end of line)                                              |
-| `--\|`           | doc-comment line (attaches to the following declaration)                   |
-| `--{` … `}--`   | nestable block comment                                                     |
-| `--/`            | node comment: excludes the immediately following item                     |
 | `:=`             | inferred value binding (`name := expr`)                                    |
-| `:`              | type annotation ("has type"): annotated bindings, type-record/tuple type fields, optional-field marker |
+| `:`              | type annotation ("has type"): annotated bindings, type-record/variant type fields, optional-field marker |
 | `::`             | function/type definition: signature line and pattern-clause lines          |
-| `=`              | value/pattern field binding: value records, tuple values, all patterns |
+| `=`              | value/pattern field binding: value records, variant construction, all patterns |
 | `->`             | function type arrow; also separates clause parameter patterns              |
 | `=>`             | anonymous-function body (short form) and `match` arm body                  |
 | `\`              | anonymous function (lambda) introducer                                     |
@@ -304,12 +253,13 @@ or pattern**. They never overlap.
 | `&&` `\|\|`      | logical AND / OR (short-circuit); operands and result are `Bool`           |
 | `...`            | open row tail in record/union types — v1 feature, reserved |
 | `;`              | terminator for fields, list items, clauses, and match arms                 |
-| `,`              | separator between tuple fields                                             |
+| `,`              | separator between tuple/variant fields                                     |
 | `{` `}`          | value record, record type, or block body                                   |
 | `[` `]`          | list value or union type                                                   |
-| `(` `)`          | tuple, grouping, and the empty tuple                                       |
+| `(` `)`          | tuple/variant, grouping, and the empty tuple                               |
 | `_`              | wildcard pattern                                                           |
 
 There is no unary operator in v0: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
 ---
+

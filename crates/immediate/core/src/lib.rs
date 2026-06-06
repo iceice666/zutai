@@ -58,7 +58,6 @@ pub fn parse_simd(input: &str) -> Result<Block, Error> {
 }
 
 #[cfg(test)]
-#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 

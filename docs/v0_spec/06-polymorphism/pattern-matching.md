@@ -19,7 +19,7 @@ match raw.port {
 }
 ```
 
-Tuple variant matching:
+Variant matching:
 
 ```zt
 match shape {
@@ -85,7 +85,7 @@ match n {
 
 The guard is evaluated only if the pattern matches. If the guard is false, the next clause is tried.
 
-Guards also apply to tuple variant patterns:
+Guards also apply to variant patterns:
 
 ```zt
 match shape {
@@ -112,7 +112,7 @@ match response {
 }
 ```
 
-Nesting works for both tuple and atom patterns:
+Nesting works for both variant and atom patterns:
 
 ```zt
 match config {

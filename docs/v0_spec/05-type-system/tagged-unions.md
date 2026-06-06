@@ -1,8 +1,8 @@
-## 17. Tuple variants
+## 17. Tagged unions
 
-### 17.1 Tuple union members
+### 17.1 Variant constructor syntax
 
-Inside `type [ ]`, a union item may be a tuple type:
+Inside `type [ ]`, a variant item may be a **tagged tuple**: `(#atom, field : Type, ...)`. The atom is the implicit discriminant; named fields follow, separated by commas, using `:` for type annotation.
 
 ```zt
 Shape :: type [
@@ -12,9 +12,7 @@ Shape :: type [
 ]
 ```
 
-This is ordinary tuple type syntax. Atom literals in tuple type positions are singleton types, so `#circle` means the type whose only value is `#circle`. Named tuple fields use `:` in type position.
-
-This replaces the earlier pattern of embedding a `kind` field inside a record:
+This replaces the earlier pattern of embedding a `kind` discriminant field inside a record:
 
 ```zt
 # Old style — no longer preferred
@@ -24,11 +22,11 @@ type [
 ]
 ```
 
-The tuple form is more concise and makes the variant shape structural without adding a separate variant grammar form.
+The new variant syntax is more concise and makes the discriminant structurally explicit.
 
 ### 17.2 Construction
 
-A tuple variant value mirrors the shape of the type, but binds each named field with `=`
+A variant value mirrors the *shape* of the type, but binds each field with `=`
 (the same way value records use `=` while record types use `:`):
 
 ```zt
@@ -37,19 +35,7 @@ s := (#square, length = 10.0)
 r := (#rect, width = 4.0, height = 3.0)
 ```
 
-The tuple value must match one of the declared union member shapes.
-
-Multiple atom singleton items are allowed:
-
-```zt
-Job :: type [
-  (#builder, #macos, prompt : Text);
-  (#builder, #linux, prompt : Text);
-  (#tester, #macos, suite : Text);
-]
-
-job := (#builder, #macos, prompt = "compile")
-```
+The atom must match one of the declared variant tags.
 
 ### 17.3 Pattern matching
 
@@ -71,18 +57,9 @@ tag_of :: Shape -> Text
        :: (#rect, width = _, height = _) { "rect" }
 ```
 
-Tuple variants with multiple atom singleton items are matched by the same tuple shape:
+### 17.4 Nested variant patterns
 
-```zt
-run :: Job -> Text
-    :: (#builder, #macos, prompt = p) { p }
-    :: (#builder, #linux, prompt = p) { p }
-    :: (#tester, #macos, suite = s)   { s }
-```
-
-### 17.4 Nested tuple variant patterns
-
-Tuple patterns can appear nested inside larger patterns:
+Variants can appear nested inside larger patterns:
 
 ```zt
 Response :: type [
@@ -96,21 +73,19 @@ handle :: Response -> Float
        :: (#err, message = _)                 { 0.0 }
 ```
 
-### 17.5 No hidden tag field
+### 17.5 Desugaring
 
-Tuple variants do not desugar to records and do not introduce hidden fields. A tuple union member such as:
+A variant `(#circle, radius : Float)` desugars internally to a closed record type:
 
 ```zt
-(#circle, radius : Float)
+{ _tag : #circle; radius : Float; }
 ```
 
-is a tuple type whose first positional item is the singleton atom type `#circle` and whose second item is the named field `radius : Float`.
+The `_tag` field is reserved and implicit. Users never write `_tag` directly; the compiler generates it. Pattern matching on a variant never requires matching `_tag` explicitly — the atom in the pattern position serves as the discriminant check.
 
-The name `_tag` has no special meaning in v0. It may be used like any other non-keyword identifier or field name.
+### 17.6 Mixing atoms and variants
 
-### 17.6 Mixing atoms and tuple variants
-
-A union type may mix plain atom members and tuple members:
+A union type may mix plain atom members and variant members:
 
 ```zt
 Result :: type [

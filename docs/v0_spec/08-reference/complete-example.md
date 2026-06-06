@@ -99,7 +99,7 @@ raw : RawConfig = import "nested.zti"
 }
 ```
 
-### 29.4 Tuple variant and pattern matching example
+### 29.4 Tagged union and pattern matching example
 
 ```zt
 Shape :: type [

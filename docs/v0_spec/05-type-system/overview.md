@@ -37,7 +37,7 @@ The grammar is:
 type_annotation ::= ":" type_expr
 ```
 
-A `type_expr` is a type-level expression. In v0, type expressions are type names, type applications, optional types (`T?`), tuple types (`(A, B)`), record types (`{ ... }`), union types (`[ ... ]`), and list types (`List T`).
+A `type_expr` is a type-level expression. In v0, type expressions are type names, type applications, optional types (`T?`), record types (`{ ... }`), union types (`[ ... ]`), and list types (`List T`).
 
 Example:
 

@@ -24,16 +24,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
-name = "ariadne"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36f5e3dca4e09a6f340a61a0e9c7b61e030c69fc27bf29d73218f7e5e3b7638f"
-dependencies = [
- "unicode-width",
- "yansi",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -110,12 +100,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "countme"
-version = "3.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
-
-[[package]]
 name = "criterion"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -183,26 +167,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "dissimilar"
-version = "1.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeda16ab4059c5fd2a83f2b9c9e9c981327b18aa8e3b313f7e6563799d4f093e"
-
-[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
-
-[[package]]
-name = "expect-test"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63af43ff4431e848fb47472a920f14fa71c24de13255a5692e93d4e90302acb0"
-dependencies = [
- "dissimilar",
- "once_cell",
-]
 
 [[package]]
 name = "futures-core"
@@ -238,12 +206,6 @@ dependencies = [
  "crunchy",
  "zerocopy",
 ]
-
-[[package]]
-name = "hashbrown"
-version = "0.14.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hermit-abi"
@@ -424,24 +386,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
-name = "rowan"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "417a3a9f582e349834051b8a10c8d71ca88da4211e4093528e36b9845f6b5f21"
-dependencies = [
- "countme",
- "hashbrown",
- "rustc-hash 1.1.0",
- "text-size",
-]
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -523,12 +467,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "text-size"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
-
-[[package]]
 name = "tinytemplate"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -543,12 +481,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unicode-width"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "walkdir"
@@ -649,12 +581,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "yansi"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
-
-[[package]]
 name = "zerocopy"
 version = "0.8.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -685,30 +611,7 @@ name = "zutai-cli"
 version = "0.1.0"
 dependencies = [
  "zutai-im",
- "zutai-semantic",
- "zutai-syntax",
  "zutai-types",
-]
-
-[[package]]
-name = "zutai-eval"
-version = "0.1.0"
-dependencies = [
- "rustc-hash 2.1.2",
- "zutai-hir",
- "zutai-semantic",
- "zutai-syntax",
- "zutai-types",
-]
-
-[[package]]
-name = "zutai-hir"
-version = "0.1.0"
-dependencies = [
- "expect-test",
- "rustc-hash 2.1.2",
- "text-size",
- "zutai-syntax",
 ]
 
 [[package]]
@@ -725,7 +628,7 @@ name = "zutai-im-simd"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "rustc-hash 2.1.2",
+ "rustc-hash",
  "zutai-im-syntax",
  "zutai-types",
 ]
@@ -734,40 +637,14 @@ dependencies = [
 name = "zutai-im-syntax"
 version = "0.1.0"
 dependencies = [
- "rustc-hash 2.1.2",
+ "rustc-hash",
  "winnow",
  "zutai-types",
 ]
 
 [[package]]
-name = "zutai-mir"
-version = "0.1.0"
-dependencies = [
- "zutai-hir",
- "zutai-semantic",
-]
-
-[[package]]
-name = "zutai-semantic"
-version = "0.1.0"
-dependencies = [
- "expect-test",
- "rustc-hash 2.1.2",
- "text-size",
- "zutai-hir",
- "zutai-syntax",
-]
-
-[[package]]
 name = "zutai-syntax"
 version = "0.1.0"
-dependencies = [
- "ariadne",
- "expect-test",
- "rowan",
- "rustc-hash 2.1.2",
- "text-size",
-]
 
 [[package]]
 name = "zutai-types"
