@@ -22,8 +22,9 @@ This means:
 Example:
 
 ```zt
-getHost :: { host : Text; ...; } -> Text
-    | x => x.host
+getHost :: { host : Text; ...; } -> Text {
+  | x => x.host;
+}
 ```
 
 The function accepts all of these values:
@@ -54,8 +55,9 @@ type {
 Example:
 
 ```zt
-identityHostRecord :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }
-    | x => x
+identityHostRecord :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {
+  | x => x;
+}
 ```
 
 This function returns a record with exactly the same additional fields it received.
@@ -78,15 +80,17 @@ type {
 A function that only reads a field can be typed with a view type:
 
 ```zt
-portOrDefault :: { port : Int?; ...; } -> Int
-    | x => x.port ?? 8080
+portOrDefault :: { port : Int?; ...; } -> Int {
+  | x => x.port ?? 8080;
+}
 ```
 
 A function that must preserve extra fields should use a named row tail:
 
 ```zt
-keep :: <Rest> { port : Int; ...Rest; } -> { port : Int; ...Rest; }
-    | x => x
+keep :: <Rest> { port : Int; ...Rest; } -> { port : Int; ...Rest; } {
+  | x => x;
+}
 ```
 
 Implementations may infer simple row-polymorphic types for local expressions, but exported or top-level polymorphic APIs should use explicit annotations.
@@ -165,10 +169,11 @@ type [
 Example:
 
 ```zt
-handle_env :: <Rest> [ #dev; #test; ...Rest; ] -> Text -> Text
-           | #dev msg  => "dev: "
-           | #test msg => "test: "
-           | _ msg     => msg
+handle_env :: <Rest> [ #dev; #test; ...Rest; ] -> Text -> Text {
+  | #dev msg  => "dev: ";
+  | #test msg => "test: ";
+  | _ msg     => msg;
+}
 ```
 
 Union tails also work with tuple members:
@@ -198,8 +203,9 @@ Here `...Shape;` means "include the members of the existing union type `Shape`."
 With row polymorphism, type parameters may include row variables:
 
 ```zt
-getHost :: <Rest> { host : Text; ...Rest; } -> Text
-         | x => x.host
+getHost :: <Rest> { host : Text; ...Rest; } -> Text {
+  | x => x.host;
+}
 ```
 
 Named row tails allow preserving the rest of the record through transformations.

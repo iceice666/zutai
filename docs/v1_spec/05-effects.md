@@ -107,15 +107,16 @@ A handler removes the effects it handles and forwards effects it does not handle
 For example, this function handles `fail` but still forwards `log`:
 
 ```zt
-parseOrDefault :: Text -> Config -> Config ! { log ParseError }
-parseOrDefault | text fallback =>
-  handle parse text with {
-    value = \cfg => cfg;
-    fail = \err => {
-      perform log err;
-      fallback
+parseOrDefault :: Text -> Config -> Config ! { log ParseError } {
+  | text fallback =>
+    handle parse text with {
+      value = \cfg => cfg;
+      fail = \err => {
+        perform log err;
+        fallback
+      };
     };
-  }
+}
 ```
 
 The handled expression may perform `fail ParseError`, and the handler body may perform `log ParseError`. After the handler, `fail ParseError` is removed from the surrounding effect row, while `log ParseError` remains.
@@ -127,8 +128,9 @@ The handled expression may perform `fail ParseError`, and the handler body may p
 Authority-sensitive effects require explicit capability values in addition to effect rows:
 
 ```zt
-load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }
-load | fs path => perform fs.read path
+load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError } {
+  | fs path => perform fs.read path;
+}
 ```
 
 The effect row records what may happen. The capability argument records who authorized it. Host-provided capabilities include operations such as filesystem access, networking, environment access, clocks, and randomness.

@@ -13,11 +13,11 @@ TopDecl
   ::= Ident ":=" Expr                                          (* inferred value binding *)
    | Ident "::" TypeExpr "=" Expr                             (* typed value binding *)
    | Ident "::" TypeParamList? "type" TypeExpr                (* type alias / type value *)
-   | Ident "::" TypeParamList? TypeExpr ("|" Clause)+         (* function: sig + clauses *)
+   | Ident "::" TypeParamList? TypeExpr "{" FuncClause+ "}"   (* function: sig + block *)
    | Ident Pattern+ "=" Expr                                  (* function: no-sig single definition *)
 
-Clause
-  ::= Pattern+ Guard? "=>" Expr
+FuncClause
+  ::= "|" Pattern+ Guard? "=>" Expr ";"
 
 Block
   ::= (Ident ":=" Expr ";")* Expr
@@ -165,7 +165,7 @@ Match
   ::= "match" Expr "{" MatchCase* "}"
 
 MatchCase
-  ::= "|" Pattern Guard? "=>" Expr ";"
+  ::= "|" Pattern Guard? "=>" Expr ";"     (* identical to FuncClause *)
 
 Guard
   ::= "if" Expr
@@ -206,7 +206,9 @@ Important grammar interpretation:
 
 A `<` appearing immediately after `::` in a `TopDecl` begins a `TypeParamList`. The `>` closes it; what follows is the type signature or `type` keyword. `<A, B>` is a two-parameter type param list.
 
-`|` serves two roles: function clause introducer and match arm introducer. As a function clause introducer it must appear at the start of a line (or after leading whitespace) at delimiter depth zero, following the declaration's `::` signature line. As a match arm introducer it appears inside the `match { }` block at delimiter depth > 0. A `|` inside an expression (e.g., in `||`) is lexed as part of that operator and is never a clause or arm introducer.
+`FuncClause` and `MatchCase` are the same production — `| pat => expr;` — and appear inside a `{ }` block. The enclosing context determines the role: `{` opened after a `:: TypeExpr` in a `TopDecl` is a function block; `{` opened after `match Expr` is a match block. A `|` inside an expression (e.g., in `||`) is lexed as part of that operator and is never a clause or arm introducer.
+
+Declaration disambiguation: after `Ident "::"`, the parser looks for `type` (type alias), then a complete `TypeParamList? TypeExpr`. If that is followed by `=`, the declaration is a typed value binding; if followed by `{`, it opens a function block.
 
 The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), named tuple type fields (`(#circle, radius : Float)`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), named tuple construction (`(#circle, radius = 5.0)`), and all patterns (record `{ host = h; }`, tuple `(#circle, radius = r)`). This makes a `{ }` block unambiguous in type context versus value context.
 

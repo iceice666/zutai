@@ -3,23 +3,26 @@
 Zutai uses a `<...>` type parameter list for polymorphic functions and types, placed immediately after `::`:
 
 ```zt
-id :: <A> A -> A
-   | x => x
+id :: <A> A -> A {
+  | x => x;
+}
 ```
 
 Multiple type parameters are comma-separated:
 
 ```zt
-const :: <A, B> A -> B -> A
-      | x _ => x
+const :: <A, B> A -> B -> A {
+  | x _ => x;
+}
 ```
 
 Example with optionals:
 
 ```zt
-unwrapOr :: <T> T? -> T -> T
-         | #none              fallback => fallback
-         | (#some, value = v) _        => v
+unwrapOr :: <T> T? -> T -> T {
+  | #none              fallback => fallback;
+  | (#some, value = v) _        => v;
+}
 ```
 
 Type variables are capitalized:
@@ -47,8 +50,9 @@ Polymorphic functions are implicitly instantiated at call sites.
 Given:
 
 ```zt
-id :: <A> A -> A
-   | x => x
+id :: <A> A -> A {
+  | x => x;
+}
 ```
 
 these calls instantiate `A` differently:
@@ -76,6 +80,7 @@ as `<A> A -> A`.
 However, public APIs, exported module fields, and complex polymorphic functions should be annotated explicitly:
 
 ```zt
-mapList :: <A, B> (A -> B) -> List A -> List B
-        | f xs => mapListImpl f xs
+mapList :: <A, B> (A -> B) -> List A -> List B {
+  | f xs => mapListImpl f xs;
+}
 ```
