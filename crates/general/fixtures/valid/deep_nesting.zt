@@ -1,6 +1,6 @@
 -- Expected: parse-clean (zero diagnostics + lossless round-trip)
--- Spec: records §10, unions §16, tagged unions §17, operator-precedence.md
--- Nests records, unions, tagged unions, and operator expressions deeply to stress
+-- Spec: records §10, unions §16, tuple variants §17, operator-precedence.md
+-- Nests records, unions, tuple variants, and operator expressions deeply to stress
 -- the recursive descent paths and precedence climbing.
 
 Tree :: type [

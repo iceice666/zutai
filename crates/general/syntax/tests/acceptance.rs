@@ -151,8 +151,15 @@ fn fixtures_invalid_parse_error() {
 #[test]
 fn fixtures_semantic_invalid_parse_clean() {
     // These fixtures are spec-invalid per v0 but remain parse-clean until their
-    // corresponding semantic pass lands.
-    run_category(&fixtures_dir().join("semantic_invalid"), check_clean);
+    // corresponding semantic pass lands. The category may be empty when all
+    // known gaps have either moved to invalid/ or become valid by design.
+    let dir = fixtures_dir().join("semantic_invalid");
+    let files = read_zt(&dir);
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|(name, src)| check_clean(src).err().map(|e| format!("{name}: {e}")))
+        .collect();
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
 
 // ── Never-panic property: random bytes ───────────────────────────────────────

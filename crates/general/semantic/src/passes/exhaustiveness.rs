@@ -132,7 +132,7 @@ impl<'a> ExhaustivenessChecker<'a> {
                         .ctx
                         .types
                         .get(*variant)
-                        .as_tagged_tuple(&self.ctx.types)
+                        .as_tuple_variant(&self.ctx.types)
                     {
                         cases.insert(tag.to_string());
                     } else {

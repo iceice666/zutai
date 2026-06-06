@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn m4_tuple_named_fields() {
-        // Tagged tuple value: (#tag, field = value)
+        // Tuple variant value: (#tag, field = value)
         assert_round_trips("(#just-value, value = 42)");
         let t = tree("(#just-value, value = 42)");
         assert!(t.contains("TUPLE_EXPR"));
@@ -393,8 +393,8 @@ mod tests {
     // ── M6 pattern tests ─────────────────────────────────────────────────────
 
     #[test]
-    fn m6_pattern_tagged_tuple_snapshot() {
-        // Pin key structural nodes for a single-field tagged tuple pattern.
+    fn m6_pattern_tuple_variant_snapshot() {
+        // Pin key structural nodes for a single-field tuple variant pattern.
         // (A raw-string snapshot would be terminated early by "#atom" tokens.)
         let src = "match x { (#just-value, value = v) => v; }";
         assert_round_trips(src);
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_tagged_tuple_hyphenated_field() {
+    fn m6_pattern_tuple_variant_hyphenated_field() {
         // Hyphenated field name in pattern field.
         let src = "match x { (#just-maybe, maybe-value = none) => -1; }";
         assert_round_trips(src);
@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_tagged_tuple_multi_field() {
+    fn m6_pattern_tuple_variant_multi_field() {
         let src = "match x { (#both-things, a = none, b = none) => -4; }";
         assert_round_trips(src);
         let t = tree(src);
@@ -497,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_tagged_tuple_wildcard_fields() {
+    fn m6_pattern_tuple_variant_wildcard_fields() {
         let src = "match x { (#both-things, a = _, b = _) => -5; }";
         assert_round_trips(src);
         let t = tree(src);
@@ -506,15 +506,15 @@ mod tests {
     }
 
     #[test]
-    fn m6_pattern_tagged_tuple_nested() {
-        // Tagged tuple inside a tagged tuple field: (#ok, body = (#circle, radius = r))
+    fn m6_pattern_tuple_variant_nested() {
+        // Tuple variant inside a tuple field: (#ok, body = (#circle, radius = r))
         let src = "match x { (#ok, body = (#circle, radius = r)) => r; }";
         assert_round_trips(src);
         let t = tree(src);
         assert_eq!(
             t.matches("TUPLE_PATTERN").count(),
             2,
-            "outer and inner tagged tuple pattern"
+            "outer and inner tuple variant pattern"
         );
         assert_eq!(t.matches("PATTERN_FIELD").count(), 2);
     }
@@ -568,7 +568,10 @@ mod tests {
         let t = tree(src);
         assert!(t.contains("MATCH_EXPR"));
         assert_eq!(t.matches("MATCH_CASE").count(), 12);
-        assert!(t.contains("TUPLE_PATTERN"), "tagged tuple patterns present");
+        assert!(
+            t.contains("TUPLE_PATTERN"),
+            "tuple variant patterns present"
+        );
         assert!(t.contains("WILDCARD_PATTERN"), "wildcard pattern present");
         assert!(t.contains("PATTERN_FIELD"), "pattern fields present");
         assert!(t.contains("FIELD_NAME"), "hyphenated field names present");
@@ -700,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn m5_type_union_tagged_tuple_with_fields() {
+    fn m5_type_union_tuple_variant_with_fields() {
         assert_round_trips("type [ (#just-value, value : Int); ]");
         let t = tree("type [ (#just-value, value : Int); ]");
         assert!(t.contains("TUPLE_EXPR"));
@@ -709,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn m5_tagged_tuple_type_multiple_fields() {
+    fn m5_tuple_variant_type_multiple_fields() {
         assert_round_trips("type [ (#both, a : Bool, b : Int); ]");
         let t = tree("type [ (#both, a : Bool, b : Int); ]");
         assert_eq!(t.matches("TYPE_TUPLE_FIELD").count(), 2);
@@ -804,7 +807,7 @@ mod tests {
         assert_eq!(
             t.matches("TUPLE_EXPR").count(),
             4,
-            "expected 4 tagged tuple items"
+            "expected 4 tuple variant items"
         );
         assert!(
             t.contains("OPTIONAL_TYPE"),

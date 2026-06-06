@@ -124,14 +124,6 @@ fn m2_union_membership_emits_type_mismatch() {
 }
 
 #[test]
-fn semantic_gap_reserved_tag() {
-    assert_no_panic(
-        include_str!("../../fixtures/semantic_invalid/reserved_tag.zt"),
-        "semantic_invalid/reserved_tag.zt",
-    );
-}
-
-#[test]
 fn m2_valid_closed_record_and_union_members_pass() {
     assert_no_semantic_diags(
         r#"
@@ -144,6 +136,25 @@ env : Env = #dev
 { server = server; env = env; }
 "#,
         "m2 valid closed record and union members",
+    );
+}
+
+#[test]
+fn m2_tag_is_normal_name_and_field() {
+    assert_no_semantic_diags(
+        r#"
+_tag := #top
+
+Tagged :: type { _tag : #record; radius : Float; }
+
+tagged : Tagged = { _tag = #record; radius = 5.0; }
+
+{
+  binding = _tag;
+  field = tagged._tag;
+}
+"#,
+        "m2 _tag is normal name and field",
     );
 }
 
