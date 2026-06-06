@@ -1,6 +1,25 @@
 //! Syntax support for Zutai general mode (`.zt`).
 //!
-//! This crate is intended to contain the parser and AST definitions for
-//! general-mode files. General mode parses zero or more top-level declarations
-//! followed by a final expression, including records, tuples, lists, imports,
-//! functions, types, conditionals, pattern matching, field access, and operators.
+//! This crate contains the parser and AST definitions for general-mode files.
+//! See [`parse`] for the entry point.
+
+pub mod ast;
+pub mod error;
+pub mod parser;
+pub mod span;
+
+mod display;
+
+#[cfg(test)]
+mod tests;
+
+pub use ast::File;
+pub use error::ParseError;
+pub use span::Span;
+
+/// Parse a `.zt` source file.
+///
+/// Returns the syntax tree on success or a list of errors on failure.
+pub fn parse(input: &str) -> Result<File, Vec<ParseError>> {
+    parser::parse(input)
+}

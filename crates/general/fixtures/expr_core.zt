@@ -1,0 +1,72 @@
+-- expr_core.zt: M1 expression smoke fixture.
+-- Exercises every atom-level form and operator precedence layer.
+
+{
+  -- Scalars
+  bool-vals      = [true; false;];
+  numbers        = [0; 123; -10; 3.14; 1e9; -2.5e-3;];
+  atoms          = [#dev; #x86_64-linux;];
+  str-val        = "hello\nworld";
+
+  -- Record, list, tuple
+  nested-rec     = { host = "localhost"; port = 8080; };
+  empty-list     = [];
+  positional-tup = (1, 2);
+  empty-tup      = ();
+  named-tup      = (#circle, radius = 5.0);
+
+  -- Field access (plain and hyphenated)
+  host-val       = nested-rec.host;
+  hyphen-field   = nested-rec.host; -- field name with hyphen tested in unit tests
+
+  -- Optional chaining and defaulting
+  opt-val        = nested-rec?.port ?? 9090;
+
+  -- Arithmetic and comparison
+  arith          = 1 + 2 * 3 - 4 / 2;
+  cmp            = 1 == 1;
+  logic          = true && false || true;
+
+  -- Coalesce right-assoc
+  coalesce       = #none ?? #none ?? #fallback;
+
+  -- Pipeline
+  pipeline-fwd   = 5 |> (\x. x + 1);
+  pipeline-bwd   = (\x. x * 2) <| 3;
+
+  -- Lambda forms
+  lam1           = \x. x + 1;
+  lam2           = \x y. x + y;
+  lam-block      = \x. { tmp := x * 2; tmp + 1 };
+
+  -- Block expression
+  block-expr     = { a := 10; b := 20; a + b };
+
+  -- If / match
+  if-expr        = if true then 1 else 2;
+  match-expr     = match #prod {
+    | #dev  => 0;
+    | #prod => 1;
+    | _     => -1;
+  };
+
+  -- Match with guard
+  match-guard    = match 5 {
+    | n if n > 0 => #pos;
+    | _          => #nonpos;
+  };
+
+  -- Import
+  -- (Parsed but path need not resolve at parse time)
+  -- imp = import "data.zti";
+
+  -- Type forms
+  type-rec       = type { host : Text; port? : Int; };
+  type-union     = type [ #a; #b; #c; ];
+  type-tup       = type (#circle, radius : Float);
+  type-arrow     = type Int -> Int -> Int;
+  type-opt       = type Int?;
+
+  -- Function application (curried)
+  applied        = (\f. \x. f x) (\n. n + 1) 41;
+}
