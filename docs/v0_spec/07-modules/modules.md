@@ -18,11 +18,11 @@ Server :: type {
 }
 
 normalize :: RawServer -> Server
-   :: raw { {
-    host = raw.host ?? "127.0.0.1";
-    port = raw.port ?? 8080;
-    tls = raw.tls ?? false;
-  } }
+          | raw => {
+            host = raw.host ?? "127.0.0.1";
+            port = raw.port ?? 8080;
+            tls = raw.tls ?? false;
+          }
 
 {
   RawServer = RawServer;
@@ -37,7 +37,7 @@ Another file:
 serverLib := import "server.zt"
 raw := import "server.zti"
 
-server : serverLib.Server = serverLib.normalize raw
+server :: serverLib.Server = serverLib.normalize raw
 
 server
 ```

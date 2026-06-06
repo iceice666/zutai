@@ -106,9 +106,9 @@ Pattern matching uses the same tuple shape:
 
 ```zt
 area :: Shape -> Float
-     :: (#circle, radius = r)          { r * r * 3.14159 }
-     :: (#square, length = l)          { l * l }
-     :: (#rect, width = w, height = h) { w * h }
+     | (#circle, radius = r)          => r * r * 3.14159
+     | (#square, length = l)          => l * l
+     | (#rect, width = w, height = h) => w * h
 ```
 
 Tuple members can be nested:
@@ -120,9 +120,9 @@ Response :: type [
 ]
 
 handle :: Response -> Float
-       :: (#ok, body = (#circle, radius = r)) { r * r * 3.14159 }
-       :: (#ok, body = _)                     { 0.0 }
-       :: (#err, message = _)                 { 0.0 }
+       | (#ok, body = (#circle, radius = r)) => r * r * 3.14159
+       | (#ok, body = _)                     => 0.0
+       | (#err, message = _)                 => 0.0
 ```
 
 Union types may freely mix singleton members and tuple members:

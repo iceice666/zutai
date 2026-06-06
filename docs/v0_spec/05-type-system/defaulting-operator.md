@@ -10,8 +10,8 @@ It is shorthand for:
 
 ```zt
 match value {
-  #none => fallback;
-  (#some, value = x) => x;
+  | #none              => fallback;
+  | (#some, value = x) => x;
 }
 ```
 

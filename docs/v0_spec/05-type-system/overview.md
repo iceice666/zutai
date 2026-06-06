@@ -27,16 +27,16 @@ A value of type `Type` describes a type. Type values may be bound, passed to typ
 
 ### Type annotations
 
-Type annotations appear after `:` in declarations and field definitions:
+Type annotations appear after `::` in declarations:
 
 ```zt
-port : Int = 8080
+port :: Int = 8080
 ```
 
 The grammar is:
 
 ```ebnf
-type_annotation ::= ":" type_expr
+type_annotation ::= "::" type_expr
 ```
 
 A `type_expr` is a type-level expression. In v0, type expressions are pure expressions that evaluate to `Type`, including type names, type applications, optional types (`T?`), record types (`{ ... }`), union types (`[ ... ]`), and list types (`List T`).
@@ -45,7 +45,7 @@ Example:
 
 ```zt
 getPort :: { port : Int } -> Int
-    :: server { server.port }
+        | server => server.port
 ```
 
 ### Type aliases and generic types
@@ -71,15 +71,15 @@ Server : Type = type {
 }
 ```
 
-Generic type aliases use a type parameter list `[...]`:
+Generic type aliases use a type parameter list `<...>`:
 
 ```zt
-Pair :: [A, B] type {
+Pair :: <A, B> type {
   first : A;
   second : B;
 }
 
-Response :: [Body] type {
+Response :: <Body> type {
   status : Int;
   body : Body?;
 }
@@ -105,12 +105,10 @@ Type constructors may also be ordinary functions returning `Type`:
 
 ```zt
 PairFn :: Type -> Type -> Type
-       :: A -> B {
-         type {
+       | A B => type {
            first : A;
            second : B;
          }
-       }
 ```
 
 ### Typing approach
@@ -119,7 +117,7 @@ Zutai uses bidirectional type checking with inference for local expressions wher
 
 Type-level evaluation is pure and deterministic, but implementations must bound it. If a type-level expression does not normalize within the implementation limit, type checking fails with a source-located error.
 
-Polymorphism is explicit at API boundaries using `[...]` type parameter lists, with HM-style let generalization permitted for simple let-bound expressions.
+Polymorphism is explicit at API boundaries using `<...>` type parameter lists, with HM-style let generalization permitted for simple let-bound expressions.
 
 Record typing uses closed records in v0. See [Record types](records.md).
 

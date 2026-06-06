@@ -55,8 +55,8 @@ means:
 
 ```zt
 match x {
-  #none => #none;
-  (#some, value = value) => optionalWrap(value.field);
+  | #none                    => #none;
+  | (#some, value = value) => optionalWrap(value.field);
 }
 ```
 
@@ -111,5 +111,7 @@ Server?
 ```
 
 Note: `??` is always the defaulting token, so double-postfix optional must be parenthesized as `(T?)?`.
+
+When the accessed field is declared optional (`field? : T?`), this same flattening applies to collapse the field-absence layer and the value-optional layer into a single `T?`. See [Optional fields](optional-fields.md) for the concrete absent/present semantics.
 
 ---

@@ -34,17 +34,17 @@ There are three declaration forms.
 name := expr
 ```
 
-**Annotated value binding** — explicit type annotation, `:=` is shorthand for `: <type> =` with the type omitted:
+**Typed value binding** — explicit type annotation:
 
 ```zt
-name : TypeExpr = expr
+name :: TypeExpr = expr
 ```
 
-**Function or type definition** — uses `::`. Functions have a type signature and one or more `::` implementation clauses:
+**Function or type definition** — uses `::` for the signature; `|` introduces each implementation clause:
 
 ```zt
 name :: TypeSignature
-     :: pattern₁ -> pattern₂ { body }
+     | pattern₁ pattern₂ => body
 ```
 
 Type aliases use `:: type` and do not have implementation clauses:
@@ -58,10 +58,10 @@ Examples:
 ```zt
 x := 42
 
-port : Int = 8080
+port :: Int = 8080
 
 add :: Int -> Int -> Int
-    :: a -> b { a + b }
+    | a b => a + b
 
 Server :: type { host : Text; port : Int; }
 ```
@@ -78,49 +78,48 @@ Everything is one of the three declaration forms.
 
 ### Function definitions
 
-A named function consists of a type signature line followed by one or more implementation clauses. Both use `::`. The `->` between clause patterns mirrors the `->` in the type signature — one pattern per arrow:
+A named function consists of a type signature line followed by one or more `|` implementation clauses. The name appears once; clauses are indented under the signature:
 
 ```zt
 factorial :: Int -> Int
-          :: 0 { 1 }
-          :: n { n * factorial (n - 1) }
+          | 0 => 1
+          | n => n * factorial (n - 1)
 ```
 
-Multi-argument curried functions:
+Multi-argument curried functions list all parameters in the clause:
 
 ```zt
 add :: Int -> Int -> Int
-    :: a -> b { a + b }
+    | a b => a + b
 ```
 
 Pattern-matching multi-clause example:
 
 ```zt
-unwrap_or_default :: [T] T? -> T -> T
-                  :: #none -> d { d }
-                  :: (#some, value = v) -> _ { v }
+unwrapOr :: <T> T? -> T -> T
+         | #none              d => d
+         | (#some, value = v) _ => v
 ```
 
-The type signature is optional when the type can be inferred:
+The type signature is optional when the type can be inferred and only one clause is needed:
 
 ```zt
-double :: a { a * 2 }
+double x = x * 2
 ```
 
 ### Anonymous functions
 
-Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
+Anonymous functions use `\` followed by space-separated patterns and `.` for the body:
 
 ```zt
-map (\x => x * 2) items
-fold (\acc x => acc + x) 0 items
+map (\x. x * 2) items
+fold (\acc x. acc + x) 0 items
 ```
 
-Block form uses `{}` when the body needs local bindings:
+Block form uses a block expression `{ stmts; expr }` when the body needs local bindings:
 
 ```zt
-\x { x * 2 }
-\acc x {
+\acc x. {
   doubled := acc * 2;
   doubled + x
 }
@@ -150,8 +149,8 @@ This allows functions to refer to themselves:
 
 ```zt
 factorial :: Int -> Int
-          :: 0 { 1 }
-          :: n { n * factorial (n - 1) }
+          | 0 => 1
+          | n => n * factorial (n - 1)
 
 factorial 5
 ```
@@ -164,7 +163,7 @@ Inside function bodies, `:=` introduces a local immutable binding:
 
 ```zt
 normalize :: RawServer -> Server
-          :: raw {
+          | raw => {
             host := raw.host ?? "127.0.0.1";
             port := raw.port ?? 8080;
             tls  := raw.tls ?? false;
