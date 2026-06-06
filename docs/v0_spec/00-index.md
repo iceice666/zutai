@@ -37,7 +37,7 @@ This specification is split into multiple files, grouped by chapter.
 - [Field access and optional chaining](05-type-system/field-access.md)
 - [Defaulting operator](05-type-system/defaulting-operator.md)
 - [Union types](05-type-system/unions.md)
-- [Tagged unions](05-type-system/tagged-unions.md)
+- [Tuple variants](05-type-system/tagged-unions.md)
 - [Equality](05-type-system/equality.md)
 
 ## Chapter 6 — Polymorphism

@@ -83,10 +83,10 @@ pub enum Ty {
 }
 
 impl Ty {
-    /// If this tuple starts with a singleton atom, return that tag and the
-    /// remaining payload elements. Union and pattern analysis use this as the
-    /// semantic tagged-tuple recognizer.
-    pub fn as_tagged_tuple<'a>(
+    /// If this tuple starts with a singleton atom, return that atom and the
+    /// remaining elements. Union and pattern analysis use this as a tuple
+    /// variant recognizer.
+    pub fn as_tuple_variant<'a>(
         &'a self,
         interner: &'a TyInterner,
     ) -> Option<(&'a str, &'a [TupleElem])> {

@@ -19,7 +19,7 @@ General mode is designed to be a pure, lazy, expression-oriented scripting langu
 
 ### Data-oriented design
 
-The primary abstractions in Zutai are structured data: records, tuples, lists, atoms, and unions. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The type system — closed records, tuples, row-polymorphic views, and union types with tagged tuple arms — is designed to represent data layouts directly, not to model object hierarchies.
+The primary abstractions in Zutai are structured data: records, tuples, lists, atoms, and unions. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The type system — closed records, tuples, row-polymorphic views, and union types with tuple variants — is designed to represent data layouts directly, not to model object hierarchies.
 
 Idiomatic Zutai code processes batches of data through pipelines:
 

@@ -27,11 +27,6 @@
 //!   Check `node.children().any(|c| c.kind() == SyntaxKind::TYPE_FORM)` to
 //!   distinguish a type def from a function def.
 //!
-//! * **`_tag` is reserved/implicit** for tagged-tuple union desugaring (§17.5).
-//!   `(#circle, radius : Float)` desugars to `{ _tag : #circle; radius : Float; }`.
-//!   Users must never write `_tag` explicitly; the `_tag` structural check pass
-//!   (M4) enforces this.
-
 use zutai_syntax::{SyntaxKind, SyntaxNode};
 
 // ── LitClass ──────────────────────────────────────────────────────────────────

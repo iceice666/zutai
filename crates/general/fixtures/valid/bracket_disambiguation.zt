@@ -1,5 +1,5 @@
 -- Expected: parse-clean (zero diagnostics + lossless round-trip)
--- Spec: declarations §5, type exprs §11.3, records §10, unions §16, tagged unions §17
+-- Spec: declarations §5, type exprs §11.3, records §10, unions §16, tuple variants §17
 -- Three-bracket taxonomy edge cases: {}, [], () disambiguation.
 
 -- [A] is a type-param list — comma-only, no `;` at depth 1

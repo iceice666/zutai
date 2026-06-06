@@ -133,13 +133,12 @@ child — there is no `TypeDecl`. Check:
 let is_type_def = decl.children().any(|c| c.kind() == SyntaxKind::TYPE_FORM);
 ```
 
-### 5. `_tag` is reserved and implicit
+### 5. Tuple variants are ordinary tuple union members
 
-Tagged-union desugaring (`tagged-unions.md` §17.5):
-`(#circle, radius : Float)` → `{ _tag : #circle; radius : Float; }`.
-
-`_tag` is never written by users. The M4 structural-check pass must reject it if it
-appears as an explicit binding name, record field name, or `_tag` access.
+Tuple variants (`tagged-unions.md` §17) are not a separate desugaring layer.
+`(#circle, radius : Float)` is a tuple type whose first positional item is the
+singleton atom type `#circle`. There is no hidden `_tag` field, and `_tag` is a
+normal user identifier or field name.
 
 ---
 
@@ -264,25 +263,7 @@ coverage, and is covered by focused M3 acceptance tests.
 
 ---
 
-### M4 — Surface structural checks
-
-**Goal:** Reject `_tag` used explicitly by users.  
-**Spec:** `docs/v0_spec/06-polymorphism/tagged-unions.md` §17.5
-
-**Checks:**
-- `_tag` as a top-level or local binding name → error.
-- `_tag` as a value-record field name → error.
-- Accessing `._tag` via field access → error.
-
-This is a surface/CST check because the rule is about what the user explicitly wrote. Put
-it in `surface_checks.rs` before HIR passes, or in `validation.rs` if it is purely
-syntactic. Do not make this a semantic `Pass`; the pass registry is HIR-only.
-
-**Fixture to flip:** `semantic_invalid/reserved_tag.zt` → `invalid/`
-
----
-
-### M5 — Import resolution
+### M4 — Import resolution
 
 **Goal:** Resolve `import "path"` expressions; detect cycles.  
 **Emits:** `E0040 InvalidImportPath`  
@@ -361,5 +342,4 @@ classify_literal(&SyntaxNode) -> Option<LitClass>
 - [x] **M1 test cleanup pass** — add unknown_identifier/forward-reference tests for HIR lowering.
 - [x] **M2 Type checking pass** — bidirectional checking/inference; Ty variants; closed-record/union checks; E0021/E0030; flipped closed_records + union_membership.
 - [ ] **M3 Exhaustiveness pass** — finite-union coverage; guard fall-through; E0031; flip exhaustiveness.
-- [ ] **M4 Surface structural checks** — `_tag` reserved check outside the HIR pass registry; flip reserved_tag.
-- [ ] **M5 Imports + serialization boundary** — E0040; path resolution; cycle detection.
+- [ ] **M4 Imports + serialization boundary** — E0040; path resolution; cycle detection.

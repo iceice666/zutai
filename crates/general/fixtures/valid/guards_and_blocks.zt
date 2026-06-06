@@ -17,7 +17,7 @@ safe_div :: Int -> Int -> Int?
          :: _ -> 0 { none }
          :: a -> b { a / b }
 
--- guard on a tagged tuple pattern
+-- guard on a tuple variant pattern
 Result :: type [
   (#ok, val : Int);
   (#err, code : Int);
