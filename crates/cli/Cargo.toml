@@ -6,5 +6,3 @@ version.workspace = true
 [dependencies]
 zutai-im = { path = "../immediate/core" }
 zutai-types = { path = "../immediate/types" }
-zutai-syntax = { path = "../general/syntax", features = ["render"] }
-zutai-semantic = { path = "../general/semantic" }
