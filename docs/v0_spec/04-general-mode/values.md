@@ -1,9 +1,8 @@
-## 6. General-mode values
+## General-mode values
 
 Core value forms:
 
 ```zt
-none
 true
 false
 123
@@ -15,17 +14,10 @@ false
   host = "localhost";
   port = 8080;
 }
+(#circle, radius = 5.0)
 ```
 
-### 6.1 None
-
-`none` represents the absence of a value.
-
-It is used by optional values and optional fields.
-
-`none` is a reserved literal, not an atom. In type positions it may be used as a singleton literal type whose only value is `none`.
-
-### 6.2 Booleans
+### Booleans
 
 ```zt
 true
@@ -49,7 +41,7 @@ type [
 ]
 ```
 
-### 6.3 Text
+### Text
 
 Text values are double-quoted strings:
 
@@ -57,7 +49,7 @@ Text values are double-quoted strings:
 "hello"
 ```
 
-### 6.4 Atoms
+### Atoms
 
 Atoms in `.zt` use `#`:
 
@@ -67,11 +59,13 @@ Atoms in `.zt` use `#`:
 #prod
 ```
 
-Atoms are symbolic singleton-like values, useful for modes, tags, enum cases, and discriminants.
+Atoms are symbolic singleton-like values, useful for modes, tags, and enum cases.
 
-Only `#`-prefixed values are atoms in `.zt`. The literals `true`, `false`, and `none` are also singleton-capable literals, but they are not atoms.
+Only `#`-prefixed values are atoms in `.zt`. The literals `true` and `false` are also singleton-capable literals, but they are not atoms.
 
-### 6.5 Records
+The atom `#none` has no special lexical status. It is an ordinary atom that the optional type convention uses as its empty case.
+
+### Records
 
 Record values use `.zti`-style fields:
 
@@ -84,7 +78,21 @@ Record values use `.zti`-style fields:
 
 Fields are semicolon-terminated.
 
-### 6.6 Lists
+### Tuples
+
+Tuples use parentheses and comma-separated items:
+
+```zt
+(#circle, radius = 5.0)
+(1, 2)
+()
+```
+
+Named tuple fields use `=` in value and pattern positions. A parenthesized single expression is a group, not a one-element tuple.
+
+Tuples are general-mode values. They are used for structured union alternatives and intermediate computation, but v0 does not define a direct `.zti` serialization for tuple values.
+
+### Lists
 
 Lists use semicolon-terminated elements:
 

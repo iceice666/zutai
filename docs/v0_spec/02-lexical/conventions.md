@@ -1,10 +1,12 @@
-## 3. Lexical conventions
+## Lexical conventions
 
-### 3.1 Whitespace
+### Whitespace
 
 Whitespace separates tokens but is otherwise insignificant outside strings.
 
-### 3.2 Strings
+In `.zt`, top-level declarations are separated by line boundaries at delimiter depth zero. A top-level declaration does not use a trailing semicolon.
+
+### Strings
 
 Strings are double-quoted and JSON-like:
 
@@ -16,7 +18,7 @@ Strings are double-quoted and JSON-like:
 
 Paths, URLs, and other complex textual values should be represented as strings, not atoms.
 
-### 3.3 Numbers
+### Numbers
 
 Numbers use JSON-style syntax.
 
@@ -44,7 +46,7 @@ Float
 
 A host implementation may expose `Number` as a convenience supertype or alias, but the v0 core distinguishes `Int` and `Float`.
 
-### 3.4 Immediate-mode atoms
+### Immediate-mode atoms
 
 In `.zti`, atom literals use the same `#` prefix as `.zt`:
 
@@ -85,12 +87,11 @@ The following are reserved literals, not atoms:
 ```zti
 true
 false
-none
 ```
 
 They are keyword literals. They may participate in singleton literal types, but they are not `Atom` values.
 
-### 3.5 General-mode atoms
+### General-mode atoms
 
 In `.zt`, atom literals also use a `#` prefix:
 
@@ -128,7 +129,7 @@ Imported into `.zt`, the value is equivalent to:
 }
 ```
 
-### 3.6 Identifiers
+### Identifiers
 
 Binding identifiers use:
 
@@ -147,13 +148,11 @@ else
 import
 true
 false
-none
 ```
 
 The following identifiers are reserved for future versions but not used in v0:
 
 ```zt
-forall
 select
 ```
 
@@ -186,7 +185,7 @@ server : Server = {
 
 This capitalization rule is a static convention. Implementations should warn or error when violated.
 
-### 3.7 Field names
+### Field names
 
 Field names are bare labels and use the atom-body shape:
 
@@ -224,7 +223,7 @@ If subtraction is intended, write:
 (cfg.target) - triple
 ```
 
-### 3.8 Symbols and operators
+### Symbols and operators
 
 This is the canonical list of every symbol and operator in the language. Binding-precedence
 and associativity for the infix/postfix forms are defined in
@@ -236,9 +235,9 @@ or pattern**. They never overlap.
 | Symbol           | Meaning                                                                    |
 | ---------------- | -------------------------------------------------------------------------- |
 | `:=`             | inferred value binding (`name := expr`)                                    |
-| `:`              | type annotation ("has type"): annotated bindings, type-record/variant type fields, optional-field marker |
+| `:`              | type annotation ("has type"): annotated bindings, type-record and tuple type fields, optional-field marker |
 | `::`             | function/type definition: signature line and pattern-clause lines          |
-| `=`              | value/pattern field binding: value records, variant construction, all patterns |
+| `=`              | value/pattern field binding: value records, named tuple fields, all patterns |
 | `->`             | function type arrow; also separates clause parameter patterns              |
 | `=>`             | anonymous-function body (short form) and `match` arm body                  |
 | `\`              | anonymous function (lambda) introducer                                     |
@@ -251,15 +250,14 @@ or pattern**. They never overlap.
 | `+` `-` `*` `/`  | arithmetic operators                                                       |
 | `==` `!=` `<` `<=` `>` `>=` | comparison operators                                            |
 | `&&` `\|\|`      | logical AND / OR (short-circuit); operands and result are `Bool`           |
-| `...`            | open row tail in record/union types — v1 feature, reserved |
-| `;`              | terminator for fields, list items, clauses, and match arms                 |
-| `,`              | separator between tuple/variant fields                                     |
+| `...`            | row tail / union spread in record or union types — v1 feature, reserved |
+| `;`              | terminator for fields, list items, local bindings, and match arms          |
+| `,`              | separator between tuple fields                                             |
 | `{` `}`          | value record, record type, or block body                                   |
 | `[` `]`          | list value or union type                                                   |
-| `(` `)`          | tuple/variant, grouping, and the empty tuple                               |
+| `(` `)`          | tuple, grouping, and the empty tuple                                       |
 | `_`              | wildcard pattern                                                           |
 
 There is no unary operator in v0: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
 ---
-

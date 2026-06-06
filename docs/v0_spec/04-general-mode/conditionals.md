@@ -1,4 +1,4 @@
-## 20. Conditionals
+## Conditionals
 
 General mode supports expression conditionals:
 

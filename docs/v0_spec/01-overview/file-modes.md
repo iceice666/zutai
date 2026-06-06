@@ -1,6 +1,6 @@
-## 2. File modes
+## File modes
 
-### 2.1 Immediate mode: `.zti`
+### Immediate mode: `.zti`
 
 A `.zti` file contains only pure data:
 
@@ -34,7 +34,7 @@ A `.zti` file has:
 
 It is an inert serialized data tree.
 
-### 2.2 General mode: `.zt`
+### General mode: `.zt`
 
 A `.zt` file contains pure lazy computation:
 

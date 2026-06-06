@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn neon_classifier_matches_scalar_for_full_chunks_and_tails() {
         let input = concat!(
-            "{ name = \"brace } semi ; quote \\\"\"; tags = [#fast-path; none;]; }",
+            "{ name = \"brace } semi ; quote \\\"\"; tags = [#fast-path; #none;]; }",
             "\nextra = true;"
         );
 

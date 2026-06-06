@@ -1,16 +1,16 @@
-## 26. Serialization boundary
+## Serialization boundary
 
 Serializable final values:
 
 ```zt
-none
 true
 false
 123
+3.14
 "hello"
 #prod
-[ ... ]
-{ ... }
+[1; 2;]
+{ host = "localhost"; }
 ```
 
 Non-serializable final values:
@@ -20,7 +20,12 @@ Non-serializable final values:
 Type
 Server
 Text -> Text
+(#ok, value = 1)
 ```
+
+Type values are first-class compile-time values in `.zt`, but they do not have a direct `.zti` or JSON representation.
+
+Tuple values are also general-mode values without a direct `.zti` representation in v0. Use records or lists when rendered output needs structured data.
 
 This is valid as an imported module:
 
@@ -33,7 +38,7 @@ This is valid as an imported module:
 
 but invalid if rendered directly as `.zti` or JSON, because it contains a type and a function.
 
-### 26.1 Rendering atoms
+### Rendering atoms
 
 When a `.zt` value containing atoms is rendered as `.zti`, the `#` prefix is preserved.
 

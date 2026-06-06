@@ -1,10 +1,10 @@
 # Metaprogramming (v1)
 
-Metaprogramming is based on type values, type functions, reflection, and schema reification. These features require first-class `Type` values (see [type-level computation](02-type-level-computation.md)) and are deferred from v0.
+Metaprogramming is based on reflection and schema reification over v0 type values and type functions. Reflection APIs such as `fields` and `schema` are deferred from v0.
 
 ---
 
-## Type Functions
+## Type Values
 
 ```zt
 WithId :: Type -> Type
@@ -13,6 +13,8 @@ WithId :: Type -> Type
     value : T;
   } }
 ```
+
+Type functions are available in v0; metaprogramming APIs can consume the type values they produce.
 
 Usage:
 

@@ -43,7 +43,7 @@ fn parse_empty_block() {
 #[test]
 fn parse_blocks_arrays_and_scalars() {
     assert_same_as_winnow(
-        "{ host = \"localhost\"; port = 8080; enabled = true; tags = [#a; #b; none; -2.5e-3;]; nested = { x = false; }; }",
+        "{ host = \"localhost\"; port = 8080; enabled = true; tags = [#a; #b; #none; -2.5e-3;]; nested = { x = false; }; }",
     );
 }
 

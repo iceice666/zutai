@@ -1,6 +1,6 @@
-## 8. Functions
+## Functions
 
-### 8.1 Named function definitions
+### Named function definitions
 
 Named functions use `::` for both the type signature and implementation clauses. The type signature line gives the full type; each clause line gives patterns and a body block.
 
@@ -10,6 +10,8 @@ add :: Int -> Int -> Int
 ```
 
 The `->` between clause patterns corresponds to the `->` in the type signature — one pattern per arrow.
+
+Function clauses are introduced by `::` and are not semicolon-terminated.
 
 Multi-clause definitions provide pattern matching directly in the function:
 
@@ -29,7 +31,7 @@ The type signature is optional when the type can be inferred:
 negate :: x { x * -1 }
 ```
 
-### 8.2 Curried functions
+### Curried functions
 
 Functions are curried by default.
 
@@ -44,7 +46,7 @@ add :: Int -> Int -> Int
 add5 := add 5
 ```
 
-### 8.3 Function application
+### Function application
 
 Function application uses whitespace and is left-associative:
 
@@ -64,14 +66,19 @@ means:
 (f x) y
 ```
 
-### 8.4 Function types
+### Function types
 
 Function types use `->` and are right-associative:
 
 ```zt
 Int -> Int -> Int
 { port : Int } -> Int
-[A] A -> A
+```
+
+Polymorphic signatures put the type parameter list immediately after `::`:
+
+```zt
+id :: [A] A -> A
 ```
 
 ```zt
@@ -89,7 +96,7 @@ In type-context positions, `{ ... }` and `[ ... ]` are parsed as record and unio
 Function expressions use `=>` or `{}`.
 Function types use `->`.
 
-### 8.5 Anonymous functions
+### Anonymous functions
 
 Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
 
@@ -116,7 +123,7 @@ filter (\x => x > 0) items
 fold   (\acc x => acc + x) 0 items
 ```
 
-### 8.6 Pipeline operators
+### Pipeline operators
 
 General mode supports pipeline operators as syntax for ordinary function application.
 
@@ -197,7 +204,7 @@ means:
 f a x
 ```
 
-### 8.7 No method-call rewrite in v0
+### No method-call rewrite in v0
 
 The expression:
 

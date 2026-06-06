@@ -1,4 +1,4 @@
-## 15. Defaulting operator
+## Defaulting operator
 
 The defaulting operator is:
 
@@ -10,8 +10,8 @@ It is shorthand for:
 
 ```zt
 match value {
-  none => fallback;
-  x => x;
+  #none => fallback;
+  (#some, value = x) => x;
 }
 ```
 
@@ -21,8 +21,8 @@ Example:
 raw.port ?? 8080
 ```
 
-If `raw.port` is `none`, the result is `8080`.
+If `raw.port` is `#none`, the result is `8080`.
 
-Otherwise, the result is the value of `raw.port`.
+If `raw.port` is `(#some, value = p)`, the result is `p`.
 
 ---

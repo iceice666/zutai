@@ -1,4 +1,4 @@
-## 28. Error model
+## Error model
 
 Implementations should report deterministic, source-located errors.
 

@@ -1,4 +1,4 @@
-## 25. Modules
+## Modules
 
 A `.zt` file can return a record containing values, functions, and types.
 

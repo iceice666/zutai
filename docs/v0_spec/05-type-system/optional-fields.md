@@ -1,4 +1,4 @@
-## 13. Optional fields
+## Optional fields
 
 Optional fields use `?` on the field name:
 
@@ -20,13 +20,13 @@ raw : RawServer = {
 }
 ```
 
-When accessed directly, an absent optional field evaluates to `none`:
+When accessed directly, an optional field evaluates to an optional value. If the field is absent, access returns `#none`; if the field is present, access returns `(#some, value = field_value)`, unless the field value is already optional and the access rule flattens it.
 
 ```zt
 raw.port ?? 8080
 ```
 
-### 13.1 Optional field versus optional value
+### Optional field versus optional value
 
 These are different:
 
@@ -34,7 +34,7 @@ These are different:
 tls : Bool?;
 ```
 
-means the field must exist, but may contain `none`.
+means the field must exist, but must contain an explicit optional value such as `#none` or `(#some, value = true)`.
 
 ```zt
 tls? : Bool;
@@ -46,6 +46,6 @@ means the field may be absent.
 tls? : Bool?;
 ```
 
-means the field may be absent, and if present may be `Bool` or `none`.
+means the field may be absent, and if present must contain an explicit optional `Bool`. Direct field access flattens the result to `Bool?`.
 
 ---

@@ -96,7 +96,6 @@ fn write_scalar(value: &Value, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match value {
         Value::True => write!(f, "True"),
         Value::False => write!(f, "False"),
-        Value::None => write!(f, "None"),
         Value::Atom(atom) => write!(f, "Atom({atom})"),
         Value::String(text) => {
             write!(f, "String(\"")?;

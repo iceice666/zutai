@@ -37,7 +37,9 @@ Ord :: [A: Eq] @A {
 A constraint may require other constraints on its type parameter via bounds in `[...]`:
 
 ```zt
-Ord :: [A: Eq] @A { ... }
+Ord :: [A: Eq] @A {
+  compare :: A -> A -> Ordering;
+}
 ```
 
 This means: to provide a witness for `Ord A`, the type `A` must already have a witness for `Eq`.
@@ -86,7 +88,7 @@ Operator methods use the same parenthesised names as in the constraint definitio
 
 ```zt
 Ord @Int :: {
-  compare = \a b => ...;
+  compare = compareInt;
   (<)     = \a b => a < b;
   (<=)    = \a b => a <= b;
   (>)     = \a b => a > b;
@@ -98,10 +100,11 @@ Methods with defaults may be omitted:
 
 ```zt
 Ord @Int :: {
-  compare = \a b => ...;
-  -- max, min use the defaults derived from compare via >=, <=
+  compare = compareInt;
 }
 ```
+
+Here `max` and `min` use the defaults derived from `compare` via `>=` and `<=`.
 
 ---
 
@@ -111,11 +114,11 @@ A witness for a parameterised type may require constraints on its type arguments
 
 ```zt
 Eq @(List A) :: [A: Eq] {
-  eq = \xs ys => ...;
+  eq = eqList;
 }
 
 Ord @(List A) :: [A: Ord] {
-  compare = \xs ys => ...;
+  compare = compareList;
 }
 ```
 
@@ -127,10 +130,10 @@ Type parameters and their constraints are declared in `[...]` immediately after 
 
 ```zt
 contains :: [A: Eq] List A -> A -> Bool
-         :: xs -> x { ... }
+         :: xs -> x { containsImpl xs x }
 
 sort :: [A: Ord] List A -> List A
-     :: xs { ... }
+     :: xs { sortImpl xs }
 ```
 
 Unconstrained parameters omit the `:` bound:
@@ -140,14 +143,14 @@ id      :: [A] A -> A
         :: x { x }
 
 mapList :: [A, B] (A -> B) -> List A -> List B
-        :: f -> xs { ... }
+        :: f -> xs { mapListImpl f xs }
 ```
 
 Multiple parameters with independent constraints:
 
 ```zt
 zipWith :: [A, B, C] (A -> B -> C) -> List A -> List B -> List C
-        :: f -> xs -> ys { ... }
+        :: f -> xs -> ys { zipWithImpl f xs ys }
 ```
 
 Witnesses are resolved implicitly at call sites — callers do not pass them explicitly.
@@ -162,7 +165,7 @@ At most one witness for a given `(Constraint, Type)` pair may be in scope. If tw
 error: conflicting witnesses for Eq Int
 ```
 
-Witnesses are automatically exported when their defining module is imported. There are no orphan restrictions in v0, but implementations may warn when a witness is defined outside both the constraint's module and the type's module.
+Witnesses are automatically exported when their defining module is imported. There are no orphan restrictions in v1, but implementations may warn when a witness is defined outside both the constraint's module and the type's module.
 
 ---
 
@@ -191,20 +194,19 @@ Witnesses target the type constructor without arguments:
 
 ```zt
 Functor @List :: {
-  map = \f xs => ...;
+  map = mapList;
 }
 
 Foldable @List :: {
-  fold = \f z xs => ...;
+  fold = foldList;
 }
 ```
 
 Partial type application is allowed in witness targets. A type constructor of kind `Type -> Type -> Type` applied to one argument yields a `Type -> Type` and may be witnessed:
 
-```zt
--- Result :: Type -> Type -> Type (error type, then value type)
--- Result E :: Type -> Type for fixed E
+For a `Result` type constructor with kind `Type -> Type -> Type`, fixing the error type `E` yields `Result E` with kind `Type -> Type`:
 
+```zt
 Functor @(Result E) :: [E] {
   map = \f r => match r {
     (#ok,  value = v) => (#ok,  value = f v);
@@ -213,7 +215,7 @@ Functor @(Result E) :: [E] {
 }
 ```
 
-v1 supports kind `Type -> Type`. Type constructors of higher arity or higher-order kinds are reserved for a future version.
+v1 higher-kinded constraints target constructors of kind `Type -> Type`. Constructors of higher arity may be partially applied until they have kind `Type -> Type`; higher-order kind targets are reserved for a future version.
 
 ---
 
@@ -262,10 +264,11 @@ eq = \a b => (eq a.host b.host) && (eq a.port b.port);
 
 where each field's `eq` is resolved from the in-scope witness for that field's type.
 
-For **union types**, derivation compares by tag first, then by variant payload field by field:
+For **union types**, derivation compares by member shape first, then compares tuple fields field by field:
+
+For `Status :: type [#active; (#suspended, reason : Text);]`, the derived equality shape is:
 
 ```zt
--- Status :: type [#active; (#suspended, reason : Text);]
 eq = \a b => match (a, b) {
   (#active, #active)                                    => true;
   ((#suspended, reason = r1), (#suspended, reason = r2)) => eq r1 r2;

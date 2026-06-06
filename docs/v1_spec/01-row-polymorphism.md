@@ -1,6 +1,6 @@
 # Row Polymorphism (v1)
 
-Row polymorphism extends the v0 closed-record and closed-union type system with open types, named row tails, and higher-rank polymorphism. These features are deferred from v0 because they significantly increase type-checker complexity.
+Row polymorphism extends the v0 closed-record and closed-union type system with open types and named row tails. These features are deferred from v0 because they significantly increase type-checker complexity.
 
 ---
 
@@ -95,7 +95,8 @@ Implementations may infer simple row-polymorphic types for local expressions, bu
 
 ## Selective Projection
 
-Selective projection uses `select`.
+Selective projection uses `select`. The `select` syntax is a v1 feature for
+both values and type values.
 
 For values:
 
@@ -112,7 +113,7 @@ means:
 }
 ```
 
-For type values (requires first-class types — see [type-level computation](02-type-level-computation.md)):
+For type values:
 
 ```zt
 select Server { host; port; }
@@ -129,11 +130,15 @@ type {
 
 `select` preserves field order as written in the selection list and reports an unknown-field error if a selected field is absent from the input record or record type.
 
+v0 has first-class type values and pure type-level computation, but it does not
+include `select` syntax. See [type-level computation extensions](02-type-level-computation.md)
+for the v0 baseline that v1 type-value projection builds on.
+
 ---
 
 ## Open Union Types
 
-Analogous to open record types, a union type may have an anonymous or named row tail to accept additional variants.
+Analogous to open record types, a union type may have an anonymous or named row tail to accept additional members.
 
 An anonymous union tail:
 
@@ -147,7 +152,7 @@ type [
 
 means any union that includes at least `#dev` and `#test` as members.
 
-A named union tail preserves the extra variants in the result type:
+A named union tail preserves the extra members in the result type:
 
 ```zt
 type [
@@ -166,7 +171,7 @@ handle_env :: [Rest] [ #dev; #test; ...Rest; ] -> Text -> Text
            :: _ -> msg { msg }
 ```
 
-Union tails also work with variant constructors:
+Union tails also work with tuple members:
 
 ```zt
 type [
@@ -175,7 +180,7 @@ type [
 ]
 ```
 
-Union extension — extend an existing union with new variants:
+Union extension spreads an existing union type into a new union type and then adds new members:
 
 ```zt
 Shape3D :: type [
@@ -183,6 +188,8 @@ Shape3D :: type [
   (#sphere, radius : Float);
 ]
 ```
+
+Here `...Shape;` means "include the members of the existing union type `Shape`." This is distinct from `...Rest;`, where `Rest` is a row variable introduced by a polymorphic type parameter list.
 
 ---
 
@@ -199,13 +206,13 @@ Named row tails allow preserving the rest of the record through transformations.
 
 ---
 
-## Predicativity and Higher-Rank Types
+## Predicativity and Inference Boundaries
 
 v0 polymorphism is predicative. A type variable may be instantiated with ordinary monotypes, including record types, union types, list types.
 
-v0 does not require impredicative instantiation, where a type variable is instantiated with another polymorphic type.
+v1 row polymorphism remains predicative and does not include impredicative instantiation, where a type variable is instantiated with another polymorphic type.
 
-v0 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension.
+v1 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension.
 
 ---
 

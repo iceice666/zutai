@@ -1,4 +1,4 @@
-## 10. Record types
+## Record types
 
 Record types use:
 
@@ -61,7 +61,11 @@ type {
 }
 ```
 
-### 10.1 Closed records
+### Duplicate fields
+
+Duplicate field names in the same record value or record type are invalid. There is no first-wins or last-wins rule.
+
+### Closed records
 
 Record types are closed in v0.
 
@@ -95,7 +99,7 @@ server : Server = {
 
 because `tls` is not declared in `Server`.
 
-### 10.2 Record update
+### Record update
 
 Record update syntax is not part of v0.
 

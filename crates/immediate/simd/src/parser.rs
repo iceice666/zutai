@@ -113,7 +113,6 @@ impl<'a> Parser<'a> {
             Some(b'{') => self.parse_block().map(Value::Block),
             Some(b't') => self.parse_keyword("true", Value::True),
             Some(b'f') => self.parse_keyword("false", Value::False),
-            Some(b'n') => self.parse_keyword("none", Value::None),
             Some(b'-' | b'0'..=b'9') => self.parse_number(),
             Some(_) | None => Err(error(
                 self.pos,
