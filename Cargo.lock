@@ -611,6 +611,7 @@ name = "zutai-cli"
 version = "0.1.0"
 dependencies = [
  "zutai-im",
+ "zutai-syntax",
  "zutai-types",
 ]
 
@@ -645,6 +646,10 @@ dependencies = [
 [[package]]
 name = "zutai-syntax"
 version = "0.1.0"
+dependencies = [
+ "rustc-hash",
+ "winnow",
+]
 
 [[package]]
 name = "zutai-types"
