@@ -1,4 +1,4 @@
-## 12. Optional values
+## Optional values
 
 Postfix `?` is the optional marker:
 
@@ -9,16 +9,18 @@ Bool?
 Server?
 ```
 
-`T?` means:
+`T?` is shorthand for `Optional T`.
+
+The optional type is an ordinary generic union type:
 
 ```zt
-type [
-  T;
-  none;
+Optional :: [T] type [
+  #none;
+  (#some, value : T);
 ]
 ```
 
-Here `none` is used as a singleton literal type.
+There is no reserved `none` literal. `#none` and `#some` are ordinary atoms used by the `Optional` convention.
 
 So:
 
@@ -29,10 +31,7 @@ Bool?
 desugars to:
 
 ```zt
-type [
-  Bool;
-  none;
-]
+Optional Bool
 ```
 
 Example:
@@ -45,7 +44,7 @@ Server :: type {
 }
 ```
 
-This means the `tls` field is required, but its value may be either `Bool` or `none`.
+This means the `tls` field is required, but its value must be either `#none` or a `#some` tuple carrying a `Bool`, such as `(#some, value = true)`.
 
 Valid:
 
@@ -53,7 +52,7 @@ Valid:
 server : Server = {
   host = "localhost";
   port = 8080;
-  tls = true;
+  tls = (#some, value = true);
 }
 ```
 
@@ -63,7 +62,7 @@ Also valid:
 server : Server = {
   host = "localhost";
   port = 8080;
-  tls = none;
+  tls = #none;
 }
 ```
 

@@ -1,6 +1,6 @@
-## 29. Complete example
+## Complete example
 
-### 29.1 `app.zti`
+### `app.zti`
 
 ```zti
 {
@@ -14,7 +14,7 @@
 }
 ```
 
-### 29.2 `app.zt`
+### `app.zt`
 
 ```zt
 Profile :: type [
@@ -69,7 +69,7 @@ config
 
 The final expression `config` is the file output.
 
-### 29.3 Optional chaining example
+### Optional chaining example
 
 `nested.zti`:
 
@@ -99,7 +99,7 @@ raw : RawConfig = import "nested.zti"
 }
 ```
 
-### 29.4 Tagged union and pattern matching example
+### Tuple union and pattern matching example
 
 ```zt
 Shape :: type [

@@ -1,6 +1,6 @@
-## 5. General mode `.zt`
+## General mode `.zt`
 
-### 5.1 File structure
+### File structure
 
 A `.zt` file is:
 
@@ -22,7 +22,9 @@ name := cfg.name
 
 The final expression is the file output.
 
-### 5.2 Declaration forms
+Top-level declarations are separated by line boundaries at delimiter depth zero. They do not use trailing semicolons.
+
+### Declaration forms
 
 There are three declaration forms.
 
@@ -38,11 +40,17 @@ name := expr
 name : TypeExpr = expr
 ```
 
-**Function or type definition** — uses `::` for the type signature and one or more `::` clauses for implementation:
+**Function or type definition** — uses `::`. Functions have a type signature and one or more `::` implementation clauses:
 
 ```zt
 name :: TypeSignature
      :: pattern₁ -> pattern₂ { body }
+```
+
+Type aliases use `:: type` and do not have implementation clauses:
+
+```zt
+Name :: type TypeExpr
 ```
 
 Examples:
@@ -60,7 +68,7 @@ Server :: type { host : Text; port : Int; }
 
 There is no separate syntax for:
 
-```zt
+```text
 type Server = ...
 def add ...
 class Server ...
@@ -68,7 +76,7 @@ class Server ...
 
 Everything is one of the three declaration forms.
 
-### 5.3 Function definitions
+### Function definitions
 
 A named function consists of a type signature line followed by one or more implementation clauses. Both use `::`. The `->` between clause patterns mirrors the `->` in the type signature — one pattern per arrow:
 
@@ -89,8 +97,8 @@ Pattern-matching multi-clause example:
 
 ```zt
 unwrap_or_default :: [T] T? -> T -> T
-                  :: none -> d { d }
-                  :: v    -> _ { v }
+                  :: #none -> d { d }
+                  :: (#some, value = v) -> _ { v }
 ```
 
 The type signature is optional when the type can be inferred:
@@ -99,7 +107,7 @@ The type signature is optional when the type can be inferred:
 double :: a { a * 2 }
 ```
 
-### 5.4 Anonymous functions
+### Anonymous functions
 
 Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
 
@@ -118,7 +126,7 @@ Block form uses `{}` when the body needs local bindings:
 }
 ```
 
-### 5.5 One namespace
+### One namespace
 
 Zutai has one namespace.
 
@@ -134,7 +142,7 @@ The name `Server` is already bound.
 
 Types, functions, modules, and runtime values all share the same namespace.
 
-### 5.6 Binding scope
+### Binding scope
 
 Top-level declarations in a `.zt` file are in one recursive scope.
 
@@ -150,7 +158,7 @@ factorial 5
 
 It also allows mutually recursive top-level bindings, subject to type-checking and evaluation limits.
 
-### 5.7 Local bindings
+### Local bindings
 
 Inside function bodies, `:=` introduces a local immutable binding:
 
@@ -166,7 +174,7 @@ normalize :: RawServer -> Server
 
 A local binding is scoped to the remainder of the block.
 
-### 5.8 Immutability
+### Immutability
 
 All bindings are immutable.
 

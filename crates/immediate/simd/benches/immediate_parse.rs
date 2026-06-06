@@ -70,7 +70,7 @@ fn generated_document(fields: usize) -> String {
         document.push_str(&(index + 1).to_string());
         document.push_str(".25;\n");
         document.push_str(
-            "    tags = [#fast-path; #simd; \"brace } semicolon ; quote \\\"\"; none;];\n",
+            "    tags = [#fast-path; #simd; \"brace } semicolon ; quote \\\"\"; #none;];\n",
         );
         document.push_str("  };\n");
     }

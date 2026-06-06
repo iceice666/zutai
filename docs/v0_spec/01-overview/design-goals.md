@@ -1,4 +1,4 @@
-## 1. Design goals
+## Design goals
 
 Zutai is a two-mode language system for data, configuration, validation, and pure data transformation.
 
@@ -15,11 +15,13 @@ The central design split is:
 
 Immediate mode is designed to be deterministic, SIMD-friendly, non-evaluating, and suitable for both full parsing and daemon-side lazy materialization.
 
-General mode is designed to be a pure, lazy, expression-oriented scripting language with a full type system, first-class type-level computation, and metaprogramming facilities.
+General mode is designed to be a pure, lazy, expression-oriented scripting language with a full type system and first-class type-level computation.
+
+Compile-time reflection and metaprogramming facilities are deferred beyond v0.
 
 ### Data-oriented design
 
-The primary abstractions in Zutai are structured data: records, lists, atoms, and unions. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The type system — closed records, row-polymorphic views, union types with variants — is designed to represent data layouts directly, not to model object hierarchies.
+The primary abstractions in Zutai are structured data: records, tuples, lists, atoms, and unions. Immediate mode contains blocks and arrays; when imported into general mode these correspond to record and list values. General mode also has tuple values for structured alternatives and intermediate computation. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The v0 type system uses closed records and unions of singleton or tuple types to represent data layouts directly, not to model object hierarchies. Row-polymorphic views are deferred beyond v0.
 
 Idiomatic Zutai code processes batches of data through pipelines:
 
@@ -34,9 +36,8 @@ items
 
 All values are immutable. There is no mutation or assignment in the core language.
 
-Functions are first-class and curried. The `|>` pipeline operator is the idiomatic way to chain transformations. Pattern matching over union types is the primary branching mechanism — `if` exists for boolean conditions, but multi-variant dispatch uses `match`.
+Functions are first-class and curried. The `|>` pipeline operator is the idiomatic way to chain transformations. Pattern matching over union types is the primary branching mechanism — `if` exists for boolean conditions, but multi-case dispatch uses `match`.
 
-Type-level computation uses the same pure expression language as runtime code. Type constructors are ordinary functions that return `Type`.
+Type-level computation uses the same pure expression language as runtime code. Type constructors are ordinary functions that return `Type`, and type-level evaluation is deterministic and bounded by implementation limits.
 
 ---
-

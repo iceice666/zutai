@@ -1,4 +1,4 @@
-## 7. Imports
+## Imports
 
 Imports are expressions.
 
@@ -17,13 +17,13 @@ cfg := import config.zti
 
 However, the canonical syntax is the string form.
 
-### 7.1 Importing `.zti`
+### Importing `.zti`
 
 ```zt
 import "file.zti"
 ```
 
-parses the `.zti` file and returns inert data.
+parses the `.zti` file and returns the corresponding `.zt` data value. Blocks become records and arrays become lists. No `.zti` expression is evaluated, because immediate mode has only values.
 
 A `.zti` atom such as:
 
@@ -37,7 +37,7 @@ is represented in `.zt` with the same atom spelling:
 #prod
 ```
 
-### 7.2 Importing `.zt`
+### Importing `.zt`
 
 ```zt
 import "file.zt"
@@ -47,7 +47,7 @@ evaluates the imported `.zt` file and returns its final expression.
 
 The returned value may contain records, lists, functions, or types.
 
-### 7.3 Import purity
+### Import purity
 
 Imports are:
 

@@ -1,12 +1,12 @@
-# Type-Level Computation (v1)
+# Type-Level Computation Extensions (v1)
 
-These features extend the v0 type system to treat types as first-class compile-time values. They are deferred from v0 because they significantly complicate the type checker.
+v0 already treats types as first-class compile-time values and allows pure type-level computation with deterministic evaluator limits. This chapter records the v0 baseline and the v1 extensions that build on it, such as richer type functions, explicit kind annotations, and normalization guidance.
 
 ---
 
-## First-Class `Type` Values
+## v0 Baseline: `Type` Values
 
-In v1, types are first-class compile-time values. A binding annotated `: Type` holds a type:
+In v0 and later, types are first-class compile-time values. A `:: type` alias or a binding annotated `: Type` holds a type:
 
 ```zt
 Server :: type {
@@ -36,13 +36,13 @@ pair : TextIntPair = {
 }
 ```
 
-In v0, the equivalent is written as a generic type alias with `[A, B]` syntax without `Type -> Type` function signatures.
+Generic type aliases with `[A, B]` remain the preferred compact spelling for named generic records and unions.
 
 ---
 
 ## Type Annotations as Expressions
 
-When types are first-class, type annotations are type expressions that evaluate to types:
+Because types are first-class, type annotations are type expressions that evaluate to types:
 
 ```zt
 port : Int = 8080
@@ -143,9 +143,9 @@ The implementation should use internal universe levels to avoid literal unsoundn
 Conceptually, users write:
 
 ```zt
-Int: Type
-Text: Type
-Server: Type
+Int : Type
+Text : Type
+Server : Type
 ```
 
 Internally, the implementation may model this as:

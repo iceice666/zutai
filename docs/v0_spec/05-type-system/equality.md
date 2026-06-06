@@ -1,8 +1,7 @@
-## 21. Equality
+## Equality
 
-Structural equality is defined for serializable values:
+Structural equality is defined for first-order data values:
 
-* `none`
 * `Bool`
 * `Int`
 * `Float`
@@ -10,6 +9,7 @@ Structural equality is defined for serializable values:
 * `Atom`
 * lists of comparable values
 * records of comparable values
+* tuples of comparable values
 
 Examples:
 
@@ -17,7 +17,10 @@ Examples:
 #prod == #prod
 #prod != #dev
 { a = 1; } == { a = 1; }
+(#ok, value = 1) == (#ok, value = 1)
 ```
+
+Serializable values are a subset of these data values. Tuple values are comparable in `.zt`, but they do not have a direct `.zti` representation in v0.
 
 Functions are not comparable.
 

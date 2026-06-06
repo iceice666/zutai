@@ -1,4 +1,4 @@
-## 19. Pattern matching
+## Pattern matching
 
 Pattern matching uses `match` and `=>`:
 
@@ -14,12 +14,12 @@ Optional matching:
 
 ```zt
 match raw.port {
-  none => 8080;
-  port => port;
+  #none => 8080;
+  (#some, value = port) => port;
 }
 ```
 
-Variant matching:
+Tuple union matching:
 
 ```zt
 match shape {
@@ -28,7 +28,7 @@ match shape {
 }
 ```
 
-### 19.1 Exhaustiveness
+### Exhaustiveness
 
 For finite union types, `match` must be exhaustive.
 
@@ -66,12 +66,12 @@ A wildcard pattern `_` or a catch-all binding may be used:
 
 ```zt
 match value {
-  none => fallback;
-  x => x;
+  #none => fallback;
+  (#some, value = x) => x;
 }
 ```
 
-### 19.2 Guard clauses
+### Guard clauses
 
 A pattern may include a guard condition using `if`:
 
@@ -85,7 +85,7 @@ match n {
 
 The guard is evaluated only if the pattern matches. If the guard is false, the next clause is tried.
 
-Guards also apply to variant patterns:
+Guards also apply to tuple patterns:
 
 ```zt
 match shape {
@@ -95,7 +95,7 @@ match shape {
 }
 ```
 
-### 19.3 Nested patterns
+### Nested patterns
 
 Patterns may be nested to destructure composite values:
 
@@ -112,7 +112,7 @@ match response {
 }
 ```
 
-Nesting works for both variant and atom patterns:
+Nesting works for both tuple and atom patterns:
 
 ```zt
 match config {
@@ -121,7 +121,7 @@ match config {
 }
 ```
 
-### 19.4 Pattern matching in function clauses
+### Pattern matching in function clauses
 
 Multi-clause function definitions use the same pattern language in `::` clauses:
 

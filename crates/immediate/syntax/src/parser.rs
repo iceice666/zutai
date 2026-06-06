@@ -100,7 +100,6 @@ pub fn parse_value(input: &mut &str) -> Result<Value> {
         parse_number,
         parse_true,
         parse_false,
-        parse_none,
     ))
     .parse_next(input)
 }
@@ -119,11 +118,6 @@ fn parse_true(input: &mut &str) -> Result<Value> {
 fn parse_false(input: &mut &str) -> Result<Value> {
     parse_word(input, "false")?;
     Ok(Value::False)
-}
-
-fn parse_none(input: &mut &str) -> Result<Value> {
-    parse_word(input, "none")?;
-    Ok(Value::None)
 }
 
 pub fn parse_field_name(input: &mut &str) -> Result<String> {

@@ -1,6 +1,6 @@
-## 14. Field access and optional chaining
+## Field access and optional chaining
 
-### 14.1 Required field access
+### Required field access
 
 Field access uses `.`:
 
@@ -11,7 +11,7 @@ server.port
 
 If the left side is a record and the field exists, the field value is returned.
 
-If the field is declared optional and is absent, direct field access returns `none`:
+If the field is declared optional, direct field access returns an optional value:
 
 ```zt
 raw.port
@@ -20,18 +20,24 @@ raw.port
 If `port` is absent, this evaluates to:
 
 ```zt
-none
+#none
 ```
 
-If the left side is `none`, direct field access is an error:
+If `port` is present with value `8080`, this evaluates to:
+
+```zt
+(#some, value = 8080)
+```
+
+If the left side is `#none`, direct field access is an error:
 
 ```zt
 maybeServer.port
 ```
 
-where `maybeServer: Server?` is invalid unless `maybeServer` is known not to be `none`.
+where `maybeServer: Server?` is invalid unless `maybeServer` is known to be a `#some` value.
 
-### 14.2 Optional chaining
+### Optional chaining
 
 Optional chaining uses `?.`:
 
@@ -49,10 +55,12 @@ means:
 
 ```zt
 match x {
-  none => none;
-  value => value.field;
+  #none => #none;
+  (#some, value = value) => optionalWrap(value.field);
 }
 ```
+
+`optionalWrap` is a specification helper, not a user-visible function. It returns an already-optional value unchanged; otherwise it wraps the value as `(#some, value = result)`.
 
 Example:
 
@@ -66,9 +74,9 @@ raw : {
 port := raw.server?.port ?? 8080
 ```
 
-If `raw.server` is absent, `raw.server` evaluates to `none`, then `?.port` also evaluates to `none`, and `?? 8080` supplies the default.
+If `raw.server` is absent, `raw.server` evaluates to `#none`, then `?.port` also evaluates to `#none`, and `?? 8080` supplies the default.
 
-### 14.3 Optional chaining type rule
+### Optional chaining type rule
 
 If:
 

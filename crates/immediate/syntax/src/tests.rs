@@ -43,8 +43,14 @@ fn test_parse_value_literals() {
     let mut no = "false";
     assert_eq!(parse_value(&mut no).unwrap(), Value::False);
 
-    let mut none = "none";
-    assert_eq!(parse_value(&mut none).unwrap(), Value::None);
+    let mut none_atom = "#none";
+    assert_eq!(
+        parse_value(&mut none_atom).unwrap(),
+        Value::Atom("none".into())
+    );
+
+    let mut bare_none = "none";
+    assert!(parse_value(&mut bare_none).is_err());
 }
 
 #[test]
@@ -195,7 +201,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
     assert_eq!(as_string(&flags[1]), "--cap-lto=thin");
     assert_eq!(as_string(&flags[2]), "--codegen=unicode\nenabled");
     assert_eq!(as_string(&flags[3]), "json:\"log\"");
-    assert!(matches!(flags[4], Value::None));
+    assert_eq!(as_atom(&flags[4]), "none");
 
     let artifact = as_block(field(&build, "artifact"));
     let outputs = as_array(field(&artifact, "outputs"));
@@ -287,7 +293,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
 
     let history = as_array(field(&diagnostics, "history"));
     assert_eq!(history.len(), 4);
-    assert!(matches!(history[3], Value::None));
+    assert_eq!(as_atom(&history[3]), "none");
 }
 
 #[test]

@@ -1,14 +1,14 @@
 # Zutai Language Specification v1 — Deferred Features
 
-These features are scoped out of v0. They build on the simpler v0 type system and are planned for v1.
+These features build on the v0 language and are planned beyond the v0 core.
 
 ## Row Polymorphism
 
-- [Row polymorphism](01-row-polymorphism.md) — open records, named row tails, open unions, selective projection, higher-rank types
+- [Row polymorphism](01-row-polymorphism.md) — open records, named row tails, open unions, selective projection
 
-## Type-Level Computation
+## Type-Level Computation Extensions
 
-- [Type-level computation](02-type-level-computation.md) — first-class `Type` values, type functions, universe levels, type normalization
+- [Type-level computation extensions](02-type-level-computation.md) — advanced type functions, kind annotations, universe levels, type normalization guidance
 
 ## Constraint System
 

@@ -4,7 +4,6 @@ Abyss :: type {
 }
 
 Shadows :: type [
-  none;
   true;
   false;
   #none;
@@ -19,7 +18,7 @@ Unholy :: type [
   (#just-abyss, deep : Abyss??);
   (#both-things, a : Shadows, b : Shadows);
   #nothing;
-  none;
+  #none;
   true;
   false;
 ]
@@ -33,7 +32,7 @@ NightmareRecord :: type {
   inline-union       : [#a; #b; #c;];
   inline-fn          : Int -> Int -> Int;
   optional-fn?       : (Int -> Bool)?;
-  optional-union?    : [#x; #y; none;]?;
+  optional-union?    : [#x; #y; #none;]?;
 }
 
 id :: [A] A -> A
@@ -55,15 +54,14 @@ compose :: [A, B, C] (B -> C) -> (A -> B) -> A -> C
         :: g -> f -> x { g (f x) }
 
 unwrapOr :: [T] T? -> T -> T
-         :: none -> fallback { fallback }
-         :: value -> _       { value ?? value }
+         :: #none -> fallback { fallback }
+         :: (#some, value = value) -> _ { value }
 
 classify :: Int -> [#neg; #zero; #pos;]
          :: 0 { #zero }
          :: n { if n > 0 then #pos else #neg }
 
 shadow_of :: Shadows -> Text
-          :: none   { "literal-none" }
           :: true   { "literal-true" }
           :: false  { "literal-false" }
           :: #none  { "atom-none" }
@@ -73,17 +71,16 @@ shadow_of :: Shadows -> Text
 triple_shadow :: Shadows -> Shadows -> Shadows -> Text
               :: a -> b -> c {
                 match a {
-                  none  => match b {
-                    none  => match c {
-                      none   => "3x-none";
+                  #none  => match b {
+                    #none  => match c {
+                      #none   => "3x-none";
                       true   => "c-true";
                       false  => "c-false";
-                      #none  => "c-atom-none";
                       #true  => "c-atom-true";
                       #false => "c-atom-false";
                     };
                     true  => match c {
-                      none  => "b-true c-none";
+                      #none  => "b-true c-none";
                       _     => "b-true c-other";
                     };
                     _     => "b-other";
@@ -95,8 +92,8 @@ triple_shadow :: Shadows -> Shadows -> Shadows -> Text
               }
 
 depth_of :: Abyss? -> Int
-         :: none { 0 }
-         :: a {
+         :: #none { 0 }
+         :: (#some, value = a) {
            a?.into?.into?.into?.into?.depth
              ?? a?.into?.into?.into?.depth
              ?? a?.into?.into?.depth
@@ -112,19 +109,19 @@ make_abyss :: Int -> Abyss
 unholy_match :: Unholy -> Int
              :: (#just)                       { 0 }
              :: (#just-value, value = v)      { v }
-             :: (#just-maybe, maybe-value = none)  { -1 }
-             :: (#just-maybe, maybe-value = v)     { v ?? -2 }
-             :: (#just-abyss, deep = none)          { -3 }
+             :: (#just-maybe, maybe-value = #none)  { -1 }
+             :: (#just-maybe, maybe-value = (#some, value = v)) { v }
+             :: (#just-abyss, deep = #none)          { -3 }
              :: (#just-abyss, deep = a)             { depth_of a }
-             :: (#both-things, a = none, b = none)  { -4 }
+             :: (#both-things, a = #none, b = #none)  { -4 }
              :: (#both-things, a = _, b = _)        { -5 }
              :: #nothing { -6 }
-             :: none     { -7 }
+             :: #none     { -7 }
              :: true     { 1 }
              :: false    { 0 }
 
 higher_order_shadow :: Shadows -> (Int -> Int)
-                    :: none   { \x => x }
+                    :: #none   { \x => x }
                     :: true   { \x => x + 1 }
                     :: false  { \x => x * -1 }
                     :: #none  { \_ => 0 }
@@ -147,8 +144,8 @@ anon_in_pipeline :: Int -> Int
                  }
 
 port_for :: Bool? -> Int
-         :: none  { if true then 0 else -1 }
-         :: value {
+         :: #none  { if true then 0 else -1 }
+         :: (#some, value = value) {
            if value
            then (\base => base + 443) 0
            else (\base => base + 8080) 0
@@ -156,24 +153,24 @@ port_for :: Bool? -> Int
 
 nightmare : NightmareRecord = {
   required        = true;
-  optional-value  = none;
+  optional-value  = #none;
   optional-field  = false;
-  both-optional   = none;
-  deep-optional   = none;
+  both-optional   = #none;
+  deep-optional   = #none;
   inline-union    = #b;
   inline-fn       = \a b => a + b;
-  optional-fn     = none;
-  optional-union  = none;
+  optional-fn     = #none;
+  optional-union  = #none;
 }
 
 u1 : Unholy = (#just)
 u2 : Unholy = (#just-value, value = 42)
-u3 : Unholy = (#just-maybe, maybe-value = none)
-u4 : Unholy = (#just-maybe, maybe-value = 99)
-u5 : Unholy = (#just-abyss, deep = none)
-u6 : Unholy = (#both-things, a = #true, b = none)
+u3 : Unholy = (#just-maybe, maybe-value = #none)
+u4 : Unholy = (#just-maybe, maybe-value = (#some, value = 99))
+u5 : Unholy = (#just-abyss, deep = #none)
+u6 : Unholy = (#both-things, a = #true, b = #none)
 u7 : Unholy = #nothing
-u8 : Unholy = none
+u8 : Unholy = #none
 u9 : Unholy = true
 u10 : Unholy = false
 
@@ -191,14 +188,14 @@ u10 : Unholy = false
     unholy_match u10;
   ];
   ports = [
-    port_for none;
-    port_for true;
-    port_for false;
+    port_for #none;
+    port_for (#some, value = true);
+    port_for (#some, value = false);
   ];
   shadow-texts = [
-    triple_shadow none none none;
+    triple_shadow #none #none #none;
     triple_shadow true false #none;
-    triple_shadow #true #false none;
+    triple_shadow #true #false #none;
   ];
   depth = depth_of (make_abyss 4);
   pipeline-result = anon_in_pipeline 3;

@@ -1,4 +1,4 @@
-## 18. Polymorphism
+## Polymorphism
 
 Zutai uses a `[...]` type parameter list for polymorphic functions and types, placed immediately after `::`:
 
@@ -31,7 +31,7 @@ Item
 Body
 ```
 
-### 18.1 Type-system model
+### Type-system model
 
 The v0 type system is predicative explicit polymorphism with HM-style let generalization and bidirectional checking.
 
@@ -39,7 +39,7 @@ Type parameters are unconstrained in v0. A constrained type parameter (e.g., `[A
 
 Row-polymorphic records and open union types are also v1 features. See [Row polymorphism](../../v1_spec/01-row-polymorphism.md).
 
-### 18.2 Instantiation
+### Instantiation
 
 Polymorphic functions are implicitly instantiated at call sites.
 
@@ -60,7 +60,7 @@ id #prod
 
 Explicit type application syntax is not part of v0. If it is added later, it must not conflict with ordinary function application.
 
-### 18.3 Let generalization
+### Let generalization
 
 Implementations may generalize let-bound expressions when all free type variables can be generalized safely.
 
@@ -76,5 +76,5 @@ However, public APIs, exported module fields, and complex polymorphic functions 
 
 ```zt
 mapList :: [A, B] (A -> B) -> List A -> List B
-        :: f -> xs { ... }
+        :: f -> xs { mapListImpl f xs }
 ```

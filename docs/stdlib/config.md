@@ -14,7 +14,7 @@ config overlay  = policy-driven application of partial layers
 normalization   = conversion from raw partial config to final validated config
 ```
 
-Record update belongs to the core expression language. Config overlay belongs here, in the standard library.
+Post-v0 record update belongs to the core expression language. Config overlay belongs here, in the standard library.
 
 ## Names
 
@@ -34,7 +34,7 @@ DeepPatch
 ### Type
 
 ```zt
-overlay: forall T. Patch T -> T -> T
+overlay :: [T] Patch T -> T -> T
 ```
 
 `overlay upper lower` applies the upper patch to the lower value.
@@ -42,7 +42,7 @@ overlay: forall T. Patch T -> T -> T
 The patch argument comes first so the function composes naturally with pipelines:
 
 ```zt
-let raw =
+raw :=
   defaults
     |> overlay project
     |> overlay local
@@ -58,7 +58,7 @@ This is equivalent to applying `project`, then `local`, then `cli` over `default
 - If a field is present in the upper layer, replace the lower value.
 - Nested records are replaced as whole values.
 - Lists are replaced as whole values.
-- none is treated as a value, not deletion.
+- `#none` is treated as a value, not deletion.
 ```
 
 Shallow overlay is the simplest config-composition primitive and should remain predictable.
@@ -68,7 +68,7 @@ Shallow overlay is the simplest config-composition primitive and should remain p
 ### Type
 
 ```zt
-overlayDeep: forall T. DeepPatch T -> T -> T
+overlayDeep :: [T] DeepPatch T -> T -> T
 ```
 
 `overlayDeep upper lower` applies the upper deep patch to the lower value.
@@ -76,7 +76,7 @@ overlayDeep: forall T. DeepPatch T -> T -> T
 Pipeline usage:
 
 ```zt
-let raw =
+raw :=
   defaults
     |> overlayDeep project
     |> overlayDeep local
@@ -90,9 +90,9 @@ let raw =
 - Present scalar in upper layer: replace lower field.
 - Present record in upper layer: recursively merge.
 - Present list in upper layer: replace whole list.
-- Present union/tagged variant in upper layer: replace whole variant.
-- Present none: set field to none, if the type allows it.
-- Unknown field: type error unless the target type is open.
+- Present union tuple in upper layer: replace the whole tuple value.
+- Present `#none`: set field to `#none`, if the type allows it.
+- Unknown field: type error unless a row-polymorphic open-record target type explicitly permits it.
 ```
 
 Lists are not concatenated by default. List merge behavior is domain-specific and should be explicit.
@@ -102,10 +102,10 @@ Lists are not concatenated by default. List merge behavior is domain-specific an
 For a schema:
 
 ```zt
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool;
 }
 ```
 
@@ -119,9 +119,9 @@ conceptually becomes:
 
 ```zt
 type {
-  host? = Text;
-  port? = Int;
-  tls? = Bool;
+  host? : Text;
+  port? : Int;
+  tls? : Bool;
 }
 ```
 
@@ -136,10 +136,10 @@ DeepPatch Config
 ```text
 field absent      = do not change the lower value
 field present X   = set the field to X
-field present none = set the field to none, if allowed by the field type
+field present #none = set the field to #none, if allowed by the field type
 ```
 
-Deletion is not part of `Patch` or `DeepPatch` v1.
+Deletion is not part of `Patch` or `DeepPatch` in this initial post-v0 design.
 
 ## Raw-then-normalize workflow
 
@@ -152,43 +152,45 @@ partial raw layers -> merged raw config -> normalized final config
 Example:
 
 ```zt
-let RawServer: Type = type {
-  host? = Text;
-  port? = Int;
-  tls? = Bool;
+RawServer :: type {
+  host? : Text;
+  port? : Int;
+  tls? : Bool;
 }
 
-let Server: Type = type {
-  host = Text;
-  port = Int;
-  tls = Bool;
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool;
 }
 
-let normalizeServer: RawServer -> Server =
-  fn raw => {
-    host = raw.host ?? "127.0.0.1";
-    port = raw.port ?? 8080;
-    tls = raw.tls ?? false;
-  }
+normalizeServer :: RawServer -> Server
+               :: raw {
+                 {
+                   host = raw.host ?? "127.0.0.1";
+                   port = raw.port ?? 8080;
+                   tls = raw.tls ?? false;
+                 }
+               }
 
-let raw =
+raw :=
   defaults
     |> overlay project
     |> overlay local
     |> overlay cli
 
-let server: Server = normalizeServer raw
+server : Server = normalizeServer raw
 ```
 
 This keeps defaulting, validation, and cross-field logic centralized in normalization functions.
 
 ## Deletion is deferred
 
-Absence and `none` already mean different things:
+Absence and `#none` already mean different things:
 
 ```text
 absent field = no value provided
-none         = explicit value representing absence
+#none        = explicit optional value
 ```
 
 Deletion must not overload either meaning.

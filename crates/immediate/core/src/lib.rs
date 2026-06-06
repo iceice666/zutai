@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn cursed_basic_scalars() {
         let doc = parse_syntax(CURSED).unwrap();
-        assert_eq!(field(&doc, "none-field"), &Value::None);
+        assert_eq!(field(&doc, "none-field"), &Value::Atom("none".into()));
         assert_eq!(field(&doc, "true-field"), &Value::True);
         assert_eq!(field(&doc, "false-field"), &Value::False);
     }
@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(nums[4], Value::Integer(123_456_789));
         assert_eq!(nums[5], Value::Integer(-987_654_321));
         assert_eq!(nums[6], Value::Float(0.0));
-        assert_eq!(nums[8], Value::Float(3.14));
+        assert_eq!(nums[8], Value::Float(314.0 / 100.0));
     }
 
     #[cfg(feature = "syntax")]
@@ -151,12 +151,12 @@ mod tests {
         let doc = parse_syntax(CURSED).unwrap();
         let mixed = as_array(field(&doc, "all-in-one-list"));
         assert_eq!(mixed.len(), 12);
-        assert_eq!(mixed[0], Value::None);
+        assert_eq!(mixed[0], Value::Atom("none".into()));
         assert_eq!(mixed[1], Value::True);
         assert_eq!(mixed[2], Value::False);
         assert_eq!(mixed[3], Value::Integer(0));
         assert_eq!(mixed[4], Value::Integer(-1));
-        assert_eq!(mixed[5], Value::Float(3.14));
+        assert_eq!(mixed[5], Value::Float(314.0 / 100.0));
         assert_eq!(mixed[6], Value::String("string".into()));
         assert_eq!(mixed[7], Value::Atom("atom".into()));
         assert_eq!(as_block(&mixed[8]).len(), 0);

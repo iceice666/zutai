@@ -1,4 +1,4 @@
-## 22. Laziness and purity
+## Laziness and purity
 
 General mode is pure and lazy.
 

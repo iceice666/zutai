@@ -1,4 +1,4 @@
-## 11. Lists
+## Lists
 
 List types use the `List` type constructor:
 
@@ -14,7 +14,9 @@ List values use `[` `;` `]`:
 items : List Int = [1; 2; 3;]
 ```
 
-### 11.1 Standard list operations
+When `.zti` arrays are imported into `.zt`, they are list values.
+
+### Standard list operations
 
 The core standard-library list functions:
 

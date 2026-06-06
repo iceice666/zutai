@@ -23,7 +23,6 @@ pub struct Pair {
 pub enum Value {
     True,
     False,
-    None,
     Atom(String),
     String(String),
     Float(f64),
@@ -63,7 +62,7 @@ mod tests {
                 field_name: "nested".into(),
                 value: Value::Block(Block(vec![Pair {
                     field_name: "x".into(),
-                    value: Value::None,
+                    value: Value::Atom("none".into()),
                 }])),
             },
         ]);

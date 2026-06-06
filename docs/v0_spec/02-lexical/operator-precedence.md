@@ -1,4 +1,4 @@
-## 27. Operator precedence
+## Operator precedence
 
 From highest to lowest:
 

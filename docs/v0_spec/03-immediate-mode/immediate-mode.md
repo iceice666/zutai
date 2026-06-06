@@ -1,6 +1,6 @@
-## 4. Immediate mode `.zti`
+## Immediate mode `.zti`
 
-### 4.1 Purpose
+### Purpose
 
 `.zti` is Zutai's pure data literal format.
 
@@ -13,7 +13,7 @@ It is intended to be:
 * suitable for SIMD structural scanning
 * suitable for daemon-side lazy materialization
 
-### 4.2 Grammar
+### Grammar
 
 ```ebnf
 document ::= block
@@ -26,7 +26,6 @@ item     ::= value ";"
 
 value    ::= "true"
            | "false"
-           | "none"
            | atom
            | string
            | number
@@ -40,7 +39,7 @@ string     ::= JSON-style-string
 number     ::= JSON-style-number
 ```
 
-### 4.3 Top-level form
+### Top-level form
 
 The top-level form of a `.zti` file must be a block:
 
@@ -65,7 +64,7 @@ This is also invalid:
 ]
 ```
 
-### 4.4 Fields and semicolons
+### Fields and semicolons
 
 Every block field is a pair:
 
@@ -93,7 +92,7 @@ Invalid:
 }
 ```
 
-### 4.5 Arrays
+### Arrays
 
 Arrays contain semicolon-terminated items:
 
@@ -107,7 +106,7 @@ Arrays contain semicolon-terminated items:
 
 The trailing semicolon is required for every item.
 
-### 4.6 Duplicate keys
+### Duplicate keys
 
 Duplicate keys in the same block are invalid.
 
@@ -122,7 +121,7 @@ Invalid:
 
 Rationale: `.zti` is deterministic data. There is no first-wins or last-wins rule.
 
-### 4.7 Comments
+### Comments
 
 Canonical `.zti` v0 has no comments.
 
@@ -137,7 +136,7 @@ Invalid:
 
 Tools may support non-canonical preprocessing, but the canonical fast path does not include comments.
 
-### 4.8 Forbidden immediate-mode constructs
+### Forbidden immediate-mode constructs
 
 The following are invalid in `.zti`:
 
@@ -152,7 +151,7 @@ The following are invalid in `.zti`:
 
 Immediate mode has no expressions. It has only values.
 
-### 4.9 Immediate-mode data model
+### Immediate-mode data model
 
 The `.zti` data model contains:
 
@@ -171,5 +170,6 @@ A block is an ordered set of unique field names mapped to values.
 
 Implementations may preserve source order for formatting and diagnostics, but semantic equality of blocks is structural and key-based.
 
----
+When `.zti` data is imported into `.zt`, blocks become record values and arrays become list values. `.zti` has no tuple literal; general-mode tuple values are not part of the immediate-mode data model.
 
+---

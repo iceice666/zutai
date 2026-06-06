@@ -37,7 +37,6 @@ This specification is split into multiple files, grouped by chapter.
 - [Field access and optional chaining](05-type-system/field-access.md)
 - [Defaulting operator](05-type-system/defaulting-operator.md)
 - [Union types](05-type-system/unions.md)
-- [Tagged unions](05-type-system/tagged-unions.md)
 - [Equality](05-type-system/equality.md)
 
 ## Chapter 6 — Polymorphism
@@ -57,5 +56,5 @@ This specification is split into multiple files, grouped by chapter.
 
 ---
 
-Features deferred to v1: row polymorphism, type-level computation, constraint system, metaprogramming.
+Features deferred to v1: row polymorphism, selective projection, constraint system, reflection APIs, and metaprogramming.
 See [v1 spec index](../v1_spec/00-index.md).
