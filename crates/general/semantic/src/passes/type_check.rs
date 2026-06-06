@@ -85,7 +85,7 @@ use zutai_syntax::diag::ErrorCode;
 
 use crate::context::AnalysisContext;
 use crate::elab::ty_of_hir;
-use crate::pass::Pass;
+use crate::passes::Pass;
 use crate::ty::*;
 
 pub struct TypeCheck;
@@ -108,6 +108,12 @@ struct TypeChecker<'a> {
 
 impl<'a> TypeChecker<'a> {
     pub fn infer_expr(&mut self, expr_id: HirExprId) -> TyId {
+        let ty = self.infer_expr_inner(expr_id);
+        self.ctx.expr_types.insert(expr_id, ty);
+        ty
+    }
+
+    fn infer_expr_inner(&mut self, expr_id: HirExprId) -> TyId {
         let expr = self.hir.exprs.get(expr_id);
         let kind = expr.kind.clone();
         let range = expr.range;
@@ -307,17 +313,20 @@ impl<'a> TypeChecker<'a> {
         let kind = expr.kind.clone();
         let range = expr.range;
 
-        match kind {
+        let checked_ty = match kind {
             HirExprKind::Record { fields } => {
                 self.check_record_expr(&fields, expected, range);
+                expected
             }
             HirExprKind::Lambda { params, body } => {
                 self.check_lambda_expr(&params, body, expected, range);
+                expected
             }
             HirExprKind::If { cond, then_, else_ } => {
                 self.check_expr(cond, BOOL_TY);
                 self.check_expr(then_, expected);
                 self.check_expr(else_, expected);
+                expected
             }
             HirExprKind::Match { scrutinee, arms } => {
                 let scr_ty = self.infer_expr(scrutinee);
@@ -329,6 +338,7 @@ impl<'a> TypeChecker<'a> {
                     }
                     self.check_expr(arm.body, expected);
                 }
+                expected
             }
             HirExprKind::Annot { expr, ty } => {
                 let annotated = self.ty_of_hir(ty);
@@ -336,14 +346,18 @@ impl<'a> TypeChecker<'a> {
                 if !self.compatible(annotated, expected) {
                     self.type_mismatch(range, annotated, expected);
                 }
+                annotated
             }
             _ => {
                 let actual = self.infer_expr(expr_id);
                 if !self.compatible(actual, expected) {
                     self.type_mismatch(range, actual, expected);
                 }
+                expected
             }
-        }
+        };
+
+        self.ctx.expr_types.insert(expr_id, checked_ty);
     }
 
     // The entrypoint of type checking
