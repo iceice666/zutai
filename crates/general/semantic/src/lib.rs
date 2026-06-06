@@ -43,7 +43,7 @@ pub fn analyze(root: &SyntaxNode) -> AnalysisResult {
     // Elaborate type annotations: HirType → Ty, write back into Symbol::ty
     elab::elab_file(&mut hir, &mut ctx.types);
 
-    for pass in pass::default_passes() {
+    for pass in passes::default_passes() {
         pass.run(&mut hir, &mut ctx);
     }
     let (diagnostics, resolution) = ctx.finish();

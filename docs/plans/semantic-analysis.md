@@ -247,6 +247,11 @@ finite union.
 **Spec:** `docs/v0_spec/06-polymorphism/pattern-matching.md` §19  
 **Prerequisite:** M2 complete (need the scrutinee's type to know what "all cases" are).
 
+**Status:** implemented in `crates/general/semantic/src/passes/exhaustiveness.rs`.
+The pass is registered by default, uses M2 expression/symbol type information,
+checks finite atom and tuple-tag union coverage, ignores guarded arms for
+coverage, and is covered by focused M3 acceptance tests.
+
 **Rules:**
 - A union `[#ok; #err; #pending;]` has a finite, known case set.
 - A `match` must cover every case. A wildcard `_` or an unconstrained `NameRef` pattern
@@ -254,7 +259,8 @@ finite union.
 - Guards (`if cond`) do *not* count as coverage — a guarded arm may fall through.
 - Function clause sets: same coverage check per union-typed first argument.
 
-**Fixture to flip:** `semantic_invalid/exhaustiveness.zt` → `invalid/`
+**Flipped fixture:**
+- `invalid/exhaustiveness.zt`
 
 ---
 

@@ -1,3 +1,4 @@
+-- Expected: semantic-error (parse-clean + semantic diagnostic)
 -- Spec-invalid: non-exhaustive match over a finite union (pattern-matching §19.1).
 -- The parser has no exhaustiveness checker, so these parse clean today.
 -- When M3 lands, move to invalid/ and assert the semantic diagnostic.

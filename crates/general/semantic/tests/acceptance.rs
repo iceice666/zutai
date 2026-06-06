@@ -106,10 +106,11 @@ fn m2_closed_records_emit_errors() {
 }
 
 #[test]
-fn semantic_gap_exhaustiveness() {
-    assert_no_panic(
-        include_str!("../../fixtures/semantic_invalid/exhaustiveness.zt"),
-        "semantic_invalid/exhaustiveness.zt",
+fn m3_exhaustiveness_emits_non_exhaustive_match() {
+    assert_has_semantic_error(
+        include_str!("../../fixtures/invalid/exhaustiveness.zt"),
+        "invalid/exhaustiveness.zt",
+        ErrorCode::NonExhaustiveMatch,
     );
 }
 
@@ -160,5 +161,61 @@ greet #staging
 "#,
         "m2 function call union argument",
         ErrorCode::TypeMismatch,
+    );
+}
+
+#[test]
+fn m3_wildcard_is_exhaustive() {
+    assert_no_semantic_diags(
+        r#"
+  Status :: type [#ok; #err; #pending;]
+
+  describe :: Status -> Text
+           :: #ok { "ok" }
+           :: _ { "other" }
+
+  describe #ok
+  "#,
+        "m3 wildcard exhaustive",
+    );
+}
+
+#[test]
+fn m3_guarded_arm_does_not_count() {
+    assert_has_semantic_error(
+        r#"
+  Status :: type [#ok; #err;]
+
+  describe :: Status -> Text
+           :: x if true { "some" }
+
+  describe #ok
+  "#,
+        "m3 guarded catch-all not exhaustive",
+        ErrorCode::NonExhaustiveMatch,
+    );
+}
+
+#[test]
+fn m3_match_field_access_scrutinee_is_checked() {
+    assert_has_semantic_error(
+        r#"
+  Status :: type [#ok; #err; #pending;]
+  Box :: type { status : Status; }
+
+  box : Box = { status = #ok; }
+
+  describe :: Box -> Text
+           :: item {
+             match item.status {
+               (#ok)  => "ok";
+               (#err) => "error";
+             }
+           }
+
+  describe box
+  "#,
+        "m3 match field access scrutinee",
+        ErrorCode::NonExhaustiveMatch,
     );
 }

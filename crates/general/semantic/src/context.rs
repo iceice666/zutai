@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 use text_size::TextRange;
 
+use zutai_hir::expr::HirExprId;
 use zutai_syntax::diag::{Diagnostic, ErrorCode};
 
 use crate::ResolutionMap;
 use crate::scope::ScopeStack;
-use crate::ty::TyInterner;
+use crate::ty::{TyId, TyInterner};
 
 // ── AnalysisContext ───────────────────────────────────────────────────────────
 
@@ -13,6 +16,7 @@ pub struct AnalysisContext {
     pub scopes: ScopeStack,
     pub resolution: ResolutionMap,
     pub types: TyInterner,
+    pub expr_types: HashMap<HirExprId, TyId>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -22,6 +26,7 @@ impl AnalysisContext {
             scopes: ScopeStack::new(),
             resolution: ResolutionMap::new(),
             types: TyInterner::new(),
+            expr_types: HashMap::new(),
             diagnostics: Vec::new(),
         }
     }
