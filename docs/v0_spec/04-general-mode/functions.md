@@ -2,33 +2,72 @@
 
 ### Named function definitions
 
-Named functions use `::` for both the type signature and implementation clauses. The type signature line gives the full type; each clause line gives patterns and a body block.
+Named functions use `::` for the type signature and `|` for each implementation clause. The function name appears once; clauses are indented under the signature.
 
 ```zt
 add :: Int -> Int -> Int
-    :: a -> b { a + b }
+    | a b => a + b
 ```
-
-The `->` between clause patterns corresponds to the `->` in the type signature — one pattern per arrow.
-
-Function clauses are introduced by `::` and are not semicolon-terminated.
 
 Multi-clause definitions provide pattern matching directly in the function:
 
 ```zt
 factorial :: Int -> Int
-          :: 0 { 1 }
-          :: n { n * factorial (n - 1) }
+          | 0 => 1
+          | n => n * factorial (n - 1)
 
 describe :: Bool -> Text
-         :: true  { "yes" }
-         :: false { "no" }
+         | true  => "yes"
+         | false => "no"
 ```
 
-The type signature is optional when the type can be inferred:
+The type signature is required when using `|` clauses. Without a signature, write a single no-sig definition instead (see below).
+
+Guard conditions use `if` between the pattern and `=>`:
 
 ```zt
-negate :: x { x * -1 }
+classify :: Int -> Text
+         | n if n > 0 => "positive"
+         | n if n < 0 => "negative"
+         | _          => "zero"
+```
+
+When the body requires local bindings, use a block expression `{ stmts; expr }`:
+
+```zt
+normalizeServer :: RawServer -> Server
+               | s => {
+                 host := s.host ?? "127.0.0.1";
+                 port := s.port ?? 8080;
+                 tls  := s.tls  ?? false;
+                 { host = host; port = port; tls = tls; }
+               }
+```
+
+### No-sig single definitions
+
+When the type is fully inferable and only one clause is needed, write a definition without a signature or `|`:
+
+```zt
+add a b = a + b
+double x = x * 2
+```
+
+This form does not support multiple clauses or guards. For those, write a `::` signature and use `|` clauses.
+
+### Typed constants
+
+Constants (zero-argument bindings) use `::` for the type annotation:
+
+```zt
+port :: Int = 8080
+host :: Text = "localhost"
+```
+
+For inferred constants, use `:=`:
+
+```zt
+port := 8080
 ```
 
 ### Curried functions
@@ -37,7 +76,7 @@ Functions are curried by default.
 
 ```zt
 add :: Int -> Int -> Int
-    :: a -> b { a + b }
+    | a b => a + b
 ```
 
 `add` takes one `Int` and returns a function `Int -> Int`. Partial application:
@@ -56,15 +95,7 @@ normalizeServer raw.server
 Pair Text Int
 ```
 
-```zt
-f x y
-```
-
-means:
-
-```zt
-(f x) y
-```
+`f x y` means `(f x) y`.
 
 ### Function types
 
@@ -75,41 +106,30 @@ Int -> Int -> Int
 { port : Int } -> Int
 ```
 
-Polymorphic signatures put the type parameter list immediately after `::`:
+Polymorphic signatures put the type parameter list `<...>` immediately after `::`:
 
 ```zt
-id :: [A] A -> A
+id :: <A> A -> A
+   | x => x
 ```
 
-```zt
-A -> B -> C
-```
-
-means:
-
-```zt
-A -> (B -> C)
-```
+`A -> B -> C` means `A -> (B -> C)`.
 
 In type-context positions, `{ ... }` and `[ ... ]` are parsed as record and union type literals without repeating the `type` keyword.
 
-Function expressions use `=>` or `{}`.
-Function types use `->`.
-
 ### Anonymous functions
 
-Anonymous functions use `\` followed by space-separated patterns and `=>` for the body:
+Anonymous functions use `\` followed by space-separated patterns and `.` for the body:
 
 ```zt
-\x => x * 2
-\x y => x + y
+\x. x * 2
+\x y. x + y
 ```
 
-Block form with `{}` when the body needs local bindings:
+When the body needs local bindings, use a block expression:
 
 ```zt
-\x { x * 2 }
-\acc x {
+\acc x. {
   doubled := acc * 2;
   doubled + x
 }
@@ -118,10 +138,12 @@ Block form with `{}` when the body needs local bindings:
 Examples:
 
 ```zt
-map    (\x => x * 2) items
-filter (\x => x > 0) items
-fold   (\acc x => acc + x) 0 items
+map    (\x. x * 2) items
+filter (\x. x > 0) items
+fold   (\acc x. acc + x) 0 items
 ```
+
+The lambda dot must be surrounded by whitespace from the last pattern. `\x.y` with no space is a parse error; write `\x. y`.
 
 ### Pipeline operators
 
@@ -133,25 +155,13 @@ Forward pipeline:
 x |> f
 ```
 
-means:
-
-```zt
-f x
-```
-
-Backward pipeline:
+means `f x`. Backward pipeline:
 
 ```zt
 f <| x
 ```
 
-means:
-
-```zt
-f x
-```
-
-Pipelines are useful for chaining transformations:
+means `f x`. Pipelines are useful for chaining transformations:
 
 ```zt
 raw
@@ -160,73 +170,18 @@ raw
   |> render
 ```
 
-which means:
+which means `render (validate (normalize raw))`.
+
+Because functions are curried, `x |> f a` means `(f a) x`. To place a value in a non-final position use an explicit lambda or `<|`:
 
 ```zt
-render (validate (normalize raw))
-```
-
-Pipelines do not perform implicit argument reordering beyond the single desugaring above.
-
-Because functions are curried:
-
-```zt
-x |> f a
-```
-
-means:
-
-```zt
-(f a) x
-```
-
-not:
-
-```zt
-f x a
-```
-
-To place a value in a non-final position, use an explicit function:
-
-```zt
-x |> \v => f v a
-```
-
-or choose argument order so that ordinary currying and `<|` compose naturally:
-
-```zt
+x |> \v. f v a
 f a <| x
-```
-
-means:
-
-```zt
-f a x
 ```
 
 ### No method-call rewrite in v0
 
-The expression:
-
-```zt
-x.f
-```
-
-is field or module access, not method-call syntax.
-
-There is no v0 rewrite from:
-
-```zt
-x.f y
-```
-
-to:
-
-```zt
-f x y
-```
-
-Use ordinary function application or pipelines instead:
+`x.f` is field or module access, not method-call syntax. Use ordinary function application or pipelines instead:
 
 ```zt
 f x y

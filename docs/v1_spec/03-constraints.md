@@ -6,20 +6,20 @@ Constraints are named behavioral interfaces over types. They enable polymorphic 
 
 ## Constraint Definitions
 
-A constraint is declared with `::`, a type parameter list `[...]`, a witness target `@T`, and a body of method signatures:
+A constraint is declared with `::`, a type parameter list `<...>`, a witness target `@T`, and a body of method signatures:
 
 ```zt
-Eq :: [A] @A {
+Eq :: <A> @A {
   eq :: A -> A -> Bool;
 }
 ```
 
-The `[A]` after `::` declares the type parameter. `@A` marks which type this constraint is "about" — the witness target. Method signatures inside the body use `::` (not `:`, which is for record field types).
+The `<A>` after `::` declares the type parameter. `@A` marks which type this constraint is "about" — the witness target. Method signatures inside the body use `::` (not `:`, which is for record field types).
 
 Operators are declared with parenthesised names, mirroring their call syntax:
 
 ```zt
-Ord :: [A: Eq] @A {
+Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
   (<)     :: A -> A -> Bool;
   (<=)    :: A -> A -> Bool;
@@ -34,10 +34,10 @@ Ord :: [A: Eq] @A {
 
 ## Superconstraints
 
-A constraint may require other constraints on its type parameter via bounds in `[...]`:
+A constraint may require other constraints on its type parameter via bounds in `<...>`:
 
 ```zt
-Ord :: [A: Eq] @A {
+Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
 }
 ```
@@ -47,7 +47,7 @@ This means: to provide a witness for `Ord A`, the type `A` must already have a w
 Multiple bounds on one parameter use `+`:
 
 ```zt
-Hash :: [A: Eq + Show] @A {
+Hash :: <A: Eq + Show> @A {
   hash :: A -> Int;
 }
 ```
@@ -59,14 +59,14 @@ Hash :: [A: Eq + Show] @A {
 A method may have a default implementation. Mark it optional with `?` and follow immediately with an anonymous `::` clause providing the default:
 
 ```zt
-Ord :: [A: Eq] @A {
+Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
 
   max? :: A -> A -> A;
-       :: a -> b { if a >= b then a else b }
+       | a b => if a >= b then a else b
 
   min? :: A -> A -> A;
-       :: a -> b { if a <= b then a else b }
+       | a b => if a <= b then a else b
 }
 ```
 
@@ -110,14 +110,14 @@ Here `max` and `min` use the defaults derived from `compare` via `>=` and `<=`.
 
 ## Conditional Witnesses
 
-A witness for a parameterised type may require constraints on its type arguments. Declare them in `[...]` after `::`:
+A witness for a parameterised type may require constraints on its type arguments. Declare them in `<...>` after `::`:
 
 ```zt
-Eq @(List A) :: [A: Eq] {
+Eq @(List A) :: <A: Eq> {
   eq = eqList;
 }
 
-Ord @(List A) :: [A: Ord] {
+Ord @(List A) :: <A: Ord> {
   compare = compareList;
 }
 ```
@@ -126,31 +126,31 @@ Ord @(List A) :: [A: Ord] {
 
 ## Using Constraints in Functions
 
-Type parameters and their constraints are declared in `[...]` immediately after `::`:
+Type parameters and their constraints are declared in `<...>` immediately after `::`:
 
 ```zt
-contains :: [A: Eq] List A -> A -> Bool
-         :: xs -> x { containsImpl xs x }
+contains :: <A: Eq> List A -> A -> Bool
+         | xs x => containsImpl xs x
 
-sort :: [A: Ord] List A -> List A
-     :: xs { sortImpl xs }
+sort :: <A: Ord> List A -> List A
+     | xs => sortImpl xs
 ```
 
 Unconstrained parameters omit the `:` bound:
 
 ```zt
-id      :: [A] A -> A
-        :: x { x }
+id      :: <A> A -> A
+        | x => x
 
-mapList :: [A, B] (A -> B) -> List A -> List B
-        :: f -> xs { mapListImpl f xs }
+mapList :: <A, B> (A -> B) -> List A -> List B
+        | f xs => mapListImpl f xs
 ```
 
 Multiple parameters with independent constraints:
 
 ```zt
-zipWith :: [A, B, C] (A -> B -> C) -> List A -> List B -> List C
-        :: f -> xs -> ys { zipWithImpl f xs ys }
+zipWith :: <A, B, C> (A -> B -> C) -> List A -> List B -> List C
+        | f xs ys => zipWithImpl f xs ys
 ```
 
 Witnesses are resolved implicitly at call sites — callers do not pass them explicitly.
@@ -171,23 +171,23 @@ Witnesses are automatically exported when their defining module is imported. The
 
 ## Higher-Kinded Constraints
 
-Type parameters in `[...]` may carry a kind annotation using `::`, allowing constraints over type constructors rather than concrete types:
+Type parameters in `<...>` may carry a kind annotation using `::`, allowing constraints over type constructors rather than concrete types:
 
 ```zt
-Functor :: [F :: Type -> Type] @F {
-  map :: [A, B] (A -> B) -> F A -> F B;
+Functor :: <F :: Type -> Type> @F {
+  map :: <A, B> (A -> B) -> F A -> F B;
 }
 
-Foldable :: [F :: Type -> Type] @F {
-  fold :: [A, B] (B -> A -> B) -> B -> F A -> B;
+Foldable :: <F :: Type -> Type> @F {
+  fold :: <A, B> (B -> A -> B) -> B -> F A -> B;
 }
 ```
 
 `F :: Type -> Type` means F must be a type constructor — it takes one type and produces a type. The kind annotation is written in the constraint definition. At use sites, the kind is inferred from the constraint so callers need not repeat it:
 
 ```zt
-mapTwice :: [F: Functor, A] (A -> A) -> F A -> F A
-         :: f -> xs { map f (map f xs) }
+mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A
+         | f xs => map f (map f xs)
 ```
 
 Witnesses target the type constructor without arguments:
@@ -207,10 +207,10 @@ Partial type application is allowed in witness targets. A type constructor of ki
 For a `Result` type constructor with kind `Type -> Type -> Type`, fixing the error type `E` yields `Result E` with kind `Type -> Type`:
 
 ```zt
-Functor @(Result E) :: [E] {
+Functor @(Result E) :: <E> {
   map = \f r => match r {
-    (#ok,  value = v) => (#ok,  value = f v);
-    (#err, error = e) => (#err, error = e);
+    | (#ok,  value = v) => (#ok,  value = f v);
+    | (#err, error = e) => (#err, error = e);
   };
 }
 ```
@@ -228,16 +228,16 @@ A constraint may declare that it supports **structural derivation** — automati
 Add `derive` after the constraint body to declare it supports structural derivation:
 
 ```zt
-Eq :: [A] @A {
+Eq :: <A> @A {
   eq :: A -> A -> Bool;
 } derive
 
-Ord :: [A: Eq] @A {
+Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
   max?    :: A -> A -> A;
-          :: a -> b { if a >= b then a else b }
+          | a b => if a >= b then a else b
   min?    :: A -> A -> A;
-          :: a -> b { if a <= b then a else b }
+          | a b => if a <= b then a else b
 } derive
 ```
 
@@ -270,9 +270,9 @@ For `Status :: type [#active; (#suspended, reason : Text);]`, the derived equali
 
 ```zt
 eq = \a b => match (a, b) {
-  (#active, #active)                                    => true;
-  ((#suspended, reason = r1), (#suspended, reason = r2)) => eq r1 r2;
-  _                                                     => false;
+  | (#active, #active)                                      => true;
+  | ((#suspended, reason = r1), (#suspended, reason = r2)) => eq r1 r2;
+  | _                                                       => false;
 };
 ```
 

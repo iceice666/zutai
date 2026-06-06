@@ -11,13 +11,13 @@ TopSep
 
 TopDecl
   ::= Ident ":=" Expr                                          (* inferred value binding *)
-   | Ident ":" TypeExpr "=" Expr                              (* annotated value binding *)
+   | Ident "::" TypeExpr "=" Expr                             (* typed value binding *)
    | Ident "::" TypeParamList? "type" TypeExpr                (* type alias / type value *)
-   | Ident "::" TypeParamList? TypeExpr ("::" Clause)+        (* function: sig + clauses *)
-   | Ident "::" Clause+                                       (* function: clauses only, type inferred *)
+   | Ident "::" TypeParamList? TypeExpr ("|" Clause)+         (* function: sig + clauses *)
+   | Ident Pattern+ "=" Expr                                  (* function: no-sig single definition *)
 
 Clause
-  ::= Pattern ("->" Pattern)* Guard? "{" Block "}"
+  ::= Pattern+ Guard? "=>" Expr
 
 Block
   ::= (Ident ":=" Expr ";")* Expr
@@ -92,8 +92,7 @@ ListItem
   ::= Expr ";"
 
 Lambda
-  ::= "\" Pattern+ "=>" Expr                        (* short form *)
-   | "\" Pattern+ "{" Block "}"                     (* block form *)
+  ::= "\" Pattern+ "." Expr
 
 Import
   ::= "import" String
@@ -166,7 +165,7 @@ Match
   ::= "match" Expr "{" MatchCase* "}"
 
 MatchCase
-  ::= Pattern Guard? "=>" Expr ";"
+  ::= "|" Pattern Guard? "=>" Expr ";"
 
 Guard
   ::= "if" Expr
@@ -194,7 +193,7 @@ If
   ::= "if" Expr "then" Expr "else" Expr
 
 TypeParamList
-  ::= "[" TypeVar ("," TypeVar)* "]"
+  ::= "<" TypeVar ("," TypeVar)* ">"
 ```
 
 Important grammar interpretation:
@@ -203,15 +202,19 @@ Important grammar interpretation:
 
 `TypeExpr` is a contextual grammar category used wherever the surrounding syntax expects a type: annotations, function-type operands, optional-type operands, type-record fields, and type-union items. Since `Type` values are first-class compile-time values in v0, a `TypeExpr` may include pure expressions that evaluate to `Type`.
 
-`Name :: type TypeExpr` is the canonical type-alias form. `Name : Type = type TypeExpr` is also an annotated type-valued binding, but examples should prefer `:: type` for named types.
+`Name :: type TypeExpr` is the canonical type-alias form. `Name :: type TypeExpr` is preferred over `Name :: TypeExpr` when the right-hand side is a `type { ... }` or `type [ ... ]` expression.
 
-A `[` appearing immediately after `::` in a `TopDecl` is parsed as a `TypeParamList`, not a union type literal. The two are syntactically unambiguous: `TypeParamList` items are separated by `,` and have no trailing `;`, while `TypeUnion` items are terminated by `;`. `[A]` is therefore always a single-parameter type param list; `[A;]` is a single-member union type.
+A `<` appearing immediately after `::` in a `TopDecl` begins a `TypeParamList`. The `>` closes it; what follows is the type signature or `type` keyword. `<A, B>` is a two-parameter type param list.
+
+`|` serves two roles: function clause introducer and match arm introducer. As a function clause introducer it must appear at the start of a line (or after leading whitespace) at delimiter depth zero, following the declaration's `::` signature line. As a match arm introducer it appears inside the `match { }` block at delimiter depth > 0. A `|` inside an expression (e.g., in `||`) is lexed as part of that operator and is never a clause or arm introducer.
 
 The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), named tuple type fields (`(#circle, radius : Float)`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), named tuple construction (`(#circle, radius = 5.0)`), and all patterns (record `{ host = h; }`, tuple `(#circle, radius = r)`). This makes a `{ }` block unambiguous in type context versus value context.
 
-Block disambiguation: a `{` following the pattern list in a `::` clause is a block body. A `{` in expression position is a value record if followed by `field_name =`, and a block expression otherwise. An empty `{}` in expression position is an empty value record.
+Block disambiguation: a `{` in expression position is a value record if followed by `field_name =`, and a block expression otherwise. An empty `{}` in expression position is an empty value record.
 
 Parentheses disambiguation: a parenthesized single expression is a `Group`; a comma makes a tuple. Parentheses starting with an atom and followed by named fields are still parsed as tuples, not as a separate form.
+
+Lambda disambiguation: the `.` in `\params. body` is the lambda dot. It must be preceded by whitespace after the final pattern. `\x.y` with no space is a parse error; write `\x. y`. A `.` following an identifier in expression position (outside lambda pattern context) is always field access.
 
 The forms `|>`, `<|`, `->`, `??`, `&&`, `||`, application, field access, and postfix `?` are parsed by the precedence rules in [Operator precedence](operator-precedence.md).
 

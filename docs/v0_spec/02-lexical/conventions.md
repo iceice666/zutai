@@ -187,7 +187,7 @@ server : Server = {
 }
 ```
 
-This capitalization rule is a static convention. Implementations should warn or error when violated.
+This capitalization rule is enforced statically. Parsers and elaborators must error when a type-valued binding starts with a lowercase letter, or when a runtime value binding starts with an uppercase letter.
 
 ### Field names
 
@@ -239,13 +239,14 @@ or pattern**. They never overlap.
 | Symbol           | Meaning                                                                    |
 | ---------------- | -------------------------------------------------------------------------- |
 | `:=`             | inferred value binding (`name := expr`)                                    |
-| `:`              | type annotation ("has type"): annotated bindings, type-record and tuple type fields, optional-field marker |
-| `::`             | function/type definition: signature line and pattern-clause lines          |
-| `=`              | value/pattern field binding: value records, named tuple fields, all patterns |
-| `->`             | function type arrow; also separates clause parameter patterns              |
-| `=>`             | anonymous-function body (short form) and `match` arm body                  |
+| `:`              | type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
+| `::`             | typed binding, function signature, and type definition                     |
+| `\|`             | function clause introducer (after a `::` signature line) and `match` arm introducer |
+| `=`              | value/pattern field binding: value records, named tuple fields, and all patterns |
+| `->`             | function type arrow                                                        |
+| `=>`             | function clause and `match` arm body separator                             |
 | `\`              | anonymous function (lambda) introducer                                     |
-| `.`              | field and module-member access                                             |
+| `.`              | lambda body separator (after `\params`); also field and module-member access |
 | `?.`             | optional chaining                                                          |
 | `?`              | postfix optional type (`T?`) and optional-field marker (`field? : T`)      |
 | `??`             | defaulting operator                                                        |
@@ -263,5 +264,7 @@ or pattern**. They never overlap.
 | `_`              | wildcard pattern                                                           |
 
 There is no unary operator in v0: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
+
+**Lambda-dot disambiguation**: the `.` in `\params. body` is the lambda body separator. Whitespace must separate the final pattern from `.` and `.` from the start of the body. `\x.y` (no space before the dot) is a parse error; write `\x. y`.
 
 ---

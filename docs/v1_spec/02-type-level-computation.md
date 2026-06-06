@@ -19,10 +19,10 @@ Type constructors are functions that return `Type`:
 
 ```zt
 Pair :: Type -> Type -> Type
-    :: A -> B { type {
+    | A B => type {
     first : A;
     second : B;
-  } }
+  }
 ```
 
 Usage:
@@ -36,7 +36,7 @@ pair : TextIntPair = {
 }
 ```
 
-Generic type aliases with `[A, B]` remain the preferred compact spelling for named generic records and unions.
+Generic type aliases with `<A, B>` remain the preferred compact spelling for named generic records and unions.
 
 ---
 
@@ -54,10 +54,10 @@ Example:
 
 ```zt
 Response :: Type -> Type
-    :: Body { type {
+    | Body => type {
     status : Int;
     body : Body?;
-  } }
+  }
 
 value : Response Text = {
   status = 200;
@@ -75,10 +75,10 @@ Example:
 
 ```zt
 Response :: Type -> Type
-   :: Body { type {
+   | Body => type {
     status : Int;
     body : Body?;
-  } }
+  }
 
 User :: type {
   id : Text;
@@ -96,7 +96,7 @@ This is syntactically allowed:
 
 ```zt
 Loop :: Type -> Type
-   :: T { Loop T }
+   | T => Loop T
 
 Bad : Type = Loop Int
 ```
@@ -119,10 +119,10 @@ Example:
 
 ```zt
 Response :: Type -> Type
-         :: Body { type {
+         | Body => type {
              status : Int;
              body : Body?;
-           } }
+           }
 
 A : Type = Response Text
 B :: type { status : Int; body : Text?; }

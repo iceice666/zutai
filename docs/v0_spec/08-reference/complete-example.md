@@ -47,18 +47,16 @@ Config :: type {
   server  : Server;
 }
 
-raw : RawConfig = import "app.zti"
+raw :: RawConfig = import "app.zti"
 
 normalizeServer :: RawServer -> Server
-               :: s {
-                 {
-                   host = s.host ?? "127.0.0.1";
-                   port = s.port ?? 8080;
-                   tls  = s.tls  ?? false;
-                 }
+               | s => {
+                 host = s.host ?? "127.0.0.1";
+                 port = s.port ?? 8080;
+                 tls  = s.tls  ?? false;
                }
 
-config : Config = {
+config :: Config = {
   name    = raw.name;
   profile = raw.profile;
   server  = normalizeServer raw.server;
@@ -91,7 +89,7 @@ RawConfig :: type {
   };
 }
 
-raw : RawConfig = import "nested.zti"
+raw :: RawConfig = import "nested.zti"
 
 {
   host = raw.server?.host ?? "127.0.0.1";
@@ -109,17 +107,17 @@ Shape :: type [
 ]
 
 area :: Shape -> Float
-     :: (#circle, radius = r)          { r * r * 3.14159 }
-     :: (#square, length = l)          { l * l }
-     :: (#rect, width = w, height = h) { w * h }
+     | (#circle, radius = r)          => r * r * 3.14159
+     | (#square, length = l)          => l * l
+     | (#rect, width = w, height = h) => w * h
 
-shapes : List Shape = [
+shapes :: List Shape = [
   (#circle, radius = 1.0);
   (#square, length = 2.0);
   (#rect, width = 3.0, height = 4.0);
 ]
 
-total_area := fold (\acc s => acc + area s) 0.0 shapes
+total_area := fold (\acc s. acc + area s) 0.0 shapes
 ```
 
 ---
