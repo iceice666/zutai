@@ -14,7 +14,7 @@ mod display;
 mod tests;
 
 pub use ast::File;
-pub use error::ParseError;
+pub use error::{ParseError, ParseErrorKind};
 pub use span::Span;
 
 /// Parse a `.zt` source file.

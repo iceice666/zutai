@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::error::ParseErrorKind;
 use crate::parse;
 use crate::parser::expr::parse_expr;
 
@@ -17,6 +18,14 @@ fn parse_str(s: &str) -> File {
         let msgs: Vec<_> = errs.iter().map(|e| e.to_string()).collect();
         panic!("parse({s:?}) failed:\n{}", msgs.join("\n"))
     })
+}
+
+fn parse_kinds(s: &str) -> Vec<ParseErrorKind> {
+    parse(s)
+        .expect_err("source should fail")
+        .into_iter()
+        .map(|err| err.kind)
+        .collect()
 }
 
 fn as_int(e: &Expr) -> i64 {
@@ -630,8 +639,151 @@ fn parse_single_colon_binding_rejected() {
 // ---------------------------------------------------------------------------
 
 const EXPR_CORE: &str = include_str!("../../fixtures/expr_core.zt");
+const VALID_CURSED_DISAMBIGUATION: &str =
+    include_str!("../../fixtures/valid/cursed_disambiguation.zt");
+const VALID_CURSED_OPERATORS: &str = include_str!("../../fixtures/valid/cursed_operators.zt");
+const VALID_CURSED_PATTERNS: &str = include_str!("../../fixtures/valid/cursed_patterns.zt");
+const INVALID_CHAINED_COMPARISON: &str =
+    include_str!("../../fixtures/invalid/chained_comparison.zt");
+const INVALID_LAMBDA_ARROW: &str = include_str!("../../fixtures/invalid/lambda_arrow.zt");
+const INVALID_LAMBDA_TIGHT_DOT: &str = include_str!("../../fixtures/invalid/lambda_tight_dot.zt");
+const INVALID_LIST_MISSING_SEMICOLON: &str =
+    include_str!("../../fixtures/invalid/list_missing_semicolon.zt");
+const INVALID_LOCAL_BINDING_MISSING_RESULT: &str =
+    include_str!("../../fixtures/invalid/local_binding_missing_result.zt");
+const INVALID_MIXED_PIPELINE: &str = include_str!("../../fixtures/invalid/mixed_pipeline.zt");
+const INVALID_RECORD_FIELD_COLON: &str =
+    include_str!("../../fixtures/invalid/record_field_colon.zt");
+const INVALID_TOP_LEVEL_SINGLE_COLON: &str =
+    include_str!("../../fixtures/invalid/top_level_single_colon.zt");
+const INVALID_TYPE_FIELD_EQUALS: &str = include_str!("../../fixtures/invalid/type_field_equals.zt");
 
 #[test]
 fn parse_expr_core_fixture() {
     parse_str(EXPR_CORE);
+}
+
+#[test]
+fn parse_cursed_fixture_variants() {
+    for (name, src) in [
+        (
+            "valid/cursed_disambiguation.zt",
+            VALID_CURSED_DISAMBIGUATION,
+        ),
+        ("valid/cursed_operators.zt", VALID_CURSED_OPERATORS),
+        ("valid/cursed_patterns.zt", VALID_CURSED_PATTERNS),
+    ] {
+        parse(src).unwrap_or_else(|errs| {
+            let msgs: Vec<_> = errs.iter().map(|e| e.to_string()).collect();
+            panic!("parse({name}) failed:\n{}", msgs.join("\n"))
+        });
+    }
+}
+
+#[test]
+fn reject_invalid_fixture_variants() {
+    for (name, src) in [
+        ("invalid/chained_comparison.zt", INVALID_CHAINED_COMPARISON),
+        ("invalid/lambda_arrow.zt", INVALID_LAMBDA_ARROW),
+        ("invalid/lambda_tight_dot.zt", INVALID_LAMBDA_TIGHT_DOT),
+        (
+            "invalid/list_missing_semicolon.zt",
+            INVALID_LIST_MISSING_SEMICOLON,
+        ),
+        (
+            "invalid/local_binding_missing_result.zt",
+            INVALID_LOCAL_BINDING_MISSING_RESULT,
+        ),
+        ("invalid/mixed_pipeline.zt", INVALID_MIXED_PIPELINE),
+        ("invalid/record_field_colon.zt", INVALID_RECORD_FIELD_COLON),
+        (
+            "invalid/top_level_single_colon.zt",
+            INVALID_TOP_LEVEL_SINGLE_COLON,
+        ),
+        ("invalid/type_field_equals.zt", INVALID_TYPE_FIELD_EQUALS),
+    ] {
+        assert!(parse(src).is_err(), "{name} parsed successfully");
+    }
+}
+
+#[test]
+fn invalid_fixtures_report_specific_error_kinds() {
+    for (name, src, kind) in [
+        (
+            "invalid/chained_comparison.zt",
+            INVALID_CHAINED_COMPARISON,
+            ParseErrorKind::ChainedComparison,
+        ),
+        (
+            "invalid/lambda_arrow.zt",
+            INVALID_LAMBDA_ARROW,
+            ParseErrorKind::LambdaArrow,
+        ),
+        (
+            "invalid/lambda_tight_dot.zt",
+            INVALID_LAMBDA_TIGHT_DOT,
+            ParseErrorKind::LambdaDotNeedsWhitespace,
+        ),
+        (
+            "invalid/list_missing_semicolon.zt",
+            INVALID_LIST_MISSING_SEMICOLON,
+            ParseErrorKind::MissingListItemSemicolon,
+        ),
+        (
+            "invalid/local_binding_missing_result.zt",
+            INVALID_LOCAL_BINDING_MISSING_RESULT,
+            ParseErrorKind::MissingBlockResult,
+        ),
+        (
+            "invalid/mixed_pipeline.zt",
+            INVALID_MIXED_PIPELINE,
+            ParseErrorKind::MixedPipeline,
+        ),
+        (
+            "invalid/record_field_colon.zt",
+            INVALID_RECORD_FIELD_COLON,
+            ParseErrorKind::ValueRecordFieldUsesColon,
+        ),
+        (
+            "invalid/top_level_single_colon.zt",
+            INVALID_TOP_LEVEL_SINGLE_COLON,
+            ParseErrorKind::TopLevelSingleColon,
+        ),
+        (
+            "invalid/type_field_equals.zt",
+            INVALID_TYPE_FIELD_EQUALS,
+            ParseErrorKind::TypeRecordFieldUsesEquals,
+        ),
+    ] {
+        let kinds = parse_kinds(src);
+        assert_eq!(kinds.first(), Some(&kind), "{name}: {kinds:?}");
+    }
+}
+
+#[test]
+fn reports_multiple_common_diagnostics_in_source_order() {
+    let errs = parse(
+        r#"
+{
+  a = 1 < 2 < 3;
+  b = \x => x;
+  c = [1; 2]
+}
+"#,
+    )
+    .expect_err("source should fail");
+
+    let kinds: Vec<_> = errs.iter().map(|err| err.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ParseErrorKind::ChainedComparison,
+            ParseErrorKind::LambdaArrow,
+            ParseErrorKind::MissingListItemSemicolon,
+        ]
+    );
+    assert!(
+        errs.windows(2)
+            .all(|pair| pair[0].span.start <= pair[1].span.start)
+    );
 }

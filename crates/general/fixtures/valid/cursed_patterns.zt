@@ -1,0 +1,54 @@
+-- cursed_patterns.zt: clause parsing, guards, nested matches, and field patterns.
+
+MaybeInt :: type [
+  #none;
+  (#some, value : Int);
+]
+
+Packet :: type {
+  status : [#ok; #err; #pending;];
+  payload? : MaybeInt;
+  meta : {
+    retry-count : Int;
+    label? : Text;
+  };
+}
+
+unwrapOr :: MaybeInt -> Int -> Int {
+  | #none fallback => fallback;
+  | (#some, value = value) _ => value;
+}
+
+classify :: Int -> Text {
+  | n if n > 0 => "positive";
+  | 0 => "zero";
+  | _ => "negative";
+}
+
+describe :: Packet -> Text {
+  | { status = #ok; payload = (#some, value = n); meta = { retry-count = 0; label = #none; }; } =>
+      classify n;
+  | { status = #ok; payload = #none; meta = _; } =>
+      "empty-ok";
+  | { status = #err; payload = value; meta = { retry-count = retries; label = _; }; } =>
+      match retries {
+        | 0 => "fresh-error";
+        | n if n > 3 => "stale-error";
+        | _ => classify (unwrapOr value -1);
+      };
+  | _ => "pending";
+}
+
+sample := {
+  status = #err;
+  payload = (#some, value = -2);
+  meta = {
+    retry-count = 2;
+    label = #none;
+  };
+}
+
+{
+  result = describe sample;
+  fallback = unwrapOr #none 99;
+}

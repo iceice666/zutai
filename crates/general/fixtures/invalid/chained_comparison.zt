@@ -1,0 +1,5 @@
+-- Comparisons are non-associative in v0.
+
+{
+  bad = 1 < 2 < 3;
+}

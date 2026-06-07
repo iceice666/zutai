@@ -1,0 +1,5 @@
+-- General-mode lambdas use `.` rather than `=>`.
+
+{
+  bad = \x => x;
+}

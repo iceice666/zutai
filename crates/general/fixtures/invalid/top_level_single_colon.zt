@@ -1,0 +1,4 @@
+-- Top-level typed bindings use `::`, not `:`.
+
+x : Int = 5
+x

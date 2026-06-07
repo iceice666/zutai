@@ -1,0 +1,5 @@
+-- A single pipeline chain cannot mix forward and backward directions.
+
+{
+  bad = 1 |> f <| 2;
+}

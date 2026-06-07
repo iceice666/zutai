@@ -1,4 +1,5 @@
 pub mod decl;
+mod diagnostics;
 pub mod expr;
 pub mod lex;
 pub mod pattern;
@@ -12,9 +13,15 @@ use crate::error::ParseError;
 use crate::span::Span;
 
 use self::decl::parse_file;
+use self::diagnostics::collect_common_diagnostics;
 use self::lex::ws;
 
 pub fn parse(input: &str) -> Result<File, Vec<ParseError>> {
+    let diagnostics = collect_common_diagnostics(input);
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+
     lex::BASE_PTR.with(|c| c.set(input.as_ptr() as usize));
     lex::DEPTH.with(|c| c.set(0));
     let mut s = input;
