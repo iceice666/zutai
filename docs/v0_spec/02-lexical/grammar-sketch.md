@@ -6,6 +6,21 @@ This grammar is intentionally a sketch. It defines the surface shape, not the fu
 File
   ::= (TopDecl TopSep)* Expr
 
+Trivia
+  ::= Whitespace
+   | LineComment
+   | BlockComment
+   | DocComment
+
+LineComment
+  ::= "--" not ("[" | "|") chars-until-line-end
+
+BlockComment
+  ::= "--[" (BlockComment | any-char-except-unmatched-end)* "]--"
+
+DocComment
+  ::= "--|" chars-until-line-end
+
 TopSep
   ::= line boundary at delimiter depth 0
 
