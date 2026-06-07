@@ -6,6 +6,36 @@ Whitespace separates tokens but is otherwise insignificant outside strings.
 
 In `.zt`, top-level declarations are separated by line boundaries at delimiter depth zero. A top-level declaration does not use a trailing semicolon.
 
+### General-mode comments
+
+In `.zt`, comments are treated as whitespace outside strings.
+
+Line comments begin with `--` and continue to the end of the line:
+
+```zt
+-- this is a comment
+answer := 42
+```
+
+Block comments begin with `--[` and end with `]--`. Block comments may nest:
+
+```zt
+--[
+  outer comment
+  --[ nested comment ]--
+]--
+answer := 42
+```
+
+Doc comments begin with `--|` and continue to the end of the line:
+
+```zt
+--| Documentation for answer.
+answer := 42
+```
+
+In v0, doc comments are lexically distinct from ordinary line comments, but they have no required semantic effect.
+
 ### Strings
 
 Strings are double-quoted and JSON-like:
