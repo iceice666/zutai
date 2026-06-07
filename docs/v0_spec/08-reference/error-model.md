@@ -17,6 +17,19 @@ Important error classes:
 * type-level evaluation limit exceeded
 * serialization boundary violation
 
+General-mode parse diagnostics should prefer specific syntax errors when the
+parser can identify a common mistake:
+
+* chained comparison
+* mixed pipeline directions
+* lambda arrow used instead of lambda dot
+* lambda dot without required whitespace before the body
+* missing list item semicolon
+* missing block result expression
+* value-record field written with `:`
+* top-level typed binding written with single `:`
+* type-record field written with `=`
+
 Examples:
 
 ```text
@@ -35,4 +48,3 @@ error: type-level computation exceeded evaluation limit
 ```
 
 ---
-

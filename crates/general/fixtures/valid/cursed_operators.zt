@@ -1,0 +1,44 @@
+-- cursed_operators.zt: dense precedence, application, access, and pipeline forms.
+
+inc :: Int -> Int {
+  | n => n + 1;
+}
+
+double :: Int -> Int {
+  | n => n * 2;
+}
+
+applyTwice :: (Int -> Int) -> Int -> Int {
+  | f x => f (f x);
+}
+
+cfg := {
+  server = {
+    host-name = "localhost";
+    port = 8080;
+    tls = #none;
+  };
+  limits = [0; -1; 2 * 3 + 4 / 2;];
+}
+
+{
+  arithmetic = ((1 + 2) * (3 + 4)) / (5 - 2);
+  comparison = (1 + 2 * 3 == 7) && (4 <= 4) || false;
+  coalesce = cfg.server?.tls ?? #none ?? (#some, value = false);
+  access = cfg.server.host-name;
+  forward-pipeline =
+    3
+    |> inc
+    |> double
+    |> applyTwice inc;
+  backward-pipeline =
+    applyTwice double
+    <| inc
+    <| (-1);
+  lambda-application = (\f x. f (x + 1)) (\n. n * n) 4;
+  nested-block = {
+    first := inc (double 2);
+    second := (\x. x ?? 0) (#some, value = first);
+    second
+  };
+}

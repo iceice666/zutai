@@ -1,0 +1,5 @@
+-- The lambda dot must be separated from the previous pattern by whitespace.
+
+{
+  bad = \x.y;
+}

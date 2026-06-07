@@ -1,0 +1,5 @@
+-- Value records use `=`, not `:`, for fields.
+
+{
+  bad : 1;
+}

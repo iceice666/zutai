@@ -1,0 +1,7 @@
+-- Type-record fields use `:`, not `=`.
+
+Bad :: type {
+  field = Int;
+}
+
+#unit

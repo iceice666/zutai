@@ -1,0 +1,5 @@
+-- Block expressions require a final result expression.
+
+{
+  x := 1;
+}
