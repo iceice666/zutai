@@ -435,6 +435,55 @@ fn parse_application_left_assoc() {
     assert_eq!(as_ident(arg), "y");
 }
 
+#[test]
+fn parse_application_negative_int_argument() {
+    let e = parse_expr_str("f -1");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "f");
+    assert_eq!(as_int(arg), -1);
+}
+
+#[test]
+fn parse_application_negative_float_argument() {
+    let e = parse_expr_str("f -2.5e-3");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "f");
+    assert!((as_float(arg) - (-2.5e-3_f64)).abs() < 1e-10);
+}
+
+#[test]
+fn parse_spaced_minus_remains_subtraction() {
+    let e = parse_expr_str("f - 1");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Sub);
+    assert_eq!(as_ident(lhs), "f");
+    assert_eq!(as_int(rhs), 1);
+}
+
+#[test]
+fn parse_tight_minus_remains_subtraction() {
+    let e = parse_expr_str("f-1");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Sub);
+    assert_eq!(as_ident(lhs), "f");
+    assert_eq!(as_int(rhs), 1);
+
+    let e = parse_expr_str("1-2");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Sub);
+    assert_eq!(as_int(lhs), 1);
+    assert_eq!(as_int(rhs), 2);
+}
+
+#[test]
+fn parse_multiply_by_negative_literal() {
+    let e = parse_expr_str("x * -1");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Mul);
+    assert_eq!(as_ident(lhs), "x");
+    assert_eq!(as_int(rhs), -1);
+}
+
 // ---------------------------------------------------------------------------
 // Lambda
 // ---------------------------------------------------------------------------
