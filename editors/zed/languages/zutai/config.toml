@@ -1,0 +1,14 @@
+[language]
+name = "Zutai"
+grammar = "zutai"
+path_suffixes = ["zt"]
+line_comment = "--"
+block_comment = ["--[", "]--"]
+indent_size = 2
+
+[brackets]
+pairs = [
+  { open = "{", close = "}" },
+  { open = "[", close = "]" },
+  { open = "(", close = ")" },
+]

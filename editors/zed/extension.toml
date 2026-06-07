@@ -1,0 +1,8 @@
+id = "zutai"
+name = "Zutai"
+version = "0.0.1"
+schema_version = 1
+authors = ["iceice666"]
+description = "Syntax highlighting for Zutai (.zt) and Zutai Immediate (.zti)"
+repository = "https://github.com/iceice666/zutai"
+
