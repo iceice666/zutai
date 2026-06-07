@@ -16,12 +16,16 @@ use self::decl::parse_file;
 use self::diagnostics::collect_common_diagnostics;
 use self::lex::ws;
 
-pub fn parse(input: &str) -> Result<File, Vec<ParseError>> {
+pub(crate) fn parse_ast(input: &str) -> Result<File, Vec<ParseError>> {
     let diagnostics = collect_common_diagnostics(input);
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
 
+    parse_ast_without_common_diagnostics(input)
+}
+
+pub(crate) fn parse_ast_without_common_diagnostics(input: &str) -> Result<File, Vec<ParseError>> {
     lex::BASE_PTR.with(|c| c.set(input.as_ptr() as usize));
     lex::DEPTH.with(|c| c.set(0));
     let mut s = input;

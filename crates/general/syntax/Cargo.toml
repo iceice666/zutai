@@ -5,5 +5,6 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+rowan = "0.16.1"
 winnow = "1.0.3"
 rustc-hash = "2.0.0"

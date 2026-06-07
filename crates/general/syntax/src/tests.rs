@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::ParseErrorKind;
-use crate::parse;
 use crate::parser::expr::parse_expr;
+use crate::{LineIndex, SyntaxKind, parse, tokenize};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -14,17 +14,23 @@ fn parse_expr_str(s: &str) -> Expr {
 }
 
 fn parse_str(s: &str) -> File {
-    parse(s).unwrap_or_else(|errs| {
-        let msgs: Vec<_> = errs.iter().map(|e| e.to_string()).collect();
-        panic!("parse({s:?}) failed:\n{}", msgs.join("\n"))
-    })
+    let parsed = parse(s);
+    if parsed.ast().is_none() {
+        let msgs: Vec<_> = parsed
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect();
+        panic!("parse({s:?}) failed:\n{}", msgs.join("\n"));
+    }
+    parsed.into_ast().expect("checked above")
 }
 
 fn parse_kinds(s: &str) -> Vec<ParseErrorKind> {
     parse(s)
-        .expect_err("source should fail")
-        .into_iter()
-        .map(|err| err.kind)
+        .diagnostics()
+        .iter()
+        .map(|err| err.kind.clone())
         .collect()
 }
 
@@ -385,8 +391,8 @@ fn parse_coalesce_right_assoc() {
 
 #[test]
 fn parse_comparison_non_assoc_error() {
-    crate::parser::lex::BASE_PTR.with(|c| c.set("1 < 2 < 3".as_ptr() as usize));
     let mut input = "1 < 2 < 3";
+    crate::parser::lex::BASE_PTR.with(|c| c.set(input.as_ptr() as usize));
     // Should fail — chained comparison is non-associative
     assert!(parse_expr(&mut input).is_err());
 }
@@ -409,8 +415,8 @@ fn parse_pipeline_backward() {
 
 #[test]
 fn parse_pipeline_mixed_rejected() {
-    crate::parser::lex::BASE_PTR.with(|c| c.set("x |> f <| g".as_ptr() as usize));
     let mut input = "x |> f <| g";
+    crate::parser::lex::BASE_PTR.with(|c| c.set(input.as_ptr() as usize));
     assert!(parse_expr(&mut input).is_err());
 }
 
@@ -631,7 +637,7 @@ fn parse_final_only_expr() {
 #[test]
 fn parse_single_colon_binding_rejected() {
     // `name : Type = expr` with single colon should fail
-    assert!(parse("x : Int = 5\n5").is_err());
+    assert!(parse("x : Int = 5\n5").has_errors());
 }
 
 // ---------------------------------------------------------------------------
@@ -673,10 +679,15 @@ fn parse_cursed_fixture_variants() {
         ("valid/cursed_operators.zt", VALID_CURSED_OPERATORS),
         ("valid/cursed_patterns.zt", VALID_CURSED_PATTERNS),
     ] {
-        parse(src).unwrap_or_else(|errs| {
-            let msgs: Vec<_> = errs.iter().map(|e| e.to_string()).collect();
+        let parsed = parse(src);
+        if parsed.ast().is_none() {
+            let msgs: Vec<_> = parsed
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.message.clone())
+                .collect();
             panic!("parse({name}) failed:\n{}", msgs.join("\n"))
-        });
+        }
     }
 }
 
@@ -702,7 +713,7 @@ fn reject_invalid_fixture_variants() {
         ),
         ("invalid/type_field_equals.zt", INVALID_TYPE_FIELD_EQUALS),
     ] {
-        assert!(parse(src).is_err(), "{name} parsed successfully");
+        assert!(parse(src).has_errors(), "{name} parsed successfully");
     }
 }
 
@@ -762,7 +773,7 @@ fn invalid_fixtures_report_specific_error_kinds() {
 
 #[test]
 fn reports_multiple_common_diagnostics_in_source_order() {
-    let errs = parse(
+    let parsed = parse(
         r#"
 {
   a = 1 < 2 < 3;
@@ -770,10 +781,14 @@ fn reports_multiple_common_diagnostics_in_source_order() {
   c = [1; 2]
 }
 "#,
-    )
-    .expect_err("source should fail");
+    );
+    assert!(parsed.has_errors(), "source should fail");
 
-    let kinds: Vec<_> = errs.iter().map(|err| err.kind.clone()).collect();
+    let kinds: Vec<_> = parsed
+        .diagnostics()
+        .iter()
+        .map(|err| err.kind.clone())
+        .collect();
     assert_eq!(
         kinds,
         vec![
@@ -783,7 +798,50 @@ fn reports_multiple_common_diagnostics_in_source_order() {
         ]
     );
     assert!(
-        errs.windows(2)
-            .all(|pair| pair[0].span.start <= pair[1].span.start)
+        parsed
+            .diagnostics()
+            .windows(2)
+            .all(|pair| pair[0].primary_span().start <= pair[1].primary_span().start)
     );
+}
+
+#[test]
+fn lossless_cst_round_trips_source_text() {
+    let src = "--| doc\nanswer := --[ nested --[ inner ]-- ]-- 42\nanswer";
+    let parsed = parse(src);
+    assert_eq!(parsed.syntax().to_string(), src);
+}
+
+#[test]
+fn tokenizer_preserves_comments_and_keywords() {
+    let tokens = tokenize("-- hi\nif true then #ok else #no");
+    let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
+    assert!(kinds.contains(&SyntaxKind::LineComment));
+    assert!(kinds.contains(&SyntaxKind::KeywordIf));
+    assert!(kinds.contains(&SyntaxKind::KeywordTrue));
+    assert!(kinds.contains(&SyntaxKind::KeywordThen));
+    assert!(kinds.contains(&SyntaxKind::KeywordElse));
+    assert!(kinds.contains(&SyntaxKind::Atom));
+}
+
+#[test]
+fn diagnostic_exposes_structured_fix() {
+    let parsed = parse("x : Int = 5\n5");
+    let diagnostic = parsed.diagnostics().first().expect("expected diagnostic");
+    assert_eq!(diagnostic.kind, ParseErrorKind::TopLevelSingleColon);
+    assert_eq!(diagnostic.code, "zutai::parse::top_level_single_colon");
+    assert_eq!(diagnostic.fixes.len(), 1);
+    assert_eq!(diagnostic.fixes[0].edits[0].replacement, "::");
+}
+
+#[test]
+fn line_index_converts_byte_and_utf16_positions() {
+    let index = LineIndex::new("a\né😀z");
+    assert_eq!(index.line_col(0).line, 0);
+    assert_eq!(index.line_col(2).line, 1);
+    assert_eq!(index.line_col(2).col, 0);
+    let offset = "a\né😀".len();
+    let utf16 = index.utf16_line_col(offset);
+    assert_eq!(utf16.line, 1);
+    assert_eq!(utf16.col, 3);
 }

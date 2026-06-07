@@ -18,24 +18,30 @@ fn main() -> Result<(), Box<dyn Error>> {
                 zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
             print_ast("zti", &ast);
         }
-        "zt" => match zutai_syntax::parse(&contents) {
-            Ok(ast) => print_ast("zt", &ast),
-            Err(errs) => {
-                print_zt_errors(&path, &contents, errs);
+        "zt" => {
+            let parsed = zutai_syntax::parse(&contents);
+            if parsed.has_errors() {
+                print_zt_errors(&path, &contents, parsed.diagnostics());
                 std::process::exit(1);
             }
-        },
+            if let Some(ast) = parsed.ast() {
+                print_ast("zt", ast);
+            } else {
+                eprintln!("parse produced no AST");
+                std::process::exit(1);
+            }
+        }
         other => return Err(format!("Unsupported extension: {other}").into()),
     }
 
     Ok(())
 }
 
-fn print_zt_errors(path: &str, contents: &str, errs: Vec<zutai_syntax::ParseError>) {
+fn print_zt_errors(path: &str, contents: &str, errs: &[zutai_syntax::Diagnostic]) {
     for err in errs {
         eprintln!(
             "{:?}",
-            miette::Report::new(ZtParseDiagnostic::new(path, contents, err))
+            miette::Report::new(ZtParseDiagnostic::new(path, contents, err.clone()))
         );
     }
 }
@@ -72,24 +78,31 @@ struct ZtParseDiagnostic {
     source_code: NamedSource<String>,
     message: String,
     code: &'static str,
-    help: Option<&'static str>,
+    help: Option<String>,
     label: String,
     span: (usize, usize),
 }
 
 impl ZtParseDiagnostic {
-    fn new(path: &str, contents: &str, err: zutai_syntax::ParseError) -> Self {
-        let start = err.span.start as usize;
-        let end = err.span.end as usize;
+    fn new(path: &str, contents: &str, err: zutai_syntax::Diagnostic) -> Self {
+        let span = err.primary_span();
+        let start = span.start as usize;
+        let end = span.end as usize;
         let clamped_start = start.min(contents.len());
         let max_len = contents.len().saturating_sub(clamped_start);
         let len = end.saturating_sub(start).max(1).min(max_len.max(1));
+        let label = err
+            .labels
+            .iter()
+            .find(|label| label.style == zutai_syntax::LabelStyle::Primary)
+            .map(|label| label.message.clone())
+            .unwrap_or_else(|| err.kind.label().to_string());
         Self {
             source_code: NamedSource::new(path, contents.to_string()),
             message: err.message,
-            code: err.kind.code(),
-            help: err.kind.help(),
-            label: err.kind.label().to_string(),
+            code: err.code,
+            help: err.help,
+            label,
             span: (clamped_start, len),
         }
     }
@@ -102,6 +115,7 @@ impl Diagnostic for ZtParseDiagnostic {
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         self.help
+            .as_ref()
             .map(|help| Box::new(help) as Box<dyn fmt::Display>)
     }
 
@@ -125,9 +139,12 @@ mod tests {
     fn renders_zt_parse_error_with_source_context() {
         let path = "bad.zt";
         let contents = "[1; 2]";
-        let err = zutai_syntax::parse(contents)
-            .expect_err("fixture should fail")
-            .remove(0);
+        let parsed = zutai_syntax::parse(contents);
+        let err = parsed
+            .diagnostics()
+            .first()
+            .expect("fixture should fail")
+            .clone();
 
         let rendered = format!(
             "{:?}",
