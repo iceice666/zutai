@@ -1,0 +1,4 @@
+# Grammar source for Zutai general mode (.zt).
+[grammar]
+repository = "https://github.com/iceice666/tree-sitter-zutai"
+rev = "3cbb0adf780292ac3e13fde8e4cfd2a824afec3c"

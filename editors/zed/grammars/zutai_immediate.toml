@@ -1,0 +1,4 @@
+# Grammar source for Zutai immediate mode (.zti).
+[grammar]
+repository = "https://github.com/iceice666/tree-sitter-zutai-immediate"
+rev = "d4832bc6fd6ec3b88b5eb4e52874ae4783ec0863"

@@ -1,0 +1,11 @@
+[language]
+name = "Zutai Immediate"
+grammar = "zutai_immediate"
+path_suffixes = ["zti"]
+indent_size = 2
+
+[brackets]
+pairs = [
+  { open = "{", close = "}" },
+  { open = "[", close = "]" },
+]
