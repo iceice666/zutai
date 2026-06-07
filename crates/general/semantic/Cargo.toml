@@ -1,0 +1,10 @@
+[package]
+name = "zutai-semantic"
+description = "Semantic analysis pipeline for Zutai general mode (.zt)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-hir = { path = "../hir" }
+zutai-syntax = { path = "../syntax" }
+zutai-thir = { path = "../thir" }
