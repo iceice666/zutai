@@ -1,0 +1,8 @@
+[package]
+name = "zutai-hir"
+description = "Resolved high-level IR for Zutai general mode (.zt)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-syntax = { path = "../syntax" }

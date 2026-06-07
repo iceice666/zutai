@@ -874,8 +874,16 @@ dependencies = [
  "miette",
  "thiserror",
  "zutai-im",
+ "zutai-semantic",
  "zutai-syntax",
  "zutai-types",
+]
+
+[[package]]
+name = "zutai-hir"
+version = "0.1.0"
+dependencies = [
+ "zutai-syntax",
 ]
 
 [[package]]
@@ -907,12 +915,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "zutai-semantic"
+version = "0.1.0"
+dependencies = [
+ "zutai-hir",
+ "zutai-syntax",
+ "zutai-thir",
+]
+
+[[package]]
 name = "zutai-syntax"
 version = "0.1.0"
 dependencies = [
  "rowan",
  "rustc-hash 2.1.2",
  "winnow",
+]
+
+[[package]]
+name = "zutai-thir"
+version = "0.1.0"
+dependencies = [
+ "zutai-hir",
+ "zutai-syntax",
 ]
 
 [[package]]

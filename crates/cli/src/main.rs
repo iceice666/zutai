@@ -19,12 +19,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             print_ast("zti", &ast);
         }
         "zt" => {
-            let parsed = zutai_syntax::parse(&contents);
-            if parsed.has_errors() {
-                print_zt_errors(&path, &contents, parsed.diagnostics());
+            let analysis = zutai_semantic::analyze(&contents);
+            let parse_errors: Vec<_> = analysis
+                .diagnostics
+                .iter()
+                .filter_map(|diagnostic| match &diagnostic.kind {
+                    zutai_semantic::SemanticDiagnosticKind::Parse(diagnostic) => {
+                        Some(diagnostic.clone())
+                    }
+                    _ => None,
+                })
+                .collect();
+            if !parse_errors.is_empty() {
+                print_zt_errors(&path, &contents, &parse_errors);
                 std::process::exit(1);
             }
-            if let Some(ast) = parsed.ast() {
+
+            let hir_errors: Vec<_> = analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.stage == zutai_semantic::SemanticStage::Hir)
+                .collect();
+            if !hir_errors.is_empty() {
+                print_hir_errors(&hir_errors);
+                std::process::exit(1);
+            }
+
+            if let Some(ast) = analysis.ast.as_ref() {
                 print_ast("zt", ast);
             } else {
                 eprintln!("parse produced no AST");
@@ -35,6 +56,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn print_hir_errors(errs: &[&zutai_semantic::SemanticDiagnostic]) {
+    for err in errs {
+        eprintln!("semantic error: {err:?}");
+    }
 }
 
 fn print_zt_errors(path: &str, contents: &str, errs: &[zutai_syntax::Diagnostic]) {

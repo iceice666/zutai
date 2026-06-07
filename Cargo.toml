@@ -1,7 +1,10 @@
 [workspace]
 members = [
   "crates/cli",
+  "crates/general/hir",
+  "crates/general/semantic",
   "crates/general/syntax",
+  "crates/general/thir",
   "crates/immediate/core",
   "crates/immediate/simd",
   "crates/immediate/syntax",
