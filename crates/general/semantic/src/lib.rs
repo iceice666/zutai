@@ -229,14 +229,30 @@ mod tests {
         assert!(analysis.ast.is_some());
         assert!(analysis.hir.is_some());
         assert!(analysis.thir.is_some());
+        assert!(analysis.is_thir_complete());
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn thir_type_error_is_reported_by_semantic_analysis() {
+        let analysis = analyze("x :: Int = \"bad\"\nx");
+
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors());
+        assert!(analysis.hir.is_some());
+        assert!(analysis.thir.is_some());
         assert!(!analysis.is_thir_complete());
         assert!(analysis.diagnostics.iter().any(|diagnostic| {
             matches!(
-                diagnostic.kind,
+                &diagnostic.kind,
                 SemanticDiagnosticKind::Thir(zutai_thir::ThirDiagnostic {
-                    kind: zutai_thir::ThirDiagnosticKind::TypeCheckerNotImplemented,
+                    kind: zutai_thir::ThirDiagnosticKind::TypeMismatch { expected, found },
                     ..
-                })
+                }) if expected == "Int" && found == "Text"
             )
         }));
     }

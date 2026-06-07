@@ -35,13 +35,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 std::process::exit(1);
             }
 
-            let hir_errors: Vec<_> = analysis
+            let semantic_errors: Vec<_> = analysis
                 .diagnostics
                 .iter()
-                .filter(|diagnostic| diagnostic.stage == zutai_semantic::SemanticStage::Hir)
+                .filter(|diagnostic| {
+                    matches!(
+                        diagnostic.stage,
+                        zutai_semantic::SemanticStage::Hir | zutai_semantic::SemanticStage::Thir
+                    )
+                })
                 .collect();
-            if !hir_errors.is_empty() {
-                print_hir_errors(&hir_errors);
+            if !semantic_errors.is_empty() {
+                print_semantic_errors(&semantic_errors);
                 std::process::exit(1);
             }
 
@@ -58,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn print_hir_errors(errs: &[&zutai_semantic::SemanticDiagnostic]) {
+fn print_semantic_errors(errs: &[&zutai_semantic::SemanticDiagnostic]) {
     for err in errs {
         eprintln!("semantic error: {err:?}");
     }
