@@ -4,6 +4,8 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+miette = { version = "7.6.0", features = ["fancy"] }
+thiserror = "2.0.18"
 zutai-im = { path = "../immediate/core" }
 zutai-syntax = { path = "../general/syntax" }
 zutai-types = { path = "../immediate/types" }
