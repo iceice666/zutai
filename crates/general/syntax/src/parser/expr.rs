@@ -274,7 +274,7 @@ fn parse_mul_level(input: &mut &str) -> Result<Expr> {
 // Level 2: function application (left-assoc juxtaposition)
 // ---------------------------------------------------------------------------
 
-fn can_start_atom(input: &str) -> bool {
+fn can_start_atom(input: &str, had_application_ws: bool) -> bool {
     // At depth 0, a leading newline terminates an expression.
     if at_depth_0() && input.starts_with('\n') {
         return false;
@@ -289,10 +289,13 @@ fn can_start_atom(input: &str) -> bool {
     if matches!(c, ';' | ')' | ']' | '}' | ',') {
         return false;
     }
+    if c == '-' {
+        return had_application_ws && s.chars().nth(1).is_some_and(|next| next.is_ascii_digit());
+    }
     // Operators / punctuation that are not atom starts
     if matches!(
         c,
-        '=' | ':' | '|' | '&' | '<' | '>' | '+' | '-' | '*' | '/' | '?' | '!'
+        '=' | ':' | '|' | '&' | '<' | '>' | '+' | '*' | '/' | '?' | '!'
     ) {
         return false;
     }
@@ -313,7 +316,8 @@ pub fn parse_application(input: &mut &str) -> Result<Expr> {
         // At depth 0, only inline ws — newlines terminate the expression.
         // Inside delimiters, full ws (including newlines) is OK.
         application_ws(input)?;
-        if can_start_atom(input) {
+        let had_application_ws = saved.len() != input.len();
+        if can_start_atom(input, had_application_ws) {
             match parse_postfix(input) {
                 Ok(arg) => {
                     let span = func.span().merge(arg.span());
