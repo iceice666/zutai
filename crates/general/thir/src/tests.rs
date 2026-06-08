@@ -300,6 +300,125 @@ fn block_local_binding_yields_result_type() {
 }
 
 #[test]
+fn list_literal_infers_homogeneous_list_type() {
+    let file = completed_file("[1; 2; 3;]");
+
+    assert!(matches!(final_type_kind(&file), TypeKind::List(_)));
+}
+
+#[test]
+fn typed_empty_list_completes_thir() {
+    let file = completed_file(
+        r#"
+items :: List Int = []
+items
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::List(_)));
+}
+
+#[test]
+fn untyped_empty_list_reports_inference_error() {
+    let lowered = lower("[]");
+
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered.diagnostics.iter().any(|diagnostic| {
+            matches!(diagnostic.kind, ThirDiagnosticKind::EmptyListNeedsType)
+        })
+    );
+}
+
+#[test]
+fn list_literal_reports_item_type_mismatch() {
+    let lowered = lower("[1; \"bad\";]");
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Text"
+        )
+    }));
+}
+
+#[test]
+fn tuple_literal_infers_tuple_type() {
+    let file = completed_file("(#circle, radius = 5.0)");
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
+}
+
+#[test]
+fn conditional_requires_bool_condition_and_compatible_branches() {
+    let file = completed_file("if true then 1 else 2");
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+
+    let lowered = lower("if 1 then 1 else 2");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Bool" && found == "Int"
+        )
+    }));
+}
+
+#[test]
+fn scalar_binary_expressions_complete_thir() {
+    for src in ["1 + 2", "1 < 2", "true && false", "1 == 1"] {
+        let file = completed_file(src);
+        assert!(
+            matches!(final_type_kind(&file), TypeKind::Int | TypeKind::Bool),
+            "{src}"
+        );
+    }
+}
+
+#[test]
+fn invalid_arithmetic_operands_are_reported() {
+    let lowered = lower("true + false");
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::InvalidBinaryOperands { op, lhs, rhs }
+                if *op == "+" && lhs == "Bool" && rhs == "Bool"
+        )
+    }));
+}
+
+#[test]
+fn defaulting_operator_requires_optional_lhs() {
+    let file = completed_file(
+        r#"
+RawServer :: type {
+  port? : Int;
+}
+
+server :: RawServer = {}
+server.port ?? 8080
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+
+    let lowered = lower("1 ?? 2");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::ExpectedOptional { found } if found == "Int"
+        )
+    }));
+}
+
+#[test]
 fn function_body_can_return_checked_record_literal() {
     let file = completed_file(
         r#"
