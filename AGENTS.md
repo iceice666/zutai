@@ -17,7 +17,11 @@ The implementation is an early Rust workspace. The v0 language design lives unde
 crates/
   cli/                 Command-line interface crate
   general/syntax/      Parser and AST definitions for general mode (`.zt`)
-  immediate/syntax/    Parser and AST definitions for immediate mode (`.zti`)
+  general/hir/         Name-resolved high-level IR and structural validation
+  general/thir/        Typed high-level IR and partial type checking/elaboration
+  general/semantic/    Facade wiring parse -> HIR -> THIR analysis
+  immediate/core/      Immediate-mode facade over selectable parser backends
+  immediate/syntax/    Parser definitions for immediate mode (`.zti`)
   immediate/simd/      SIMD-accelerated parser for immediate mode (`.zti`)
   immediate/types/     Shared AST types for immediate mode (`.zti`)
 docs/
@@ -43,5 +47,7 @@ cargo clippy --workspace --all-targets
 - Prefer small, focused changes.
 - Do not overwrite user changes you did not make.
 - Read the relevant files in `docs/v0_spec/` before implementing v0 language syntax or semantics; read `docs/v1_spec/` as design context only when working on deferred v1 features.
+- Keep parser syntax in `general/syntax`, name resolution and syntax-only normalization in `general/hir`, and type-dependent checking/elaboration in `general/thir`.
+- Route end-to-end general-mode semantic behavior through `general/semantic` where practical so callers can inspect parse, HIR, THIR, and diagnostics consistently.
 - Keep crate descriptions and README layout in sync when crates are renamed or added.
 - Use Rust 2024 edition conventions from the workspace configuration.
