@@ -2,15 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirDecl, HirDeclId, HirDeclKind, HirExpr, HirExprId, HirExprKind,
-    HirFile, HirRecordField, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField,
-    HirTypeTupleItem,
+    HirFile, HirLocalBinding, HirPat, HirPatId, HirPatKind, HirRecordField, HirTypeExpr, HirTypeId,
+    HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
 };
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
-    ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat,
-    ThirRecordField, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+    ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile,
+    ThirLocalBinding, ThirPat, ThirPatId, ThirPatKind, ThirRecordField, Type, TypeId, TypeKind,
+    TypeRecordField, TypeTupleItem,
 };
 use crate::pass::{ThirPassReport, run_default_passes};
 
@@ -141,8 +142,20 @@ impl<'hir> Lowerer<'hir> {
                     let ty = self.lower_type(*annotation);
                     self.value_types.insert(decl.binding, ty);
                 }
-                HirDeclKind::Function { .. } => {
-                    self.unsupported("function declarations", decl.span);
+                HirDeclKind::Function {
+                    params,
+                    sig: Some(sig),
+                    ..
+                } => {
+                    if !params.is_empty() {
+                        self.unsupported("generic function declarations", decl.span);
+                        continue;
+                    }
+                    let sig = self.lower_type(*sig);
+                    self.value_types.insert(decl.binding, sig);
+                }
+                HirDeclKind::Function { sig: None, .. } => {
+                    self.unsupported("no-signature function declarations", decl.span);
                 }
                 HirDeclKind::Value {
                     annotation: None, ..
@@ -183,14 +196,23 @@ impl<'hir> Lowerer<'hir> {
                 self.value_types.insert(decl.binding, ty);
                 ThirDeclKind::Value { ty, value }
             }
-            HirDeclKind::Function { params, sig, .. } => {
+            HirDeclKind::Function {
+                params,
+                sig,
+                clauses,
+            } => {
                 let sig = sig
-                    .map(|sig| self.lower_type(sig))
+                    .and_then(|_| self.value_types.get(&decl.binding).copied())
                     .unwrap_or(self.error_type);
+                let clauses = if params.is_empty() && sig != self.error_type {
+                    self.lower_function_clauses(clauses, sig)
+                } else {
+                    Vec::new()
+                };
                 ThirDeclKind::Function {
                     params: params.clone(),
                     sig,
-                    clauses: Vec::new(),
+                    clauses,
                 }
             }
         };
@@ -206,6 +228,9 @@ impl<'hir> Lowerer<'hir> {
         let expr = self.hir_expr(id);
         match &expr.kind {
             HirExprKind::Record(fields) => self.check_record_expr(id, fields, expected),
+            HirExprKind::Block { bindings, result } => {
+                self.lower_block_expr(id, bindings, *result, Some(expected))
+            }
             _ => {
                 let lowered = self.infer_expr(id);
                 let found = self.expr(lowered).ty;
@@ -291,6 +316,10 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Access { receiver, field } => {
                 self.lower_access_expr(id, *receiver, field, expr.span)
             }
+            HirExprKind::Block { bindings, result } => {
+                self.lower_block_expr(id, bindings, *result, None)
+            }
+            HirExprKind::Apply { func, arg } => self.lower_apply_expr(id, *func, *arg, expr.span),
             HirExprKind::UnresolvedIdent(name) => {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::ValueTypeUnavailable { name: name.clone() },
@@ -300,22 +329,227 @@ impl<'hir> Lowerer<'hir> {
             }
             HirExprKind::Tuple(_) => self.unsupported_expr(id, "tuple expressions", expr.span),
             HirExprKind::List(_) => self.unsupported_expr(id, "list expressions", expr.span),
-            HirExprKind::Block { .. } => self.unsupported_expr(id, "block expressions", expr.span),
             HirExprKind::Lambda { .. } => {
                 self.unsupported_expr(id, "lambda expressions", expr.span)
             }
             HirExprKind::If { .. } => self.unsupported_expr(id, "if expressions", expr.span),
             HirExprKind::Match { .. } => self.unsupported_expr(id, "match expressions", expr.span),
             HirExprKind::Import(_) => self.unsupported_expr(id, "imports", expr.span),
-            HirExprKind::Apply { .. } => {
-                self.unsupported_expr(id, "function application expressions", expr.span)
-            }
             HirExprKind::OptAccess { .. } => {
                 self.unsupported_expr(id, "optional access expressions", expr.span)
             }
             HirExprKind::Binary { .. } => {
                 self.unsupported_expr(id, "binary expressions", expr.span)
             }
+        }
+    }
+
+    fn lower_function_clauses(
+        &mut self,
+        clauses: &[zutai_hir::HirClause],
+        sig: TypeId,
+    ) -> Vec<ThirClause> {
+        let (param_types, return_type) = self.function_parts(sig, self.ty(sig).span);
+        clauses
+            .iter()
+            .map(|clause| {
+                if clause.patterns.len() != param_types.len() {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::FunctionClauseArityMismatch {
+                            expected: param_types.len(),
+                            found: clause.patterns.len(),
+                        },
+                        span: clause.span,
+                    });
+                }
+
+                let mut scoped_bindings = Vec::new();
+                let patterns = clause
+                    .patterns
+                    .iter()
+                    .enumerate()
+                    .map(|(index, pattern)| {
+                        let expected = param_types.get(index).copied().unwrap_or(self.error_type);
+                        self.check_pattern(*pattern, expected, &mut scoped_bindings)
+                    })
+                    .collect();
+                let guard = clause.guard.map(|guard| {
+                    let bool_ty = self.bool_type(clause.span);
+                    self.check_expr(guard, bool_ty)
+                });
+                let body = self.check_expr(clause.body, return_type);
+                self.clear_scoped_value_types(&scoped_bindings);
+
+                ThirClause {
+                    patterns,
+                    guard,
+                    body,
+                    span: clause.span,
+                }
+            })
+            .collect()
+    }
+
+    fn lower_block_expr(
+        &mut self,
+        id: HirExprId,
+        bindings: &[HirLocalBinding],
+        result: HirExprId,
+        expected: Option<TypeId>,
+    ) -> ThirExprId {
+        let span = self.hir_expr(id).span;
+        let mut scoped_bindings = Vec::with_capacity(bindings.len());
+        let bindings = bindings
+            .iter()
+            .map(|binding| {
+                let value = self.infer_expr(binding.value);
+                let ty = self.expr(value).ty;
+                self.value_types.insert(binding.binding, ty);
+                scoped_bindings.push(binding.binding);
+                ThirLocalBinding {
+                    binding: binding.binding,
+                    ty,
+                    value,
+                    span: binding.span,
+                }
+            })
+            .collect();
+        let result = match expected {
+            Some(expected) => self.check_expr(result, expected),
+            None => self.infer_expr(result),
+        };
+        self.clear_scoped_value_types(&scoped_bindings);
+        let ty = self.expr(result).ty;
+
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty,
+            kind: ThirExprKind::Block { bindings, result },
+            span,
+        })
+    }
+
+    fn lower_apply_expr(
+        &mut self,
+        id: HirExprId,
+        func: HirExprId,
+        arg: HirExprId,
+        span: Span,
+    ) -> ThirExprId {
+        let func = self.infer_expr(func);
+        let func_ty = self.expr(func).ty;
+        let Some((from, to)) = self.function_input_output(func_ty, span) else {
+            let found = self.type_name(func_ty);
+            if !matches!(self.ty(func_ty).kind, TypeKind::Error) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedFunction { found },
+                    span,
+                });
+            }
+            let arg = self.infer_expr(arg);
+            return self.alloc_expr(ThirExpr {
+                source: id,
+                ty: self.error_type,
+                kind: ThirExprKind::Apply {
+                    func,
+                    arg,
+                    instantiation: Vec::new(),
+                },
+                span,
+            });
+        };
+        let arg = self.check_expr(arg, from);
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: to,
+            kind: ThirExprKind::Apply {
+                func,
+                arg,
+                instantiation: Vec::new(),
+            },
+            span,
+        })
+    }
+
+    fn check_pattern(
+        &mut self,
+        id: HirPatId,
+        expected: TypeId,
+        scoped_bindings: &mut Vec<BindingId>,
+    ) -> ThirPatId {
+        let pattern = self.hir_pat(id);
+        let kind = match &pattern.kind {
+            HirPatKind::Wildcard => ThirPatKind::Wildcard,
+            HirPatKind::Bind(binding) => {
+                self.value_types.insert(*binding, expected);
+                scoped_bindings.push(*binding);
+                ThirPatKind::Bind(*binding)
+            }
+            HirPatKind::True => {
+                let ty = self.alloc_type(Type {
+                    kind: TypeKind::True,
+                    span: pattern.span,
+                });
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::True
+            }
+            HirPatKind::False => {
+                let ty = self.alloc_type(Type {
+                    kind: TypeKind::False,
+                    span: pattern.span,
+                });
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::False
+            }
+            HirPatKind::Integer(value) => {
+                let ty = self.int_type(pattern.span);
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::Integer(*value)
+            }
+            HirPatKind::Float(value) => {
+                let ty = self.float_type(pattern.span);
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::Float(*value)
+            }
+            HirPatKind::String(value) => {
+                let ty = self.text_type(pattern.span);
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::String(value.clone())
+            }
+            HirPatKind::Atom(name) => {
+                let ty = self.alloc_type(Type {
+                    kind: TypeKind::Atom(name.clone()),
+                    span: pattern.span,
+                });
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::Atom(name.clone())
+            }
+            HirPatKind::Tuple(_) => {
+                self.unsupported("tuple patterns", pattern.span);
+                ThirPatKind::Error
+            }
+            HirPatKind::Record(_) => {
+                self.unsupported("record patterns", pattern.span);
+                ThirPatKind::Error
+            }
+        };
+        self.alloc_pat(ThirPat {
+            source: id,
+            ty: expected,
+            kind,
+            span: pattern.span,
+        })
+    }
+
+    fn check_pattern_type(&mut self, expected: TypeId, found: TypeId, span: Span) {
+        if !self.type_matches(expected, found) {
+            self.type_mismatch(expected, found, span);
+        }
+    }
+
+    fn clear_scoped_value_types(&mut self, scoped_bindings: &[BindingId]) {
+        for binding in scoped_bindings {
+            self.value_types.remove(binding);
         }
     }
 
@@ -691,6 +925,29 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    fn function_input_output(&mut self, ty: TypeId, span: Span) -> Option<(TypeId, TypeId)> {
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.ty(resolved).kind {
+            TypeKind::Function { from, to } => Some((from, to)),
+            _ => None,
+        }
+    }
+
+    fn function_parts(&mut self, ty: TypeId, span: Span) -> (Vec<TypeId>, TypeId) {
+        let mut params = Vec::new();
+        let mut current = ty;
+        loop {
+            let resolved = self.resolve_alias(current, &mut HashSet::new(), span);
+            match self.ty(resolved).kind {
+                TypeKind::Function { from, to } => {
+                    params.push(from);
+                    current = to;
+                }
+                _ => return (params, resolved),
+            }
+        }
+    }
+
     fn type_matches(&mut self, expected: TypeId, found: TypeId) -> bool {
         let expected = self.resolve_alias(expected, &mut HashSet::new(), self.ty(expected).span);
         let found = self.resolve_alias(found, &mut HashSet::new(), self.ty(found).span);
@@ -705,8 +962,28 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .copied()
                 .any(|item| self.type_matches(item, found)),
+            (TypeKind::List(expected), TypeKind::List(found))
+            | (TypeKind::Optional(expected), TypeKind::Optional(found)) => {
+                self.type_matches(expected, found)
+            }
             (TypeKind::Record(expected_fields), TypeKind::Record(found_fields)) => {
                 self.record_types_match(&expected_fields, &found_fields)
+            }
+            (TypeKind::Tuple(expected_items), TypeKind::Tuple(found_items)) => {
+                self.tuple_types_match(&expected_items, &found_items)
+            }
+            (
+                TypeKind::Function {
+                    from: expected_from,
+                    to: expected_to,
+                },
+                TypeKind::Function {
+                    from: found_from,
+                    to: found_to,
+                },
+            ) => {
+                self.type_matches(expected_from, found_from)
+                    && self.type_matches(expected_to, found_to)
             }
             (left, right) => left == right,
         }
@@ -735,6 +1012,37 @@ impl<'hir> Lowerer<'hir> {
         found_fields
             .iter()
             .all(|found| expected_fields.iter().any(|field| field.name == found.name))
+    }
+
+    fn tuple_types_match(
+        &mut self,
+        expected_items: &[TypeTupleItem],
+        found_items: &[TypeTupleItem],
+    ) -> bool {
+        if expected_items.len() != found_items.len() {
+            return false;
+        }
+        expected_items
+            .iter()
+            .zip(found_items)
+            .all(|(expected, found)| match (expected, found) {
+                (TypeTupleItem::Positional(expected), TypeTupleItem::Positional(found)) => {
+                    self.type_matches(*expected, *found)
+                }
+                (
+                    TypeTupleItem::Named {
+                        name: expected_name,
+                        ty: expected,
+                        ..
+                    },
+                    TypeTupleItem::Named {
+                        name: found_name,
+                        ty: found,
+                        ..
+                    },
+                ) if expected_name == found_name => self.type_matches(*expected, *found),
+                _ => false,
+            })
     }
 
     fn resolve_alias(&mut self, ty: TypeId, seen: &mut HashSet<BindingId>, span: Span) -> TypeId {
@@ -829,6 +1137,10 @@ impl<'hir> Lowerer<'hir> {
         &self.hir.type_arena[id.0 as usize]
     }
 
+    fn hir_pat(&self, id: HirPatId) -> &'hir HirPat {
+        &self.hir.pat_arena[id.0 as usize]
+    }
+
     fn expr(&self, id: ThirExprId) -> &ThirExpr {
         &self.expr_arena[id.0 as usize]
     }
@@ -846,6 +1158,12 @@ impl<'hir> Lowerer<'hir> {
     fn alloc_expr(&mut self, expr: ThirExpr) -> ThirExprId {
         let id = ThirExprId(self.expr_arena.len() as u32);
         self.expr_arena.push(expr);
+        id
+    }
+
+    fn alloc_pat(&mut self, pat: ThirPat) -> ThirPatId {
+        let id = ThirPatId(self.pat_arena.len() as u32);
+        self.pat_arena.push(pat);
         id
     }
 

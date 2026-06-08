@@ -11,6 +11,8 @@ pub enum ThirDiagnosticKind {
     TypeCheckerNotImplemented,
     UnsupportedFeature { feature: &'static str },
     TypeMismatch { expected: String, found: String },
+    ExpectedFunction { found: String },
+    FunctionClauseArityMismatch { expected: usize, found: usize },
     ExpectedRecord { found: String },
     MissingRecordField { name: String },
     UnexpectedRecordField { name: String },
