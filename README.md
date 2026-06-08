@@ -5,7 +5,7 @@ Zutai is an experimental two-mode language system for data, configuration, valid
 - `.zti` is an inert data literal format: deterministic, non-evaluating, and optimized for fast parsing and lazy materialization.
 - `.zt` is a pure, lazy, typed computation language over data.
 
-The current repository is an early Rust workspace containing language-support crates and the v0 language design documents.
+The current repository is an early Rust workspace containing parser, semantic IR, CLI, and editor-support work alongside the v0 language design documents.
 
 ## Repository layout
 
@@ -14,13 +14,18 @@ crates/
   cli/                 Command-line interface crate
   general/
     syntax/            Parser and AST definitions for general mode (`.zt`)
+    hir/               Resolved high-level IR for general mode
+    thir/              Typed high-level IR and partial type checking for general mode
+    semantic/          Facade wiring parse -> HIR -> THIR analysis
   immediate/
+    core/              Immediate-mode facade over selectable parser backends
     syntax/            Parser and AST definitions for immediate mode (`.zti`)
     simd/              SIMD-accelerated parser for immediate mode (`.zti`)
-    types/             Shared types
+    types/             Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
   v0_spec/             Zutai v0 language specification
+  v1_spec/             Deferred post-v0 language design notes
   stdlib/              Standard library notes
 ```
 
@@ -38,7 +43,7 @@ This project is a Rust workspace.
 
 ```sh
 cargo build
-cargo test
+cargo test --workspace
 cargo fmt
 cargo clippy --workspace --all-targets
 ```
@@ -54,3 +59,9 @@ The shell provides `cargo`, `rustc`, `rustfmt`, `clippy`, and `rust-analyzer`.
 ## Status
 
 Zutai is under active design. The docs describe the intended v0 language; implementation details may lag behind the specification.
+
+Current implementation highlights:
+
+- Immediate mode has syntax and SIMD parser crates behind the `zutai-im` facade.
+- General mode has parsing, HIR lowering/name resolution, a semantic facade, and early THIR/type-checking support.
+- THIR currently supports scalar values, non-generic type aliases, closed record checking, field access, atom unions, block locals, and explicitly typed monomorphic function declarations/application. Larger v0 features such as imports, optional chaining/defaulting, full pattern matching, lambdas, and polymorphism are still incomplete.
