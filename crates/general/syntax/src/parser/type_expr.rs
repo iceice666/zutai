@@ -13,8 +13,9 @@ use super::lex::{
 /// Entry for type-expression parsing (level 10: `->` right-assoc).
 pub fn parse_type_expr(input: &mut &str) -> Result<TypeExpr> {
     ws(input)?;
-    let lhs = parse_type_postfix(input)?;
+    let lhs = parse_type_application(input)?;
 
+    let checkpoint = *input;
     ws(input)?;
     if input.starts_with("->") && !input.starts_with("->>") {
         "->".parse_next(input)?;
@@ -27,8 +28,32 @@ pub fn parse_type_expr(input: &mut &str) -> Result<TypeExpr> {
             span,
         });
     }
+    *input = checkpoint;
 
     Ok(lhs)
+}
+
+/// Type constructor application, e.g. `List Int` or `Pair Text Int`.
+fn parse_type_application(input: &mut &str) -> Result<TypeExpr> {
+    let mut node = parse_type_postfix(input)?;
+
+    loop {
+        let checkpoint = *input;
+        consume_inline_ws(input);
+        if !starts_type_atom(input) {
+            *input = checkpoint;
+            break;
+        }
+        let arg = parse_type_postfix(input)?;
+        let span = node.span().merge(arg.span());
+        node = TypeExpr::Apply {
+            func: Box::new(node),
+            arg: Box::new(arg),
+            span,
+        };
+    }
+
+    Ok(node)
 }
 
 /// Level 1 in type context: field access, optional chaining, postfix `?`.
@@ -36,6 +61,7 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
     let mut node = parse_type_atom(input)?;
 
     loop {
+        let checkpoint = *input;
         ws(input)?;
         if input.starts_with("?.") {
             "?.".parse_next(input)?;
@@ -66,6 +92,7 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
                 span,
             };
         } else {
+            *input = checkpoint;
             break;
         }
     }
@@ -103,6 +130,21 @@ fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     // Fall through to ExprEscape for things like type-application (`List Int`)
     // We parse a single application-level expression and wrap it.
     super::expr::parse_application_as_type_escape(input)
+}
+
+fn starts_type_atom(input: &str) -> bool {
+    input.starts_with('[')
+        || input.starts_with('(')
+        || input.starts_with('#')
+        || input
+            .chars()
+            .next()
+            .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+}
+
+fn consume_inline_ws(input: &mut &str) {
+    let trimmed = input.trim_start_matches([' ', '\t']);
+    *input = trimmed;
 }
 
 // ---------------------------------------------------------------------------

@@ -650,6 +650,13 @@ fn parse_typed_decl() {
 }
 
 #[test]
+fn parse_type_application_in_typed_decl() {
+    let f = parse_str("items :: List Int = []\nitems");
+    let (_name, ty, _val) = as_typed(decl_by(&f, "items"));
+    assert!(matches!(ty, TypeExpr::Apply { .. }));
+}
+
+#[test]
 fn parse_type_alias() {
     let f = parse_str("Server :: type { host : Text; }\n#unit");
     let (name, params, _ty) = as_alias(decl_by(&f, "Server"));
