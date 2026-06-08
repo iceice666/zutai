@@ -172,7 +172,7 @@ profile
 }
 
 #[test]
-fn function_declarations_are_explicitly_unsupported() {
+fn no_signature_function_declarations_remain_unsupported() {
     let lowered = lower("id x = x\n1");
 
     assert!(lowered.file.is_none());
@@ -180,10 +180,190 @@ fn function_declarations_are_explicitly_unsupported() {
         matches!(
             diagnostic.kind,
             ThirDiagnosticKind::UnsupportedFeature {
-                feature: "function declarations"
+                feature: "no-signature function declarations"
             }
         )
     }));
+}
+
+#[test]
+fn monomorphic_function_application_yields_return_type() {
+    let file = completed_file(
+        r#"
+id :: Int -> Int {
+  | x => x;
+}
+
+id 41
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn curried_function_application_yields_final_return_type() {
+    let file = completed_file(
+        r#"
+first :: Int -> Text -> Int {
+  | x _ => x;
+}
+
+first 1 "ignored"
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn function_can_reference_later_function_signature() {
+    let file = completed_file(
+        r#"
+useLater :: Int -> Int {
+  | x => later x;
+}
+
+later :: Int -> Int {
+  | y => y;
+}
+
+useLater 3
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn function_return_mismatch_reports_type_error() {
+    let lowered = lower(
+        r#"
+bad :: Int -> Text {
+  | x => x;
+}
+
+bad 1
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Text" && found == "Int"
+        )
+    }));
+}
+
+#[test]
+fn function_argument_mismatch_reports_type_error() {
+    let lowered = lower(
+        r#"
+id :: Int -> Int {
+  | x => x;
+}
+
+id "bad"
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Text"
+        )
+    }));
+}
+
+#[test]
+fn applying_non_function_reports_expected_function() {
+    let lowered = lower("x := 1\nx 2");
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::ExpectedFunction { found } if found == "Int"
+        )
+    }));
+}
+
+#[test]
+fn block_local_binding_yields_result_type() {
+    let file = completed_file("{ x := 1; x }");
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn function_body_can_return_checked_record_literal() {
+    let file = completed_file(
+        r#"
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+make :: Text -> Server {
+  | host => {
+    host = host;
+    port = 8080;
+  };
+}
+
+make "localhost"
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Alias(_)));
+}
+
+#[test]
+fn function_clause_arity_mismatch_is_reported() {
+    let lowered = lower(
+        r#"
+bad :: Int -> Int {
+  | x y => x;
+}
+
+1
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.kind,
+            ThirDiagnosticKind::FunctionClauseArityMismatch {
+                expected: 1,
+                found: 2
+            }
+        )
+    }));
+}
+
+#[test]
+fn atom_literal_pattern_accepts_union_member() {
+    let file = completed_file(
+        r#"
+Profile :: type [
+  #dev;
+  #prod;
+]
+
+isProd :: Profile -> Bool {
+  | #prod => true;
+}
+
+isProd #prod
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Bool));
 }
 
 #[test]

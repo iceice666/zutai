@@ -152,6 +152,7 @@ pub struct ThirPat {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThirPatKind {
+    Error,
     Wildcard,
     Bind(BindingId),
     True,
