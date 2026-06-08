@@ -201,6 +201,22 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    pub(super) fn list_item_type(&mut self, ty: TypeId, span: Span) -> Option<TypeId> {
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.ty(resolved).kind {
+            TypeKind::List(item) => Some(item),
+            _ => None,
+        }
+    }
+
+    pub(super) fn optional_inner_type(&mut self, ty: TypeId, span: Span) -> Option<TypeId> {
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.ty(resolved).kind {
+            TypeKind::Optional(inner) => Some(inner),
+            _ => None,
+        }
+    }
+
     pub(super) fn function_input_output(
         &mut self,
         ty: TypeId,
@@ -325,7 +341,12 @@ impl<'hir> Lowerer<'hir> {
             })
     }
 
-    fn resolve_alias(&mut self, ty: TypeId, seen: &mut HashSet<BindingId>, span: Span) -> TypeId {
+    pub(super) fn resolve_alias(
+        &mut self,
+        ty: TypeId,
+        seen: &mut HashSet<BindingId>,
+        span: Span,
+    ) -> TypeId {
         let TypeKind::Alias(binding) = self.ty(ty).kind else {
             return ty;
         };
