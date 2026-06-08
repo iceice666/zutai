@@ -85,7 +85,7 @@ pub fn analyze(input: &str) -> Analysis {
 }
 
 pub fn analyze_with_options(input: &str, options: AnalysisOptions) -> Analysis {
-    let parsed = zutai_syntax::parse(input);
+    let parsed = zutai_syntax::parse_ast_only(input);
     let parse_diagnostics: Vec<_> = parsed
         .diagnostics()
         .iter()

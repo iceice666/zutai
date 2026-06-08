@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::ParseErrorKind;
 use crate::parser::expr::parse_expr;
-use crate::{LineIndex, SyntaxKind, parse, tokenize};
+use crate::{LineIndex, SyntaxKind, parse, parse_ast_only, tokenize};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,6 +28,14 @@ fn parse_str(s: &str) -> File {
 
 fn parse_kinds(s: &str) -> Vec<ParseErrorKind> {
     parse(s)
+        .diagnostics()
+        .iter()
+        .map(|err| err.kind.clone())
+        .collect()
+}
+
+fn parse_ast_only_kinds(s: &str) -> Vec<ParseErrorKind> {
+    parse_ast_only(s)
         .diagnostics()
         .iter()
         .map(|err| err.kind.clone())
@@ -825,6 +833,15 @@ fn invalid_fixtures_report_specific_error_kinds() {
         let kinds = parse_kinds(src);
         assert_eq!(kinds.first(), Some(&kind), "{name}: {kinds:?}");
     }
+}
+
+#[test]
+fn ast_only_parse_matches_parse_diagnostics() {
+    assert!(parse_ast_only("x := 1\nx").ast().is_some());
+    assert_eq!(
+        parse_ast_only_kinds(INVALID_MIXED_PIPELINE),
+        parse_kinds(INVALID_MIXED_PIPELINE)
+    );
 }
 
 #[test]
