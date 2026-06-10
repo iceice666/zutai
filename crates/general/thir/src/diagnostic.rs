@@ -67,4 +67,8 @@ pub enum ThirDiagnosticKind {
     InvalidTypeExpression {
         reason: &'static str,
     },
+    LambdaNeedsTypeContext,
+    MatchArmPatternCountMismatch {
+        found: usize,
+    },
 }

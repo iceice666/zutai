@@ -258,6 +258,8 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .copied()
                 .any(|item| self.type_matches(item, found)),
+            // #none is always a valid value of Optional(T)
+            (TypeKind::Optional(_), TypeKind::Atom(ref name)) if name == "none" => true,
             (TypeKind::List(expected), TypeKind::List(found))
             | (TypeKind::Optional(expected), TypeKind::Optional(found)) => {
                 self.type_matches(expected, found)
