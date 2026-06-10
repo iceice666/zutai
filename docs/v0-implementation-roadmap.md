@@ -20,9 +20,9 @@ Source → HIR → THIR → TLC
 
 **TLC** (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds. All inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. TLC is the clean input contract for all compilation stages.
 
-The earlier direction of building a tree-walking interpreter (runtime value model + thunk environment) has been superseded by this AOT compile pipeline. Laziness and sharing are represented structurally in the Dataflow Core rather than operationally via runtime thunks.
+The production execution strategy is this AOT compile pipeline. Laziness and sharing are represented **structurally** in Dataflow Core — not via runtime thunks. No tree-walking interpreter sits on the critical path to production.
 
-A REPL requires JIT compilation and is deferred until the LLVM backend is stable.
+**Interim reference interpreter (`zutai-eval`).** While the back half of the pipeline (TLC, Dataflow Core, ANF, SSA, LLVM) does not yet exist, `crates/general/eval/` provides a THIR tree-walking interpreter that can run any fully type-checked `.zt` program today. It is a *semantics oracle* — it refuses to evaluate any program that is not fully type-checked — and its output is the ground truth for future differential testing of the LLVM backend. It also provides the `run` and `repl` CLI subcommands. "Superseded" applies to the *compilation* strategy; a reference interpreter as a tool is compatible with and complementary to that strategy.
 
 The Dataflow Core design is specified in [`docs/dataflow-core.md`](dataflow-core.md).
 

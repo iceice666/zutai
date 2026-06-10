@@ -5,7 +5,9 @@ version.workspace = true
 
 [dependencies]
 miette = { version = "7.6.0", features = ["fancy"] }
+rustyline = "15"
 thiserror = "2.0.18"
+zutai-eval = { path = "../general/eval" }
 zutai-im = { path = "../immediate/core" }
 zutai-semantic = { path = "../general/semantic" }
 zutai-syntax = { path = "../general/syntax" }

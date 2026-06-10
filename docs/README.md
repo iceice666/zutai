@@ -7,8 +7,6 @@
 - [Dataflow Core IR design](dataflow-core.md)
 - [v1 deferred feature specification](v1_spec/00-index.md)
 - [Standard library](stdlib/00-index.md)
-- [Design decisions](decisions/0001-record-update-and-config-layering.md)
-
 ## General-mode compiler layers
 
 ```text
@@ -31,3 +29,4 @@ Source → HIR → THIR → TLC
 - **SSA** — basic blocks with phi-nodes. Standard form for LLVM emission. Produced by `zutai-ssa`.
 - **LLVM IR** — final backend target. Emitted by `zutai-codegen`.
 - **Semantic facade** (`zutai-semantic`) — wires parse, HIR, THIR, and TLC into one staged API. Passes live in the IR crate they transform.
+- **Reference interpreter** (`zutai-eval`) — interim THIR tree-walking interpreter. A semantics oracle: runs only fully type-checked `.zt` programs; provides `run` and `repl` CLI subcommands; output is ground truth for differential testing of the LLVM backend.
