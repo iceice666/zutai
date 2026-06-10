@@ -1,0 +1,11 @@
+[package]
+name = "zutai-eval"
+description = "Interim THIR reference interpreter for Zutai general mode (.zt)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-thir = { path = "../thir" }
+zutai-hir = { path = "../hir" }
+zutai-syntax = { path = "../syntax" }
+zutai-semantic = { path = "../semantic" }
