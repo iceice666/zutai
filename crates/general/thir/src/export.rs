@@ -1,0 +1,123 @@
+//! Export a completed module's type for use by an importer.
+//!
+//! A `.zt` module import is typed by its final expression's type.  That type
+//! lives in the imported module's own arena and may reference type aliases
+//! defined there, so it cannot be handed to a different module's lowerer
+//! directly.  [`export_type`] walks it into a neutral [`ImportedType`]
+//! descriptor (alias-expanded, arena-independent) that the importer interns
+//! into its own arena.
+//!
+//! Only self-contained *data* shapes can cross a module boundary: the current
+//! evaluator binds closures and type values to file-relative arena indices, so
+//! exporting a function or type value is refused rather than mis-evaluated.
+
+use std::collections::{HashMap, HashSet};
+
+use zutai_hir::BindingId;
+
+use crate::import::{ImportedField, ImportedTupleItem, ImportedType};
+use crate::ir::{ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
+
+/// A type that cannot be exported across a module import in this phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportUnsupported {
+    pub reason: &'static str,
+}
+
+/// Convert `ty` (a type in `file`'s arena) into a neutral [`ImportedType`].
+pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUnsupported> {
+    let aliases = build_alias_map(file);
+    let mut seen = HashSet::new();
+    export(file, &aliases, ty, &mut seen)
+}
+
+fn build_alias_map(file: &ThirFile) -> HashMap<BindingId, TypeId> {
+    let mut map = HashMap::new();
+    for decl in &file.decl_arena {
+        if let ThirDeclKind::TypeAlias { ty, .. } = decl.kind {
+            map.insert(decl.binding, ty);
+        }
+    }
+    map
+}
+
+fn export(
+    file: &ThirFile,
+    aliases: &HashMap<BindingId, TypeId>,
+    ty: TypeId,
+    seen: &mut HashSet<BindingId>,
+) -> Result<ImportedType, ExportUnsupported> {
+    match file.type_arena[ty.0 as usize].kind.clone() {
+        // Imported data is just a value, so a singleton `true`/`false` type is
+        // exported as the wider `Bool`.
+        TypeKind::Bool | TypeKind::True | TypeKind::False => Ok(ImportedType::Bool),
+        TypeKind::Int => Ok(ImportedType::Int),
+        TypeKind::Float => Ok(ImportedType::Float),
+        TypeKind::Text => Ok(ImportedType::Text),
+        TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
+        TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export(
+            file, aliases, inner, seen,
+        )?))),
+        TypeKind::Optional(inner) => Ok(ImportedType::Optional(Box::new(export(
+            file, aliases, inner, seen,
+        )?))),
+        TypeKind::Record(fields) => {
+            let mut out = Vec::with_capacity(fields.len());
+            for field in &fields {
+                out.push(ImportedField {
+                    name: field.name.clone(),
+                    optional: field.optional,
+                    ty: export(file, aliases, field.ty, seen)?,
+                });
+            }
+            Ok(ImportedType::Record(out))
+        }
+        TypeKind::Tuple(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in &items {
+                out.push(match item {
+                    TypeTupleItem::Named { name, ty, .. } => ImportedTupleItem::Named {
+                        name: name.clone(),
+                        ty: export(file, aliases, *ty, seen)?,
+                    },
+                    TypeTupleItem::Positional(ty) => {
+                        ImportedTupleItem::Positional(export(file, aliases, *ty, seen)?)
+                    }
+                });
+            }
+            Ok(ImportedType::Tuple(out))
+        }
+        TypeKind::Union(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(export(file, aliases, item, seen)?);
+            }
+            Ok(ImportedType::Union(out))
+        }
+        TypeKind::Alias(binding) => {
+            if !seen.insert(binding) {
+                // Cyclic alias — cannot happen in completed THIR (it would be a
+                // diagnostic), but stay total rather than recurse forever.
+                return Ok(ImportedType::Unknown);
+            }
+            let result = match aliases.get(&binding).copied() {
+                Some(target) => export(file, aliases, target, seen),
+                None => Ok(ImportedType::Unknown),
+            };
+            seen.remove(&binding);
+            result
+        }
+        // Free inference / type variables represent unconstrained positions; the
+        // importer re-introduces a fresh variable for them.
+        TypeKind::InferVar(_) | TypeKind::TypeVar(_) => Ok(ImportedType::Unknown),
+        TypeKind::Function { .. } => Err(ExportUnsupported {
+            reason: "functions cannot cross module imports yet",
+        }),
+        TypeKind::Type => Err(ExportUnsupported {
+            reason: "type values cannot cross module imports yet",
+        }),
+        TypeKind::Error => Err(ExportUnsupported {
+            reason: "imported module has an unresolved type",
+        }),
+    }
+}

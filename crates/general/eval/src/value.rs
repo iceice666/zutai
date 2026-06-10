@@ -32,6 +32,41 @@ pub enum Value {
     Nothing,
 }
 
+impl Value {
+    /// Convert a parsed `.zti` immediate-mode value into a runtime value.
+    ///
+    /// Blocks become records and arrays become lists (per the import spec);
+    /// every element is already fully evaluated, so its thunk is `ready`.
+    pub fn from_immediate(value: &zutai_im::Value) -> Value {
+        use zutai_im::Value as Im;
+        match value {
+            Im::True => Value::Bool(true),
+            Im::False => Value::Bool(false),
+            Im::Integer(n) => Value::Int(*n),
+            Im::Float(f) => Value::Float(*f),
+            Im::String(s) => Value::Text(Rc::from(s.as_str())),
+            Im::Atom(s) => Value::Atom(Rc::from(s.as_str())),
+            Im::Array(items) => Value::List(
+                items
+                    .iter()
+                    .map(|item| crate::thunk::Thunk::ready(Value::from_immediate(item)))
+                    .collect(),
+            ),
+            Im::Block(block) => Value::Record(Rc::new(
+                block
+                    .iter()
+                    .map(|pair| {
+                        (
+                            Rc::from(pair.field_name.as_str()),
+                            crate::thunk::Thunk::ready(Value::from_immediate(&pair.value)),
+                        )
+                    })
+                    .collect(),
+            )),
+        }
+    }
+}
+
 /// A named or positional tuple field carrying a lazy value.
 #[derive(Clone, Debug)]
 pub struct TupleField {

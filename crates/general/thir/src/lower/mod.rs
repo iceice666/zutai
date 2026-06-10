@@ -7,6 +7,7 @@ use zutai_hir::{
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
+use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
     ThirDecl, ThirDeclId, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat, ThirPatId, Type,
     TypeId, TypeKind, TypeTupleItem,
@@ -16,6 +17,7 @@ use crate::pass::{ThirPassReport, run_default_passes};
 mod decl;
 mod exhaust;
 mod expr;
+mod import;
 mod pat;
 mod types;
 
@@ -26,14 +28,21 @@ pub struct LoweredThir {
     pub pass_reports: Vec<ThirPassReport>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ThirLowerOptions {
     pub run_passes: bool,
+    /// Pre-resolved import types, keyed by import source.  Built by the semantic
+    /// layer (which owns filesystem access); empty when lowering with no module
+    /// context, in which case every `import` becomes an unsupported `Error` node.
+    pub imports: HashMap<ImportKey, ImportedType>,
 }
 
 impl Default for ThirLowerOptions {
     fn default() -> Self {
-        Self { run_passes: true }
+        Self {
+            run_passes: true,
+            imports: HashMap::new(),
+        }
     }
 }
 
@@ -42,9 +51,13 @@ pub fn lower_hir(file: &zutai_hir::HirFile) -> LoweredThir {
 }
 
 pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptions) -> LoweredThir {
-    let mut lowerer = Lowerer::new(file);
+    let ThirLowerOptions {
+        run_passes,
+        imports,
+    } = options;
+    let mut lowerer = Lowerer::new(file, imports);
     let mut lowered = lowerer.lower_file();
-    if options.run_passes {
+    if run_passes {
         lowered.pass_reports = run_default_passes(&mut lowered.file, &mut lowered.diagnostics);
     }
     lowered
@@ -52,6 +65,7 @@ pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptio
 
 struct Lowerer<'hir> {
     hir: &'hir HirFile,
+    imports: HashMap<ImportKey, ImportedType>,
     decl_arena: Vec<ThirDecl>,
     expr_arena: Vec<ThirExpr>,
     pat_arena: Vec<ThirPat>,
@@ -66,9 +80,10 @@ struct Lowerer<'hir> {
 }
 
 impl<'hir> Lowerer<'hir> {
-    fn new(hir: &'hir HirFile) -> Self {
+    fn new(hir: &'hir HirFile, imports: HashMap<ImportKey, ImportedType>) -> Self {
         let mut lowerer = Self {
             hir,
+            imports,
             decl_arena: Vec::new(),
             expr_arena: Vec::new(),
             pat_arena: Vec::new(),

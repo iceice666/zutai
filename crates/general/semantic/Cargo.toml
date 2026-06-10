@@ -8,3 +8,4 @@ version.workspace = true
 zutai-hir = { path = "../hir" }
 zutai-syntax = { path = "../syntax" }
 zutai-thir = { path = "../thir" }
+zutai-im = { path = "../../immediate/core" }

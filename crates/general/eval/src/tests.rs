@@ -364,3 +364,156 @@ classify 5
 ";
     assert_eq!(run(src), Value::Int(1));
 }
+
+// ─── `.zti` imports ───────────────────────────────────────────────────────────
+
+fn imports_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports")
+}
+
+/// Evaluate `src` with the shared fixtures directory as the import base.
+fn run_import(src: &str) -> Value {
+    crate::eval_with_base(src, Some(&imports_dir()))
+        .unwrap_or_else(|e| panic!("eval failed for:\n{src}\nerror: {e}"))
+}
+
+fn run_import_err(src: &str) -> EvalError {
+    crate::eval_with_base(src, Some(&imports_dir()))
+        .expect_err(&format!("expected error for:\n{src}"))
+}
+
+#[test]
+fn import_zti_field_access_int() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\ncfg.port"),
+        Value::Int(8080)
+    );
+}
+
+#[test]
+fn import_zti_field_access_text() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\ncfg.host"),
+        Value::Text("127.0.0.1".into())
+    );
+}
+
+#[test]
+fn import_zti_field_access_bool() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\ncfg.debug"),
+        Value::Bool(true)
+    );
+}
+
+#[test]
+fn import_zti_field_access_atom() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\ncfg.env"),
+        Value::Atom("prod".into())
+    );
+}
+
+#[test]
+fn import_zti_nested_field() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\ncfg.limits.max"),
+        Value::Int(100)
+    );
+}
+
+#[test]
+fn import_zti_list_field() {
+    match run_import("cfg := import \"config.zti\"\ncfg.tags") {
+        Value::List(items) => assert_eq!(items.len(), 2),
+        other => panic!("expected list, got {other:?}"),
+    }
+}
+
+#[test]
+fn import_zti_whole_record() {
+    match run_import("cfg := import \"config.zti\"\ncfg") {
+        Value::Record(fields) => assert_eq!(fields.len(), 6),
+        other => panic!("expected record, got {other:?}"),
+    }
+}
+
+#[test]
+fn import_via_eval_path() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports/importer.zt");
+    assert_eq!(crate::eval_path(&path).unwrap(), Value::Int(8080));
+}
+
+#[test]
+fn import_without_base_is_not_runnable() {
+    // `eval_file` has no base directory, so the import cannot resolve.
+    match eval_file("cfg := import \"config.zti\"\ncfg.port") {
+        Err(EvalError::NotRunnable(_)) => {}
+        other => panic!("expected NotRunnable, got {other:?}"),
+    }
+}
+
+#[test]
+fn import_missing_file_is_not_runnable() {
+    match run_import_err("cfg := import \"nope.zti\"\ncfg") {
+        EvalError::NotRunnable(_) => {}
+        other => panic!("expected NotRunnable, got {other:?}"),
+    }
+}
+
+// ─── `.zt` module imports ─────────────────────────────────────────────────────
+
+fn imports_path(name: &str) -> std::path::PathBuf {
+    imports_dir().join(name)
+}
+
+#[test]
+fn zt_import_scalar_value() {
+    // other.zt evaluates to the bare integer 42.
+    assert_eq!(run_import("n := import \"other.zt\"\nn"), Value::Int(42));
+}
+
+#[test]
+fn zt_import_record_field() {
+    // data_module.zt returns a record whose `doubled` field is 21 * 2.
+    assert_eq!(
+        run_import("m := import \"data_module.zt\"\nm.doubled"),
+        Value::Int(42)
+    );
+}
+
+#[test]
+fn zt_import_whole_record() {
+    match run_import("m := import \"data_module.zt\"\nm") {
+        Value::Record(fields) => assert_eq!(fields.len(), 3),
+        other => panic!("expected record, got {other:?}"),
+    }
+}
+
+#[test]
+fn zt_import_transitive_through_zti() {
+    // chain_top.zt imports chain_mid.zt which imports config.zti.
+    assert_eq!(
+        crate::eval_path(&imports_path("chain_top.zt")).unwrap(),
+        Value::Int(8080)
+    );
+}
+
+#[test]
+fn zt_import_function_value_is_refused() {
+    // A module whose final value is a function cannot cross the import boundary:
+    // a clean refusal, not an internal error or panic.
+    match run_import_err("f := import \"func_module.zt\"\nf") {
+        EvalError::NotRunnable(_) => {}
+        other => panic!("expected NotRunnable, got {other:?}"),
+    }
+}
+
+#[test]
+fn zt_import_cycle_is_refused() {
+    match crate::eval_path(&imports_path("cycle_a.zt")) {
+        Err(EvalError::NotRunnable(_)) => {}
+        other => panic!("expected NotRunnable, got {other:?}"),
+    }
+}

@@ -12,7 +12,9 @@ use std::rc::Rc;
 
 use zutai_hir::BindingId;
 use zutai_syntax::ast::BinOp;
-use zutai_thir::{ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId};
+use zutai_thir::{
+    ImportKey, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
+};
 use zutai_thir::{ThirPatKind, ThirTupleItem, ThirTuplePatItem};
 
 use crate::{
@@ -29,13 +31,21 @@ pub struct Evaluator<'a> {
     /// Used when looking up function declarations by their `BindingId` to build
     /// `Closure` values at env-building time.
     pub decls_by_binding: &'a HashMap<BindingId, ThirDeclId>,
+    /// Pre-resolved `.zti` import values, keyed by import source.  An `Import`
+    /// node evaluates by looking up its source here.
+    pub imports: &'a HashMap<ImportKey, Value>,
 }
 
 impl<'a> Evaluator<'a> {
-    pub fn new(file: &'a ThirFile, decls_by_binding: &'a HashMap<BindingId, ThirDeclId>) -> Self {
+    pub fn new(
+        file: &'a ThirFile,
+        decls_by_binding: &'a HashMap<BindingId, ThirDeclId>,
+        imports: &'a HashMap<ImportKey, Value>,
+    ) -> Self {
         Self {
             file,
             decls_by_binding,
+            imports,
         }
     }
 
@@ -209,9 +219,12 @@ impl<'a> Evaluator<'a> {
                     "match expression reached evaluator (unreachable past gate)",
                 ))
             }
-            ThirExprKind::Import(_) => Err(EvalError::Internal(
-                "import reached evaluator (unreachable past gate)",
-            )),
+            ThirExprKind::Import(source) => match self.imports.get(source) {
+                Some(value) => Ok(value.clone()),
+                None => Err(EvalError::Internal(
+                    "import not resolved (unreachable past gate)",
+                )),
+            },
             ThirExprKind::OptionalAccess { .. } => Err(EvalError::Internal(
                 "optional access reached evaluator (unreachable past gate)",
             )),

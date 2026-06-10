@@ -5,6 +5,8 @@
 //! lower type-dependent sugar such as optional access and defaulting.
 
 pub mod diagnostic;
+pub mod export;
+pub mod import;
 pub mod ir;
 pub mod lower;
 pub mod pass;
@@ -13,6 +15,8 @@ pub mod pass;
 mod tests;
 
 pub use diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
+pub use export::{ExportUnsupported, export_type};
+pub use import::{ImportKey, ImportedField, ImportedTupleItem, ImportedType};
 pub use ir::{
     ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile,
     ThirLocalBinding, ThirPat, ThirPatId, ThirPatKind, ThirRecordField, ThirRecordPatField,

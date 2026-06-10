@@ -28,9 +28,10 @@ pub mod value;
 mod tests;
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use zutai_hir::BindingId;
-use zutai_thir::{ThirDeclId, ThirExprKind, ThirFile};
+use zutai_thir::{ImportKey, ThirDeclId, ThirExprKind, ThirFile};
 
 pub use value::Value;
 
@@ -291,23 +292,60 @@ fn has_reachable_error(file: &ThirFile) -> bool {
 /// This is the full pipeline: `semantic::analyze` → gate → build env →
 /// eval final expression → deep-force.
 pub fn eval_file(source: &str) -> Result<Value, EvalError> {
-    let analysis = zutai_semantic::analyze(source);
-    let file = check_runnable(&analysis)?;
-    eval_thir(file)
+    eval_with_base(source, None)
 }
 
-/// Evaluate a pre-analyzed, gate-checked `ThirFile`.
+/// Evaluate a `.zt` file on disk, resolving imports relative to its directory.
+pub fn eval_path(path: &Path) -> Result<Value, EvalError> {
+    let analysis = zutai_semantic::analyze_path(path)
+        .map_err(|err| EvalError::NotRunnable(vec![format!("cannot read {path:?}: {err}")]))?;
+    eval_analysis(&analysis)
+}
+
+/// Evaluate a `.zt` source string, resolving `import`s relative to `base`.
+pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalError> {
+    let analysis =
+        zutai_semantic::analyze_with_base(source, base, zutai_semantic::AnalysisOptions::default());
+    eval_analysis(&analysis)
+}
+
+/// Gate-check an analyzed module and evaluate it, recursively evaluating its
+/// imports first.  `.zti` imports become data values; `.zt` imports are
+/// evaluated depth-first.  The import graph is acyclic by the time evaluation
+/// runs (the analyzer refuses cyclic imports), so this terminates.
+fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    let file = check_runnable(analysis)?;
+    let mut imports: HashMap<ImportKey, Value> = HashMap::new();
+    for (key, value) in &analysis.import_values {
+        imports.insert(key.clone(), Value::from_immediate(value));
+    }
+    for (key, module) in &analysis.import_modules {
+        let value = eval_analysis(module)?;
+        imports.insert(key.clone(), value);
+    }
+    eval_thir_with_imports(file, &imports)
+}
+
+/// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.
 pub fn eval_thir(file: &ThirFile) -> Result<Value, EvalError> {
+    eval_thir_with_imports(file, &HashMap::new())
+}
+
+/// Evaluate a pre-analyzed, gate-checked `ThirFile` with resolved import values.
+pub fn eval_thir_with_imports(
+    file: &ThirFile,
+    imports: &HashMap<ImportKey, Value>,
+) -> Result<Value, EvalError> {
     let decls_by_binding: HashMap<BindingId, ThirDeclId> = file
         .decls
         .iter()
         .map(|&id| (file.decl_arena[id.0 as usize].binding, id))
         .collect();
 
-    let evaluator = eval::Evaluator::new(file, &decls_by_binding);
+    let evaluator = eval::Evaluator::new(file, &decls_by_binding, imports);
     let top = evaluator.build_top_env();
     let result = evaluator.eval(file.final_expr, &top)?;
-    Ok(force_deep(result, &evaluator)?)
+    force_deep(result, &evaluator)
 }
 
 /// Recursively force all lazy thunks inside a value so it can be displayed.

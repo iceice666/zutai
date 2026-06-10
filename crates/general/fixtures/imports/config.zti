@@ -1,0 +1,13 @@
+{
+  host = "127.0.0.1";
+  port = 8080;
+  debug = true;
+  env = #prod;
+  tags = [
+    "alpha";
+    "beta";
+  ];
+  limits = {
+    max = 100;
+  };
+}

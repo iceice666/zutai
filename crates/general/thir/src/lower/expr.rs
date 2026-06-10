@@ -147,7 +147,7 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Match { scrutinee, arms } => {
                 self.lower_match_expr(id, *scrutinee, arms, None)
             }
-            HirExprKind::Import(_) => self.unsupported_expr(id, "imports", expr.span),
+            HirExprKind::Import(source) => self.lower_import_expr(id, source, expr.span),
             HirExprKind::OptAccess { receiver, field } => {
                 self.lower_opt_access_expr(id, *receiver, field, expr.span)
             }

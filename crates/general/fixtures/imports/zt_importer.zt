@@ -1,0 +1,2 @@
+m := import "data_module.zt"
+m.doubled

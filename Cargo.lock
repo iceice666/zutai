@@ -1083,6 +1083,7 @@ name = "zutai-eval"
 version = "0.1.0"
 dependencies = [
  "zutai-hir",
+ "zutai-im",
  "zutai-semantic",
  "zutai-syntax",
  "zutai-thir",
@@ -1128,6 +1129,7 @@ name = "zutai-semantic"
 version = "0.1.0"
 dependencies = [
  "zutai-hir",
+ "zutai-im",
  "zutai-syntax",
  "zutai-thir",
 ]

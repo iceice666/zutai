@@ -1,0 +1,2 @@
+b := import "cycle_b.zt"
+b

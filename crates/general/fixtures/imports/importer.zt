@@ -1,0 +1,2 @@
+cfg := import "config.zti"
+cfg.port

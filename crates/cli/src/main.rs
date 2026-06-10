@@ -47,12 +47,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// Evaluate a `.zt` file and print the result.
 fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
-    match zutai_eval::eval_file(&contents) {
+    // Resolve imports relative to the file's directory.
+    let base = Path::new(path).parent();
+    match zutai_eval::eval_with_base(&contents, base) {
         Ok(value) => println!("{value}"),
         Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
-            // These are parse/HIR errors — render with miette if possible,
+            // These are parse/HIR/import errors — render with miette if possible,
             // otherwise fall back to the semantic analyzer for pretty output.
-            let analysis = zutai_semantic::analyze(&contents);
+            let analysis = zutai_semantic::analyze_with_base(
+                &contents,
+                base,
+                zutai_semantic::AnalysisOptions::default(),
+            );
             let parse_errors: Vec<_> = analysis
                 .diagnostics
                 .iter()
@@ -63,6 +69,20 @@ fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
                 .collect();
             if !parse_errors.is_empty() {
                 print_zt_errors(path, &contents, &parse_errors);
+                std::process::exit(1);
+            }
+            let import_errors: Vec<_> = analysis
+                .diagnostics
+                .iter()
+                .filter_map(|d| match &d.kind {
+                    zutai_semantic::SemanticDiagnosticKind::Import(i) => Some(i.clone()),
+                    _ => None,
+                })
+                .collect();
+            if !import_errors.is_empty() {
+                for err in &import_errors {
+                    eprintln!("import error: {}", format_import_diagnostic(err));
+                }
                 std::process::exit(1);
             }
             for m in msgs {
@@ -267,7 +287,26 @@ fn count_decls_in(src: &str) -> usize {
 
 fn print_semantic_errors(errs: &[&zutai_semantic::SemanticDiagnostic]) {
     for err in errs {
-        eprintln!("semantic error: {err:?}");
+        match &err.kind {
+            zutai_semantic::SemanticDiagnosticKind::Import(import) => {
+                eprintln!("import error: {}", format_import_diagnostic(import));
+            }
+            _ => eprintln!("semantic error: {err:?}"),
+        }
+    }
+}
+
+fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) -> String {
+    use zutai_semantic::ImportDiagnosticKind::*;
+    match &diag.kind {
+        NoBaseDirectory => "cannot resolve an import without a base directory".to_string(),
+        UnsupportedImportForm { path } => format!("unsupported import path: {path}"),
+        FileNotFound { path } => format!("file not found: {path}"),
+        ReadError { path, msg } => format!("cannot read {path}: {msg}"),
+        ParseError { path, msg } => format!("failed to parse {path}: {msg}"),
+        ImportCycle { path } => format!("import cycle through {path}"),
+        ModuleHasErrors { path } => format!("imported module {path} has errors"),
+        UnsupportedExport { path, reason } => format!("cannot import {path}: {reason}"),
     }
 }
 
