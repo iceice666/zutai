@@ -661,7 +661,11 @@ fn parse_typed_decl() {
 fn parse_typed_decl_lambda_value() {
     let src = "\ndouble :: Int -> Int = \\x. x * 2\n\ndouble 5\n";
     let parsed = parse(src);
-    assert!(!parsed.has_errors(), "parse errors: {:?}", parsed.diagnostics());
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
     let f = parsed.into_ast().expect("should have AST");
     assert_eq!(f.decls.len(), 1);
 }

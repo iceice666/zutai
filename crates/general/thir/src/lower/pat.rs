@@ -4,7 +4,10 @@ use zutai_hir::{BindingId, HirPatId, HirPatKind, HirTuplePatItem};
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{ThirPat, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId, TypeKind, TypeTupleItem};
+use crate::ir::{
+    ThirPat, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId, TypeKind,
+    TypeTupleItem,
+};
 
 use super::Lowerer;
 
@@ -64,10 +67,22 @@ impl<'hir> Lowerer<'hir> {
                 ThirPatKind::Atom(name.clone())
             }
             HirPatKind::Tuple(items) => {
-                return self.check_tuple_pattern(id, items, expected, pattern.span, scoped_bindings);
+                return self.check_tuple_pattern(
+                    id,
+                    items,
+                    expected,
+                    pattern.span,
+                    scoped_bindings,
+                );
             }
             HirPatKind::Record(fields) => {
-                return self.check_record_pattern(id, fields, expected, pattern.span, scoped_bindings);
+                return self.check_record_pattern(
+                    id,
+                    fields,
+                    expected,
+                    pattern.span,
+                    scoped_bindings,
+                );
             }
         };
         self.alloc_pat(ThirPat {
@@ -180,11 +195,12 @@ impl<'hir> Lowerer<'hir> {
                             span: *item_span,
                         }
                     }
-                    (
-                        HirTuplePatItem::Positional(pat_id),
-                        Some(TypeTupleItem::Positional(ty)),
-                    ) => {
-                        ThirTuplePatItem::Positional(self.check_pattern(*pat_id, *ty, scoped_bindings))
+                    (HirTuplePatItem::Positional(pat_id), Some(TypeTupleItem::Positional(ty))) => {
+                        ThirTuplePatItem::Positional(self.check_pattern(
+                            *pat_id,
+                            *ty,
+                            scoped_bindings,
+                        ))
                     }
                     (
                         HirTuplePatItem::Positional(pat_id),
@@ -201,9 +217,20 @@ impl<'hir> Lowerer<'hir> {
                             },
                             span: *type_span,
                         });
-                        ThirTuplePatItem::Positional(self.check_pattern(*pat_id, *ty, scoped_bindings))
+                        ThirTuplePatItem::Positional(self.check_pattern(
+                            *pat_id,
+                            *ty,
+                            scoped_bindings,
+                        ))
                     }
-                    (HirTuplePatItem::Named { name, pattern: pat_id, span: item_span }, None) => {
+                    (
+                        HirTuplePatItem::Named {
+                            name,
+                            pattern: pat_id,
+                            span: item_span,
+                        },
+                        None,
+                    ) => {
                         let pat = self.check_pattern(*pat_id, self.error_type, scoped_bindings);
                         ThirTuplePatItem::Named {
                             name: name.clone(),
@@ -211,11 +238,9 @@ impl<'hir> Lowerer<'hir> {
                             span: *item_span,
                         }
                     }
-                    (HirTuplePatItem::Positional(pat_id), None) => {
-                        ThirTuplePatItem::Positional(
-                            self.check_pattern(*pat_id, self.error_type, scoped_bindings),
-                        )
-                    }
+                    (HirTuplePatItem::Positional(pat_id), None) => ThirTuplePatItem::Positional(
+                        self.check_pattern(*pat_id, self.error_type, scoped_bindings),
+                    ),
                 }
             })
             .collect();
@@ -237,7 +262,11 @@ impl<'hir> Lowerer<'hir> {
         items
             .iter()
             .map(|item| match item {
-                HirTuplePatItem::Named { name, pattern, span } => {
+                HirTuplePatItem::Named {
+                    name,
+                    pattern,
+                    span,
+                } => {
                     let pat = self.check_pattern(*pattern, self.error_type, scoped_bindings);
                     ThirTuplePatItem::Named {
                         name: name.clone(),

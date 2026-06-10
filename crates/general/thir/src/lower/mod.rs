@@ -9,7 +9,7 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
     ThirDecl, ThirDeclId, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat, ThirPatId, Type,
-    TypeId, TypeKind,
+    TypeId, TypeKind, TypeTupleItem,
 };
 use crate::pass::{ThirPassReport, run_default_passes};
 
@@ -60,6 +60,8 @@ struct Lowerer<'hir> {
     diagnostics: Vec<ThirDiagnostic>,
     error_type: TypeId,
     type_type: TypeId,
+    next_infer_var: u32,
+    infer_subst: HashMap<u32, TypeId>,
 }
 
 impl<'hir> Lowerer<'hir> {
@@ -75,6 +77,8 @@ impl<'hir> Lowerer<'hir> {
             diagnostics: Vec::new(),
             error_type: TypeId(0),
             type_type: TypeId(0),
+            next_infer_var: 0,
+            infer_subst: HashMap::new(),
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,
@@ -98,6 +102,10 @@ impl<'hir> Lowerer<'hir> {
             .map(|id| self.lower_decl(id))
             .collect();
         let final_expr = self.infer_expr(self.hir.final_expr);
+
+        // Zonk: replace solved InferVar slots in the type arena with their
+        // concrete types so downstream consumers see fully-resolved types.
+        self.zonk_type_arena();
 
         let file = ThirFile {
             decls,
@@ -200,5 +208,112 @@ impl<'hir> Lowerer<'hir> {
             kind: ThirExprKind::Error,
             span,
         })
+    }
+
+    // ── Inference / unification ──────────────────────────────────────────────
+
+    pub(super) fn fresh_infer_var(&mut self, span: Span) -> TypeId {
+        let id = self.next_infer_var;
+        self.next_infer_var += 1;
+        self.alloc_type(Type {
+            kind: TypeKind::InferVar(id),
+            span,
+        })
+    }
+
+    /// Chase InferVar substitution chains to find the canonical representative.
+    pub(super) fn resolve(&self, ty: TypeId) -> TypeId {
+        let mut current = ty;
+        loop {
+            match self.type_arena[current.0 as usize].kind {
+                TypeKind::InferVar(v) => {
+                    if let Some(&next) = self.infer_subst.get(&v) {
+                        current = next;
+                    } else {
+                        return current;
+                    }
+                }
+                _ => return current,
+            }
+        }
+    }
+
+    /// Occurs check: true if `var_id` appears free in `ty`.
+    pub(super) fn occurs(&self, var_id: u32, ty: TypeId) -> bool {
+        let ty = self.resolve(ty);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::InferVar(v) => v == var_id,
+            TypeKind::Function { from, to } => self.occurs(var_id, from) || self.occurs(var_id, to),
+            TypeKind::List(inner) | TypeKind::Optional(inner) => self.occurs(var_id, inner),
+            TypeKind::Union(items) => items.iter().any(|&item| self.occurs(var_id, item)),
+            TypeKind::Tuple(items) => items.iter().any(|item| {
+                let inner = match item {
+                    TypeTupleItem::Named { ty, .. } => *ty,
+                    TypeTupleItem::Positional(ty) => *ty,
+                };
+                self.occurs(var_id, inner)
+            }),
+            TypeKind::Record(fields) => fields.iter().any(|f| self.occurs(var_id, f.ty)),
+            _ => false,
+        }
+    }
+
+    /// Structural unification of two types.  Solves InferVars in `infer_subst`.
+    /// Reports a `TypeMismatch` diagnostic for rigid conflicts.
+    pub(super) fn unify(&mut self, t1: TypeId, t2: TypeId, span: Span) {
+        let t1 = self.resolve(t1);
+        let t2 = self.resolve(t2);
+        if t1 == t2 {
+            return;
+        }
+
+        let k1 = self.type_arena[t1.0 as usize].kind.clone();
+        let k2 = self.type_arena[t2.0 as usize].kind.clone();
+
+        match (k1, k2) {
+            (TypeKind::Error, _) | (_, TypeKind::Error) => {}
+
+            (TypeKind::InferVar(v), _) => {
+                if !self.occurs(v, t2) {
+                    self.infer_subst.insert(v, t2);
+                }
+            }
+
+            (_, TypeKind::InferVar(v)) => {
+                if !self.occurs(v, t1) {
+                    self.infer_subst.insert(v, t1);
+                }
+            }
+
+            (TypeKind::Function { from: f1, to: r1 }, TypeKind::Function { from: f2, to: r2 }) => {
+                self.unify(f1, f2, span);
+                self.unify(r1, r2, span);
+            }
+
+            (TypeKind::List(e1), TypeKind::List(e2)) => self.unify(e1, e2, span),
+
+            (TypeKind::Optional(e1), TypeKind::Optional(e2)) => self.unify(e1, e2, span),
+
+            (left, right) => {
+                if left != right {
+                    self.type_mismatch(t1, t2, span);
+                }
+            }
+        }
+    }
+
+    /// Zonk: for every solved InferVar slot in the type arena, overwrite it
+    /// with the kind of its resolved type so callers see concrete types without
+    /// having to chase substitution chains.
+    fn zonk_type_arena(&mut self) {
+        for i in 0..self.type_arena.len() {
+            if matches!(self.type_arena[i].kind, TypeKind::InferVar(_)) {
+                let resolved = self.resolve(TypeId(i as u32));
+                if resolved.0 as usize != i {
+                    let resolved_kind = self.type_arena[resolved.0 as usize].kind.clone();
+                    self.type_arena[i].kind = resolved_kind;
+                }
+            }
+        }
     }
 }

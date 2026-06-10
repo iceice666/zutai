@@ -203,8 +203,16 @@ pub enum TypeKind {
     Record(Vec<TypeRecordField>),
     Union(Vec<TypeId>),
     Tuple(Vec<TypeTupleItem>),
-    Function { from: TypeId, to: TypeId },
+    Function {
+        from: TypeId,
+        to: TypeId,
+    },
     TypeVar(BindingId),
+    /// Inference metavariable generated during type inference.  Solved by the
+    /// unification engine and replaced (zonked) with the concrete type before
+    /// the `ThirFile` is returned.  Free (unsolved) InferVars represent
+    /// polymorphic positions; TLC (Phase 2) will generalize them explicitly.
+    InferVar(u32),
     Alias(BindingId),
     Error,
 }

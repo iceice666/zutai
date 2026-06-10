@@ -1,7 +1,7 @@
 use zutai_hir::{HirClause, HirDeclId, HirDeclKind};
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, TypeId};
+use crate::ir::{ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, Type, TypeId, TypeKind};
 
 use super::Lowerer;
 
@@ -26,20 +26,30 @@ impl<'hir> Lowerer<'hir> {
                     let ty = self.lower_type(*annotation);
                     self.value_types.insert(decl.binding, ty);
                 }
-                HirDeclKind::Function {
-                    params,
-                    sig: Some(sig),
-                    ..
-                } => {
-                    if !params.is_empty() {
-                        self.unsupported("generic function declarations", decl.span);
-                        continue;
-                    }
+                HirDeclKind::Function { sig: Some(sig), .. } => {
+                    // Works for both monomorphic (params=[]) and generic (params non-empty):
+                    // type params are BindingKind::TypeParam and lower to TypeKind::TypeVar.
                     let sig = self.lower_type(*sig);
                     self.value_types.insert(decl.binding, sig);
                 }
-                HirDeclKind::Function { sig: None, .. } => {
-                    self.unsupported("no-signature function declarations", decl.span);
+                HirDeclKind::Function {
+                    sig: None, clauses, ..
+                } => {
+                    // No-signature inference: assign fresh InferVars for each
+                    // parameter position and an InferVar for the return type.
+                    // Unification during clause lowering will solve them.
+                    let arity = clauses.first().map(|c| c.patterns.len()).unwrap_or(0);
+                    let span = decl.span;
+                    let param_vars: Vec<TypeId> =
+                        (0..arity).map(|_| self.fresh_infer_var(span)).collect();
+                    let ret_var = self.fresh_infer_var(span);
+                    let sig = param_vars.iter().rev().fold(ret_var, |to, &from| {
+                        self.alloc_type(Type {
+                            kind: TypeKind::Function { from, to },
+                            span,
+                        })
+                    });
+                    self.value_types.insert(decl.binding, sig);
                 }
                 HirDeclKind::Value {
                     annotation: None, ..
@@ -81,14 +91,16 @@ impl<'hir> Lowerer<'hir> {
                 ThirDeclKind::Value { ty, value }
             }
             HirDeclKind::Function {
-                params,
-                sig,
-                clauses,
+                params, clauses, ..
             } => {
-                let sig = sig
-                    .and_then(|_| self.value_types.get(&decl.binding).copied())
+                // Use whatever sig was pre-declared: explicit annotation lowered
+                // to its type, or InferVar chain for no-signature functions.
+                let sig = self
+                    .value_types
+                    .get(&decl.binding)
+                    .copied()
                     .unwrap_or(self.error_type);
-                let clauses = if params.is_empty() && sig != self.error_type {
+                let clauses = if sig != self.error_type {
                     self.lower_function_clauses(clauses, sig)
                 } else {
                     Vec::new()

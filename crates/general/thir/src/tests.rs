@@ -172,18 +172,66 @@ profile
 }
 
 #[test]
-fn no_signature_function_declarations_remain_unsupported() {
-    let lowered = lower("id x = x\n1");
+fn no_signature_identity_function_completes_thir() {
+    // `id x = x` — polymorphic identity; no annotation needed.
+    let file = completed_file("id x = x\nid 42");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
 
-    assert!(lowered.file.is_none());
-    assert!(lowered.diagnostics.iter().any(|diagnostic| {
-        matches!(
-            diagnostic.kind,
-            ThirDiagnosticKind::UnsupportedFeature {
-                feature: "no-signature function declarations"
-            }
-        )
-    }));
+#[test]
+fn no_signature_arithmetic_function_infers_int_type() {
+    let file = completed_file("double x = x + x\ndouble 5");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn no_signature_multi_param_function_completes_thir() {
+    let file = completed_file("add x y = x + y\nadd 3 4");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+// ── Generic (explicit TypeVar) functions ────────────────────────────────────
+
+#[test]
+fn generic_identity_function_applied_to_int() {
+    let file = completed_file(
+        r#"
+id :: <A> A -> A {
+  | x => x;
+}
+
+id 99
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn generic_identity_function_applied_to_text() {
+    let file = completed_file(
+        r#"
+id :: <A> A -> A {
+  | x => x;
+}
+
+id "hello"
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
+}
+
+#[test]
+fn generic_const_function_returns_first_arg() {
+    let file = completed_file(
+        r#"
+const :: <A, B> A -> B -> A {
+  | x _ => x;
+}
+
+const 42 "ignored"
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
@@ -565,10 +613,13 @@ fst :: (Int, Int) -> Int {
 fst (1, 2)
 "#,
     );
-    assert!(lowered
-        .diagnostics
-        .iter()
-        .any(|d| matches!(&d.kind, ThirDiagnosticKind::TupleArityMismatch { expected: 2, found: 3 })));
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::TupleArityMismatch {
+            expected: 2,
+            found: 3
+        }
+    )));
 }
 
 // ── Record patterns ─────────────────────────────────────────────────────────
@@ -635,12 +686,17 @@ add 3 4
 }
 
 #[test]
-fn lambda_without_type_context_reports_error() {
-    let lowered = lower(r#"\x. x"#);
-    assert!(lowered
-        .diagnostics
-        .iter()
-        .any(|d| matches!(&d.kind, ThirDiagnosticKind::LambdaNeedsTypeContext)));
+fn lambda_without_type_context_infers_polymorphic_type() {
+    // `\x. x` is a polymorphic identity; inference now succeeds without a
+    // type annotation.
+    let file = completed_file(r#"(\x. x) 42"#);
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn lambda_without_annotation_applied_to_text_yields_text_type() {
+    let file = completed_file(r#"(\x. x) "hello""#);
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
 }
 
 // ── Match expressions ────────────────────────────────────────────────────────
@@ -745,8 +801,10 @@ get_port :: Server -> Int? {
 get_port { port = 80; }
 "#,
     );
-    assert!(lowered.diagnostics.iter().any(|d| matches!(
-        &d.kind,
-        ThirDiagnosticKind::ExpectedOptional { .. }
-    )));
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::ExpectedOptional { .. }))
+    );
 }

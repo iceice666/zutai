@@ -245,14 +245,35 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn type_matches(&mut self, expected: TypeId, found: TypeId) -> bool {
-        let expected = self.resolve_alias(expected, &mut HashSet::new(), self.ty(expected).span);
-        let found = self.resolve_alias(found, &mut HashSet::new(), self.ty(found).span);
+        let e_span = self.type_arena[expected.0 as usize].span;
+        let f_span = self.type_arena[found.0 as usize].span;
+        let expected = self.resolve_alias(expected, &mut HashSet::new(), e_span);
+        let found = self.resolve_alias(found, &mut HashSet::new(), f_span);
         if expected == found {
             return true;
         }
 
-        match (self.ty(expected).kind.clone(), self.ty(found).kind.clone()) {
+        let ek = self.type_arena[expected.0 as usize].kind.clone();
+        let fk = self.type_arena[found.0 as usize].kind.clone();
+
+        match (ek, fk) {
             (TypeKind::Error, _) | (_, TypeKind::Error) => true,
+
+            // Solve InferVars: if either side is an unsolved InferVar, unify
+            // and treat as matching (errors emitted inside unify on conflicts).
+            (TypeKind::InferVar(v), _) => {
+                if !self.occurs(v, found) {
+                    self.infer_subst.insert(v, found);
+                }
+                true
+            }
+            (_, TypeKind::InferVar(v)) => {
+                if !self.occurs(v, expected) {
+                    self.infer_subst.insert(v, expected);
+                }
+                true
+            }
+
             (TypeKind::Bool, TypeKind::True | TypeKind::False) => true,
             (TypeKind::Union(items), _) => items
                 .iter()
@@ -260,28 +281,12 @@ impl<'hir> Lowerer<'hir> {
                 .any(|item| self.type_matches(item, found)),
             // #none is always a valid value of Optional(T)
             (TypeKind::Optional(_), TypeKind::Atom(ref name)) if name == "none" => true,
-            (TypeKind::List(expected), TypeKind::List(found))
-            | (TypeKind::Optional(expected), TypeKind::Optional(found)) => {
-                self.type_matches(expected, found)
-            }
-            (TypeKind::Record(expected_fields), TypeKind::Record(found_fields)) => {
-                self.record_types_match(&expected_fields, &found_fields)
-            }
-            (TypeKind::Tuple(expected_items), TypeKind::Tuple(found_items)) => {
-                self.tuple_types_match(&expected_items, &found_items)
-            }
-            (
-                TypeKind::Function {
-                    from: expected_from,
-                    to: expected_to,
-                },
-                TypeKind::Function {
-                    from: found_from,
-                    to: found_to,
-                },
-            ) => {
-                self.type_matches(expected_from, found_from)
-                    && self.type_matches(expected_to, found_to)
+            (TypeKind::List(e), TypeKind::List(f))
+            | (TypeKind::Optional(e), TypeKind::Optional(f)) => self.type_matches(e, f),
+            (TypeKind::Record(ef), TypeKind::Record(ff)) => self.record_types_match(&ef, &ff),
+            (TypeKind::Tuple(ei), TypeKind::Tuple(fi)) => self.tuple_types_match(&ei, &fi),
+            (TypeKind::Function { from: ef, to: et }, TypeKind::Function { from: ff, to: ft }) => {
+                self.type_matches(ef, ff) && self.type_matches(et, ft)
             }
             (left, right) => left == right,
         }
@@ -349,7 +354,9 @@ impl<'hir> Lowerer<'hir> {
         seen: &mut HashSet<BindingId>,
         span: Span,
     ) -> TypeId {
-        let TypeKind::Alias(binding) = self.ty(ty).kind else {
+        // Resolve InferVar chains first so alias resolution sees the concrete type.
+        let ty = self.resolve(ty);
+        let TypeKind::Alias(binding) = self.type_arena[ty.0 as usize].kind else {
             return ty;
         };
         if !seen.insert(binding) {
@@ -367,8 +374,9 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn type_name(&mut self, ty: TypeId) -> String {
-        let ty = self.resolve_alias(ty, &mut HashSet::new(), self.ty(ty).span);
-        match self.ty(ty).kind.clone() {
+        let span = self.type_arena[ty.0 as usize].span;
+        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),
             TypeKind::Text => "Text".to_string(),
@@ -386,7 +394,161 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::TypeVar(binding) | TypeKind::Alias(binding) => {
                 self.hir.bindings[binding.0 as usize].name.clone()
             }
+            TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
+        }
+    }
+
+    /// Collect all `TypeVar` binding IDs that appear free in `ty`, in a
+    /// deduped stable order (by binding index).
+    pub(super) fn collect_type_vars(&self, ty: TypeId) -> Vec<BindingId> {
+        let mut vars: Vec<BindingId> = Vec::new();
+        self.collect_type_vars_into(ty, &mut vars);
+        vars.sort_by_key(|b| b.0);
+        vars.dedup();
+        vars
+    }
+
+    fn collect_type_vars_into(&self, ty: TypeId, out: &mut Vec<BindingId>) {
+        let ty = self.resolve(ty);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::TypeVar(b) => out.push(b),
+            TypeKind::Function { from, to } => {
+                self.collect_type_vars_into(from, out);
+                self.collect_type_vars_into(to, out);
+            }
+            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+                self.collect_type_vars_into(inner, out);
+            }
+            TypeKind::Union(items) => {
+                for item in items {
+                    self.collect_type_vars_into(item, out);
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in items {
+                    let inner = match item {
+                        TypeTupleItem::Named { ty, .. } => ty,
+                        TypeTupleItem::Positional(ty) => ty,
+                    };
+                    self.collect_type_vars_into(inner, out);
+                }
+            }
+            TypeKind::Record(fields) => {
+                for f in fields {
+                    self.collect_type_vars_into(f.ty, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Substitute `TypeVar`s appearing in `ty` according to `subst`.
+    /// Allocates new `Type` nodes for any structural type that contains
+    /// substituted vars; leaf types and unchanged subtrees are reused.
+    pub(super) fn instantiate_type_vars(
+        &mut self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> TypeId {
+        if subst.is_empty() {
+            return ty;
+        }
+        let span = self.type_arena[ty.0 as usize].span;
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::TypeVar(b) => subst.get(&b).copied().unwrap_or(ty),
+            TypeKind::Function { from, to } => {
+                let new_from = self.instantiate_type_vars(from, subst);
+                let new_to = self.instantiate_type_vars(to, subst);
+                if new_from == from && new_to == to {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Function {
+                        from: new_from,
+                        to: new_to,
+                    },
+                    span,
+                })
+            }
+            TypeKind::List(inner) => {
+                let new_inner = self.instantiate_type_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::List(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Optional(inner) => {
+                let new_inner = self.instantiate_type_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Optional(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Union(items) => {
+                let new_items: Vec<TypeId> = items
+                    .iter()
+                    .map(|&item| self.instantiate_type_vars(item, subst))
+                    .collect();
+                if new_items == items {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Union(new_items),
+                    span,
+                })
+            }
+            TypeKind::Tuple(items) => {
+                let new_items: Vec<TypeTupleItem> = items
+                    .iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named {
+                            name,
+                            ty: inner,
+                            span: s,
+                        } => TypeTupleItem::Named {
+                            name: name.clone(),
+                            ty: self.instantiate_type_vars(*inner, subst),
+                            span: *s,
+                        },
+                        TypeTupleItem::Positional(inner) => {
+                            TypeTupleItem::Positional(self.instantiate_type_vars(*inner, subst))
+                        }
+                    })
+                    .collect();
+                if new_items == items {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Tuple(new_items),
+                    span,
+                })
+            }
+            TypeKind::Record(fields) => {
+                let new_fields: Vec<TypeRecordField> = fields
+                    .iter()
+                    .map(|f| TypeRecordField {
+                        name: f.name.clone(),
+                        optional: f.optional,
+                        ty: self.instantiate_type_vars(f.ty, subst),
+                        span: f.span,
+                    })
+                    .collect();
+                if new_fields == fields {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Record(new_fields),
+                    span,
+                })
+            }
+            _ => ty,
         }
     }
 

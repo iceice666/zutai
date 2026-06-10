@@ -141,12 +141,8 @@ impl<'hir> Lowerer<'hir> {
                 });
                 self.error_expr(id, expr.span)
             }
-            HirExprKind::Lambda { .. } => {
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::LambdaNeedsTypeContext,
-                    span: expr.span,
-                });
-                self.error_expr(id, expr.span)
+            HirExprKind::Lambda { params, body } => {
+                self.infer_lambda_expr(id, params, *body, expr.span)
             }
             HirExprKind::Match { scrutinee, arms } => {
                 self.lower_match_expr(id, *scrutinee, arms, None)
@@ -208,7 +204,10 @@ impl<'hir> Lowerer<'hir> {
         let func_ty = self.expr(func).ty;
         let Some((from, to)) = self.function_input_output(func_ty, span) else {
             let found = self.type_name(func_ty);
-            if !matches!(self.ty(func_ty).kind, TypeKind::Error) {
+            if !matches!(
+                self.type_arena[self.resolve(func_ty).0 as usize].kind,
+                TypeKind::Error
+            ) {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::ExpectedFunction { found },
                     span,
@@ -226,14 +225,44 @@ impl<'hir> Lowerer<'hir> {
                 span,
             });
         };
+
+        // If the function signature contains TypeVars (explicit polymorphism),
+        // instantiate them with fresh InferVars so each call site is independent.
+        let type_vars: Vec<_> = {
+            let mut v = self.collect_type_vars(from);
+            let mut from_to = self.collect_type_vars(to);
+            from_to.retain(|b| !v.contains(b));
+            v.extend(from_to);
+            v.sort_by_key(|b| b.0);
+            v.dedup();
+            v
+        };
+        let (from, to, instantiation) = if type_vars.is_empty() {
+            (from, to, Vec::new())
+        } else {
+            let mut subst = HashMap::new();
+            let mut inst = Vec::new();
+            for var in &type_vars {
+                let fresh = self.fresh_infer_var(span);
+                subst.insert(*var, fresh);
+                inst.push(fresh);
+            }
+            let new_from = self.instantiate_type_vars(from, &subst);
+            let new_to = self.instantiate_type_vars(to, &subst);
+            (new_from, new_to, inst)
+        };
+
         let arg = self.check_expr(arg, from);
+        // Resolve the return type: InferVars introduced for TypeVars may now be
+        // solved after checking the argument.
+        let result_ty = self.resolve(to);
         self.alloc_expr(ThirExpr {
             source: id,
-            ty: to,
+            ty: result_ty,
             kind: ThirExprKind::Apply {
                 func,
                 arg,
-                instantiation: Vec::new(),
+                instantiation,
             },
             span,
         })
@@ -626,9 +655,18 @@ impl<'hir> Lowerer<'hir> {
         let lhs = self.infer_expr(lhs);
         let lhs_ty = self.expr(lhs).ty;
         let rhs = self.check_expr(rhs, lhs_ty);
+        let lhs_resolved = self.resolve(lhs_ty);
         if !self.is_ordered_scalar(lhs_ty) {
-            let rhs_ty = self.expr(rhs).ty;
-            self.invalid_binary_operands(op, lhs_ty, rhs_ty, span);
+            if matches!(
+                self.type_arena[lhs_resolved.0 as usize].kind,
+                TypeKind::InferVar(_)
+            ) {
+                let int_ty = self.int_type(span);
+                self.unify(lhs_ty, int_ty, span);
+            } else {
+                let rhs_ty = self.expr(rhs).ty;
+                self.invalid_binary_operands(op, lhs_ty, rhs_ty, span);
+            }
         }
         let ty = self.bool_type(span);
         self.alloc_binary_expr(id, op, lhs, rhs, ty, span)
@@ -645,11 +683,23 @@ impl<'hir> Lowerer<'hir> {
         let lhs = self.infer_expr(lhs);
         let lhs_ty = self.expr(lhs).ty;
         let rhs = self.check_expr(rhs, lhs_ty);
+        let lhs_resolved = self.resolve(lhs_ty);
         if !self.is_numeric_scalar(lhs_ty) {
-            let rhs_ty = self.expr(rhs).ty;
-            self.invalid_binary_operands(op, lhs_ty, rhs_ty, span);
+            if matches!(
+                self.type_arena[lhs_resolved.0 as usize].kind,
+                TypeKind::InferVar(_)
+            ) {
+                // Default unresolved numeric context to Int.
+                let int_ty = self.int_type(span);
+                self.unify(lhs_ty, int_ty, span);
+            } else {
+                let rhs_ty = self.expr(rhs).ty;
+                self.invalid_binary_operands(op, lhs_ty, rhs_ty, span);
+            }
         }
-        self.alloc_binary_expr(id, op, lhs, rhs, lhs_ty, span)
+        // After possible unification, use the resolved type for the result.
+        let result_ty = self.resolve(lhs_ty);
+        self.alloc_binary_expr(id, op, lhs, rhs, result_ty, span)
     }
 
     fn lower_coalesce_expr(
@@ -828,6 +878,49 @@ impl<'hir> Lowerer<'hir> {
             kind: ThirExprKind::Access {
                 receiver,
                 field: field.to_string(),
+            },
+            span,
+        })
+    }
+
+    /// Infer the type of a lambda when no expected type is available.
+    /// Generates fresh InferVars for each parameter; they are solved by checking
+    /// the body, then zonked to concrete types at the end of lowering.
+    fn infer_lambda_expr(
+        &mut self,
+        id: HirExprId,
+        params: &[zutai_hir::HirPatId],
+        body: HirExprId,
+        span: Span,
+    ) -> ThirExprId {
+        let param_vars: Vec<TypeId> = params.iter().map(|_| self.fresh_infer_var(span)).collect();
+
+        let mut scoped_bindings = Vec::new();
+        let lowered_params: Vec<_> = params
+            .iter()
+            .zip(&param_vars)
+            .map(|(&pat_id, &param_ty)| self.check_pattern(pat_id, param_ty, &mut scoped_bindings))
+            .collect();
+
+        let body_thir = self.infer_expr(body);
+        let body_ty = self.expr(body_thir).ty;
+        self.clear_scoped_value_types(&scoped_bindings);
+
+        // Build curried function type: p1 -> p2 -> ... -> body_ty
+        let lambda_ty = param_vars.iter().rev().fold(body_ty, |to, &from| {
+            let from = self.resolve(from);
+            self.alloc_type(crate::ir::Type {
+                kind: TypeKind::Function { from, to },
+                span,
+            })
+        });
+
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: lambda_ty,
+            kind: ThirExprKind::Lambda {
+                params: lowered_params,
+                body: body_thir,
             },
             span,
         })
