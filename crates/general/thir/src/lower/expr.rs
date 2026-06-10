@@ -29,6 +29,12 @@ impl<'hir> Lowerer<'hir> {
                 then_branch,
                 else_branch,
             } => self.lower_if_expr(id, *cond, *then_branch, *else_branch, Some(expected)),
+            HirExprKind::Lambda { params, body } => {
+                self.check_lambda_expr(id, params, *body, expected)
+            }
+            HirExprKind::Match { scrutinee, arms } => {
+                self.lower_match_expr(id, *scrutinee, arms, Some(expected))
+            }
             _ => {
                 let lowered = self.infer_expr(id);
                 let found = self.expr(lowered).ty;
@@ -136,12 +142,18 @@ impl<'hir> Lowerer<'hir> {
                 self.error_expr(id, expr.span)
             }
             HirExprKind::Lambda { .. } => {
-                self.unsupported_expr(id, "lambda expressions", expr.span)
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::LambdaNeedsTypeContext,
+                    span: expr.span,
+                });
+                self.error_expr(id, expr.span)
             }
-            HirExprKind::Match { .. } => self.unsupported_expr(id, "match expressions", expr.span),
+            HirExprKind::Match { scrutinee, arms } => {
+                self.lower_match_expr(id, *scrutinee, arms, None)
+            }
             HirExprKind::Import(_) => self.unsupported_expr(id, "imports", expr.span),
-            HirExprKind::OptAccess { .. } => {
-                self.unsupported_expr(id, "optional access expressions", expr.span)
+            HirExprKind::OptAccess { receiver, field } => {
+                self.lower_opt_access_expr(id, *receiver, field, expr.span)
             }
         }
     }
@@ -815,6 +827,190 @@ impl<'hir> Lowerer<'hir> {
             ty,
             kind: ThirExprKind::Access {
                 receiver,
+                field: field.to_string(),
+            },
+            span,
+        })
+    }
+
+    fn check_lambda_expr(
+        &mut self,
+        id: HirExprId,
+        params: &[zutai_hir::HirPatId],
+        body: HirExprId,
+        expected: TypeId,
+    ) -> ThirExprId {
+        let span = self.hir_expr(id).span;
+        let (param_types, return_type) = self.function_parts(expected, span);
+
+        if param_types.is_empty() {
+            let found = self.type_name(expected);
+            if !matches!(self.ty(expected).kind, TypeKind::Error) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedFunction { found },
+                    span,
+                });
+            }
+            return self.error_expr(id, span);
+        }
+
+        if params.len() != param_types.len() {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::FunctionClauseArityMismatch {
+                    expected: param_types.len(),
+                    found: params.len(),
+                },
+                span,
+            });
+        }
+
+        let mut scoped_bindings = Vec::new();
+        let lowered_params: Vec<_> = params
+            .iter()
+            .enumerate()
+            .map(|(i, &pat_id)| {
+                let expected_ty = param_types.get(i).copied().unwrap_or(self.error_type);
+                self.check_pattern(pat_id, expected_ty, &mut scoped_bindings)
+            })
+            .collect();
+
+        let body = self.check_expr(body, return_type);
+        self.clear_scoped_value_types(&scoped_bindings);
+
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: expected,
+            kind: ThirExprKind::Lambda {
+                params: lowered_params,
+                body,
+            },
+            span,
+        })
+    }
+
+    fn lower_match_expr(
+        &mut self,
+        id: HirExprId,
+        scrutinee: HirExprId,
+        arms: &[zutai_hir::HirClause],
+        expected: Option<TypeId>,
+    ) -> ThirExprId {
+        let span = self.hir_expr(id).span;
+        let scrutinee_thir = self.infer_expr(scrutinee);
+        let scrutinee_ty = self.expr(scrutinee_thir).ty;
+
+        if arms.is_empty() {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnsupportedFeature {
+                    feature: "empty match expressions",
+                },
+                span,
+            });
+            return self.error_expr(id, span);
+        }
+
+        let mut body_ty = expected;
+        let mut lowered_arms = Vec::with_capacity(arms.len());
+
+        for arm in arms {
+            if arm.patterns.len() != 1 {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::MatchArmPatternCountMismatch {
+                        found: arm.patterns.len(),
+                    },
+                    span: arm.span,
+                });
+            }
+
+            let mut scoped_bindings = Vec::new();
+            let patterns: Vec<_> = arm
+                .patterns
+                .iter()
+                .map(|&pat_id| self.check_pattern(pat_id, scrutinee_ty, &mut scoped_bindings))
+                .collect();
+
+            let guard = arm.guard.map(|guard_id| {
+                let bool_ty = self.bool_type(arm.span);
+                self.check_expr(guard_id, bool_ty)
+            });
+
+            let body = match body_ty {
+                Some(ty) => self.check_expr(arm.body, ty),
+                None => {
+                    let b = self.infer_expr(arm.body);
+                    body_ty = Some(self.expr(b).ty);
+                    b
+                }
+            };
+
+            self.clear_scoped_value_types(&scoped_bindings);
+
+            lowered_arms.push(crate::ir::ThirClause {
+                patterns,
+                guard,
+                body,
+                span: arm.span,
+            });
+        }
+
+        let ty = body_ty.unwrap_or(self.error_type);
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty,
+            kind: ThirExprKind::Match {
+                scrutinee: scrutinee_thir,
+                arms: lowered_arms,
+            },
+            span,
+        })
+    }
+
+    fn lower_opt_access_expr(
+        &mut self,
+        id: HirExprId,
+        receiver: HirExprId,
+        field: &str,
+        span: Span,
+    ) -> ThirExprId {
+        let receiver_thir = self.infer_expr(receiver);
+        let receiver_ty = self.expr(receiver_thir).ty;
+
+        let Some(inner) = self.optional_inner_type(receiver_ty, span) else {
+            let found = self.type_name(receiver_ty);
+            if !matches!(self.ty(receiver_ty).kind, TypeKind::Error) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedOptional { found },
+                    span,
+                });
+            }
+            return self.error_expr(id, span);
+        };
+
+        let Some(fields) = self.record_fields(inner, span) else {
+            let found = self.type_name(inner);
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::ExpectedRecord { found },
+                span,
+            });
+            return self.error_expr(id, span);
+        };
+
+        let Some(record_field) = fields.iter().find(|f| f.name == field).cloned() else {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnknownField {
+                    name: field.to_string(),
+                },
+                span,
+            });
+            return self.error_expr(id, span);
+        };
+
+        let ty = self.optional_type(record_field.ty, span);
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty,
+            kind: ThirExprKind::OptionalAccess {
+                receiver: receiver_thir,
                 field: field.to_string(),
             },
             span,

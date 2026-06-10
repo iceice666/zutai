@@ -31,6 +31,7 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
     let mut last_dir: Option<PipelineDir> = None;
 
     loop {
+        let ws_checkpoint = *input;
         ws(input)?;
         let dir = if input.starts_with("|>") {
             Some(PipelineDir::Forward)
@@ -40,7 +41,10 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
             None
         };
 
-        let Some(dir) = dir else { break };
+        let Some(dir) = dir else {
+            *input = ws_checkpoint;
+            break;
+        };
 
         if let Some(last) = last_dir {
             if last != dir {
@@ -74,6 +78,7 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
 
 fn parse_coalesce_level(input: &mut &str) -> Result<Expr> {
     let lhs = parse_or_level(input)?;
+    let checkpoint = *input;
     ws(input)?;
     if input.starts_with("??") {
         "??".parse_next(input)?;
@@ -87,6 +92,7 @@ fn parse_coalesce_level(input: &mut &str) -> Result<Expr> {
             span,
         });
     }
+    *input = checkpoint;
     Ok(lhs)
 }
 
@@ -97,6 +103,7 @@ fn parse_coalesce_level(input: &mut &str) -> Result<Expr> {
 fn parse_or_level(input: &mut &str) -> Result<Expr> {
     let mut lhs = parse_and_level(input)?;
     loop {
+        let ws_checkpoint = *input;
         ws(input)?;
         if input.starts_with("||") {
             "||".parse_next(input)?;
@@ -110,6 +117,7 @@ fn parse_or_level(input: &mut &str) -> Result<Expr> {
                 span,
             };
         } else {
+            *input = ws_checkpoint;
             break;
         }
     }
@@ -123,6 +131,7 @@ fn parse_or_level(input: &mut &str) -> Result<Expr> {
 fn parse_and_level(input: &mut &str) -> Result<Expr> {
     let mut lhs = parse_compare_level(input)?;
     loop {
+        let ws_checkpoint = *input;
         ws(input)?;
         if input.starts_with("&&") {
             "&&".parse_next(input)?;
@@ -136,6 +145,7 @@ fn parse_and_level(input: &mut &str) -> Result<Expr> {
                 span,
             };
         } else {
+            *input = ws_checkpoint;
             break;
         }
     }
@@ -176,9 +186,9 @@ fn parse_compare_op(input: &mut &str) -> Result<BinOp> {
 
 fn parse_compare_level(input: &mut &str) -> Result<Expr> {
     let lhs = parse_add_level(input)?;
-    ws(input)?;
 
     let checkpoint = *input;
+    ws(input)?;
     if let Ok(op_val) = parse_compare_op(input) {
         ws(input)?;
         let rhs = parse_add_level(input)?;
@@ -210,6 +220,7 @@ fn parse_compare_level(input: &mut &str) -> Result<Expr> {
 fn parse_add_level(input: &mut &str) -> Result<Expr> {
     let mut lhs = parse_mul_level(input)?;
     loop {
+        let ws_checkpoint = *input;
         ws(input)?;
         let op_val = if input.starts_with('+') && !input.starts_with("+=") {
             '+'.parse_next(input)?;
@@ -218,6 +229,7 @@ fn parse_add_level(input: &mut &str) -> Result<Expr> {
             '-'.parse_next(input)?;
             BinOp::Sub
         } else {
+            *input = ws_checkpoint;
             break;
         };
         ws(input)?;
@@ -240,6 +252,7 @@ fn parse_add_level(input: &mut &str) -> Result<Expr> {
 fn parse_mul_level(input: &mut &str) -> Result<Expr> {
     let mut lhs = parse_application(input)?;
     loop {
+        let ws_checkpoint = *input;
         ws(input)?;
         let op_val = if input.starts_with('*') {
             '*'.parse_next(input)?;
@@ -248,6 +261,7 @@ fn parse_mul_level(input: &mut &str) -> Result<Expr> {
             '/'.parse_next(input)?;
             BinOp::Div
         } else {
+            *input = ws_checkpoint;
             break;
         };
         ws(input)?;

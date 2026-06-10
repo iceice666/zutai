@@ -189,6 +189,10 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         ValueTypeUnavailable { name } => format!("type of `{name}` is unavailable"),
         InvalidTypeExpression { reason } => format!("invalid type expression: {reason}"),
         TypeCheckerNotImplemented => "type checker not yet implemented for this form".to_string(),
+        LambdaNeedsTypeContext => "lambda expression requires type context".to_string(),
+        MatchArmPatternCountMismatch { found } => {
+            format!("match arm must have exactly 1 pattern, found {found}")
+        }
     }
 }
 

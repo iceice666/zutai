@@ -523,3 +523,230 @@ fn runs_thir_passes_in_order() {
     );
     assert!(diagnostics.is_empty());
 }
+
+// ── Tuple patterns ──────────────────────────────────────────────────────────
+
+#[test]
+fn tuple_pattern_in_function_clause() {
+    let file = completed_file(
+        r#"
+pair_first :: (#tag, Int) -> Int {
+  | (#tag, x) => x;
+}
+
+pair_first (#tag, 42)
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn positional_tuple_pattern_in_function_clause() {
+    let file = completed_file(
+        r#"
+add_pair :: (Int, Int) -> Int {
+  | (a, b) => a + b;
+}
+
+add_pair (1, 2)
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn tuple_pattern_arity_mismatch_reports_error() {
+    let lowered = lower(
+        r#"
+fst :: (Int, Int) -> Int {
+  | (a, b, c) => a;
+}
+
+fst (1, 2)
+"#,
+    );
+    assert!(lowered
+        .diagnostics
+        .iter()
+        .any(|d| matches!(&d.kind, ThirDiagnosticKind::TupleArityMismatch { expected: 2, found: 3 })));
+}
+
+// ── Record patterns ─────────────────────────────────────────────────────────
+
+#[test]
+fn record_pattern_in_function_clause() {
+    let file = completed_file(
+        r#"
+Point :: type { x : Int; y : Int; }
+
+get_x :: Point -> Int {
+  | { x = v; y = _; } => v;
+}
+
+get_x { x = 10; y = 20; }
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn record_pattern_unknown_field_reports_error() {
+    let lowered = lower(
+        r#"
+Point :: type { x : Int; y : Int; }
+
+get_x :: Point -> Int {
+  | { x = v; z = _; } => v;
+}
+
+get_x { x = 1; y = 2; }
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::UnknownField { name } if name == "z"
+    )));
+}
+
+// ── Lambda expressions ───────────────────────────────────────────────────────
+
+#[test]
+fn lambda_in_checked_position_lowers_correctly() {
+    let file = completed_file(
+        r#"
+double :: Int -> Int = \n. n * 2
+
+double 5
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn lambda_multi_param_in_checked_position() {
+    let file = completed_file(
+        r#"
+add :: Int -> Int -> Int = \a b. a + b
+
+add 3 4
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn lambda_without_type_context_reports_error() {
+    let lowered = lower(r#"\x. x"#);
+    assert!(lowered
+        .diagnostics
+        .iter()
+        .any(|d| matches!(&d.kind, ThirDiagnosticKind::LambdaNeedsTypeContext)));
+}
+
+// ── Match expressions ────────────────────────────────────────────────────────
+
+#[test]
+fn match_on_atom_union_lowers_correctly() {
+    let file = completed_file(
+        r#"
+Status :: type [ #ok; #err; ]
+
+describe :: Status -> Text {
+  | s => match s {
+    | #ok => "ok";
+    | #err => "error";
+  };
+}
+
+describe #ok
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
+}
+
+#[test]
+fn match_with_guard_lowers_correctly() {
+    let file = completed_file(
+        r#"
+classify :: Int -> Text {
+  | n => match n {
+    | x if x > 0 => "positive";
+    | x if x < 0 => "negative";
+    | _ => "zero";
+  };
+}
+
+classify 5
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
+}
+
+#[test]
+fn match_with_tuple_arm_lowers_correctly() {
+    let file = completed_file(
+        r#"
+extract :: (#tag, Int) -> Int {
+  | pair => match pair {
+    | (#tag, n) => n;
+  };
+}
+
+extract (#tag, 7)
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+// ── Optional access (`?.`) ───────────────────────────────────────────────────
+
+#[test]
+fn opt_access_on_optional_record() {
+    let file = completed_file(
+        r#"
+Server :: type { port : Int; }
+
+get_port :: Server? -> Int? {
+  | s => s?.port;
+}
+
+get_port #none
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Optional(_)));
+}
+
+#[test]
+fn opt_access_optional_field_flattens() {
+    let file = completed_file(
+        r#"
+Server :: type { port? : Int; }
+
+get_port :: Server? -> Int? {
+  | s => s?.port;
+}
+
+get_port #none
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Optional(_)));
+}
+
+#[test]
+fn opt_access_on_non_optional_reports_error() {
+    let lowered = lower(
+        r#"
+Server :: type { port : Int; }
+
+get_port :: Server -> Int? {
+  | s => s?.port;
+}
+
+get_port { port = 80; }
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::ExpectedOptional { .. }
+    )));
+}

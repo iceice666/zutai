@@ -658,6 +658,15 @@ fn parse_typed_decl() {
 }
 
 #[test]
+fn parse_typed_decl_lambda_value() {
+    let src = "\ndouble :: Int -> Int = \\x. x * 2\n\ndouble 5\n";
+    let parsed = parse(src);
+    assert!(!parsed.has_errors(), "parse errors: {:?}", parsed.diagnostics());
+    let f = parsed.into_ast().expect("should have AST");
+    assert_eq!(f.decls.len(), 1);
+}
+
+#[test]
 fn parse_type_application_in_typed_decl() {
     let f = parse_str("items :: List Int = []\nitems");
     let (_name, ty, _val) = as_typed(decl_by(&f, "items"));
