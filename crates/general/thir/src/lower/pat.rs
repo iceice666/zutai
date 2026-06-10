@@ -5,7 +5,7 @@ use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
-    ThirPat, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId, TypeKind,
+    ThirPat, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, Type, TypeId, TypeKind,
     TypeTupleItem,
 };
 
@@ -102,23 +102,17 @@ impl<'hir> Lowerer<'hir> {
         scoped_bindings: &mut Vec<BindingId>,
     ) -> ThirPatId {
         let resolved = self.resolve_alias(expected, &mut HashSet::new(), span);
-        let type_items = match self.ty(resolved).kind.clone() {
-            TypeKind::Tuple(items) => items,
-            TypeKind::Error => {
-                let lowered = self.lower_tuple_pat_items_with_error(items, span, scoped_bindings);
-                return self.alloc_pat(ThirPat {
-                    source: id,
-                    ty: expected,
-                    kind: ThirPatKind::Tuple(lowered),
-                    span,
-                });
-            }
-            _ => {
-                let found = self.type_name(expected);
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::ExpectedTuple { found },
-                    span,
-                });
+        let type_items = match self.tuple_scrutinee_items(resolved, items, span) {
+            Some(type_items) => type_items,
+            None => {
+                // An already-`Error` scrutinee was diagnosed upstream; stay quiet.
+                if !matches!(self.ty(resolved).kind, TypeKind::Error) {
+                    let found = self.type_name(expected);
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::ExpectedTuple { found },
+                        span,
+                    });
+                }
                 let lowered = self.lower_tuple_pat_items_with_error(items, span, scoped_bindings);
                 return self.alloc_pat(ThirPat {
                     source: id,
@@ -361,6 +355,63 @@ impl<'hir> Lowerer<'hir> {
     fn check_pattern_type(&mut self, expected: TypeId, found: TypeId, span: Span) {
         if !self.type_matches(expected, found) {
             self.type_mismatch(expected, found, span);
+        }
+    }
+
+    /// Resolve the tuple-shaped field types a tuple pattern is matched against,
+    /// narrowing a `Union` scrutinee by the pattern's leading `#tag` and an
+    /// `Optional` scrutinee by a leading `#some`. Returns `None` when the
+    /// scrutinee is not a tuple-compatible shape for this pattern.
+    fn tuple_scrutinee_items(
+        &mut self,
+        resolved: TypeId,
+        items: &[HirTuplePatItem],
+        span: Span,
+    ) -> Option<Vec<TypeTupleItem>> {
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Tuple(type_items) => Some(type_items),
+            TypeKind::Union(members) => {
+                let tag = self.pattern_leading_atom_hir(items)?;
+                for member in members {
+                    let resolved_member = self.resolve_alias(member, &mut HashSet::new(), span);
+                    let TypeKind::Tuple(type_items) = self.ty(resolved_member).kind.clone() else {
+                        continue;
+                    };
+                    if self.tuple_member_tag(&type_items, span).as_deref() == Some(tag.as_str()) {
+                        return Some(type_items);
+                    }
+                }
+                None
+            }
+            TypeKind::Optional(inner) => match self.pattern_leading_atom_hir(items) {
+                Some(tag) if tag == "some" => {
+                    let some_ty = self.alloc_type(Type {
+                        kind: TypeKind::Atom("some".to_string()),
+                        span,
+                    });
+                    Some(vec![
+                        TypeTupleItem::Positional(some_ty),
+                        TypeTupleItem::Named {
+                            name: "value".to_string(),
+                            ty: inner,
+                            span,
+                        },
+                    ])
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The leading positional atom name of a tuple *pattern* (its union tag).
+    fn pattern_leading_atom_hir(&self, items: &[HirTuplePatItem]) -> Option<String> {
+        let HirTuplePatItem::Positional(first) = items.first()? else {
+            return None;
+        };
+        match &self.hir_pat(*first).kind {
+            HirPatKind::Atom(name) => Some(name.clone()),
+            _ => None,
         }
     }
 }

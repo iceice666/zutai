@@ -325,6 +325,7 @@ Profile :: type [
 ]
 isProd :: Profile -> Bool {
   | #prod => true;
+  | #dev => false;
 }
 isProd #prod
 ";

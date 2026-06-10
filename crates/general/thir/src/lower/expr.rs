@@ -1046,6 +1046,13 @@ impl<'hir> Lowerer<'hir> {
             });
         }
 
+        // Only check coverage when every arm has the expected single pattern;
+        // an arm-count mismatch already produced a diagnostic and would yield a
+        // malformed matrix.
+        if lowered_arms.iter().all(|arm| arm.patterns.len() == 1) {
+            self.check_match_exhaustiveness(&lowered_arms, &[scrutinee_ty], span);
+        }
+
         let ty = body_ty.unwrap_or(self.error_type);
         self.alloc_expr(ThirExpr {
             source: id,

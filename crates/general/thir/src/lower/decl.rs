@@ -121,8 +121,9 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn lower_function_clauses(&mut self, clauses: &[HirClause], sig: TypeId) -> Vec<ThirClause> {
-        let (param_types, return_type) = self.function_parts(sig, self.ty(sig).span);
-        clauses
+        let sig_span = self.ty(sig).span;
+        let (param_types, return_type) = self.function_parts(sig, sig_span);
+        let lowered: Vec<ThirClause> = clauses
             .iter()
             .map(|clause| {
                 if clause.patterns.len() != param_types.len() {
@@ -159,6 +160,17 @@ impl<'hir> Lowerer<'hir> {
                     span: clause.span,
                 }
             })
-            .collect()
+            .collect();
+
+        // Only check coverage when every clause matches the function arity; a
+        // clause-arity mismatch already produced a diagnostic.
+        if lowered
+            .iter()
+            .all(|clause| clause.patterns.len() == param_types.len())
+        {
+            self.check_match_exhaustiveness(&lowered, &param_types, sig_span);
+        }
+
+        lowered
     }
 }

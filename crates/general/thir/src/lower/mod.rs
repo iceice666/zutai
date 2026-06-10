@@ -14,6 +14,7 @@ use crate::ir::{
 use crate::pass::{ThirPassReport, run_default_passes};
 
 mod decl;
+mod exhaust;
 mod expr;
 mod pat;
 mod types;

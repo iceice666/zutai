@@ -71,4 +71,13 @@ pub enum ThirDiagnosticKind {
     MatchArmPatternCountMismatch {
         found: usize,
     },
+    /// A `match` or multi-clause function does not cover every possible value of
+    /// the scrutinee type. `witness` is a rendered example of an unmatched
+    /// pattern (e.g. `#dev`, `(#square, ...)`, or `_`).
+    NonExhaustiveMatch {
+        witness: String,
+    },
+    /// A `match` arm or function clause can never be reached because earlier
+    /// unguarded arms already cover every value its pattern would match.
+    UnreachableMatchArm,
 }

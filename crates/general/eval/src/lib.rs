@@ -193,6 +193,10 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         MatchArmPatternCountMismatch { found } => {
             format!("match arm must have exactly 1 pattern, found {found}")
         }
+        NonExhaustiveMatch { witness } => {
+            format!("non-exhaustive patterns: `{witness}` not covered")
+        }
+        UnreachableMatchArm => "unreachable match arm".to_string(),
     }
 }
 
