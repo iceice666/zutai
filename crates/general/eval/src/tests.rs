@@ -633,3 +633,30 @@ is_zero 0
 ";
     assert_eq!(run(src), Value::Bool(true));
 }
+
+// ─── optional access ──────────────────────────────────────────────────────────
+
+#[test]
+fn optional_access_present() {
+    // `?.` chains through an optional record field that is present.
+    // outer.inner has type Optional(Inner); outer.inner?.val returns Int.
+    let src = "
+Inner :: type { val : Int; }
+Outer :: type { inner? : Inner; }
+outer :: Outer = { inner = { val = 42; }; }
+outer.inner?.val
+";
+    assert_eq!(run(src), Value::Int(42));
+}
+
+#[test]
+fn optional_access_absent() {
+    // When the optional record field is absent, ?.field returns Nothing.
+    let src = "
+Inner :: type { val : Int; }
+Outer :: type { inner? : Inner; }
+outer :: Outer = {}
+outer.inner?.val
+";
+    assert_eq!(run(src), Value::Nothing);
+}

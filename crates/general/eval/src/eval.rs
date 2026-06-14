@@ -253,9 +253,24 @@ impl<'a> Evaluator<'a> {
                     "import not resolved (unreachable past gate)",
                 )),
             },
-            ThirExprKind::OptionalAccess { .. } => Err(EvalError::Internal(
-                "optional access reached evaluator (unreachable past gate)",
-            )),
+            ThirExprKind::OptionalAccess { receiver, field } => {
+                let rv = self.eval(*receiver, env)?;
+                match rv {
+                    Value::Nothing => Ok(Value::Nothing),
+                    Value::Record(fields) => {
+                        for (name, thunk) in fields.iter() {
+                            if name.as_ref() == field.as_str() {
+                                return thunk.force(self);
+                            }
+                        }
+                        Ok(Value::Nothing)
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "Record or Nothing",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
             ThirExprKind::Error => Err(EvalError::Internal(
                 "Error node reached evaluator (unreachable past gate)",
             )),
