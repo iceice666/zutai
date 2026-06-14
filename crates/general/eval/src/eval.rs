@@ -52,15 +52,15 @@ impl<'a> Evaluator<'a> {
     // ── arena helpers ────────────────────────────────────────────────────────
 
     fn expr(&self, id: ThirExprId) -> &'a zutai_thir::ThirExpr {
-        &self.file.expr_arena[id.0 as usize]
+        &self.file.expr_arena[id]
     }
 
     fn pat(&self, id: ThirPatId) -> &'a zutai_thir::ThirPat {
-        &self.file.pat_arena[id.0 as usize]
+        &self.file.pat_arena[id]
     }
 
     fn decl(&self, id: ThirDeclId) -> &'a zutai_thir::ThirDecl {
-        &self.file.decl_arena[id.0 as usize]
+        &self.file.decl_arena[id]
     }
 
     // ── main entry point ─────────────────────────────────────────────────────

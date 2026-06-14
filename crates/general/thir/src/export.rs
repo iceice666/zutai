@@ -33,7 +33,7 @@ pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUn
 
 fn build_alias_map(file: &ThirFile) -> HashMap<BindingId, TypeId> {
     let mut map = HashMap::new();
-    for decl in &file.decl_arena {
+    for (_, decl) in file.decl_arena.iter() {
         if let ThirDeclKind::TypeAlias { ty, .. } = decl.kind {
             map.insert(decl.binding, ty);
         }

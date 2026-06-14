@@ -378,6 +378,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "la-arena"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3752f229dcc5a481d60f385fa479ff46818033d881d2d801aa27dffcfb5e8306"
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1082,6 +1088,7 @@ dependencies = [
 name = "zutai-eval"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
  "zutai-hir",
  "zutai-im",
  "zutai-semantic",
@@ -1093,6 +1100,7 @@ dependencies = [
 name = "zutai-hir"
 version = "0.1.0"
 dependencies = [
+ "la-arena",
  "zutai-syntax",
 ]
 
@@ -1100,6 +1108,7 @@ dependencies = [
 name = "zutai-im"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
  "zutai-im-simd",
  "zutai-im-syntax",
  "zutai-types",
@@ -1111,6 +1120,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "rustc-hash 2.1.2",
+ "thiserror",
  "zutai-im-syntax",
  "zutai-types",
 ]
@@ -1147,6 +1157,7 @@ dependencies = [
 name = "zutai-thir"
 version = "0.1.0"
 dependencies = [
+ "la-arena",
  "zutai-hir",
  "zutai-syntax",
 ]

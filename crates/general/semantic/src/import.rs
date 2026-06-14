@@ -130,7 +130,7 @@ pub(crate) fn resolve_imports(
 
     // Resolve each distinct source once, using the first span seen for diagnostics.
     let mut seen: HashSet<&HirImportSource> = HashSet::new();
-    for expr in &hir.expr_arena {
+    for (_, expr) in hir.expr_arena.iter() {
         let HirExprKind::Import(source) = &expr.kind else {
             continue;
         };
@@ -273,7 +273,7 @@ impl Resolver<'_> {
                     span,
                 );
             };
-            let final_ty = file.expr_arena[file.final_expr.0 as usize].ty;
+            let final_ty = file.expr_arena[file.final_expr].ty;
             zutai_thir::export_type(file, final_ty)
         };
 

@@ -34,7 +34,7 @@ fn normalizes_no_signature_function_to_function_decl() {
     let lowered = lower("double x = x * 2\ndouble 2");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let decl = &lowered.file.decl_arena[lowered.file.decls[0].0 as usize];
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
     match &decl.kind {
         HirDeclKind::Function {
             params,
@@ -55,12 +55,12 @@ fn desugars_forward_pipeline_to_application() {
     let lowered = lower("f x = x\n1 |> f");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let expr = &lowered.file.expr_arena[lowered.file.final_expr.0 as usize];
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::Apply { func, arg } = expr.kind else {
         panic!("expected pipeline to become apply, got {:?}", expr.kind);
     };
-    let func = &lowered.file.expr_arena[func.0 as usize];
-    let arg = &lowered.file.expr_arena[arg.0 as usize];
+    let func = &lowered.file.expr_arena[func];
+    let arg = &lowered.file.expr_arena[arg];
     assert!(matches!(func.kind, HirExprKind::BindingRef(_)));
     assert!(matches!(arg.kind, HirExprKind::Integer(1)));
 }
@@ -70,12 +70,12 @@ fn desugars_backward_pipeline_to_application() {
     let lowered = lower("f x = x\nf <| 1");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let expr = &lowered.file.expr_arena[lowered.file.final_expr.0 as usize];
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::Apply { func, arg } = expr.kind else {
         panic!("expected pipeline to become apply, got {:?}", expr.kind);
     };
-    let func = &lowered.file.expr_arena[func.0 as usize];
-    let arg = &lowered.file.expr_arena[arg.0 as usize];
+    let func = &lowered.file.expr_arena[func];
+    let arg = &lowered.file.expr_arena[arg];
     assert!(matches!(func.kind, HirExprKind::BindingRef(_)));
     assert!(matches!(arg.kind, HirExprKind::Integer(1)));
 }
@@ -85,16 +85,16 @@ fn resolves_local_binding_only_after_its_value() {
     let lowered = lower("x := 1\n{ x := x; x }");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let block = &lowered.file.expr_arena[lowered.file.final_expr.0 as usize];
+    let block = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::Block { bindings, result } = &block.kind else {
         panic!("expected final block, got {:?}", block.kind);
     };
     let local = bindings[0].binding;
-    let value_ref = match lowered.file.expr_arena[bindings[0].value.0 as usize].kind {
+    let value_ref = match lowered.file.expr_arena[bindings[0].value].kind {
         HirExprKind::BindingRef(id) => id,
         ref other => panic!("expected local value ref, got {other:?}"),
     };
-    let result_ref = match lowered.file.expr_arena[result.0 as usize].kind {
+    let result_ref = match lowered.file.expr_arena[*result].kind {
         HirExprKind::BindingRef(id) => id,
         ref other => panic!("expected block result ref, got {other:?}"),
     };
@@ -109,7 +109,7 @@ fn resolves_function_type_params_in_signature_and_body_type_form() {
     let lowered = lower("id :: <A> A -> A { | x => type A; }\nid");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let decl = &lowered.file.decl_arena[lowered.file.decls[0].0 as usize];
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
     let HirDeclKind::Function {
         params,
         sig: Some(sig),
@@ -119,14 +119,14 @@ fn resolves_function_type_params_in_signature_and_body_type_form() {
         panic!("expected generic function, got {decl:?}");
     };
     let type_param = params[0];
-    let sig = &lowered.file.type_arena[sig.0 as usize];
+    let sig = &lowered.file.type_arena[*sig];
     assert!(contains_type_binding(&lowered.file, sig, type_param));
 
-    let body = &lowered.file.expr_arena[clauses[0].body.0 as usize];
+    let body = &lowered.file.expr_arena[clauses[0].body];
     let HirExprKind::TypeForm(body_ty) = body.kind else {
         panic!("expected type form body, got {:?}", body.kind);
     };
-    let body_ty = &lowered.file.type_arena[body_ty.0 as usize];
+    let body_ty = &lowered.file.type_arena[body_ty];
     assert_eq!(body_ty.kind, HirTypeKind::BindingRef(type_param));
 }
 
@@ -241,8 +241,8 @@ fn contains_type_binding(file: &HirFile, ty: &HirTypeExpr, binding: BindingId) -
     match &ty.kind {
         HirTypeKind::BindingRef(id) => *id == binding,
         HirTypeKind::Arrow { from, to } => {
-            contains_type_binding(file, &file.type_arena[from.0 as usize], binding)
-                || contains_type_binding(file, &file.type_arena[to.0 as usize], binding)
+            contains_type_binding(file, &file.type_arena[*from], binding)
+                || contains_type_binding(file, &file.type_arena[*to], binding)
         }
         _ => false,
     }

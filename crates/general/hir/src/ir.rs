@@ -1,17 +1,11 @@
+use la_arena::{Arena, Idx};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HirDeclId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HirExprId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HirPatId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HirTypeId(pub u32);
+pub type HirDeclId = Idx<HirDecl>;
+pub type HirExprId = Idx<HirExpr>;
+pub type HirPatId = Idx<HirPat>;
+pub type HirTypeId = Idx<HirTypeExpr>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
@@ -22,10 +16,10 @@ pub struct HirFile {
     pub final_expr: HirExprId,
     pub span: Span,
     pub bindings: Vec<Binding>,
-    pub decl_arena: Vec<HirDecl>,
-    pub expr_arena: Vec<HirExpr>,
-    pub pat_arena: Vec<HirPat>,
-    pub type_arena: Vec<HirTypeExpr>,
+    pub decl_arena: Arena<HirDecl>,
+    pub expr_arena: Arena<HirExpr>,
+    pub pat_arena: Arena<HirPat>,
+    pub type_arena: Arena<HirTypeExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

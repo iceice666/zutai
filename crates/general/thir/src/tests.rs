@@ -15,7 +15,7 @@ fn completed_file(src: &str) -> ThirFile {
 }
 
 fn final_type_kind(file: &ThirFile) -> &TypeKind {
-    let final_expr = &file.expr_arena[file.final_expr.0 as usize];
+    let final_expr = &file.expr_arena[file.final_expr];
     &file.type_arena[final_expr.ty.0 as usize].kind
 }
 
@@ -548,14 +548,7 @@ fn runs_thir_passes_in_order() {
         }
     }
 
-    let mut file = ThirFile {
-        decls: Vec::new(),
-        final_expr: ThirExprId(0),
-        decl_arena: Vec::new(),
-        expr_arena: Vec::new(),
-        pat_arena: Vec::new(),
-        type_arena: Vec::new(),
-    };
+    let mut file = completed_file("1");
     let mut diagnostics = Vec::new();
     let mut first = MarkerPass("first");
     let mut second = MarkerPass("second");

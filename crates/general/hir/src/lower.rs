@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use la_arena::Arena;
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
@@ -50,10 +51,10 @@ struct Scope {
 
 struct Lowerer {
     bindings: Vec<Binding>,
-    decl_arena: Vec<HirDecl>,
-    expr_arena: Vec<HirExpr>,
-    pat_arena: Vec<HirPat>,
-    type_arena: Vec<HirTypeExpr>,
+    decl_arena: Arena<HirDecl>,
+    expr_arena: Arena<HirExpr>,
+    pat_arena: Arena<HirPat>,
+    type_arena: Arena<HirTypeExpr>,
     scopes: Vec<Scope>,
     diagnostics: Vec<HirDiagnostic>,
 }
@@ -62,10 +63,10 @@ impl Lowerer {
     fn new(file_span: Span) -> Self {
         let mut lowerer = Self {
             bindings: Vec::new(),
-            decl_arena: Vec::new(),
-            expr_arena: Vec::new(),
-            pat_arena: Vec::new(),
-            type_arena: Vec::new(),
+            decl_arena: Arena::new(),
+            expr_arena: Arena::new(),
+            pat_arena: Arena::new(),
+            type_arena: Arena::new(),
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
         };
@@ -517,27 +518,19 @@ impl Lowerer {
     }
 
     fn alloc_decl(&mut self, decl: HirDecl) -> HirDeclId {
-        let id = HirDeclId(self.decl_arena.len() as u32);
-        self.decl_arena.push(decl);
-        id
+        self.decl_arena.alloc(decl)
     }
 
     fn alloc_expr(&mut self, expr: HirExpr) -> HirExprId {
-        let id = HirExprId(self.expr_arena.len() as u32);
-        self.expr_arena.push(expr);
-        id
+        self.expr_arena.alloc(expr)
     }
 
     fn alloc_pat(&mut self, pat: HirPat) -> HirPatId {
-        let id = HirPatId(self.pat_arena.len() as u32);
-        self.pat_arena.push(pat);
-        id
+        self.pat_arena.alloc(pat)
     }
 
     fn alloc_type(&mut self, ty: HirTypeExpr) -> HirTypeId {
-        let id = HirTypeId(self.type_arena.len() as u32);
-        self.type_arena.push(ty);
-        id
+        self.type_arena.alloc(ty)
     }
 }
 

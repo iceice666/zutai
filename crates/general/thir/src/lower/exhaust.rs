@@ -361,7 +361,7 @@ impl<'hir> Lowerer<'hir> {
     /// Deconstruct a THIR pattern into the matrix algebra, reordering tuple/record
     /// sub-patterns into the column type's canonical order.
     fn decon_pattern(&mut self, pat: ThirPatId, col_ty: TypeId) -> DeconPat {
-        let pat = self.pat_arena[pat.0 as usize].clone();
+        let pat = self.pat_arena[pat].clone();
         let col_ty = self.resolve_alias(col_ty, &mut HashSet::new(), pat.span);
         match pat.kind {
             ThirPatKind::Error | ThirPatKind::Wildcard | ThirPatKind::Bind(_) => DeconPat::Wild,
@@ -469,7 +469,7 @@ impl<'hir> Lowerer<'hir> {
         let ThirTuplePatItem::Positional(first) = items.first()? else {
             return None;
         };
-        match &self.pat_arena[first.0 as usize].kind {
+        match &self.pat_arena[*first].kind {
             ThirPatKind::Atom(name) => Some(name.clone()),
             _ => None,
         }

@@ -1,16 +1,15 @@
+use la_arena::{Arena, Idx};
 use zutai_hir::{BindingId, HirDeclId, HirExprId, HirImportSource, HirPatId};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ThirDeclId(pub u32);
+pub type ThirDeclId = Idx<ThirDecl>;
+pub type ThirExprId = Idx<ThirExpr>;
+pub type ThirPatId = Idx<ThirPat>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ThirExprId(pub u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ThirPatId(pub u32);
-
+/// Type arena index. Kept as a plain `u32` newtype (not `la_arena::Idx`) because
+/// the same ID space serves double duty as type-inference variable addresses
+/// (`next_infer_var` / `infer_subst` in the lowerer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(pub u32);
 
@@ -18,9 +17,9 @@ pub struct TypeId(pub u32);
 pub struct ThirFile {
     pub decls: Vec<ThirDeclId>,
     pub final_expr: ThirExprId,
-    pub decl_arena: Vec<ThirDecl>,
-    pub expr_arena: Vec<ThirExpr>,
-    pub pat_arena: Vec<ThirPat>,
+    pub decl_arena: Arena<ThirDecl>,
+    pub expr_arena: Arena<ThirExpr>,
+    pub pat_arena: Arena<ThirPat>,
     pub type_arena: Vec<Type>,
 }
 

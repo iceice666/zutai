@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use la_arena::Arena;
 use zutai_hir::{
     BindingId, BindingKind, HirDecl, HirDeclId, HirExpr, HirExprId, HirFile, HirPat, HirPatId,
     HirTypeExpr, HirTypeId,
@@ -66,9 +67,9 @@ pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptio
 struct Lowerer<'hir> {
     hir: &'hir HirFile,
     imports: HashMap<ImportKey, ImportedType>,
-    decl_arena: Vec<ThirDecl>,
-    expr_arena: Vec<ThirExpr>,
-    pat_arena: Vec<ThirPat>,
+    decl_arena: Arena<ThirDecl>,
+    expr_arena: Arena<ThirExpr>,
+    pat_arena: Arena<ThirPat>,
     type_arena: Vec<Type>,
     aliases: HashMap<BindingId, TypeId>,
     value_types: HashMap<BindingId, TypeId>,
@@ -84,9 +85,9 @@ impl<'hir> Lowerer<'hir> {
         let mut lowerer = Self {
             hir,
             imports,
-            decl_arena: Vec::new(),
-            expr_arena: Vec::new(),
-            pat_arena: Vec::new(),
+            decl_arena: Arena::new(),
+            expr_arena: Arena::new(),
+            pat_arena: Arena::new(),
             type_arena: Vec::new(),
             aliases: HashMap::new(),
             value_types: HashMap::new(),
@@ -150,21 +151,15 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn alloc_decl(&mut self, decl: ThirDecl) -> ThirDeclId {
-        let id = ThirDeclId(self.decl_arena.len() as u32);
-        self.decl_arena.push(decl);
-        id
+        self.decl_arena.alloc(decl)
     }
 
     fn alloc_expr(&mut self, expr: ThirExpr) -> ThirExprId {
-        let id = ThirExprId(self.expr_arena.len() as u32);
-        self.expr_arena.push(expr);
-        id
+        self.expr_arena.alloc(expr)
     }
 
     fn alloc_pat(&mut self, pat: ThirPat) -> ThirPatId {
-        let id = ThirPatId(self.pat_arena.len() as u32);
-        self.pat_arena.push(pat);
-        id
+        self.pat_arena.alloc(pat)
     }
 
     fn alloc_type(&mut self, ty: Type) -> TypeId {
@@ -174,23 +169,23 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn hir_decl(&self, id: HirDeclId) -> &'hir HirDecl {
-        &self.hir.decl_arena[id.0 as usize]
+        &self.hir.decl_arena[id]
     }
 
     fn hir_expr(&self, id: HirExprId) -> &'hir HirExpr {
-        &self.hir.expr_arena[id.0 as usize]
+        &self.hir.expr_arena[id]
     }
 
     fn hir_type(&self, id: HirTypeId) -> &'hir HirTypeExpr {
-        &self.hir.type_arena[id.0 as usize]
+        &self.hir.type_arena[id]
     }
 
     fn hir_pat(&self, id: HirPatId) -> &'hir HirPat {
-        &self.hir.pat_arena[id.0 as usize]
+        &self.hir.pat_arena[id]
     }
 
     fn expr(&self, id: ThirExprId) -> &ThirExpr {
-        &self.expr_arena[id.0 as usize]
+        &self.expr_arena[id]
     }
 
     fn ty(&self, id: TypeId) -> &Type {
