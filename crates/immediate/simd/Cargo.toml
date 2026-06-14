@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+thiserror = "2"
 rustc-hash = "2.0.0"
 zutai-types = { path = "../types" }
 

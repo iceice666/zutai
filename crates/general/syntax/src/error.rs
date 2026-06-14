@@ -167,3 +167,5 @@ impl std::fmt::Display for ParseError {
         Ok(())
     }
 }
+
+impl std::error::Error for ParseError {}

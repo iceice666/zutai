@@ -3,30 +3,18 @@ pub use zutai_types::{Block, Pair, Value};
 #[cfg(not(any(feature = "syntax", feature = "simd")))]
 compile_error!("zutai-im: enable at least one of the `syntax` or `simd` features");
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[cfg(feature = "syntax")]
+    #[error("syntax parse error: {0}")]
     Syntax(String),
     #[cfg(feature = "syntax")]
+    #[error("trailing data after parsed document")]
     TrailingData,
     #[cfg(feature = "simd")]
-    Simd(zutai_im_simd::ParseError),
+    #[error("simd parse error: {0}")]
+    Simd(#[from] zutai_im_simd::ParseError),
 }
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            #[cfg(feature = "syntax")]
-            Error::Syntax(msg) => write!(f, "syntax parse error: {msg}"),
-            #[cfg(feature = "syntax")]
-            Error::TrailingData => write!(f, "trailing data after parsed document"),
-            #[cfg(feature = "simd")]
-            Error::Simd(err) => write!(f, "simd parse error: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub fn parse(input: &str) -> Result<Block, Error> {
     dispatch(input)
@@ -34,7 +22,7 @@ pub fn parse(input: &str) -> Result<Block, Error> {
 
 #[cfg(feature = "simd")]
 fn dispatch(input: &str) -> Result<Block, Error> {
-    zutai_im_simd::parse(input).map_err(Error::Simd)
+    Ok(zutai_im_simd::parse(input)?)
 }
 
 #[cfg(all(not(feature = "simd"), feature = "syntax"))]
@@ -54,7 +42,7 @@ pub fn parse_syntax(input: &str) -> Result<Block, Error> {
 
 #[cfg(feature = "simd")]
 pub fn parse_simd(input: &str) -> Result<Block, Error> {
-    zutai_im_simd::parse(input).map_err(Error::Simd)
+    Ok(zutai_im_simd::parse(input)?)
 }
 
 #[cfg(test)]

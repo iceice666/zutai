@@ -37,82 +37,46 @@ pub use value::Value;
 
 // ─── errors ───────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq)]
+fn indent_msgs(msgs: &[String]) -> String {
+    msgs.iter().map(|m| format!("\n  {m}")).collect()
+}
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum EvalError {
     /// Source program has parse or HIR errors.
+    #[error("program has errors and cannot be evaluated:{}", indent_msgs(.0))]
     NotRunnable(Vec<String>),
     /// THIR type checking failed or is incomplete.
+    #[error("type checking failed:{}", indent_msgs(.0))]
     TypeCheckFailed(Vec<String>),
     /// A `ThirExprKind::Error` node was reachable in a nominally-complete THIR.
+    #[error("internal: reachable Error node in type-checked THIR")]
     ErrorNodeReachable,
     /// Runtime black-hole: a non-productive recursive binding was forced.
+    #[error("runtime error: non-productive recursive definition (black hole)")]
     BlackHole,
     /// Division by zero in integer division.
+    #[error("runtime error: integer division by zero")]
     DivByZero,
     /// Integer overflow.
+    #[error("runtime error: integer overflow in `{0}`")]
     IntOverflow(&'static str),
     /// No clause of a function matched the arguments.
+    #[error("runtime error: no matching clause (non-exhaustive pattern match)")]
     NoMatchingClause,
     /// An unbound `BindingId` was looked up (unreachable in well-typed code).
+    #[error("internal: unbound binding {0:?}")]
     UnboundBinding(BindingId),
     /// Runtime type mismatch (unreachable in well-typed code).
+    #[error("internal: type mismatch — expected {expected}, found {found}")]
     TypeMismatch {
         expected: &'static str,
         found: &'static str,
     },
     /// Internal invariant violated (always a bug in the interpreter).
+    #[error("internal error: {0}")]
     Internal(&'static str),
 }
-
-impl std::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvalError::NotRunnable(msgs) => {
-                write!(f, "program has errors and cannot be evaluated:")?;
-                for m in msgs {
-                    write!(f, "\n  {m}")?;
-                }
-                Ok(())
-            }
-            EvalError::TypeCheckFailed(msgs) => {
-                write!(f, "type checking failed:")?;
-                for m in msgs {
-                    write!(f, "\n  {m}")?;
-                }
-                Ok(())
-            }
-            EvalError::ErrorNodeReachable => {
-                write!(f, "internal: reachable Error node in type-checked THIR")
-            }
-            EvalError::BlackHole => write!(
-                f,
-                "runtime error: non-productive recursive definition (black hole)"
-            ),
-            EvalError::DivByZero => write!(f, "runtime error: integer division by zero"),
-            EvalError::IntOverflow(op) => {
-                write!(f, "runtime error: integer overflow in `{op}`")
-            }
-            EvalError::NoMatchingClause => {
-                write!(
-                    f,
-                    "runtime error: no matching clause (non-exhaustive pattern match)"
-                )
-            }
-            EvalError::UnboundBinding(id) => {
-                write!(f, "internal: unbound binding {:?}", id)
-            }
-            EvalError::TypeMismatch { expected, found } => {
-                write!(
-                    f,
-                    "internal: type mismatch — expected {expected}, found {found}"
-                )
-            }
-            EvalError::Internal(msg) => write!(f, "internal error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for EvalError {}
 
 // ─── pre-flight gate ──────────────────────────────────────────────────────────
 
@@ -205,7 +169,7 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
 fn has_reachable_error(file: &ThirFile) -> bool {
     // Check the final expression and all top-level declaration expressions.
     let mut to_visit: Vec<zutai_thir::ThirExprId> = vec![file.final_expr];
-    for decl in &file.decl_arena {
+    for (_, decl) in file.decl_arena.iter() {
         match &decl.kind {
             zutai_thir::ThirDeclKind::Value { value, .. } => to_visit.push(*value),
             zutai_thir::ThirDeclKind::Function { clauses, .. } => {
@@ -223,10 +187,10 @@ fn has_reachable_error(file: &ThirFile) -> bool {
     let mut visited = std::collections::HashSet::new();
     let mut stack = to_visit;
     while let Some(id) = stack.pop() {
-        if !visited.insert(id.0) {
+        if !visited.insert(id) {
             continue;
         }
-        let expr = &file.expr_arena[id.0 as usize];
+        let expr = &file.expr_arena[id];
         match &expr.kind {
             ThirExprKind::Error => return true,
             ThirExprKind::Block { bindings, result } => {
@@ -339,7 +303,7 @@ pub fn eval_thir_with_imports(
     let decls_by_binding: HashMap<BindingId, ThirDeclId> = file
         .decls
         .iter()
-        .map(|&id| (file.decl_arena[id.0 as usize].binding, id))
+        .map(|&id| (file.decl_arena[id].binding, id))
         .collect();
 
     let evaluator = eval::Evaluator::new(file, &decls_by_binding, imports);

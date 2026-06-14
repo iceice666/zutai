@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+thiserror = "2"
 zutai-thir = { path = "../thir" }
 zutai-hir = { path = "../hir" }
 zutai-syntax = { path = "../syntax" }

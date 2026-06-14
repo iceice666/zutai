@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+thiserror = "2"
 zutai-types = { path = "../types" }
 zutai-im-syntax = { path = "../syntax", optional = true }
 zutai-im-simd = { path = "../simd", optional = true }
