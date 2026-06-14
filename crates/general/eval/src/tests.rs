@@ -554,3 +554,82 @@ fn lambda_partial_application() {
         Value::Int(5)
     );
 }
+
+// ─── match expressions ────────────────────────────────────────────────────────
+
+#[test]
+fn match_int_literal() {
+    // Matched arm returns Int so both arms have the same type.
+    let src = r"
+match 0 {
+  | 0 => 1;
+  | _ => 2;
+}
+";
+    assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn match_wildcard_fallthrough() {
+    let src = r"
+match 99 {
+  | 0 => 1;
+  | _ => 2;
+}
+";
+    assert_eq!(run(src), Value::Int(2));
+}
+
+#[test]
+fn match_bind_pattern() {
+    // Binding pattern captures the matched value.
+    let src = r"
+match 7 {
+  | n => n * 2;
+}
+";
+    assert_eq!(run(src), Value::Int(14));
+}
+
+#[test]
+fn match_with_guard() {
+    // Guard filters to the correct arm.
+    let src = r"
+match 5 {
+  | n if n > 3 => 1;
+  | _ => 0;
+}
+";
+    assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn match_guard_falls_through() {
+    // When the guard fails, the next arm is tried.
+    let src = r"
+match 2 {
+  | n if n > 3 => 1;
+  | _ => 0;
+}
+";
+    assert_eq!(run(src), Value::Int(0));
+}
+
+#[test]
+fn match_bool_patterns() {
+    assert_eq!(run(r"match true { | true => 1; | false => 0; }"), Value::Int(1));
+    assert_eq!(run(r"match false { | true => 1; | false => 0; }"), Value::Int(0));
+}
+
+#[test]
+fn match_function_using_match_expr() {
+    // match expression inside a lambda stored as a value binding
+    let src = "
+is_zero :: Int -> Bool = \\n . match n {
+  | 0 => true;
+  | _ => false;
+}
+is_zero 0
+";
+    assert_eq!(run(src), Value::Bool(true));
+}

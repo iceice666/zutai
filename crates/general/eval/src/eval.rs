@@ -223,11 +223,29 @@ impl<'a> Evaluator<'a> {
                 };
                 Ok(Value::Closure(Rc::new(closure)))
             }
-            ThirExprKind::Match { .. } => {
-                // Extension: reuse apply_clause matching logic.
-                Err(EvalError::Internal(
-                    "match expression reached evaluator (unreachable past gate)",
-                ))
+            ThirExprKind::Match { scrutinee, arms } => {
+                let sv = self.eval(*scrutinee, env)?;
+                let scrutinee_thunk = Thunk::ready(sv);
+                for arm in arms {
+                    debug_assert_eq!(arm.patterns.len(), 1, "match arm must have exactly 1 pattern");
+                    let mut child = env.push_frame();
+                    if self.match_pattern(arm.patterns[0], scrutinee_thunk.clone(), &mut child)? {
+                        if let Some(guard_id) = arm.guard {
+                            match self.eval(guard_id, &child)? {
+                                Value::Bool(true) => {}
+                                Value::Bool(false) => continue,
+                                other => {
+                                    return Err(EvalError::TypeMismatch {
+                                        expected: "Bool",
+                                        found: value_type_name(&other),
+                                    });
+                                }
+                            }
+                        }
+                        return self.eval(arm.body, &child);
+                    }
+                }
+                Err(EvalError::NoMatchingClause)
             }
             ThirExprKind::Import(source) => match self.imports.get(source) {
                 Some(value) => Ok(value.clone()),
