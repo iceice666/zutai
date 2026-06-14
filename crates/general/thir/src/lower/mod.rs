@@ -78,6 +78,12 @@ struct Lowerer<'hir> {
     type_type: TypeId,
     next_infer_var: u32,
     infer_subst: HashMap<u32, TypeId>,
+    /// HM let-generalization schemes: for each generalized binding, the list of
+    /// `InferVar` ids quantified over. A reference instantiates these with fresh
+    /// independent `InferVar`s so unifying one use site does not monomorphize others.
+    /// Bindings absent here are monomorphic (used at a single type, or shared with
+    /// the surrounding environment).
+    poly_schemes: HashMap<BindingId, Vec<u32>>,
 }
 
 impl<'hir> Lowerer<'hir> {
@@ -96,6 +102,7 @@ impl<'hir> Lowerer<'hir> {
             type_type: TypeId(0),
             next_infer_var: 0,
             infer_subst: HashMap::new(),
+            poly_schemes: HashMap::new(),
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,

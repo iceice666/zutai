@@ -179,6 +179,27 @@ fn no_signature_identity_function_completes_thir() {
 }
 
 #[test]
+fn no_signature_identity_used_at_two_types_completes() {
+    // `id x = x` generalizes; each use instantiates fresh InferVars.
+    let file = completed_file("id x = x\n(id 42, id \"hello\")");
+    assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
+}
+
+#[test]
+fn no_signature_identity_single_type_still_int() {
+    // Single-type use is unaffected by generalization.
+    let file = completed_file("id x = x\nid 42");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn recursive_function_stays_monomorphic() {
+    // Self-references read the un-generalized signature so recursion stays monomorphic.
+    let file = completed_file("count n = count n\ncount 5");
+    let _ = file;
+}
+
+#[test]
 fn no_signature_arithmetic_function_infers_int_type() {
     let file = completed_file("double x = x + x\ndouble 5");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));

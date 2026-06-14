@@ -289,12 +289,24 @@ impl<'hir> Lowerer<'hir> {
         }
 
         match self.value_types.get(&binding).copied() {
-            Some(ty) => self.alloc_expr(ThirExpr {
-                source: id,
-                ty,
-                kind: ThirExprKind::BindingRef(binding),
-                span,
-            }),
+            Some(ty) => {
+                let ty = match self.poly_schemes.get(&binding).cloned() {
+                    Some(scheme) => {
+                        let subst: HashMap<u32, TypeId> = scheme
+                            .into_iter()
+                            .map(|v| (v, self.fresh_infer_var(span)))
+                            .collect();
+                        self.instantiate_infer_vars(ty, &subst)
+                    }
+                    None => ty,
+                };
+                self.alloc_expr(ThirExpr {
+                    source: id,
+                    ty,
+                    kind: ThirExprKind::BindingRef(binding),
+                    span,
+                })
+            }
             None => {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::ValueTypeUnavailable {

@@ -88,6 +88,7 @@ impl<'hir> Lowerer<'hir> {
                 let value = self.infer_expr(*value);
                 let ty = self.expr(value).ty;
                 self.value_types.insert(decl.binding, ty);
+                self.generalize_if_polymorphic(decl.binding, ty);
                 ThirDeclKind::Value { ty, value }
             }
             HirDeclKind::Function {
@@ -101,7 +102,9 @@ impl<'hir> Lowerer<'hir> {
                     .copied()
                     .unwrap_or(self.error_type);
                 let clauses = if sig != self.error_type {
-                    self.lower_function_clauses(clauses, sig)
+                    let clauses = self.lower_function_clauses(clauses, sig);
+                    self.generalize_if_polymorphic(decl.binding, sig);
+                    clauses
                 } else {
                     Vec::new()
                 };

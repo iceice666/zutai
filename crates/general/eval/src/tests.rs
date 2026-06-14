@@ -3,7 +3,7 @@
 //! These tests double as the differential-testing oracle for future LLVM
 //! codegen: any LLVM output that disagrees with these is a codegen bug.
 
-use crate::{EvalError, Value, eval_file};
+use crate::{EvalError, Value, eval_file, thunk, value};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -665,4 +665,30 @@ outer :: Outer = {}
 outer.inner?.val
 ";
     assert_eq!(run(src), Value::Nothing);
+}
+
+// ─── HM let-generalization ────────────────────────────────────────────────────
+
+#[test]
+fn polymorphic_identity_runs_at_two_types() {
+    let v = eval_file("id x = x\n(id 42, id \"hello\")").unwrap();
+    let expected = Value::Tuple(
+        vec![
+            value::TupleField {
+                name: None,
+                value: thunk::Thunk::ready(Value::Int(42)),
+            },
+            value::TupleField {
+                name: None,
+                value: thunk::Thunk::ready(Value::Text("hello".into())),
+            },
+        ]
+        .into(),
+    );
+    assert_eq!(v, expected);
+}
+
+#[test]
+fn monomorphic_value_binding_still_runs() {
+    assert_eq!(eval_file("answer := 42\nanswer").unwrap(), Value::Int(42));
 }

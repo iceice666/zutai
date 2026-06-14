@@ -552,6 +552,198 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    // ── HM let-generalization ────────────────────────────────────────────────
+
+    /// Collect every unresolved `InferVar` id that appears free in `ty`, deduped
+    /// in stable order. Resolves chains at entry so partially-solved variables
+    /// (e.g. `?1` pointing at `?0`) are reported by their canonical id.
+    pub(super) fn free_infer_vars_in(&self, ty: TypeId) -> Vec<u32> {
+        let mut vars: Vec<u32> = Vec::new();
+        self.free_infer_vars_into(ty, &mut vars);
+        vars.sort_unstable();
+        vars.dedup();
+        vars
+    }
+
+    fn free_infer_vars_into(&self, ty: TypeId, out: &mut Vec<u32>) {
+        let ty = self.resolve(ty);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::InferVar(v) => out.push(v),
+            TypeKind::Function { from, to } => {
+                self.free_infer_vars_into(from, out);
+                self.free_infer_vars_into(to, out);
+            }
+            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+                self.free_infer_vars_into(inner, out);
+            }
+            TypeKind::Union(items) => {
+                for item in items {
+                    self.free_infer_vars_into(item, out);
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in items {
+                    let inner = match item {
+                        TypeTupleItem::Named { ty, .. } => ty,
+                        TypeTupleItem::Positional(ty) => ty,
+                    };
+                    self.free_infer_vars_into(inner, out);
+                }
+            }
+            TypeKind::Record(fields) => {
+                for f in fields {
+                    self.free_infer_vars_into(f.ty, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// All `InferVar` ids free in the stored type of any binding other than
+    /// `exclude`. These are "in the environment": generalizing them would be
+    /// unsound, so they stay monomorphic.
+    fn env_infer_vars(&self, exclude: BindingId) -> HashSet<u32> {
+        let mut set = HashSet::new();
+        for (&binding, &ty) in &self.value_types {
+            if binding == exclude {
+                continue;
+            }
+            for v in self.free_infer_vars_in(ty) {
+                set.insert(v);
+            }
+        }
+        set
+    }
+
+    /// HM "gen" rule: generalize `binding`'s free inference variables that are not
+    /// shared with the surrounding environment. Call AFTER the binding's body is
+    /// fully lowered and its type is in `value_types`.
+    ///
+    /// Source-order / define-before-use: only references that appear textually
+    /// after this point observe the scheme. Polymorphic recursion is not inferred.
+    pub(super) fn generalize_if_polymorphic(&mut self, binding: BindingId, ty: TypeId) {
+        let env = self.env_infer_vars(binding);
+        let scheme: Vec<u32> = self
+            .free_infer_vars_in(ty)
+            .into_iter()
+            .filter(|v| !env.contains(v))
+            .collect();
+        if !scheme.is_empty() {
+            self.poly_schemes.insert(binding, scheme);
+        }
+    }
+
+    /// Substitute `InferVar`s appearing in `ty` according to `subst`, allocating
+    /// new nodes only where a substitution occurs. Unlike `instantiate_type_vars`,
+    /// this resolves chains at entry because stored signatures contain
+    /// partially-solved `InferVar`s.
+    pub(super) fn instantiate_infer_vars(
+        &mut self,
+        ty: TypeId,
+        subst: &HashMap<u32, TypeId>,
+    ) -> TypeId {
+        let ty = self.resolve(ty);
+        if subst.is_empty() {
+            return ty;
+        }
+        let span = self.type_arena[ty.0 as usize].span;
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::InferVar(v) => subst.get(&v).copied().unwrap_or(ty),
+            TypeKind::Function { from, to } => {
+                let new_from = self.instantiate_infer_vars(from, subst);
+                let new_to = self.instantiate_infer_vars(to, subst);
+                if new_from == from && new_to == to {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Function {
+                        from: new_from,
+                        to: new_to,
+                    },
+                    span,
+                })
+            }
+            TypeKind::List(inner) => {
+                let new_inner = self.instantiate_infer_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::List(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Optional(inner) => {
+                let new_inner = self.instantiate_infer_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Optional(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Union(items) => {
+                let new_items: Vec<TypeId> = items
+                    .iter()
+                    .map(|&i| self.instantiate_infer_vars(i, subst))
+                    .collect();
+                if new_items == items {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Union(new_items),
+                    span,
+                })
+            }
+            TypeKind::Tuple(items) => {
+                let new_items: Vec<TypeTupleItem> = items
+                    .iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named {
+                            name,
+                            ty: inner,
+                            span: s,
+                        } => TypeTupleItem::Named {
+                            name: name.clone(),
+                            ty: self.instantiate_infer_vars(*inner, subst),
+                            span: *s,
+                        },
+                        TypeTupleItem::Positional(inner) => {
+                            TypeTupleItem::Positional(self.instantiate_infer_vars(*inner, subst))
+                        }
+                    })
+                    .collect();
+                if new_items == items {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Tuple(new_items),
+                    span,
+                })
+            }
+            TypeKind::Record(fields) => {
+                let new_fields: Vec<TypeRecordField> = fields
+                    .iter()
+                    .map(|f| TypeRecordField {
+                        name: f.name.clone(),
+                        optional: f.optional,
+                        ty: self.instantiate_infer_vars(f.ty, subst),
+                        span: f.span,
+                    })
+                    .collect();
+                if new_fields == fields {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Record(new_fields),
+                    span,
+                })
+            }
+            _ => ty,
+        }
+    }
+
     pub(super) fn type_mismatch(&mut self, expected: TypeId, found: TypeId, span: Span) {
         let expected = self.type_name(expected);
         let found = self.type_name(found);
