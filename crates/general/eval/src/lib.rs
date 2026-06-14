@@ -314,9 +314,10 @@ pub fn eval_thir_with_imports(
 
 /// Recursively force all lazy thunks inside a value so it can be displayed.
 ///
-/// Only descends into finite structures.  Infinite lazy lists are not handled
-/// and would loop; they cannot be produced by the current THIR gate since
-/// infinite data requires `match`/`Lambda` which are gated out.
+/// Only descends into finite structures.  Recursive lambdas can produce
+/// infinite data (e.g. an infinite list); `force_deep` will loop on them.
+/// This is acceptable for the reference interpreter — a non-terminating
+/// program already diverges at eval time before reaching this function.
 pub fn force_deep(v: Value, ev: &eval::Evaluator<'_>) -> Result<Value, EvalError> {
     match v {
         Value::List(thunks) => {
