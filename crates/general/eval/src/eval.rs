@@ -13,7 +13,7 @@ use std::rc::Rc;
 use zutai_hir::BindingId;
 use zutai_syntax::ast::BinOp;
 use zutai_thir::{
-    ImportKey, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
+    ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
 };
 use zutai_thir::{ThirPatKind, ThirTupleItem, ThirTuplePatItem};
 
@@ -206,12 +206,22 @@ impl<'a> Evaluator<'a> {
                 }
             }
 
-            // ── not yet supported by the THIR gate (unreachable post-gate) ───
-            ThirExprKind::Lambda { .. } => {
-                // Extension: when THIR type-checks lambdas, build a Closure here.
-                Err(EvalError::Internal(
-                    "lambda expression reached evaluator (unreachable past gate)",
-                ))
+            // ── lambda / match ───────────────────────────────────────────────
+            ThirExprKind::Lambda { params, body } => {
+                let clause = ThirClause {
+                    patterns: params.clone(),
+                    guard: None,
+                    body: *body,
+                    span: expr.span,
+                };
+                let closure = Closure {
+                    binding: None,
+                    arity: params.len(),
+                    clauses: Rc::from([clause]),
+                    env: env.clone(),
+                    applied: Vec::new(),
+                };
+                Ok(Value::Closure(Rc::new(closure)))
             }
             ThirExprKind::Match { .. } => {
                 // Extension: reuse apply_clause matching logic.
@@ -500,7 +510,7 @@ impl<'a> Evaluator<'a> {
                 ThirDeclKind::Function { clauses, .. } => {
                     let arity = clauses.first().map(|c| c.patterns.len()).unwrap_or(0);
                     let closure = Closure {
-                        binding: decl.binding,
+                        binding: Some(decl.binding),
                         arity,
                         clauses: clauses.as_slice().into(),
                         env: top.clone(),

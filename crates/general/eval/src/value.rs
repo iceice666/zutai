@@ -78,8 +78,8 @@ pub struct TupleField {
 #[derive(Clone, Debug)]
 pub struct Closure {
     /// The `BindingId` of the top-level `Function` declaration this was built
-    /// from.  Used only for display.
-    pub binding: BindingId,
+    /// from, or `None` for an anonymous lambda.  Used only for display.
+    pub binding: Option<BindingId>,
     /// Total number of value arguments the function expects (the number of
     /// `ThirPatId`s in `clauses[0].patterns`).
     pub arity: usize,

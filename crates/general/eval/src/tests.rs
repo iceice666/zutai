@@ -517,3 +517,40 @@ fn zt_import_cycle_is_refused() {
         other => panic!("expected NotRunnable, got {other:?}"),
     }
 }
+
+// ─── lambda expressions ───────────────────────────────────────────────────────
+
+#[test]
+fn lambda_identity() {
+    assert_eq!(run(r"(\x . x) 42"), Value::Int(42));
+}
+
+#[test]
+fn lambda_add() {
+    // Two-parameter lambda applied to two arguments (curried)
+    assert_eq!(run(r"(\x y . x + y) 3 4"), Value::Int(7));
+}
+
+#[test]
+fn lambda_captured_env() {
+    // Lambda captures surrounding block binding
+    assert_eq!(run(r"{ n := 10; (\x . x + n) 5 }"), Value::Int(15));
+}
+
+#[test]
+fn lambda_as_value_binding() {
+    // Lambda stored in a type-annotated value declaration, then applied
+    let src = "
+double :: Int -> Int = \\x . x + x
+double 7
+";
+    assert_eq!(run(src), Value::Int(14));
+}
+
+#[test]
+fn lambda_partial_application() {
+    assert_eq!(
+        run(r"{ add := \x y . x + y; add_two := add 2; add_two 3 }"),
+        Value::Int(5)
+    );
+}
