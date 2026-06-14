@@ -227,7 +227,11 @@ impl<'a> Evaluator<'a> {
                 let sv = self.eval(*scrutinee, env)?;
                 let scrutinee_thunk = Thunk::ready(sv);
                 for arm in arms {
-                    debug_assert_eq!(arm.patterns.len(), 1, "match arm must have exactly 1 pattern");
+                    debug_assert_eq!(
+                        arm.patterns.len(),
+                        1,
+                        "match arm must have exactly 1 pattern"
+                    );
                     let mut child = env.push_frame();
                     if self.match_pattern(arm.patterns[0], scrutinee_thunk.clone(), &mut child)? {
                         if let Some(guard_id) = arm.guard {

@@ -617,8 +617,14 @@ match 2 {
 
 #[test]
 fn match_bool_patterns() {
-    assert_eq!(run(r"match true { | true => 1; | false => 0; }"), Value::Int(1));
-    assert_eq!(run(r"match false { | true => 1; | false => 0; }"), Value::Int(0));
+    assert_eq!(
+        run(r"match true { | true => 1; | false => 0; }"),
+        Value::Int(1)
+    );
+    assert_eq!(
+        run(r"match false { | true => 1; | false => 0; }"),
+        Value::Int(0)
+    );
 }
 
 #[test]
