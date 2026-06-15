@@ -24,7 +24,7 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         match self.imports.get(source).cloned() {
             Some(desc) => {
-                let ty = self.intern_imported_type(&desc, span);
+                let ty = self.intern_imported_type_with_source(&desc, Some(source), span);
                 self.alloc_expr(ThirExpr {
                     source: id,
                     ty,
@@ -37,7 +37,17 @@ impl<'hir> Lowerer<'hir> {
     }
 
     /// Intern a neutral [`ImportedType`] descriptor into the THIR type arena.
-    fn intern_imported_type(&mut self, desc: &ImportedType, span: Span) -> TypeId {
+    ///
+    /// `source` is the import key of the module being interned; it is `Some`
+    /// only when called from `lower_import_expr` (not from recursive calls on
+    /// nested non-import types).  It is used to register denotations for
+    /// `ImportedType::Type` fields so that annotation-position access works.
+    pub(super) fn intern_imported_type_with_source(
+        &mut self,
+        desc: &ImportedType,
+        source: Option<&HirImportSource>,
+        span: Span,
+    ) -> TypeId {
         match desc {
             ImportedType::Bool => self.bool_type(span),
             ImportedType::Int => self.int_type(span),
@@ -48,31 +58,41 @@ impl<'hir> Lowerer<'hir> {
                 span,
             }),
             ImportedType::List(inner) => {
-                let inner_ty = self.intern_imported_type(inner, span);
+                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
                 self.alloc_type(Type {
                     kind: TypeKind::List(inner_ty),
                     span,
                 })
             }
             ImportedType::Optional(inner) => {
-                let inner_ty = self.intern_imported_type(inner, span);
+                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
                 self.optional_type(inner_ty, span)
             }
             ImportedType::Record(fields) => {
-                let fields = fields
-                    .iter()
-                    .map(|field| {
-                        let ty = self.intern_imported_type(&field.ty, span);
-                        TypeRecordField {
-                            name: field.name.clone(),
-                            optional: field.optional,
-                            ty,
-                            span,
+                let mut thir_fields = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let ty = if let ImportedType::Type(inner) = &field.ty {
+                        // This field carries a type-value.  Intern the denotation
+                        // separately and register it so annotation-position access
+                        // (`x : moduleLib.SomeType`) can recover the concrete type.
+                        let denotation = self.intern_imported_type_with_source(inner, source, span);
+                        if let Some(src) = source {
+                            self.import_type_denotations
+                                .insert((src.clone(), field.name.clone()), denotation);
                         }
-                    })
-                    .collect();
+                        self.type_type
+                    } else {
+                        self.intern_imported_type_with_source(&field.ty, source, span)
+                    };
+                    thir_fields.push(TypeRecordField {
+                        name: field.name.clone(),
+                        optional: field.optional,
+                        ty,
+                        span,
+                    });
+                }
                 self.alloc_type(Type {
-                    kind: TypeKind::Record(fields),
+                    kind: TypeKind::Record(thir_fields),
                     span,
                 })
             }
@@ -82,12 +102,12 @@ impl<'hir> Lowerer<'hir> {
                     .map(|item| match item {
                         ImportedTupleItem::Named { name, ty } => TypeTupleItem::Named {
                             name: name.clone(),
-                            ty: self.intern_imported_type(ty, span),
+                            ty: self.intern_imported_type_with_source(ty, source, span),
                             span,
                         },
-                        ImportedTupleItem::Positional(ty) => {
-                            TypeTupleItem::Positional(self.intern_imported_type(ty, span))
-                        }
+                        ImportedTupleItem::Positional(ty) => TypeTupleItem::Positional(
+                            self.intern_imported_type_with_source(ty, source, span),
+                        ),
                     })
                     .collect();
                 self.alloc_type(Type {
@@ -98,12 +118,26 @@ impl<'hir> Lowerer<'hir> {
             ImportedType::Union(items) => {
                 let items = items
                     .iter()
-                    .map(|item| self.intern_imported_type(item, span))
+                    .map(|item| self.intern_imported_type_with_source(item, source, span))
                     .collect();
                 self.alloc_type(Type {
                     kind: TypeKind::Union(items),
                     span,
                 })
+            }
+            ImportedType::Function { from, to } => {
+                let from = self.intern_imported_type_with_source(from, source, span);
+                let to = self.intern_imported_type_with_source(to, source, span);
+                self.alloc_type(Type {
+                    kind: TypeKind::Function { from, to },
+                    span,
+                })
+            }
+            ImportedType::Type(_) => {
+                // A `Type`-kinded value at top-level (not in a record field).
+                // No denotation registration here — the field-name context is
+                // unavailable.  Just return `type_type`.
+                self.type_type
             }
             ImportedType::Unknown => self.fresh_infer_var(span),
         }

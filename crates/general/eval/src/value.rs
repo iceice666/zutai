@@ -12,6 +12,14 @@ use zutai_thir::{ThirClause, TypeId};
 
 use crate::{EvalError, env::Env};
 
+/// Index into the module registry held by the evaluator.
+///
+/// Each evaluated `.zt` module is assigned a `ModuleId` so that closures and
+/// thunks can record their home module and re-enter the correct arena when
+/// forced or applied across a module boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleId(pub usize);
+
 /// A fully-evaluated or partially-applied Zutai runtime value.
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -89,6 +97,10 @@ pub struct Closure {
     pub env: Env,
     /// Arguments already applied (thunks, in order).  Length < arity.
     pub applied: Vec<crate::thunk::Thunk>,
+    /// The module in whose arena the clauses' `ThirExprId`s / `ThirPatId`s live.
+    /// `apply_closure` switches the active module to this before evaluating any
+    /// clause body or guard so arena look-ups hit the right file.
+    pub home: ModuleId,
 }
 
 // ─── PartialEq ───────────────────────────────────────────────────────────────

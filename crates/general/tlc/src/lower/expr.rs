@@ -28,12 +28,8 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::Float(f) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Float(f)), tlc_ty, span)
             }
-            ThirExprKind::String(s) => {
-                self.alloc_expr(TlcExpr::Lit(Literal::Str(s)), tlc_ty, span)
-            }
-            ThirExprKind::Atom(s) => {
-                self.alloc_expr(TlcExpr::Lit(Literal::Atom(s)), tlc_ty, span)
-            }
+            ThirExprKind::String(s) => self.alloc_expr(TlcExpr::Lit(Literal::Str(s)), tlc_ty, span),
+            ThirExprKind::Atom(s) => self.alloc_expr(TlcExpr::Lit(Literal::Atom(s)), tlc_ty, span),
             ThirExprKind::BindingRef(binding) => {
                 self.lower_binding_ref(binding, tlc_ty, thir_ty, span)
             }
@@ -62,8 +58,7 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_expr(TlcExpr::Tuple(tlc_items), tlc_ty, span)
             }
             ThirExprKind::List(items) => {
-                let tlc_items: Vec<TlcExprId> =
-                    items.iter().map(|&e| self.lower_expr(e)).collect();
+                let tlc_items: Vec<TlcExprId> = items.iter().map(|&e| self.lower_expr(e)).collect();
                 self.alloc_expr(TlcExpr::List(tlc_items), tlc_ty, span)
             }
             ThirExprKind::Access { receiver, field } => {
@@ -127,9 +122,7 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 self.alloc_expr(TlcExpr::Case(scrut, alts), tlc_ty, span)
             }
-            ThirExprKind::Lambda { params, body } => {
-                self.lower_lambda(params, body, tlc_ty, span)
-            }
+            ThirExprKind::Lambda { params, body } => self.lower_lambda(params, body, tlc_ty, span),
             ThirExprKind::Apply { func, arg, .. } => {
                 let func_tlc = self.lower_expr(func);
                 let arg_tlc = self.lower_expr(arg);

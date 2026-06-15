@@ -85,8 +85,53 @@ impl<'hir> Lowerer<'hir> {
                 });
                 self.error_type
             }
-            HirTypeKind::Access { .. } => {
-                self.invalid_type("type field access is not supported yet", ty.span)
+            HirTypeKind::Access { receiver, field } => {
+                // Resolve `moduleLib.SomeType` in annotation position.
+                // Only simple `BindingRef` receivers are supported (e.g. `serverLib`);
+                // chained access (`a.b.C`) is not yet implemented.
+                let access_span = ty.span;
+                let receiver_hir = self.hir_type(*receiver);
+                let binding = match &receiver_hir.kind {
+                    HirTypeKind::BindingRef(b) => *b,
+                    _ => {
+                        return self.invalid_type(
+                            "type field access receiver must be a simple name",
+                            access_span,
+                        );
+                    }
+                };
+                // Look up the record type of the receiver (e.g. the inferred
+                // record type of `serverLib := import "server.zt"`).
+                let receiver_ty = match self.value_types.get(&binding).copied() {
+                    Some(t) => t,
+                    None => {
+                        return self
+                            .invalid_type("type field access on unknown binding", access_span);
+                    }
+                };
+                // Walk to the record fields of that type.
+                let fields = match self.record_fields(receiver_ty, access_span) {
+                    Some(f) => f,
+                    None => {
+                        return self
+                            .invalid_type("type field access on non-record type", access_span);
+                    }
+                };
+                let Some(record_field) = fields.iter().find(|f| f.name == *field).cloned() else {
+                    return self.invalid_type("unknown type field", access_span);
+                };
+                // If this binding is a known import and the field carries a
+                // registered type denotation, return the concrete type so that
+                // annotation-position use (`x : serverLib.Server`) type-checks.
+                if let Some(import_source) = self.binding_import_key.get(&binding).cloned() {
+                    if let Some(&denotation) = self
+                        .import_type_denotations
+                        .get(&(import_source, field.clone()))
+                    {
+                        return denotation;
+                    }
+                }
+                record_field.ty
             }
             HirTypeKind::ExprEscape(_) => {
                 self.invalid_type("type expression escapes are not supported yet", ty.span)

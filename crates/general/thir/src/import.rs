@@ -20,9 +20,7 @@ pub type ImportKey = HirImportSource;
 ///
 /// For `.zti` imports it mirrors the shape of the immediate data; for `.zt`
 /// module imports it is the structurally-exported type of the module's final
-/// expression (see [`crate::export_type`]).  Only self-contained data shapes
-/// are representable — functions and type values cannot cross a module boundary
-/// in the current evaluator and are refused before they reach here.
+/// expression (see [`crate::export_type`]).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImportedType {
     Bool,
@@ -35,6 +33,18 @@ pub enum ImportedType {
     Record(Vec<ImportedField>),
     Tuple(Vec<ImportedTupleItem>),
     Union(Vec<ImportedType>),
+    /// A function value crossing a module boundary.  The evaluator stamps a
+    /// home-module handle on every closure so the body is evaluated against
+    /// the *defining* module's arenas.
+    Function {
+        from: Box<ImportedType>,
+        to: Box<ImportedType>,
+    },
+    /// A type-value field carrying its denotation.  Enables annotation-position
+    /// use (`x : serverLib.Server`) by threading the concrete type through the
+    /// import boundary.  The inner descriptor is the denoted structural type
+    /// (e.g. the record `{ host: Text; port: Int }` behind `Server`).
+    Type(Box<ImportedType>),
     /// Element type of an empty imported list, or an unconstrained position —
     /// interned as a fresh inference variable so it unifies with whatever the
     /// consumer needs.

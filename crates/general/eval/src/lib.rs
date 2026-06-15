@@ -29,11 +29,15 @@ mod tests;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use zutai_hir::BindingId;
-use zutai_thir::{ImportKey, ThirDeclId, ThirExprKind, ThirFile};
+use zutai_thir::{ImportKey, ThirExprKind, ThirFile};
 
 pub use value::Value;
+
+use eval::{Evaluator, ModuleRegistry};
+use value::ModuleId;
 
 // ─── errors ───────────────────────────────────────────────────────────────────
 
@@ -287,17 +291,59 @@ pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalEr
 /// imports first.  `.zti` imports become data values; `.zt` imports are
 /// evaluated depth-first.  The import graph is acyclic by the time evaluation
 /// runs (the analyzer refuses cyclic imports), so this terminates.
+///
+/// Each `.zt` dependency is assigned a `ModuleId` in the registry so closures
+/// stamped with that id can re-enter the correct file's arenas when forced or
+/// applied across a module boundary.
 fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
-    let file = check_runnable(analysis)?;
+    let mut registry: ModuleRegistry = Vec::new();
     let mut imports: HashMap<ImportKey, Value> = HashMap::new();
+    eval_analysis_into(analysis, &mut registry, &mut imports)?;
+    // The root module is the last entry in the registry.
+    let root_id = ModuleId(registry.len() - 1);
+    let root_file = Arc::clone(registry.last().unwrap());
+    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports);
+    let top = evaluator.build_top_env();
+    let result = evaluator.eval(root_file.final_expr, &top)?;
+    force_deep(result, &evaluator)
+}
+
+/// Recursive helper: populate `registry` and `imports` depth-first, then
+/// register the current module and return its `ModuleId`.
+fn eval_analysis_into(
+    analysis: &zutai_semantic::Analysis,
+    registry: &mut ModuleRegistry,
+    imports: &mut HashMap<ImportKey, Value>,
+) -> Result<ModuleId, EvalError> {
+    let file = check_runnable(analysis)?;
+
+    // Populate `.zti` import values.
     for (key, value) in &analysis.import_values {
-        imports.insert(key.clone(), Value::from_immediate(value));
+        if !imports.contains_key(key) {
+            imports.insert(key.clone(), Value::from_immediate(value));
+        }
     }
+
+    // Recursively register imported `.zt` modules depth-first.
     for (key, module) in &analysis.import_modules {
-        let value = eval_analysis(module)?;
-        imports.insert(key.clone(), value);
+        if !imports.contains_key(key) {
+            // Recurse: register the dependency, building its top-env stamped
+            // with its own ModuleId so closures carry the correct home.
+            let dep_id = eval_analysis_into(module, registry, imports)?;
+            // Now evaluate the dependency's final expression in its own module.
+            let dep_file = Arc::clone(&registry[dep_id.0]);
+            let dep_ev = Evaluator::new(&dep_file, registry, dep_id, imports);
+            let dep_top = dep_ev.build_top_env();
+            let dep_result = dep_ev.eval(dep_file.final_expr, &dep_top)?;
+            let dep_value = force_deep(dep_result, &dep_ev)?;
+            imports.insert(key.clone(), dep_value);
+        }
     }
-    eval_thir_with_imports(file, &imports)
+
+    // Register this module and return its id.
+    let id = ModuleId(registry.len());
+    registry.push(Arc::new(file.clone()));
+    Ok(id)
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.
@@ -306,17 +352,15 @@ pub fn eval_thir(file: &ThirFile) -> Result<Value, EvalError> {
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with resolved import values.
+///
+/// For single-file evaluation (no cross-module closures).  The file is
+/// registered as module 0 in a single-entry registry.
 pub fn eval_thir_with_imports(
     file: &ThirFile,
     imports: &HashMap<ImportKey, Value>,
 ) -> Result<Value, EvalError> {
-    let decls_by_binding: HashMap<BindingId, ThirDeclId> = file
-        .decls
-        .iter()
-        .map(|&id| (file.decl_arena[id].binding, id))
-        .collect();
-
-    let evaluator = eval::Evaluator::new(file, &decls_by_binding, imports);
+    let registry: ModuleRegistry = vec![Arc::new(file.clone())];
+    let evaluator = Evaluator::new(file, &registry, ModuleId(0), imports);
     let top = evaluator.build_top_env();
     let result = evaluator.eval(file.final_expr, &top)?;
     force_deep(result, &evaluator)

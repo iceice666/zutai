@@ -7,9 +7,9 @@
 //! descriptor (alias-expanded, arena-independent) that the importer interns
 //! into its own arena.
 //!
-//! Only self-contained *data* shapes can cross a module boundary: the current
-//! evaluator binds closures and type values to file-relative arena indices, so
-//! exporting a function or type value is refused rather than mis-evaluated.
+//! Functions and type-values cross module boundaries using home-module handles
+//! stamped by the evaluator (for closures) and denotation descriptors embedded
+//! in `ImportedType::Type` (for type aliases).  Both are now representable.
 
 use std::collections::{HashMap, HashSet};
 
@@ -113,12 +113,17 @@ fn export(
         // Parametric constructors cannot cross module boundaries unapplied; treat
         // as unknown at the import boundary (the same fallback as TypeVar).
         TypeKind::AliasApply { .. } => Ok(ImportedType::Unknown),
-        TypeKind::Function { .. } => Err(ExportUnsupported {
-            reason: "functions cannot cross module imports yet",
+        TypeKind::Function { from, to } => Ok(ImportedType::Function {
+            from: Box::new(export(file, aliases, from, seen)?),
+            to: Box::new(export(file, aliases, to, seen)?),
         }),
-        TypeKind::Type => Err(ExportUnsupported {
-            reason: "type values cannot cross module imports yet",
-        }),
+        // `Type` has no payload — the denotation is recovered separately by
+        // the semantic layer from the module's final-expression value (the
+        // `ThirExprKind::TypeValue(tid)` for that field).  Here we emit a bare
+        // `ImportedType::Type(Unknown)` as a placeholder; `resolve_zt` in the
+        // semantic crate overwrites it with the real denotation after walking
+        // the final expression.
+        TypeKind::Type => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
         TypeKind::Error => Err(ExportUnsupported {
             reason: "imported module has an unresolved type",
         }),

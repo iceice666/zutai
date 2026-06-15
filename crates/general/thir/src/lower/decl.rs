@@ -1,4 +1,4 @@
-use zutai_hir::{HirClause, HirDeclId, HirDeclKind};
+use zutai_hir::{HirClause, HirDeclId, HirDeclKind, HirExprKind};
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, Type, TypeId, TypeKind};
@@ -77,6 +77,10 @@ impl<'hir> Lowerer<'hir> {
                 annotation: Some(annotation),
                 value,
             } => {
+                // Track import-binding associations for annotation-position access.
+                if let HirExprKind::Import(source) = &self.hir_expr(*value).kind {
+                    self.binding_import_key.insert(decl.binding, source.clone());
+                }
                 let ty = self.lower_type(*annotation);
                 let value = self.check_expr(*value, ty);
                 self.value_types.insert(decl.binding, ty);
@@ -86,6 +90,10 @@ impl<'hir> Lowerer<'hir> {
                 annotation: None,
                 value,
             } => {
+                // Track import-binding associations for annotation-position access.
+                if let HirExprKind::Import(source) = &self.hir_expr(*value).kind {
+                    self.binding_import_key.insert(decl.binding, source.clone());
+                }
                 let value = self.infer_expr(*value);
                 let ty = self.expr(value).ty;
                 self.value_types.insert(decl.binding, ty);

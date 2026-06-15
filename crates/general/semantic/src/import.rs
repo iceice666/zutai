@@ -11,10 +11,9 @@
 //!   expression's exported type, and keep the analyzed sub-module so the
 //!   evaluator can evaluate it.  Import cycles are detected and reported.
 //!
-//! Only self-contained *data* can cross a module boundary — the evaluator binds
-//! closures and type values to file-relative arena indices — so a `.zt` module
-//! whose final value is (or contains) a function or type is refused here rather
-//! than mis-evaluated.
+//! Functions cross module boundaries via home-module handles stamped by the
+//! evaluator.  Type-valued fields carry their denotation in `ImportedType::Type`
+//! so annotation-position access (`x : serverLib.Server`) type-checks.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -22,7 +21,7 @@ use std::rc::Rc;
 
 use zutai_hir::{HirExprKind, HirFile, HirImportSource};
 use zutai_syntax::Span;
-use zutai_thir::{ImportKey, ImportedField, ImportedType};
+use zutai_thir::{ImportKey, ImportedField, ImportedType, ThirExprKind, ThirFile};
 
 use crate::{Analysis, AnalysisOptions};
 
@@ -263,7 +262,8 @@ impl Resolver<'_> {
             }
         };
 
-        // Type the import by exporting the module's final-expression type.
+        // Type the import by exporting the module's final-expression type,
+        // then enrich type-valued record fields with their denotations.
         let exported = {
             let Some(file) = module.thir.as_ref().and_then(|thir| thir.file.as_ref()) else {
                 return self.diag(
@@ -274,7 +274,7 @@ impl Resolver<'_> {
                 );
             };
             let final_ty = file.expr_arena[file.final_expr].ty;
-            zutai_thir::export_type(file, final_ty)
+            zutai_thir::export_type(file, final_ty).map(|ty| enrich_with_type_denotations(ty, file))
         };
 
         match exported {
@@ -374,4 +374,45 @@ fn array_element_type(items: &[zutai_im::Value]) -> ImportedType {
         1 => distinct.pop().unwrap(),
         _ => ImportedType::Union(distinct),
     }
+}
+
+/// Enrich an `ImportedType::Record`'s type-valued fields with their concrete
+/// denotations recovered from the module's final expression.
+///
+/// `export_type` converts a bare `TypeKind::Type` slot (which is payload-less)
+/// to `ImportedType::Type(Unknown)`.  This function upgrades those placeholders
+/// by walking the module's final-expression AST and — for each record field
+/// whose THIR value is a `TypeValue(tid)` — calling `export_type(file, tid)`
+/// to obtain the real denotation.
+///
+/// Non-record final expressions (scalars, functions, …) are returned as-is.
+fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedType {
+    let ImportedType::Record(mut fields) = ty else {
+        return ty;
+    };
+
+    // Inspect the final expression for TypeValue fields.
+    let final_expr = &file.expr_arena[file.final_expr];
+    let ThirExprKind::Record(thir_fields) = &final_expr.kind else {
+        return ImportedType::Record(fields);
+    };
+
+    for thir_field in thir_fields {
+        // Only enrich fields that are already `Type(Unknown)` placeholders.
+        let Some(imp_field) = fields.iter_mut().find(|f| f.name == thir_field.name) else {
+            continue;
+        };
+        if !matches!(imp_field.ty, ImportedType::Type(_)) {
+            continue;
+        }
+        // The THIR field value must be a TypeValue to carry a denotation.
+        let value_expr = &file.expr_arena[thir_field.value];
+        if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind {
+            if let Ok(denotation) = zutai_thir::export_type(file, denotation_tid) {
+                imp_field.ty = ImportedType::Type(Box::new(denotation));
+            }
+        }
+    }
+
+    ImportedType::Record(fields)
 }

@@ -1142,6 +1142,7 @@ dependencies = [
  "zutai-im",
  "zutai-syntax",
  "zutai-thir",
+ "zutai-tlc",
 ]
 
 [[package]]
@@ -1160,6 +1161,16 @@ dependencies = [
  "la-arena",
  "zutai-hir",
  "zutai-syntax",
+]
+
+[[package]]
+name = "zutai-tlc"
+version = "0.1.0"
+dependencies = [
+ "la-arena",
+ "zutai-hir",
+ "zutai-syntax",
+ "zutai-thir",
 ]
 
 [[package]]

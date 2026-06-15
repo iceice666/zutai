@@ -501,13 +501,51 @@ fn zt_import_transitive_through_zti() {
 }
 
 #[test]
-fn zt_import_function_value_is_refused() {
-    // A module whose final value is a function cannot cross the import boundary:
-    // a clean refusal, not an internal error or panic.
-    match run_import_err("f := import \"func_module.zt\"\nf") {
-        EvalError::NotRunnable(_) => {}
-        other => panic!("expected NotRunnable, got {other:?}"),
-    }
+fn zt_import_function_is_callable() {
+    // func_module.zt exports `add :: Int -> Int -> Int`.  Calling it across
+    // the module boundary must yield the correct result.
+    assert_eq!(
+        run_import("f := import \"func_module.zt\"\nf 2 3"),
+        Value::Int(5)
+    );
+}
+
+#[test]
+fn zt_import_function_partial_application() {
+    // Partially-applied cross-module function retains the correct arity.
+    assert_eq!(
+        run_import("f := import \"func_module.zt\"\n(f 10) 7"),
+        Value::Int(17)
+    );
+}
+
+#[test]
+fn zt_import_sibling_call() {
+    // sibling_module.zt: add2 calls `inc` (a sibling top-level binding in the
+    // same module).  This exercises the arena switch on BindingRef resolution.
+    assert_eq!(
+        run_import("lib := import \"sibling_module.zt\"\nlib 3"),
+        Value::Int(5)
+    );
+}
+
+#[test]
+fn zt_import_mixed_record_data_field() {
+    // mixed_module.zt exports a record with both data and function fields.
+    // Reading a data field must still work.
+    assert_eq!(
+        run_import("m := import \"mixed_module.zt\"\nm.version"),
+        Value::Int(1)
+    );
+}
+
+#[test]
+fn zt_import_mixed_record_function_call() {
+    // Calling a function field from an imported mixed record.
+    assert_eq!(
+        run_import("m := import \"mixed_module.zt\"\nm.double 21"),
+        Value::Int(42)
+    );
 }
 
 #[test]

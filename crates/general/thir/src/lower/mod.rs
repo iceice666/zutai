@@ -13,6 +13,8 @@ use crate::ir::{
     ThirDecl, ThirDeclId, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat, ThirPatId, Type,
     TypeId, TypeKind, TypeTupleItem,
 };
+
+pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
 use crate::pass::{ThirPassReport, run_default_passes};
 
 mod decl;
@@ -106,6 +108,18 @@ struct Lowerer<'hir> {
     /// on every expansion step. When it reaches zero a `TypeLevelEvalLimitExceeded`
     /// diagnostic is emitted and expansion short-circuits to the error type.
     type_eval_fuel: u32,
+    /// Maps each import-decl binding to its import source key.
+    /// Populated during `lower_decl` when the value RHS is an `Import` expr.
+    /// Used by the annotation-position `HirTypeKind::Access` arm to resolve
+    /// e.g. `serverLib` → `"server.zt"` so it can look up `import_type_denotations`.
+    pub(super) binding_import_key: BindingImportKey,
+    /// Maps `(import_source, field_name)` → concrete denotation `TypeId` for
+    /// type-valued fields exported by `.zt` modules.
+    /// Populated during `intern_imported_type_with_source` when a field's
+    /// `ImportedType` is `Type(inner)`.
+    /// Queried by the `HirTypeKind::Access` arm when the field's type is
+    /// `TypeKind::Type` and the receiver is a known import binding.
+    pub(super) import_type_denotations: HashMap<(ImportKey, String), TypeId>,
 }
 
 impl<'hir> Lowerer<'hir> {
@@ -128,6 +142,8 @@ impl<'hir> Lowerer<'hir> {
             alias_params: HashMap::new(),
             type_param_scope: HashSet::new(),
             type_eval_fuel: 10_000,
+            binding_import_key: HashMap::new(),
+            import_type_denotations: HashMap::new(),
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,

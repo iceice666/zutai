@@ -17,7 +17,12 @@ use std::rc::Rc;
 
 use zutai_thir::ThirExprId;
 
-use crate::{EvalError, env::Env, eval::Evaluator, value::Value};
+use crate::{
+    EvalError,
+    env::Env,
+    eval::Evaluator,
+    value::{ModuleId, Value},
+};
 
 /// A single lazily-evaluated expression.
 #[derive(Clone, Debug)]
@@ -28,6 +33,9 @@ pub enum ThunkState {
     Unforced {
         expr: ThirExprId,
         env: Env,
+        /// The module in whose arena `expr` lives.  `force()` switches the
+        /// evaluator to this module before evaluating.
+        home: ModuleId,
     },
     /// Set while the thunk is being evaluated; detected as a black-hole.
     InProgress,
@@ -36,8 +44,12 @@ pub enum ThunkState {
 
 impl Thunk {
     /// Create a deferred thunk (not yet evaluated).
-    pub fn deferred(expr: ThirExprId, env: Env) -> Self {
-        Thunk(Rc::new(RefCell::new(ThunkState::Unforced { expr, env })))
+    pub fn deferred(expr: ThirExprId, env: Env, home: ModuleId) -> Self {
+        Thunk(Rc::new(RefCell::new(ThunkState::Unforced {
+            expr,
+            env,
+            home,
+        })))
     }
 
     /// Create an already-forced thunk wrapping a known value.
@@ -48,6 +60,8 @@ impl Thunk {
     /// Evaluate the thunk (if not already done) and return the value.
     ///
     /// Memoises on first call.  Subsequent calls are free clones.
+    /// Evaluates against the thunk's home module so arena look-ups are correct
+    /// even when the thunk was created in a different module from the caller.
     pub fn force(&self, ev: &Evaluator<'_>) -> Result<Value, EvalError> {
         // Fast path: already forced.
         {
@@ -60,11 +74,11 @@ impl Thunk {
             }
         }
 
-        // Extract the (expr, env) pair and mark as in-progress.
-        let (expr, env) = {
+        // Extract the (expr, env, home) tuple and mark as in-progress.
+        let (expr, env, home) = {
             let mut state = self.0.borrow_mut();
             match std::mem::replace(&mut *state, ThunkState::InProgress) {
-                ThunkState::Unforced { expr, env } => (expr, env),
+                ThunkState::Unforced { expr, env, home } => (expr, env, home),
                 // Raced — shouldn't happen in single-threaded eval, but handle
                 // defensively.
                 ThunkState::InProgress => return Err(EvalError::BlackHole),
@@ -74,7 +88,8 @@ impl Thunk {
         // NOTE: borrow is dropped here before we call eval(), so there is no
         // outstanding borrow when eval() tries to force sub-expressions.
 
-        let value = ev.eval(expr, &env)?;
+        // Evaluate in the home module's arena.
+        let value = ev.for_module(home).eval(expr, &env)?;
 
         // Store the result.
         *self.0.borrow_mut() = ThunkState::Forced(value.clone());

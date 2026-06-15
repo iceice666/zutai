@@ -4,13 +4,15 @@
 //! parallel `eval_tlc.rs` will be added here reusing everything in `value`,
 //! `thunk`, and `env` unchanged.
 //!
-//! The `Evaluator` holds read-only references to the `ThirFile` arenas.  It is
-//! cheaply copyable (two references) and is passed by reference to helpers.
+//! The `Evaluator` holds a module registry (`&[ThirFile]`) plus an
+//! `active_module: ModuleId` index.  Arena helpers route through the active
+//! file.  When applying a cross-module closure, callers use `for_module(home)`
+//! to obtain a copy with the correct active file before calling `eval`.
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use zutai_hir::BindingId;
 use zutai_syntax::ast::BinOp;
 use zutai_thir::{
     ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
@@ -21,32 +23,63 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{Closure, TupleField, Value, values_equal},
+    value::{Closure, ModuleId, TupleField, Value, values_equal},
 };
 
+/// A slice of all evaluated modules for this run, keyed by position = `ModuleId`.
+pub type ModuleRegistry = Vec<Arc<ThirFile>>;
+
 /// Holds read-only access to the THIR arenas while evaluating.
+///
+/// `Evaluator` is cheaply `Copy` — it's two references plus a `usize`.
+/// Use `for_module(m)` to get a copy that operates in module `m`'s arenas.
 #[derive(Clone, Copy)]
 pub struct Evaluator<'a> {
+    /// The *active* file — arena helpers read from here.
     pub file: &'a ThirFile,
-    /// Used when looking up function declarations by their `BindingId` to build
-    /// `Closure` values at env-building time.
-    pub decls_by_binding: &'a HashMap<BindingId, ThirDeclId>,
-    /// Pre-resolved `.zti` import values, keyed by import source.  An `Import`
-    /// node evaluates by looking up its source here.
+    /// All evaluated modules in this run.  Index = `ModuleId(i).0`.
+    pub registry: &'a [Arc<ThirFile>],
+    /// Which module is currently active.  Matches `file`.
+    pub active_module: ModuleId,
+    /// Pre-resolved import values (`.zti` data + `.zt` final-expr values),
+    /// keyed by import source.  An `Import` node looks up its source here.
     pub imports: &'a HashMap<ImportKey, Value>,
 }
 
 impl<'a> Evaluator<'a> {
     pub fn new(
         file: &'a ThirFile,
-        decls_by_binding: &'a HashMap<BindingId, ThirDeclId>,
+        registry: &'a [Arc<ThirFile>],
+        active_module: ModuleId,
         imports: &'a HashMap<ImportKey, Value>,
     ) -> Self {
         Self {
             file,
-            decls_by_binding,
+            registry,
+            active_module,
             imports,
         }
+    }
+
+    /// Return a copy of this evaluator re-pointed at module `m`.
+    ///
+    /// Used by `apply_closure` and `Thunk::force` to switch arenas when
+    /// evaluating a closure or thunk that was created in a different module.
+    pub fn for_module(&self, m: ModuleId) -> Self {
+        Self {
+            file: &self.registry[m.0],
+            active_module: m,
+            registry: self.registry,
+            imports: self.imports,
+        }
+    }
+
+    /// Create a deferred thunk for `expr` in the current module.
+    ///
+    /// Stamps `home = self.active_module` so the thunk evaluates against the
+    /// correct arena regardless of which module forces it later.
+    pub fn defer(&self, expr: ThirExprId, env: Env) -> Thunk {
+        Thunk::deferred(expr, env, self.active_module)
     }
 
     // ── arena helpers ────────────────────────────────────────────────────────
@@ -91,19 +124,14 @@ impl<'a> Evaluator<'a> {
             ThirExprKind::List(items) => {
                 let thunks: Rc<[Thunk]> = items
                     .iter()
-                    .map(|&item| Thunk::deferred(item, env.clone()))
+                    .map(|&item| self.defer(item, env.clone()))
                     .collect();
                 Ok(Value::List(thunks))
             }
             ThirExprKind::Record(fields) => {
                 let vec: Vec<(Rc<str>, Thunk)> = fields
                     .iter()
-                    .map(|f| {
-                        (
-                            Rc::from(f.name.as_str()),
-                            Thunk::deferred(f.value, env.clone()),
-                        )
-                    })
+                    .map(|f| (Rc::from(f.name.as_str()), self.defer(f.value, env.clone())))
                     .collect();
                 Ok(Value::Record(Rc::new(vec)))
             }
@@ -113,11 +141,11 @@ impl<'a> Evaluator<'a> {
                     .map(|item| match item {
                         ThirTupleItem::Named { name, value, .. } => TupleField {
                             name: Some(Rc::from(name.as_str())),
-                            value: Thunk::deferred(*value, env.clone()),
+                            value: self.defer(*value, env.clone()),
                         },
                         ThirTupleItem::Positional(e) => TupleField {
                             name: None,
-                            value: Thunk::deferred(*e, env.clone()),
+                            value: self.defer(*e, env.clone()),
                         },
                     })
                     .collect();
@@ -130,7 +158,7 @@ impl<'a> Evaluator<'a> {
                 for local in bindings {
                     // Each local captures the env extended so far (sequential
                     // scoping, matching lower_block_expr).
-                    let thunk = Thunk::deferred(local.value, child.clone());
+                    let thunk = self.defer(local.value, child.clone());
                     child.insert(local.binding, thunk);
                 }
                 self.eval(*result, &child)
@@ -184,7 +212,9 @@ impl<'a> Evaluator<'a> {
                 match fv {
                     Value::Closure(c) => {
                         let mut applied = c.applied.clone();
-                        applied.push(Thunk::deferred(*arg, env.clone()));
+                        // The arg is evaluated in the *caller's* module (this
+                        // evaluator's active_module), not in the closure's home.
+                        applied.push(self.defer(*arg, env.clone()));
                         if applied.len() < c.arity {
                             // Partial application — return a new closure.
                             Ok(Value::Closure(Rc::new(Closure {
@@ -193,6 +223,7 @@ impl<'a> Evaluator<'a> {
                                 clauses: c.clauses.clone(),
                                 env: c.env.clone(),
                                 applied,
+                                home: c.home,
                             })))
                         } else {
                             // All arguments present — try each clause.
@@ -220,6 +251,7 @@ impl<'a> Evaluator<'a> {
                     clauses: Rc::from([clause]),
                     env: env.clone(),
                     applied: Vec::new(),
+                    home: self.active_module,
                 };
                 Ok(Value::Closure(Rc::new(closure)))
             }
@@ -378,13 +410,18 @@ impl<'a> Evaluator<'a> {
     // ── clause / pattern matching ─────────────────────────────────────────────
 
     /// Try all clauses of `closure` with the given argument thunks.
+    ///
+    /// Switches to the closure's home module before evaluating clause bodies
+    /// and guards so arena look-ups (`expr_arena`, `pat_arena`) hit the file
+    /// where the clause was originally lowered.
     fn apply_closure(&self, closure: &Closure, args: Vec<Thunk>) -> Result<Value, EvalError> {
+        let home_ev = self.for_module(closure.home);
         for clause in closure.clauses.iter() {
             let mut child = closure.env.push_frame();
-            if self.match_all_patterns(&clause.patterns, &args, &mut child)? {
-                // Check guard (if any).
+            if home_ev.match_all_patterns(&clause.patterns, &args, &mut child)? {
+                // Check guard (if any) in the home module.
                 if let Some(guard_id) = clause.guard {
-                    match self.eval(guard_id, &child)? {
+                    match home_ev.eval(guard_id, &child)? {
                         Value::Bool(true) => {}
                         Value::Bool(false) => continue,
                         other => {
@@ -395,7 +432,7 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                 }
-                return self.eval(clause.body, &child);
+                return home_ev.eval(clause.body, &child);
             }
         }
         Err(EvalError::NoMatchingClause)
@@ -540,8 +577,9 @@ impl<'a> Evaluator<'a> {
             let decl = self.decl(decl_id);
             match &decl.kind {
                 ThirDeclKind::Value { value, .. } => {
-                    // Deferred thunk — captures `top` (letrec).
-                    let thunk = Thunk::deferred(*value, top.clone());
+                    // Deferred thunk stamped with this module so it evaluates
+                    // against the correct arenas when forced.
+                    let thunk = self.defer(*value, top.clone());
                     top.insert(decl.binding, thunk);
                 }
                 ThirDeclKind::Function { clauses, .. } => {
@@ -552,6 +590,7 @@ impl<'a> Evaluator<'a> {
                         clauses: clauses.as_slice().into(),
                         env: top.clone(),
                         applied: Vec::new(),
+                        home: self.active_module,
                     };
                     // Functions are pre-evaluated to closures.
                     top.insert(decl.binding, Thunk::ready(Value::Closure(Rc::new(closure))));

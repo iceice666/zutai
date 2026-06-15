@@ -432,14 +432,15 @@ mod tests {
     }
 
     #[test]
-    fn zt_import_function_module_is_refused() {
+    fn zt_import_function_module_completes() {
+        // func_module.zt exports a function; the import must now succeed and
+        // produce a complete THIR (no UnsupportedExport diagnostic).
         let analysis = analyze_in_imports("f := import \"func_module.zt\"\nf");
-        assert!(!analysis.is_thir_complete());
-        assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
-            &diagnostic.kind,
-            SemanticDiagnosticKind::Import(import)
-                if matches!(import.kind, ImportDiagnosticKind::UnsupportedExport { .. })
-        )));
+        assert!(
+            analysis.is_thir_complete(),
+            "expected complete THIR, got diagnostics: {:?}",
+            analysis.diagnostics
+        );
     }
 
     #[test]

@@ -65,13 +65,8 @@ impl<'thir> Lowerer<'thir> {
         for &v in scheme_vars.iter().rev() {
             let tyvar = self.inferred_tyvar(v);
             current_ty = self.alloc_type(TlcType::ForAll(tyvar, current_ty));
-            let span = self
-                .spans
-                .get(&inner_body)
-                .copied()
-                .unwrap_or_default();
-            current_body =
-                self.alloc_expr(TlcExpr::TyLam(tyvar, current_body), current_ty, span);
+            let span = self.spans.get(&inner_body).copied().unwrap_or_default();
+            current_body = self.alloc_expr(TlcExpr::TyLam(tyvar, current_body), current_ty, span);
         }
         (current_ty, current_body)
     }
