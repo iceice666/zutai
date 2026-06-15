@@ -232,32 +232,33 @@ fn parse_type_union_inner(input: &mut &str) -> Result<Vec<TypeExpr>> {
 
 // ---------------------------------------------------------------------------
 // Type tuple: `()` or `(item, item, ...)`
+// A single positional element with no comma — `(T)` — is a grouped/parenthesized
+// type and is unwrapped to the inner type directly (per spec). A single *named*
+// element `(field : T)` is kept as a 1-element Tuple.
 // ---------------------------------------------------------------------------
 
-fn parse_type_tuple(input: &mut &str) -> Result<TypeExpr> {
-    let (items, span) = spanned(parse_type_tuple_inner).parse_next(input)?;
-    Ok(TypeExpr::Tuple { items, span })
-}
-
-fn parse_type_tuple_inner(input: &mut &str) -> Result<Vec<TypeTupleItem>> {
+/// Inner result from parsing the contents of a `(...)` type:
+///   - the item list
+///   - whether a comma separator was seen (determines group-vs-tuple)
+fn parse_type_tuple_inner(input: &mut &str) -> Result<(Vec<TypeTupleItem>, bool)> {
     '('.parse_next(input)?;
     let _guard = enter_delimiter();
     ws(input)?;
 
     if input.starts_with(')') {
         ')'.parse_next(input)?;
-        return Ok(vec![]);
+        return Ok((vec![], false));
     }
 
     let first = parse_type_tuple_item(input)?;
     ws(input)?;
 
     if !input.starts_with(',') {
-        // Single item without comma — treat as a grouped type, not a tuple type.
-        // Actually per spec, a single-element (no comma) parenthesized type IS a
-        // group. We succeed here but caller might wrap differently; return one item.
+        // No comma: single-item parens.  Per spec, a single *positional* item
+        // in parens is a grouped type (not a tuple).  A single *named* item
+        // has no group meaning and is kept as a 1-element tuple.
         ')'.parse_next(input)?;
-        return Ok(vec![first]);
+        return Ok((vec![first], false));
     }
 
     let mut items = vec![first];
@@ -272,7 +273,23 @@ fn parse_type_tuple_inner(input: &mut &str) -> Result<Vec<TypeTupleItem>> {
     }
     ws(input)?;
     ')'.parse_next(input)?;
-    Ok(items)
+    Ok((items, true))
+}
+
+fn parse_type_tuple(input: &mut &str) -> Result<TypeExpr> {
+    let ((items, comma_seen), span) = spanned(parse_type_tuple_inner).parse_next(input)?;
+
+    // Single positional item with no comma: `(T)` — a grouped/parenthesized
+    // type.  Unwrap to the inner type; the parens are pure grouping.
+    if !comma_seen && matches!(items.as_slice(), [TypeTupleItem::Positional(_)]) {
+        let TypeTupleItem::Positional(inner) = items.into_iter().next().expect("checked above")
+        else {
+            unreachable!()
+        };
+        return Ok(inner);
+    }
+
+    Ok(TypeExpr::Tuple { items, span })
 }
 
 fn parse_type_tuple_item(input: &mut &str) -> Result<TypeTupleItem> {

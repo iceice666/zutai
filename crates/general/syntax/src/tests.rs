@@ -718,6 +718,86 @@ fn parse_single_colon_binding_rejected() {
 }
 
 // ---------------------------------------------------------------------------
+// Type-grouping / parenthesized-type tests (Fix A)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn single_positional_type_paren_is_arrow_not_tuple() {
+    // `(Int -> Int) -> Int -> Int` — the `(Int -> Int)` in the first position
+    // should be an Arrow type, not a 1-element Tuple.
+    let file = parse_str("f :: (Int -> Int) -> Int -> Int { | x => x; }\nf");
+    let decl = decl_by(&file, "f");
+    let (_, _, sig, _) = as_function(decl);
+    // Top-level sig is `Arrow { from: (Int -> Int), to: (Int -> Int) }`.
+    // After the fix, `from` must be TypeExpr::Arrow, never TypeExpr::Tuple.
+    let TypeExpr::Arrow { from, .. } = sig else {
+        panic!("expected Arrow sig, got {sig:?}");
+    };
+    assert!(
+        matches!(from.as_ref(), TypeExpr::Arrow { .. }),
+        "expected from-type to be Arrow (grouped type), got {:?}",
+        from
+    );
+}
+
+#[test]
+fn optional_of_grouped_arrow_type_is_optional_arrow() {
+    // `(Int -> Int)?` — the inner type should be Arrow, not a 1-element Tuple.
+    let file = parse_str("T :: type { fn? : (Int -> Int)?; }\nT");
+    let decl = decl_by(&file, "T");
+    let (_, _, ty) = as_alias(decl);
+    // Find the field type inside the record.
+    let TypeExpr::Record { fields, .. } = ty else {
+        panic!("expected Record alias, got {ty:?}");
+    };
+    let field = fields
+        .iter()
+        .find(|f| f.name == "fn")
+        .expect("field `fn` not found");
+    // Field type is `(Int -> Int)?` = Optional(Arrow(..))
+    let TypeExpr::Optional { inner, .. } = &field.ty else {
+        panic!("expected Optional field type, got {:?}", field.ty);
+    };
+    assert!(
+        matches!(inner.as_ref(), TypeExpr::Arrow { .. }),
+        "expected Arrow inside Optional, got {:?}",
+        inner
+    );
+}
+
+#[test]
+fn two_element_paren_type_is_tuple() {
+    // `(Int, Text)` must still be a 2-element Tuple.
+    let file = parse_str("f :: (Int, Text) -> Int { | _ => 0; }\nf");
+    let decl = decl_by(&file, "f");
+    let (_, _, sig, _) = as_function(decl);
+    let TypeExpr::Arrow { from, .. } = sig else {
+        panic!("expected Arrow sig, got {sig:?}");
+    };
+    assert!(
+        matches!(from.as_ref(), TypeExpr::Tuple { items, .. } if items.len() == 2),
+        "expected 2-element Tuple, got {:?}",
+        from
+    );
+}
+
+#[test]
+fn empty_type_paren_is_empty_tuple() {
+    // `()` must still be an empty Tuple (unit type).
+    let file = parse_str("f :: () -> Int { | _ => 0; }\nf");
+    let decl = decl_by(&file, "f");
+    let (_, _, sig, _) = as_function(decl);
+    let TypeExpr::Arrow { from, .. } = sig else {
+        panic!("expected Arrow sig, got {sig:?}");
+    };
+    assert!(
+        matches!(from.as_ref(), TypeExpr::Tuple { items, .. } if items.is_empty()),
+        "expected empty Tuple, got {:?}",
+        from
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Fixture smoke test (M1)
 // ---------------------------------------------------------------------------
 
@@ -726,6 +806,12 @@ const VALID_CURSED_DISAMBIGUATION: &str =
     include_str!("../../fixtures/valid/cursed_disambiguation.zt");
 const VALID_CURSED_OPERATORS: &str = include_str!("../../fixtures/valid/cursed_operators.zt");
 const VALID_CURSED_PATTERNS: &str = include_str!("../../fixtures/valid/cursed_patterns.zt");
+const VALID_HIGHER_ORDER_FUNCTIONS: &str =
+    include_str!("../../fixtures/valid/higher_order_functions.zt");
+const VALID_DEEP_OPTIONALS: &str = include_str!("../../fixtures/valid/deep_optionals.zt");
+const VALID_GENERIC_ALIASES: &str = include_str!("../../fixtures/valid/generic_aliases.zt");
+const VALID_NESTED_MATCH: &str = include_str!("../../fixtures/valid/nested_match.zt");
+const VALID_LARGE_PROGRAM: &str = include_str!("../../fixtures/valid/large_program.zt");
 const INVALID_CHAINED_COMPARISON: &str =
     include_str!("../../fixtures/invalid/chained_comparison.zt");
 const INVALID_LAMBDA_ARROW: &str = include_str!("../../fixtures/invalid/lambda_arrow.zt");
@@ -740,6 +826,9 @@ const INVALID_RECORD_FIELD_COLON: &str =
 const INVALID_TOP_LEVEL_SINGLE_COLON: &str =
     include_str!("../../fixtures/invalid/top_level_single_colon.zt");
 const INVALID_TYPE_FIELD_EQUALS: &str = include_str!("../../fixtures/invalid/type_field_equals.zt");
+const INVALID_UNCLOSED_RECORD: &str = include_str!("../../fixtures/invalid/unclosed_record.zt");
+const INVALID_UNCLOSED_LIST: &str = include_str!("../../fixtures/invalid/unclosed_list.zt");
+const INVALID_TRAILING_OPERATOR: &str = include_str!("../../fixtures/invalid/trailing_operator.zt");
 
 #[test]
 fn parse_expr_core_fixture() {
@@ -755,6 +844,14 @@ fn parse_cursed_fixture_variants() {
         ),
         ("valid/cursed_operators.zt", VALID_CURSED_OPERATORS),
         ("valid/cursed_patterns.zt", VALID_CURSED_PATTERNS),
+        (
+            "valid/higher_order_functions.zt",
+            VALID_HIGHER_ORDER_FUNCTIONS,
+        ),
+        ("valid/deep_optionals.zt", VALID_DEEP_OPTIONALS),
+        ("valid/generic_aliases.zt", VALID_GENERIC_ALIASES),
+        ("valid/nested_match.zt", VALID_NESTED_MATCH),
+        ("valid/large_program.zt", VALID_LARGE_PROGRAM),
     ] {
         let parsed = parse(src);
         if parsed.ast().is_none() {
@@ -789,6 +886,9 @@ fn reject_invalid_fixture_variants() {
             INVALID_TOP_LEVEL_SINGLE_COLON,
         ),
         ("invalid/type_field_equals.zt", INVALID_TYPE_FIELD_EQUALS),
+        ("invalid/unclosed_record.zt", INVALID_UNCLOSED_RECORD),
+        ("invalid/unclosed_list.zt", INVALID_UNCLOSED_LIST),
+        ("invalid/trailing_operator.zt", INVALID_TRAILING_OPERATOR),
     ] {
         assert!(parse(src).has_errors(), "{name} parsed successfully");
     }
@@ -841,6 +941,16 @@ fn invalid_fixtures_report_specific_error_kinds() {
             "invalid/type_field_equals.zt",
             INVALID_TYPE_FIELD_EQUALS,
             ParseErrorKind::TypeRecordFieldUsesEquals,
+        ),
+        (
+            "invalid/unclosed_record.zt",
+            INVALID_UNCLOSED_RECORD,
+            ParseErrorKind::UnclosedDelimiter('{'),
+        ),
+        (
+            "invalid/unclosed_list.zt",
+            INVALID_UNCLOSED_LIST,
+            ParseErrorKind::UnclosedDelimiter('['),
         ),
     ] {
         let kinds = parse_kinds(src);

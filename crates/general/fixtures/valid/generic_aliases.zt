@@ -1,0 +1,57 @@
+-- generic_aliases.zt: Parametric type aliases and generic functions.
+
+Pair :: <A, B> type {
+  first : A;
+  second : B;
+}
+
+Box :: <A> type {
+  value : A;
+}
+
+Either :: <A, B> type [
+  (#left, value : A);
+  (#right, value : B);
+]
+
+fst :: <A, B> Pair A B -> A {
+  | p => p.first;
+}
+
+snd :: <A, B> Pair A B -> B {
+  | p => p.second;
+}
+
+swap :: <A, B> Pair A B -> Pair B A {
+  | p => { first = p.second; second = p.first; };
+}
+
+unbox :: <A> Box A -> A {
+  | b => b.value;
+}
+
+mapBox :: <A, B> (A -> B) -> Box A -> Box B {
+  | f b => { value = f b.value; };
+}
+
+isLeft :: <A, B> Either A B -> Bool {
+  | (#left, value = _) => true;
+  | (#right, value = _) => false;
+}
+
+{
+  int-pair    = { first = 1; second = 2; };
+  str-pair    = { first = "hello"; second = "world"; };
+  mixed-pair  = { first = 42; second = true; };
+  boxed-int   = { value = 100; };
+  boxed-text  = { value = "wrapped"; };
+  left-val    = (#left, value = 1);
+  right-val   = (#right, value = "ok");
+  x           = fst int-pair;
+  y           = snd str-pair;
+  swapped     = swap int-pair;
+  raw         = unbox boxed-int;
+  doubled-box = mapBox (\n. n * 2) { value = 5; };
+  is-left     = isLeft left-val;
+  is-right    = isLeft right-val;
+}

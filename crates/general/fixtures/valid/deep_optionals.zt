@@ -1,0 +1,49 @@
+-- deep_optionals.zt: Optional fields, null-coalescing, and optional types.
+
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+Config :: type {
+  server? : Server;
+  retries? : Int;
+  label? : Text;
+}
+
+defaultHost :: Config -> Text {
+  | c => c.server?.host ?? "localhost";
+}
+
+defaultPort :: Config -> Int {
+  | c => c.server?.port ?? 8080;
+}
+
+withRetries :: Config -> Int {
+  | c => c.retries ?? 3;
+}
+
+withLabel :: Config -> Text {
+  | c => c.label ?? "none";
+}
+
+orZero :: Int? -> Int {
+  | n => n ?? 0;
+}
+
+{
+  cfg = {
+    server = #none;
+    retries = #none;
+    label = #none;
+  };
+  host1     = defaultHost cfg;
+  port1     = defaultPort cfg;
+  retries1  = withRetries cfg;
+  label1    = withLabel cfg;
+  zero1     = orZero #none;
+  some1     = orZero (#some, value = 7);
+  coalesce1 = #none ?? (#some, value = 42);
+  chain1    = cfg.server?.host ?? "fallback";
+  chain2    = cfg.server?.port ?? 0;
+}

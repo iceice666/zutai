@@ -330,9 +330,22 @@ impl<'hir> Lowerer<'hir> {
         ty: TypeId,
         span: Span,
     ) -> Option<(TypeId, TypeId)> {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        // First resolve named aliases, then chase any InferVar substitutions.
+        let alias_resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve(alias_resolved);
         match self.ty(resolved).kind {
             TypeKind::Function { from, to } => Some((from, to)),
+            // For an unsolved InferVar, mint a fresh arrow and unify to bind it.
+            TypeKind::InferVar(_) => {
+                let from = self.fresh_infer_var(span);
+                let to = self.fresh_infer_var(span);
+                let arrow = self.alloc_type(Type {
+                    kind: TypeKind::Function { from, to },
+                    span,
+                });
+                self.unify(resolved, arrow, span);
+                Some((from, to))
+            }
             _ => None,
         }
     }
