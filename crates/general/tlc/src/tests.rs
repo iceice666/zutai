@@ -46,3 +46,32 @@ fn monomorphic_int_binding_translates_type() {
     };
     assert_eq!(m.type_arena[*ty], crate::TlcType::Prim(crate::PrimTy::Int));
 }
+
+#[test]
+fn int_literal_final_expr_no_decls() {
+    let m = tlc_of("42");
+    assert_eq!(m.decls.len(), 0);
+}
+
+#[test]
+fn annotated_value_decl_lowers_correctly() {
+    let m = tlc_of("x :: Int = 42\nx");
+    assert_eq!(m.decls.len(), 1);
+    let decl = &m.decl_arena[m.decls[0]];
+    let crate::TlcDecl::Value { ty, body, .. } = decl else { panic!("expected Value decl") };
+    assert_eq!(m.type_arena[*ty], crate::TlcType::Prim(crate::PrimTy::Int));
+    assert_eq!(m.expr_arena[*body], crate::TlcExpr::Lit(crate::Literal::Int(42)));
+}
+
+#[test]
+fn type_alias_decl_lowers_correctly() {
+    let m = tlc_of("Point :: type { x : Int; y : Int; }\nPoint");
+    assert_eq!(m.decls.len(), 1);
+    assert!(matches!(m.decl_arena[m.decls[0]], crate::TlcDecl::TypeAlias { .. }));
+}
+
+#[test]
+fn bool_literal_no_crash() {
+    let m = tlc_of("true");
+    assert_eq!(m.decls.len(), 0);
+}
