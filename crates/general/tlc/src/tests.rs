@@ -13,3 +13,17 @@ fn tlc_of(src: &str) -> TlcModule {
     );
     lower_thir(thir.file.as_ref().expect("thir file should be complete"))
 }
+
+#[test]
+fn tlc_module_is_constructible() {
+    use std::collections::HashMap;
+    use la_arena::Arena;
+    let _m = TlcModule {
+        decls: Vec::new(),
+        decl_arena: Arena::new(),
+        expr_arena: Arena::new(),
+        type_arena: Arena::new(),
+        expr_types: HashMap::new(),
+        spans: HashMap::new(),
+    };
+}
