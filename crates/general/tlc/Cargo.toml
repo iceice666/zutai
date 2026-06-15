@@ -1,0 +1,11 @@
+[package]
+name = "zutai-tlc"
+description = "Type Lambda Calculus IR and THIR→TLC lowering pass for Zutai."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+la-arena = "0.3"
+zutai-hir = { path = "../hir" }
+zutai-syntax = { path = "../syntax" }
+zutai-thir = { path = "../thir" }
