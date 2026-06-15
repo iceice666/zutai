@@ -58,20 +58,118 @@ fn annotated_value_decl_lowers_correctly() {
     let m = tlc_of("x :: Int = 42\nx");
     assert_eq!(m.decls.len(), 1);
     let decl = &m.decl_arena[m.decls[0]];
-    let crate::TlcDecl::Value { ty, body, .. } = decl else { panic!("expected Value decl") };
+    let crate::TlcDecl::Value { ty, body, .. } = decl else {
+        panic!("expected Value decl")
+    };
     assert_eq!(m.type_arena[*ty], crate::TlcType::Prim(crate::PrimTy::Int));
-    assert_eq!(m.expr_arena[*body], crate::TlcExpr::Lit(crate::Literal::Int(42)));
+    assert_eq!(
+        m.expr_arena[*body],
+        crate::TlcExpr::Lit(crate::Literal::Int(42))
+    );
 }
 
 #[test]
 fn type_alias_decl_lowers_correctly() {
     let m = tlc_of("Point :: type { x : Int; y : Int; }\nPoint");
     assert_eq!(m.decls.len(), 1);
-    assert!(matches!(m.decl_arena[m.decls[0]], crate::TlcDecl::TypeAlias { .. }));
+    assert!(matches!(
+        m.decl_arena[m.decls[0]],
+        crate::TlcDecl::TypeAlias { .. }
+    ));
 }
 
 #[test]
 fn bool_literal_no_crash() {
     let m = tlc_of("true");
     assert_eq!(m.decls.len(), 0);
+}
+
+#[test]
+fn monomorphic_identity_function_lowers_to_lam() {
+    // Explicitly typed: no generalization
+    let m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    assert_eq!(m.decls.len(), 1);
+    let crate::TlcDecl::Value { body, ty, .. } = &m.decl_arena[m.decls[0]] else {
+        panic!("expected Value decl")
+    };
+    // Type should be Fun(Int, Int), not ForAll.
+    assert!(
+        matches!(m.type_arena[*ty], crate::TlcType::Fun(_, _)),
+        "expected Fun type but got {:?}",
+        m.type_arena[*ty]
+    );
+    // Body should be a Lam (possibly through TyApp wrappers — walk to innermost).
+    fn innermost(m: &crate::TlcModule, id: crate::TlcExprId) -> &crate::TlcExpr {
+        match &m.expr_arena[id] {
+            crate::TlcExpr::TyApp(inner, _) => innermost(m, *inner),
+            e => e,
+        }
+    }
+    assert!(
+        matches!(innermost(&m, *body), crate::TlcExpr::Lam(_, _, _)),
+        "expected Lam body but got {:?}",
+        innermost(&m, *body)
+    );
+}
+
+#[test]
+fn polymorphic_identity_gets_tylam_and_forall() {
+    // No annotation → HM generalizes to ∀a. a → a
+    let m = tlc_of("id x = x\nid 42");
+    assert_eq!(m.decls.len(), 1);
+    let crate::TlcDecl::Value { body, ty, .. } = &m.decl_arena[m.decls[0]] else {
+        panic!("expected Value decl")
+    };
+    assert!(
+        matches!(m.type_arena[*ty], crate::TlcType::ForAll(_, _)),
+        "expected ForAll but got {:?}",
+        m.type_arena[*ty]
+    );
+    assert!(
+        matches!(m.expr_arena[*body], crate::TlcExpr::TyLam(_, _)),
+        "expected TyLam but got {:?}",
+        m.expr_arena[*body]
+    );
+}
+
+#[test]
+fn if_desugars_to_case() {
+    let m = tlc_of("f x = if x then 1 else 2\nf true");
+    let has_case = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, crate::TlcExpr::Case(_, _)));
+    assert!(has_case, "expected a Case node from If desugaring");
+}
+
+#[test]
+fn block_desugars_to_let() {
+    let m = tlc_of("f x = { n := 42; n }\nf 0");
+    let has_let = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, crate::TlcExpr::Let { .. }));
+    assert!(has_let, "expected a Let node from Block desugaring");
+}
+
+#[test]
+fn binary_op_lowers_to_builtin() {
+    let m = tlc_of("f x y = x + y\nf 1 2");
+    let has_builtin = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, crate::TlcExpr::Builtin(crate::BuiltinOp::Add, _, _)));
+    assert!(has_builtin, "expected Builtin(Add) from binary + op");
+}
+
+#[test]
+fn invariant_every_expr_has_type_entry() {
+    let m = tlc_of("add x y = x + y\nadd 1 2");
+    for (id, _) in m.expr_arena.iter() {
+        assert!(
+            m.expr_types.contains_key(&id),
+            "expr {:?} missing from expr_types",
+            id
+        );
+    }
 }
