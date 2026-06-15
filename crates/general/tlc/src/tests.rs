@@ -2,9 +2,17 @@ use crate::*;
 
 fn tlc_of(src: &str) -> TlcModule {
     let parsed = zutai_syntax::parse(src);
-    assert!(!parsed.has_errors(), "parse errors: {:?}", parsed.diagnostics());
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
     let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
-    assert!(hir.diagnostics.is_empty(), "hir errors: {:?}", hir.diagnostics);
+    assert!(
+        hir.diagnostics.is_empty(),
+        "hir errors: {:?}",
+        hir.diagnostics
+    );
     let thir = zutai_thir::lower_hir(&hir.file);
     assert!(
         thir.diagnostics.is_empty(),
@@ -16,8 +24,8 @@ fn tlc_of(src: &str) -> TlcModule {
 
 #[test]
 fn tlc_module_is_constructible() {
-    use std::collections::HashMap;
     use la_arena::Arena;
+    use std::collections::HashMap;
     let _m = TlcModule {
         decls: Vec::new(),
         decl_arena: Arena::new(),
@@ -26,4 +34,15 @@ fn tlc_module_is_constructible() {
         expr_types: HashMap::new(),
         spans: HashMap::new(),
     };
+}
+
+#[test]
+fn monomorphic_int_binding_translates_type() {
+    let m = tlc_of("x := 42\nx");
+    assert_eq!(m.decls.len(), 1);
+    let decl = &m.decl_arena[m.decls[0]];
+    let crate::TlcDecl::Value { ty, .. } = decl else {
+        panic!("expected Value decl")
+    };
+    assert_eq!(m.type_arena[*ty], crate::TlcType::Prim(crate::PrimTy::Int));
 }
