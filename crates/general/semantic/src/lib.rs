@@ -30,6 +30,8 @@ pub struct Analysis {
     /// Analyzed `.zt` sub-modules, keyed by import source, for the evaluator to
     /// evaluate recursively.
     pub import_modules: HashMap<zutai_thir::ImportKey, Rc<Analysis>>,
+    /// TLC module produced by lowering THIR; `None` when THIR is incomplete.
+    pub tlc: Option<zutai_tlc::TlcModule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +163,7 @@ pub(crate) fn analyze_inner(
             pass_reports: Vec::new(),
             import_values: HashMap::new(),
             import_modules: HashMap::new(),
+            tlc: None,
         };
     }
 
@@ -173,6 +176,7 @@ pub(crate) fn analyze_inner(
             pass_reports: Vec::new(),
             import_values: HashMap::new(),
             import_modules: HashMap::new(),
+            tlc: None,
         };
     };
 
@@ -248,6 +252,11 @@ pub(crate) fn analyze_inner(
             None
         };
 
+    let tlc = thir
+        .as_ref()
+        .and_then(|t| t.file.as_ref())
+        .map(|file| zutai_tlc::lower_thir(file));
+
     Analysis {
         ast: Some(ast),
         hir: Some(hir),
@@ -256,6 +265,7 @@ pub(crate) fn analyze_inner(
         pass_reports,
         import_values,
         import_modules,
+        tlc,
     }
 }
 
@@ -468,5 +478,25 @@ mod tests {
         // Heterogeneous `.zti` array → `List(Union(...))`.
         let analysis = analyze_in_imports("cfg := import \"mixed_list.zti\"\ncfg");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    }
+
+    #[test]
+    fn tlc_is_some_for_complete_thir() {
+        let analysis = analyze("x := 42\nx");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.tlc.is_some(),
+            "expected TLC module for complete program"
+        );
+    }
+
+    #[test]
+    fn tlc_is_none_for_type_error() {
+        let analysis = analyze("x :: Int = \"bad\"\nx");
+        assert!(!analysis.is_thir_complete());
+        assert!(
+            analysis.tlc.is_none(),
+            "expected no TLC module for type-error program"
+        );
     }
 }
