@@ -61,6 +61,14 @@ pub enum ThirDiagnosticKind {
     AliasCycle {
         name: String,
     },
+    /// A parametric type constructor was applied to the wrong number of arguments.
+    TypeConstructorArityMismatch {
+        name: String,
+        expected: usize,
+        found: usize,
+    },
+    /// Type-level alias expansion exceeded the deterministic evaluation budget.
+    TypeLevelEvalLimitExceeded,
     ValueTypeUnavailable {
         name: String,
     },

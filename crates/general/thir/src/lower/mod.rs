@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use la_arena::Arena;
 use zutai_hir::{
@@ -36,6 +36,10 @@ pub struct ThirLowerOptions {
     /// layer (which owns filesystem access); empty when lowering with no module
     /// context, in which case every `import` becomes an unsupported `Error` node.
     pub imports: HashMap<ImportKey, ImportedType>,
+    /// Override the type-level alias expansion fuel budget.  `None` uses the
+    /// default (10 000 steps).  Set to a small value in tests to trigger the
+    /// `TypeLevelEvalLimitExceeded` diagnostic deterministically.
+    pub type_eval_fuel: Option<u32>,
 }
 
 impl Default for ThirLowerOptions {
@@ -43,6 +47,7 @@ impl Default for ThirLowerOptions {
         Self {
             run_passes: true,
             imports: HashMap::new(),
+            type_eval_fuel: None,
         }
     }
 }
@@ -55,8 +60,12 @@ pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptio
     let ThirLowerOptions {
         run_passes,
         imports,
+        type_eval_fuel,
     } = options;
     let mut lowerer = Lowerer::new(file, imports);
+    if let Some(fuel) = type_eval_fuel {
+        lowerer.type_eval_fuel = fuel;
+    }
     let mut lowered = lowerer.lower_file();
     if run_passes {
         lowered.pass_reports = run_default_passes(&mut lowered.file, &mut lowered.diagnostics);
@@ -84,6 +93,19 @@ struct Lowerer<'hir> {
     /// Bindings absent here are monomorphic (used at a single type, or shared with
     /// the surrounding environment).
     poly_schemes: HashMap<BindingId, Vec<u32>>,
+    /// Params of each parametric type constructor (generic alias or type-level
+    /// function), keyed by binding. Presence marks the binding as a parametric
+    /// constructor applied via `AliasApply` at use sites.
+    alias_params: HashMap<BindingId, Vec<BindingId>>,
+    /// Bindings currently in scope as type-variable substitution targets while
+    /// lowering a type-level function's body. Populated transiently during
+    /// `lower_decl` for type-level functions so that `Param` bindings used in
+    /// a type expression map to `TypeKind::TypeVar` instead of erroring.
+    type_param_scope: HashSet<BindingId>,
+    /// Total type-level alias expansion budget. Decremented in `resolve_alias`
+    /// on every expansion step. When it reaches zero a `TypeLevelEvalLimitExceeded`
+    /// diagnostic is emitted and expansion short-circuits to the error type.
+    type_eval_fuel: u32,
 }
 
 impl<'hir> Lowerer<'hir> {
@@ -103,6 +125,9 @@ impl<'hir> Lowerer<'hir> {
             next_infer_var: 0,
             infer_subst: HashMap::new(),
             poly_schemes: HashMap::new(),
+            alias_params: HashMap::new(),
+            type_param_scope: HashSet::new(),
+            type_eval_fuel: 10_000,
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,

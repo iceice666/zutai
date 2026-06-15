@@ -104,23 +104,77 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn lower_type_apply(&mut self, func: HirTypeId, arg: HirTypeId, span: Span) -> TypeId {
-        let func_ty = self.hir_type(func);
-        let arg = self.lower_type(arg);
-        let HirTypeKind::BindingRef(binding) = func_ty.kind else {
-            return self.invalid_type("only built-in type constructors are supported yet", span);
-        };
-        let name = &self.hir.bindings[binding.0 as usize].name;
-        match name.as_str() {
-            "List" => self.alloc_type(Type {
-                kind: TypeKind::List(arg),
-                span,
-            }),
-            "Optional" => self.optional_type(arg, span),
-            _ => self.invalid_type("generic type application is not supported yet", span),
+        // Walk the left-nested Apply spine to collect head + all args left-to-right.
+        let mut args = vec![self.lower_type(arg)];
+        let mut head = func;
+        loop {
+            let head_kind = self.hir_type(head).kind.clone();
+            match head_kind {
+                HirTypeKind::Apply { func: f, arg: a } => {
+                    args.push(self.lower_type(a));
+                    head = f;
+                }
+                _ => break,
+            }
         }
+        args.reverse();
+
+        let HirTypeKind::BindingRef(binding) = self.hir_type(head).kind else {
+            return self.invalid_type("only named type constructors can be applied", span);
+        };
+
+        // Built-in single-arg constructors keep existing handling.
+        let name = self.hir.bindings[binding.0 as usize].name.clone();
+        match name.as_str() {
+            "List" if args.len() == 1 => {
+                return self.alloc_type(Type {
+                    kind: TypeKind::List(args[0]),
+                    span,
+                });
+            }
+            "Optional" if args.len() == 1 => return self.optional_type(args[0], span),
+            _ => {}
+        }
+
+        // Generic alias or type-level function: arity-check and build a lazy
+        // AliasApply node. Expansion happens on demand in resolve_alias.
+        if let Some(params) = self.alias_params.get(&binding).cloned() {
+            if params.len() != args.len() {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                        name,
+                        expected: params.len(),
+                        found: args.len(),
+                    },
+                    span,
+                });
+                return self.error_type;
+            }
+            return self.alloc_type(Type {
+                kind: TypeKind::AliasApply { binding, args },
+                span,
+            });
+        }
+
+        self.invalid_type("type is not a parametric constructor", span)
     }
 
     fn alias_or_builtin_type(&mut self, binding: BindingId, span: Span) -> TypeId {
+        // A bare reference to a parametric constructor (without application) is
+        // a zero-argument arity error. Check before the binding-kind match so
+        // both TopType and TopFunction aliases can be caught here.
+        if let Some(params) = self.alias_params.get(&binding).cloned() {
+            let name = self.hir.bindings[binding.0 as usize].name.clone();
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                    name,
+                    expected: params.len(),
+                    found: 0,
+                },
+                span,
+            });
+            return self.error_type;
+        }
         let binding_info = &self.hir.bindings[binding.0 as usize];
         match binding_info.kind {
             BindingKind::BuiltinType => self
@@ -131,6 +185,15 @@ impl<'hir> Lowerer<'hir> {
                 kind: TypeKind::TypeVar(binding),
                 span,
             }),
+            BindingKind::Param | BindingKind::Local if self.type_param_scope.contains(&binding) => {
+                // A `Param` or `Local` binding that was registered in
+                // `type_param_scope` during type-level function body lowering
+                // acts as a substitutable type variable.
+                self.alloc_type(Type {
+                    kind: TypeKind::TypeVar(binding),
+                    span,
+                })
+            }
             _ => self.invalid_type("value binding used as a type", span),
         }
     }
@@ -356,21 +419,51 @@ impl<'hir> Lowerer<'hir> {
     ) -> TypeId {
         // Resolve InferVar chains first so alias resolution sees the concrete type.
         let ty = self.resolve(ty);
-        let TypeKind::Alias(binding) = self.type_arena[ty.0 as usize].kind else {
-            return ty;
-        };
-        if !seen.insert(binding) {
-            let name = self.hir.bindings[binding.0 as usize].name.clone();
-            self.diagnostics.push(ThirDiagnostic {
-                kind: ThirDiagnosticKind::AliasCycle { name },
-                span,
-            });
-            return self.error_type;
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Alias(binding) => {
+                if !seen.insert(binding) {
+                    self.push_alias_cycle(binding, span);
+                    return self.error_type;
+                }
+                match self.aliases.get(&binding).copied() {
+                    Some(alias) => self.resolve_alias(alias, seen, span),
+                    None => ty,
+                }
+            }
+            TypeKind::AliasApply { binding, args } => {
+                if !seen.insert(binding) {
+                    self.push_alias_cycle(binding, span);
+                    return self.error_type;
+                }
+                if self.type_eval_fuel == 0 {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::TypeLevelEvalLimitExceeded,
+                        span,
+                    });
+                    return self.error_type;
+                }
+                self.type_eval_fuel -= 1;
+                let Some(params) = self.alias_params.get(&binding).cloned() else {
+                    return ty; // not registered → leave inert (arity already diagnosed)
+                };
+                let Some(body) = self.aliases.get(&binding).copied() else {
+                    return ty;
+                };
+                let subst: HashMap<BindingId, TypeId> =
+                    params.into_iter().zip(args.into_iter()).collect();
+                let expanded = self.instantiate_type_vars(body, &subst);
+                self.resolve_alias(expanded, seen, span)
+            }
+            _ => ty,
         }
-        match self.aliases.get(&binding).copied() {
-            Some(alias) => self.resolve_alias(alias, seen, span),
-            None => ty,
-        }
+    }
+
+    fn push_alias_cycle(&mut self, binding: BindingId, span: Span) {
+        let name = self.hir.bindings[binding.0 as usize].name.clone();
+        self.diagnostics.push(ThirDiagnostic {
+            kind: ThirDiagnosticKind::AliasCycle { name },
+            span,
+        });
     }
 
     pub(super) fn type_name(&mut self, ty: TypeId) -> String {
@@ -393,6 +486,11 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Function { .. } => "function".to_string(),
             TypeKind::TypeVar(binding) | TypeKind::Alias(binding) => {
                 self.hir.bindings[binding.0 as usize].name.clone()
+            }
+            TypeKind::AliasApply { binding, args } => {
+                let head = self.hir.bindings[binding.0 as usize].name.clone();
+                let parts: Vec<String> = args.iter().map(|&a| self.type_name(a)).collect();
+                format!("{head} {}", parts.join(" "))
             }
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
@@ -437,6 +535,11 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Record(fields) => {
                 for f in fields {
                     self.collect_type_vars_into(f.ty, out);
+                }
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for a in args {
+                    self.collect_type_vars_into(a, out);
                 }
             }
             _ => {}
@@ -548,6 +651,22 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::AliasApply { binding, args } => {
+                let new_args: Vec<TypeId> = args
+                    .iter()
+                    .map(|&a| self.instantiate_type_vars(a, subst))
+                    .collect();
+                if new_args == args {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::AliasApply {
+                        binding,
+                        args: new_args,
+                    },
+                    span,
+                })
+            }
             _ => ty,
         }
     }
@@ -593,6 +712,11 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Record(fields) => {
                 for f in fields {
                     self.free_infer_vars_into(f.ty, out);
+                }
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for a in args {
+                    self.free_infer_vars_into(a, out);
                 }
             }
             _ => {}

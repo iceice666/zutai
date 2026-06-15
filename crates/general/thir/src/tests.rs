@@ -1089,3 +1089,116 @@ get_port { port = 80; }
             .any(|d| matches!(&d.kind, ThirDiagnosticKind::ExpectedOptional { .. }))
     );
 }
+
+// ── Generic type aliases (parametric type constructors) ──────────────────────
+
+#[test]
+fn generic_alias_application_resolves_to_record() {
+    // `Pair :: <A, B> type { first: A; second: B; }` then `p : Pair Text Int`.
+    // After THIR type-checks the record, the final_expr (p) has type
+    // `AliasApply { binding: Pair, args: [Text, Int] }`.  The alias is
+    // transparent at the use site: the record literal `{ first: "x"; second: 1 }`
+    // must match — so we assert the whole program completes with no diagnostics.
+    let file = completed_file(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+p :: Pair Text Int = { first = "x"; second = 1; }
+p
+"#,
+    );
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::AliasApply { .. }
+    ));
+}
+
+#[test]
+fn generic_alias_used_in_function_signature() {
+    // A function that takes a `Pair Int Int` and returns the first field.
+    let file = completed_file(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+fst :: Pair Int Int -> Int {
+  | p => p.first;
+}
+fst { first = 1; second = 2; }
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn generic_alias_wrong_arity_reports_error() {
+    // `Pair` needs 2 args; giving 1 must emit TypeConstructorArityMismatch.
+    let lowered = lower(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+x :: Pair Text = x
+x
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::TypeConstructorArityMismatch { name, expected, found }
+            if name == "Pair" && *expected == 2 && *found == 1
+    )));
+}
+
+#[test]
+fn generic_alias_bare_reference_reports_error() {
+    // A bare `Pair` (zero args) in type position must emit TypeConstructorArityMismatch.
+    let lowered = lower(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+x :: Pair = x
+x
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::TypeConstructorArityMismatch { expected, found, .. }
+            if *expected == 2 && *found == 0
+    )));
+}
+
+// ── Type-level evaluation fuel limit ────────────────────────────────────────
+
+/// Lower `src` with a reduced type-evaluation fuel budget, returned as a
+/// `LoweredThir` so callers can inspect diagnostics.
+fn lower_with_type_eval_fuel(src: &str, fuel: u32) -> LoweredThir {
+    let parsed = zutai_syntax::parse(src);
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
+    lower_hir_with_options(
+        &hir.file,
+        ThirLowerOptions {
+            run_passes: true,
+            type_eval_fuel: Some(fuel),
+            ..ThirLowerOptions::default()
+        },
+    )
+}
+
+#[test]
+fn type_level_expansion_exceeding_fuel_reports_limit() {
+    // D1 → D2 = Pair D1 D1 → D3 = Pair D2 D2: resolving D3 requires multiple
+    // Pair expansions. With a budget of 1 the second expansion is denied.
+    let src = r#"
+Pair :: <A, B> type { first : A; second : B; }
+D1 :: type Int
+D2 :: type Pair D1 D1
+D3 :: type Pair D2 D2
+x :: D3 = x
+x
+"#;
+    let lowered = lower_with_type_eval_fuel(src, 1);
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeLevelEvalLimitExceeded)),
+        "expected TypeLevelEvalLimitExceeded in {:?}",
+        lowered.diagnostics
+    );
+}

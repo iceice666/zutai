@@ -11,12 +11,13 @@ impl<'hir> Lowerer<'hir> {
             let decl = self.hir_decl(*decl_id);
             match &decl.kind {
                 HirDeclKind::TypeAlias { params, ty } => {
-                    if !params.is_empty() {
-                        self.unsupported("generic type aliases", decl.span);
-                        continue;
-                    }
                     let ty = self.lower_type(*ty);
                     self.aliases.insert(decl.binding, ty);
+                    if !params.is_empty() {
+                        // Generic alias: record the params so use sites can build
+                        // AliasApply nodes and resolve_alias can expand them.
+                        self.alias_params.insert(decl.binding, params.clone());
+                    }
                     self.value_types.insert(decl.binding, self.type_type);
                 }
                 HirDeclKind::Value {

@@ -213,6 +213,15 @@ pub enum TypeKind {
     /// polymorphic positions; TLC (Phase 2) will generalize them explicitly.
     InferVar(u32),
     Alias(BindingId),
+    /// Application of a parametric type constructor (generic alias or type-level
+    /// function) to type arguments. Lazy: expanded on demand in `resolve_alias`
+    /// by substituting `args` for the constructor's params. Never reaches `unify`
+    /// directly (callers resolve via `resolve_alias`/`type_matches` first),
+    /// mirroring `Alias`.
+    AliasApply {
+        binding: BindingId,
+        args: Vec<TypeId>,
+    },
     Error,
 }
 

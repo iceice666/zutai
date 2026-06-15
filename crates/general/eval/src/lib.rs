@@ -162,6 +162,16 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
             format!("non-exhaustive patterns: `{witness}` not covered")
         }
         UnreachableMatchArm => "unreachable match arm".to_string(),
+        TypeConstructorArityMismatch {
+            name,
+            expected,
+            found,
+        } => {
+            format!("type constructor `{name}` expects {expected} argument(s), found {found}")
+        }
+        TypeLevelEvalLimitExceeded => {
+            "type-level computation exceeded evaluation limit".to_string()
+        }
     }
 }
 

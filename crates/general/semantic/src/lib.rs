@@ -225,6 +225,7 @@ pub(crate) fn analyze_inner(
                 zutai_thir::ThirLowerOptions {
                     run_passes: options.run_thir_passes,
                     imports: resolved.types,
+                    type_eval_fuel: None,
                 },
             );
             pass_reports.extend(

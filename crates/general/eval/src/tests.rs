@@ -692,3 +692,17 @@ fn polymorphic_identity_runs_at_two_types() {
 fn monomorphic_value_binding_still_runs() {
     assert_eq!(eval_file("answer := 42\nanswer").unwrap(), Value::Int(42));
 }
+
+// ─── generic type aliases ─────────────────────────────────────────────────────
+
+#[test]
+fn generic_alias_value_evaluates() {
+    // A value typed with a generic alias must evaluate to the underlying record,
+    // and field access must return the correctly typed value.
+    let decl = r#"
+Pair :: <A, B> type { first : A; second : B; }
+p :: Pair Text Int = { first = "x"; second = 1; }
+"#;
+    assert_eq!(run(&format!("{decl}\np.first")), Value::Text("x".into()));
+    assert_eq!(run(&format!("{decl}\np.second")), Value::Int(1));
+}
