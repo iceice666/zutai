@@ -21,6 +21,7 @@ pub struct ThirFile {
     pub expr_arena: Arena<ThirExpr>,
     pub pat_arena: Arena<ThirPat>,
     pub type_arena: Vec<Type>,
+    pub poly_schemes: std::collections::HashMap<zutai_hir::BindingId, Vec<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

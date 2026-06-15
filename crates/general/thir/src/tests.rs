@@ -1202,3 +1202,13 @@ x
         lowered.diagnostics
     );
 }
+
+#[test]
+fn poly_schemes_populated_for_inferred_identity() {
+    // `id x = x` is polymorphic — poly_schemes[id] should be non-empty.
+    let file = completed_file("id x = x\nid 42");
+    assert!(
+        !file.poly_schemes.is_empty(),
+        "expected poly_schemes to be non-empty for polymorphic `id`"
+    );
+}
