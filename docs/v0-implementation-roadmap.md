@@ -24,7 +24,7 @@ The production execution strategy is this AOT compile pipeline. Laziness and sha
 
 **Interim reference interpreter (`zutai-eval`).** While the back half of the pipeline (TLC, Dataflow Core, ANF, SSA, LLVM) does not yet exist, `crates/general/eval/` provides a THIR tree-walking interpreter that can run any fully type-checked `.zt` program today. It is a *semantics oracle* — it refuses to evaluate any program that is not fully type-checked — and its output is the ground truth for future differential testing of the LLVM backend. It also provides the `run` and `repl` CLI subcommands. "Superseded" applies to the *compilation* strategy; a reference interpreter as a tool is compatible with and complementary to that strategy.
 
-The Dataflow Core design is specified in [`docs/dataflow-core.md`](dataflow-core.md).
+The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflow Core design is specified in [`docs/dataflow-core.md`](dataflow-core.md).
 
 ## Current Baseline
 
@@ -61,8 +61,15 @@ Verification gate: `cargo test --workspace` includes spec-shaped parser, HIR, TH
 
 Goal: produce a fully-elaborated, polymorphism-explicit IR from completed THIR. TLC is only produced when THIR type checking succeeds. It is the clean input contract for all compilation stages downstream.
 
+The full TLC design — Kind language, Type language (`VariantT`, `Singleton`, `TyLamK`, `Row`/`EffRow`), Term language (`Variant`), NbE normalizer, phased implementation sub-roadmap (Phase 0–5), and invariants — is specified in [`docs/tlc-core.md`](tlc-core.md).
+
 - Add crate `crates/general/tlc/` (`zutai-tlc`).
-- Implement the TLC IR: `TyLam`/`TyApp` structural nodes, no `TypeVar` free, spans in a side-table only.
+- Implement the TLC IR:
+  - Core nodes: `TyLam`/`TyApp`, explicit polymorphism, spans in a side-table only.
+  - Sum type nodes: `VariantT(Row)` (type former) and `Variant(label, e)` (term injection) — fixes the three silent-destruction bugs in `lower/types.rs:20–22, :64, :83`.
+  - Singleton type: `Singleton(Lit)` — fixes `True`/`False` discrimination loss and `Atom` symbol loss.
+  - Kind annotations on `ForAll`/`TyVar`/`TyLam`; `Kind` enum.
+  - NbE normalizer for type equality and lazy alias expansion.
 - Implement the THIR→TLC lowering pass:
   - **Constraint solving** — run the unification engine on all accumulated type constraints; report unsolvable constraints as THIR diagnostics.
   - **Zonking** — substitute all solved `TypeVar`s with their concrete types throughout the expression tree.
@@ -70,7 +77,7 @@ Goal: produce a fully-elaborated, polymorphism-explicit IR from completed THIR. 
   - **Call-site instantiation** — replace the `instantiation: Vec<TypeId>` stub on `Apply` with explicit `TyApp` nodes at polymorphic call sites.
 - Extend `zutai-semantic` to expose `TlcModule` alongside THIR output.
 
-Verification gate: TLC modules for all v0 spec examples have no free `TypeVar`s, correct `TyLam`/`TyApp` structure, and match expected polymorphic signatures.
+Verification gate: TLC modules for all v0 spec examples have no free `TypeVar`s, no `Union`→`{}` collapses, correct `VariantT`/`Singleton` nodes for sum/singleton types, correct `TyLam`/`TyApp` structure, and match expected polymorphic signatures.
 
 ## Phase 3: Dataflow Core
 

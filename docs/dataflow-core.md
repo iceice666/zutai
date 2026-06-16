@@ -16,7 +16,7 @@ Source → HIR → THIR → TLC
                     LLVM IR
 ```
 
-THIR is the error-tolerant, source-preserving typed IR used by the language server (LSP) and diagnostics tooling. It carries spans on every node, tolerates partial type information, and is produced even when type checking fails partially. TLC (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds: all inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. The Dataflow Core lowering takes TLC as input.
+THIR is the error-tolerant, source-preserving typed IR used by the language server (LSP) and diagnostics tooling. It carries spans on every node, tolerates partial type information, and is produced even when type checking fails partially. TLC (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds: all inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. The Dataflow Core lowering takes TLC as its sole input. TLC is specified in [`docs/tlc-core.md`](tlc-core.md).
 
 ## Why a graph?
 
