@@ -39,8 +39,21 @@ fn parse_wildcard(input: &mut &str) -> Result<Pattern> {
 }
 
 fn parse_pattern_atom(input: &mut &str) -> Result<Pattern> {
-    let ((name, span), _) = (spanned(parse_atom_name), ws).parse_next(input)?;
-    Ok(Pattern::Atom { name, span })
+    let (name, atom_span) = spanned(parse_atom_name).parse_next(input)?;
+    ws(input)?;
+    if input.starts_with('{') {
+        let (fields, rec_span) = spanned(parse_record_pattern_inner).parse_next(input)?;
+        let span = atom_span.merge(rec_span);
+        return Ok(Pattern::TaggedValue {
+            tag: name,
+            payload: fields,
+            span,
+        });
+    }
+    Ok(Pattern::Atom {
+        name,
+        span: atom_span,
+    })
 }
 
 fn parse_pattern_literal(input: &mut &str) -> Result<Pattern> {

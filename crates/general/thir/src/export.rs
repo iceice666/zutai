@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use zutai_hir::BindingId;
 
-use crate::import::{ImportedField, ImportedTupleItem, ImportedType};
+use crate::import::{ImportedField, ImportedTupleItem, ImportedType, ImportedUnionVariant};
 use crate::ir::{ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
 
 /// A type that cannot be exported across a module import in this phase.
@@ -87,10 +87,17 @@ fn export(
             }
             Ok(ImportedType::Tuple(out))
         }
-        TypeKind::Union(items) => {
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                out.push(export(file, aliases, item, seen)?);
+        TypeKind::Union(variants) => {
+            let mut out = Vec::with_capacity(variants.len());
+            for variant in &variants {
+                let payload = match variant.payload {
+                    Some(ty) => Some(Box::new(export(file, aliases, ty, seen)?)),
+                    None => None,
+                };
+                out.push(ImportedUnionVariant {
+                    name: variant.name.clone(),
+                    payload,
+                });
             }
             Ok(ImportedType::Union(out))
         }

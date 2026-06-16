@@ -617,10 +617,10 @@ fn parse_type_form_record() {
 
 #[test]
 fn parse_type_form_union() {
-    let e = parse_expr_str("type [ #a; #b; #c; ]");
+    let e = parse_expr_str("type [a; b; c;]");
     match &e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
-            TypeExpr::Union { items, .. } => assert_eq!(items.len(), 3),
+            TypeExpr::Union { variants, .. } => assert_eq!(variants.len(), 3),
             other => panic!("expected TyUnion, got {other:?}"),
         },
         other => panic!("expected TypeForm, got {other:?}"),
@@ -634,6 +634,57 @@ fn parse_type_optional_postfix() {
         Expr::TypeForm { ty, .. } => assert!(matches!(ty.as_ref(), TypeExpr::Optional { .. })),
         other => panic!("expected TypeForm, got {other:?}"),
     }
+}
+
+#[test]
+fn parse_type_union_in_record_field() {
+    parse_str(r#"{ type-union = type [a; b; c;]; }"#);
+}
+
+#[test]
+fn parse_type_union_in_file() {
+    parse_str(
+        r#"
+Foo :: type [a; b; c;]
+Foo
+"#,
+    );
+}
+
+#[test]
+fn parse_type_forms_section() {
+    parse_str(
+        r#"{
+  type-rec       = type { host : Text; port? : Int; };
+  type-union     = type [a; b; c;];
+  type-tup       = type (#circle, radius : Float);
+  type-arrow     = type Int -> Int -> Int;
+  type-opt       = type Int?;
+}"#,
+    );
+}
+
+#[test]
+fn parse_match_section() {
+    parse_str(
+        r#"{
+  match-expr = match #prod {
+    | #dev  => 0;
+    | #prod => 1;
+    | _     => -1;
+  };
+}"#,
+    );
+}
+
+#[test]
+fn parse_match_in_record_minimal() {
+    parse_str(r#"{ x = match #a { | #a => 1; }; }"#);
+}
+
+#[test]
+fn parse_match_with_hyphen_field() {
+    parse_str(r#"{ match-expr = match #a { | #a => 1; }; }"#);
 }
 
 // ---------------------------------------------------------------------------

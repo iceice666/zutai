@@ -10,8 +10,8 @@ Box :: <A> type {
 }
 
 Either :: <A, B> type [
-  (#left, value : A);
-  (#right, value : B);
+  left: { value: A; };
+  right: { value: B; };
 ]
 
 fst :: <A, B> Pair A B -> A {
@@ -35,8 +35,8 @@ mapBox :: <A, B> (A -> B) -> Box A -> Box B {
 }
 
 isLeft :: <A, B> Either A B -> Bool {
-  | (#left, value = _) => true;
-  | (#right, value = _) => false;
+  | #left { value = _; } => true;
+  | #right { value = _; } => false;
 }
 
 {
@@ -45,8 +45,8 @@ isLeft :: <A, B> Either A B -> Bool {
   mixed-pair  = { first = 42; second = true; };
   boxed-int   = { value = 100; };
   boxed-text  = { value = "wrapped"; };
-  left-val    = (#left, value = 1);
-  right-val   = (#right, value = "ok");
+  left-val    = #left { value = 1; };
+  right-val   = #right { value = "ok"; };
   x           = fst int-pair;
   y           = snd str-pair;
   swapped     = swap int-pair;

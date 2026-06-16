@@ -11,6 +11,7 @@ use crate::parser::lex::{
 };
 use crate::parser::pattern::parse_pattern;
 use crate::parser::type_expr::parse_type_expr;
+use winnow::token::take_while;
 
 use super::fix_number_span;
 
@@ -28,8 +29,33 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
             Ok(Expr::String { value: s, span })
         }
         '#' => {
-            let (name, span) = spanned(parse_atom_name).parse_next(input)?;
-            Ok(Expr::Atom { name, span })
+            let (name, atom_span) = spanned(parse_atom_name).parse_next(input)?;
+            // Try `#tag { ... }` tagged-value form. Save a checkpoint so that if
+            // `{ ... }` is not a valid record/block (e.g. it is a match clause
+            // block `{ | ... }`) we fall back to returning a plain atom.
+            let checkpoint = *input;
+            take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
+            if input.starts_with('{') {
+                match parse_record_or_block(input) {
+                    Ok(payload) => {
+                        let span = atom_span.merge(payload.span());
+                        return Ok(Expr::TaggedValue {
+                            tag: name,
+                            payload: Box::new(payload),
+                            span,
+                        });
+                    }
+                    Err(_) => {
+                        *input = checkpoint;
+                    }
+                }
+            } else {
+                *input = checkpoint;
+            }
+            Ok(Expr::Atom {
+                name,
+                span: atom_span,
+            })
         }
         '\\' => parse_lambda(input),
         '(' => parse_tuple_or_group(input),

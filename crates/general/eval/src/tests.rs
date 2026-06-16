@@ -320,8 +320,8 @@ server.port ?? 8080
 fn atom_literal_pattern_in_clause() {
     let src = "
 Profile :: type [
-  #dev;
-  #prod;
+  dev;
+  prod;
 ]
 isProd :: Profile -> Bool {
   | #prod => true;

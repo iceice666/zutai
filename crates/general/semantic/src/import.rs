@@ -372,7 +372,9 @@ fn array_element_type(items: &[zutai_im::Value]) -> ImportedType {
     match distinct.len() {
         0 => ImportedType::Unknown,
         1 => distinct.pop().unwrap(),
-        _ => ImportedType::Union(distinct),
+        // Heterogeneous arrays have no meaningful tag names for the variants,
+        // so fall back to Unknown and let the consumer unify with what it needs.
+        _ => ImportedType::Unknown,
     }
 }
 

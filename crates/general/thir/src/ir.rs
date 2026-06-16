@@ -74,6 +74,10 @@ pub enum ThirExprKind {
     Float(f64),
     String(String),
     Atom(String),
+    TaggedValue {
+        tag: String,
+        payload: ThirExprId,
+    },
     BindingRef(BindingId),
     Record(Vec<ThirRecordField>),
     Tuple(Vec<ThirTupleItem>),
@@ -161,6 +165,10 @@ pub enum ThirPatKind {
     Float(f64),
     String(String),
     Atom(String),
+    TaggedValue {
+        tag: String,
+        payload: Vec<ThirRecordPatField>,
+    },
     Tuple(Vec<ThirTuplePatItem>),
     Record(Vec<ThirRecordPatField>),
 }
@@ -201,7 +209,7 @@ pub enum TypeKind {
     List(TypeId),
     Optional(TypeId),
     Record(Vec<TypeRecordField>),
-    Union(Vec<TypeId>),
+    Union(Vec<UnionVariant>),
     Tuple(Vec<TypeTupleItem>),
     Function {
         from: TypeId,
@@ -224,6 +232,13 @@ pub enum TypeKind {
         args: Vec<TypeId>,
     },
     Error,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnionVariant {
+    pub name: String,
+    pub payload: Option<TypeId>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

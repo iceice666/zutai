@@ -150,6 +150,11 @@ pub enum Expr {
         name: String,
         span: Span,
     },
+    TaggedValue {
+        tag: String,
+        payload: Box<Expr>,
+        span: Span,
+    },
     Ident {
         name: String,
         span: Span,
@@ -232,6 +237,7 @@ impl Expr {
             | Expr::Float { span, .. }
             | Expr::String { span, .. }
             | Expr::Atom { span, .. }
+            | Expr::TaggedValue { span, .. }
             | Expr::Ident { span, .. }
             | Expr::Record { span, .. }
             | Expr::Tuple { span, .. }
@@ -276,6 +282,11 @@ pub enum Pattern {
         name: String,
         span: Span,
     },
+    TaggedValue {
+        tag: String,
+        payload: Vec<RecordPatternField>,
+        span: Span,
+    },
     Tuple {
         items: Vec<TuplePatternItem>,
         span: Span,
@@ -295,6 +306,7 @@ impl Pattern {
             | Pattern::Float { span, .. }
             | Pattern::String { span, .. }
             | Pattern::Atom { span, .. }
+            | Pattern::TaggedValue { span, .. }
             | Pattern::Tuple { span, .. }
             | Pattern::Record { span, .. } => *span,
         }
@@ -315,6 +327,13 @@ pub enum TuplePatternItem {
 pub struct RecordPatternField {
     pub name: String,
     pub pattern: Pattern,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct UnionVariant {
+    pub name: String,
+    pub payload: Option<Vec<TypeRecordField>>,
     pub span: Span,
 }
 
@@ -347,7 +366,7 @@ pub enum TypeExpr {
         span: Span,
     },
     Union {
-        items: Vec<TypeExpr>,
+        variants: Vec<UnionVariant>,
         span: Span,
     },
     Tuple {

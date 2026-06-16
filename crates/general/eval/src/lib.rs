@@ -248,6 +248,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
                 }
             }
             ThirExprKind::List(items) => stack.extend(items.iter().copied()),
+            ThirExprKind::TaggedValue { payload, .. } => stack.push(*payload),
             // Leaves — no sub-expressions.
             ThirExprKind::True
             | ThirExprKind::False

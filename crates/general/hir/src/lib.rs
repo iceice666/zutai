@@ -18,7 +18,7 @@ pub use ir::{
     Binding, BindingId, BindingKind, HirClause, HirDecl, HirDeclId, HirDeclKind, HirExpr,
     HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding, HirPat, HirPatId,
     HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem, HirTypeExpr,
-    HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
+    HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
 };
 pub use lower::{HirLowerOptions, LoweredHir, lower_file, lower_file_with_options};
 pub use pass::{

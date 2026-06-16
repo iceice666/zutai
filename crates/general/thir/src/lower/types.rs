@@ -2,11 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
+    HirUnionVariant,
 };
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem};
+use crate::ir::{Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant};
 
 use super::Lowerer;
 
@@ -25,10 +26,26 @@ impl<'hir> Lowerer<'hir> {
                     span: ty.span,
                 })
             }
-            HirTypeKind::Union(items) => {
-                let items = items.iter().map(|item| self.lower_type(*item)).collect();
+            HirTypeKind::Union(variants) => {
+                let variants = variants
+                    .iter()
+                    .map(|v: &HirUnionVariant| UnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.as_ref().map(|fields| {
+                            let field_types: Vec<TypeRecordField> = fields
+                                .iter()
+                                .map(|f| self.lower_type_record_field(f))
+                                .collect();
+                            self.alloc_type(Type {
+                                kind: TypeKind::Record(field_types),
+                                span: v.span,
+                            })
+                        }),
+                        span: v.span,
+                    })
+                    .collect();
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(items),
+                    kind: TypeKind::Union(variants),
                     span: ty.span,
                 })
             }
@@ -396,10 +413,20 @@ impl<'hir> Lowerer<'hir> {
             }
 
             (TypeKind::Bool, TypeKind::True | TypeKind::False) => true,
-            (TypeKind::Union(items), _) => items
+            (TypeKind::Union(variants), TypeKind::Atom(ref name)) => variants
                 .iter()
-                .copied()
-                .any(|item| self.type_matches(item, found)),
+                .any(|v| v.name == *name && v.payload.is_none()),
+            (TypeKind::Union(variants), TypeKind::Union(ref other)) => {
+                variants.len() == other.len()
+                    && variants.iter().zip(other.iter()).all(|(a, b)| {
+                        a.name == b.name
+                            && match (a.payload, b.payload) {
+                                (Some(pa), Some(pb)) => self.type_matches(pa, pb),
+                                (None, None) => true,
+                                _ => false,
+                            }
+                    })
+            }
             // #none is always a valid value of Optional(T)
             (TypeKind::Optional(_), TypeKind::Atom(ref name)) if name == "none" => true,
             (TypeKind::List(e), TypeKind::List(f))
@@ -576,9 +603,11 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) | TypeKind::Optional(inner) => {
                 self.collect_type_vars_into(inner, out);
             }
-            TypeKind::Union(items) => {
-                for item in items {
-                    self.collect_type_vars_into(item, out);
+            TypeKind::Union(variants) => {
+                for v in variants {
+                    if let Some(payload) = v.payload {
+                        self.collect_type_vars_into(payload, out);
+                    }
                 }
             }
             TypeKind::Tuple(items) => {
@@ -652,16 +681,24 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Union(items) => {
-                let new_items: Vec<TypeId> = items
+            TypeKind::Union(variants) => {
+                let new_variants: Vec<UnionVariant> = variants
                     .iter()
-                    .map(|&item| self.instantiate_type_vars(item, subst))
+                    .map(|v| UnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.map(|p| self.instantiate_type_vars(p, subst)),
+                        span: v.span,
+                    })
                     .collect();
-                if new_items == items {
+                if new_variants
+                    .iter()
+                    .zip(variants.iter())
+                    .all(|(n, o)| n.payload == o.payload)
+                {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(new_items),
+                    kind: TypeKind::Union(new_variants),
                     span,
                 })
             }
@@ -753,9 +790,11 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) | TypeKind::Optional(inner) => {
                 self.free_infer_vars_into(inner, out);
             }
-            TypeKind::Union(items) => {
-                for item in items {
-                    self.free_infer_vars_into(item, out);
+            TypeKind::Union(variants) => {
+                for v in variants {
+                    if let Some(payload) = v.payload {
+                        self.free_infer_vars_into(payload, out);
+                    }
                 }
             }
             TypeKind::Tuple(items) => {
@@ -865,16 +904,24 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Union(items) => {
-                let new_items: Vec<TypeId> = items
+            TypeKind::Union(variants) => {
+                let new_variants: Vec<UnionVariant> = variants
                     .iter()
-                    .map(|&i| self.instantiate_infer_vars(i, subst))
+                    .map(|v| UnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.map(|p| self.instantiate_infer_vars(p, subst)),
+                        span: v.span,
+                    })
                     .collect();
-                if new_items == items {
+                if new_variants
+                    .iter()
+                    .zip(variants.iter())
+                    .all(|(n, o)| n.payload == o.payload)
+                {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(new_items),
+                    kind: TypeKind::Union(new_variants),
                     span,
                 })
             }

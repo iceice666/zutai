@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use zutai_hir::{BindingId, HirPatId, HirPatKind, HirTuplePatItem};
+use zutai_hir::{BindingId, HirPatId, HirPatKind, HirRecordPatField, HirTuplePatItem};
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
@@ -79,6 +79,16 @@ impl<'hir> Lowerer<'hir> {
                 return self.check_record_pattern(
                     id,
                     fields,
+                    expected,
+                    pattern.span,
+                    scoped_bindings,
+                );
+            }
+            HirPatKind::TaggedValue { tag, payload } => {
+                return self.check_tagged_value_pattern(
+                    id,
+                    tag,
+                    payload,
                     expected,
                     pattern.span,
                     scoped_bindings,
@@ -346,6 +356,180 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    fn check_tagged_value_pattern(
+        &mut self,
+        id: HirPatId,
+        tag: &str,
+        payload: &[HirRecordPatField],
+        expected: TypeId,
+        span: Span,
+        scoped_bindings: &mut Vec<BindingId>,
+    ) -> ThirPatId {
+        let resolved = self.resolve_alias(expected, &mut HashSet::new(), span);
+        let kind = self.ty(resolved).kind.clone();
+
+        let lowered_payload: Vec<ThirRecordPatField> = match kind {
+            TypeKind::Union(variants) => {
+                match variants.iter().find(|v| v.name == tag).cloned() {
+                    Some(v) => match v.payload {
+                        None => {
+                            if !payload.is_empty() {
+                                self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::UnexpectedRecordField {
+                                        name: payload[0].name.clone(),
+                                    },
+                                    span,
+                                });
+                            }
+                            vec![]
+                        }
+                        Some(record_ty) => self.check_tagged_payload_fields(
+                            payload,
+                            record_ty,
+                            span,
+                            scoped_bindings,
+                        ),
+                    },
+                    None => {
+                        // Unknown variant — type mismatch
+                        let found = self.alloc_type(Type {
+                            kind: TypeKind::Atom(tag.to_string()),
+                            span,
+                        });
+                        self.type_mismatch(expected, found, span);
+                        payload
+                            .iter()
+                            .map(|f| {
+                                let pat =
+                                    self.check_pattern(f.pattern, self.error_type, scoped_bindings);
+                                ThirRecordPatField {
+                                    name: f.name.clone(),
+                                    pattern: pat,
+                                    span: f.span,
+                                }
+                            })
+                            .collect()
+                    }
+                }
+            }
+            TypeKind::Optional(inner) => {
+                if tag == "none" {
+                    vec![]
+                } else if tag == "some" {
+                    // Optional #some { value = x }
+                    payload
+                        .iter()
+                        .map(|f| {
+                            let field_ty = if f.name == "value" {
+                                inner
+                            } else {
+                                self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::UnknownField {
+                                        name: f.name.clone(),
+                                    },
+                                    span: f.span,
+                                });
+                                self.error_type
+                            };
+                            let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
+                            ThirRecordPatField {
+                                name: f.name.clone(),
+                                pattern: pat,
+                                span: f.span,
+                            }
+                        })
+                        .collect()
+                } else {
+                    let found = self.alloc_type(Type {
+                        kind: TypeKind::Atom(tag.to_string()),
+                        span,
+                    });
+                    self.type_mismatch(expected, found, span);
+                    vec![]
+                }
+            }
+            TypeKind::Error => vec![],
+            _ => {
+                let found = self.alloc_type(Type {
+                    kind: TypeKind::Atom(tag.to_string()),
+                    span,
+                });
+                self.type_mismatch(expected, found, span);
+                payload
+                    .iter()
+                    .map(|f| {
+                        let pat = self.check_pattern(f.pattern, self.error_type, scoped_bindings);
+                        ThirRecordPatField {
+                            name: f.name.clone(),
+                            pattern: pat,
+                            span: f.span,
+                        }
+                    })
+                    .collect()
+            }
+        };
+
+        self.alloc_pat(ThirPat {
+            source: id,
+            ty: expected,
+            kind: ThirPatKind::TaggedValue {
+                tag: tag.to_string(),
+                payload: lowered_payload,
+            },
+            span,
+        })
+    }
+
+    /// Check `payload` pattern fields against the record type `record_ty`.
+    fn check_tagged_payload_fields(
+        &mut self,
+        payload: &[HirRecordPatField],
+        record_ty: TypeId,
+        span: Span,
+        scoped_bindings: &mut Vec<BindingId>,
+    ) -> Vec<ThirRecordPatField> {
+        let Some(type_fields) = self.record_fields(record_ty, span) else {
+            return payload
+                .iter()
+                .map(|f| {
+                    let pat = self.check_pattern(f.pattern, self.error_type, scoped_bindings);
+                    ThirRecordPatField {
+                        name: f.name.clone(),
+                        pattern: pat,
+                        span: f.span,
+                    }
+                })
+                .collect();
+        };
+        let type_by_name: HashMap<&str, TypeId> = type_fields
+            .iter()
+            .map(|f| (f.name.as_str(), f.ty))
+            .collect();
+        payload
+            .iter()
+            .map(|f| {
+                let field_ty = match type_by_name.get(f.name.as_str()) {
+                    Some(&ty) => ty,
+                    None => {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::UnknownField {
+                                name: f.name.clone(),
+                            },
+                            span: f.span,
+                        });
+                        self.error_type
+                    }
+                };
+                let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
+                ThirRecordPatField {
+                    name: f.name.clone(),
+                    pattern: pat,
+                    span: f.span,
+                }
+            })
+            .collect()
+    }
+
     pub(super) fn clear_scoped_value_types(&mut self, scoped_bindings: &[BindingId]) {
         for binding in scoped_bindings {
             self.value_types.remove(binding);
@@ -370,19 +554,6 @@ impl<'hir> Lowerer<'hir> {
     ) -> Option<Vec<TypeTupleItem>> {
         match self.ty(resolved).kind.clone() {
             TypeKind::Tuple(type_items) => Some(type_items),
-            TypeKind::Union(members) => {
-                let tag = self.pattern_leading_atom_hir(items)?;
-                for member in members {
-                    let resolved_member = self.resolve_alias(member, &mut HashSet::new(), span);
-                    let TypeKind::Tuple(type_items) = self.ty(resolved_member).kind.clone() else {
-                        continue;
-                    };
-                    if self.tuple_member_tag(&type_items, span).as_deref() == Some(tag.as_str()) {
-                        return Some(type_items);
-                    }
-                }
-                None
-            }
             TypeKind::Optional(inner) => match self.pattern_leading_atom_hir(items) {
                 Some(tag) if tag == "some" => {
                     let some_ty = self.alloc_type(Type {

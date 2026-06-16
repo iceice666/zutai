@@ -1,31 +1,31 @@
 -- nested_match.zt: Nested match, guards, multi-clause, and variant constructors.
 
 Color :: type [
-  #red;
-  #green;
-  #blue;
-  (#custom, r : Int, g : Int, b : Int);
+  red;
+  green;
+  blue;
+  custom: { r: Int; g: Int; b: Int; };
 ]
 
 Shape :: type [
-  (#circle, radius : Int);
-  (#rect, width : Int, height : Int);
-  (#triangle, base : Int, height : Int);
+  circle: { radius: Int; };
+  rect: { width: Int; height: Int; };
+  triangle: { base: Int; height: Int; };
 ]
 
 colorName :: Color -> Text {
   | #red   => "red";
   | #green => "green";
   | #blue  => "blue";
-  | (#custom, r = 0, g = 0, b = 0) => "black";
-  | (#custom, r = 255, g = 255, b = 255) => "white";
-  | (#custom, r = _, g = _, b = _) => "custom";
+  | #custom { r = 0; g = 0; b = 0; } => "black";
+  | #custom { r = 255; g = 255; b = 255; } => "white";
+  | #custom { r = _; g = _; b = _; } => "custom";
 }
 
 area :: Shape -> Int {
-  | (#circle, radius = r)          => r * r;
-  | (#rect, width = w, height = h) => w * h;
-  | (#triangle, base = b, height = h) => b * h;
+  | #circle { radius = r; }          => r * r;
+  | #rect { width = w; height = h; } => w * h;
+  | #triangle { base = b; height = h; } => b * h;
 }
 
 classify :: Int -> Text {
@@ -37,22 +37,22 @@ classify :: Int -> Text {
 }
 
 describeShape :: Shape -> Text {
-  | (#circle, radius = r) if r > 100 => "big circle";
-  | (#circle, radius = _)            => "circle";
-  | (#rect, width = w, height = h) if w == h => "square";
-  | (#rect, width = _, height = _)            => "rectangle";
+  | #circle { radius = r; } if r > 100 => "big circle";
+  | #circle { radius = _; }            => "circle";
+  | #rect { width = w; height = h; } if w == h => "square";
+  | #rect { width = _; height = _; }            => "rectangle";
   | _                                          => "triangle";
 }
 
 {
   c1 = colorName #red;
-  c2 = colorName (#custom, r = 0, g = 0, b = 0);
-  c3 = colorName (#custom, r = 128, g = 64, b = 32);
-  a1 = area (#circle, radius = 5);
-  a2 = area (#rect, width = 3, height = 4);
-  a3 = area (#triangle, base = 6, height = 8);
-  s1 = describeShape (#circle, radius = 200);
-  s2 = describeShape (#rect, width = 5, height = 5);
+  c2 = colorName #custom { r = 0; g = 0; b = 0; };
+  c3 = colorName #custom { r = 128; g = 64; b = 32; };
+  a1 = area #circle { radius = 5; };
+  a2 = area #rect { width = 3; height = 4; };
+  a3 = area #triangle { base = 6; height = 8; };
+  s1 = describeShape #circle { radius = 200; };
+  s2 = describeShape #rect { width = 5; height = 5; };
   cl1 = classify (-5);
   cl2 = classify 0;
   cl3 = classify 7;

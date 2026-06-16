@@ -1,12 +1,12 @@
 -- cursed_patterns.zt: clause parsing, guards, nested matches, and field patterns.
 
 MaybeInt :: type [
-  #none;
-  (#some, value : Int);
+  none;
+  some: { value: Int; };
 ]
 
 Packet :: type {
-  status : [#ok; #err; #pending;];
+  status : [ok; err; pending;];
   payload? : MaybeInt;
   meta : {
     retry-count : Int;
@@ -16,7 +16,7 @@ Packet :: type {
 
 unwrapOr :: MaybeInt -> Int -> Int {
   | #none fallback => fallback;
-  | (#some, value = value) _ => value;
+  | #some { value = value; } _ => value;
 }
 
 classify :: Int -> Text {
@@ -26,7 +26,7 @@ classify :: Int -> Text {
 }
 
 describe :: Packet -> Text {
-  | { status = #ok; payload = (#some, value = n); meta = { retry-count = 0; label = #none; }; } =>
+  | { status = #ok; payload = #some { value = n; }; meta = { retry-count = 0; label = #none; }; } =>
       classify n;
   | { status = #ok; payload = #none; meta = _; } =>
       "empty-ok";
@@ -41,7 +41,7 @@ describe :: Packet -> Text {
 
 sample := {
   status = #err;
-  payload = (#some, value = -2);
+  payload = #some { value = -2; };
   meta = {
     retry-count = 2;
     label = #none;

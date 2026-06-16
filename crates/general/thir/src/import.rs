@@ -32,7 +32,7 @@ pub enum ImportedType {
     Optional(Box<ImportedType>),
     Record(Vec<ImportedField>),
     Tuple(Vec<ImportedTupleItem>),
-    Union(Vec<ImportedType>),
+    Union(Vec<ImportedUnionVariant>),
     /// A function value crossing a module boundary.  The evaluator stamps a
     /// home-module handle on every closure so the body is evaluated against
     /// the *defining* module's arenas.
@@ -49,6 +49,12 @@ pub enum ImportedType {
     /// interned as a fresh inference variable so it unifies with whatever the
     /// consumer needs.
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedUnionVariant {
+    pub name: String,
+    pub payload: Option<Box<ImportedType>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

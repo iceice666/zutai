@@ -159,8 +159,8 @@ fn atom_union_alias_accepts_matching_atom() {
     let file = completed_file(
         r#"
 Profile :: type [
-  #dev;
-  #prod;
+  dev;
+  prod;
 ]
 
 profile :: Profile = #prod
@@ -539,8 +539,8 @@ fn atom_literal_pattern_accepts_union_member() {
     let file = completed_file(
         r#"
 Profile :: type [
-  #dev;
-  #prod;
+  dev;
+  prod;
 ]
 
 isProd :: Profile -> Bool {
@@ -720,7 +720,7 @@ fn lambda_without_annotation_applied_to_text_yields_text_type() {
 fn match_on_atom_union_lowers_correctly() {
     let file = completed_file(
         r#"
-Status :: type [ #ok; #err; ]
+Status :: type [ok; err;]
 
 describe :: Status -> Text {
   | s => match s {
@@ -789,7 +789,7 @@ fn has_unreachable(lowered: &LoweredThir) -> bool {
 fn exhaustive_atom_union_passes() {
     completed_file(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 isProd :: Profile -> Bool {
   | #dev => false;
   | #prod => true;
@@ -803,7 +803,7 @@ isProd #dev
 fn non_exhaustive_atom_union_reports_witness() {
     let lowered = lower(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 isProd :: Profile -> Bool {
   | #prod => true;
 }
@@ -818,7 +818,7 @@ isProd #prod
 fn wildcard_catch_all_is_exhaustive() {
     let lowered = lower(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 isProd :: Profile -> Bool {
   | #prod => true;
   | _ => false;
@@ -833,7 +833,7 @@ isProd #dev
 fn redundant_arm_after_catch_all_is_unreachable() {
     let lowered = lower(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 classify :: Profile -> Bool {
   | _ => false;
   | #prod => true;
@@ -901,7 +901,7 @@ f 1
 fn guarded_arm_does_not_cover() {
     let lowered = lower(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 f :: Profile -> Bool {
   | #dev => false;
   | #prod if true => true;
@@ -916,7 +916,7 @@ f #dev
 fn plain_arm_after_guarded_same_pattern_is_reachable() {
     let lowered = lower(
         r#"
-Profile :: type [ #dev; #prod; ]
+Profile :: type [dev; prod;]
 f :: Profile -> Bool {
   | #dev => false;
   | #prod if true => true;
@@ -961,12 +961,12 @@ fn tagged_tuple_union_exhaustive_passes() {
     completed_file(
         r#"
 Shape :: type [
-  (#circle, radius : Int);
-  (#square, side : Int);
+  circle: { radius: Int; };
+  square: { side: Int; };
 ]
 area :: Shape -> Int {
-  | (#circle, radius = r) => r;
-  | (#square, side = s) => s;
+  | #circle { radius = r; } => r;
+  | #square { side = s; } => s;
 }
 area
 "#,
@@ -978,18 +978,18 @@ fn tagged_tuple_union_non_exhaustive_reports_witness() {
     let lowered = lower(
         r#"
 Shape :: type [
-  (#circle, radius : Int);
-  (#square, side : Int);
+  circle: { radius: Int; };
+  square: { side: Int; };
 ]
 area :: Shape -> Int {
-  | (#circle, radius = r) => r;
+  | #circle { radius = r; } => r;
 }
 area
 "#,
     );
     assert_eq!(
         nonexhaustive_witness(&lowered).as_deref(),
-        Some("(#square, ...)")
+        Some("#square { ... }")
     );
 }
 
@@ -1031,7 +1031,7 @@ unwrap #none
     );
     assert_eq!(
         nonexhaustive_witness(&lowered).as_deref(),
-        Some("(#some, ...)")
+        Some("#some { ... }")
     );
 }
 

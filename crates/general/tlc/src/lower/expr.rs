@@ -131,6 +131,13 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::Import(_) | ThirExprKind::TypeValue(_) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
             }
+            // Tagged union values are not yet lowered through TLC — the eval
+            // crate uses THIR directly.  Emit a Nothing placeholder so the
+            // TLC pipeline still compiles while the TLC TaggedValue repr is designed.
+            ThirExprKind::TaggedValue { payload, .. } => {
+                let _ = self.lower_expr(payload);
+                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
+            }
         }
     }
 
@@ -205,6 +212,9 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 TlcPat::Record(tlc_fields)
             }
+            // Not yet representable in TLC — lower to wildcard so the
+            // pipeline compiles while TLC tagged-union support is added.
+            ThirPatKind::TaggedValue { .. } => TlcPat::Wildcard,
         }
     }
 

@@ -113,6 +113,17 @@ impl<'a> Evaluator<'a> {
             ThirExprKind::String(s) => Ok(Value::Text(Rc::from(s.as_str()))),
             ThirExprKind::Atom(a) => Ok(Value::Atom(Rc::from(a.as_str()))),
             ThirExprKind::TypeValue(ty) => Ok(Value::TypeValue(*ty)),
+            ThirExprKind::TaggedValue { tag, payload } => {
+                let payload_val = self.eval(*payload, env)?;
+                let fields = match payload_val {
+                    Value::Record(f) => (*f).clone(),
+                    _ => vec![],
+                };
+                Ok(Value::TaggedValue {
+                    tag: Rc::from(tag.as_str()),
+                    payload: Rc::new(fields),
+                })
+            }
 
             // ── binding reference ────────────────────────────────────────────
             ThirExprKind::BindingRef(b) => {
@@ -196,6 +207,17 @@ impl<'a> Evaluator<'a> {
                         }
                         // Record field access on a record where the field is
                         // absent means optional + was not present.
+                        Ok(Value::Nothing)
+                    }
+                    Value::TaggedValue { tag, payload } => {
+                        if field == "tag" {
+                            return Ok(Value::Atom(tag));
+                        }
+                        for (name, thunk) in payload.iter() {
+                            if name.as_ref() == field.as_str() {
+                                return thunk.force(self);
+                            }
+                        }
                         Ok(Value::Nothing)
                     }
                     other => Err(EvalError::TypeMismatch {
@@ -562,6 +584,39 @@ impl<'a> Evaluator<'a> {
                     _ => Ok(false),
                 }
             }
+            ThirPatKind::TaggedValue {
+                tag: pat_tag,
+                payload: pat_fields,
+            } => {
+                let v = thunk.force(self)?;
+                match v {
+                    Value::TaggedValue {
+                        tag: val_tag,
+                        payload,
+                    } => {
+                        if val_tag.as_ref() != pat_tag.as_str() {
+                            return Ok(false);
+                        }
+                        let pat_fields_owned: Vec<_> = pat_fields.clone();
+                        for pf in &pat_fields_owned {
+                            let maybe_thunk = payload
+                                .iter()
+                                .find(|(n, _)| n.as_ref() == pf.name.as_str())
+                                .map(|(_, t)| t.clone());
+                            match maybe_thunk {
+                                None => return Ok(false),
+                                Some(t) => {
+                                    if !self.match_pattern(pf.pattern, t, child_env)? {
+                                        return Ok(false);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(true)
+                    }
+                    _ => Ok(false),
+                }
+            }
         }
     }
 
@@ -619,6 +674,7 @@ fn value_type_name(v: &Value) -> &'static str {
         Value::Record(_) => "Record",
         Value::Closure(_) => "Function",
         Value::TypeValue(_) => "Type",
+        Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",
     }
 }

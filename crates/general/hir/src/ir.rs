@@ -86,6 +86,10 @@ pub enum HirExprKind {
     Float(f64),
     String(String),
     Atom(String),
+    TaggedValue {
+        tag: String,
+        payload: HirExprId,
+    },
     BindingRef(BindingId),
     UnresolvedIdent(String),
     Record(Vec<HirRecordField>),
@@ -175,6 +179,10 @@ pub enum HirPatKind {
     Float(f64),
     String(String),
     Atom(String),
+    TaggedValue {
+        tag: String,
+        payload: Vec<HirRecordPatField>,
+    },
     Tuple(Vec<HirTuplePatItem>),
     Record(Vec<HirRecordPatField>),
 }
@@ -207,7 +215,7 @@ pub enum HirTypeKind {
     BindingRef(BindingId),
     UnresolvedIdent(String),
     Record(Vec<HirTypeRecordField>),
-    Union(Vec<HirTypeId>),
+    Union(Vec<HirUnionVariant>),
     Tuple(Vec<HirTypeTupleItem>),
     Optional(HirTypeId),
     Arrow { from: HirTypeId, to: HirTypeId },
@@ -217,6 +225,13 @@ pub enum HirTypeKind {
     True,
     False,
     ExprEscape(HirExprId),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirUnionVariant {
+    pub name: String,
+    pub payload: Option<Vec<HirTypeRecordField>>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

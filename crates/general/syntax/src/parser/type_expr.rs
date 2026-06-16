@@ -2,7 +2,7 @@ use winnow::Parser;
 use winnow::Result;
 use winnow::combinator::fail;
 
-use crate::ast::{TypeExpr, TypeRecordField, TypeTupleItem};
+use crate::ast::{TypeExpr, TypeRecordField, TypeTupleItem, UnionVariant};
 use crate::span::Span;
 
 use super::lex::{
@@ -203,31 +203,46 @@ fn parse_type_record_inner(input: &mut &str) -> Result<Vec<TypeRecordField>> {
 }
 
 // ---------------------------------------------------------------------------
-// Type union: `[ TypeExpr; ... ]`
+// Type union: `[ name; ... ]` or `[ name: { field: T; }; ... ]`
 // ---------------------------------------------------------------------------
 
 fn parse_type_union(input: &mut &str) -> Result<TypeExpr> {
-    let (items, span) = spanned(parse_type_union_inner).parse_next(input)?;
-    Ok(TypeExpr::Union { items, span })
+    let (variants, span) = spanned(parse_type_union_inner).parse_next(input)?;
+    Ok(TypeExpr::Union { variants, span })
 }
 
-fn parse_type_union_inner(input: &mut &str) -> Result<Vec<TypeExpr>> {
+fn parse_type_union_inner(input: &mut &str) -> Result<Vec<UnionVariant>> {
     '['.parse_next(input)?;
     let _guard = enter_delimiter();
-    let mut items = vec![];
+    let mut variants = vec![];
     loop {
         ws(input)?;
         if input.starts_with(']') {
             break;
         }
-        let ty = parse_type_expr(input)?;
+        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
         ws(input)?;
-        ';'.parse_next(input)?;
-        items.push(ty);
+        // Optional payload: `name: { ... };`
+        let payload = if input.starts_with(':') && !input.starts_with("::") {
+            ':'.parse_next(input)?;
+            ws(input)?;
+            let fields = parse_type_record_inner(input)?;
+            Some(fields)
+        } else {
+            None
+        };
+        ws(input)?;
+        let (_, end_span) = spanned(|i: &mut &str| ';'.parse_next(i)).parse_next(input)?;
+        let span = name_span.merge(end_span);
+        variants.push(UnionVariant {
+            name,
+            payload,
+            span,
+        });
     }
     ws(input)?;
     ']'.parse_next(input)?;
-    Ok(items)
+    Ok(variants)
 }
 
 // ---------------------------------------------------------------------------

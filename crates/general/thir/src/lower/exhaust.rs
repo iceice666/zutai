@@ -24,7 +24,7 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
     ThirClause, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId, TypeKind,
-    TypeTupleItem,
+    TypeTupleItem, UnionVariant,
 };
 
 use super::Lowerer;
@@ -294,66 +294,31 @@ impl<'hir> Lowerer<'hir> {
         Signature { ctors }
     }
 
-    /// Build the constructor set of a union, discriminating tuple members by
-    /// their leading `#tag`. Returns `None` (forcing a wildcard requirement) if
-    /// any member is non-discriminable.
-    fn union_signature(&mut self, members: &[TypeId], span: Span) -> Option<Vec<SigCtor>> {
+    /// Build the constructor set of a union from its variant list. Each variant
+    /// becomes a `Tagged(name)` constructor; variants with a record payload expand
+    /// to their field types as sub-columns.
+    fn union_signature(&mut self, variants: &[UnionVariant], span: Span) -> Option<Vec<SigCtor>> {
         let mut ctors: Vec<SigCtor> = Vec::new();
-        for &member in members {
-            let resolved = self.resolve_alias(member, &mut HashSet::new(), span);
-            match self.ty(resolved).kind.clone() {
-                TypeKind::Atom(name) => push_unique(&mut ctors, SigCtor::nullary(Ctor::Atom(name))),
-                TypeKind::True => push_unique(&mut ctors, SigCtor::nullary(Ctor::Bool(true))),
-                TypeKind::False => push_unique(&mut ctors, SigCtor::nullary(Ctor::Bool(false))),
-                TypeKind::Optional(inner) => {
-                    push_unique(&mut ctors, SigCtor::nullary(Ctor::OptNone));
-                    push_unique(
-                        &mut ctors,
-                        SigCtor {
-                            ctor: Ctor::OptSome,
-                            fields: vec![inner],
-                        },
-                    );
-                }
-                TypeKind::Union(inner) => match self.union_signature(&inner, span) {
-                    Some(sub) => {
-                        for sc in sub {
-                            push_unique(&mut ctors, sc);
-                        }
+        for variant in variants {
+            let fields = match variant.payload {
+                None => vec![],
+                Some(record_ty) => {
+                    let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
+                    match self.ty(resolved).kind.clone() {
+                        TypeKind::Record(fields) => fields.iter().map(|f| f.ty).collect(),
+                        _ => return None,
                     }
-                    None => return None,
+                }
+            };
+            push_unique(
+                &mut ctors,
+                SigCtor {
+                    ctor: Ctor::Tagged(variant.name.clone()),
+                    fields,
                 },
-                TypeKind::Tuple(items) => match self.tuple_member_tag(&items, span) {
-                    Some(tag) => push_unique(
-                        &mut ctors,
-                        SigCtor {
-                            ctor: Ctor::Tagged(tag),
-                            fields: items[1..].iter().map(tuple_item_ty).collect(),
-                        },
-                    ),
-                    None => return None,
-                },
-                _ => return None,
-            }
+            );
         }
         Some(ctors)
-    }
-
-    /// If `items` is a tuple led by a positional atom, return that atom's name
-    /// (the union tag), without the leading `#`.
-    pub(super) fn tuple_member_tag(
-        &mut self,
-        items: &[TypeTupleItem],
-        span: Span,
-    ) -> Option<String> {
-        let TypeTupleItem::Positional(first) = items.first()? else {
-            return None;
-        };
-        let resolved = self.resolve_alias(*first, &mut HashSet::new(), span);
-        match &self.ty(resolved).kind {
-            TypeKind::Atom(name) => Some(name.clone()),
-            _ => None,
-        }
     }
 
     // ── Pattern deconstruction ───────────────────────────────────────────────
@@ -373,12 +338,18 @@ impl<'hir> Lowerer<'hir> {
             ThirPatKind::Atom(name) => {
                 if name == "none" && matches!(self.ty(col_ty).kind, TypeKind::Optional(_)) {
                     DeconPat::nullary(Ctor::OptNone)
+                } else if matches!(self.ty(col_ty).kind, TypeKind::Union(_)) {
+                    // Atom pattern against a union: pure enum variant with no payload.
+                    DeconPat::nullary(Ctor::Tagged(name))
                 } else {
                     DeconPat::nullary(Ctor::Atom(name))
                 }
             }
             ThirPatKind::Tuple(items) => self.decon_tuple_pattern(&items, col_ty, pat.span),
             ThirPatKind::Record(fields) => self.decon_record_pattern(&fields, col_ty),
+            ThirPatKind::TaggedValue { tag, payload } => {
+                self.decon_tagged_value_pattern(tag, &payload, col_ty, pat.span)
+            }
         }
     }
 
@@ -397,18 +368,6 @@ impl<'hir> Lowerer<'hir> {
                 DeconPat::Ctor {
                     tag: Ctor::Struct,
                     fields: self.decon_items_indexed(items, &field_tys),
-                }
-            }
-            TypeKind::Union(members) => {
-                let Some(tag) = self.pattern_leading_atom(items) else {
-                    return DeconPat::Wild;
-                };
-                match self.union_member_payload_tys(&members, &tag, span) {
-                    Some(field_tys) if field_tys.len() == items.len() - 1 => DeconPat::Ctor {
-                        tag: Ctor::Tagged(tag),
-                        fields: self.decon_items_indexed(&items[1..], &field_tys),
-                    },
-                    _ => DeconPat::Wild,
                 }
             }
             TypeKind::Optional(inner) => match self.pattern_leading_atom(items) {
@@ -475,23 +434,61 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Payload field types of the union member tagged `tag`.
-    fn union_member_payload_tys(
+    /// Deconstruct a `ThirPatKind::TaggedValue` pattern for the Maranget matrix.
+    fn decon_tagged_value_pattern(
         &mut self,
-        members: &[TypeId],
-        tag: &str,
+        tag: String,
+        payload: &[ThirRecordPatField],
+        col_ty: TypeId,
         span: Span,
-    ) -> Option<Vec<TypeId>> {
-        for &member in members {
-            let resolved = self.resolve_alias(member, &mut HashSet::new(), span);
-            let TypeKind::Tuple(items) = self.ty(resolved).kind.clone() else {
-                continue;
-            };
-            if self.tuple_member_tag(&items, span).as_deref() == Some(tag) {
-                return Some(items[1..].iter().map(tuple_item_ty).collect());
+    ) -> DeconPat {
+        use std::collections::HashMap;
+        match self.ty(col_ty).kind.clone() {
+            TypeKind::Optional(_) if tag == "none" => DeconPat::nullary(Ctor::OptNone),
+            TypeKind::Optional(inner) if tag == "some" => {
+                let pat = payload
+                    .iter()
+                    .find(|f| f.name == "value")
+                    .map(|f| self.decon_pattern(f.pattern, inner))
+                    .unwrap_or(DeconPat::Wild);
+                DeconPat::Ctor {
+                    tag: Ctor::OptSome,
+                    fields: vec![pat],
+                }
             }
+            TypeKind::Union(variants) => {
+                let variant = variants.iter().find(|v| v.name == tag).cloned();
+                match variant {
+                    None => DeconPat::Wild,
+                    Some(v) => match v.payload {
+                        None => DeconPat::nullary(Ctor::Tagged(tag)),
+                        Some(record_ty) => {
+                            let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
+                            let TypeKind::Record(type_fields) = self.ty(resolved).kind.clone()
+                            else {
+                                return DeconPat::Wild;
+                            };
+                            let by_name: HashMap<&str, ThirPatId> = payload
+                                .iter()
+                                .map(|f| (f.name.as_str(), f.pattern))
+                                .collect();
+                            let fields = type_fields
+                                .iter()
+                                .map(|tf| match by_name.get(tf.name.as_str()) {
+                                    Some(&pat) => self.decon_pattern(pat, tf.ty),
+                                    None => DeconPat::Wild,
+                                })
+                                .collect();
+                            DeconPat::Ctor {
+                                tag: Ctor::Tagged(tag),
+                                fields,
+                            }
+                        }
+                    },
+                }
+            }
+            _ => DeconPat::Wild,
         }
-        None
     }
 }
 
@@ -599,8 +596,20 @@ fn render_one(pat: &DeconPat) -> String {
             Ctor::FloatLit(bits) => f64::from_bits(*bits).to_string(),
             Ctor::StrLit(value) => format!("{value:?}"),
             Ctor::OptNone => "#none".to_string(),
-            Ctor::OptSome => format!("(#some, {})", render_payload(fields)),
-            Ctor::Tagged(tag) => format!("(#{tag}, {})", render_payload(fields)),
+            Ctor::OptSome => {
+                if fields.is_empty() {
+                    "#some".to_string()
+                } else {
+                    format!("#some {{ {} }}", render_payload(fields))
+                }
+            }
+            Ctor::Tagged(tag) => {
+                if fields.is_empty() {
+                    format!("#{tag}")
+                } else {
+                    format!("#{tag} {{ {} }}", render_payload(fields))
+                }
+            }
             Ctor::Struct => format!("({})", render_payload(fields)),
         },
     }

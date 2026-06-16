@@ -1,19 +1,19 @@
 -- cursed_disambiguation.zt: valid but awkward syntax around type/value contexts.
 
 Tagged :: type [
-  (#empty);
-  (#single, value : Int);
-  (#recorded, item : {
+  empty;
+  single: { value: Int; };
+  recorded: { item: {
     plain : Text;
     optional-field? : Int?;
     hyphen-name : Bool;
-  });
+  }; };
 ]
 
 Callbacks :: type {
   direct : Int -> Int;
   wrapped? : (Int -> Int)?;
-  choice : [#left; #right; (#other, label : Text);];
+  choice : [left; right; other: { label: Text; };];
   nested? : {
     tag : Tagged;
     next? : Tagged?;
@@ -29,7 +29,7 @@ choose :: Bool -> Int -> Int -> Int {
   | false _ no => no;
 }
 
-wrap value = (#single, value = value)
+wrap value = #single { value = value; }
 
 {
   empty-record = {};
@@ -37,11 +37,11 @@ wrap value = (#single, value = value)
     local := choose true 10 20;
     wrap local
   };
-  tuple-tagged-record = (#recorded, item = {
+  recorded-val = #recorded { item = {
     plain = "text";
     optional-field = #none;
     hyphen-name = false;
-  });
+  }; };
   type-value = type {
     field : Tagged;
     callback? : (Int -> Int)?;
@@ -49,7 +49,7 @@ wrap value = (#single, value = value)
   callbacks = {
     direct = \x. identity x;
     wrapped = #none;
-    choice = (#other, label = "fallback");
+    choice = #other { label = "fallback"; };
     nested = #none;
   };
 }

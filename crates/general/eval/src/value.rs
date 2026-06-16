@@ -36,6 +36,11 @@ pub enum Value {
     Record(Rc<Vec<(Rc<str>, crate::thunk::Thunk)>>),
     Closure(Rc<Closure>),
     TypeValue(TypeId),
+    /// A tagged union value: `#tag { field = value; ... }`.
+    TaggedValue {
+        tag: Rc<str>,
+        payload: Rc<Vec<(Rc<str>, crate::thunk::Thunk)>>,
+    },
     /// Absent optional field / left-hand side of `??` that is absent.
     Nothing,
 }
@@ -216,6 +221,38 @@ pub fn values_equal(
             }
             Ok(true)
         }
+        (
+            Value::TaggedValue {
+                tag: ta,
+                payload: pa,
+            },
+            Value::TaggedValue {
+                tag: tb,
+                payload: pb,
+            },
+        ) => {
+            if ta != tb {
+                return Ok(false);
+            }
+            let mut fa: Vec<_> = pa.iter().collect();
+            let mut fb: Vec<_> = pb.iter().collect();
+            fa.sort_by_key(|(n, _)| n.as_ref());
+            fb.sort_by_key(|(n, _)| n.as_ref());
+            if fa.len() != fb.len() {
+                return Ok(false);
+            }
+            for ((na, ta), (nb, tb)) in fa.iter().zip(fb.iter()) {
+                if na != nb {
+                    return Ok(false);
+                }
+                let va = ta.force(ev)?;
+                let vb = tb.force(ev)?;
+                if !values_equal(&va, &vb, ev)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
         // Closures and TypeValues are not comparable under `==` in well-typed
         // programs; this branch is an internal error if ever reached.
         (Value::Closure(_), _) | (_, Value::Closure(_)) => Err(EvalError::Internal(
@@ -305,6 +342,24 @@ impl fmt::Display for Value {
                     }
                 }
                 write!(f, " }}")
+            }
+            Value::TaggedValue { tag, payload } => {
+                write!(f, "#{tag}")?;
+                if !payload.is_empty() {
+                    write!(f, " {{")?;
+                    for (i, (name, t)) in payload.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ";")?;
+                        }
+                        write!(f, " {name} = ")?;
+                        match t.peek() {
+                            Some(v) => write!(f, "{v}")?,
+                            None => write!(f, "<thunk>")?,
+                        }
+                    }
+                    write!(f, " }}")?;
+                }
+                Ok(())
             }
             Value::Closure(c) => {
                 // The HIR binding name isn't stored here; use the arity.

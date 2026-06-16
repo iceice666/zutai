@@ -9,7 +9,7 @@ use crate::ir::{
     Binding, BindingId, BindingKind, HirClause, HirDecl, HirDeclId, HirDeclKind, HirExpr,
     HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding, HirPat, HirPatId,
     HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem, HirTypeExpr,
-    HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
+    HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 
@@ -70,7 +70,7 @@ impl Lowerer {
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
         };
-        for name in ["Type", "Text", "Bool", "Int", "Float", "List", "Optional"] {
+        for name in ["Type", "Text", "Bool", "Int", "Float", "List"] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }
         lowerer
@@ -234,6 +234,10 @@ impl Lowerer {
             ast::Expr::Float { value, .. } => HirExprKind::Float(*value),
             ast::Expr::String { value, .. } => HirExprKind::String(value.clone()),
             ast::Expr::Atom { name, .. } => HirExprKind::Atom(name.clone()),
+            ast::Expr::TaggedValue { tag, payload, .. } => HirExprKind::TaggedValue {
+                tag: tag.clone(),
+                payload: self.lower_expr(payload),
+            },
             ast::Expr::Ident { name, span } => self.lower_ident(name, *span),
             ast::Expr::Record { fields, .. } => HirExprKind::Record(
                 fields
@@ -383,6 +387,17 @@ impl Lowerer {
             ast::Pattern::Float { value, .. } => HirPatKind::Float(*value),
             ast::Pattern::String { value, .. } => HirPatKind::String(value.clone()),
             ast::Pattern::Atom { name, .. } => HirPatKind::Atom(name.clone()),
+            ast::Pattern::TaggedValue { tag, payload, .. } => HirPatKind::TaggedValue {
+                tag: tag.clone(),
+                payload: payload
+                    .iter()
+                    .map(|field| HirRecordPatField {
+                        name: field.name.clone(),
+                        pattern: self.lower_pattern(&field.pattern),
+                        span: field.span,
+                    })
+                    .collect(),
+            },
             ast::Pattern::Tuple { items, .. } => HirPatKind::Tuple(
                 items
                     .iter()
@@ -442,9 +457,26 @@ impl Lowerer {
                     })
                     .collect(),
             ),
-            ast::TypeExpr::Union { items, .. } => {
-                HirTypeKind::Union(items.iter().map(|item| self.lower_type(item)).collect())
-            }
+            ast::TypeExpr::Union { variants, .. } => HirTypeKind::Union(
+                variants
+                    .iter()
+                    .map(|v| HirUnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.as_ref().map(|fields| {
+                            fields
+                                .iter()
+                                .map(|field| HirTypeRecordField {
+                                    name: field.name.clone(),
+                                    optional: field.optional,
+                                    ty: self.lower_type(&field.ty),
+                                    span: field.span,
+                                })
+                                .collect()
+                        }),
+                        span: v.span,
+                    })
+                    .collect(),
+            ),
             ast::TypeExpr::Tuple { items, .. } => HirTypeKind::Tuple(
                 items
                     .iter()

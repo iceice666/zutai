@@ -115,13 +115,20 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            ImportedType::Union(items) => {
-                let items = items
+            ImportedType::Union(variants) => {
+                let variants = variants
                     .iter()
-                    .map(|item| self.intern_imported_type_with_source(item, source, span))
+                    .map(|v| crate::ir::UnionVariant {
+                        name: v.name.clone(),
+                        payload: v
+                            .payload
+                            .as_deref()
+                            .map(|p| self.intern_imported_type_with_source(p, source, span)),
+                        span,
+                    })
                     .collect();
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(items),
+                    kind: TypeKind::Union(variants),
                     span,
                 })
             }

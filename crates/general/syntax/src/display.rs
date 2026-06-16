@@ -127,6 +127,10 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
         Expr::Float { value, .. } => writeln!(f, "{prefix}Float({value})"),
         Expr::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Expr::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
+        Expr::TaggedValue { tag, payload, .. } => {
+            writeln!(f, "{prefix}TaggedValue(#{tag})")?;
+            write_expr(f, payload, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
         Expr::Ident { name, .. } => writeln!(f, "{prefix}Ident({name})"),
         Expr::Record { fields, .. } => {
             writeln!(f, "{prefix}Record")?;
@@ -318,6 +322,18 @@ fn write_pattern(
         Pattern::Float { value, .. } => writeln!(f, "{prefix}Float({value})"),
         Pattern::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Pattern::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
+        Pattern::TaggedValue { tag, payload, .. } => {
+            writeln!(f, "{prefix}TaggedPat(#{tag})")?;
+            for field in payload {
+                write_pattern(
+                    f,
+                    &field.pattern,
+                    &format!("{indent}├─ {}=", field.name),
+                    &format!("{indent}│  "),
+                )?;
+            }
+            Ok(())
+        }
         Pattern::Tuple { items, .. } => {
             writeln!(f, "{prefix}TuplePat")?;
             for item in items {
@@ -376,10 +392,23 @@ fn write_type_expr(
             }
             Ok(())
         }
-        TypeExpr::Union { items, .. } => {
+        TypeExpr::Union { variants, .. } => {
             writeln!(f, "{prefix}TyUnion")?;
-            for item in items {
-                write_type_expr(f, item, &format!("{indent}├─ "), &format!("{indent}│  "))?;
+            for v in variants {
+                if let Some(fields) = &v.payload {
+                    writeln!(f, "{indent}├─ {}:", v.name)?;
+                    for field in fields {
+                        let opt = if field.optional { "?" } else { "" };
+                        write_type_expr(
+                            f,
+                            &field.ty,
+                            &format!("{indent}│  ├─ {}{opt}: ", field.name),
+                            &format!("{indent}│  │  "),
+                        )?;
+                    }
+                } else {
+                    writeln!(f, "{indent}├─ {}", v.name)?;
+                }
             }
             Ok(())
         }

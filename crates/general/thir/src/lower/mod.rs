@@ -305,7 +305,9 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::InferVar(v) => v == var_id,
             TypeKind::Function { from, to } => self.occurs(var_id, from) || self.occurs(var_id, to),
             TypeKind::List(inner) | TypeKind::Optional(inner) => self.occurs(var_id, inner),
-            TypeKind::Union(items) => items.iter().any(|&item| self.occurs(var_id, item)),
+            TypeKind::Union(variants) => variants
+                .iter()
+                .any(|v| v.payload.is_some_and(|p| self.occurs(var_id, p))),
             TypeKind::Tuple(items) => items.iter().any(|item| {
                 let inner = match item {
                     TypeTupleItem::Named { ty, .. } => *ty,
