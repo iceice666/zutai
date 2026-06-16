@@ -3,8 +3,7 @@ use zutai_syntax::ast::BinOp;
 use zutai_thir::{ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId};
 
 use crate::ir::{
-    BuiltinOp, Literal, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcTupleItem, TlcType,
-    TlcTypeId,
+    BuiltinOp, Literal, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcTupleItem, TlcTypeId,
 };
 
 use super::Lowerer;
@@ -131,12 +130,9 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::Import(_) | ThirExprKind::TypeValue(_) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
             }
-            // Tagged union values are not yet lowered through TLC — the eval
-            // crate uses THIR directly.  Emit a Nothing placeholder so the
-            // TLC pipeline still compiles while the TLC TaggedValue repr is designed.
-            ThirExprKind::TaggedValue { payload, .. } => {
-                let _ = self.lower_expr(payload);
-                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
+            ThirExprKind::TaggedValue { tag, payload } => {
+                let payload_tlc = self.lower_expr(payload);
+                self.alloc_expr(TlcExpr::Variant(tag, payload_tlc), tlc_ty, span)
             }
         }
     }
@@ -212,9 +208,20 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 TlcPat::Record(tlc_fields)
             }
-            // Not yet representable in TLC — lower to wildcard so the
-            // pipeline compiles while TLC tagged-union support is added.
-            ThirPatKind::TaggedValue { .. } => TlcPat::Wildcard,
+            ThirPatKind::TaggedValue { tag, payload } => {
+                let inner = if payload.is_empty() {
+                    // Bare atom arm: `#dev` — no payload to bind.
+                    Box::new(TlcPat::Wildcard)
+                } else {
+                    // Tagged-payload arm: `(#circle, radius: r)` — match as record.
+                    let fields: Vec<(String, TlcPat)> = payload
+                        .iter()
+                        .map(|f| (f.name.clone(), self.lower_pat(f.pattern)))
+                        .collect();
+                    Box::new(TlcPat::Record(fields))
+                };
+                TlcPat::Variant(tag, inner)
+            }
         }
     }
 

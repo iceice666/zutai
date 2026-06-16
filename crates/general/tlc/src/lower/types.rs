@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use zutai_hir::BindingId;
 use zutai_thir::{ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
-use crate::ir::{PrimTy, TlcRecordField, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
+use crate::ir::{
+    Kind, Literal, PrimTy, Row, TlcRecordField, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar,
+};
 
 use super::Lowerer;
 
@@ -17,11 +19,13 @@ impl<'thir> Lowerer<'thir> {
         let tlc_ty = match kind {
             TypeKind::Int => self.alloc_type(TlcType::Prim(PrimTy::Int)),
             TypeKind::Float => self.alloc_type(TlcType::Prim(PrimTy::Float)),
-            TypeKind::Bool | TypeKind::True | TypeKind::False => {
-                self.alloc_type(TlcType::Prim(PrimTy::Bool))
-            }
+            TypeKind::Bool => self.alloc_type(TlcType::Prim(PrimTy::Bool)),
+            // Singleton types — preserve discrimination (Phase 0 bug fix).
+            TypeKind::True => self.alloc_type(TlcType::Singleton(Literal::Bool(true))),
+            TypeKind::False => self.alloc_type(TlcType::Singleton(Literal::Bool(false))),
+            // Atom with its symbol payload (Phase 0 bug fix).
+            TypeKind::Atom(sym) => self.alloc_type(TlcType::Singleton(Literal::Atom(sym))),
             TypeKind::Text => self.alloc_type(TlcType::Prim(PrimTy::Str)),
-            TypeKind::Atom(_) => self.alloc_type(TlcType::Prim(PrimTy::Atom)),
             TypeKind::Function { from, to } => {
                 let from_tlc = self.lower_type(from);
                 let to_tlc = self.lower_type(to);
@@ -61,26 +65,55 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 self.alloc_type(TlcType::Tuple(tlc_items))
             }
-            TypeKind::Union(_) => self.alloc_type(TlcType::Record(Vec::new())),
+            // Union / sum type — build a VariantT row (Phase 0 bug fix).
+            TypeKind::Union(variants) => {
+                let fields: Vec<(String, TlcTypeId)> = variants
+                    .iter()
+                    .map(|v| {
+                        let arm_ty = match v.payload {
+                            // Bare atom arm: type is `Singleton(Atom(name))`.
+                            None => {
+                                self.alloc_type(TlcType::Singleton(Literal::Atom(v.name.clone())))
+                            }
+                            // Tagged-payload arm: lower the payload type directly.
+                            Some(payload_ty) => self.lower_type(payload_ty),
+                        };
+                        (v.name.clone(), arm_ty)
+                    })
+                    .collect();
+                self.alloc_type(TlcType::VariantT(Row::from_fields(fields)))
+            }
             TypeKind::TypeVar(binding) => {
                 let tyvar = self.named_tyvar(binding);
-                self.alloc_type(TlcType::TyVar(tyvar))
+                self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
             }
             TypeKind::InferVar(v) => {
                 let tyvar = self.inferred_tyvar(v);
-                self.alloc_type(TlcType::TyVar(tyvar))
+                self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
             }
-            TypeKind::Alias(binding) => match self.thir_alias_body(binding) {
-                Some(body) => self.lower_type(body),
-                None => self.alloc_type(TlcType::Record(Vec::new())),
-            },
+            TypeKind::Alias(binding) => {
+                let tyvar = self.named_tyvar(binding);
+                let kind = self.alias_head_kind(binding);
+                self.alloc_type(TlcType::TyVar(tyvar, kind))
+            }
             TypeKind::AliasApply { binding, args } => {
-                match self.expand_alias_apply(binding, &args) {
-                    Some(expanded) => self.lower_type(expanded),
-                    None => self.alloc_type(TlcType::Record(Vec::new())),
+                let tyvar = self.named_tyvar(binding);
+                let kind = self.alias_head_kind(binding);
+                let mut spine = self.alloc_type(TlcType::TyVar(tyvar, kind));
+                for &arg in &args {
+                    let arg_tlc = self.lower_type(arg);
+                    spine = self.alloc_type(TlcType::TyApp(spine, arg_tlc));
                 }
+                spine
             }
-            TypeKind::Type | TypeKind::Error => self.alloc_type(TlcType::Record(Vec::new())),
+            // TLC is only produced when THIR is complete — Error cannot appear.
+            TypeKind::Error => unreachable!(
+                "TypeKind::Error must not reach TLC lowering; only call lower_thir when is_thir_complete()"
+            ),
+            // Type-valued bindings are erased before reaching the type arena.
+            TypeKind::Type => {
+                unreachable!("TypeKind::Type must not reach the TLC type arena as a reified node")
+            }
         };
         self.type_cache.insert(resolved.0, tlc_ty);
         tlc_ty
@@ -90,44 +123,27 @@ impl<'thir> Lowerer<'thir> {
         ty
     }
 
-    fn thir_alias_body(&self, binding: BindingId) -> Option<TypeId> {
-        for &decl_id in &self.thir.decls {
-            let decl = &self.thir.decl_arena[decl_id];
-            if decl.binding == binding {
-                if let ThirDeclKind::TypeAlias { ty, .. } = decl.kind {
-                    return Some(ty);
+    /// Returns the kind for an alias head: `Type(0)` for a 0-ary alias;
+    /// `Arrow(Type(0), … Arrow(Type(0), Type(0)))` for an n-ary one.
+    /// Phase 2 first constructs `Kind::Arrow` — the dormant Phase-1 variant goes live here.
+    fn alias_head_kind(&self, binding: BindingId) -> Kind {
+        let arity = self
+            .thir
+            .decls
+            .iter()
+            .find_map(|&d| {
+                let decl = &self.thir.decl_arena[d];
+                if decl.binding == binding
+                    && let ThirDeclKind::TypeAlias { ref params, .. } = decl.kind
+                {
+                    return Some(params.len());
                 }
-            }
-        }
-        None
-    }
-
-    fn expand_alias_apply(&self, binding: BindingId, args: &[TypeId]) -> Option<TypeId> {
-        for &decl_id in &self.thir.decls {
-            let decl = &self.thir.decl_arena[decl_id];
-            if decl.binding == binding {
-                if let ThirDeclKind::TypeAlias { ref params, ty } = decl.kind {
-                    if params.len() != args.len() {
-                        return None;
-                    }
-                    return Some(self.substitute_type_vars(ty, params, args));
-                }
-            }
-        }
-        None
-    }
-
-    fn substitute_type_vars(&self, ty: TypeId, params: &[BindingId], args: &[TypeId]) -> TypeId {
-        match self.thir.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::TypeVar(b) => {
-                if let Some(pos) = params.iter().position(|&p| p == b) {
-                    args[pos]
-                } else {
-                    ty
-                }
-            }
-            _ => ty,
-        }
+                None
+            })
+            .unwrap_or(0);
+        (0..arity).fold(Kind::ground(), |acc, _| {
+            Kind::Arrow(Box::new(Kind::ground()), Box::new(acc))
+        })
     }
 
     pub(super) fn named_tyvar(&mut self, binding: BindingId) -> TlcTypeVar {
@@ -159,7 +175,7 @@ impl<'thir> Lowerer<'thir> {
                     self.lower_type(concrete)
                 } else {
                     let tyvar = self.inferred_tyvar(v);
-                    self.alloc_type(TlcType::TyVar(tyvar))
+                    self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
                 };
                 (self.inferred_tyvar(v), tlc_ty)
             })

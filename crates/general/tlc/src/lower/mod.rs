@@ -6,8 +6,7 @@ use zutai_syntax::Span;
 use zutai_thir::{ThirFile, TypeId};
 
 use crate::ir::{
-    TlcDecl, TlcDeclId, TlcExpr, TlcExprId, TlcModule, TlcRecordField, TlcTupleField, TlcType,
-    TlcTypeId, TlcTypeVar,
+    TlcDecl, TlcDeclId, TlcExpr, TlcExprId, TlcModule, TlcType, TlcTypeId, TlcTypeVar,
 };
 
 mod decl;

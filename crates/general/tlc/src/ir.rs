@@ -19,16 +19,95 @@ pub enum TlcTypeVar {
     Inferred(u32), // InferVar id from poly_schemes
 }
 
+// ── Kind language (spec §3) ───────────────────────────────────────────────────
+
+/// Kind language (spec §3). Phase 1 only ever constructs `Type(0)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Kind {
+    /// `Type ℓ` — universe at level ℓ. Ground types are `Type(0)`.
+    Type(u32),
+    /// `Row κ` — a row whose entries have kind κ (records / unions / effects). Dormant until Phase 3.
+    Row(Box<Kind>),
+    /// `κ₁ -> κ₂` — type-constructor kind (HKT / F-ω layer). Dormant until Phase 3/5.
+    Arrow(Box<Kind>, Box<Kind>),
+}
+
+impl Kind {
+    /// The ground kind `Type 0` — the Phase 1 default for every annotation.
+    pub fn ground() -> Kind {
+        Kind::Type(0)
+    }
+}
+
+// ── Row type (Phase 0: closed rows only; RVar added in Phase 3) ───────────────
+
+/// A structural row — the spine of `RecordT` and `VariantT`.
+/// Closed in v0 (no `RVar`); open-row polymorphism is Phase 3.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Row {
+    /// Empty / closed tail.
+    REmpty,
+    /// Extend the row with one labelled field.
+    RExtend {
+        label: String,
+        ty: TlcTypeId,
+        tail: Box<Row>,
+    },
+}
+
+impl Row {
+    /// Build a closed row from an iterator of `(label, ty)` pairs (first pair = outermost).
+    pub fn from_fields(fields: impl IntoIterator<Item = (String, TlcTypeId)>) -> Self {
+        let mut fields: Vec<_> = fields.into_iter().collect();
+        fields.reverse();
+        fields
+            .into_iter()
+            .fold(Row::REmpty, |tail, (label, ty)| Row::RExtend {
+                label,
+                ty,
+                tail: Box::new(tail),
+            })
+    }
+
+    /// Iterate over `(label, ty)` pairs in declaration order.
+    pub fn fields(&self) -> impl Iterator<Item = (&str, TlcTypeId)> {
+        RowIter(self)
+    }
+}
+
+struct RowIter<'a>(&'a Row);
+
+impl<'a> Iterator for RowIter<'a> {
+    type Item = (&'a str, TlcTypeId);
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0 {
+            Row::REmpty => None,
+            Row::RExtend { label, ty, tail } => {
+                self.0 = tail;
+                Some((label.as_str(), *ty))
+            }
+        }
+    }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TlcType {
     Prim(PrimTy),
+    /// Singleton type: `true`, `false`, `#atom`, integer literal, …
+    /// Fixes the silent `True`/`False` and `Atom` data-loss bugs.
+    Singleton(Literal),
     Fun(TlcTypeId, TlcTypeId),
-    ForAll(TlcTypeVar, TlcTypeId),
-    TyVar(TlcTypeVar),
+    ForAll(TlcTypeVar, Kind, TlcTypeId),
+    TyVar(TlcTypeVar, Kind),
     TyApp(TlcTypeId, TlcTypeId),
+    /// Type-level lambda (F-ω). Binds `a : k` in `body`. Introduced in Phase 2 for
+    /// generic type aliases; reduced by the NbE normalizer (`normalize.rs`).
+    TyLamK(TlcTypeVar, Kind, TlcTypeId),
     Record(Vec<TlcRecordField>),
+    /// Union / sum type former — replaces the silent `Union → Record([])` collapse.
+    VariantT(Row),
     Tuple(Vec<TlcTupleField>),
     List(TlcTypeId),
     Optional(TlcTypeId),
@@ -40,6 +119,7 @@ pub enum PrimTy {
     Float,
     Bool,
     Str,
+    /// Kept for the unqualified `Atom` primitive type (not a singleton).
     Atom,
     Nothing,
 }
@@ -65,7 +145,7 @@ pub enum TlcExpr {
     Lit(Literal),
     Lam(BindingId, TlcTypeId, TlcExprId),
     App(TlcExprId, TlcExprId),
-    TyLam(TlcTypeVar, TlcExprId),
+    TyLam(TlcTypeVar, Kind, TlcExprId),
     TyApp(TlcExprId, TlcTypeId),
     Let {
         binding: BindingId,
@@ -83,6 +163,8 @@ pub enum TlcExpr {
     Tuple(Vec<TlcTupleItem>),
     List(Vec<TlcExprId>),
     Builtin(BuiltinOp, TlcExprId, TlcExprId),
+    /// Inject a value into a sum / union arm: `#dev` or `(#circle, …)`.
+    Variant(String, TlcExprId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +182,8 @@ pub enum TlcPat {
     Atom(String),
     Tuple(Vec<TlcPatItem>),
     Record(Vec<(String, TlcPat)>),
+    /// Match a sum / union arm: `(#circle, inner_pat)`.
+    Variant(String, Box<TlcPat>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
