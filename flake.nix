@@ -26,6 +26,8 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               cargo
+              cargo-llvm-cov
+              cargo-nextest
               clippy
               rust-analyzer
               rustc

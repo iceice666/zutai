@@ -69,6 +69,14 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
+Coverage (requires `cargo-llvm-cov` and `cargo-nextest` from the dev shell):
+
+```sh
+cargo llvm-cov nextest --workspace
+```
+
+Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
+
 ## Agent guidelines
 
 - Prefer small, focused changes.
