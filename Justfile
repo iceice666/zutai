@@ -1,7 +1,9 @@
 # Zutai workspace recipes — run `just` to list all
+# Every recipe runs inside `nix develop` so tools are always available.
+set shell := ["nix", "develop", "--command", "bash", "-c"]
 
 default:
-    @just --list
+    just --list
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
