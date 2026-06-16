@@ -3,10 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, fenix, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -21,17 +25,22 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          # Stable toolchain with llvm-tools-preview for cargo-llvm-cov
+          toolchain = fenix.packages.${system}.stable.withComponents [
+            "cargo"
+            "clippy"
+            "llvm-tools-preview"
+            "rustc"
+            "rustfmt"
+          ];
         in
         {
           default = pkgs.mkShell {
-            packages = with pkgs; [
-              cargo
-              cargo-llvm-cov
-              cargo-nextest
-              clippy
-              rust-analyzer
-              rustc
-              rustfmt
+            packages = [
+              toolchain
+              pkgs.cargo-llvm-cov
+              pkgs.cargo-nextest
+              pkgs.rust-analyzer
             ];
 
             RUST_BACKTRACE = "1";
