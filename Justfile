@@ -1,15 +1,57 @@
-# Zutai workspace recipes
+# Zutai workspace recipes — run `just` to list all
 
-# Run tests with LLVM coverage (terminal summary)
+default:
+    @just --list
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+
+build:
+    cargo build --workspace
+
+build-release:
+    cargo build --workspace --release
+
+# ── Test ──────────────────────────────────────────────────────────────────────
+
+# Run tests with nextest (accepts extra args, e.g. `just test -p zutai-tlc`)
+test *ARGS:
+    cargo nextest run --workspace {{ARGS}}
+
+# ── Lint & format ─────────────────────────────────────────────────────────────
+
+fmt:
+    cargo fmt
+
+fmt-check:
+    cargo fmt --check
+
+clippy:
+    cargo clippy --workspace --all-targets
+
+# ── CI gate (what to run before every commit) ─────────────────────────────────
+
+ci: fmt-check test clippy
+
+# ── Coverage ──────────────────────────────────────────────────────────────────
+
+# Line/function coverage summary in terminal
 cov:
     cargo llvm-cov nextest --workspace
 
-# Run tests with LLVM coverage and open HTML report
+# HTML coverage report — opens in browser
 cov-html:
     cargo llvm-cov nextest --workspace --html --open
 
-# Standard checks (fmt + test + clippy)
-check:
-    cargo fmt --check
-    cargo test --workspace
-    cargo clippy --workspace --all-targets
+# lcov output for external tools / CI upload
+cov-lcov:
+    cargo llvm-cov nextest --workspace --lcov --output-path target/lcov.info
+
+# ── Docs ──────────────────────────────────────────────────────────────────────
+
+doc:
+    cargo doc --workspace --no-deps --open
+
+# ── Housekeeping ──────────────────────────────────────────────────────────────
+
+clean:
+    cargo clean
