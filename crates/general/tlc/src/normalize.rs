@@ -35,6 +35,9 @@
 //! index integers). Row equality is **order-insensitive** (permutation by label): `{a: Int, b: Str}`
 //! equals `{b: Str, a: Int}`. α-equivalence over bound row *variables* (renaming a quantified
 //! `RVar`) remains deferred.
+//!
+//! `Fun` carries an effect row (Phase 4); its effect row is compared via the same
+//! order-insensitive `rows_equal_deep` — correct for effect sets. In v0, `eff = REmpty` always.
 
 use std::collections::HashMap;
 
@@ -170,10 +173,11 @@ fn normalize_ty(
             let nb = normalize_ty(arena, alias_env, body_id, fuel, fuel_limit)?;
             Ok(arena.alloc(TlcType::ForAll(binder, kind, nb)))
         }
-        TlcType::Fun(from_id, to_id) => {
+        TlcType::Fun(from_id, to_id, eff) => {
             let nf = normalize_ty(arena, alias_env, from_id, fuel, fuel_limit)?;
             let nt = normalize_ty(arena, alias_env, to_id, fuel, fuel_limit)?;
-            Ok(arena.alloc(TlcType::Fun(nf, nt)))
+            let neff = normalize_row(arena, alias_env, &eff, fuel, fuel_limit)?;
+            Ok(arena.alloc(TlcType::Fun(nf, nt, neff)))
         }
         TlcType::List(inner_id) => {
             let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit)?;
@@ -292,10 +296,11 @@ fn subst(
             let na = subst(arena, a, var, replacement);
             arena.alloc(TlcType::TyApp(nf, na))
         }
-        TlcType::Fun(from, to) => {
+        TlcType::Fun(from, to, eff) => {
             let nf = subst(arena, from, var, replacement);
             let nt = subst(arena, to, var, replacement);
-            arena.alloc(TlcType::Fun(nf, nt))
+            let neff = subst_row(arena, &eff, var, replacement);
+            arena.alloc(TlcType::Fun(nf, nt, neff))
         }
         TlcType::List(inner) => {
             let ni = subst(arena, inner, var, replacement);
@@ -391,8 +396,10 @@ fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool 
         (TlcType::Prim(pa), TlcType::Prim(pb)) => pa == pb,
         (TlcType::Singleton(la), TlcType::Singleton(lb)) => la == lb,
         (TlcType::TyVar(va, ka), TlcType::TyVar(vb, kb)) => va == vb && ka == kb,
-        (TlcType::Fun(f1, t1), TlcType::Fun(f2, t2)) => {
-            types_equal_deep(arena, f1, f2) && types_equal_deep(arena, t1, t2)
+        (TlcType::Fun(f1, t1, e1), TlcType::Fun(f2, t2, e2)) => {
+            types_equal_deep(arena, f1, f2)
+                && types_equal_deep(arena, t1, t2)
+                && rows_equal_deep(arena, &e1, &e2)
         }
         (TlcType::List(i1), TlcType::List(i2)) => types_equal_deep(arena, i1, i2),
         (TlcType::Optional(i1), TlcType::Optional(i2)) => types_equal_deep(arena, i1, i2),

@@ -144,7 +144,9 @@ pub enum TlcType {
     /// Singleton type: `true`, `false`, `#atom`, integer literal, …
     /// Fixes the silent `True`/`False` and `Atom` data-loss bugs.
     Singleton(Literal),
-    Fun(TlcTypeId, TlcTypeId),
+    /// A function type carrying an effect row (`EffRow ::= Row`, spec §4 line 133).
+    /// In v0 every function is pure: `eff = REmpty` always.
+    Fun(TlcTypeId, TlcTypeId, Row),
     ForAll(TlcTypeVar, Kind, TlcTypeId),
     TyVar(TlcTypeVar, Kind),
     TyApp(TlcTypeId, TlcTypeId),

@@ -103,9 +103,9 @@ fn monomorphic_identity_function_lowers_to_lam() {
     let crate::TlcDecl::Value { body, ty, .. } = &m.decl_arena[m.decls[0]] else {
         panic!("expected Value decl")
     };
-    // Type should be Fun(Int, Int), not ForAll.
+    // Type should be Fun(Int, Int, REmpty), not ForAll.
     assert!(
-        matches!(m.type_arena[*ty], crate::TlcType::Fun(_, _)),
+        matches!(m.type_arena[*ty], crate::TlcType::Fun(_, _, _)),
         "expected Fun type but got {:?}",
         m.type_arena[*ty]
     );
@@ -798,4 +798,136 @@ fn optional_record_field_roundtrips() {
             _ => panic!("expected RExtend, got {:?}", row),
         }
     }
+}
+
+// ── Phase 4 tests: effect row on Fun ─────────────────────────────────────────
+
+/// Every v0 function lowers to `Fun(_, _, Row::REmpty)` — invariant #10 holds vacuously:
+/// no v0 path produces a non-empty effect row, so "erase before DC" is a no-op.
+#[test]
+fn v0_function_lowers_with_empty_effect_row() {
+    let m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    let crate::TlcDecl::Value { ty, .. } = &m.decl_arena[m.decls[0]] else {
+        panic!("expected Value decl")
+    };
+    let TlcType::Fun(_, _, ref eff) = m.type_arena[*ty] else {
+        panic!("expected Fun, got {:?}", m.type_arena[*ty])
+    };
+    assert_eq!(
+        *eff,
+        Row::REmpty,
+        "v0 function must have REmpty effect row (invariant #10 vacuous), got {:?}",
+        eff
+    );
+}
+
+/// A non-empty effect row (arbitrary placeholder labels/types — *not* the final effect
+/// encoding, which requires the deferred free-monad elaboration) survives `normalize`.
+/// This proves `normalize_ty` threads the field rather than dropping it.
+#[test]
+fn effect_row_survives_normalize() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    // Placeholder effect row: RExtend("e", Bool, REmpty).
+    // Label "e" and type Bool are arbitrary stand-ins — effect entry contents are
+    // not yet pinned (Kind::Effect is deferred with free-monad elaboration).
+    let bool_placeholder = type_arena.alloc(TlcType::Prim(PrimTy::Bool));
+    let eff_row = Row::RExtend {
+        label: "e".to_string(),
+        ty: bool_placeholder,
+        optional: false,
+        tail: Box::new(Row::REmpty),
+    };
+    let fun_ty = type_arena.alloc(TlcType::Fun(int_ty, int_ty, eff_row));
+    let mut m = make_module(type_arena);
+    let norm = m.normalize(fun_ty).expect("normalize must not fail");
+    let TlcType::Fun(_, _, ref eff_after) = m.type_arena[norm] else {
+        panic!("expected Fun after normalize, got {:?}", m.type_arena[norm])
+    };
+    match eff_after {
+        Row::RExtend { label, .. } => {
+            assert_eq!(label, "e", "effect row label must survive normalization");
+        }
+        _ => panic!(
+            "expected RExtend in effect row after normalize, got {:?}",
+            eff_after
+        ),
+    }
+}
+
+/// Two functions identical in `from` and `to` but differing in their effect row
+/// must NOT be equal. This is the discriminating test: `REmpty→REmpty` alone cannot
+/// distinguish "field compared" from "field ignored"; a non-empty vs. empty row can.
+#[test]
+fn functions_differing_only_in_effect_row_are_unequal() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    let bool_placeholder = type_arena.alloc(TlcType::Prim(PrimTy::Bool));
+    let pure_fun = type_arena.alloc(TlcType::Fun(int_ty, int_ty, Row::REmpty));
+    let effectful_fun = type_arena.alloc(TlcType::Fun(
+        int_ty,
+        int_ty,
+        Row::RExtend {
+            label: "e".to_string(),
+            ty: bool_placeholder,
+            optional: false,
+            tail: Box::new(Row::REmpty),
+        },
+    ));
+    let mut m = make_module(type_arena);
+    assert!(
+        !m.types_equal(pure_fun, effectful_fun),
+        "Fun with REmpty effect row must not equal Fun with non-empty effect row"
+    );
+}
+
+/// Effect rows compare order-insensitively (they model a set of effects).
+/// `Fun(A, B, {e1, e2})` must equal `Fun(A, B, {e2, e1})`.
+/// Labels "e1"/"e2" and placeholder type `Bool` are arbitrary — effect entry
+/// contents are not yet pinned (deferred with free-monad elaboration).
+#[test]
+fn effect_row_permutation_equality_holds() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    let bool_placeholder = type_arena.alloc(TlcType::Prim(PrimTy::Bool));
+    // Fun(Int, Int, {e1: Bool, e2: Bool})
+    let fun_e1e2 = type_arena.alloc(TlcType::Fun(
+        int_ty,
+        int_ty,
+        Row::RExtend {
+            label: "e1".to_string(),
+            ty: bool_placeholder,
+            optional: false,
+            tail: Box::new(Row::RExtend {
+                label: "e2".to_string(),
+                ty: bool_placeholder,
+                optional: false,
+                tail: Box::new(Row::REmpty),
+            }),
+        },
+    ));
+    // Fun(Int, Int, {e2: Bool, e1: Bool}) — reversed order
+    let fun_e2e1 = type_arena.alloc(TlcType::Fun(
+        int_ty,
+        int_ty,
+        Row::RExtend {
+            label: "e2".to_string(),
+            ty: bool_placeholder,
+            optional: false,
+            tail: Box::new(Row::RExtend {
+                label: "e1".to_string(),
+                ty: bool_placeholder,
+                optional: false,
+                tail: Box::new(Row::REmpty),
+            }),
+        },
+    ));
+    let mut m = make_module(type_arena);
+    assert!(
+        m.types_equal(fun_e1e2, fun_e2e1),
+        "effect rows must compare order-insensitively: {{e1,e2}} ≡ {{e2,e1}}"
+    );
 }

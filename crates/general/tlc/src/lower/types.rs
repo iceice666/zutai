@@ -27,7 +27,8 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Function { from, to } => {
                 let from_tlc = self.lower_type(from);
                 let to_tlc = self.lower_type(to);
-                self.alloc_type(TlcType::Fun(from_tlc, to_tlc))
+                // v0: every function is pure — effect row defaults to REmpty (spec §4 line 171).
+                self.alloc_type(TlcType::Fun(from_tlc, to_tlc, Row::REmpty))
             }
             TypeKind::List(inner) => {
                 let inner_tlc = self.lower_type(inner);
