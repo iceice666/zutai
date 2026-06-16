@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use la_arena::Arena;
 use zutai_hir::{
-    BindingId, BindingKind, HirDecl, HirDeclId, HirExpr, HirExprId, HirFile, HirPat, HirPatId,
-    HirTypeExpr, HirTypeId,
+    BindingId, BindingKind, HirDecl, HirDeclId, HirDeclKind, HirExpr, HirExprId, HirFile, HirPat,
+    HirPatId, HirTypeExpr, HirTypeId,
 };
 use zutai_syntax::Span;
 
@@ -159,11 +159,21 @@ impl<'hir> Lowerer<'hir> {
 
     fn lower_file(&mut self) -> LoweredThir {
         self.predeclare_decl_types();
-        let decls: Vec<_> = self
+        // Filter out Constraint/Witness HIR decls (D2: no ThirDeclKind for them yet)
+        let filtered_ids: Vec<_> = self
             .hir
             .decls
             .iter()
             .copied()
+            .filter(|&id| {
+                !matches!(
+                    self.hir_decl(id).kind,
+                    HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. }
+                )
+            })
+            .collect();
+        let decls: Vec<_> = filtered_ids
+            .into_iter()
             .map(|id| self.lower_decl(id))
             .collect();
         let final_expr = self.infer_expr(self.hir.final_expr);

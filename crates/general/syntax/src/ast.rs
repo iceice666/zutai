@@ -10,7 +10,52 @@ pub struct File {
 #[derive(Debug, PartialEq)]
 pub struct TypeParam {
     pub name: String,
+    pub bounds: Vec<TypeParamBound>,
+    pub kind: Option<Box<TypeExpr>>,
     pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TypeParamBound {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MethodName {
+    Ident(String),
+    Operator(String),
+}
+
+impl MethodName {
+    pub fn as_str(&self) -> &str {
+        match self {
+            MethodName::Ident(s) | MethodName::Operator(s) => s,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ConstraintMethod {
+    pub name: MethodName,
+    pub optional: bool,
+    pub params: Vec<TypeParam>,
+    pub sig: TypeExpr,
+    pub default: Vec<FuncClause>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct WitnessField {
+    pub name: MethodName,
+    pub value: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum WitnessBody {
+    Fields(Vec<WitnessField>),
+    Derive,
 }
 
 #[derive(Debug, PartialEq)]
@@ -45,6 +90,21 @@ pub enum Decl {
         body: Expr,
         span: Span,
     },
+    Constraint {
+        name: String,
+        params: Vec<TypeParam>,
+        target: TypeExpr,
+        methods: Vec<ConstraintMethod>,
+        derivable: bool,
+        span: Span,
+    },
+    Witness {
+        constraint: String,
+        target: TypeExpr,
+        params: Vec<TypeParam>,
+        body: WitnessBody,
+        span: Span,
+    },
 }
 
 impl Decl {
@@ -54,7 +114,9 @@ impl Decl {
             | Decl::Typed { span, .. }
             | Decl::TypeAlias { span, .. }
             | Decl::Function { span, .. }
-            | Decl::NoSigFn { span, .. } => *span,
+            | Decl::NoSigFn { span, .. }
+            | Decl::Constraint { span, .. }
+            | Decl::Witness { span, .. } => *span,
         }
     }
 
@@ -64,7 +126,9 @@ impl Decl {
             | Decl::Typed { name, .. }
             | Decl::TypeAlias { name, .. }
             | Decl::Function { name, .. }
-            | Decl::NoSigFn { name, .. } => name,
+            | Decl::NoSigFn { name, .. }
+            | Decl::Constraint { name, .. } => name,
+            Decl::Witness { constraint, .. } => constraint,
         }
     }
 }

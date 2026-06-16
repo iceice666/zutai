@@ -55,6 +55,8 @@ impl<'hir> Lowerer<'hir> {
                 HirDeclKind::Value {
                     annotation: None, ..
                 } => {}
+                // Constraint/Witness decls are filtered out in lower_file (D2)
+                HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. } => continue,
             }
         }
     }
@@ -122,6 +124,10 @@ impl<'hir> Lowerer<'hir> {
                     sig,
                     clauses,
                 }
+            }
+            // These are filtered in lower_file (D2) — should never be reached
+            HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. } => {
+                unreachable!("constraint/witness decls are filtered before THIR lowering")
             }
         };
         self.alloc_decl(ThirDecl {

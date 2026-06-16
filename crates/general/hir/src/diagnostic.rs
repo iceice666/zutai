@@ -16,4 +16,7 @@ pub enum HirDiagnosticKind {
     DuplicateTypeTupleField { name: String, first_span: Span },
     DuplicateTuplePatternField { name: String, first_span: Span },
     UnknownIdentifier { name: String },
+    DuplicateConstraintMethod { name: String, first_span: Span },
+    DuplicateWitnessField { name: String, first_span: Span },
+    UnknownConstraint { name: String },
 }

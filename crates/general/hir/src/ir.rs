@@ -35,6 +35,8 @@ pub enum BindingKind {
     TopValue,
     TopFunction,
     TopType,
+    TopConstraint,
+    TopWitness,
     TypeParam,
     Local,
     Param,
@@ -44,6 +46,33 @@ pub enum BindingKind {
 pub struct HirDecl {
     pub binding: BindingId,
     pub kind: HirDeclKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirTypeParam {
+    pub binding: BindingId,
+    pub bounds: Vec<BindingId>,
+    pub kind: Option<HirTypeId>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirConstraintMethod {
+    pub name: String,
+    pub is_operator: bool,
+    pub optional: bool,
+    pub params: Vec<HirTypeParam>,
+    pub sig: HirTypeId,
+    pub default: Vec<HirClause>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirWitnessField {
+    pub name: String,
+    pub is_operator: bool,
+    pub value: HirExprId,
     pub span: Span,
 }
 
@@ -61,6 +90,19 @@ pub enum HirDeclKind {
         params: Vec<BindingId>,
         sig: Option<HirTypeId>,
         clauses: Vec<HirClause>,
+    },
+    Constraint {
+        params: Vec<HirTypeParam>,
+        target: HirTypeId,
+        methods: Vec<HirConstraintMethod>,
+        derivable: bool,
+    },
+    Witness {
+        constraint: Option<BindingId>,
+        target: HirTypeId,
+        params: Vec<HirTypeParam>,
+        fields: Vec<HirWitnessField>,
+        derive: bool,
     },
 }
 

@@ -90,6 +90,12 @@ fn write_decl(f: &mut fmt::Formatter<'_>, decl: &Decl, prefix: &str, indent: &st
                 &format!("{indent}   "),
             )
         }
+        Decl::Constraint { name, .. } => {
+            writeln!(f, "{prefix} Constraint {name:?}")
+        }
+        Decl::Witness { constraint, .. } => {
+            writeln!(f, "{prefix} Witness for {constraint:?}")
+        }
     }
 }
 

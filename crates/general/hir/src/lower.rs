@@ -6,10 +6,11 @@ use zutai_syntax::ast;
 
 use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
-    Binding, BindingId, BindingKind, HirClause, HirDecl, HirDeclId, HirDeclKind, HirExpr,
-    HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding, HirPat, HirPatId,
-    HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem, HirTypeExpr,
-    HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
+    Binding, BindingId, BindingKind, HirClause, HirConstraintMethod, HirDecl, HirDeclId,
+    HirDeclKind, HirExpr, HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding,
+    HirPat, HirPatId, HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem,
+    HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam, HirTypeRecordField, HirTypeTupleItem,
+    HirUnionVariant, HirWitnessField,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 
@@ -107,12 +108,36 @@ impl Lowerer {
     }
 
     fn define_top_decl(&mut self, decl: &ast::Decl) -> BindingId {
-        let kind = match decl {
-            ast::Decl::Inferred { .. } | ast::Decl::Typed { .. } => BindingKind::TopValue,
-            ast::Decl::TypeAlias { .. } => BindingKind::TopType,
-            ast::Decl::Function { .. } | ast::Decl::NoSigFn { .. } => BindingKind::TopFunction,
-        };
-        self.define_current(decl.name().to_string(), kind, decl.span())
+        match decl {
+            ast::Decl::Inferred { .. } | ast::Decl::Typed { .. } => {
+                self.define_current(decl.name().to_string(), BindingKind::TopValue, decl.span())
+            }
+            ast::Decl::TypeAlias { .. } => {
+                self.define_current(decl.name().to_string(), BindingKind::TopType, decl.span())
+            }
+            ast::Decl::Function { .. } | ast::Decl::NoSigFn { .. } => self.define_current(
+                decl.name().to_string(),
+                BindingKind::TopFunction,
+                decl.span(),
+            ),
+            ast::Decl::Constraint { name, .. } => {
+                self.define_current(name.clone(), BindingKind::TopConstraint, decl.span())
+            }
+            ast::Decl::Witness { constraint, .. } => {
+                // D3: unscoped so duplicate witnesses don't raise DuplicateBinding
+                self.alloc_binding_unscoped(
+                    constraint.clone(),
+                    BindingKind::TopWitness,
+                    decl.span(),
+                )
+            }
+        }
+    }
+
+    fn alloc_binding_unscoped(&mut self, name: String, kind: BindingKind, span: Span) -> BindingId {
+        let id = BindingId(self.bindings.len() as u32);
+        self.bindings.push(Binding { name, kind, span });
+        id
     }
 
     fn lower_decl(&mut self, decl: &ast::Decl, binding: BindingId) -> HirDeclId {
@@ -190,6 +215,133 @@ impl Lowerer {
                     *span,
                 )
             }
+            ast::Decl::Constraint {
+                params,
+                target,
+                methods,
+                derivable,
+                span,
+                ..
+            } => {
+                self.push_scope();
+                let hir_params = self.lower_hir_type_params(params);
+                let hir_target = self.lower_type(target);
+                let mut seen_methods: HashMap<String, Span> = HashMap::new();
+                let mut hir_methods = Vec::new();
+                for method in methods {
+                    let key = method.name.as_str().to_string();
+                    if let Some(&first_span) = seen_methods.get(&key) {
+                        self.diagnostics.push(HirDiagnostic {
+                            kind: HirDiagnosticKind::DuplicateConstraintMethod {
+                                name: key.clone(),
+                                first_span,
+                            },
+                            span: method.span,
+                        });
+                    } else {
+                        seen_methods.insert(key.clone(), method.span);
+                    }
+                    self.push_scope();
+                    let method_params = self.lower_hir_type_params(&method.params);
+                    let sig = self.lower_type(&method.sig);
+                    let default = method
+                        .default
+                        .iter()
+                        .map(|c| self.lower_clause(c))
+                        .collect();
+                    self.pop_scope();
+                    let (is_operator, name_str) = match &method.name {
+                        ast::MethodName::Ident(s) => (false, s.clone()),
+                        ast::MethodName::Operator(s) => (true, s.clone()),
+                    };
+                    hir_methods.push(HirConstraintMethod {
+                        name: name_str,
+                        is_operator,
+                        optional: method.optional,
+                        params: method_params,
+                        sig,
+                        default,
+                        span: method.span,
+                    });
+                }
+                self.pop_scope();
+                (
+                    HirDeclKind::Constraint {
+                        params: hir_params,
+                        target: hir_target,
+                        methods: hir_methods,
+                        derivable: *derivable,
+                    },
+                    *span,
+                )
+            }
+            ast::Decl::Witness {
+                constraint,
+                target,
+                params,
+                body,
+                span,
+            } => {
+                let constraint_binding = match self.resolve(constraint) {
+                    Some(bid) => Some(bid),
+                    None => {
+                        self.diagnostics.push(HirDiagnostic {
+                            kind: HirDiagnosticKind::UnknownConstraint {
+                                name: constraint.clone(),
+                            },
+                            span: *span,
+                        });
+                        None
+                    }
+                };
+                self.push_scope();
+                let hir_params = self.lower_hir_type_params(params);
+                let hir_target = self.lower_type(target);
+                let (hir_fields, derive) = match body {
+                    ast::WitnessBody::Derive => (Vec::new(), true),
+                    ast::WitnessBody::Fields(fields) => {
+                        let mut seen: HashMap<String, Span> = HashMap::new();
+                        let mut hir_fields = Vec::new();
+                        for field in fields {
+                            let key = field.name.as_str().to_string();
+                            if let Some(&first_span) = seen.get(&key) {
+                                self.diagnostics.push(HirDiagnostic {
+                                    kind: HirDiagnosticKind::DuplicateWitnessField {
+                                        name: key.clone(),
+                                        first_span,
+                                    },
+                                    span: field.span,
+                                });
+                            } else {
+                                seen.insert(key.clone(), field.span);
+                            }
+                            let (is_operator, name_str) = match &field.name {
+                                ast::MethodName::Ident(s) => (false, s.clone()),
+                                ast::MethodName::Operator(s) => (true, s.clone()),
+                            };
+                            let value = self.lower_expr(&field.value);
+                            hir_fields.push(HirWitnessField {
+                                name: name_str,
+                                is_operator,
+                                value,
+                                span: field.span,
+                            });
+                        }
+                        (hir_fields, false)
+                    }
+                };
+                self.pop_scope();
+                (
+                    HirDeclKind::Witness {
+                        constraint: constraint_binding,
+                        target: hir_target,
+                        params: hir_params,
+                        fields: hir_fields,
+                        derive,
+                    },
+                    *span,
+                )
+            }
         };
         self.alloc_decl(HirDecl {
             binding,
@@ -199,10 +351,59 @@ impl Lowerer {
     }
 
     fn lower_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<BindingId> {
-        params
+        let ids: Vec<BindingId> = params
             .iter()
             .map(|param| {
                 self.define_current(param.name.clone(), BindingKind::TypeParam, param.span)
+            })
+            .collect();
+        // D1: resolve-but-don't-store bounds for plain function/alias params
+        for param in params {
+            for bound in &param.bounds {
+                if self.resolve(&bound.name).is_none() {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::UnknownIdentifier {
+                            name: bound.name.clone(),
+                        },
+                        span: bound.span,
+                    });
+                }
+            }
+        }
+        ids
+    }
+
+    /// Lower type params for constraint/witness decls: creates `HirTypeParam` with
+    /// resolved bounds and lowered kind annotations.
+    fn lower_hir_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<HirTypeParam> {
+        params
+            .iter()
+            .map(|param| {
+                let binding =
+                    self.define_current(param.name.clone(), BindingKind::TypeParam, param.span);
+                let bounds: Vec<BindingId> = param
+                    .bounds
+                    .iter()
+                    .filter_map(|bound| match self.resolve(&bound.name) {
+                        Some(bid) => Some(bid),
+                        None => {
+                            self.diagnostics.push(HirDiagnostic {
+                                kind: HirDiagnosticKind::UnknownIdentifier {
+                                    name: bound.name.clone(),
+                                },
+                                span: bound.span,
+                            });
+                            None
+                        }
+                    })
+                    .collect();
+                let kind = param.kind.as_ref().map(|k| self.lower_type(k));
+                HirTypeParam {
+                    binding,
+                    bounds,
+                    kind,
+                    span: param.span,
+                }
             })
             .collect()
     }

@@ -101,7 +101,7 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
 }
 
 /// Atom-level type: `{`, `[`, `(`, atom, ident, true/false, or ExprEscape.
-fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
+pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     ws(input)?;
 
     if input.starts_with('{') {

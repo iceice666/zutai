@@ -391,7 +391,8 @@ impl<'a> Scanner<'a> {
     fn is_type_context_before(&self, offset: usize) -> bool {
         let before = self.src[..offset].trim_end();
         before.ends_with("type")
-            || before.ends_with(':')
+            // Single `:` (e.g. `field : {`) but NOT `::` (e.g. `Eq @Int :: {` is a witness body)
+            || (before.ends_with(':') && !before.ends_with("::"))
             || before.ends_with("->")
             || before.ends_with('[')
             || self.stack.last().is_some_and(|f| f.type_context)
@@ -431,11 +432,34 @@ impl<'a> Scanner<'a> {
     fn looks_like_top_level_single_colon(&self, offset: usize) -> bool {
         let line_start = self.src[..offset].rfind('\n').map_or(0, |idx| idx + 1);
         let prefix = self.src[line_start..offset].trim();
-        !prefix.is_empty()
-            && prefix
-                .chars()
-                .next()
-                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        if prefix.is_empty() {
+            return false;
+        }
+        if !prefix
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        {
+            return false;
+        }
+        // If we're inside an unmatched `<...>` type-param list (line has `::` and a `<`
+        // that hasn't been closed yet), this `:` is a bound separator, not a stray colon.
+        let line_text = &self.src[line_start..offset];
+        if line_text.contains("::") && line_text.contains('<') {
+            let depth: i32 = line_text.chars().fold(0i32, |d, c| {
+                if c == '<' {
+                    d + 1
+                } else if c == '>' {
+                    d - 1
+                } else {
+                    d
+                }
+            });
+            if depth > 0 {
+                return false;
+            }
+        }
+        true
     }
 
     fn looks_like_value_record_colon(&self, offset: usize) -> bool {

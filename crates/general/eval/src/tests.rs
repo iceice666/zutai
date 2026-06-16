@@ -744,3 +744,23 @@ p :: Pair Text Int = { first = "x"; second = 1; }
     assert_eq!(run(&format!("{decl}\np.first")), Value::Text("x".into()));
     assert_eq!(run(&format!("{decl}\np.second")), Value::Int(1));
 }
+
+// ─── T-INV: v1 constraint/witness does not break THIR completeness ────────────
+
+/// T-INV: a file with well-formed constraint + witness + normal binding produces
+/// a complete THIR (LoweredThir.file.is_some()) and still evaluates.
+/// This guards the semantics-oracle invariant: constraint/witness decls must
+/// emit zero HIR+THIR diagnostics so they don't null out LoweredThir.file.
+#[test]
+fn t_inv_constraint_witness_does_not_break_eval() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n42";
+    assert_eq!(run(src), Value::Int(42));
+}
+
+/// Derive witness also must not break THIR completeness.
+#[test]
+fn t_inv_derive_witness_does_not_break_eval() {
+    // Use builtin type `Int` so target resolves without error
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
+    assert_eq!(run(src), Value::Int(1));
+}

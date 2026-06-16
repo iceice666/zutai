@@ -83,6 +83,7 @@ pub enum SyntaxKind {
     Gt = 58,
     GtEq = 59,
     Unknown = 60,
+    At = 61,
 }
 
 impl SyntaxKind {
@@ -149,6 +150,7 @@ impl SyntaxKind {
             58 => Self::Gt,
             59 => Self::GtEq,
             60 => Self::Unknown,
+            61 => Self::At,
             _ => Self::Unknown,
         }
     }
@@ -276,6 +278,7 @@ impl<'a> Lexer<'a> {
             '/' => self.bump(SyntaxKind::Slash),
             '&' if self.starts_with("&&") => self.bump_n(2, SyntaxKind::AmpAmp),
             '!' if self.starts_with("!=") => self.bump_n(2, SyntaxKind::BangEq),
+            '@' => self.bump(SyntaxKind::At),
             _ => {
                 self.pos += ch.len_utf8();
                 SyntaxKind::Unknown
