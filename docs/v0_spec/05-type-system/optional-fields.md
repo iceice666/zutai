@@ -20,7 +20,7 @@ raw : RawServer = {
 }
 ```
 
-When accessed directly, an optional field evaluates to an optional value. If the field is absent, access returns `#none`; if the field is present, access returns `(#some, value = field_value)`, unless the field value is already optional and the access rule flattens it.
+When accessed directly, an optional field evaluates to an optional value. If the field is absent, access returns `#none`; if the field is present, access returns `#some { value = field_value }`, unless the field value is already optional and the access rule flattens it.
 
 ```zt
 raw.port ?? 8080
@@ -34,7 +34,7 @@ These are different:
 tls : Bool?;
 ```
 
-means the field must exist, but must contain an explicit optional value such as `#none` or `(#some, value = true)`.
+means the field must exist, but must contain an explicit optional value such as `#none` or `#some { value = true }`.
 
 ```zt
 tls? : Bool;
@@ -54,7 +54,7 @@ When a field is declared `field? : T?`, two layers of optionality exist: the fie
 
 - Field absent → `#none`
 - Field present, value is `#none` → `#none`
-- Field present, value is `(#some, value = v)` → `(#some, value = v)`
+- Field present, value is `#some { value = v }` → `#some { value = v }`
 
 The result type is always `T?`, never `(T?)?`. See [Field access and optional chaining](field-access.md) for the general optional-chaining type rule that applies this same flattening.
 

@@ -14,17 +14,17 @@ Optional matching:
 
 ```zt
 match raw.port {
-  | #none              => 8080;
-  | (#some, value = port) => port;
+  | #none           => 8080;
+  | #some { value } => value;
 }
 ```
 
-Tuple union matching:
+Tagged union matching uses an atom followed by a record destructure:
 
 ```zt
 match shape {
-  | (#circle, radius = r)          => r * r * 3.14159;
-  | (#rect, width = w, height = h) => w * h;
+  | #circle { radius = r }            => r * r * 3.14159;
+  | #rect   { width = w; height = h } => w * h;
 }
 ```
 
@@ -35,11 +35,7 @@ For finite union types, `match` must be exhaustive.
 Given:
 
 ```zt
-Profile :: type [
-  #dev;
-  #test;
-  #prod;
-]
+Profile :: type [dev; test; prod;]
 ```
 
 This is exhaustive:
@@ -66,8 +62,8 @@ A wildcard pattern `_` or a catch-all binding may be used:
 
 ```zt
 match value {
-  | #none              => fallback;
-  | (#some, value = x) => x;
+  | #none           => fallback;
+  | #some { value = x } => x;
 }
 ```
 
@@ -85,13 +81,13 @@ match n {
 
 The guard is evaluated only if the pattern matches. If the guard is false, the next clause is tried.
 
-Guards also apply to tuple patterns:
+Guards also apply to tagged union patterns:
 
 ```zt
 match shape {
-  | (#circle, radius = r) if r > 0.0 => r * r * 3.14159;
-  | (#circle, radius = _)             => 0.0;
-  | (#square, length = l)             => l * l;
+  | #circle { radius = r } if r > 0.0 => r * r * 3.14159;
+  | #circle { radius = _ }             => 0.0;
+  | #square { length = l }             => l * l;
 }
 ```
 
@@ -101,18 +97,18 @@ Patterns may be nested to destructure composite values:
 
 ```zt
 Response :: type [
-  (#ok, body : Shape);
-  (#err, message : Text);
+  ok:  { body: Shape; };
+  err: { message: Text; };
 ]
 
 match response {
-  | (#ok, body = (#circle, radius = r)) => r * r * 3.14159;
-  | (#ok, body = _)                     => 0.0;
-  | (#err, message = _)                 => 0.0;
+  | #ok  { body = #circle { radius = r } } => r * r * 3.14159;
+  | #ok  { body = _ }                      => 0.0;
+  | #err { message = _ }                   => 0.0;
 }
 ```
 
-Nesting works for both tuple and atom patterns:
+Nesting works for both tagged union and record patterns:
 
 ```zt
 match config {
@@ -127,9 +123,9 @@ Multi-clause function definitions use the same `| pat => expr;` form inside a `{
 
 ```zt
 describe_shape :: Shape -> Text {
-  | (#circle, radius = _)          => "circle";
-  | (#square, length = _)          => "square";
-  | (#rect, width = _, height = _) => "rect";
+  | #circle { radius = _ }            => "circle";
+  | #square { length = _ }            => "square";
+  | #rect   { width = _; height = _ } => "rect";
 }
 ```
 

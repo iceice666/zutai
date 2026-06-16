@@ -21,7 +21,7 @@ Compile-time reflection and metaprogramming facilities are deferred beyond v0.
 
 ### Data-oriented design
 
-The primary abstractions in Zutai are structured data: records, tuples, lists, atoms, and unions. Immediate mode contains blocks and arrays; when imported into general mode these correspond to record and list values. General mode also has tuple values for structured alternatives and intermediate computation. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The v0 type system uses closed records and unions of singleton or tuple types to represent data layouts directly, not to model object hierarchies. Row-polymorphic views are deferred beyond v0.
+The primary abstractions in Zutai are structured data: records, tuples, lists, atoms, and unions. Immediate mode contains blocks and arrays; when imported into general mode these correspond to record and list values. General mode also has tuple values for structured alternatives and intermediate computation. Computation is expressed as pure transformations over collections rather than mutation of individual objects. The v0 type system uses closed records and tagged unions of singleton or record-payload variants to represent data layouts directly, not to model object hierarchies. Row-polymorphic views are deferred beyond v0.
 
 Idiomatic Zutai code processes batches of data through pipelines:
 

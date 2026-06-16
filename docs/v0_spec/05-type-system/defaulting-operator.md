@@ -11,7 +11,7 @@ It is shorthand for:
 ```zt
 match value {
   | #none              => fallback;
-  | (#some, value = x) => x;
+  | #some { value = x } => x;
 }
 ```
 
@@ -23,6 +23,6 @@ raw.port ?? 8080
 
 If `raw.port` is `#none`, the result is `8080`.
 
-If `raw.port` is `(#some, value = p)`, the result is `p`.
+If `raw.port` is `#some { value = p }`, the result is `p`.
 
 ---

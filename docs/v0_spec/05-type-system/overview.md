@@ -16,12 +16,13 @@ List
 Implementations may provide additional standard-library types such as:
 
 ```zt
+Optional
 Number
 Result
 Map
 ```
 
-but they are not required for the v0 core.
+but they are not required for the v0 core. `Optional` is a standard-library generic tagged union — not a compiler primitive. It may be defined in a prelude `.zt` file or equivalent. The compiler only knows about the `T?` → `Optional T` desugaring; everything else about `Optional` follows from it being an ordinary `<T> type [none; some: { value: T; };]`.
 
 A value of type `Type` describes a type. Type values may be bound, passed to type-level functions, imported from `.zt` modules, and used in type annotations. They are not serializable final outputs.
 
@@ -39,7 +40,7 @@ The grammar is:
 type_annotation ::= "::" type_expr
 ```
 
-A `type_expr` is a type-level expression. In v0, type expressions are pure expressions that evaluate to `Type`, including type names, type applications, optional types (`T?`), record types (`{ ... }`), union types (`[ ... ]`), and list types (`List T`).
+A `type_expr` is a type-level expression. In v0, type expressions are pure expressions that evaluate to `Type`, including type names, type applications, optional types (`T?`), record types (`{ ... }`), tagged union types (`[ ... ]`), and list types (`List T`).
 
 Example:
 

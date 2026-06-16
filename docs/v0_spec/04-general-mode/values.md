@@ -9,12 +9,12 @@ false
 3.14
 "hello"
 #prod
+#circle { radius = 5.0; }
 [1; 2; 3;]
 {
   host = "localhost";
   port = 8080;
 }
-(#circle, radius = 5.0)
 ```
 
 ### Booleans
@@ -35,10 +35,7 @@ Bool
 is the finite type:
 
 ```zt
-type [
-  true;
-  false;
-]
+type [true; false;]
 ```
 
 ### Text
@@ -78,19 +75,36 @@ Record values use `.zti`-style fields:
 
 Fields are semicolon-terminated.
 
+### Tagged union values
+
+A tag with no payload is a bare atom:
+
+```zt
+#north
+#prod
+#none
+```
+
+A tag with a record payload is an atom followed by a record:
+
+```zt
+#circle { radius = 5.0; }
+#rect   { width = 4.0; height = 3.0; }
+#some   { value = true; }
+```
+
+Tagged union values are general-mode values and are not part of `.zti` serialization in v0.
+
 ### Tuples
 
 Tuples use parentheses and comma-separated items:
 
 ```zt
-(#circle, radius = 5.0)
 (1, 2)
 ()
 ```
 
-Named tuple fields use `=` in value and pattern positions. A parenthesized single expression is a group, not a one-element tuple.
-
-Tuples are general-mode values. They are used for structured union alternatives and intermediate computation, but v0 does not define a direct `.zti` serialization for tuple values.
+A parenthesized single expression is a group, not a one-element tuple. Tuples are used for anonymous structured data and intermediate computation.
 
 ### Lists
 

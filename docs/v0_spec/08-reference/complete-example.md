@@ -17,11 +17,7 @@
 ### `app.zt`
 
 ```zt
-Profile :: type [
-  #dev;
-  #test;
-  #prod;
-]
+Profile :: type [dev; test; prod;]
 
 RawServer :: type {
   host? : Text;
@@ -98,25 +94,25 @@ raw :: RawConfig = import "nested.zti"
 }
 ```
 
-### Tuple union and pattern matching example
+### Tagged union and pattern matching example
 
 ```zt
 Shape :: type [
-  (#circle, radius : Float);
-  (#square, length : Float);
-  (#rect,   width  : Float, height : Float);
+  circle: { radius: Float; };
+  square: { length: Float; };
+  rect:   { width: Float; height: Float; };
 ]
 
 area :: Shape -> Float {
-  | (#circle, radius = r)          => r * r * 3.14159;
-  | (#square, length = l)          => l * l;
-  | (#rect, width = w, height = h) => w * h;
+  | #circle { radius = r }             => r * r * 3.14159;
+  | #square { length = l }             => l * l;
+  | #rect   { width = w; height = h }  => w * h;
 }
 
 shapes :: List Shape = [
-  (#circle, radius = 1.0);
-  (#square, length = 2.0);
-  (#rect, width = 3.0, height = 4.0);
+  #circle { radius = 1.0; };
+  #square { length = 2.0; };
+  #rect   { width = 3.0; height = 4.0; };
 ]
 
 total_area := fold (\acc s. acc + area s) 0.0 shapes

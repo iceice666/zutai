@@ -6,19 +6,20 @@ Postfix `?` is the optional marker:
 Text?
 Int?
 Bool?
-Server?
 ```
 
 `T?` is shorthand for `Optional T`.
 
-The optional type is an ordinary generic union type:
+`Optional` is an ordinary generic tagged union defined in the standard library — it is not a compiler primitive. Any user could write an equivalent definition:
 
 ```zt
 Optional :: <T> type [
-  #none;
-  (#some, value : T);
+  none;
+  some: { value: T; };
 ]
 ```
+
+The compiler's only special knowledge of `Optional` is the `T?` → `Optional T` desugaring. All matching, construction, and type-checking behaviour follows from it being a normal generic tagged union.
 
 There is no reserved `none` literal. `#none` and `#some` are ordinary atoms used by the `Optional` convention.
 
@@ -40,11 +41,11 @@ Example:
 Server :: type {
   host : Text;
   port : Int;
-  tls : Bool?;
+  tls  : Bool?;
 }
 ```
 
-This means the `tls` field is required, but its value must be either `#none` or a `#some` tuple carrying a `Bool`, such as `(#some, value = true)`.
+The `tls` field is required, but its value must be either `#none` or `#some { value = true }`.
 
 Valid:
 
@@ -52,7 +53,7 @@ Valid:
 server :: Server = {
   host = "localhost";
   port = 8080;
-  tls = (#some, value = true);
+  tls  = #some { value = true; };
 }
 ```
 
@@ -62,7 +63,7 @@ Also valid:
 server :: Server = {
   host = "localhost";
   port = 8080;
-  tls = #none;
+  tls  = #none;
 }
 ```
 

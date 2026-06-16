@@ -10,6 +10,7 @@ Structural equality is defined for first-order data values:
 * lists of comparable values
 * records of comparable values
 * tuples of comparable values
+* tagged union values whose payloads are comparable
 
 Examples:
 
@@ -17,10 +18,10 @@ Examples:
 #prod == #prod
 #prod != #dev
 { a = 1; } == { a = 1; }
-(#ok, value = 1) == (#ok, value = 1)
+#ok { value = 1; } == #ok { value = 1; }
 ```
 
-Serializable values are a subset of these data values. Tuple values are comparable in `.zt`, but they do not have a direct `.zti` representation in v0.
+Serializable values are a subset of these data values. Tagged union values and tuple values are comparable in `.zt`, but they do not have a direct `.zti` representation in v0.
 
 Functions are not comparable.
 

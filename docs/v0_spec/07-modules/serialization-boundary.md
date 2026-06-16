@@ -20,12 +20,12 @@ Non-serializable final values:
 Type
 Server
 Text -> Text
-(#ok, value = 1)
+#ok { value = 1; }
 ```
 
 Type values are first-class compile-time values in `.zt`, but they do not have a direct `.zti` or JSON representation.
 
-Tuple values are also general-mode values without a direct `.zti` representation in v0. Use records or lists when rendered output needs structured data.
+Tagged union values are also general-mode values without a direct `.zti` representation in v0. Use records or lists when rendered output needs structured data.
 
 This is valid as an imported module:
 
