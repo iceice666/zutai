@@ -32,16 +32,15 @@
 //!
 //! `types_equal` normalizes both sides, then does a deep structural comparison by dereferencing
 //! arena indices — **not** via the derived `PartialEq` on `TlcTypeId` (which only compares the
-//! index integers). The comparison is field-order-sensitive. α-equivalence and row-permutation
-//! equality are deferred to Phase 3 (row polymorphism).
+//! index integers). Row equality is **order-insensitive** (permutation by label): `{a: Int, b: Str}`
+//! equals `{b: Str, a: Int}`. α-equivalence over bound row *variables* (renaming a quantified
+//! `RVar`) remains deferred.
 
 use std::collections::HashMap;
 
 use la_arena::Arena;
 
-use crate::ir::{
-    Row, TlcDecl, TlcModule, TlcRecordField, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar,
-};
+use crate::ir::{Row, TlcDecl, TlcModule, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
 /// Fuel limit from spec §10 line 475.
 pub const DEFAULT_FUEL: u32 = 1000;
@@ -184,9 +183,9 @@ fn normalize_ty(
             let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit)?;
             Ok(arena.alloc(TlcType::Optional(ni)))
         }
-        TlcType::Record(fields) => {
-            let new_fields = normalize_record_fields(arena, alias_env, &fields, fuel, fuel_limit)?;
-            Ok(arena.alloc(TlcType::Record(new_fields)))
+        TlcType::Record(row) => {
+            let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit)?;
+            Ok(arena.alloc(TlcType::Record(new_row)))
         }
         TlcType::VariantT(row) => {
             let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit)?;
@@ -199,26 +198,6 @@ fn normalize_ty(
         // Atoms — nothing to reduce.
         TlcType::Prim(_) | TlcType::Singleton(_) | TlcType::TyVar(_, _) => Ok(ty),
     }
-}
-
-fn normalize_record_fields(
-    arena: &mut Arena<TlcType>,
-    alias_env: &HashMap<u32, TlcTypeId>,
-    fields: &[TlcRecordField],
-    fuel: &mut u32,
-    fuel_limit: u32,
-) -> Result<Vec<TlcRecordField>, NormalizeError> {
-    fields
-        .iter()
-        .map(|f| {
-            let nt = normalize_ty(arena, alias_env, f.ty, fuel, fuel_limit)?;
-            Ok(TlcRecordField {
-                name: f.name.clone(),
-                optional: f.optional,
-                ty: nt,
-            })
-        })
-        .collect()
 }
 
 fn normalize_tuple_fields(
@@ -255,12 +234,20 @@ fn normalize_row(
 ) -> Result<Row, NormalizeError> {
     match row {
         Row::REmpty => Ok(Row::REmpty),
-        Row::RExtend { label, ty, tail } => {
+        // RVar is inert under type normalization — a row variable has no reduct.
+        Row::RVar(v) => Ok(Row::RVar(*v)),
+        Row::RExtend {
+            label,
+            ty,
+            optional,
+            tail,
+        } => {
             let nt = normalize_ty(arena, alias_env, *ty, fuel, fuel_limit)?;
             let ntail = normalize_row(arena, alias_env, tail, fuel, fuel_limit)?;
             Ok(Row::RExtend {
                 label: label.clone(),
                 ty: nt,
+                optional: *optional,
                 tail: Box::new(ntail),
             })
         }
@@ -318,16 +305,9 @@ fn subst(
             let ni = subst(arena, inner, var, replacement);
             arena.alloc(TlcType::Optional(ni))
         }
-        TlcType::Record(fields) => {
-            let new_fields: Vec<TlcRecordField> = fields
-                .iter()
-                .map(|f| TlcRecordField {
-                    name: f.name.clone(),
-                    optional: f.optional,
-                    ty: subst(arena, f.ty, var, replacement),
-                })
-                .collect();
-            arena.alloc(TlcType::Record(new_fields))
+        TlcType::Record(row) => {
+            let new_row = subst_row(arena, &row, var, replacement);
+            arena.alloc(TlcType::Record(new_row))
         }
         TlcType::VariantT(row) => {
             let new_row = subst_row(arena, &row, var, replacement);
@@ -361,9 +341,17 @@ fn subst_row(
 ) -> Row {
     match row {
         Row::REmpty => Row::REmpty,
-        Row::RExtend { label, ty, tail } => Row::RExtend {
+        // Type-variable subst is inert on row variables — different kind discipline.
+        Row::RVar(v) => Row::RVar(*v),
+        Row::RExtend {
+            label,
+            ty,
+            optional,
+            tail,
+        } => Row::RExtend {
             label: label.clone(),
             ty: subst(arena, *ty, var, replacement),
+            optional: *optional,
             tail: Box::new(subst_row(arena, tail, var, replacement)),
         },
     }
@@ -371,8 +359,30 @@ fn subst_row(
 
 // ── Deep structural equality ──────────────────────────────────────────────────
 
+/// Collect `(label, ty, optional)` fields from a row spine (stopping at `REmpty` or `RVar`),
+/// and return the tail kind (`None` = closed, `Some(v)` = open via `RVar(v)`).
+fn row_fields_and_tail(row: &Row) -> (Vec<(&str, TlcTypeId, bool)>, Option<TlcTypeVar>) {
+    let mut fields = Vec::new();
+    let mut cur = row;
+    loop {
+        match cur {
+            Row::REmpty => return (fields, None),
+            Row::RVar(v) => return (fields, Some(*v)),
+            Row::RExtend {
+                label,
+                ty,
+                optional,
+                tail,
+            } => {
+                fields.push((label.as_str(), *ty, *optional));
+                cur = tail;
+            }
+        }
+    }
+}
+
 /// Deep structural equality by dereferencing arena IDs.
-/// Field-order-sensitive; no α-equivalence (Phase 3 concern).
+/// Row equality is order-insensitive (permutation by label); no binder α-equivalence.
 fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool {
     if a == b {
         return true; // fast path: same index
@@ -395,14 +405,7 @@ fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool 
         (TlcType::ForAll(v1, k1, b1), TlcType::ForAll(v2, k2, b2)) => {
             v1 == v2 && k1 == k2 && types_equal_deep(arena, b1, b2)
         }
-        (TlcType::Record(f1), TlcType::Record(f2)) => {
-            f1.len() == f2.len()
-                && f1.iter().zip(f2.iter()).all(|(a, b)| {
-                    a.name == b.name
-                        && a.optional == b.optional
-                        && types_equal_deep(arena, a.ty, b.ty)
-                })
-        }
+        (TlcType::Record(r1), TlcType::Record(r2)) => rows_equal_deep(arena, &r1, &r2),
         (TlcType::VariantT(r1), TlcType::VariantT(r2)) => rows_equal_deep(arena, &r1, &r2),
         (TlcType::Tuple(i1), TlcType::Tuple(i2)) => {
             i1.len() == i2.len()
@@ -421,23 +424,35 @@ fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool 
     }
 }
 
+/// Order-insensitive (permutation by label) row equality.
+///
+/// Two rows are equal iff they have the same set of labels (with matching `optional` and type),
+/// and the same tail kind (`REmpty` or the same `RVar`).
 fn rows_equal_deep(arena: &Arena<TlcType>, a: &Row, b: &Row) -> bool {
-    match (a, b) {
-        (Row::REmpty, Row::REmpty) => true,
-        (
-            Row::RExtend {
-                label: la,
-                ty: ta,
-                tail: ra,
-            },
-            Row::RExtend {
-                label: lb,
-                ty: tb,
-                tail: rb,
-            },
-        ) => la == lb && types_equal_deep(arena, *ta, *tb) && rows_equal_deep(arena, ra, rb),
-        _ => false,
+    let (fields_a, tail_a) = row_fields_and_tail(a);
+    let (fields_b, tail_b) = row_fields_and_tail(b);
+
+    // Tails must match (both closed, or same row variable).
+    if tail_a != tail_b {
+        return false;
     }
+    if fields_a.len() != fields_b.len() {
+        return false;
+    }
+
+    // Build a label → (ty, optional) map for b's fields.
+    let map_b: HashMap<&str, (TlcTypeId, bool)> = fields_b
+        .iter()
+        .map(|&(l, ty, opt)| (l, (ty, opt)))
+        .collect();
+
+    fields_a.iter().all(|&(label, ty_a, opt_a)| {
+        if let Some(&(ty_b, opt_b)) = map_b.get(label) {
+            opt_a == opt_b && types_equal_deep(arena, ty_a, ty_b)
+        } else {
+            false
+        }
+    })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

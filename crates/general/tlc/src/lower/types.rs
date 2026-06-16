@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use zutai_hir::BindingId;
 use zutai_thir::{ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
-use crate::ir::{
-    Kind, Literal, PrimTy, Row, TlcRecordField, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar,
-};
+use crate::ir::{Kind, Literal, PrimTy, Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
 use super::Lowerer;
 
@@ -40,15 +38,11 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_type(TlcType::Optional(inner_tlc))
             }
             TypeKind::Record(fields) => {
-                let tlc_fields: Vec<TlcRecordField> = fields
+                let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
-                    .map(|f| TlcRecordField {
-                        name: f.name.clone(),
-                        optional: f.optional,
-                        ty: self.lower_type(f.ty),
-                    })
+                    .map(|f| (f.name.clone(), self.lower_type(f.ty), f.optional))
                     .collect();
-                self.alloc_type(TlcType::Record(tlc_fields))
+                self.alloc_type(TlcType::Record(Row::from_record_fields(row_fields)))
             }
             TypeKind::Tuple(items) => {
                 let tlc_items: Vec<TlcTupleField> = items

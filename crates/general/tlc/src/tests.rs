@@ -192,11 +192,11 @@ fn assert_no_data_loss(m: &TlcModule) {
     for (_, ty) in m.type_arena.iter() {
         match ty {
             // Union must have been converted to VariantT — no empty Record fallback.
-            TlcType::Record(fields) => {
+            TlcType::Record(row) => {
                 // Empty Record as a Union fallback is the bug; legitimate empty records are ok,
                 // but flag them in this helper only when tests are specifically checking for
                 // Union→VariantT conversion. Separate per-test asserts cover that.
-                let _ = fields;
+                let _ = row;
             }
             TlcType::Prim(PrimTy::Atom) => {
                 // PrimTy::Atom is valid for the unqualified Atom primitive.
@@ -526,26 +526,28 @@ x
         "Pair Text Int should normalize to a Record, got {:?}",
         m.type_arena[norm]
     );
-    if let crate::TlcType::Record(ref fields) = m.type_arena[norm] {
+    if let crate::TlcType::Record(ref row) = m.type_arena[norm] {
+        // Walk the Row in declaration order (normal form preserves declaration order).
+        let fields: Vec<_> = row.fields().collect();
         assert_eq!(fields.len(), 2, "Pair record must have exactly 2 fields");
-        assert_eq!(fields[0].name, "first");
-        assert_eq!(fields[1].name, "second");
+        assert_eq!(fields[0].0, "first");
+        assert_eq!(fields[1].0, "second");
         // Field types must be Text (Str) and Int after substitution.
         assert!(
             matches!(
-                m.type_arena[fields[0].ty],
+                m.type_arena[fields[0].1],
                 crate::TlcType::Prim(crate::PrimTy::Str)
             ),
             "first field should be Str (Text), got {:?}",
-            m.type_arena[fields[0].ty]
+            m.type_arena[fields[0].1]
         );
         assert!(
             matches!(
-                m.type_arena[fields[1].ty],
+                m.type_arena[fields[1].1],
                 crate::TlcType::Prim(crate::PrimTy::Int)
             ),
             "second field should be Int, got {:?}",
-            m.type_arena[fields[1].ty]
+            m.type_arena[fields[1].1]
         );
     }
 }
@@ -614,4 +616,186 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         "expected FuelExhausted with limit=10, got {:?}",
         result2
     );
+}
+
+// ── Phase 3 tests: row kind + row polymorphism ────────────────────────────────
+
+fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
+    use std::collections::HashMap;
+    TlcModule {
+        decls: Vec::new(),
+        decl_arena: la_arena::Arena::new(),
+        expr_arena: la_arena::Arena::new(),
+        type_arena,
+        expr_types: HashMap::new(),
+        spans: HashMap::new(),
+    }
+}
+
+#[test]
+fn open_record_rvar_is_inert_under_normalize() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let rest_var = TlcTypeVar::Named(0);
+    let text_ty = type_arena.alloc(TlcType::Prim(PrimTy::Str));
+    let record_ty = type_arena.alloc(TlcType::Record(Row::RExtend {
+        label: "host".to_string(),
+        ty: text_ty,
+        optional: false,
+        tail: Box::new(Row::RVar(rest_var)),
+    }));
+    let mut m = make_module(type_arena);
+    let norm = m
+        .normalize(record_ty)
+        .expect("open record normalize must not fail");
+    assert!(
+        matches!(m.type_arena[norm], TlcType::Record(_)),
+        "expected Record, got {:?}",
+        m.type_arena[norm]
+    );
+    if let TlcType::Record(ref row) = m.type_arena[norm] {
+        match row {
+            Row::RExtend { label, tail, .. } => {
+                assert_eq!(label, "host");
+                assert!(
+                    matches!(**tail, Row::RVar(_)),
+                    "RVar tail must survive normalization, got {:?}",
+                    tail
+                );
+            }
+            _ => panic!("expected RExtend as top of row after normalize"),
+        }
+    }
+}
+
+#[test]
+fn subst_row_var_flattens_open_to_closed() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let rest_var = TlcTypeVar::Named(0);
+    let text_ty = type_arena.alloc(TlcType::Prim(PrimTy::Str));
+    // Open row: { host : Text, ...rest }
+    let open_row = Row::RExtend {
+        label: "host".to_string(),
+        ty: text_ty,
+        optional: false,
+        tail: Box::new(Row::RVar(rest_var)),
+    };
+    // Splice in REmpty to close the row.
+    let closed = open_row.subst_row_var(rest_var, Row::REmpty);
+    match closed {
+        Row::RExtend {
+            ref label,
+            ref tail,
+            ..
+        } => {
+            assert_eq!(label, "host");
+            assert_eq!(
+                **tail,
+                Row::REmpty,
+                "tail must be REmpty after subst_row_var"
+            );
+        }
+        _ => panic!("expected RExtend after subst_row_var, got {:?}", closed),
+    }
+}
+
+#[test]
+fn row_permutation_equality_holds() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    let str_ty = type_arena.alloc(TlcType::Prim(PrimTy::Str));
+    // { a : Int, b : Str }
+    let record_ab = type_arena.alloc(TlcType::Record(Row::from_record_fields([
+        ("a".to_string(), int_ty, false),
+        ("b".to_string(), str_ty, false),
+    ])));
+    // { b : Str, a : Int } — reversed order
+    let record_ba = type_arena.alloc(TlcType::Record(Row::from_record_fields([
+        ("b".to_string(), str_ty, false),
+        ("a".to_string(), int_ty, false),
+    ])));
+    let mut m = make_module(type_arena);
+    assert!(
+        m.types_equal(record_ab, record_ba),
+        "row permutation equality must hold: {{a,b}} ≡ {{b,a}}"
+    );
+}
+
+#[test]
+fn row_field_type_mismatch_is_unequal() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    let str_ty = type_arena.alloc(TlcType::Prim(PrimTy::Str));
+    let record_int = type_arena.alloc(TlcType::Record(Row::from_record_fields([(
+        "a".to_string(),
+        int_ty,
+        false,
+    )])));
+    let record_str = type_arena.alloc(TlcType::Record(Row::from_record_fields([(
+        "a".to_string(),
+        str_ty,
+        false,
+    )])));
+    let mut m = make_module(type_arena);
+    assert!(
+        !m.types_equal(record_int, record_str),
+        "field type mismatch must not be equal: {{a:Int}} ≢ {{a:Str}}"
+    );
+}
+
+#[test]
+fn forall_row_kinded_var_roundtrips() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let rest_var = TlcTypeVar::Named(42);
+    let row_kind = Kind::Row(Box::new(Kind::ground()));
+    // ForAll(rest, Kind::Row(Type(0)), Record(RVar(rest)))
+    let open_record = type_arena.alloc(TlcType::Record(Row::RVar(rest_var)));
+    let forall_ty = type_arena.alloc(TlcType::ForAll(rest_var, row_kind.clone(), open_record));
+    let mut m = make_module(type_arena);
+    let norm = m
+        .normalize(forall_ty)
+        .expect("ForAll with row kind should normalize without fuel error");
+    assert!(
+        matches!(&m.type_arena[norm], TlcType::ForAll(_, k, _) if *k == row_kind),
+        "ForAll with row kind must preserve Kind::Row, got {:?}",
+        m.type_arena[norm]
+    );
+}
+
+#[test]
+fn optional_record_field_roundtrips() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    // Record with one optional field: { age? : Int }
+    let record_ty = type_arena.alloc(TlcType::Record(Row::RExtend {
+        label: "age".to_string(),
+        ty: int_ty,
+        optional: true,
+        tail: Box::new(Row::REmpty),
+    }));
+    let mut m = make_module(type_arena);
+    let norm = m
+        .normalize(record_ty)
+        .expect("optional record must normalize without error");
+    assert!(
+        matches!(m.type_arena[norm], TlcType::Record(_)),
+        "expected Record after normalize, got {:?}",
+        m.type_arena[norm]
+    );
+    if let TlcType::Record(ref row) = m.type_arena[norm] {
+        match row {
+            Row::RExtend {
+                label, optional, ..
+            } => {
+                assert_eq!(label, "age");
+                assert!(*optional, "optional flag must survive normalization");
+            }
+            _ => panic!("expected RExtend, got {:?}", row),
+        }
+    }
 }

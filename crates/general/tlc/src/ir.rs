@@ -39,10 +39,10 @@ impl Kind {
     }
 }
 
-// ── Row type (Phase 0: closed rows only; RVar added in Phase 3) ───────────────
+// ── Row type (Phase 3: RVar added for open-row polymorphism) ─────────────────
 
 /// A structural row — the spine of `RecordT` and `VariantT`.
-/// Closed in v0 (no `RVar`); open-row polymorphism is Phase 3.
+/// Phase 3 adds `RVar` for open-row polymorphism and `optional` on `RExtend` for optional fields.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Row {
     /// Empty / closed tail.
@@ -51,12 +51,16 @@ pub enum Row {
     RExtend {
         label: String,
         ty: TlcTypeId,
+        /// True for optional record fields (`field? : T`). Always false for variant arms.
+        optional: bool,
         tail: Box<Row>,
     },
+    /// Row variable — the open tail of a polymorphic row (`...Rest`).
+    RVar(TlcTypeVar),
 }
 
 impl Row {
-    /// Build a closed row from an iterator of `(label, ty)` pairs (first pair = outermost).
+    /// Build a closed row from `(label, ty)` pairs with `optional = false` (used for variant arms).
     pub fn from_fields(fields: impl IntoIterator<Item = (String, TlcTypeId)>) -> Self {
         let mut fields: Vec<_> = fields.into_iter().collect();
         fields.reverse();
@@ -65,13 +69,53 @@ impl Row {
             .fold(Row::REmpty, |tail, (label, ty)| Row::RExtend {
                 label,
                 ty,
+                optional: false,
                 tail: Box::new(tail),
             })
     }
 
-    /// Iterate over `(label, ty)` pairs in declaration order.
+    /// Build a closed row from `(label, ty, optional)` triples (used for record types).
+    pub fn from_record_fields(fields: impl IntoIterator<Item = (String, TlcTypeId, bool)>) -> Self {
+        let mut fields: Vec<_> = fields.into_iter().collect();
+        fields.reverse();
+        fields
+            .into_iter()
+            .fold(Row::REmpty, |tail, (label, ty, optional)| Row::RExtend {
+                label,
+                ty,
+                optional,
+                tail: Box::new(tail),
+            })
+    }
+
+    /// Iterate over `(label, ty)` pairs in declaration order, stopping at `RVar` or `REmpty`.
     pub fn fields(&self) -> impl Iterator<Item = (&str, TlcTypeId)> {
         RowIter(self)
+    }
+
+    /// Splice `replacement` into the position of `row_var`'s tail. Flattens an open row
+    /// whose tail is `RVar(row_var)` into `replacement` (open→closed when `replacement` is
+    /// closed). Inert if this row does not contain `RVar(row_var)`.
+    ///
+    /// This is a row-variable substitution — distinct from type-variable `subst` in
+    /// `normalize.rs`, which leaves `RVar` inert (different kind).
+    pub fn subst_row_var(self, row_var: TlcTypeVar, replacement: Row) -> Row {
+        match self {
+            Row::REmpty => Row::REmpty,
+            Row::RVar(v) if v == row_var => replacement,
+            Row::RVar(v) => Row::RVar(v),
+            Row::RExtend {
+                label,
+                ty,
+                optional,
+                tail,
+            } => Row::RExtend {
+                label,
+                ty,
+                optional,
+                tail: Box::new(tail.subst_row_var(row_var, replacement)),
+            },
+        }
     }
 }
 
@@ -81,8 +125,10 @@ impl<'a> Iterator for RowIter<'a> {
     type Item = (&'a str, TlcTypeId);
     fn next(&mut self) -> Option<Self::Item> {
         match self.0 {
-            Row::REmpty => None,
-            Row::RExtend { label, ty, tail } => {
+            Row::REmpty | Row::RVar(_) => None,
+            Row::RExtend {
+                label, ty, tail, ..
+            } => {
                 self.0 = tail;
                 Some((label.as_str(), *ty))
             }
@@ -105,7 +151,8 @@ pub enum TlcType {
     /// Type-level lambda (F-ω). Binds `a : k` in `body`. Introduced in Phase 2 for
     /// generic type aliases; reduced by the NbE normalizer (`normalize.rs`).
     TyLamK(TlcTypeVar, Kind, TlcTypeId),
-    Record(Vec<TlcRecordField>),
+    /// Record type — the spine is a `Row` (closed in front-end lowering; open via `RVar` in hand-built IR).
+    Record(Row),
     /// Union / sum type former — replaces the silent `Union → Record([])` collapse.
     VariantT(Row),
     Tuple(Vec<TlcTupleField>),
@@ -122,13 +169,6 @@ pub enum PrimTy {
     /// Kept for the unqualified `Atom` primitive type (not a singleton).
     Atom,
     Nothing,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TlcRecordField {
-    pub name: String,
-    pub optional: bool,
-    pub ty: TlcTypeId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
