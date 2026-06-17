@@ -17,7 +17,9 @@ use zutai_syntax::ast::BinOp;
 use zutai_thir::{
     ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
 };
-use zutai_thir::{ThirPatKind, ThirTupleItem, ThirTuplePatItem};
+use zutai_thir::{
+    ThirPatKind, ThirTupleItem, ThirTuplePatItem, Type, TypeId, TypeKind, TypeTupleItem,
+};
 
 use crate::{
     EvalError,
@@ -228,9 +230,20 @@ impl<'a> Evaluator<'a> {
             }
 
             // ── function application ──────────────────────────────────────────
-            ThirExprKind::Apply { func, arg, .. } => {
-                // Force the function position.
-                let fv = self.eval(*func, env)?;
+            ThirExprKind::Apply {
+                func,
+                arg,
+                instantiation,
+            } => {
+                // Type-directed constraint dispatch: if func is a BindingRef to a
+                // named constraint method, look up the matching witness and use its
+                // field body as the function value. Falls through to normal eval if
+                // no witness matches (returns UnboundBinding via env.lookup).
+                let fv = if let Some(v) = self.try_method_dispatch(*func, instantiation, env)? {
+                    v
+                } else {
+                    self.eval(*func, env)?
+                };
                 match fv {
                     Value::Closure(c) => {
                         let mut applied = c.applied.clone();
@@ -620,6 +633,73 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    // ── constraint method dispatch ────────────────────────────────────────────
+
+    /// Try to dispatch a constraint method call to a matching witness field.
+    ///
+    /// Returns `Ok(Some(value))` when `func` is a `BindingRef` to a named
+    /// constraint method AND a witness with a matching target type is in scope.
+    /// Returns `Ok(None)` in all other cases (not a method, no instantiation,
+    /// no witness found) — the caller then falls through to normal `eval`.
+    fn try_method_dispatch(
+        &self,
+        func: ThirExprId,
+        instantiation: &[TypeId],
+        env: &Env,
+    ) -> Result<Option<Value>, EvalError> {
+        // Step 1: func must be a BindingRef to a constraint method.
+        let method_binding = match &self.expr(func).kind {
+            ThirExprKind::BindingRef(b) => *b,
+            _ => return Ok(None),
+        };
+
+        // Step 2: find which constraint owns this method binding.
+        let mut found = None;
+        'outer: for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Constraint { methods, .. } = &decl.kind {
+                for m in methods {
+                    if m.binding == Some(method_binding) {
+                        found = Some((decl.binding, m.name.clone()));
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let (constraint_binding, method_name) = match found {
+            Some(x) => x,
+            None => return Ok(None),
+        };
+
+        // Step 3: guard — only dispatch when exactly one type var was instantiated.
+        if instantiation.len() != 1 {
+            return Ok(None);
+        }
+        let key = type_key(&self.file.type_arena, instantiation[0]);
+
+        // Step 4: find the matching witness and its field body.
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Witness {
+                constraint: Some(c),
+                target,
+                fields,
+                ..
+            } = &decl.kind
+            {
+                if *c == constraint_binding && type_key(&self.file.type_arena, *target) == key {
+                    for field in fields {
+                        if field.name == method_name {
+                            return Ok(Some(self.eval(field.value, env)?));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     // ── building top-level env ────────────────────────────────────────────────
 
     /// Build the top-level letrec environment from the file's declarations.
@@ -664,6 +744,71 @@ impl<'a> Evaluator<'a> {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Structural type key mirroring `witness_target_key` in the THIR lowerer.
+///
+/// Used for dispatch: both the witness target type and the call-site
+/// instantiation type go through this function, so a match means "same type."
+/// No alias resolution — witness targets for concrete types like `@Int` lower
+/// directly to `TypeKind::Int`, not `TypeKind::Alias`.
+fn type_key(type_arena: &[Type], ty: TypeId) -> String {
+    match &type_arena[ty.0 as usize].kind {
+        TypeKind::Int => "Int".into(),
+        TypeKind::Bool => "Bool".into(),
+        TypeKind::Text => "Text".into(),
+        TypeKind::Float => "Float".into(),
+        TypeKind::Type => "Type".into(),
+        TypeKind::True => "true".into(),
+        TypeKind::False => "false".into(),
+        TypeKind::Atom(a) => format!("#{a}"),
+        TypeKind::List(inner) => format!("[{}]", type_key(type_arena, *inner)),
+        TypeKind::Optional(inner) => format!("{}?", type_key(type_arena, *inner)),
+        TypeKind::Record(fields) => {
+            let mut parts: Vec<String> = fields
+                .iter()
+                .map(|f| format!("{}:{}", f.name, type_key(type_arena, f.ty)))
+                .collect();
+            parts.sort();
+            format!("{{{}}}", parts.join(","))
+        }
+        TypeKind::Union(variants) => {
+            let parts: Vec<String> = variants
+                .iter()
+                .map(|v| match v.payload {
+                    Some(p) => format!("{}({})", v.name, type_key(type_arena, p)),
+                    None => v.name.clone(),
+                })
+                .collect();
+            format!("<{}>", parts.join("|"))
+        }
+        TypeKind::Tuple(items) => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|item| match item {
+                    TypeTupleItem::Named { name, ty, .. } => {
+                        format!("{}:{}", name, type_key(type_arena, *ty))
+                    }
+                    TypeTupleItem::Positional(ty) => type_key(type_arena, *ty),
+                })
+                .collect();
+            format!("({})", parts.join(","))
+        }
+        TypeKind::Function { from, to } => {
+            format!(
+                "({}->{}",
+                type_key(type_arena, *from),
+                type_key(type_arena, *to)
+            )
+        }
+        TypeKind::TypeVar(b) | TypeKind::Alias(b) => format!("@{}", b.0),
+        TypeKind::AliasApply { binding, args } => {
+            let arg_parts: Vec<String> = args.iter().map(|a| type_key(type_arena, *a)).collect();
+            format!("${}[{}]", binding.0, arg_parts.join(","))
+        }
+        TypeKind::InferVar(v) => format!("?{v}"),
+        TypeKind::Error => "<error>".into(),
+    }
+}
 
 fn value_type_name(v: &Value) -> &'static str {
     match v {

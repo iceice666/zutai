@@ -780,3 +780,50 @@ fn t_inv5_method_call_type_checks_but_refuses_eval() {
         "expected EvalError::UnboundBinding for un-dispatched method call, got {err:?}"
     );
 }
+
+// ─── Increment 6: dictionary-passing / instance resolution ────────────────────
+
+/// Basic dispatch: `eq 1 2` resolves to the `Eq @Int` witness body.
+#[test]
+fn dispatch_basic_method_call() {
+    let src = "
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \\a b. true; }
+eq 1 2
+";
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// Type-directed selection: two witnesses for the same constraint, each with a
+/// different target type — the dispatch must pick the right one per call site.
+#[test]
+fn dispatch_type_directed_witness_selection() {
+    let src = "
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \\a b. true; }
+Eq @Bool :: { eq = \\a b. false; }
+(eq 1 2, eq true false)
+";
+    let v = run(src);
+    match v {
+        Value::Tuple(fields) => {
+            assert_eq!(fields.len(), 2);
+            // force_deep (called inside eval_file) ensures all thunk fields are forced.
+            assert_eq!(fields[0].value.peek(), Some(Value::Bool(true)));
+            assert_eq!(fields[1].value.peek(), Some(Value::Bool(false)));
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+}
+
+/// Refusal: method with constraint but NO witness → still `UnboundBinding`.
+/// The oracle must decline rather than invent a value.
+#[test]
+fn dispatch_refusal_no_witness() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
+    let err = run_err(src);
+    assert!(
+        matches!(err, EvalError::UnboundBinding(_)),
+        "expected UnboundBinding when no witness is in scope, got {err:?}"
+    );
+}
