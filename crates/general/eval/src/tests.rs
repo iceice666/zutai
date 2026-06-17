@@ -953,6 +953,35 @@ Ord @Point :: { (<) = \\a b. true; }
     assert_eq!(run(src), Value::Bool(true));
 }
 
+// ─── Increment 8: polymorphic constraint dispatch ─────────────────────────────
+
+/// Headline test: `same 1 1` evaluates to `Bool true` via witness-dict injection.
+/// The `eq` method inside `same` dispatches through the `Eq @Int` witness because
+/// the injected WitnessDict resolves the ambiguous TypeVar at the call site.
+#[test]
+fn dispatch_polymorphic_method_inside_bounded_fn() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same 1 1
+"#;
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// Default-body fallback: a witness that omits the method uses the default body
+/// defined in the constraint.  Witness `Eq @Int :: {}` is valid (method has a
+/// default), and calling `eq 1 2` uses the default clause `| _ _ => true;`.
+#[test]
+fn dispatch_default_method_used_when_field_absent() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }
+Eq @Int :: {}
+eq 1 2
+"#;
+    assert_eq!(run(src), Value::Bool(true));
+}
+
 // ─── Value::Display ───────────────────────────────────────────────────────────
 
 #[test]

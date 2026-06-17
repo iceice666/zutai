@@ -236,6 +236,73 @@ impl<'a> Evaluator<'a> {
                 arg,
                 instantiation,
             } => {
+                // Witness-dict injection: if func is a BindingRef to a top-level
+                // function with param_bounds, inject a WitnessDict for each
+                // concrete (non-ambiguous) bound into the caller's env so that
+                // method dispatch inside the body can fall back to it.
+                if let ThirExprKind::BindingRef(bid) = &self.expr(*func).kind {
+                    let bid = *bid;
+                    // Find the Function decl with params/param_bounds.
+                    let maybe_bounds: Option<(Vec<BindingId>, Vec<Vec<BindingId>>)> =
+                        self.file.decls.iter().find_map(|&did| {
+                            let decl = self.decl(did);
+                            if decl.binding == bid
+                                && let ThirDeclKind::Function {
+                                    params,
+                                    param_bounds,
+                                    ..
+                                } = &decl.kind
+                            {
+                                return Some((params.clone(), param_bounds.clone()));
+                            }
+                            None
+                        });
+                    if let Some((params, param_bounds)) = maybe_bounds {
+                        let aliases = self.build_alias_map();
+                        for (i, constraint_bindings) in param_bounds.iter().enumerate() {
+                            if i >= params.len() || i >= instantiation.len() {
+                                break;
+                            }
+                            let key = type_key(&self.file.type_arena, &aliases, instantiation[i]);
+                            if key.starts_with('@') || key.starts_with('?') || key.starts_with('$')
+                            {
+                                continue; // ambiguous — can't resolve witness
+                            }
+                            for &constraint_binding in constraint_bindings {
+                                // Find a matching witness.
+                                for &decl_id in &self.file.decls {
+                                    let decl = self.decl(decl_id);
+                                    if let ThirDeclKind::Witness {
+                                        constraint: Some(c),
+                                        target,
+                                        fields,
+                                        ..
+                                    } = &decl.kind
+                                    {
+                                        if *c != constraint_binding
+                                            || type_key(&self.file.type_arena, &aliases, *target)
+                                                != key
+                                        {
+                                            continue;
+                                        }
+                                        // Build the witness dict from the witness fields.
+                                        let mut dict: HashMap<String, Value> = HashMap::new();
+                                        for field in fields {
+                                            let v = self.eval(field.value, env)?;
+                                            dict.insert(field.name.clone(), v);
+                                        }
+                                        env.insert(
+                                            constraint_binding,
+                                            Thunk::ready(Value::WitnessDict(dict)),
+                                        );
+                                        break; // one witness per constraint
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Type-directed constraint dispatch: if func is a BindingRef to a
                 // named constraint method, look up the matching witness and use its
                 // field body as the function value. Falls through to normal eval if
@@ -734,22 +801,60 @@ impl<'a> Evaluator<'a> {
         let key = type_key(&self.file.type_arena, &aliases, instantiation[0]);
 
         // Step 4: find the matching witness and its field body.
-        for &decl_id in &self.file.decls {
-            let decl = self.decl(decl_id);
-            if let ThirDeclKind::Witness {
-                constraint: Some(c),
-                target,
-                fields,
-                ..
-            } = &decl.kind
-            {
-                if *c == constraint_binding
+        // For concrete (non-ambiguous) keys, scan witnesses directly.
+        if !key.starts_with('@') {
+            for &decl_id in &self.file.decls {
+                let decl = self.decl(decl_id);
+                if let ThirDeclKind::Witness {
+                    constraint: Some(c),
+                    target,
+                    fields,
+                    ..
+                } = &decl.kind
+                    && *c == constraint_binding
                     && type_key(&self.file.type_arena, &aliases, *target) == key
                 {
                     for field in fields {
                         if field.name == method_name {
                             return Ok(Some(self.eval(field.value, env)?));
                         }
+                    }
+                }
+            }
+        }
+
+        // Step 5: env-fallback — when type key is ambiguous (TypeVar inside
+        // a bounded function body), look up the constraint binding in env.
+        // If it holds a WitnessDict injected at the call site, dispatch from it.
+        if key.starts_with('@')
+            && let Ok(thunk) = env.lookup(constraint_binding)
+            && let Value::WitnessDict(dict) = thunk.force(self)?
+            && let Some(v) = dict.get(&method_name)
+        {
+            return Ok(Some(v.clone()));
+        }
+
+        // Step 6: default-body fallback — if no field matched (either because
+        // the witness omitted it or there is no witness at all), check if the
+        // constraint method has a default body and return a closure for it.
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+                && decl.binding == constraint_binding
+            {
+                for m in methods {
+                    if m.name == method_name
+                        && let Some(clauses) = &m.default
+                    {
+                        let arity = clauses.first().map(|c| c.patterns.len()).unwrap_or(0);
+                        return Ok(Some(Value::Closure(Rc::new(Closure {
+                            binding: m.binding,
+                            arity,
+                            clauses: clauses.as_slice().into(),
+                            env: env.clone(),
+                            applied: Vec::new(),
+                            home: self.active_module,
+                        }))));
                     }
                 }
             }
@@ -1020,6 +1125,7 @@ fn value_type_name(v: &Value) -> &'static str {
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",
+        Value::WitnessDict(_) => "WitnessDict",
     }
 }
 

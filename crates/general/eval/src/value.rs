@@ -4,6 +4,7 @@
 //! depth.  This module is deliberately IR-agnostic: nothing here imports THIR
 //! directly; the THIR-specific eval walker lives in `eval.rs`.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -43,6 +44,11 @@ pub enum Value {
     },
     /// Absent optional field / left-hand side of `??` that is absent.
     Nothing,
+    /// A resolved constraint witness dictionary mapping method/operator name to
+    /// the evaluated closure for that field.  Injected into the environment at
+    /// bounded call sites so that method dispatch inside the body can fall back
+    /// to this dict when the type key is a TypeVar at the call site.
+    WitnessDict(HashMap<String, Value>),
 }
 
 impl Value {
@@ -165,6 +171,8 @@ impl PartialEq for Value {
                     })
             }
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
+            // WitnessDicts are opaque to user-level equality.
+            (Value::WitnessDict(_), _) | (_, Value::WitnessDict(_)) => false,
             _ => false,
         }
     }
@@ -278,6 +286,10 @@ pub fn values_equal(
         (Value::TypeValue(_), _) | (_, Value::TypeValue(_)) => Err(EvalError::Internal(
             "equality on type value (unreachable in well-typed code)",
         )),
+        // WitnessDicts are internal; comparing them is an internal error.
+        (Value::WitnessDict(_), _) | (_, Value::WitnessDict(_)) => Err(EvalError::Internal(
+            "equality on witness dict (unreachable in well-typed code)",
+        )),
         _ => Ok(false),
     }
 }
@@ -383,6 +395,7 @@ impl fmt::Display for Value {
                 write!(f, "<function/{}>", c.arity - c.applied.len())
             }
             Value::TypeValue(_) => write!(f, "<type>"),
+            Value::WitnessDict(_) => write!(f, "<witness>"),
         }
     }
 }
