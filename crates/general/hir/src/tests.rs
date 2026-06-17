@@ -118,7 +118,7 @@ fn resolves_function_type_params_in_signature_and_body_type_form() {
     else {
         panic!("expected generic function, got {decl:?}");
     };
-    let type_param = params[0];
+    let type_param = params[0].binding;
     let sig = &lowered.file.type_arena[*sig];
     assert!(contains_type_binding(&lowered.file, sig, type_param));
 

@@ -44,6 +44,10 @@ pub enum ThirDeclKind {
     },
     Function {
         params: Vec<BindingId>,
+        /// Per-param constraint bounds. `param_bounds[i]` is the list of constraint
+        /// `BindingId`s required by `params[i]`. Populated from `HirTypeParam.bounds`
+        /// during HIR→THIR lowering. Empty inner vecs mean an unconstrained type param.
+        param_bounds: Vec<Vec<BindingId>>,
         sig: TypeId,
         clauses: Vec<ThirClause>,
     },

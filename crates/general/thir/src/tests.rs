@@ -3857,3 +3857,82 @@ Eq @Int :: {}
         lowered.diagnostics
     );
 }
+
+/// Task 3: A function with a bounded type param records the bound's BindingId in
+/// `param_bounds[0]`.
+#[test]
+fn function_type_param_bounds_are_recorded_in_thir() {
+    let file = completed_file(
+        r#"
+Eq :: <A> @A {
+  eq :: A -> A -> Bool;
+}
+same :: <A: Eq> A -> A -> A { | x _ => x; }
+same
+"#,
+    );
+
+    // Find the `same` function decl.
+    let same_decl = file
+        .decl_arena
+        .iter()
+        .map(|(_, d)| d)
+        .find(|d| {
+            matches!(
+                &d.kind,
+                ThirDeclKind::Function { params, .. } if !params.is_empty()
+            )
+        })
+        .expect("same function decl should exist");
+
+    let ThirDeclKind::Function { param_bounds, .. } = &same_decl.kind else {
+        panic!("expected Function decl");
+    };
+
+    assert_eq!(
+        param_bounds.len(),
+        1,
+        "one type param → one param_bounds entry"
+    );
+    assert!(
+        !param_bounds[0].is_empty(),
+        "type param A has bound Eq so param_bounds[0] must be non-empty"
+    );
+}
+
+/// Task 3: An unconstrained type param produces an empty `param_bounds` entry.
+#[test]
+fn function_type_param_without_bounds_has_empty_param_bounds() {
+    let file = completed_file(
+        r#"
+id :: <A> A -> A { | x => x; }
+id
+"#,
+    );
+
+    let id_decl = file
+        .decl_arena
+        .iter()
+        .map(|(_, d)| d)
+        .find(|d| {
+            matches!(
+                &d.kind,
+                ThirDeclKind::Function { params, .. } if !params.is_empty()
+            )
+        })
+        .expect("id function decl should exist");
+
+    let ThirDeclKind::Function { param_bounds, .. } = &id_decl.kind else {
+        panic!("expected Function decl");
+    };
+
+    assert_eq!(
+        param_bounds.len(),
+        1,
+        "one type param → one param_bounds entry"
+    );
+    assert!(
+        param_bounds[0].is_empty(),
+        "unconstrained type param A should produce an empty bounds list"
+    );
+}

@@ -132,8 +132,12 @@ impl<'hir> Lowerer<'hir> {
                 } else {
                     Vec::new()
                 };
+                let param_bounds: Vec<Vec<zutai_hir::BindingId>> =
+                    params.iter().map(|p| p.bounds.clone()).collect();
+                let params: Vec<zutai_hir::BindingId> = params.iter().map(|p| p.binding).collect();
                 ThirDeclKind::Function {
-                    params: params.clone(),
+                    params,
+                    param_bounds,
                     sig,
                     clauses,
                 }

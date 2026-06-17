@@ -199,10 +199,16 @@ impl Lowerer {
                 params, ty, span, ..
             } => {
                 self.push_scope();
-                let params = self.lower_type_params(params);
+                let hir_params = self.lower_type_params(params);
                 let ty = self.lower_type(ty);
                 self.pop_scope();
-                (HirDeclKind::TypeAlias { params, ty }, *span)
+                (
+                    HirDeclKind::TypeAlias {
+                        params: hir_params.into_iter().map(|p| p.binding).collect(),
+                        ty,
+                    },
+                    *span,
+                )
             }
             ast::Decl::Function {
                 params,
@@ -395,27 +401,45 @@ impl Lowerer {
         })
     }
 
-    fn lower_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<BindingId> {
-        let ids: Vec<BindingId> = params
+    fn lower_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<HirTypeParam> {
+        // First pass: allocate all BindingIds so that forward-references within
+        // the param list are handled correctly (mirrors lower_hir_type_params).
+        let bindings: Vec<BindingId> = params
             .iter()
             .map(|param| {
                 self.define_current(param.name.clone(), BindingKind::TypeParam, param.span)
             })
             .collect();
-        // D1: resolve-but-don't-store bounds for plain function/alias params
-        for param in params {
-            for bound in &param.bounds {
-                if self.resolve(&bound.name).is_none() {
-                    self.diagnostics.push(HirDiagnostic {
-                        kind: HirDiagnosticKind::UnknownIdentifier {
-                            name: bound.name.clone(),
-                        },
-                        span: bound.span,
-                    });
+        // Second pass: resolve bounds, storing them (was D1 resolve-but-don't-store).
+        bindings
+            .into_iter()
+            .zip(params)
+            .map(|(binding, param)| {
+                let bounds: Vec<BindingId> = param
+                    .bounds
+                    .iter()
+                    .filter_map(|bound| match self.resolve(&bound.name) {
+                        Some(bid) => Some(bid),
+                        None => {
+                            self.diagnostics.push(HirDiagnostic {
+                                kind: HirDiagnosticKind::UnknownIdentifier {
+                                    name: bound.name.clone(),
+                                },
+                                span: bound.span,
+                            });
+                            None
+                        }
+                    })
+                    .collect();
+                let kind = param.kind.as_ref().map(|k| self.lower_type(k));
+                HirTypeParam {
+                    binding,
+                    bounds,
+                    kind,
+                    span: param.span,
                 }
-            }
-        }
-        ids
+            })
+            .collect()
     }
 
     /// Lower type params for constraint/witness decls: creates `HirTypeParam` with

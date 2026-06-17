@@ -95,7 +95,7 @@ pub enum HirDeclKind {
         ty: HirTypeId,
     },
     Function {
-        params: Vec<BindingId>,
+        params: Vec<HirTypeParam>,
         sig: Option<HirTypeId>,
         clauses: Vec<HirClause>,
     },
