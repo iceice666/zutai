@@ -827,3 +827,128 @@ fn dispatch_refusal_no_witness() {
         "expected UnboundBinding when no witness is in scope, got {err:?}"
     );
 }
+
+// ─── Increment 7: operator-method dispatch ────────────────────────────────────
+
+/// Custom `(==)` on a scalar overrides builtin structural equality.
+/// `1 == 1` is builtin-`true` but the witness returns `false`.
+#[test]
+fn op_dispatch_eq_overrides_builtin() {
+    let src = "
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \\a b. false; }
+1 == 1
+";
+    assert_eq!(run(src), Value::Bool(false));
+}
+
+/// `!=` negates the `(==)` field when no `(!=)` field is present.
+#[test]
+fn op_dispatch_ne_negates_eq() {
+    let src = "
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \\a b. false; }
+1 != 1
+";
+    // Custom (==) says false → ne returns true.
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// Custom `(<)` on a scalar overrides builtin ordering.
+/// `2 < 1` is builtin-`false` but the witness returns `true`.
+#[test]
+fn op_dispatch_lt_overrides_builtin() {
+    let src = "
+Ord :: <A> @A { (<) :: A -> A -> Bool; }
+Ord @Int :: { (<) = \\a b. true; }
+2 < 1
+";
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// All six comparison operators dispatch to the appropriate witness field.
+#[test]
+fn op_dispatch_all_six_operators() {
+    let src = "
+Cmp :: <A> @A {
+  (==) :: A -> A -> Bool;
+  (!=) :: A -> A -> Bool;
+  (<)  :: A -> A -> Bool;
+  (<=) :: A -> A -> Bool;
+  (>)  :: A -> A -> Bool;
+  (>=) :: A -> A -> Bool;
+}
+Cmp @Int :: {
+  (==)  = \\a b. false;
+  (!=)  = \\a b. false;
+  (<)   = \\a b. false;
+  (<=)  = \\a b. false;
+  (>)   = \\a b. false;
+  (>=)  = \\a b. false;
+}
+(1 == 2, 1 != 2, 1 < 2, 1 <= 2, 1 > 2, 1 >= 2)
+";
+    let v = run(src);
+    match v {
+        Value::Tuple(fields) => {
+            assert_eq!(fields.len(), 6);
+            for f in fields.iter() {
+                assert_eq!(f.value.peek(), Some(Value::Bool(false)));
+            }
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+}
+
+/// Alias-resolved key match: a witness whose target is a named type alias
+/// must still dispatch when the operand's inferred type is the structural record.
+/// This verifies the D4 alias-resolution fix in `type_key`.
+#[test]
+fn op_dispatch_alias_resolved_key() {
+    let src = "
+Point :: type { x : Int; y : Int; }
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Point :: { (==) = \\a b. false; }
+{ x = 1; y = 2; } == { x = 1; y = 2; }
+";
+    // Without alias resolution in type_key, dispatch would miss and builtin
+    // values_equal would return true (structural equality). With it: false.
+    assert_eq!(run(src), Value::Bool(false));
+}
+
+/// Builtin fallback: with no witness, `1 == 1` uses structural equality.
+#[test]
+fn op_dispatch_eq_builtin_fallback() {
+    assert_eq!(run("1 == 1"), Value::Bool(true));
+    assert_eq!(run("1 == 2"), Value::Bool(false));
+}
+
+/// Ordering on a non-scalar type-checks (D6 relaxation) when an ordering
+/// constraint exists, but eval refuses via `cmp_op` when no witness matches.
+#[test]
+fn op_dispatch_ordering_non_scalar_no_witness_refuses() {
+    let src = "
+Ord :: <A> @A { (<) :: A -> A -> Bool; }
+{ x = 1; } < { x = 2; }
+";
+    // Type-checks (no THIR error) because Ord constraint declares (<).
+    // Eval refuses: no Ord @{...} witness → cmp_op returns TypeMismatch.
+    let err = run_err(src);
+    assert!(
+        matches!(err, EvalError::TypeMismatch { .. }),
+        "expected TypeMismatch for non-scalar < with no witness, got {err:?}"
+    );
+}
+
+/// Ordering on a non-scalar WITH a witness dispatches correctly.
+#[test]
+fn op_dispatch_ordering_non_scalar_with_witness() {
+    let src = "
+Point :: type { x : Int; y : Int; }
+Ord :: <A> @A { (<) :: A -> A -> Bool; }
+Ord @Point :: { (<) = \\a b. true; }
+{ x = 2; y = 0; } < { x = 1; y = 0; }
+";
+    // Custom (<) always returns true even though 2 > 1.
+    assert_eq!(run(src), Value::Bool(true));
+}

@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use zutai_hir::BindingId;
 use zutai_syntax::ast::BinOp;
 use zutai_thir::{
     ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
@@ -426,17 +427,71 @@ impl<'a> Evaluator<'a> {
                 _ => numeric_binop(lv, rv, i64::checked_div, f64::div, "/"),
             },
             BinOp::Eq => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Eq, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                // D5: if the operand type is unresolved and an equality witness
+                // exists, refuse rather than silently returning a structural bool.
+                let aliases = self.build_alias_map();
+                let key = type_key(&self.file.type_arena, &aliases, self.expr(lhs).ty);
+                if key_is_ambiguous(&key) && self.has_eq_operator_witness() {
+                    return Err(EvalError::Internal(
+                        "equality dispatch: unresolved operand type with (==) witnesses in scope",
+                    ));
+                }
                 let eq = values_equal(&lv, &rv, self)?;
                 Ok(Value::Bool(eq))
             }
             BinOp::Ne => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Ne, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                let aliases = self.build_alias_map();
+                let key = type_key(&self.file.type_arena, &aliases, self.expr(lhs).ty);
+                if key_is_ambiguous(&key) && self.has_eq_operator_witness() {
+                    return Err(EvalError::Internal(
+                        "equality dispatch: unresolved operand type with (==) witnesses in scope",
+                    ));
+                }
                 let eq = values_equal(&lv, &rv, self)?;
                 Ok(Value::Bool(!eq))
             }
-            BinOp::Lt => cmp_op(lv, rv, std::cmp::Ordering::Less, false),
-            BinOp::Le => cmp_op(lv, rv, std::cmp::Ordering::Less, true),
-            BinOp::Gt => cmp_op(lv, rv, std::cmp::Ordering::Greater, false),
-            BinOp::Ge => cmp_op(lv, rv, std::cmp::Ordering::Greater, true),
+            BinOp::Lt => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Lt, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                cmp_op(lv, rv, std::cmp::Ordering::Less, false)
+            }
+            BinOp::Le => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Le, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                cmp_op(lv, rv, std::cmp::Ordering::Less, true)
+            }
+            BinOp::Gt => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Gt, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                cmp_op(lv, rv, std::cmp::Ordering::Greater, false)
+            }
+            BinOp::Ge => {
+                if let Some(v) =
+                    self.try_operator_dispatch(BinOp::Ge, self.expr(lhs).ty, &lv, &rv, env)?
+                {
+                    return Ok(v);
+                }
+                cmp_op(lv, rv, std::cmp::Ordering::Greater, true)
+            }
             // Already handled above.
             BinOp::And | BinOp::Or | BinOp::Coalesce => unreachable!(),
         }
@@ -675,7 +730,8 @@ impl<'a> Evaluator<'a> {
         if instantiation.len() != 1 {
             return Ok(None);
         }
-        let key = type_key(&self.file.type_arena, instantiation[0]);
+        let aliases = self.build_alias_map();
+        let key = type_key(&self.file.type_arena, &aliases, instantiation[0]);
 
         // Step 4: find the matching witness and its field body.
         for &decl_id in &self.file.decls {
@@ -687,7 +743,9 @@ impl<'a> Evaluator<'a> {
                 ..
             } = &decl.kind
             {
-                if *c == constraint_binding && type_key(&self.file.type_arena, *target) == key {
+                if *c == constraint_binding
+                    && type_key(&self.file.type_arena, &aliases, *target) == key
+                {
                     for field in fields {
                         if field.name == method_name {
                             return Ok(Some(self.eval(field.value, env)?));
@@ -698,6 +756,110 @@ impl<'a> Evaluator<'a> {
         }
 
         Ok(None)
+    }
+
+    // ── operator-method dispatch ──────────────────────────────────────────────
+
+    /// Dispatch a comparison operator to a user-defined witness field.
+    ///
+    /// Returns `Ok(Some(v))` when a matching `(op)` field is found and applied.
+    /// Returns `Ok(None)` when no witness matches — caller falls through to builtin.
+    fn try_operator_dispatch(
+        &self,
+        op: BinOp,
+        operand_ty: TypeId,
+        lv: &Value,
+        rv: &Value,
+        env: &Env,
+    ) -> Result<Option<Value>, EvalError> {
+        let op_name = match op {
+            BinOp::Eq => "==",
+            BinOp::Ne => "!=",
+            BinOp::Lt => "<",
+            BinOp::Le => "<=",
+            BinOp::Gt => ">",
+            BinOp::Ge => ">=",
+            _ => return Ok(None),
+        };
+        let aliases = self.build_alias_map();
+        let key = type_key(&self.file.type_arena, &aliases, operand_ty);
+
+        if op == BinOp::Ne {
+            // Try (!=) first; fall back to negating (==).
+            if let Some(v) = self.dispatch_operator_field("!=", &key, &aliases, lv, rv, env)? {
+                return Ok(Some(v));
+            }
+            if let Some(v) = self.dispatch_operator_field("==", &key, &aliases, lv, rv, env)? {
+                return Ok(match v {
+                    Value::Bool(b) => Some(Value::Bool(!b)),
+                    _ => None,
+                });
+            }
+            return Ok(None);
+        }
+
+        self.dispatch_operator_field(op_name, &key, &aliases, lv, rv, env)
+    }
+
+    /// Find a witness field matching `op_name` for type key `key` and apply it.
+    fn dispatch_operator_field(
+        &self,
+        op_name: &str,
+        key: &str,
+        aliases: &HashMap<BindingId, TypeId>,
+        lv: &Value,
+        rv: &Value,
+        env: &Env,
+    ) -> Result<Option<Value>, EvalError> {
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Witness { target, fields, .. } = &decl.kind {
+                if type_key(&self.file.type_arena, aliases, *target) == key {
+                    for field in fields {
+                        if field.is_operator && field.name == op_name {
+                            let fv = self.eval(field.value, env)?;
+                            match fv {
+                                Value::Closure(c) => {
+                                    let args =
+                                        vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                                    return Ok(Some(self.apply_closure(&c, args)?));
+                                }
+                                _ => return Ok(None),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Build a map from alias `BindingId` to its underlying `TypeId` for
+    /// alias-resolved `type_key` calls.
+    fn build_alias_map(&self) -> HashMap<BindingId, TypeId> {
+        let mut m = HashMap::new();
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::TypeAlias { ty, .. } = &decl.kind {
+                m.insert(decl.binding, *ty);
+            }
+        }
+        m
+    }
+
+    /// Return `true` if the file has any witness with a `(==)` or `(!=)` operator field.
+    fn has_eq_operator_witness(&self) -> bool {
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Witness { fields, .. } = &decl.kind {
+                for f in fields {
+                    if f.is_operator && (f.name == "==" || f.name == "!=") {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     // ── building top-level env ────────────────────────────────────────────────
@@ -747,11 +909,12 @@ impl<'a> Evaluator<'a> {
 
 /// Structural type key mirroring `witness_target_key` in the THIR lowerer.
 ///
-/// Used for dispatch: both the witness target type and the call-site
-/// instantiation type go through this function, so a match means "same type."
-/// No alias resolution — witness targets for concrete types like `@Int` lower
-/// directly to `TypeKind::Int`, not `TypeKind::Alias`.
-fn type_key(type_arena: &[Type], ty: TypeId) -> String {
+/// Resolves top-level `Alias` chains via `aliases` so that a witness target
+/// written as a named alias matches an operand whose inferred type is the
+/// equivalent structural type. `AliasApply` (parametric aliases) is not
+/// resolved and stays as `$<id>[...]` — dispatch on those is deferred.
+fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeId) -> String {
+    let ty = resolve_alias_chain(type_arena, aliases, ty);
     match &type_arena[ty.0 as usize].kind {
         TypeKind::Int => "Int".into(),
         TypeKind::Bool => "Bool".into(),
@@ -761,12 +924,12 @@ fn type_key(type_arena: &[Type], ty: TypeId) -> String {
         TypeKind::True => "true".into(),
         TypeKind::False => "false".into(),
         TypeKind::Atom(a) => format!("#{a}"),
-        TypeKind::List(inner) => format!("[{}]", type_key(type_arena, *inner)),
-        TypeKind::Optional(inner) => format!("{}?", type_key(type_arena, *inner)),
+        TypeKind::List(inner) => format!("[{}]", type_key(type_arena, aliases, *inner)),
+        TypeKind::Optional(inner) => format!("{}?", type_key(type_arena, aliases, *inner)),
         TypeKind::Record(fields) => {
             let mut parts: Vec<String> = fields
                 .iter()
-                .map(|f| format!("{}:{}", f.name, type_key(type_arena, f.ty)))
+                .map(|f| format!("{}:{}", f.name, type_key(type_arena, aliases, f.ty)))
                 .collect();
             parts.sort();
             format!("{{{}}}", parts.join(","))
@@ -775,7 +938,7 @@ fn type_key(type_arena: &[Type], ty: TypeId) -> String {
             let parts: Vec<String> = variants
                 .iter()
                 .map(|v| match v.payload {
-                    Some(p) => format!("{}({})", v.name, type_key(type_arena, p)),
+                    Some(p) => format!("{}({})", v.name, type_key(type_arena, aliases, p)),
                     None => v.name.clone(),
                 })
                 .collect();
@@ -786,9 +949,9 @@ fn type_key(type_arena: &[Type], ty: TypeId) -> String {
                 .iter()
                 .map(|item| match item {
                     TypeTupleItem::Named { name, ty, .. } => {
-                        format!("{}:{}", name, type_key(type_arena, *ty))
+                        format!("{}:{}", name, type_key(type_arena, aliases, *ty))
                     }
-                    TypeTupleItem::Positional(ty) => type_key(type_arena, *ty),
+                    TypeTupleItem::Positional(ty) => type_key(type_arena, aliases, *ty),
                 })
                 .collect();
             format!("({})", parts.join(","))
@@ -796,18 +959,51 @@ fn type_key(type_arena: &[Type], ty: TypeId) -> String {
         TypeKind::Function { from, to } => {
             format!(
                 "({}->{}",
-                type_key(type_arena, *from),
-                type_key(type_arena, *to)
+                type_key(type_arena, aliases, *from),
+                type_key(type_arena, aliases, *to)
             )
         }
         TypeKind::TypeVar(b) | TypeKind::Alias(b) => format!("@{}", b.0),
         TypeKind::AliasApply { binding, args } => {
-            let arg_parts: Vec<String> = args.iter().map(|a| type_key(type_arena, *a)).collect();
+            let arg_parts: Vec<String> = args
+                .iter()
+                .map(|a| type_key(type_arena, aliases, *a))
+                .collect();
             format!("${}[{}]", binding.0, arg_parts.join(","))
         }
         TypeKind::InferVar(v) => format!("?{v}"),
         TypeKind::Error => "<error>".into(),
     }
+}
+
+/// Repeatedly resolves `TypeKind::Alias` entries through `aliases` until
+/// a non-alias type or an unknown alias is reached.
+fn resolve_alias_chain(
+    type_arena: &[Type],
+    aliases: &HashMap<BindingId, TypeId>,
+    mut ty: TypeId,
+) -> TypeId {
+    let mut fuel = 64u8;
+    while fuel > 0 {
+        match &type_arena[ty.0 as usize].kind {
+            TypeKind::Alias(b) => match aliases.get(b) {
+                Some(&next) => {
+                    ty = next;
+                    fuel -= 1;
+                }
+                None => break,
+            },
+            _ => break,
+        }
+    }
+    ty
+}
+
+/// Returns `true` if the type key contains unresolvable components
+/// (`?` for `InferVar`, `$` for `AliasApply`) that could cause a
+/// dispatch miss despite a witness being present.
+fn key_is_ambiguous(key: &str) -> bool {
+    key.contains('?') || key.contains('$')
 }
 
 fn value_type_name(v: &Value) -> &'static str {

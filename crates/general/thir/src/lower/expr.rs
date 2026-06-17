@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
-    BindingId, BindingKind, HirExprId, HirExprKind, HirLocalBinding, HirRecordField, HirTupleItem,
+    BindingId, BindingKind, HirDeclKind, HirExprId, HirExprKind, HirLocalBinding, HirRecordField,
+    HirTupleItem,
 };
 use zutai_syntax::Span;
 use zutai_syntax::ast;
@@ -681,7 +682,7 @@ impl<'hir> Lowerer<'hir> {
             ) {
                 let int_ty = self.int_type(span);
                 self.unify(lhs_ty, int_ty, span);
-            } else {
+            } else if !self.hir_has_ordering_constraint(op) {
                 let rhs_ty = self.expr(rhs).ty;
                 self.invalid_binary_operands(op, lhs_ty, rhs_ty, span);
             }
@@ -778,6 +779,24 @@ impl<'hir> Lowerer<'hir> {
             let resolved = self.resolve_alias_for_expr(ty);
             matches!(self.ty(resolved).kind, TypeKind::Text)
         }
+    }
+
+    /// Returns `true` if any HIR constraint declares an operator method whose
+    /// name matches `bin_op_name(op)`. Used to allow non-scalar ordering
+    /// expressions to type-check when a user-defined witness may cover them.
+    fn hir_has_ordering_constraint(&self, op: ast::BinOp) -> bool {
+        let op_name = bin_op_name(op);
+        for &decl_id in &self.hir.decls {
+            let decl = self.hir_decl(decl_id);
+            if let HirDeclKind::Constraint { methods, .. } = &decl.kind {
+                for m in methods {
+                    if m.is_operator && m.name == op_name {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn invalid_binary_operands(&mut self, op: ast::BinOp, lhs: TypeId, rhs: TypeId, span: Span) {
