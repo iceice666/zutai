@@ -104,4 +104,9 @@ pub enum ThirDiagnosticKind {
         constraint: String,
         target: String,
     },
+    /// A constraint definition uses more than one type parameter.  Multi-param
+    /// constraints are not yet supported; witness checking is skipped for them.
+    UnsupportedMultiParamConstraint {
+        name: String,
+    },
 }

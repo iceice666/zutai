@@ -422,6 +422,9 @@ impl<'hir> Lowerer<'hir> {
             fields: Vec<(String, TypeId, Span)>,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
+        // Multi-param constraint names and their witness spans, collected for
+        // diagnostic emission after the immutable scan loop ends.
+        let mut multi_param_errors: Vec<(String, Span)> = Vec::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Witness {
                 constraint,
@@ -441,6 +444,10 @@ impl<'hir> Lowerer<'hir> {
                     continue;
                 };
                 if cst_params.len() != 1 {
+                    // Multi-param constraints are not yet supported: collect for
+                    // diagnostic emission below (outside the immutable-borrow loop).
+                    let cst_name = self.hir.bindings[cst_binding.0 as usize].name.clone();
+                    multi_param_errors.push((cst_name, decl.span));
                     continue;
                 }
                 let fields_owned: Vec<(String, TypeId, Span)> = fields
@@ -455,6 +462,14 @@ impl<'hir> Lowerer<'hir> {
                     fields: fields_owned,
                 });
             }
+        }
+
+        // Emit UnsupportedMultiParamConstraint diagnostics (collected above).
+        for (name, span) in multi_param_errors {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnsupportedMultiParamConstraint { name },
+                span,
+            });
         }
 
         // Phase 2: mutable checks over owned task data.

@@ -193,6 +193,9 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         ConflictingWitness { constraint, target } => {
             format!("conflicting witnesses for constraint `{constraint}` at type `{target}`")
         }
+        UnsupportedMultiParamConstraint { name } => {
+            format!("multi-param constraint `{name}` is not yet supported")
+        }
     }
 }
 

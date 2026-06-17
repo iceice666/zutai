@@ -140,8 +140,8 @@ impl<'hir> Lowerer<'hir> {
             }
             // D2′: Constraint/Witness decls are now lowered to THIR (no longer filtered).
             // Method sigs use `lower_type`; witness field values use `infer_expr`.
-            // Method-level params and default bodies are dropped (D6).
-            // Checking (method-sig vs field-value coherence) is deferred to Increment 3.
+            // Method-level params and default bodies are dropped (deferred to D6).
+            // Increment 3 (check_witnesses) is implemented and runs after cw-lowering.
             HirDeclKind::Constraint {
                 params,
                 target,

@@ -1876,6 +1876,31 @@ fn coherence_derive_and_explicit_same_pair_conflict() {
     );
 }
 
+// ── Multi-param constraint diagnostic (4c) ───────────────────────────────────
+
+/// A constraint with two type params emits `UnsupportedMultiParamConstraint`
+/// for any witness that targets it — no panic, no silent pass.
+#[test]
+fn multi_param_constraint_witness_emits_diagnostic() {
+    // `Pair` has two type params `<A, B>` — witness checking is not supported.
+    let src =
+        "Pair :: <A, B> @A { pair :: A -> B -> Bool; }\nPair @Int :: { pair = \\a b. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "multi-param constraint witness should nullify LoweredThir.file; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::UnsupportedMultiParamConstraint { name } if name == "Pair"
+        )),
+        "expected UnsupportedMultiParamConstraint for `Pair`; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
 // Increment 5: method-name resolution tests
 // ---------------------------------------------------------------------------
 

@@ -49,7 +49,8 @@ pub enum ThirDeclKind {
     },
     /// A constraint definition: `Eq :: <A> @A { eq :: A -> A -> Bool; }`.
     /// `params` are the constraint's own type-param bindings (e.g. `A`).
-    /// Method-level params and default bodies are dropped this increment (D6).
+    /// Increments 3/4 (witness checking, coherence) are done.
+    /// Method-level params and default bodies are deferred to D6 (defaults + operator bindings).
     Constraint {
         params: Vec<BindingId>,
         target: TypeId,
@@ -69,8 +70,9 @@ pub enum ThirDeclKind {
 }
 
 /// A single method in a constraint definition.
-/// Method-level type params (`<A,B>`) and default clause bodies are deferred to
-/// Increment 3 (default/override resolution) and omitted here (D6).
+/// Increment 3 (witness checking / coherence) is done.
+/// Method-level type params (`<A,B>`) and default clause bodies are deferred to D6
+/// (defaults + operator bindings) and omitted here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThirConstraintMethod {
     pub name: String,
