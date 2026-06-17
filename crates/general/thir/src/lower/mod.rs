@@ -159,22 +159,36 @@ impl<'hir> Lowerer<'hir> {
 
     fn lower_file(&mut self) -> LoweredThir {
         self.predeclare_decl_types();
-        // Filter out Constraint/Witness HIR decls (D2: no ThirDeclKind for them yet)
-        let filtered_ids: Vec<_> = self
+        // D5: Two-phase lowering.  Witness field RHSs may forward-reference later
+        // top-level bindings that are unannotated (not pre-declared by
+        // `predeclare_decl_types`).  Lowering normal decls first populates
+        // `value_types` for all of them, letting constraint/witness lowering see a
+        // complete top-level environment and avoiding `ValueTypeUnavailable` errors.
+        //
+        // Output order is always the original `hir.decls` source order so downstream
+        // positional assumptions stay intact — the partition controls *lowering*
+        // order, not *output* order.
+        let (cw_ids, normal_ids): (Vec<_>, Vec<_>) =
+            self.hir.decls.iter().copied().partition(|&id| {
+                matches!(
+                    self.hir_decl(id).kind,
+                    HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. }
+                )
+            });
+        let mut id_map: HashMap<HirDeclId, ThirDeclId> = HashMap::new();
+        for id in normal_ids {
+            id_map.insert(id, self.lower_decl(id));
+        }
+        for id in cw_ids {
+            id_map.insert(id, self.lower_decl(id));
+        }
+        // Reassemble in source order.
+        let decls: Vec<_> = self
             .hir
             .decls
             .iter()
             .copied()
-            .filter(|&id| {
-                !matches!(
-                    self.hir_decl(id).kind,
-                    HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. }
-                )
-            })
-            .collect();
-        let decls: Vec<_> = filtered_ids
-            .into_iter()
-            .map(|id| self.lower_decl(id))
+            .map(|id| id_map[&id])
             .collect();
         let final_expr = self.infer_expr(self.hir.final_expr);
 

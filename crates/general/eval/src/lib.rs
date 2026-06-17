@@ -195,6 +195,15 @@ fn has_reachable_error(file: &ThirFile) -> bool {
                 }
             }
             zutai_thir::ThirDeclKind::TypeAlias { .. } => {}
+            // Constraint decls have no expr nodes to walk.
+            zutai_thir::ThirDeclKind::Constraint { .. } => {}
+            // Witness field values must be error-walked: a malformed field should
+            // refuse evaluation just like a malformed top-level binding.
+            zutai_thir::ThirDeclKind::Witness { fields, .. } => {
+                for f in fields {
+                    to_visit.push(f.value);
+                }
+            }
         }
     }
 

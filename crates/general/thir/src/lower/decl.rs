@@ -1,7 +1,10 @@
 use zutai_hir::{HirClause, HirDeclId, HirDeclKind, HirExprKind};
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{ThirClause, ThirDecl, ThirDeclId, ThirDeclKind, Type, TypeId, TypeKind};
+use crate::ir::{
+    ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirWitnessField, Type,
+    TypeId, TypeKind,
+};
 
 use super::Lowerer;
 
@@ -125,9 +128,60 @@ impl<'hir> Lowerer<'hir> {
                     clauses,
                 }
             }
-            // These are filtered in lower_file (D2) — should never be reached
-            HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. } => {
-                unreachable!("constraint/witness decls are filtered before THIR lowering")
+            // D2′: Constraint/Witness decls are now lowered to THIR (no longer filtered).
+            // Method sigs use `lower_type`; witness field values use `infer_expr`.
+            // Method-level params and default bodies are dropped (D6).
+            // Checking (method-sig vs field-value coherence) is deferred to Increment 3.
+            HirDeclKind::Constraint {
+                params,
+                target,
+                methods,
+                derivable,
+            } => {
+                let target = self.lower_type(*target);
+                let params: Vec<_> = params.iter().map(|p| p.binding).collect();
+                let methods: Vec<ThirConstraintMethod> = methods
+                    .iter()
+                    .map(|m| ThirConstraintMethod {
+                        name: m.name.clone(),
+                        is_operator: m.is_operator,
+                        optional: m.optional,
+                        sig: self.lower_type(m.sig),
+                        span: m.span,
+                    })
+                    .collect();
+                ThirDeclKind::Constraint {
+                    params,
+                    target,
+                    methods,
+                    derivable: *derivable,
+                }
+            }
+            HirDeclKind::Witness {
+                constraint,
+                target,
+                params,
+                fields,
+                derive,
+            } => {
+                let target = self.lower_type(*target);
+                let params: Vec<_> = params.iter().map(|p| p.binding).collect();
+                let fields: Vec<ThirWitnessField> = fields
+                    .iter()
+                    .map(|f| ThirWitnessField {
+                        name: f.name.clone(),
+                        is_operator: f.is_operator,
+                        value: self.infer_expr(f.value),
+                        span: f.span,
+                    })
+                    .collect();
+                ThirDeclKind::Witness {
+                    constraint: *constraint,
+                    target,
+                    params,
+                    fields,
+                    derive: *derive,
+                }
             }
         };
         self.alloc_decl(ThirDecl {

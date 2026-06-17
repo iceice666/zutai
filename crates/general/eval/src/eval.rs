@@ -654,6 +654,9 @@ impl<'a> Evaluator<'a> {
                     // Type aliases are available as type values.
                     top.insert(decl.binding, Thunk::ready(Value::TypeValue(*ty)));
                 }
+                // Constraint/witness decls contribute nothing to the eval environment
+                // this increment; dictionary-passing elaboration is deferred.
+                ThirDeclKind::Constraint { .. } | ThirDeclKind::Witness { .. } => {}
             }
         }
         top

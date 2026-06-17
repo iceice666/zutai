@@ -47,6 +47,46 @@ pub enum ThirDeclKind {
         sig: TypeId,
         clauses: Vec<ThirClause>,
     },
+    /// A constraint definition: `Eq :: <A> @A { eq :: A -> A -> Bool; }`.
+    /// `params` are the constraint's own type-param bindings (e.g. `A`).
+    /// Method-level params and default bodies are dropped this increment (D6).
+    Constraint {
+        params: Vec<BindingId>,
+        target: TypeId,
+        methods: Vec<ThirConstraintMethod>,
+        derivable: bool,
+    },
+    /// A constraint witness: `Eq @Int :: { eq = intEq; }`.
+    /// `constraint` is the resolved binding of the named constraint (None if unresolved).
+    /// Witness fields are lowered via `infer_expr` but not checked against method sigs.
+    Witness {
+        constraint: Option<BindingId>,
+        target: TypeId,
+        params: Vec<BindingId>,
+        fields: Vec<ThirWitnessField>,
+        derive: bool,
+    },
+}
+
+/// A single method in a constraint definition.
+/// Method-level type params (`<A,B>`) and default clause bodies are deferred to
+/// Increment 3 (default/override resolution) and omitted here (D6).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThirConstraintMethod {
+    pub name: String,
+    pub is_operator: bool,
+    pub optional: bool,
+    pub sig: TypeId,
+    pub span: Span,
+}
+
+/// A single field in a constraint witness.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThirWitnessField {
+    pub name: String,
+    pub is_operator: bool,
+    pub value: ThirExprId,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

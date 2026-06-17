@@ -52,6 +52,10 @@ impl<'thir> Lowerer<'thir> {
                     body: final_body,
                 }
             }
+            // Constraint/witness THIR decls are filtered before reaching here (D2′).
+            ThirDeclKind::Constraint { .. } | ThirDeclKind::Witness { .. } => {
+                unreachable!("constraint/witness decls are filtered before TLC lowering")
+            }
         };
         self.alloc_decl(tlc_decl)
     }

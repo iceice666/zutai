@@ -51,11 +51,19 @@ impl<'thir> Lowerer<'thir> {
 
     fn lower_file(&mut self) -> TlcModule {
         self.collect_decl_types();
+        // D2′: filter constraint/witness THIR decls — TLC has no dictionary IR yet.
         let decls: Vec<TlcDeclId> = self
             .thir
             .decls
             .iter()
             .copied()
+            .filter(|&id| {
+                !matches!(
+                    self.thir.decl_arena[id].kind,
+                    zutai_thir::ThirDeclKind::Constraint { .. }
+                        | zutai_thir::ThirDeclKind::Witness { .. }
+                )
+            })
             .map(|id| self.lower_decl(id))
             .collect();
         TlcModule {
@@ -74,7 +82,10 @@ impl<'thir> Lowerer<'thir> {
             let thir_ty = match &decl.kind {
                 zutai_thir::ThirDeclKind::Value { ty, .. } => *ty,
                 zutai_thir::ThirDeclKind::Function { sig, .. } => *sig,
-                zutai_thir::ThirDeclKind::TypeAlias { .. } => continue,
+                // No TLC type to register for these; filtered before lower_decl.
+                zutai_thir::ThirDeclKind::TypeAlias { .. }
+                | zutai_thir::ThirDeclKind::Constraint { .. }
+                | zutai_thir::ThirDeclKind::Witness { .. } => continue,
             };
             self.decl_thir_types.insert(decl.binding, thir_ty);
         }

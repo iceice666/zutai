@@ -1585,3 +1585,131 @@ get_port #none
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
+
+// ── v1 Constraint / Witness THIR representation (Increment 2) ────────────────
+
+/// Helper: find the first decl in `file.decls` whose kind matches the predicate.
+fn find_decl_kind<'a, F>(file: &'a ThirFile, pred: F) -> Option<&'a ThirDeclKind>
+where
+    F: Fn(&ThirDeclKind) -> bool,
+{
+    file.decls
+        .iter()
+        .find(|&&id| pred(&file.decl_arena[id].kind))
+        .map(|&id| &file.decl_arena[id].kind)
+}
+
+/// A constraint def + witness + normal binding all lower to a complete THIR file
+/// with the expected structural presence.
+#[test]
+fn constraint_and_witness_produce_thir_decls() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n42";
+    let file = completed_file(src);
+
+    // Constraint decl is present.
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected a ThirDeclKind::Constraint");
+    let (n_methods, derivable) = match cst {
+        ThirDeclKind::Constraint {
+            methods, derivable, ..
+        } => (methods.len(), *derivable),
+        _ => unreachable!(),
+    };
+    assert_eq!(n_methods, 1, "Eq should have one method");
+    assert!(!derivable, "Eq is not derivable in this source");
+
+    // Witness decl is present.
+    let wit = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Witness { .. }))
+        .expect("expected a ThirDeclKind::Witness");
+    let n_fields = match wit {
+        ThirDeclKind::Witness { fields, .. } => fields.len(),
+        _ => unreachable!(),
+    };
+    assert_eq!(n_fields, 1, "Eq @Int should have one field");
+}
+
+/// Constraint method sig resolves to a `Function { from: TypeVar, … }` — not Error.
+/// This confirms the `BindingKind::TypeParam → TypeKind::TypeVar` path (types.rs:246).
+#[test]
+fn constraint_method_sig_resolves_to_typevar() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n1";
+    let file = completed_file(src);
+
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected a ThirDeclKind::Constraint");
+    let methods = match cst {
+        ThirDeclKind::Constraint { methods, .. } => methods,
+        _ => unreachable!(),
+    };
+    let sig_id = methods[0].sig;
+    let sig_kind = &file.type_arena[sig_id.0 as usize].kind;
+    // Outermost sig should be `A -> …`, i.e. `Function { from: TypeVar(_), to: … }`.
+    assert!(
+        matches!(sig_kind, TypeKind::Function { from, .. }
+            if matches!(file.type_arena[from.0 as usize].kind, TypeKind::TypeVar(_))),
+        "method sig `from` should be TypeVar, got {sig_kind:?}"
+    );
+}
+
+/// Witness with a real lambda body (non-trivial `infer_expr`): file stays complete.
+#[test]
+fn witness_with_lambda_field_completes_thir() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. a; }\n1";
+    let file = completed_file(src);
+
+    let wit = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Witness { .. }))
+        .expect("expected a ThirDeclKind::Witness");
+    let ThirDeclKind::Witness { fields, .. } = wit else {
+        unreachable!()
+    };
+    let field_expr = &file.expr_arena[fields[0].value];
+    assert!(
+        matches!(field_expr.kind, ThirExprKind::Lambda { .. }),
+        "witness field should be a Lambda expr, got {:?}",
+        field_expr.kind
+    );
+}
+
+/// D5: a witness that forward-references a binding defined *after* it in source
+/// order must still produce a complete THIR (no `ValueTypeUnavailable`).
+#[test]
+fn witness_forward_reference_completes_thir() {
+    // `laterFn` is defined *after* the witness — tests the two-phase ordering.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn := \\x. x\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_some(),
+        "forward-reference in witness field should not null LoweredThir.file; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// A `derive` witness lowers to `ThirDeclKind::Witness { derive: true, fields: [] }`.
+#[test]
+fn derive_witness_lowers_with_derive_flag() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
+    let file = completed_file(src);
+
+    let wit = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Witness { .. }))
+        .expect("expected a ThirDeclKind::Witness");
+    let (fields, derive) = match wit {
+        ThirDeclKind::Witness { fields, derive, .. } => (fields.len(), *derive),
+        _ => unreachable!(),
+    };
+    assert_eq!(fields, 0, "derive witness should have no explicit fields");
+    assert!(derive, "derive witness should have derive=true");
+
+    // Constraint should also carry derivable=true.
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected a ThirDeclKind::Constraint");
+    assert!(
+        matches!(
+            cst,
+            ThirDeclKind::Constraint {
+                derivable: true,
+                ..
+            }
+        ),
+        "constraint with 'derive' marker should have derivable=true"
+    );
+}
