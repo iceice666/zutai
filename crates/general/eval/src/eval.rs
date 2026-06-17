@@ -291,6 +291,23 @@ impl<'a> Evaluator<'a> {
                                             let v = self.eval(field.value, env)?;
                                             dict.insert(field.name.clone(), v);
                                         }
+                                        // NOTE: injecting into the caller's frame only works when
+                                        // the callee's closure.env is an ancestor of this frame —
+                                        // i.e. direct top-level calls. Indirect calls (bounded fn
+                                        // called from another fn) won't see this dict because
+                                        // apply_closure builds the body env as
+                                        // closure.env.push_frame(), not as env.push_frame(). Those
+                                        // cases are caught by try_method_dispatch returning
+                                        // EvalError::UnresolvedWitness. Full dictionary-passing
+                                        // (threading witnesses through call chains) is deferred to
+                                        // the TLC elaboration layer.
+                                        //
+                                        // Keyed by constraint BindingId. Limitation: if two
+                                        // distinct type params are bounded by the same constraint
+                                        // (e.g. <A: Eq, B: Eq>), the second insertion clobbers
+                                        // the first. Document here but don't fix — the
+                                        // indirect-call limitation (see above) is the more
+                                        // fundamental boundary.
                                         env.insert(
                                             constraint_binding,
                                             Thunk::ready(Value::WitnessDict(dict)),
@@ -762,7 +779,12 @@ impl<'a> Evaluator<'a> {
     /// Returns `Ok(Some(value))` when `func` is a `BindingRef` to a named
     /// constraint method AND a witness with a matching target type is in scope.
     /// Returns `Ok(None)` in all other cases (not a method, no instantiation,
-    /// no witness found) — the caller then falls through to normal `eval`.
+    /// no concrete witness found) — the caller then falls through to normal `eval`.
+    /// Returns `Err(EvalError::UnresolvedWitness)` when the type key is ambiguous
+    /// (TypeVar inside a bounded function body) AND no WitnessDict is visible in
+    /// the current env — this covers the indirect-call case where the witness
+    /// was injected into the caller's frame but is not an ancestor of the callee's
+    /// captured env.
     fn try_method_dispatch(
         &self,
         func: ThirExprId,
@@ -800,9 +822,30 @@ impl<'a> Evaluator<'a> {
         let aliases = self.build_alias_map();
         let key = type_key(&self.file.type_arena, &aliases, instantiation[0]);
 
-        // Step 4: find the matching witness and its field body.
-        // For concrete (non-ambiguous) keys, scan witnesses directly.
-        if !key.starts_with('@') {
+        // Step 4: dispatch based on key ambiguity.
+        //
+        // **Concrete key** (not starting with `@`, `?`, `$`):
+        //   - Scan witnesses for a matching (constraint_binding, target_key).
+        //   - If a matching witness is found and contains the field → return it.
+        //   - If a matching witness is found but omits the field AND the method
+        //     has a default body → return the default closure (valid omission).
+        //   - If no matching witness exists at all → return Ok(None) so the
+        //     caller falls through to normal eval (UnboundBinding).
+        //
+        // **Ambiguous key** (TypeVar / InferVar / AliasApply, starts with `@`, `?`, `$`):
+        //   - Try env fallback: look up the constraint binding; if it holds a
+        //     WitnessDict injected at the direct call site, dispatch from it.
+        //   - If env fallback misses → return EvalError::UnresolvedWitness.
+        //   - NEVER fall through to the default-body fallback for ambiguous keys:
+        //     the failure here is "can't resolve which witness to use", not
+        //     "witness omitted an optional method".
+
+        let key_is_concrete =
+            !key.starts_with('@') && !key.starts_with('?') && !key.starts_with('$');
+
+        if key_is_concrete {
+            // Scan all witnesses for one matching this constraint + type key.
+            let mut found_witness = false;
             for &decl_id in &self.file.decls {
                 let decl = self.decl(decl_id);
                 if let ThirDeclKind::Witness {
@@ -814,53 +857,66 @@ impl<'a> Evaluator<'a> {
                     && *c == constraint_binding
                     && type_key(&self.file.type_arena, &aliases, *target) == key
                 {
+                    found_witness = true;
                     for field in fields {
                         if field.name == method_name {
                             return Ok(Some(self.eval(field.value, env)?));
                         }
                     }
+                    // Matching witness found but field absent — fall through to
+                    // default-body check below (only reachable for concrete keys).
+                    break;
                 }
             }
+
+            if found_witness {
+                // Matching witness exists but omitted this method — check for a
+                // default body in the constraint declaration.
+                for &decl_id in &self.file.decls {
+                    let decl = self.decl(decl_id);
+                    if let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+                        && decl.binding == constraint_binding
+                    {
+                        for m in methods {
+                            if m.name == method_name
+                                && let Some(clauses) = &m.default
+                            {
+                                let arity = clauses.first().map(|c| c.patterns.len()).unwrap_or(0);
+                                return Ok(Some(Value::Closure(Rc::new(Closure {
+                                    binding: m.binding,
+                                    arity,
+                                    clauses: clauses.as_slice().into(),
+                                    env: env.clone(),
+                                    applied: Vec::new(),
+                                    home: self.active_module,
+                                }))));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // No matching witness at all (or witness had no field and no default).
+            return Ok(None);
         }
 
-        // Step 5: env-fallback — when type key is ambiguous (TypeVar inside
-        // a bounded function body), look up the constraint binding in env.
-        // If it holds a WitnessDict injected at the call site, dispatch from it.
-        if key.starts_with('@')
-            && let Ok(thunk) = env.lookup(constraint_binding)
+        // Ambiguous key: TypeVar/InferVar/AliasApply inside a bounded function body.
+        //
+        // Env fallback: for direct top-level calls, the dict was injected into
+        // an ancestor frame. For indirect calls, lookup returns Err — we fall
+        // through to UnresolvedWitness rather than a wrong-answer default.
+        if let Ok(thunk) = env.lookup(constraint_binding)
             && let Value::WitnessDict(dict) = thunk.force(self)?
             && let Some(v) = dict.get(&method_name)
         {
             return Ok(Some(v.clone()));
         }
 
-        // Step 6: default-body fallback — if no field matched (either because
-        // the witness omitted it or there is no witness at all), check if the
-        // constraint method has a default body and return a closure for it.
-        for &decl_id in &self.file.decls {
-            let decl = self.decl(decl_id);
-            if let ThirDeclKind::Constraint { methods, .. } = &decl.kind
-                && decl.binding == constraint_binding
-            {
-                for m in methods {
-                    if m.name == method_name
-                        && let Some(clauses) = &m.default
-                    {
-                        let arity = clauses.first().map(|c| c.patterns.len()).unwrap_or(0);
-                        return Ok(Some(Value::Closure(Rc::new(Closure {
-                            binding: m.binding,
-                            arity,
-                            clauses: clauses.as_slice().into(),
-                            env: env.clone(),
-                            applied: Vec::new(),
-                            home: self.active_module,
-                        }))));
-                    }
-                }
-            }
-        }
-
-        Ok(None)
+        // Env fallback failed — dict is not visible (indirect call case).
+        // Return a clean refusal instead of silently using the default body.
+        Err(EvalError::UnresolvedWitness {
+            method: method_name,
+        })
     }
 
     // ── operator-method dispatch ──────────────────────────────────────────────

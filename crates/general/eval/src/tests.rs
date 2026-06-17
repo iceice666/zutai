@@ -982,6 +982,46 @@ eq 1 2
     assert_eq!(run(src), Value::Bool(true));
 }
 
+/// Regression: an unbounded wrapper calls a bounded function — the bounded
+/// function is called indirectly so the witness dict is not visible in the
+/// callee's captured env.  Must refuse cleanly with `UnresolvedWitness`,
+/// not return a wrong value (`Bool(true)`) or an internal error.
+#[test]
+fn dispatch_polymorphic_indirect_call_refuses_cleanly() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+wrapper :: Int -> Bool { | n => same n n; }
+wrapper 1
+"#;
+    let err = run_err(src);
+    assert!(
+        matches!(err, EvalError::UnresolvedWitness { .. }),
+        "expected UnresolvedWitness for indirect bounded-fn call, got {err:?}"
+    );
+}
+
+/// Regression: the default-body fallback must NOT fire for ambiguous type keys
+/// even when the method has a default body.  An indirect call where the witness
+/// dict is invisible must refuse with `UnresolvedWitness`, not silently return
+/// the default value `Bool(true)`.
+#[test]
+fn dispatch_default_not_used_when_witness_exists_but_indirect() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }
+Eq @Int :: { eq = \a b. a == b; }
+same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+useit :: Int -> Bool { | _ => same 1 2; }
+useit 0
+"#;
+    let err = run_err(src);
+    assert!(
+        matches!(err, EvalError::UnresolvedWitness { .. }),
+        "expected UnresolvedWitness (not Bool(true) wrong answer), got {err:?}"
+    );
+}
+
 // ─── Value::Display ───────────────────────────────────────────────────────────
 
 #[test]

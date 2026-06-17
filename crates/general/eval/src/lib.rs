@@ -85,6 +85,16 @@ pub enum EvalError {
     /// Internal invariant violated (always a bug in the interpreter).
     #[error("internal error: {0}")]
     Internal(&'static str),
+    /// A constraint method was called inside a polymorphic function but no
+    /// witness could be resolved — the function was likely called indirectly,
+    /// where witness injection via env is not yet supported.
+    ///
+    /// This is a deliberate limitation of the oracle, not a bug in the user's
+    /// program. Full dictionary-passing is deferred to the TLC elaboration layer.
+    #[error(
+        "eval limitation: cannot resolve witness for method `{method}` in indirect call (dictionary-passing deferred to TLC)"
+    )]
+    UnresolvedWitness { method: String },
 }
 
 // ─── pre-flight gate ──────────────────────────────────────────────────────────
