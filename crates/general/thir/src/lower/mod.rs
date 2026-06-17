@@ -398,17 +398,20 @@ impl<'hir> Lowerer<'hir> {
     fn check_witnesses(&mut self) {
         // Phase 1: immutable scan — collect owned data to avoid borrow conflicts.
 
-        // constraint binding → (params, methods: (name, optional, sig))
-        let mut constraint_map: HashMap<BindingId, (Vec<BindingId>, Vec<(String, bool, TypeId)>)> =
-            HashMap::new();
+        // constraint binding → (params, methods: (name, optional, has_default, sig))
+        #[allow(clippy::type_complexity)]
+        let mut constraint_map: HashMap<
+            BindingId,
+            (Vec<BindingId>, Vec<(String, bool, bool, TypeId)>),
+        > = HashMap::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Constraint {
                 params, methods, ..
             } = &decl.kind
             {
-                let owned_methods: Vec<(String, bool, TypeId)> = methods
+                let owned_methods: Vec<(String, bool, bool, TypeId)> = methods
                     .iter()
-                    .map(|m| (m.name.clone(), m.optional, m.sig))
+                    .map(|m| (m.name.clone(), m.optional, m.default.is_some(), m.sig))
                     .collect();
                 constraint_map.insert(decl.binding, (params.clone(), owned_methods));
             }
@@ -418,7 +421,7 @@ impl<'hir> Lowerer<'hir> {
             span: Span,
             target: TypeId,
             constraint_param: BindingId,
-            methods: Vec<(String, bool, TypeId)>,
+            methods: Vec<(String, bool, bool, TypeId)>,
             fields: Vec<(String, TypeId, Span)>,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
@@ -481,7 +484,9 @@ impl<'hir> Lowerer<'hir> {
                 task.fields.iter().map(|(n, _, _)| n.clone()).collect();
 
             for (fname, value_ty, fspan) in &task.fields {
-                if let Some((_, _, method_sig)) = task.methods.iter().find(|(n, _, _)| n == fname) {
+                if let Some((_, _, _, method_sig)) =
+                    task.methods.iter().find(|(n, _, _, _)| n == fname)
+                {
                     let expected = self.instantiate_type_vars(*method_sig, &subst);
                     let found = *value_ty;
                     let expected_name = self.type_name(expected);
@@ -506,8 +511,9 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
 
-            for (mname, optional, _) in &task.methods {
-                if !optional && !field_names.contains(mname) {
+            for (mname, optional, has_default, _) in &task.methods {
+                // D6/4a: suppress MissingWitnessField when the method has a default body.
+                if !optional && !has_default && !field_names.contains(mname) {
                     self.diagnostics.push(ThirDiagnostic {
                         kind: ThirDiagnosticKind::MissingWitnessField {
                             name: mname.clone(),

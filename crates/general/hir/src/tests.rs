@@ -508,7 +508,8 @@ fn h11_method_name_resolves_as_binding_ref_in_final_expr() {
 
 /// H12: operator methods get `binding: None` (deferred to a later increment).
 #[test]
-fn h12_operator_method_has_no_binding() {
+fn h12_operator_method_gets_binding() {
+    // D6/4b: operator methods now get an unscoped BindingId (previously None).
     // Operator methods use parenthesised operator syntax: `(==)`.
     let lowered = lower_no_diag("Eq :: <A> @A { (==) :: A -> A -> Bool; }\n1");
     let eq_decl = lowered
@@ -526,8 +527,7 @@ fn h12_operator_method_has_no_binding() {
     let method = &methods[0];
     assert!(method.is_operator, "== should be an operator method");
     assert!(
-        method.binding.is_none(),
-        "operator method must not have a binding, got {:?}",
-        method.binding
+        method.binding.is_some(),
+        "operator method must have Some(binding) after D6/4b, got None"
     );
 }

@@ -50,7 +50,8 @@ pub enum ThirDeclKind {
     /// A constraint definition: `Eq :: <A> @A { eq :: A -> A -> Bool; }`.
     /// `params` are the constraint's own type-param bindings (e.g. `A`).
     /// Increments 3/4 (witness checking, coherence) are done.
-    /// Method-level params and default bodies are deferred to D6 (defaults + operator bindings).
+    /// D6: operator bindings and default bodies are now present in each method.
+    /// Method-level params are still deferred.
     Constraint {
         params: Vec<BindingId>,
         target: TypeId,
@@ -70,9 +71,8 @@ pub enum ThirDeclKind {
 }
 
 /// A single method in a constraint definition.
-/// Increment 3 (witness checking / coherence) is done.
-/// Method-level type params (`<A,B>`) and default clause bodies are deferred to D6
-/// (defaults + operator bindings) and omitted here.
+/// D6: operator bindings and default bodies are now carried through.
+/// Method-level type params (`<A,B>`) are still deferred.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThirConstraintMethod {
     pub name: String,
@@ -80,9 +80,11 @@ pub struct ThirConstraintMethod {
     pub optional: bool,
     pub sig: TypeId,
     pub span: Span,
-    /// `BindingId` for this method, if it is a named (non-operator) method.
-    /// `None` for operator methods (deferred to a later increment).
+    /// `BindingId` for this method. Both named and operator methods now get `Some(_)` (D6/4b).
     pub binding: Option<BindingId>,
+    /// Lowered default clause body, if one was provided in the constraint definition (D6/4a).
+    /// `None` means no default; `Some(clauses)` carries the type-checked clauses.
+    pub default: Option<Vec<ThirClause>>,
 }
 
 /// A single field in a constraint witness.

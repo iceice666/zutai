@@ -141,7 +141,19 @@ impl Lowerer {
                             );
                             Some(id)
                         }
-                        ast::MethodName::Operator(_) => None,
+                        // D6 (4b): allocate an unscoped binding for operator methods so
+                        // ThirConstraintMethod.binding is Some for operators too.
+                        // Unscoped (not define_current) because operators are never
+                        // referenced as bare idents and two constraints could share the
+                        // same symbol name without a DuplicateBinding conflict.
+                        ast::MethodName::Operator(op) => {
+                            let id = self.alloc_binding_unscoped(
+                                op.clone(),
+                                BindingKind::ConstraintMethod,
+                                m.span,
+                            );
+                            Some(id)
+                        }
                     })
                     .collect();
                 self.constraint_method_bindings

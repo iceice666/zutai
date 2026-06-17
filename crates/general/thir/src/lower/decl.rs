@@ -152,13 +152,25 @@ impl<'hir> Lowerer<'hir> {
                 let params: Vec<_> = params.iter().map(|p| p.binding).collect();
                 let methods: Vec<ThirConstraintMethod> = methods
                     .iter()
-                    .map(|m| ThirConstraintMethod {
-                        name: m.name.clone(),
-                        is_operator: m.is_operator,
-                        optional: m.optional,
-                        sig: self.lower_type(m.sig),
-                        span: m.span,
-                        binding: m.binding,
+                    .map(|m| {
+                        let sig = self.lower_type(m.sig);
+                        // D6/4a: lower default clause body if present.
+                        // Use lower_function_clauses against the method sig so the
+                        // clauses are type-checked. Skip when empty (no default).
+                        let default = if m.default.is_empty() {
+                            None
+                        } else {
+                            Some(self.lower_function_clauses(&m.default, sig))
+                        };
+                        ThirConstraintMethod {
+                            name: m.name.clone(),
+                            is_operator: m.is_operator,
+                            optional: m.optional,
+                            sig,
+                            span: m.span,
+                            binding: m.binding,
+                            default,
+                        }
                     })
                     .collect();
                 ThirDeclKind::Constraint {

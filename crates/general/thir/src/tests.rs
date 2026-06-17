@@ -3771,3 +3771,89 @@ make_pair 42
     );
     let _ = file;
 }
+
+// ── D6: operator-method bindings + default bodies ────────────────────────────
+
+/// D6/4b: an operator method in a constraint lowers to a `ThirConstraintMethod`
+/// with `binding == Some(_)` (non-sentinel BindingId).
+#[test]
+fn operator_method_gets_binding_in_thir() {
+    // Constraint with one operator method `(==)`.
+    let src = "Eq :: <A> @A { (==) :: A -> A -> Bool; }\n1";
+    let file = completed_file(src);
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected ThirDeclKind::Constraint");
+    let methods = match cst {
+        ThirDeclKind::Constraint { methods, .. } => methods,
+        _ => unreachable!(),
+    };
+    assert_eq!(methods.len(), 1, "expected one operator method");
+    assert!(
+        methods[0].is_operator,
+        "method should be flagged as operator"
+    );
+    assert!(
+        methods[0].binding.is_some(),
+        "operator method must have Some(binding) after D6/4b, got None"
+    );
+}
+
+/// D6/4a: a constraint method with a default body lowers to a
+/// `ThirConstraintMethod` with `default == Some(clauses)` containing at least
+/// one clause.
+#[test]
+fn constraint_method_default_body_lowered_to_thir() {
+    // A non-optional method with a default clause body.
+    // The body `| _ _ => true;` typechecks against `A -> A -> Bool`.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }\n1";
+    let file = completed_file(src);
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected ThirDeclKind::Constraint");
+    let methods = match cst {
+        ThirDeclKind::Constraint { methods, .. } => methods,
+        _ => unreachable!(),
+    };
+    assert_eq!(methods.len(), 1, "expected one method");
+    assert!(
+        methods[0].default.is_some(),
+        "method with default body must have Some(default) in THIR, got None"
+    );
+    let clauses = methods[0].default.as_ref().unwrap();
+    assert!(
+        !clauses.is_empty(),
+        "default body must contain at least one clause"
+    );
+}
+
+/// D6/4a: a witness that omits a non-optional method which has a default body
+/// must NOT emit `MissingWitnessField`.  This is distinct from the `optional`
+/// path: the method has no `?`, but the compiler-supplied default means the
+/// witness is still valid when the field is absent.
+#[test]
+fn witness_omitting_method_with_default_body_no_missing_field_diagnostic() {
+    // `eq` is non-optional but has a default body.  The witness omits `eq`.
+    let src = r#"
+Eq :: <A> @A {
+  eq :: A -> A -> Bool { | _ _ => true; };
+}
+Eq @Int :: {}
+1
+"#;
+    let lowered = lower(src);
+    // File must be produced (no error should nullify it).
+    assert!(
+        lowered.file.is_some(),
+        "witness omitting a method with a default body should not nullify the file; \
+         diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    // Specifically, no MissingWitnessField for `eq`.
+    assert!(
+        !lowered.diagnostics.iter().any(
+            |d| matches!(&d.kind, ThirDiagnosticKind::MissingWitnessField { name } if name == "eq")
+        ),
+        "MissingWitnessField for `eq` must not be emitted when the method has a default body; \
+         diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
