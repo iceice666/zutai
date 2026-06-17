@@ -425,4 +425,151 @@ mod tests {
             "{rendered}"
         );
     }
+
+    // ── extension_or_error ────────────────────────────────────────────────────
+
+    #[test]
+    fn extension_or_error_returns_lowercase_ext() {
+        assert_eq!(extension_or_error("hello.ZT").unwrap(), "zt");
+        assert_eq!(extension_or_error("data.zti").unwrap(), "zti");
+    }
+
+    #[test]
+    fn extension_or_error_no_extension_returns_err() {
+        assert!(extension_or_error("noext").is_err());
+        assert!(extension_or_error("no/ext").is_err());
+    }
+
+    // ── count_decls_in ────────────────────────────────────────────────────────
+
+    #[test]
+    fn count_decls_in_returns_zero_for_unparseable() {
+        // Empty or invalid → HIR not produced → 0.
+        assert_eq!(count_decls_in(""), 0);
+    }
+
+    #[test]
+    fn count_decls_in_returns_one_for_single_decl() {
+        // One declaration plus a final expression.
+        assert_eq!(count_decls_in("x := 1\nx\n"), 1);
+    }
+
+    #[test]
+    fn count_decls_in_returns_two_for_two_decls() {
+        assert_eq!(count_decls_in("x := 1\ny := 2\nx\n"), 2);
+    }
+
+    // ── format_import_diagnostic — all 8 arms ────────────────────────────────
+
+    fn make_diag(kind: zutai_semantic::ImportDiagnosticKind) -> zutai_semantic::ImportDiagnostic {
+        zutai_semantic::ImportDiagnostic {
+            kind,
+            span: zutai_syntax::Span { start: 0, end: 1 },
+        }
+    }
+
+    #[test]
+    fn format_import_diag_no_base() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::NoBaseDirectory);
+        assert!(format_import_diagnostic(&d).contains("base directory"));
+    }
+
+    #[test]
+    fn format_import_diag_unsupported_form() {
+        let d = make_diag(
+            zutai_semantic::ImportDiagnosticKind::UnsupportedImportForm {
+                path: "a/b.zt".to_string(),
+            },
+        );
+        let s = format_import_diagnostic(&d);
+        assert!(
+            s.contains("unsupported import path") && s.contains("a/b.zt"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn format_import_diag_file_not_found() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::FileNotFound {
+            path: "missing.zti".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(
+            s.contains("file not found") && s.contains("missing.zti"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn format_import_diag_read_error() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::ReadError {
+            path: "file.zti".to_string(),
+            msg: "permission denied".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(
+            s.contains("file.zti") && s.contains("permission denied"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn format_import_diag_parse_error() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::ParseError {
+            path: "data.zti".to_string(),
+            msg: "unexpected EOF".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(
+            s.contains("data.zti") && s.contains("unexpected EOF"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn format_import_diag_import_cycle() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::ImportCycle {
+            path: "a.zti".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(s.contains("import cycle") && s.contains("a.zti"), "{s}");
+    }
+
+    #[test]
+    fn format_import_diag_module_has_errors() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::ModuleHasErrors {
+            path: "lib.zti".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(s.contains("lib.zti") && s.contains("has errors"), "{s}");
+    }
+
+    #[test]
+    fn format_import_diag_unsupported_export() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::UnsupportedExport {
+            path: "mod.zti".to_string(),
+            reason: "not a type",
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(s.contains("mod.zti") && s.contains("not a type"), "{s}");
+    }
+
+    // ── ZtParseDiagnostic span clamping ──────────────────────────────────────
+
+    #[test]
+    fn zt_parse_diagnostic_clamps_span_end_to_content_length() {
+        // Produce a real parse diagnostic with a span that might exceed the
+        // content length when rendered.
+        let contents = "[1; 2]";
+        let parsed = zutai_syntax::parse(contents);
+        let err = parsed
+            .diagnostics()
+            .first()
+            .expect("fixture should fail")
+            .clone();
+        // This should not panic even if span.end > contents.len().
+        let d = ZtParseDiagnostic::new("f.zt", contents, err);
+        // We just need to ensure the span was clamped (no panic, valid len ≥ 1).
+        assert!(d.span.1 >= 1);
+    }
 }

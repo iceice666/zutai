@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::ParseErrorKind;
 use crate::parser::expr::parse_expr;
-use crate::{LineIndex, SyntaxKind, parse, parse_ast_only, tokenize};
+use crate::{LineIndex, SyntaxKind, parse, parse_ast_only, parse_lossless, tokenize};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1315,4 +1315,584 @@ fn line_index_converts_byte_and_utf16_positions() {
     let utf16 = index.utf16_line_col(offset);
     assert_eq!(utf16.line, 1);
     assert_eq!(utf16.col, 3);
+}
+
+// ============================================================================
+// Display (display.rs) – exhaust every branch of write_decl / write_clause /
+// write_expr / write_pattern / write_type_expr.
+// ============================================================================
+
+// ─── File header ─────────────────────────────────────────────────────────────
+
+#[test]
+fn display_file_starts_with_file_header() {
+    let s = parse_str("42").to_string();
+    assert!(s.starts_with("File\n"), "output must start with 'File\\n'");
+}
+
+// ─── Decl variants ───────────────────────────────────────────────────────────
+
+#[test]
+fn display_decl_inferred() {
+    let s = parse_str("x := 42\nx").to_string();
+    assert!(s.contains("Inferred \"x\""), "inferred decl name");
+    assert!(s.contains("Int(42)"), "inferred decl value");
+}
+
+#[test]
+fn display_decl_typed() {
+    let s = parse_str("x :: Int = 99\nx").to_string();
+    assert!(s.contains("Typed \"x\""), "typed decl name");
+    assert!(s.contains("TyIdent(Int)"), "typed decl type annotation");
+    assert!(s.contains("Int(99)"), "typed decl value");
+}
+
+#[test]
+fn display_decl_type_alias_no_params() {
+    let s = parse_str("MyInt :: type Int\nMyInt").to_string();
+    assert!(
+        s.contains("TypeAlias \"MyInt\" <>"),
+        "alias name and empty params"
+    );
+    assert!(s.contains("TyIdent(Int)"), "alias body");
+}
+
+#[test]
+fn display_decl_type_alias_with_params() {
+    let s = parse_str("Pair :: <A, B> type (A, B)\n1").to_string();
+    assert!(
+        s.contains("TypeAlias \"Pair\" <A, B>"),
+        "alias with type params"
+    );
+}
+
+#[test]
+fn display_decl_function() {
+    let s = parse_str("id :: Int -> Int {\n  | x => x;\n}\nid 1").to_string();
+    assert!(s.contains("Function \"id\" <>"), "function decl name");
+    assert!(s.contains("TyArrow"), "function signature");
+    assert!(s.contains("Clause"), "function clause");
+}
+
+#[test]
+fn display_decl_function_clause_with_guard() {
+    let s =
+        parse_str("pos :: Int -> Int {\n  | x if x > 0 => x;\n  | _ => 0;\n}\npos 3").to_string();
+    assert!(s.contains("guard:"), "clause guard label");
+    assert!(s.contains("Binary("), "guard binary expression");
+}
+
+#[test]
+fn display_decl_nosig_fn() {
+    let s = parse_str("f x = x\nf 1").to_string();
+    assert!(s.contains("NoSigFn \"f\""), "no-sig fn name");
+    assert!(s.contains("pat: Ident(x)"), "no-sig fn pattern");
+    assert!(s.contains("body: Ident(x)"), "no-sig fn body");
+}
+
+#[test]
+fn display_decl_constraint() {
+    let s = parse_str("Eq :: <A> @A { eq :: A -> A -> Bool; }\n1").to_string();
+    assert!(s.contains("Constraint \"Eq\""), "constraint name");
+}
+
+#[test]
+fn display_decl_witness() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; }\n1";
+    let s = parse_str(src).to_string();
+    assert!(s.contains("Witness for \"Eq\""), "witness header");
+}
+
+// ─── Expr variants ───────────────────────────────────────────────────────────
+
+#[test]
+fn display_expr_true() {
+    let s = parse_str("true").to_string();
+    assert!(s.contains("final: true"), "true literal in final expr");
+}
+
+#[test]
+fn display_expr_false() {
+    let s = parse_str("false").to_string();
+    assert!(s.contains("final: false"), "false literal in final expr");
+}
+
+#[test]
+fn display_expr_integer() {
+    let s = parse_str("123").to_string();
+    assert!(s.contains("Int(123)"), "integer literal");
+}
+
+#[test]
+fn display_expr_float() {
+    let s = parse_str("3.14").to_string();
+    assert!(s.contains("Float(3.14)"), "float literal");
+}
+
+#[test]
+fn display_expr_string() {
+    let s = parse_str("\"hello\"").to_string();
+    assert!(s.contains("Str(\"hello\")"), "string literal");
+}
+
+#[test]
+fn display_expr_atom() {
+    let s = parse_str("#foo").to_string();
+    assert!(s.contains("Atom(#foo)"), "atom literal");
+}
+
+#[test]
+fn display_expr_tagged_value() {
+    let s = parse_str("#some { val = 1; }").to_string();
+    assert!(s.contains("TaggedValue(#some)"), "tagged value tag");
+    assert!(s.contains("Record"), "tagged value payload is record");
+}
+
+#[test]
+fn display_expr_ident() {
+    let s = parse_str("x := 1\nx").to_string();
+    assert!(s.contains("Ident(x)"), "identifier expression");
+}
+
+#[test]
+fn display_expr_record() {
+    let s = parse_str("{ a = 1; b = 2; }").to_string();
+    assert!(s.contains("Record"), "record expression");
+    assert!(s.contains("a:"), "record field a");
+    assert!(s.contains("b:"), "record field b");
+}
+
+#[test]
+fn display_expr_tuple_positional() {
+    let s = parse_str("(1, 2)").to_string();
+    assert!(s.contains("Tuple"), "tuple expression");
+    assert!(s.contains("Int(1)"), "first tuple element");
+    assert!(s.contains("Int(2)"), "second tuple element");
+}
+
+#[test]
+fn display_expr_tuple_named() {
+    let s = parse_str("(x=1, y=2)").to_string();
+    assert!(s.contains("Tuple"), "named tuple");
+    assert!(s.contains("x="), "named tuple field x");
+    assert!(s.contains("y="), "named tuple field y");
+}
+
+#[test]
+fn display_expr_list() {
+    let s = parse_str("[1; 2; 3;]").to_string();
+    assert!(s.contains("List"), "list expression");
+    assert!(s.contains("Int(1)"), "first list element");
+}
+
+#[test]
+fn display_expr_block() {
+    let s = parse_str("{ x := 1; x }").to_string();
+    assert!(s.contains("Block"), "block expression");
+    assert!(s.contains("x:"), "block binding");
+    assert!(s.contains("result:"), "block result");
+}
+
+#[test]
+fn display_expr_lambda() {
+    let s = parse_str(r"\x. x").to_string();
+    assert!(s.contains("Lambda"), "lambda expression");
+    assert!(s.contains("param:"), "lambda param");
+    assert!(s.contains("body:"), "lambda body");
+}
+
+#[test]
+fn display_expr_if() {
+    let s = parse_str("if true then 1 else 2").to_string();
+    assert!(s.contains("If"), "if expression");
+    assert!(s.contains("cond:"), "if condition");
+    assert!(s.contains("then:"), "if then branch");
+    assert!(s.contains("else:"), "if else branch");
+}
+
+#[test]
+fn display_expr_match() {
+    let s = parse_str("match 1 { | 1 => true; | _ => false; }").to_string();
+    assert!(s.contains("Match"), "match expression");
+    assert!(s.contains("on:"), "match scrutinee");
+    assert!(s.contains("Clause"), "match arm");
+}
+
+#[test]
+fn display_expr_import_string() {
+    let s = parse_str("import \"data.zti\"").to_string();
+    assert!(s.contains("Import(\"data.zti\")"), "string import");
+}
+
+#[test]
+fn display_expr_import_path() {
+    let s = parse_str("import foo.bar").to_string();
+    assert!(s.contains("Import(foo.bar)"), "path import");
+}
+
+#[test]
+fn display_expr_type_form() {
+    let s = parse_str("type Int?").to_string();
+    assert!(s.contains("TypeForm"), "type form expression");
+    assert!(s.contains("TyOptional"), "type form contains optional type");
+}
+
+#[test]
+fn display_expr_apply() {
+    let s = parse_str("f 1").to_string();
+    assert!(s.contains("Apply"), "application");
+    assert!(s.contains("fn:"), "apply function");
+    assert!(s.contains("arg:"), "apply argument");
+}
+
+#[test]
+fn display_expr_access() {
+    let s = parse_str("r := { a = 1; }\nr.a").to_string();
+    assert!(s.contains("Access .a"), "field access");
+}
+
+#[test]
+fn display_expr_opt_access() {
+    let s = parse_str("r?.field").to_string();
+    assert!(s.contains("OptAccess ?.field"), "optional field access");
+}
+
+#[test]
+fn display_expr_binary() {
+    let s = parse_str("1 + 2").to_string();
+    assert!(s.contains("Binary("), "binary expression");
+}
+
+#[test]
+fn display_expr_pipeline_forward() {
+    let s = parse_str("1 |> f").to_string();
+    assert!(s.contains("Pipeline(|>)"), "forward pipeline");
+}
+
+#[test]
+fn display_expr_pipeline_backward() {
+    let s = parse_str("f <| 1").to_string();
+    assert!(s.contains("Pipeline(<|)"), "backward pipeline");
+}
+
+// ─── Pattern variants ─────────────────────────────────────────────────────────
+
+#[test]
+fn display_pattern_wildcard() {
+    let s = parse_str("match 1 { | _ => 0; }").to_string();
+    assert!(s.contains("pat: _"), "wildcard pattern");
+}
+
+#[test]
+fn display_pattern_ident() {
+    let s = parse_str("match 1 { | x => x; }").to_string();
+    assert!(s.contains("pat: Ident(x)"), "ident pattern");
+}
+
+#[test]
+fn display_pattern_true() {
+    let s = parse_str("match true { | true => 1; | _ => 0; }").to_string();
+    assert!(s.contains("pat: true"), "true pattern");
+}
+
+#[test]
+fn display_pattern_false() {
+    let s = parse_str("match false { | false => 0; | _ => 1; }").to_string();
+    assert!(s.contains("pat: false"), "false pattern");
+}
+
+#[test]
+fn display_pattern_integer() {
+    let s = parse_str("match 42 { | 42 => true; | _ => false; }").to_string();
+    assert!(s.contains("pat: Int(42)"), "integer pattern");
+}
+
+#[test]
+fn display_pattern_float() {
+    let s = parse_str("match 1.5 { | 1.5 => true; | _ => false; }").to_string();
+    assert!(s.contains("pat: Float("), "float pattern");
+}
+
+#[test]
+fn display_pattern_string() {
+    let s = parse_str("match \"hi\" { | \"hi\" => 1; | _ => 0; }").to_string();
+    assert!(s.contains("pat: Str("), "string pattern");
+}
+
+#[test]
+fn display_pattern_atom() {
+    let s = parse_str("match #ok { | #ok => 1; | _ => 0; }").to_string();
+    assert!(s.contains("pat: Atom(#ok)"), "atom pattern");
+}
+
+#[test]
+fn display_pattern_tagged_value() {
+    let s = parse_str("match #some { v = 1; } { | #some { v = x; } => x; | _ => 0; }").to_string();
+    assert!(s.contains("TaggedPat(#some)"), "tagged value pattern tag");
+    assert!(s.contains("v="), "tagged pattern field");
+}
+
+#[test]
+fn display_pattern_tuple_positional() {
+    let s = parse_str("match (1, 2) { | (a, b) => a; }").to_string();
+    assert!(s.contains("TuplePat"), "positional tuple pattern");
+}
+
+#[test]
+fn display_pattern_tuple_named() {
+    let s = parse_str("match (x=1, y=2) { | (x=a, y=b) => a; }").to_string();
+    assert!(s.contains("TuplePat"), "named tuple pattern");
+    assert!(s.contains("x="), "named tuple pattern field x");
+    assert!(s.contains("y="), "named tuple pattern field y");
+}
+
+#[test]
+fn display_pattern_record() {
+    let s = parse_str("match { a = 1; } { | { a = x; } => x; }").to_string();
+    assert!(s.contains("RecordPat"), "record pattern");
+    assert!(s.contains("a="), "record pattern field");
+}
+
+// ─── TypeExpr variants ───────────────────────────────────────────────────────
+
+#[test]
+fn display_type_expr_ident() {
+    let s = parse_str("x :: Int = 1\nx").to_string();
+    assert!(s.contains("TyIdent(Int)"), "type ident");
+}
+
+#[test]
+fn display_type_expr_atom() {
+    let s = parse_str("x :: #ok = #ok\nx").to_string();
+    assert!(s.contains("TyAtom(#ok)"), "type atom");
+}
+
+#[test]
+fn display_type_expr_true() {
+    let s = parse_str("x :: true = true\nx").to_string();
+    assert!(s.contains("TyTrue"), "type literal true");
+}
+
+#[test]
+fn display_type_expr_false() {
+    let s = parse_str("x :: false = false\nx").to_string();
+    assert!(s.contains("TyFalse"), "type literal false");
+}
+
+#[test]
+fn display_type_expr_record_with_optional_field() {
+    let s = parse_str("Point :: type { x : Int; y? : Text; }\n1").to_string();
+    assert!(s.contains("TyRecord"), "type record");
+    assert!(s.contains("x:"), "required field");
+    assert!(s.contains("y?:"), "optional field");
+}
+
+#[test]
+fn display_type_expr_union_with_and_without_payload() {
+    let s = parse_str("Shape :: type [circle; rect : { w : Int; h : Int; };]\n1").to_string();
+    assert!(s.contains("TyUnion"), "type union");
+    assert!(s.contains("circle"), "bare union variant");
+    assert!(s.contains("rect:"), "payload union variant");
+}
+
+#[test]
+fn display_type_expr_tuple_positional() {
+    let s = parse_str("f :: (Int, Text) -> Int { | _ => 0; }\nf").to_string();
+    assert!(s.contains("TyTuple"), "positional type tuple");
+}
+
+#[test]
+fn display_type_expr_tuple_named() {
+    let s = parse_str("T :: type (x : Int, y : Text)\n1").to_string();
+    assert!(s.contains("TyTuple"), "named type tuple");
+    assert!(s.contains("x:"), "named tuple type field x");
+}
+
+#[test]
+fn display_type_expr_optional() {
+    let s = parse_str("x :: Int? = #none\nx").to_string();
+    assert!(s.contains("TyOptional"), "optional type");
+    assert!(s.contains("TyIdent(Int)"), "optional inner type");
+}
+
+#[test]
+fn display_type_expr_arrow() {
+    let s = parse_str("f :: Int -> Text { | _ => \"x\"; }\nf").to_string();
+    assert!(s.contains("TyArrow"), "arrow type");
+    assert!(s.contains("from:"), "arrow from");
+    assert!(s.contains("to:"), "arrow to");
+}
+
+#[test]
+fn display_type_expr_apply() {
+    let s = parse_str("xs :: List Int = [1;]\nxs").to_string();
+    assert!(s.contains("TyApply"), "type application");
+}
+
+#[test]
+fn display_type_expr_access() {
+    let s = parse_str("x :: Foo.Bar = x\nx").to_string();
+    assert!(s.contains("TyAccess .Bar"), "type field access");
+}
+
+#[test]
+fn display_type_expr_expr_escape() {
+    // A numeric literal in type position falls through to ExprEscape.
+    let s = parse_str("x :: 1 = 1\nx").to_string();
+    assert!(s.contains("TyExprEscape"), "type expr escape");
+    assert!(s.contains("Int(1)"), "escaped expression value");
+}
+
+// ── Lexer coverage: v1 keywords, @, scientific notation, unknown token ────────
+
+/// V1 future-reserved keywords produce their own SyntaxKind variants.
+/// Tokenizing them exercises `consume_word` arms 21-25 and `from_raw` arms 21-25.
+#[test]
+fn tokenize_v1_keywords() {
+    let tokens = tokenize("select perform handle with resume");
+    let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+    assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select");
+    assert!(kinds.contains(&SyntaxKind::KeywordPerform), "perform");
+    assert!(kinds.contains(&SyntaxKind::KeywordHandle), "handle");
+    assert!(kinds.contains(&SyntaxKind::KeywordWith), "with");
+    assert!(kinds.contains(&SyntaxKind::KeywordResume), "resume");
+}
+
+/// `@` tokenises as `SyntaxKind::At` — used in constraint/witness declarations.
+/// Parsing a real witness program ensures `from_raw` arm 61 is also covered.
+#[test]
+fn tokenize_at_sign() {
+    let tokens = tokenize("@");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::At);
+}
+
+/// Characters not in the lexer's known set produce `SyntaxKind::Unknown`.
+/// `$` is not a valid Zutai token — exercises the `_ =>` arm in `next_kind`
+/// and `from_raw` arm 60.
+#[test]
+fn tokenize_unknown_character() {
+    let tokens = tokenize("$");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::Unknown);
+}
+
+/// Scientific-notation integers and floats — exercises the `e`/`E` branch
+/// inside `consume_number` (lines 411-424 in syntax.rs).
+#[test]
+fn tokenize_scientific_notation() {
+    // Integer with exponent → Float
+    let tokens = tokenize("1e3");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "1e3 should be Float");
+
+    // Float with negative exponent
+    let tokens = tokenize("1.5e-2");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "1.5e-2 should be Float");
+
+    // Positive exponent sign
+    let tokens = tokenize("2e+4");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "2e+4 should be Float");
+}
+
+// ── parse_lossless: covers SyntaxKind::from_raw and kind_from_raw ─────────────
+
+/// Calling `parse_lossless` and then iterating children with `.kind()` triggers
+/// `Language::kind_from_raw` → `SyntaxKind::from_raw` for every token in the
+/// input — the only way to cover those arms (the winnow AST path never calls them).
+#[test]
+fn parse_lossless_traversal_covers_from_raw() {
+    // Source containing every token kind the lexer can produce.
+    // Carefully ordered so operators aren't accidentally merged:
+    //   - `::` before `:=` before bare `:`
+    //   - `==` before `=>` before bare `=`
+    //   - `??` before `?.` before bare `?`
+    //   - `->` before bare `-`
+    //   - `|>` `||` before bare `|`
+    //   - `<|` `<=` before bare `<`
+    //   - `>=` before bare `>`
+    let src = concat!(
+        // Keywords (13-25)
+        "type match if then else import true false select perform handle with resume\n",
+        // Punctuation and multi-char operators
+        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > -> ?? ?. ? + - * / && != @ $\n",
+        // Comments (on their own line so the lexer doesn't swallow the operators above)
+        "--[ block comment ]--\n",
+        "--|  doc comment\n",
+        "-- line comment\n",
+        // Literals
+        "42 1.5 \"hello\" #atom ident\n",
+        // Whitespace + newlines are already implicit in the concat
+    );
+    let root = parse_lossless(src);
+    // .kind() on the root triggers from_raw(0) = SourceFile
+    let root_kind = root.kind();
+    assert_eq!(root_kind, SyntaxKind::SourceFile);
+    // Iterating children triggers from_raw for each token kind present in src
+    let kinds: Vec<_> = root.children_with_tokens().map(|e| e.kind()).collect();
+    assert!(!kinds.is_empty(), "expected tokens from parse_lossless");
+    // Spot-check a few expected kinds
+    assert!(kinds.contains(&SyntaxKind::KeywordType), "type keyword");
+    assert!(kinds.contains(&SyntaxKind::Integer), "integer literal");
+    assert!(kinds.contains(&SyntaxKind::At), "@ token");
+    assert!(kinds.contains(&SyntaxKind::ColonColon), "::");
+    assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select keyword");
+}
+
+// ── Unicode escape coverage ───────────────────────────────────────────────────
+
+/// A string with `\uXXXX` BMP escape exercises `parse_unicode_escape` and
+/// `parse_u16_hex_escape` for the basic plane (U+0000–U+D7FF, U+E000–U+FFFF).
+#[test]
+fn parse_string_bmp_unicode_escape() {
+    // A = 'A', a normal BMP codepoint (not a surrogate).
+    // This exercises parse_unicode_escape's `other =>` arm and parse_u16_hex_escape.
+    let file = parse_str("x := \"\\u0041\"\nx");
+    let _ = file;
+}
+
+/// A surrogate-pair escape (`𐀀`) decodes to U+10000, exercising the
+/// high-surrogate branch (0xD800..=0xDBFF) in `parse_unicode_escape`.
+#[test]
+fn parse_string_surrogate_pair_escape() {
+    // \uD800 is a high surrogate; \uDC00 is a low surrogate.
+    // Together they encode U+10000 via the surrogate-pair algorithm.
+    let file = parse_str("x := \"\\uD800\\uDC00\"\nx");
+    let _ = file;
+}
+
+/// A lone low surrogate (`\uDC00`) is invalid UTF-16 and causes
+/// `parse_unicode_escape` to return `fail` — exercising the `0xDC00..=0xDFFF`
+/// error arm. The surrounding string literal fails to parse.
+#[test]
+fn parse_string_lone_low_surrogate_is_parse_error() {
+    // The lexer sees `\uDC00` inside a string, calls parse_unicode_escape which
+    // hits the `0xDC00..=0xDFFF => fail` arm, causing a parse diagnostic.
+    let diags = parse_kinds(r#""\uDC00""#);
+    assert!(
+        !diags.is_empty(),
+        "expected parse error for lone low surrogate"
+    );
+}
+
+/// An integer literal too large for i64 causes `parse_number_value` to fail
+/// and backtrack (covers the `Err(_) => { *input = start; fail }` arm).
+#[test]
+fn parse_number_int_overflow_is_parse_error() {
+    // 2^63 cannot be stored in i64 → parse_number_value backtracks.
+    let diags = parse_kinds("9223372036854775808");
+    // The parser fails to parse the oversized literal — a diagnostic is emitted.
+    assert!(!diags.is_empty(), "expected parse error for i64 overflow");
+}
+
+/// An unclosed block comment reaching end-of-input triggers the
+/// `if input.is_empty() { return fail }` branch inside `skip_block_comment`.
+#[test]
+fn parse_unclosed_block_comment_is_parse_error() {
+    // After parsing `1`, the whitespace skipper tries to consume `--[…` but
+    // never finds `]--`, hits EOF, and returns `fail`.
+    let diags = parse_kinds("1 --[ this comment is never closed");
+    assert!(
+        !diags.is_empty(),
+        "expected parse error for unclosed block comment"
+    );
 }

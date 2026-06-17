@@ -147,6 +147,23 @@ impl PartialEq for Value {
                     na == nb && matches!((ta.peek(), tb.peek()), (Some(va), Some(vb)) if va == vb)
                 })
             }
+            (
+                Value::TaggedValue {
+                    tag: ta,
+                    payload: pa,
+                },
+                Value::TaggedValue {
+                    tag: tb,
+                    payload: pb,
+                },
+            ) => {
+                ta == tb
+                    && pa.len() == pb.len()
+                    && pa.iter().zip(pb.iter()).all(|((na, va), (nb, vb))| {
+                        na == nb
+                            && matches!((va.peek(), vb.peek()), (Some(xa), Some(xb)) if xa == xb)
+                    })
+            }
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }

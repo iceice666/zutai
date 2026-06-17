@@ -124,3 +124,122 @@ fn rejects_mismatched_delimiters() {
     assert!(parse("{ a = [1; };").is_err());
     assert!(parse("{ a = { b = 1; ]; }").is_err());
 }
+
+// ── Additional error-path coverage ───────────────────────────────────────────
+
+/// Unterminated block — EOF before the closing `}` (L60-63 of parser.rs).
+#[test]
+fn rejects_unterminated_block() {
+    assert!(matches!(
+        parse("{ a = 1;").unwrap_err().kind,
+        ParseErrorKind::Expected { expected: "`}`" }
+    ));
+}
+
+/// Unterminated array — EOF before the closing `]` (L99-102 of parser.rs).
+#[test]
+fn rejects_unterminated_array() {
+    assert!(matches!(
+        parse("{ a = [1;").unwrap_err().kind,
+        ParseErrorKind::Expected { expected: "`]`" }
+    ));
+}
+
+/// Missing field name: `=` before any name bytes — L136-142 of parser.rs.
+#[test]
+fn rejects_missing_field_name() {
+    assert!(parse("{ = 1; }").is_err());
+}
+
+/// Bare `#` at EOF is an invalid atom — L161 of parser.rs.
+#[test]
+fn rejects_bare_hash_as_atom() {
+    assert!(matches!(
+        parse("{ a = #; }").unwrap_err().kind,
+        ParseErrorKind::InvalidAtom
+    ));
+}
+
+/// `#` followed by a digit is an invalid atom start — L163-164 of parser.rs.
+#[test]
+fn rejects_hash_digit_as_atom() {
+    assert!(matches!(
+        parse("{ a = #1foo; }").unwrap_err().kind,
+        ParseErrorKind::InvalidAtom
+    ));
+}
+
+/// `true` followed by a name-continue char is not a valid `true` — L191-195.
+#[test]
+fn rejects_keyword_with_trailing_ident_char() {
+    assert!(parse("{ a = trueX; }").is_err());
+    assert!(parse("{ a = false1; }").is_err());
+}
+
+/// String containing a multi-byte UTF-8 character — L229-233 of parser.rs.
+#[test]
+fn accepts_utf8_string_value() {
+    // The simd parser must handle multi-byte UTF-8 characters in string values.
+    assert_same_as_winnow("{ a = \"café\"; }");
+}
+
+/// Unclosed string literal — L237 of parser.rs.
+#[test]
+fn rejects_unclosed_string() {
+    assert!(matches!(
+        parse("{ a = \"unclosed").unwrap_err().kind,
+        ParseErrorKind::UnclosedString
+    ));
+}
+
+/// `\` at EOF inside a string — L242-243 (parse_escape: None arm).
+/// The scanner may surface this as UnclosedString or InvalidEscape depending
+/// on whether the quote-tracking sees the escape; either way the parse fails.
+#[test]
+fn rejects_backslash_at_eof_in_string() {
+    // The exact error kind depends on the SIMD scanner's string-state tracking,
+    // but the parse must fail.
+    assert!(
+        parse("{ a = \"\\").is_err(),
+        "backslash at EOF must be rejected"
+    );
+}
+
+/// Specific string escapes: `\/`, `\b`, `\f`, `\r`, `\t` — L250-255.
+/// These are the less-common JSON escapes rarely covered by happy-path tests.
+#[test]
+fn accepts_various_string_escapes() {
+    // `\/` → '/'
+    assert_same_as_winnow("{ a = \"\\/\"; }");
+    // `\b` → backspace (0x08)
+    assert_same_as_winnow("{ a = \"\\b\"; }");
+    // `\f` → form feed (0x0C)
+    assert_same_as_winnow("{ a = \"\\f\"; }");
+    // `\r` → carriage return
+    assert_same_as_winnow("{ a = \"\\r\"; }");
+    // `\t` → tab
+    assert_same_as_winnow("{ a = \"\\t\"; }");
+}
+
+/// Minus followed by a non-digit is an invalid number — L320 (the `_` arm).
+#[test]
+fn rejects_minus_followed_by_non_digit() {
+    assert!(matches!(
+        parse("{ a = -x; }").unwrap_err().kind,
+        ParseErrorKind::InvalidNumber
+    ));
+}
+
+/// Number with exponent marker but no digits — L341-342.
+#[test]
+fn rejects_number_with_empty_exponent() {
+    assert!(matches!(
+        parse("{ a = 1e; }").unwrap_err().kind,
+        ParseErrorKind::InvalidNumber
+    ));
+    // Also with sign but no digits
+    assert!(matches!(
+        parse("{ a = 2.5e+; }").unwrap_err().kind,
+        ParseErrorKind::InvalidNumber
+    ));
+}

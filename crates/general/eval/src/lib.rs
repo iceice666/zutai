@@ -437,6 +437,20 @@ pub fn force_deep(v: Value, ev: &eval::Evaluator<'_>) -> Result<Value, EvalError
                 .collect();
             Ok(Value::Record(std::rc::Rc::new(forced?)))
         }
+        Value::TaggedValue { tag, payload } => {
+            let forced: Result<Vec<_>, _> = payload
+                .iter()
+                .map(|(name, t)| {
+                    let inner = t.force(ev)?;
+                    let deep = force_deep(inner, ev)?;
+                    Ok((name.clone(), thunk::Thunk::ready(deep)))
+                })
+                .collect();
+            Ok(Value::TaggedValue {
+                tag,
+                payload: std::rc::Rc::new(forced?),
+            })
+        }
         other => Ok(other),
     }
 }

@@ -1,0 +1,4 @@
+-- A .zt module whose final expression has a positional tuple type.
+-- Used to exercise ImportedType::Tuple in thir/lower/import.rs and export.rs.
+p :: (Int, Text) = (1, "hello")
+p

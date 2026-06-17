@@ -1,0 +1,4 @@
+-- A .zt module whose final expression is a type-value.
+-- Used to exercise ImportedType::Type in thir/lower/import.rs and export.rs.
+MyInt :: type Int
+MyInt
