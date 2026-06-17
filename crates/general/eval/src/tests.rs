@@ -753,7 +753,7 @@ p :: Pair Text Int = { first = "x"; second = 1; }
 /// emit zero HIR+THIR diagnostics so they don't null out LoweredThir.file.
 #[test]
 fn t_inv_constraint_witness_does_not_break_eval() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := \\a b. true\n42";
     assert_eq!(run(src), Value::Int(42));
 }
 

@@ -10,8 +10,8 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
-    ThirDecl, ThirDeclId, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat, ThirPatId, Type,
-    TypeId, TypeKind, TypeTupleItem,
+    ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat,
+    ThirPatId, Type, TypeId, TypeKind, TypeTupleItem,
 };
 
 pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
@@ -182,6 +182,7 @@ impl<'hir> Lowerer<'hir> {
         for id in cw_ids {
             id_map.insert(id, self.lower_decl(id));
         }
+        self.check_witnesses();
         // Reassemble in source order.
         let decls: Vec<_> = self
             .hir
@@ -383,6 +384,120 @@ impl<'hir> Lowerer<'hir> {
             (left, right) => {
                 if left != right {
                     self.type_mismatch(t1, t2, span);
+                }
+            }
+        }
+    }
+
+    /// Check each non-derive witness's fields against the corresponding constraint's
+    /// method signatures, with the constraint's type param substituted by the witness
+    /// target type. Emits WitnessFieldTypeMismatch, MissingWitnessField, and
+    /// UnknownWitnessField diagnostics. Must run after the entire cw-lowering loop
+    /// (D7) and before zonk_type_arena() so infer-var solutions get zonked.
+    fn check_witnesses(&mut self) {
+        // Phase 1: immutable scan — collect owned data to avoid borrow conflicts.
+
+        // constraint binding → (params, methods: (name, optional, sig))
+        let mut constraint_map: HashMap<BindingId, (Vec<BindingId>, Vec<(String, bool, TypeId)>)> =
+            HashMap::new();
+        for (_, decl) in self.decl_arena.iter() {
+            if let ThirDeclKind::Constraint {
+                params, methods, ..
+            } = &decl.kind
+            {
+                let owned_methods: Vec<(String, bool, TypeId)> = methods
+                    .iter()
+                    .map(|m| (m.name.clone(), m.optional, m.sig))
+                    .collect();
+                constraint_map.insert(decl.binding, (params.clone(), owned_methods));
+            }
+        }
+
+        struct WitnessTask {
+            span: Span,
+            target: TypeId,
+            constraint_param: BindingId,
+            methods: Vec<(String, bool, TypeId)>,
+            fields: Vec<(String, TypeId, Span)>,
+        }
+        let mut tasks: Vec<WitnessTask> = Vec::new();
+        for (_, decl) in self.decl_arena.iter() {
+            if let ThirDeclKind::Witness {
+                constraint,
+                target,
+                derive,
+                fields,
+                ..
+            } = &decl.kind
+            {
+                if *derive {
+                    continue;
+                }
+                let Some(cst_binding) = constraint else {
+                    continue;
+                };
+                let Some((cst_params, cst_methods)) = constraint_map.get(cst_binding) else {
+                    continue;
+                };
+                if cst_params.len() != 1 {
+                    continue;
+                }
+                let fields_owned: Vec<(String, TypeId, Span)> = fields
+                    .iter()
+                    .map(|f| (f.name.clone(), self.expr(f.value).ty, f.span))
+                    .collect();
+                tasks.push(WitnessTask {
+                    span: decl.span,
+                    target: *target,
+                    constraint_param: cst_params[0],
+                    methods: cst_methods.clone(),
+                    fields: fields_owned,
+                });
+            }
+        }
+
+        // Phase 2: mutable checks over owned task data.
+        for task in tasks {
+            let subst: HashMap<BindingId, TypeId> =
+                [(task.constraint_param, task.target)].into_iter().collect();
+
+            let field_names: HashSet<String> =
+                task.fields.iter().map(|(n, _, _)| n.clone()).collect();
+
+            for (fname, value_ty, fspan) in &task.fields {
+                if let Some((_, _, method_sig)) = task.methods.iter().find(|(n, _, _)| n == fname) {
+                    let expected = self.instantiate_type_vars(*method_sig, &subst);
+                    let found = *value_ty;
+                    let expected_name = self.type_name(expected);
+                    let found_name = self.type_name(found);
+                    if !self.type_matches(expected, found) {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::WitnessFieldTypeMismatch {
+                                name: fname.clone(),
+                                expected: expected_name,
+                                found: found_name,
+                            },
+                            span: *fspan,
+                        });
+                    }
+                } else {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::UnknownWitnessField {
+                            name: fname.clone(),
+                        },
+                        span: *fspan,
+                    });
+                }
+            }
+
+            for (mname, optional, _) in &task.methods {
+                if !optional && !field_names.contains(mname) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::MissingWitnessField {
+                            name: mname.clone(),
+                        },
+                        span: task.span,
+                    });
                 }
             }
         }

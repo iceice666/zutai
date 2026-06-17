@@ -1603,7 +1603,7 @@ where
 /// with the expected structural presence.
 #[test]
 fn constraint_and_witness_produce_thir_decls() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := \\a b. true\n42";
     let file = completed_file(src);
 
     // Constraint decl is present.
@@ -1654,7 +1654,7 @@ fn constraint_method_sig_resolves_to_typevar() {
 /// Witness with a real lambda body (non-trivial `infer_expr`): file stays complete.
 #[test]
 fn witness_with_lambda_field_completes_thir() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. a; }\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; }\n1";
     let file = completed_file(src);
 
     let wit = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Witness { .. }))
@@ -1675,7 +1675,7 @@ fn witness_with_lambda_field_completes_thir() {
 #[test]
 fn witness_forward_reference_completes_thir() {
     // `laterFn` is defined *after* the witness — tests the two-phase ordering.
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn := \\x. x\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn := \\a b. true\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_some(),
@@ -1711,5 +1711,110 @@ fn derive_witness_lowers_with_derive_flag() {
             }
         ),
         "constraint with 'derive' marker should have derivable=true"
+    );
+}
+
+// ─── Increment 3: witness checking ───────────────────────────────────────────
+
+/// Concrete-typed field passes checking (discriminator: proves substitution fires).
+/// `realEq :: Int -> Int -> Bool` is fully concrete — no infer vars. The check
+/// passes only if `{A → Int}` rewrites the method sig to `Int -> Int -> Bool`.
+#[test]
+fn witness_concrete_field_type_matches_passes() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = realEq; }\nrealEq :: Int -> Int -> Bool = \\a b. true\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_some(),
+        "concrete-typed witness field should pass checking; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// Negative: field type does not match the expected method signature.
+#[test]
+fn witness_field_type_mismatch_emits_diagnostic() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "type-incorrect witness field should null LoweredThir.file"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::WitnessFieldTypeMismatch { name, .. } if name == "eq"
+        )),
+        "expected WitnessFieldTypeMismatch for `eq`; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// Negative: witness is missing a required method field.
+/// Two-method constraint so only the missing `neq` fires; `eq` is provided correctly.
+#[test]
+fn witness_missing_required_field_emits_diagnostic() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; neq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "witness missing required field should null LoweredThir.file"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::MissingWitnessField { name } if name == "neq"
+        )),
+        "expected MissingWitnessField for `neq`; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        !lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::WitnessFieldTypeMismatch { name, .. } if name == "eq"
+        )),
+        "provided `eq` field should not trigger WitnessFieldTypeMismatch"
+    );
+}
+
+/// Negative: witness provides a field that does not exist in the constraint.
+/// One-method constraint; `eq` is provided correctly, `neq` is unknown.
+#[test]
+fn witness_unknown_field_emits_diagnostic() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; neq = \\a b. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "witness with unknown field should null LoweredThir.file"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::UnknownWitnessField { name } if name == "neq"
+        )),
+        "expected UnknownWitnessField for `neq`; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// Derive witnesses skip checking entirely — no missing/mismatch diagnostics.
+#[test]
+fn derive_witness_skips_field_checking() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_some(),
+        "derive witness should produce a complete THIR; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        !lowered.diagnostics.iter().any(|d| {
+            matches!(
+                &d.kind,
+                ThirDiagnosticKind::MissingWitnessField { .. }
+                    | ThirDiagnosticKind::WitnessFieldTypeMismatch { .. }
+            )
+        }),
+        "derive witness should emit no checking diagnostics; diagnostics: {:?}",
+        lowered.diagnostics
     );
 }

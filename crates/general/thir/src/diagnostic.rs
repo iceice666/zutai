@@ -88,4 +88,15 @@ pub enum ThirDiagnosticKind {
     /// A `match` arm or function clause can never be reached because earlier
     /// unguarded arms already cover every value its pattern would match.
     UnreachableMatchArm,
+    WitnessFieldTypeMismatch {
+        name: String,
+        expected: String,
+        found: String,
+    },
+    MissingWitnessField {
+        name: String,
+    },
+    UnknownWitnessField {
+        name: String,
+    },
 }

@@ -176,6 +176,15 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         TypeLevelEvalLimitExceeded => {
             "type-level computation exceeded evaluation limit".to_string()
         }
+        WitnessFieldTypeMismatch {
+            name,
+            expected,
+            found,
+        } => {
+            format!("witness field `{name}` has type {found}, expected {expected}")
+        }
+        MissingWitnessField { name } => format!("missing witness field `{name}`"),
+        UnknownWitnessField { name } => format!("unknown witness field `{name}`"),
     }
 }
 
