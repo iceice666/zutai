@@ -99,4 +99,9 @@ pub enum ThirDiagnosticKind {
     UnknownWitnessField {
         name: String,
     },
+    /// Two witnesses claim the same `(Constraint, Type)` pair.
+    ConflictingWitness {
+        constraint: String,
+        target: String,
+    },
 }

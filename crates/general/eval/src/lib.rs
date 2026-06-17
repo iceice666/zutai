@@ -185,6 +185,9 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         }
         MissingWitnessField { name } => format!("missing witness field `{name}`"),
         UnknownWitnessField { name } => format!("unknown witness field `{name}`"),
+        ConflictingWitness { constraint, target } => {
+            format!("conflicting witnesses for constraint `{constraint}` at type `{target}`")
+        }
     }
 }
 

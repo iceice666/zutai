@@ -1818,3 +1818,60 @@ fn derive_witness_skips_field_checking() {
         lowered.diagnostics
     );
 }
+
+// ── Increment 4: coherence checking ──────────────────────────────────────────
+
+#[test]
+fn coherence_distinct_targets_pass() {
+    // Two witnesses for the same constraint but different types should not conflict.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: { eq = \\a b. true; }\nEq @Text :: { eq = \\a b. true; }\n1";
+    // completed_file panics on any diagnostic — success means no conflict.
+    let _file = completed_file(src);
+}
+
+#[test]
+fn coherence_same_target_different_constraints_pass() {
+    // Two witnesses for different constraints at the same type should not conflict.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nOrd :: <A> @A { cmp :: A -> A -> Bool; } derive\nEq @Int :: { eq = \\a b. true; }\nOrd @Int :: { cmp = \\a b. true; }\n1";
+    // completed_file panics on any diagnostic — success means no conflict.
+    let _file = completed_file(src);
+}
+
+#[test]
+fn coherence_duplicate_pair_emits_conflicting_witness() {
+    // Two witnesses for the same (Constraint, Type) pair: the second must be rejected.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: { eq = \\a b. true; }\nEq @Int :: { eq = \\a b. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "duplicate witness pair should nullify LoweredThir.file; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| {
+            matches!(
+                &d.kind,
+                ThirDiagnosticKind::ConflictingWitness { constraint, target }
+                    if constraint == "Eq" && target == "Int"
+            )
+        }),
+        "expected ConflictingWitness{{constraint=Eq, target=Int}}; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn coherence_derive_and_explicit_same_pair_conflict() {
+    // A `derive` witness and an explicit witness for the same pair must conflict.
+    // Coherence includes derive witnesses (D12).
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\nEq @Int :: { eq = \\a b. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| { matches!(&d.kind, ThirDiagnosticKind::ConflictingWitness { .. }) }),
+        "derive + explicit witness for same pair should emit ConflictingWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}

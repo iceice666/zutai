@@ -183,6 +183,7 @@ impl<'hir> Lowerer<'hir> {
             id_map.insert(id, self.lower_decl(id));
         }
         self.check_witnesses();
+        self.check_witness_coherence();
         // Reassemble in source order.
         let decls: Vec<_> = self
             .hir
@@ -499,6 +500,50 @@ impl<'hir> Lowerer<'hir> {
                         span: task.span,
                     });
                 }
+            }
+        }
+    }
+
+    /// Enforce coherence: at most one witness per `(Constraint, Type)` pair.
+    ///
+    /// For each non-`derive` or `derive` witness whose `constraint` binding is
+    /// resolved, compute a structural key `(constraint_binding, target_key)`.
+    /// If a prior witness already claimed that key, emit `ConflictingWitness` at
+    /// the later witness's span. Witnesses with `constraint == None` (unresolved
+    /// constraint name) are skipped — that error is reported elsewhere.
+    ///
+    /// Must run after `check_witnesses` and before `zonk_type_arena()`.
+    fn check_witness_coherence(&mut self) {
+        // Phase 1: immutable scan — collect (constraint, target, span) triples.
+        let mut triples: Vec<(BindingId, TypeId, Span)> = Vec::new();
+        for (_, decl) in self.decl_arena.iter() {
+            if let ThirDeclKind::Witness {
+                constraint, target, ..
+            } = &decl.kind
+            {
+                if let Some(cst) = constraint {
+                    triples.push((*cst, *target, decl.span));
+                }
+            }
+        }
+
+        // Phase 2: mutable — compute keys, detect duplicates.
+        let mut seen: HashMap<(BindingId, String), ()> = HashMap::new();
+        for (cst, target, span) in triples {
+            let target_key = self.witness_target_key(target);
+            let key = (cst, target_key);
+            if seen.contains_key(&key) {
+                let constraint_name = self.hir.bindings[cst.0 as usize].name.clone();
+                let target_name = self.type_name(target);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ConflictingWitness {
+                        constraint: constraint_name,
+                        target: target_name,
+                    },
+                    span,
+                });
+            } else {
+                seen.insert(key, ());
             }
         }
     }

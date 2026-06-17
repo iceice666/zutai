@@ -582,6 +582,82 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    /// Structural coherence key for a witness target type.
+    ///
+    /// Unlike `type_name`, this function recurses into compound types
+    /// (`Record`, `Union`, `Tuple`, `Function`) so that distinct types
+    /// always produce distinct keys. This is used as the second half of
+    /// the coherence-check map key `(constraint BindingId, target key)`.
+    pub(super) fn witness_target_key(&mut self, ty: TypeId) -> String {
+        let span = self.type_arena[ty.0 as usize].span;
+        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Type => "Type".to_string(),
+            TypeKind::Bool => "Bool".to_string(),
+            TypeKind::Text => "Text".to_string(),
+            TypeKind::Int => "Int".to_string(),
+            TypeKind::Float => "Float".to_string(),
+            TypeKind::Atom(name) => format!("#{name}"),
+            TypeKind::True => "true".to_string(),
+            TypeKind::False => "false".to_string(),
+            TypeKind::List(inner) => format!("[{}]", self.witness_target_key(inner)),
+            TypeKind::Optional(inner) => format!("{}?", self.witness_target_key(inner)),
+            TypeKind::Record(fields) => {
+                // Sort by name — records are order-independent.
+                let mut parts: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        let k = self.witness_target_key(f.ty);
+                        if f.optional {
+                            format!("{}?:{}", f.name, k)
+                        } else {
+                            format!("{}:{}", f.name, k)
+                        }
+                    })
+                    .collect();
+                parts.sort();
+                format!("{{{}}}", parts.join(","))
+            }
+            TypeKind::Union(variants) => {
+                let parts: Vec<String> = variants
+                    .iter()
+                    .map(|v| match v.payload {
+                        Some(p) => format!("{}({})", v.name, self.witness_target_key(p)),
+                        None => v.name.clone(),
+                    })
+                    .collect();
+                format!("<{}>", parts.join("|"))
+            }
+            TypeKind::Tuple(items) => {
+                let parts: Vec<String> = items
+                    .iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named { name, ty, .. } => {
+                            format!("{}:{}", name, self.witness_target_key(*ty))
+                        }
+                        TypeTupleItem::Positional(ty) => self.witness_target_key(*ty),
+                    })
+                    .collect();
+                format!("({})", parts.join(","))
+            }
+            TypeKind::Function { from, to } => {
+                format!(
+                    "({}->{})",
+                    self.witness_target_key(from),
+                    self.witness_target_key(to)
+                )
+            }
+            // Key by binding index rather than name — shadow-safe.
+            TypeKind::TypeVar(b) | TypeKind::Alias(b) => format!("@{}", b.0),
+            TypeKind::AliasApply { binding, args } => {
+                let parts: Vec<String> = args.iter().map(|&a| self.witness_target_key(a)).collect();
+                format!("${}[{}]", binding.0, parts.join(","))
+            }
+            TypeKind::InferVar(v) => format!("?{v}"),
+            TypeKind::Error => "<error>".to_string(),
+        }
+    }
+
     /// Collect all `TypeVar` binding IDs that appear free in `ty`, in a
     /// deduped stable order (by binding index).
     pub(super) fn collect_type_vars(&self, ty: TypeId) -> Vec<BindingId> {
