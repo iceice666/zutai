@@ -58,6 +58,9 @@ struct Lowerer {
     type_arena: Arena<HirTypeExpr>,
     scopes: Vec<Scope>,
     diagnostics: Vec<HirDiagnostic>,
+    /// Maps each constraint's `BindingId` to the index-aligned vector of
+    /// per-method bindings allocated in Pass 1.  `None` entries are operator methods.
+    constraint_method_bindings: HashMap<BindingId, Vec<Option<BindingId>>>,
 }
 
 impl Lowerer {
@@ -70,6 +73,7 @@ impl Lowerer {
             type_arena: Arena::new(),
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
+            constraint_method_bindings: HashMap::new(),
         };
         for name in ["Type", "Text", "Bool", "Int", "Float", "List"] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
@@ -120,8 +124,29 @@ impl Lowerer {
                 BindingKind::TopFunction,
                 decl.span(),
             ),
-            ast::Decl::Constraint { name, .. } => {
-                self.define_current(name.clone(), BindingKind::TopConstraint, decl.span())
+            ast::Decl::Constraint { name, methods, .. } => {
+                let constraint_binding =
+                    self.define_current(name.clone(), BindingKind::TopConstraint, decl.span());
+                // D1/D3: Allocate a BindingId for each *named* method now (Pass 1) so
+                // method names are resolvable by any body lowered in Pass 2, regardless of
+                // source order.  Operator methods get `None` (deferred to a later increment).
+                let method_bindings: Vec<Option<BindingId>> = methods
+                    .iter()
+                    .map(|m| match &m.name {
+                        ast::MethodName::Ident(method_name) => {
+                            let id = self.define_current(
+                                method_name.clone(),
+                                BindingKind::ConstraintMethod,
+                                m.span,
+                            );
+                            Some(id)
+                        }
+                        ast::MethodName::Operator(_) => None,
+                    })
+                    .collect();
+                self.constraint_method_bindings
+                    .insert(constraint_binding, method_bindings);
+                constraint_binding
             }
             ast::Decl::Witness { constraint, .. } => {
                 // D3: unscoped so duplicate witnesses don't raise DuplicateBinding
@@ -228,7 +253,7 @@ impl Lowerer {
                 let hir_target = self.lower_type(target);
                 let mut seen_methods: HashMap<String, Span> = HashMap::new();
                 let mut hir_methods = Vec::new();
-                for method in methods {
+                for (idx, method) in methods.iter().enumerate() {
                     let key = method.name.as_str().to_string();
                     if let Some(&first_span) = seen_methods.get(&key) {
                         self.diagnostics.push(HirDiagnostic {
@@ -254,6 +279,13 @@ impl Lowerer {
                         ast::MethodName::Ident(s) => (false, s.clone()),
                         ast::MethodName::Operator(s) => (true, s.clone()),
                     };
+                    // D3: retrieve the pre-allocated binding from the threaded map.
+                    let method_binding = self
+                        .constraint_method_bindings
+                        .get(&binding)
+                        .and_then(|v| v.get(idx))
+                        .copied()
+                        .flatten();
                     hir_methods.push(HirConstraintMethod {
                         name: name_str,
                         is_operator,
@@ -262,6 +294,7 @@ impl Lowerer {
                         sig,
                         default,
                         span: method.span,
+                        binding: method_binding,
                     });
                 }
                 self.pop_scope();

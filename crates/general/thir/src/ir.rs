@@ -78,6 +78,9 @@ pub struct ThirConstraintMethod {
     pub optional: bool,
     pub sig: TypeId,
     pub span: Span,
+    /// `BindingId` for this method, if it is a named (non-operator) method.
+    /// `None` for operator methods (deferred to a later increment).
+    pub binding: Option<BindingId>,
 }
 
 /// A single field in a constraint witness.

@@ -1875,3 +1875,69 @@ fn coherence_derive_and_explicit_same_pair_conflict() {
         lowered.diagnostics
     );
 }
+
+// Increment 5: method-name resolution tests
+// ---------------------------------------------------------------------------
+
+/// T5-1: a named method call `eq 1 2` type-checks to Bool (positive, monomorphic).
+#[test]
+fn method_call_eq_int_typechecks_to_bool() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
+    let file = completed_file(src);
+    assert!(
+        matches!(final_type_kind(&file), TypeKind::Bool),
+        "expected final type Bool, got {:?}",
+        final_type_kind(&file)
+    );
+}
+
+/// T5-2: the method's TypeVar is instantiated independently at each call site
+/// so `(eq 1 2, eq true false)` type-checks without mixing the two instances.
+#[test]
+fn method_call_polymorphic_independent_instantiation() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n(eq 1 2, eq true false)";
+    let file = completed_file(src);
+    // The result is a 2-tuple; just check the file is complete.
+    assert!(
+        matches!(final_type_kind(&file), TypeKind::Tuple(_)),
+        "expected Tuple type, got {:?}",
+        final_type_kind(&file)
+    );
+}
+
+/// T5-3: mismatched argument types `eq true 2` emit TypeMismatch and nullify the file.
+#[test]
+fn method_call_arg_type_mismatch_emits_diagnostic() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq true 2";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "type-mismatched call should produce no file"
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. })),
+        "expected TypeMismatch diagnostic; got {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// T5-4: the lowered `ThirConstraintMethod.binding` is `Some(_)` for a named method.
+#[test]
+fn thir_constraint_method_binding_is_some_for_named() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n1";
+    let file = completed_file(src);
+    let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
+        .expect("expected a ThirDeclKind::Constraint");
+    let methods = match cst {
+        ThirDeclKind::Constraint { methods, .. } => methods,
+        _ => unreachable!(),
+    };
+    assert_eq!(methods.len(), 1, "expected one method");
+    assert!(
+        methods[0].binding.is_some(),
+        "named method `eq` must have Some(binding), got None"
+    );
+}

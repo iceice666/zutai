@@ -37,6 +37,9 @@ pub enum BindingKind {
     TopType,
     TopConstraint,
     TopWitness,
+    /// A named method declared inside a constraint definition.
+    /// Operator methods are excluded (they carry `None` in `HirConstraintMethod.binding`).
+    ConstraintMethod,
     TypeParam,
     Local,
     Param,
@@ -66,6 +69,9 @@ pub struct HirConstraintMethod {
     pub sig: HirTypeId,
     pub default: Vec<HirClause>,
     pub span: Span,
+    /// `BindingId` allocated for this method in Pass 1, or `None` for operator methods.
+    /// Named methods get a `ConstraintMethod` binding so expressions can reference them.
+    pub binding: Option<BindingId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

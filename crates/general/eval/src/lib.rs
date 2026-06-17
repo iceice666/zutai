@@ -68,7 +68,12 @@ pub enum EvalError {
     /// No clause of a function matched the arguments.
     #[error("runtime error: no matching clause (non-exhaustive pattern match)")]
     NoMatchingClause,
-    /// An unbound `BindingId` was looked up (unreachable in well-typed code).
+    /// An unbound `BindingId` was looked up.
+    ///
+    /// Unreachable in fully-evaluated well-typed code **except** for constraint
+    /// method calls: a method like `eq` type-checks correctly against its polymorphic
+    /// signature, but has no runtime value until dictionary-passing is implemented
+    /// (a later increment).  The interpreter refuses rather than guessing a value.
     #[error("internal: unbound binding {0:?}")]
     UnboundBinding(BindingId),
     /// Runtime type mismatch (unreachable in well-typed code).

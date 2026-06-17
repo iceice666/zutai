@@ -465,3 +465,69 @@ fn contains_type_binding(file: &HirFile, ty: &HirTypeExpr, binding: BindingId) -
         _ => false,
     }
 }
+
+// Increment 5: method-name resolution tests
+// ---------------------------------------------------------------------------
+
+/// H10: a named constraint method gets a `ConstraintMethod` binding in Pass 1.
+#[test]
+fn h10_named_method_gets_constraint_method_binding() {
+    let lowered = lower_no_diag("Eq :: <A> @A { eq :: A -> A -> Bool; }\n1");
+    let eq_decl = lowered
+        .file
+        .decl_arena
+        .iter()
+        .map(|(_, d)| d)
+        .find(|d| lowered.file.bindings[d.binding.0 as usize].name == "Eq")
+        .expect("Eq decl");
+    let methods = match &eq_decl.kind {
+        HirDeclKind::Constraint { methods, .. } => methods,
+        other => panic!("expected Constraint kind, got {other:?}"),
+    };
+    assert_eq!(methods.len(), 1);
+    let method = &methods[0];
+    assert!(!method.is_operator, "eq should not be an operator");
+    let binding = method.binding.expect("named method must have a binding");
+    let b = &lowered.file.bindings[binding.0 as usize];
+    assert_eq!(b.name, "eq");
+    assert_eq!(b.kind, BindingKind::ConstraintMethod);
+}
+
+/// H11: a method name is resolvable in the final expression after constraint declaration.
+#[test]
+fn h11_method_name_resolves_as_binding_ref_in_final_expr() {
+    let lowered = lower_no_diag("Eq :: <A> @A { eq :: A -> A -> Bool; }\neq");
+    // final expr: BindingRef(eq_binding) — no UnresolvedIdent
+    let final_expr = &lowered.file.expr_arena[lowered.file.final_expr];
+    assert!(
+        matches!(final_expr.kind, HirExprKind::BindingRef(_)),
+        "final expr should be BindingRef(eq_binding), got {:?}",
+        final_expr.kind
+    );
+}
+
+/// H12: operator methods get `binding: None` (deferred to a later increment).
+#[test]
+fn h12_operator_method_has_no_binding() {
+    // Operator methods use parenthesised operator syntax: `(==)`.
+    let lowered = lower_no_diag("Eq :: <A> @A { (==) :: A -> A -> Bool; }\n1");
+    let eq_decl = lowered
+        .file
+        .decl_arena
+        .iter()
+        .map(|(_, d)| d)
+        .find(|d| lowered.file.bindings[d.binding.0 as usize].name == "Eq")
+        .expect("Eq decl");
+    let methods = match &eq_decl.kind {
+        HirDeclKind::Constraint { methods, .. } => methods,
+        other => panic!("expected Constraint kind, got {other:?}"),
+    };
+    assert_eq!(methods.len(), 1);
+    let method = &methods[0];
+    assert!(method.is_operator, "== should be an operator method");
+    assert!(
+        method.binding.is_none(),
+        "operator method must not have a binding, got {:?}",
+        method.binding
+    );
+}

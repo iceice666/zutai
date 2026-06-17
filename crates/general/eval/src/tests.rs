@@ -764,3 +764,19 @@ fn t_inv_derive_witness_does_not_break_eval() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
     assert_eq!(run(src), Value::Int(1));
 }
+
+// Increment 5: method-name resolution — eval invariant tests
+// ---------------------------------------------------------------------------
+
+/// T-INV-5: `eq 1 2` type-checks (THIR is complete) but has no runtime value yet
+/// (no dictionary-passing).  The interpreter must refuse with `UnboundBinding`
+/// rather than guessing a value — the oracle must not invent semantics.
+#[test]
+fn t_inv5_method_call_type_checks_but_refuses_eval() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
+    let err = run_err(src);
+    assert!(
+        matches!(err, EvalError::UnboundBinding(_)),
+        "expected EvalError::UnboundBinding for un-dispatched method call, got {err:?}"
+    );
+}

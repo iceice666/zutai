@@ -58,8 +58,18 @@ impl<'hir> Lowerer<'hir> {
                 HirDeclKind::Value {
                     annotation: None, ..
                 } => {}
-                // Constraint/Witness decls are filtered out in lower_file (D2)
-                HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. } => continue,
+                // D4: register each named method's signature so that method-name
+                // BindingRefs are resolvable via the normal `value_types` path.
+                HirDeclKind::Constraint { methods, .. } => {
+                    for m in methods {
+                        if let Some(b) = m.binding {
+                            let ty = self.lower_type(m.sig);
+                            self.value_types.insert(b, ty);
+                        }
+                    }
+                }
+                // Witness decls contribute no value bindings.
+                HirDeclKind::Witness { .. } => continue,
             }
         }
     }
@@ -148,6 +158,7 @@ impl<'hir> Lowerer<'hir> {
                         optional: m.optional,
                         sig: self.lower_type(m.sig),
                         span: m.span,
+                        binding: m.binding,
                     })
                     .collect();
                 ThirDeclKind::Constraint {
