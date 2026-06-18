@@ -20,13 +20,17 @@
 //!   re-normalize.
 //! * Otherwise, recurse structurally into children.
 //!
-//! ## Substitution
+//! ## Substitution (Phase 3: capture-avoiding)
 //!
-//! `subst` is shadow-respecting: it stops descending under any `TyLamK`/`ForAll` binder that
-//! rebinds the variable being substituted. All Phase-2 alias arguments are closed types (no
-//! free type variables), so capture cannot occur and capture-avoiding renaming is unnecessary.
-//! **Limitation (Phase 3):** once open type arguments become possible, `subst` must be
-//! upgraded to capture-avoiding.
+//! `subst` is capture-avoiding: before descending under a `TyLamK` / `ForAll` binder whose
+//! variable appears free in the replacement, the binder is alpha-renamed to a fresh
+//! `TlcTypeVar::Inferred(u32::MAX - counter)` variable (counting downward from `u32::MAX`
+//! to avoid collision with THIR inference vars which start from 0).
+//!
+//! In v0 every replacement from the THIR lowering is a closed type (no free type variables),
+//! so the freshening path is unreachable for any real `.zt` program. The upgrade is required
+//! for v1 row polymorphism, where open-record/union types can carry free row-kinded type
+//! variables.
 //!
 //! ## Type equality
 //!
@@ -39,7 +43,7 @@
 //! `Fun` carries an effect row (Phase 4); its effect row is compared via the same
 //! order-insensitive `rows_equal_deep` — correct for effect sets. In v0, `eff = REmpty` always.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use la_arena::Arena;
 
@@ -68,7 +72,17 @@ impl TlcModule {
     ) -> Result<TlcTypeId, NormalizeError> {
         let alias_env = build_alias_env(&self.decl_arena);
         let mut remaining = fuel;
-        normalize_ty(&mut self.type_arena, &alias_env, ty, &mut remaining, fuel)
+        // Fresh-variable counter for capture-avoiding substitution.
+        // Counts downward from u32::MAX; THIR infer vars count upward from 0, so no collision.
+        let mut next_fresh = u32::MAX;
+        normalize_ty(
+            &mut self.type_arena,
+            &alias_env,
+            ty,
+            &mut remaining,
+            fuel,
+            &mut next_fresh,
+        )
     }
 
     /// Returns `true` iff `a` and `b` normalize to structurally identical types.
@@ -107,6 +121,7 @@ fn normalize_ty(
     ty: TlcTypeId,
     fuel: &mut u32,
     fuel_limit: u32,
+    next_fresh: &mut u32,
 ) -> Result<TlcTypeId, NormalizeError> {
     match arena[ty].clone() {
         // ── β-reduction: TyApp(TyLamK(a, _, body), arg) ─────────────────────
@@ -115,9 +130,10 @@ fn normalize_ty(
                 TlcType::TyLamK(binder, _kind, body_id) => {
                     consume_fuel(fuel, fuel_limit)?;
                     // Normalize the argument first, then substitute.
-                    let norm_arg = normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit)?;
-                    let substituted = subst(arena, body_id, binder, norm_arg);
-                    normalize_ty(arena, alias_env, substituted, fuel, fuel_limit)
+                    let norm_arg =
+                        normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit, next_fresh)?;
+                    let substituted = subst(arena, body_id, binder, norm_arg, next_fresh);
+                    normalize_ty(arena, alias_env, substituted, fuel, fuel_limit, next_fresh)
                 }
                 // ── Alias-head unfolding: TyApp(TyVar(alias, _), arg) ────────
                 TlcType::TyVar(tyvar, _kind) => {
@@ -126,26 +142,33 @@ fn normalize_ty(
                         consume_fuel(fuel, fuel_limit)?;
                         // Rebuild TyApp with the unfolded alias body, then re-normalize.
                         let new_app = arena.alloc(TlcType::TyApp(alias_body, arg_id));
-                        normalize_ty(arena, alias_env, new_app, fuel, fuel_limit)
+                        normalize_ty(arena, alias_env, new_app, fuel, fuel_limit, next_fresh)
                     } else {
-                        // Not an alias head — normalize both sides structurally.
-                        let nf = normalize_ty(arena, alias_env, func_id, fuel, fuel_limit)?;
-                        let na = normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit)?;
-                        Ok(arena.alloc(TlcType::TyApp(nf, na)))
+                        // func_id is already a TyVar (normal form) — only normalize arg.
+                        let na =
+                            normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit, next_fresh)?;
+                        Ok(arena.alloc(TlcType::TyApp(func_id, na)))
                     }
                 }
                 _ => {
                     // Head is not immediately reducible: normalize both sides, then
                     // inspect the normalized head — it may now be a TyLamK (curried
                     // alias after partial application) or an alias TyVar.
-                    let nf = normalize_ty(arena, alias_env, func_id, fuel, fuel_limit)?;
-                    let na = normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit)?;
+                    let nf = normalize_ty(arena, alias_env, func_id, fuel, fuel_limit, next_fresh)?;
+                    let na = normalize_ty(arena, alias_env, arg_id, fuel, fuel_limit, next_fresh)?;
                     match arena[nf].clone() {
                         TlcType::TyLamK(binder, _kind, body_id) => {
                             // β-reduce the now-exposed lambda.
                             consume_fuel(fuel, fuel_limit)?;
-                            let substituted = subst(arena, body_id, binder, na);
-                            normalize_ty(arena, alias_env, substituted, fuel, fuel_limit)
+                            let substituted = subst(arena, body_id, binder, na, next_fresh);
+                            normalize_ty(
+                                arena,
+                                alias_env,
+                                substituted,
+                                fuel,
+                                fuel_limit,
+                                next_fresh,
+                            )
                         }
                         TlcType::TyVar(tyvar, _kind) => {
                             let binding_key = tyvar_key(tyvar);
@@ -153,7 +176,9 @@ fn normalize_ty(
                                 // Unfold the now-exposed alias head.
                                 consume_fuel(fuel, fuel_limit)?;
                                 let new_app = arena.alloc(TlcType::TyApp(alias_body, na));
-                                normalize_ty(arena, alias_env, new_app, fuel, fuel_limit)
+                                normalize_ty(
+                                    arena, alias_env, new_app, fuel, fuel_limit, next_fresh,
+                                )
                             } else {
                                 Ok(arena.alloc(TlcType::TyApp(nf, na)))
                             }
@@ -166,37 +191,38 @@ fn normalize_ty(
 
         // ── Structural recursion into children ───────────────────────────────
         TlcType::TyLamK(binder, kind, body_id) => {
-            let nb = normalize_ty(arena, alias_env, body_id, fuel, fuel_limit)?;
+            let nb = normalize_ty(arena, alias_env, body_id, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::TyLamK(binder, kind, nb)))
         }
         TlcType::ForAll(binder, kind, body_id) => {
-            let nb = normalize_ty(arena, alias_env, body_id, fuel, fuel_limit)?;
+            let nb = normalize_ty(arena, alias_env, body_id, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::ForAll(binder, kind, nb)))
         }
         TlcType::Fun(from_id, to_id, eff) => {
-            let nf = normalize_ty(arena, alias_env, from_id, fuel, fuel_limit)?;
-            let nt = normalize_ty(arena, alias_env, to_id, fuel, fuel_limit)?;
-            let neff = normalize_row(arena, alias_env, &eff, fuel, fuel_limit)?;
+            let nf = normalize_ty(arena, alias_env, from_id, fuel, fuel_limit, next_fresh)?;
+            let nt = normalize_ty(arena, alias_env, to_id, fuel, fuel_limit, next_fresh)?;
+            let neff = normalize_row(arena, alias_env, &eff, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Fun(nf, nt, neff)))
         }
         TlcType::List(inner_id) => {
-            let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit)?;
+            let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::List(ni)))
         }
         TlcType::Optional(inner_id) => {
-            let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit)?;
+            let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Optional(ni)))
         }
         TlcType::Record(row) => {
-            let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit)?;
+            let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Record(new_row)))
         }
         TlcType::VariantT(row) => {
-            let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit)?;
+            let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::VariantT(new_row)))
         }
         TlcType::Tuple(items) => {
-            let new_items = normalize_tuple_fields(arena, alias_env, &items, fuel, fuel_limit)?;
+            let new_items =
+                normalize_tuple_fields(arena, alias_env, &items, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Tuple(new_items)))
         }
         // Atoms — nothing to reduce.
@@ -210,16 +236,17 @@ fn normalize_tuple_fields(
     items: &[TlcTupleField],
     fuel: &mut u32,
     fuel_limit: u32,
+    next_fresh: &mut u32,
 ) -> Result<Vec<TlcTupleField>, NormalizeError> {
     items
         .iter()
         .map(|item| match item {
             TlcTupleField::Positional(ty_id) => {
-                let nt = normalize_ty(arena, alias_env, *ty_id, fuel, fuel_limit)?;
+                let nt = normalize_ty(arena, alias_env, *ty_id, fuel, fuel_limit, next_fresh)?;
                 Ok(TlcTupleField::Positional(nt))
             }
             TlcTupleField::Named { name, ty: ty_id } => {
-                let nt = normalize_ty(arena, alias_env, *ty_id, fuel, fuel_limit)?;
+                let nt = normalize_ty(arena, alias_env, *ty_id, fuel, fuel_limit, next_fresh)?;
                 Ok(TlcTupleField::Named {
                     name: name.clone(),
                     ty: nt,
@@ -235,6 +262,7 @@ fn normalize_row(
     row: &Row,
     fuel: &mut u32,
     fuel_limit: u32,
+    next_fresh: &mut u32,
 ) -> Result<Row, NormalizeError> {
     match row {
         Row::REmpty => Ok(Row::REmpty),
@@ -246,8 +274,8 @@ fn normalize_row(
             optional,
             tail,
         } => {
-            let nt = normalize_ty(arena, alias_env, *ty, fuel, fuel_limit)?;
-            let ntail = normalize_row(arena, alias_env, tail, fuel, fuel_limit)?;
+            let nt = normalize_ty(arena, alias_env, *ty, fuel, fuel_limit, next_fresh)?;
+            let ntail = normalize_row(arena, alias_env, tail, fuel, fuel_limit, next_fresh)?;
             Ok(Row::RExtend {
                 label: label.clone(),
                 ty: nt,
@@ -258,76 +286,319 @@ fn normalize_row(
     }
 }
 
-// ── Substitution ──────────────────────────────────────────────────────────────
+// ── Free type variables ───────────────────────────────────────────────────────
 
-/// Shadow-respecting substitution: replaces all free occurrences of `var` in `ty` with
-/// `replacement`. Stops under any binder (`TyLamK` / `ForAll`) that shadows `var`.
-///
-/// **Limitation (Phase 3):** `replacement` must be a closed type (no free type vars).
-/// If open type arguments become possible, upgrade to capture-avoiding renaming.
-fn subst(
+/// Collect all type variables (`TyVar`) that appear free in `ty`.
+/// Row variables (`RVar`) are ignored — they have a different kind and cannot be
+/// captured by `TyLamK`/`ForAll` binders, which bind type-kinded variables.
+fn free_type_vars(arena: &Arena<TlcType>, ty: TlcTypeId) -> HashSet<TlcTypeVar> {
+    let mut free = HashSet::new();
+    collect_free(arena, ty, &HashSet::new(), &mut free);
+    free
+}
+
+fn collect_free(
+    arena: &Arena<TlcType>,
+    ty: TlcTypeId,
+    bound: &HashSet<TlcTypeVar>,
+    free: &mut HashSet<TlcTypeVar>,
+) {
+    match arena[ty].clone() {
+        TlcType::TyVar(v, _) => {
+            if !bound.contains(&v) {
+                free.insert(v);
+            }
+        }
+        TlcType::TyLamK(binder, _, body) => {
+            let mut new_bound = bound.clone();
+            new_bound.insert(binder);
+            collect_free(arena, body, &new_bound, free);
+        }
+        TlcType::ForAll(binder, _, body) => {
+            let mut new_bound = bound.clone();
+            new_bound.insert(binder);
+            collect_free(arena, body, &new_bound, free);
+        }
+        TlcType::TyApp(f, a) => {
+            collect_free(arena, f, bound, free);
+            collect_free(arena, a, bound, free);
+        }
+        TlcType::Fun(from, to, eff) => {
+            collect_free(arena, from, bound, free);
+            collect_free(arena, to, bound, free);
+            collect_free_row(arena, &eff, bound, free);
+        }
+        TlcType::List(inner) | TlcType::Optional(inner) => {
+            collect_free(arena, inner, bound, free);
+        }
+        TlcType::Record(row) | TlcType::VariantT(row) => {
+            collect_free_row(arena, &row, bound, free);
+        }
+        TlcType::Tuple(items) => {
+            for item in &items {
+                let t = match item {
+                    TlcTupleField::Positional(t) => *t,
+                    TlcTupleField::Named { ty, .. } => *ty,
+                };
+                collect_free(arena, t, bound, free);
+            }
+        }
+        TlcType::Prim(_) | TlcType::Singleton(_) => {}
+    }
+}
+
+fn collect_free_row(
+    arena: &Arena<TlcType>,
+    row: &Row,
+    bound: &HashSet<TlcTypeVar>,
+    free: &mut HashSet<TlcTypeVar>,
+) {
+    match row {
+        Row::REmpty => {}
+        // RVar shares the TlcTypeVar namespace with type-kinded variables. A TyLamK/ForAll
+        // binder whose id appears as a free RVar in the replacement must be freshened.
+        Row::RVar(v) => {
+            if !bound.contains(v) {
+                free.insert(*v);
+            }
+        }
+        Row::RExtend { ty, tail, .. } => {
+            collect_free(arena, *ty, bound, free);
+            collect_free_row(arena, tail, bound, free);
+        }
+    }
+}
+
+// ── Alpha-renaming ────────────────────────────────────────────────────────────
+
+/// Rename all free occurrences of `old` to `fresh` in `ty`.
+/// `fresh` must not appear anywhere in `ty` (guaranteed when allocated from the
+/// downward counter in `subst_inner`), so no capture check is needed here.
+fn alpha_rename(
     arena: &mut Arena<TlcType>,
     ty: TlcTypeId,
-    var: TlcTypeVar,
-    replacement: TlcTypeId,
+    old: TlcTypeVar,
+    fresh: TlcTypeVar,
 ) -> TlcTypeId {
     match arena[ty].clone() {
-        TlcType::TyVar(v, _) if v == var => replacement,
+        TlcType::TyVar(v, k) if v == old => arena.alloc(TlcType::TyVar(fresh, k)),
         TlcType::TyVar(_, _) => ty,
-
-        // Stop under binders that shadow `var`.
         TlcType::TyLamK(binder, kind, body) => {
-            if binder == var {
-                return ty; // shadowed — do not descend
+            if binder == old {
+                return ty; // old is re-bound here — stop descending
             }
-            let new_body = subst(arena, body, var, replacement);
+            let new_body = alpha_rename(arena, body, old, fresh);
             arena.alloc(TlcType::TyLamK(binder, kind, new_body))
         }
         TlcType::ForAll(binder, kind, body) => {
-            if binder == var {
-                return ty; // shadowed
+            if binder == old {
+                return ty; // old is re-bound here — stop descending
             }
-            let new_body = subst(arena, body, var, replacement);
+            let new_body = alpha_rename(arena, body, old, fresh);
             arena.alloc(TlcType::ForAll(binder, kind, new_body))
         }
-
         TlcType::TyApp(f, a) => {
-            let nf = subst(arena, f, var, replacement);
-            let na = subst(arena, a, var, replacement);
+            let nf = alpha_rename(arena, f, old, fresh);
+            let na = alpha_rename(arena, a, old, fresh);
             arena.alloc(TlcType::TyApp(nf, na))
         }
         TlcType::Fun(from, to, eff) => {
-            let nf = subst(arena, from, var, replacement);
-            let nt = subst(arena, to, var, replacement);
-            let neff = subst_row(arena, &eff, var, replacement);
+            let nf = alpha_rename(arena, from, old, fresh);
+            let nt = alpha_rename(arena, to, old, fresh);
+            let neff = alpha_rename_row(arena, eff, old, fresh);
             arena.alloc(TlcType::Fun(nf, nt, neff))
         }
         TlcType::List(inner) => {
-            let ni = subst(arena, inner, var, replacement);
+            let ni = alpha_rename(arena, inner, old, fresh);
             arena.alloc(TlcType::List(ni))
         }
         TlcType::Optional(inner) => {
-            let ni = subst(arena, inner, var, replacement);
+            let ni = alpha_rename(arena, inner, old, fresh);
             arena.alloc(TlcType::Optional(ni))
         }
         TlcType::Record(row) => {
-            let new_row = subst_row(arena, &row, var, replacement);
+            let new_row = alpha_rename_row(arena, row, old, fresh);
             arena.alloc(TlcType::Record(new_row))
         }
         TlcType::VariantT(row) => {
-            let new_row = subst_row(arena, &row, var, replacement);
+            let new_row = alpha_rename_row(arena, row, old, fresh);
             arena.alloc(TlcType::VariantT(new_row))
         }
         TlcType::Tuple(items) => {
             let new_items: Vec<TlcTupleField> = items
                 .iter()
                 .map(|item| match item {
-                    TlcTupleField::Positional(ty_id) => {
-                        TlcTupleField::Positional(subst(arena, *ty_id, var, replacement))
+                    TlcTupleField::Positional(t) => {
+                        TlcTupleField::Positional(alpha_rename(arena, *t, old, fresh))
                     }
+                    TlcTupleField::Named { name, ty } => TlcTupleField::Named {
+                        name: name.clone(),
+                        ty: alpha_rename(arena, *ty, old, fresh),
+                    },
+                })
+                .collect();
+            arena.alloc(TlcType::Tuple(new_items))
+        }
+        TlcType::Prim(_) | TlcType::Singleton(_) => ty,
+    }
+}
+
+fn alpha_rename_row(
+    arena: &mut Arena<TlcType>,
+    row: Row,
+    old: TlcTypeVar,
+    fresh: TlcTypeVar,
+) -> Row {
+    match row {
+        Row::REmpty => Row::REmpty,
+        // RVar shares the TlcTypeVar namespace; rename it when it matches `old`.
+        Row::RVar(v) if v == old => Row::RVar(fresh),
+        Row::RVar(v) => Row::RVar(v),
+        Row::RExtend {
+            label,
+            ty,
+            optional,
+            tail,
+        } => Row::RExtend {
+            label,
+            ty: alpha_rename(arena, ty, old, fresh),
+            optional,
+            tail: Box::new(alpha_rename_row(arena, *tail, old, fresh)),
+        },
+    }
+}
+
+// ── Capture-avoiding substitution ────────────────────────────────────────────
+
+/// Entry point: substitute all free occurrences of `var` in `ty` with `replacement`.
+///
+/// Capture-avoiding: if a `TyLamK`/`ForAll` binder `b ≠ var` has the same id as a free
+/// variable in `replacement`, `b` is alpha-renamed to a fresh `Inferred(next_fresh)` before
+/// descending. This prevents the replacement's free variable from being shadowed by `b`.
+///
+/// In v0 all replacements from THIR lowering are closed types, so the freshening path is
+/// unreachable for any real `.zt` program. The upgrade is mandatory for v1 row-polymorphic
+/// types where open-record/union types can carry free type variables.
+fn subst(
+    arena: &mut Arena<TlcType>,
+    ty: TlcTypeId,
+    var: TlcTypeVar,
+    replacement: TlcTypeId,
+    next_fresh: &mut u32,
+) -> TlcTypeId {
+    let replacement_free = free_type_vars(arena, replacement);
+    subst_inner(arena, ty, var, replacement, &replacement_free, next_fresh)
+}
+
+fn subst_inner(
+    arena: &mut Arena<TlcType>,
+    ty: TlcTypeId,
+    var: TlcTypeVar,
+    replacement: TlcTypeId,
+    replacement_free: &HashSet<TlcTypeVar>,
+    next_fresh: &mut u32,
+) -> TlcTypeId {
+    match arena[ty].clone() {
+        TlcType::TyVar(v, _) if v == var => replacement,
+        TlcType::TyVar(_, _) => ty,
+
+        // Capture-avoiding: freshen any binder whose id appears free in `replacement`.
+        TlcType::TyLamK(binder, kind, body) => {
+            if binder == var {
+                return ty; // shadowed — do not descend
+            }
+            let (new_binder, new_body) = if replacement_free.contains(&binder) {
+                let fresh = TlcTypeVar::Inferred(*next_fresh);
+                *next_fresh -= 1;
+                let renamed = alpha_rename(arena, body, binder, fresh);
+                (fresh, renamed)
+            } else {
+                (binder, body)
+            };
+            let subst_body = subst_inner(
+                arena,
+                new_body,
+                var,
+                replacement,
+                replacement_free,
+                next_fresh,
+            );
+            arena.alloc(TlcType::TyLamK(new_binder, kind, subst_body))
+        }
+        TlcType::ForAll(binder, kind, body) => {
+            if binder == var {
+                return ty; // shadowed
+            }
+            let (new_binder, new_body) = if replacement_free.contains(&binder) {
+                let fresh = TlcTypeVar::Inferred(*next_fresh);
+                *next_fresh -= 1;
+                let renamed = alpha_rename(arena, body, binder, fresh);
+                (fresh, renamed)
+            } else {
+                (binder, body)
+            };
+            let subst_body = subst_inner(
+                arena,
+                new_body,
+                var,
+                replacement,
+                replacement_free,
+                next_fresh,
+            );
+            arena.alloc(TlcType::ForAll(new_binder, kind, subst_body))
+        }
+
+        TlcType::TyApp(f, a) => {
+            let nf = subst_inner(arena, f, var, replacement, replacement_free, next_fresh);
+            let na = subst_inner(arena, a, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::TyApp(nf, na))
+        }
+        TlcType::Fun(from, to, eff) => {
+            let nf = subst_inner(arena, from, var, replacement, replacement_free, next_fresh);
+            let nt = subst_inner(arena, to, var, replacement, replacement_free, next_fresh);
+            let neff = subst_row_inner(arena, &eff, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::Fun(nf, nt, neff))
+        }
+        TlcType::List(inner) => {
+            let ni = subst_inner(arena, inner, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::List(ni))
+        }
+        TlcType::Optional(inner) => {
+            let ni = subst_inner(arena, inner, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::Optional(ni))
+        }
+        TlcType::Record(row) => {
+            let new_row =
+                subst_row_inner(arena, &row, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::Record(new_row))
+        }
+        TlcType::VariantT(row) => {
+            let new_row =
+                subst_row_inner(arena, &row, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::VariantT(new_row))
+        }
+        TlcType::Tuple(items) => {
+            let new_items: Vec<TlcTupleField> = items
+                .iter()
+                .map(|item| match item {
+                    TlcTupleField::Positional(ty_id) => TlcTupleField::Positional(subst_inner(
+                        arena,
+                        *ty_id,
+                        var,
+                        replacement,
+                        replacement_free,
+                        next_fresh,
+                    )),
                     TlcTupleField::Named { name, ty: ty_id } => TlcTupleField::Named {
                         name: name.clone(),
-                        ty: subst(arena, *ty_id, var, replacement),
+                        ty: subst_inner(
+                            arena,
+                            *ty_id,
+                            var,
+                            replacement,
+                            replacement_free,
+                            next_fresh,
+                        ),
                     },
                 })
                 .collect();
@@ -338,15 +609,17 @@ fn subst(
     }
 }
 
-fn subst_row(
+fn subst_row_inner(
     arena: &mut Arena<TlcType>,
     row: &Row,
     var: TlcTypeVar,
     replacement: TlcTypeId,
+    replacement_free: &HashSet<TlcTypeVar>,
+    next_fresh: &mut u32,
 ) -> Row {
     match row {
         Row::REmpty => Row::REmpty,
-        // Type-variable subst is inert on row variables — different kind discipline.
+        // Type-variable substitution is inert on row variables — different kind discipline.
         Row::RVar(v) => Row::RVar(*v),
         Row::RExtend {
             label,
@@ -355,9 +628,16 @@ fn subst_row(
             tail,
         } => Row::RExtend {
             label: label.clone(),
-            ty: subst(arena, *ty, var, replacement),
+            ty: subst_inner(arena, *ty, var, replacement, replacement_free, next_fresh),
             optional: *optional,
-            tail: Box::new(subst_row(arena, tail, var, replacement)),
+            tail: Box::new(subst_row_inner(
+                arena,
+                tail,
+                var,
+                replacement,
+                replacement_free,
+                next_fresh,
+            )),
         },
     }
 }
@@ -386,8 +666,9 @@ fn row_fields_and_tail(row: &Row) -> (Vec<(&str, TlcTypeId, bool)>, Option<TlcTy
     }
 }
 
-/// Deep structural equality by dereferencing arena IDs.
-/// Row equality is order-insensitive (permutation by label); no binder α-equivalence.
+/// Deep structural equality by dereferencing arena IDs (post-normalization).
+/// Row comparison is order-insensitive (permutation by label). Binder α-equivalence
+/// (`∀a.F(a)` ≡ `∀b.F(b)`) is NOT implemented — binders must be syntactically identical.
 fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool {
     if a == b {
         return true; // fast path: same index
@@ -431,10 +712,10 @@ fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool 
     }
 }
 
-/// Order-insensitive (permutation by label) row equality.
+/// Order-insensitive (permutation by label) row equality (post-normalization).
 ///
-/// Two rows are equal iff they have the same set of labels (with matching `optional` and type),
-/// and the same tail kind (`REmpty` or the same `RVar`).
+/// Two rows are equal iff they have the same label set (matching `optional` and field type) and
+/// the same tail (`REmpty` or the same `RVar`). No α-equivalence over quantified row variables.
 fn rows_equal_deep(arena: &Arena<TlcType>, a: &Row, b: &Row) -> bool {
     let (fields_a, tail_a) = row_fields_and_tail(a);
     let (fields_b, tail_b) = row_fields_and_tail(b);

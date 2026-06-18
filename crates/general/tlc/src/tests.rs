@@ -800,6 +800,75 @@ fn optional_record_field_roundtrips() {
     }
 }
 
+// ── Phase 3 tests: capture-avoiding substitution ─────────────────────────────
+
+/// `(λa. ∀b. a) b` — the binder `b` in `∀b` would capture the free `b` in the
+/// replacement if substitution were naive. The normalizer must freshen the `ForAll`
+/// binder before descending, so the result is `∀b'. b` where `b' ≠ b`.
+#[test]
+fn subst_is_capture_avoiding_for_forall_binder() {
+    use la_arena::Arena;
+    let mut ta: Arena<TlcType> = Arena::new();
+    let a = TlcTypeVar::Named(1);
+    let b = TlcTypeVar::Named(2);
+    let kind = Kind::ground();
+    let tyvar_a = ta.alloc(TlcType::TyVar(a, kind.clone()));
+    let tyvar_b = ta.alloc(TlcType::TyVar(b, kind.clone()));
+    // Body of TyLamK: ∀b. TyVar(a)  — b shadows a different var, a is free inside
+    let forall_b_a = ta.alloc(TlcType::ForAll(b, kind.clone(), tyvar_a));
+    // Full type: λa. ∀b. a
+    let outer_lam = ta.alloc(TlcType::TyLamK(a, kind, forall_b_a));
+    // Application: (λa. ∀b. a) b  — substitute a := TyVar(b) under ∀b
+    let app = ta.alloc(TlcType::TyApp(outer_lam, tyvar_b));
+    let mut m = make_module(ta);
+    let norm = m.normalize(app).expect("normalize must succeed");
+    // After capture-avoiding subst: result is ∀b'. b  where b' is a fresh var ≠ b
+    match &m.type_arena[norm] {
+        TlcType::ForAll(new_binder, _, inner) => {
+            assert_ne!(*new_binder, b, "binder must be freshened to avoid capture");
+            assert!(
+                matches!(m.type_arena[*inner], TlcType::TyVar(v, _) if v == b),
+                "inner must be TyVar(b) after capture-avoiding subst, got {:?}",
+                m.type_arena[*inner]
+            );
+        }
+        other => panic!("expected ForAll after normalization, got {:?}", other),
+    }
+}
+
+/// `(λa. λb. a) b` — the inner `λb` would capture the free `b` in the replacement
+/// if substitution were naive. The normalizer must freshen the inner `TyLamK` binder.
+#[test]
+fn subst_is_capture_avoiding_for_tylam_binder() {
+    use la_arena::Arena;
+    let mut ta: Arena<TlcType> = Arena::new();
+    let a = TlcTypeVar::Named(1);
+    let b = TlcTypeVar::Named(2);
+    let kind = Kind::ground();
+    let tyvar_a = ta.alloc(TlcType::TyVar(a, kind.clone()));
+    let tyvar_b = ta.alloc(TlcType::TyVar(b, kind.clone()));
+    // Inner lambda: λb. TyVar(a)
+    let inner_lam = ta.alloc(TlcType::TyLamK(b, kind.clone(), tyvar_a));
+    // Outer lambda: λa. λb. a
+    let outer_lam = ta.alloc(TlcType::TyLamK(a, kind, inner_lam));
+    // Application: (λa. λb. a) b  — substitute a := TyVar(b) under λb
+    let app = ta.alloc(TlcType::TyApp(outer_lam, tyvar_b));
+    let mut m = make_module(ta);
+    let norm = m.normalize(app).expect("normalize must succeed");
+    // After capture-avoiding subst: result is λb'. b  where b' is a fresh var ≠ b
+    match &m.type_arena[norm] {
+        TlcType::TyLamK(new_binder, _, inner) => {
+            assert_ne!(*new_binder, b, "binder must be freshened to avoid capture");
+            assert!(
+                matches!(m.type_arena[*inner], TlcType::TyVar(v, _) if v == b),
+                "inner must be TyVar(b) after capture-avoiding subst, got {:?}",
+                m.type_arena[*inner]
+            );
+        }
+        other => panic!("expected TyLamK after normalization, got {:?}", other),
+    }
+}
+
 // ── Phase 4 tests: effect row on Fun ─────────────────────────────────────────
 
 /// Every v0 function lowers to `Fun(_, _, Row::REmpty)` — invariant #10 holds vacuously:

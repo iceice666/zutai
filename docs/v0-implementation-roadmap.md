@@ -155,7 +155,7 @@ Verification gate: CLI integration tests cover successful `.zt` compile + run, p
 _Updated to reflect current state and agreed goal: complete TLC → Dataflow Core → ANF → SSA/LLVM IR, with the interpreter migrating from THIR to TLC during Phase 5._
 
 - [x] **Finish THIR** — complete (lambda, match, optional access, HM polymorphism, constraints/witnesses).
-- [ ] **TLC Phase 3** — row kind + `RVar`; capture-avoiding `subst`; open-record/union lowering.
+- [x] **TLC Phase 3** — row kind + `RVar`; capture-avoiding `subst`; open-record/union lowering.
 - [ ] **TLC Phase 4** — effect-row eraser (v0 is pure; this is mostly mechanical).
 - [ ] **TLC Phase 5 + eval migration** — dictionary-passing elaboration; migrate `zutai-eval` from THIR to TLC (`eval_tlc.rs`). After this step the interpreter runs on TLC and constraint dispatch is correct for all call patterns.
 - [ ] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
