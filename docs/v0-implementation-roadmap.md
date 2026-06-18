@@ -109,16 +109,16 @@ Goal: lower the completed TLC to a Dataflow Core graph where sharing, laziness, 
 
 Verification gate: unit tests lower TLC for all v0 language forms and assert correct graph structure (sharing, SCC detection, type consistency). ✅
 
-## Phase 4: ANF Lowering
+## Phase 4: ANF Lowering ✅
 
 Goal: convert the Dataflow Core graph into Administrative Normal Form — a linear schedule where every sub-expression is named by a `let` or `letrec` binding.
 
-- [ ] Write `docs/anf.md` (design spec, to be done at the start of this phase).
-- [ ] Add crate `crates/general/anf/` (`zutai-anf`).
-- [ ] Implement SCC analysis on the global dependency graph.
-- [ ] Implement a topological sort of SCCs.
-- [ ] Implement node-to-ANF lowering: one fresh name per non-trivial sub-expression.
-- [ ] Emit `let` for non-recursive SCCs; emit `letrec` for recursive or mutually-recursive SCCs.
+- [x] Write `docs/anf.md` (design spec, to be done at the start of this phase).
+- [x] Add crate `crates/general/anf/` (`zutai-anf`).
+- [x] Implement SCC analysis on the global dependency graph.
+- [x] Implement a topological sort of SCCs.
+- [x] Implement node-to-ANF lowering: one fresh name per non-trivial sub-expression.
+- [x] Emit `let` for non-recursive SCCs; emit `letrec` for recursive or mutually-recursive SCCs.
 
 Verification gate: ANF-lowered modules for all v0 forms are well-formed (every name defined before first use; `letrec` only where cycles exist in DC).
 
@@ -159,6 +159,6 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **TLC Phase 4** — effect-row eraser (v0 is pure; this is mostly mechanical).
 - [x] **TLC Phase 5 + eval migration** — dictionary-passing elaboration; migrate `zutai-eval` from THIR to TLC (`eval_tlc.rs`). After this step the interpreter runs on TLC and constraint dispatch is correct for all call patterns.
 - [x] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
-- [ ] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
+- [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [ ] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; `inkwell`/`llvm-sys` emission.
 - [ ] **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.

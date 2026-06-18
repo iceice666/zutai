@@ -1,0 +1,14 @@
+[package]
+name = "zutai-anf"
+description = "Administrative Normal Form lowering from Dataflow Core for Zutai."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-dataflow = { path = "../dataflow" }
+
+[dev-dependencies]
+zutai-syntax = { path = "../syntax" }
+zutai-hir = { path = "../hir" }
+zutai-thir = { path = "../thir" }
+zutai-tlc = { path = "../tlc" }
