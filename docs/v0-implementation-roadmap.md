@@ -85,13 +85,13 @@ The full TLC design is specified in [`docs/tlc-core.md`](tlc-core.md).
 - ✅ THIR→TLC lowering: constraint solving, zonking, let-generalization, call-site instantiation (explicit `TyApp` replaces the `instantiation` stub). TLC Phase 0 ("close the live hole") is complete.
 - ✅ `zutai-semantic` exposes `TlcModule` alongside THIR output.
 
-**Remaining (TLC sub-roadmap Phases 3–5):**
+**Remaining (TLC sub-roadmap Phases 3–5 — to be completed in order):**
 
-- ⬜ **Phase 3 — Row polymorphism**: `RVar` row-tail normalization; open-record and open-union unification. Currently `subst` is not capture-avoiding (sound only because all current type arguments are closed).
-- ⬜ **Phase 4 — Effect rows**: `EffRow` on `Fun`; free-monad elaboration for `perform`/`handle`. Scaffolded but `v0` programs are always pure — deferred until the effects chapter of the spec is prioritised.
-- ⬜ **Phase 5 — Dictionary-passing for constraints**: elaborate witness arguments as implicit `TyLam`/`TyApp` parameters in TLC, eliminating the interpreter's `UnresolvedWitness` limitation for indirect bounded calls. This is the proper resolution of the constraint/witness polymorphic-dispatch gap noted in Phase 1.
+- ⬜ **Phase 3 — Row kind + `RVar`**: add `RVar(TlcTypeVar)` to `Row`; add `Row` kind to `Kind`; lower THIR open-record/union row tails to `RVar`; make `subst` capture-avoiding (currently sound only because all type arguments are closed). After this phase, DC will see only flattened closed rows with no `RVar`.
+- ⬜ **Phase 4 — Effect rows**: fully wire `eff` on `Fun`; add the eraser pass that sets `eff = REmpty` before DC emission. Nearly free for v0 (all programs are pure, so the eraser is a no-op); the field already exists in the IR and gives v1 effects a type-level hook at no downstream cost.
+- ⬜ **Phase 5 — Dictionary-passing + eval migration**: elaborate constraint witnesses as implicit `Lam(dict, …)` / `Record` parameters in TLC, eliminating `UnresolvedWitness` for indirect bounded calls. Per Decision 0002 in `docs/tlc-core.md`, this phase triggers migration of `zutai-eval` from THIR to TLC (new `eval_tlc.rs` walker). The THIR walker remains as a regression oracle during the transition.
 
-Verification gate: TLC modules for all v0 spec examples have no free `TypeVar`s, correct `VariantT`/`Singleton` nodes, correct `TyLam`/`TyApp` structure, and match expected polymorphic signatures.
+Verification gate: TLC modules for all v0 spec examples have no free `TypeVar`s, no `RVar` in closed-type position, correct `VariantT`/`Singleton` nodes, correct `TyLam`/`TyApp`/`ForAll` structure, dictionary arguments explicit at every polymorphic call site.
 
 ## Phase 3: Dataflow Core
 
@@ -152,18 +152,13 @@ Verification gate: CLI integration tests cover successful `.zt` compile + run, p
 
 ## Near-Term Implementation Order
 
-_Updated to reflect current state._
+_Updated to reflect current state and agreed goal: complete TLC → Dataflow Core → ANF → SSA/LLVM IR, with the interpreter migrating from THIR to TLC during Phase 5._
 
 1. ✅ **~~Finish THIR~~** — complete (lambda, match, optional access, HM polymorphism, constraints/witnesses).
-2. 🔄 **Finish TLC** — row-var normalization (Phase 3), then dictionary-passing for constraints (Phase 5, prerequisite for correct polymorphic dispatch). Effect rows (Phase 4) can follow.
-3. ⬜ **Dataflow Core crate + TLC→DC lowering** — start with monomorphic programs, then add polymorphism and recursion. Design is in `docs/dataflow-core.md`.
-4. ⬜ **ANF lowering** — SCC analysis, topological sort, let/letrec introduction. Write `docs/anf.md` at the start of this phase.
-5. ⬜ **SSA + LLVM IR** — standard path from ANF.
-6. ⬜ **CLI `compile` subcommand** — wire the full pipeline.
-
-**Constraint/witness completion** can be woven in alongside step 2 or deferred until after step 3 (the interpreter oracle remains useful throughout):
-
-- Dictionary-passing in TLC (step 2, Phase 5) — highest value, unblocks correct polymorphic dispatch
-- Conditional witnesses — requires parametric `AliasApply` resolution in `type_key`
-- Cross-module witnesses + orphan rule — wires into the module import/export system
-- `derive` synthesis — can be a post-v0 convenience
+2. ⬜ **TLC Phase 3** — row kind + `RVar`; capture-avoiding `subst`; open-record/union lowering.
+3. ⬜ **TLC Phase 4** — effect-row eraser (v0 is pure; this is mostly mechanical).
+4. ⬜ **TLC Phase 5 + eval migration** — dictionary-passing elaboration; migrate `zutai-eval` from THIR to TLC (`eval_tlc.rs`). After this step the interpreter runs on TLC and constraint dispatch is correct for all call patterns.
+5. ⬜ **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
+6. ⬜ **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
+7. ⬜ **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; `inkwell`/`llvm-sys` emission.
+8. ⬜ **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.
