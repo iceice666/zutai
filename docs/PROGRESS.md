@@ -28,15 +28,15 @@ The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflo
 
 ## Current Baseline
 
-_Last updated: after the constraints/witnesses milestone._
+_Last updated: after the cross-module witnesses milestone; backend complete through ANF (Phases 3–4)._
 
 - Immediate mode parses `.zti` data through selectable parser backends (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
 - THIR is feature-complete for v0: scalar/record/tuple/list literals and patterns, optional access and defaulting, `if`, binary operators, type aliases, block locals, lambda lowering, HM-style unification, match exhaustiveness, let-generalization, predicative polymorphism with call-site `instantiation`, generic type aliases, cross-module imports, and constraints/witnesses (parsing → HIR resolution → THIR type-checking → coherence checking → named-method and operator dispatch in the interpreter).
 - The CLI exposes `parse`, `run`, and `repl` subcommands backed by the reference interpreter.
-- `crates/general/eval/` is a THIR tree-walking semantics oracle: it refuses to evaluate any program that is not fully type-checked; it provides ground truth for future compiler differential testing.
-- `crates/general/tlc/` (TLC — Type Lambda Calculus) is substantially built: TLC IR with kinds, rows, singletons, variants, NbE normalizer, and THIR→TLC lowering are all functional. Phase 3–5 of the TLC sub-roadmap (row-var normalization, effect-row elaboration, dictionary-passing for constraints) remain.
-- The backend (Dataflow Core, ANF, SSA, LLVM IR) does not yet exist.
+- `crates/general/eval/` is a semantics oracle that refuses to evaluate any program that is not fully type-checked; it provides ground truth for compiler differential testing. Per Decision 0002 it has migrated to walk TLC (`eval_tlc.rs`); the THIR walker remains as a regression oracle.
+- `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, and dictionary-passing elaboration for constraints are all functional.
+- `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered. The remaining backend (SSA, LLVM IR codegen) does not yet exist.
 
 ## Phase 1: Complete THIR (LSP Foundation) ✅
 
@@ -64,7 +64,7 @@ The `constraint` / `witness` declarations from `docs/v1_spec/03-constraints.md` 
 
 **Remaining constraint/witness work** (deferred — each is its own milestone):
 
-- [ ] **Dictionary-passing in TLC**: the correct solution for polymorphic dispatch through indirect calls. The interpreter currently returns `EvalError::UnresolvedWitness` for bounded functions called from within other functions; TLC elaboration will thread witness arguments as implicit parameters, eliminating this limitation.
+- [x] **Dictionary-passing in TLC**: polymorphic dispatch through indirect calls. TLC elaboration threads witness dictionaries as implicit `Lam(dict, …)` parameters and injects them at call sites; constraint-method calls lower to `GetField` on the dict. Completed in TLC Phase 5; `zutai-eval` walks TLC (`eval_tlc.rs`), so `UnresolvedWitness` no longer arises for bounded indirect calls.
 - [ ] **Conditional / higher-kinded witnesses**: `Eq @(List A)` where `A: Eq`; blocked by parametric `AliasApply` targets in `type_key`.
 - [x] **Cross-module witnesses + orphan rule**: `import.rs` / `export.rs` have no constraint/witness handling.
 - [ ] **`derive` synthesis**: `Witness { derive: true }` currently lowers to an empty-fields no-op in the interpreter.
@@ -72,7 +72,7 @@ The `constraint` / `witness` declarations from `docs/v1_spec/03-constraints.md` 
 
 Verification gate: `cargo test --workspace` includes spec-shaped parser, HIR, THIR, and semantic facade tests for every v0 chapter. ✅
 
-## Phase 2: TLC (Type Lambda Calculus) 🔄
+## Phase 2: TLC (Type Lambda Calculus) ✅
 
 Goal: produce a fully-elaborated, polymorphism-explicit IR from completed THIR. TLC is only produced when THIR type checking succeeds. It is the clean input contract for all compilation stages downstream.
 
@@ -85,9 +85,9 @@ The full TLC design is specified in [`docs/tlc-core.md`](tlc-core.md).
 - [x] THIR→TLC lowering: constraint solving, zonking, let-generalization, call-site instantiation (explicit `TyApp` replaces the `instantiation` stub). TLC Phase 0 ("close the live hole") is complete.
 - [x] `zutai-semantic` exposes `TlcModule` alongside THIR output.
 
-**Remaining (TLC sub-roadmap Phases 3–5 — to be completed in order):**
+**Done (TLC sub-roadmap Phases 3–5):**
 
-- [ ] **Phase 3 — Row kind + `RVar`**: add `RVar(TlcTypeVar)` to `Row`; add `Row` kind to `Kind`; lower THIR open-record/union row tails to `RVar`; make `subst` capture-avoiding (currently sound only because all type arguments are closed). After this phase, DC will see only flattened closed rows with no `RVar`.
+- [x] **Phase 3 — Row kind + `RVar`**: add `RVar(TlcTypeVar)` to `Row`; add `Row` kind to `Kind`; lower THIR open-record/union row tails to `RVar`; make `subst` capture-avoiding (currently sound only because all type arguments are closed). After this phase, DC will see only flattened closed rows with no `RVar`.
 - [x] **Phase 4 — Effect rows**: fully wire `eff` on `Fun`; add the eraser pass that sets `eff = REmpty` before DC emission. Nearly free for v0 (all programs are pure, so the eraser is a no-op); the field already exists in the IR and gives v1 effects a type-level hook at no downstream cost.
 - [x] **Phase 5 — Dictionary-passing + eval migration**: elaborate constraint witnesses as implicit `Lam(dict, …)` / `Record` parameters in TLC, eliminating `UnresolvedWitness` for indirect bounded calls. Per Decision 0002 in `docs/tlc-core.md`, this phase triggers migration of `zutai-eval` from THIR to TLC (new `eval_tlc.rs` walker). The THIR walker remains as a regression oracle during the transition.
 
@@ -150,6 +150,21 @@ Goal: make `zutai-cli` a usable compiler for `.zt` files.
 
 Verification gate: CLI integration tests cover successful `.zt` compile + run, parse errors, semantic errors, and a check-only invocation.
 
+## Phase 7: v1 Parser Frontend (surface syntax only)
+
+Goal: parse the v1 surface constructs in `docs/v1_spec/` into AST/CST. Scope is the parser frontend only — lexer, AST, parser, diagnostics, tests. Lowering these forms through HIR/THIR to type-checked programs is a separate, later effort (HIR/THIR `TypeKind` has no row-variable representation yet, though TLC IR already does via `RVar`).
+
+Already parsed during the v0 cycle (no work needed): constraint declarations, witness declarations, `derive`, bounded type params (`<A: Eq + Show>`), kinded type params (`<F :: Type -> Type>`), parenthesised operator method names. The v1 keywords `select`, `perform`, `handle`, `with`, `resume` are already lexed but not yet parsed into AST nodes.
+
+- [ ] **B1 — Ellipsis token + row tails**: lex `...` (`SyntaxKind::DotDotDot`); add anonymous (`...`), named (`...Rest`), and union-spread (`...Shape`) tails to `TypeExpr::Record` / `TypeExpr::Union`; reject row tails that overlap declared fields. Foundation for B2.
+- [ ] **B2 — `select` projection**: `Expr::Select { receiver, fields }` (value position) and the type-level `select` form (type position); preserve field order; defer unknown-field checks to semantics.
+- [ ] **B3 — Algebraic-effects surface**: `Expr::Perform`, `Expr::Handle { expr, clauses }` with `with { value = …, op = … }`, `Expr::Resume`; effect-row syntax `! { fail E }` on function types in `TypeExpr`.
+- [ ] **B4 — Reflection builtins**: confirm `fields` / `schema` parse as ordinary application; add tests; introduce dedicated syntax only if required.
+
+Verification gate: parser tests cover every example in `docs/v1_spec/01-row-polymorphism.md`, `04-metaprogramming.md`, and `05-effects.md`; the v1 keywords already lexed are exercised end-to-end through the AST.
+
+Out of scope (follow-on "v1 semantics" milestone): extend HIR & THIR `TypeKind::Record`/`Union` with row tails; wire THIR→TLC to emit the existing `RVar`; type-check open rows, effects, and `select`.
+
 ## Near-Term Implementation Order
 
 _Updated to reflect current state and agreed goal: complete TLC → Dataflow Core → ANF → SSA/LLVM IR, with the interpreter migrating from THIR to TLC during Phase 5._
@@ -162,3 +177,5 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [ ] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; `inkwell`/`llvm-sys` emission.
 - [ ] **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.
+- [ ] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
+- [ ] **Deferred constraint/witness milestones** — `derive` synthesis; method-level type params (`<A,B>` dropped at THIR); conditional / higher-kinded witnesses (`Eq @(List A)`, blocked by parametric `AliasApply` in `type_key`). Independent of the v1 parser frontend; schedulable alongside the backend.

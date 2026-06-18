@@ -29,7 +29,7 @@ Source → HIR → THIR → TLC
 
 THIR is error-tolerant and source-preserving — the foundation for LSP tooling (diagnostics, hover types, go-to-definition). TLC (Type Lambda Calculus) is the fully-elaborated IR with explicit `TyLam`/`TyApp` and no free type variables; it is the clean input for all compilation stages.
 
-See `docs/dataflow-core.md` for the Dataflow Core IR specification and `docs/v0-implementation-roadmap.md` for the full phase plan.
+See `docs/dataflow-core.md` for the Dataflow Core IR specification and `docs/PROGRESS.md` for the full phase plan.
 
 ## Repository layout
 
@@ -53,7 +53,7 @@ crates/
 docs/
   README.md            Documentation index
   dataflow-core.md     Dataflow Core IR design specification
-  v0-implementation-roadmap.md  Phase-by-phase compile pipeline plan
+  PROGRESS.md          Phase-by-phase compile pipeline plan and progress tracker
   v0_spec/             Zutai v0 language specification (8 chapters, source of truth)
   v1_spec/             Zutai v1 deferred feature specification
   stdlib/              Standard-library notes

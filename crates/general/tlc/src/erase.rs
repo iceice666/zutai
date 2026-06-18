@@ -1,6 +1,6 @@
 //! Effect-row eraser: sets all `Fun` effect rows to `REmpty` before DC emission.
 //!
-//! Spec source of truth: `docs/v0-implementation-roadmap.md` §"TLC Phase 4 — Effect rows".
+//! Spec source of truth: `docs/PROGRESS.md` §"TLC Phase 4 — Effect rows".
 //!
 //! ## Design
 //!
@@ -24,7 +24,7 @@ impl TlcModule {
     /// Erase all effect rows: replace every `Fun(from, to, eff)` with
     /// `Fun(from, to, REmpty)` regardless of the current value of `eff`.
     ///
-    /// Must be called before Dataflow Core emission (see `docs/v0-implementation-roadmap.md`
+    /// Must be called before Dataflow Core emission (see `docs/PROGRESS.md`
     /// §"TLC Phase 4"). In v0 this is always a structural no-op; the call is required for
     /// forward compatibility when v1 effects are introduced.
     pub fn erase_effects(&mut self) {

@@ -3,7 +3,7 @@
 ## Sections
 
 - [v0 language specification](v0_spec/00-index.md)
-- [v0 implementation roadmap](v0-implementation-roadmap.md)
+- [implementation progress and phase plan](PROGRESS.md)
 - [TLC IR design](tlc-core.md)
 - [Dataflow Core IR design](dataflow-core.md)
 - [v1 deferred feature specification](v1_spec/00-index.md)
