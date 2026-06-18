@@ -93,21 +93,21 @@ The full TLC design is specified in [`docs/tlc-core.md`](tlc-core.md).
 
 Verification gate: TLC modules for all v0 spec examples have no free `TypeVar`s, no `RVar` in closed-type position, correct `VariantT`/`Singleton` nodes, correct `TyLam`/`TyApp`/`ForAll` structure, dictionary arguments explicit at every polymorphic call site.
 
-## Phase 3: Dataflow Core
+## Phase 3: Dataflow Core ✅
 
 Goal: lower the completed TLC to a Dataflow Core graph where sharing, laziness, and recursion are structurally explicit.
 
-- [ ] Add crate `crates/general/dataflow/` (`zutai-dataflow`).
-- [ ] Implement the `DataflowGraph` IR as specified in `docs/dataflow-core.md`.
-- [ ] Implement the TLC→DC lowering pass in `zutai-dataflow::lower`:
-  - [ ] Tree-to-graph conversion: local bindings lowered once; all references share a single `NodeId`.
-  - [ ] Global-to-`GlobalRef` conversion: top-level references become `GlobalRef` nodes.
-  - [ ] Recursive definitions: body may produce `GlobalRef` nodes pointing back to the same global (cycles); these are valid and expected.
-  - [ ] Multi-clause functions: desugar into `Lambda + Match`.
-  - [ ] Polymorphic functions: `TyLam` → `TyLam` node; call-site `TyApp` → `TyApp` node.
-- [ ] Implement the DC validation pass (invariant checking in debug builds).
+- [x] Add crate `crates/general/dataflow/` (`zutai-dataflow`).
+- [x] Implement the `DataflowGraph` IR as specified in `docs/dataflow-core.md`.
+- [x] Implement the TLC→DC lowering pass in `zutai-dataflow::lower`:
+  - [x] Tree-to-graph conversion: local bindings lowered once; all references share a single `NodeId`.
+  - [x] Global-to-`GlobalRef` conversion: top-level references become `GlobalRef` nodes.
+  - [x] Recursive definitions: body may produce `GlobalRef` nodes pointing back to the same global (cycles); these are valid and expected.
+  - [x] Multi-clause functions: desugar into `Lambda + Match`.
+  - [x] Polymorphic functions: `TyLam` → `TyLam` node; call-site `TyApp` → `TyApp` node.
+- [x] Implement the DC validation pass (invariant checking in debug builds).
 
-Verification gate: unit tests lower TLC for all v0 language forms and assert correct graph structure (sharing, SCC detection, type consistency).
+Verification gate: unit tests lower TLC for all v0 language forms and assert correct graph structure (sharing, SCC detection, type consistency). ✅
 
 ## Phase 4: ANF Lowering
 
@@ -158,7 +158,7 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **TLC Phase 3** — row kind + `RVar`; capture-avoiding `subst`; open-record/union lowering.
 - [x] **TLC Phase 4** — effect-row eraser (v0 is pure; this is mostly mechanical).
 - [x] **TLC Phase 5 + eval migration** — dictionary-passing elaboration; migrate `zutai-eval` from THIR to TLC (`eval_tlc.rs`). After this step the interpreter runs on TLC and constraint dispatch is correct for all call patterns.
-- [ ] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
+- [x] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
 - [ ] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [ ] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; `inkwell`/`llvm-sys` emission.
 - [ ] **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.

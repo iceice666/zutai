@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/cli",
+  "crates/general/dataflow",
   "crates/general/eval",
   "crates/general/hir",
   "crates/general/semantic",
