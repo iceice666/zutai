@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use zutai_hir::BindingId;
 use zutai_thir::{ThirClause, TypeId};
+use zutai_tlc::TlcExprId;
 
 use crate::{EvalError, env::Env};
 
@@ -49,6 +50,18 @@ pub enum Value {
     /// bounded call sites so that method dispatch inside the body can fall back
     /// to this dict when the type key is a TypeVar at the call site.
     WitnessDict(HashMap<String, Value>),
+    /// A closure created by the TLC evaluator — stores a single-parameter lambda
+    /// body and its captured environment.  Distinct from `Closure` (which is
+    /// THIR-based) so the two evaluators never confuse each other's closures.
+    TlcClosure(Rc<TlcClosure>),
+}
+
+/// A single-parameter closure produced by the TLC eager evaluator.
+#[derive(Clone, Debug)]
+pub struct TlcClosure {
+    pub param: BindingId,
+    pub body: TlcExprId,
+    pub env: Env,
 }
 
 impl Value {
@@ -171,6 +184,7 @@ impl PartialEq for Value {
                     })
             }
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
+            (Value::TlcClosure(a), Value::TlcClosure(b)) => Rc::ptr_eq(a, b),
             // WitnessDicts are opaque to user-level equality.
             (Value::WitnessDict(_), _) | (_, Value::WitnessDict(_)) => false,
             _ => false,
@@ -283,6 +297,9 @@ pub fn values_equal(
         (Value::Closure(_), _) | (_, Value::Closure(_)) => Err(EvalError::Internal(
             "equality on closure (unreachable in well-typed code)",
         )),
+        (Value::TlcClosure(_), _) | (_, Value::TlcClosure(_)) => Err(EvalError::Internal(
+            "equality on TLC closure (unreachable in well-typed code)",
+        )),
         (Value::TypeValue(_), _) | (_, Value::TypeValue(_)) => Err(EvalError::Internal(
             "equality on type value (unreachable in well-typed code)",
         )),
@@ -394,6 +411,7 @@ impl fmt::Display for Value {
                 // The HIR binding name isn't stored here; use the arity.
                 write!(f, "<function/{}>", c.arity - c.applied.len())
             }
+            Value::TlcClosure(_) => write!(f, "<function/1>"),
             Value::TypeValue(_) => write!(f, "<type>"),
             Value::WitnessDict(_) => write!(f, "<witness>"),
         }

@@ -1,7 +1,7 @@
 // ── Normalize (hand-built IR): subst + β-reduction tests ─────────────────────
 
-use crate::*;
 use super::make_module;
+use crate::*;
 
 #[test]
 fn subst_replaces_matching_tyvar() {

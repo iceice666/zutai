@@ -1,7 +1,7 @@
 // ── types_equal_deep: direct structural equality tests ───────────────────────
 
-use crate::*;
 use super::make_module;
+use crate::*;
 
 #[test]
 fn types_equal_deep_list_arm() {

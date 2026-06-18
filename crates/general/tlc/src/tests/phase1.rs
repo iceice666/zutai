@@ -1,7 +1,7 @@
 // ── Phase 1 tests: kind annotations on polymorphism nodes ────────────────────
 
-use crate::{Kind, TlcExpr, TlcType};
 use super::tlc_of;
+use crate::{Kind, TlcExpr, TlcType};
 
 /// Every `TyVar`, `ForAll`, and `TyLam` node produced in Phase 1 must carry
 /// `Kind::Type(0)`. This locks the invariant so later phases that introduce

@@ -1,7 +1,7 @@
 // ── Phase 0 tests: close the live data-loss holes ────────────────────────────
 
-use crate::*;
 use super::{assert_no_data_loss, tlc_of};
+use crate::*;
 
 #[test]
 fn union_type_lowers_to_variant_t_not_empty_record() {

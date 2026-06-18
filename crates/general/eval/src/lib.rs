@@ -21,6 +21,7 @@
 
 pub mod env;
 pub mod eval;
+pub mod eval_tlc;
 pub mod thunk;
 pub mod value;
 
@@ -384,6 +385,26 @@ fn eval_analysis_into(
     let id = ModuleId(registry.len());
     registry.push(Arc::new(file.clone()));
     Ok(id)
+}
+
+/// Evaluate a `.zt` source string using the TLC eager evaluator.
+///
+/// Runs the full pipeline through TLC elaboration, then evaluates the TLC
+/// module's final expression with `eval_tlc::TlcEvaluator`.  This avoids the
+/// `EvalError::UnresolvedWitness` limitation of the THIR oracle for programs
+/// using bounded polymorphism (constraint/witness).
+pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
+    let analysis =
+        zutai_semantic::analyze_with_base(source, None, zutai_semantic::AnalysisOptions::default());
+    let thir_file = check_runnable(&analysis)?;
+    let module = zutai_tlc::lower_thir(thir_file);
+    let ev = eval_tlc::TlcEvaluator::new(&module);
+    let top = ev.build_top_env()?;
+    let final_id = module
+        .final_expr
+        .ok_or(EvalError::Internal("TLC module has no final expression"))?;
+    let result = ev.eval_expr(final_id, &top)?;
+    eval_tlc::tlc_force_deep(result)
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.

@@ -105,10 +105,9 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Error => unreachable!(
                 "TypeKind::Error must not reach TLC lowering; only call lower_thir when is_thir_complete()"
             ),
-            // Type-valued bindings are erased before reaching the type arena.
-            TypeKind::Type => {
-                unreachable!("TypeKind::Type must not reach the TLC type arena as a reified node")
-            }
+            // Type-valued expressions are erased to Lit(Nothing) in the expr lowerer;
+            // their type is mapped to a Nothing placeholder here.
+            TypeKind::Type => self.alloc_type(TlcType::Prim(PrimTy::Nothing)),
         };
         self.type_cache.insert(resolved.0, tlc_ty);
         tlc_ty

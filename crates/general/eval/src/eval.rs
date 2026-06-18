@@ -1178,6 +1178,7 @@ fn value_type_name(v: &Value) -> &'static str {
         Value::Tuple(_) => "Tuple",
         Value::Record(_) => "Record",
         Value::Closure(_) => "Function",
+        Value::TlcClosure(_) => "Function",
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",

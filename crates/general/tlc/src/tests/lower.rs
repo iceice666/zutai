@@ -1,7 +1,7 @@
 // ── Additional lower/types.rs + lower/expr.rs + binop coverage ───────────────
 
-use crate::*;
 use super::tlc_of;
+use crate::*;
 
 #[test]
 fn float_literal_lowers_to_prim_float_type() {

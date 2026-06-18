@@ -122,7 +122,66 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_expr(TlcExpr::Case(scrut, alts), tlc_ty, span)
             }
             ThirExprKind::Lambda { params, body } => self.lower_lambda(params, body, tlc_ty, span),
-            ThirExprKind::Apply { func, arg, .. } => {
+            ThirExprKind::Apply {
+                func,
+                arg,
+                instantiation,
+            } => {
+                // Extract func binding info without holding a borrow while calling &mut self.
+                let func_binding_info = {
+                    let fe = &self.thir.expr_arena[func];
+                    if let ThirExprKind::BindingRef(b) = fe.kind {
+                        Some((b, fe.ty, fe.span))
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some((binding, func_thir_ty, func_span)) = func_binding_info {
+                    // Constraint method call: dispatch via GetField on the active dict param.
+                    if let Some((cst_binding, method_name)) =
+                        self.constraint_methods.get(&binding).cloned()
+                    {
+                        if !instantiation.is_empty() {
+                            let dict_expr =
+                                self.get_dict_expr(cst_binding, instantiation[0], func_span);
+                            let method_ty = self.lower_type(func_thir_ty);
+                            let get_field = self.alloc_expr(
+                                TlcExpr::GetField(dict_expr, method_name),
+                                method_ty,
+                                span,
+                            );
+                            let arg_tlc = self.lower_expr(arg);
+                            return self.alloc_expr(TlcExpr::App(get_field, arg_tlc), tlc_ty, span);
+                        }
+                    }
+
+                    // Explicit-params function call: inject TyApp + dict App before value arg.
+                    if let Some(explicit_params) = self.fn_explicit_params.get(&binding).cloned() {
+                        if !instantiation.is_empty() {
+                            let fn_var_ty = self.lower_type(func_thir_ty);
+                            let mut cur =
+                                self.alloc_expr(TlcExpr::Var(binding), fn_var_ty, func_span);
+                            for (i, (_, constraint_bindings)) in explicit_params.iter().enumerate()
+                            {
+                                if i < instantiation.len() {
+                                    let inst_ty_id = instantiation[i];
+                                    let ty_arg = self.lower_type(inst_ty_id);
+                                    cur =
+                                        self.alloc_expr(TlcExpr::TyApp(cur, ty_arg), tlc_ty, span);
+                                    for &cst_b in constraint_bindings.iter() {
+                                        let dict = self.get_dict_expr(cst_b, inst_ty_id, span);
+                                        cur =
+                                            self.alloc_expr(TlcExpr::App(cur, dict), tlc_ty, span);
+                                    }
+                                }
+                            }
+                            let arg_tlc = self.lower_expr(arg);
+                            return self.alloc_expr(TlcExpr::App(cur, arg_tlc), tlc_ty, span);
+                        }
+                    }
+                }
+
                 let func_tlc = self.lower_expr(func);
                 let arg_tlc = self.lower_expr(arg);
                 self.alloc_expr(TlcExpr::App(func_tlc, arg_tlc), tlc_ty, span)

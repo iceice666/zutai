@@ -154,6 +154,7 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         type_arena,
         expr_types: HashMap::new(),
         spans: HashMap::new(),
+        final_expr: None,
     };
 
     // With small fuel (5 steps) this must return FuelExhausted, never panic.

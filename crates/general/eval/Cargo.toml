@@ -11,3 +11,4 @@ zutai-hir = { path = "../hir" }
 zutai-syntax = { path = "../syntax" }
 zutai-semantic = { path = "../semantic" }
 zutai-im = { path = "../../immediate/core" }
+zutai-tlc = { path = "../tlc" }

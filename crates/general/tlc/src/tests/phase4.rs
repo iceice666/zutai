@@ -1,7 +1,7 @@
 // ── Phase 4 tests: effect row on Fun + effect-row eraser ─────────────────────
 
-use crate::*;
 use super::{make_module, tlc_of};
+use crate::*;
 
 /// Every v0 function lowers to `Fun(_, _, Row::REmpty)` — invariant #10 holds vacuously:
 /// no v0 path produces a non-empty effect row, so "erase before DC" is a no-op.

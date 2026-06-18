@@ -43,18 +43,20 @@ pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
         type_arena,
         expr_types: HashMap::new(),
         spans: HashMap::new(),
+        final_expr: None,
     }
 }
 
+mod lower;
+mod normalize;
+mod patterns;
 mod phase0;
 mod phase1;
 mod phase2;
 mod phase3;
 mod phase4;
-mod lower;
-mod normalize;
+mod phase5;
 mod types_equal;
-mod patterns;
 
 // ── Basic smoke tests ─────────────────────────────────────────────────────────
 
@@ -69,6 +71,7 @@ fn tlc_module_is_constructible() {
         type_arena: Arena::new(),
         expr_types: HashMap::new(),
         spans: HashMap::new(),
+        final_expr: None,
     };
 }
 

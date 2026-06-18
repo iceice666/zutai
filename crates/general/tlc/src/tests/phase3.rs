@@ -1,7 +1,7 @@
 // ── Phase 3 tests: row kind + row polymorphism + capture-avoiding substitution ─
 
-use crate::*;
 use super::make_module;
+use crate::*;
 
 #[test]
 fn open_record_rvar_is_inert_under_normalize() {

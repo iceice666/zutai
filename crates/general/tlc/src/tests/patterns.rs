@@ -1,7 +1,7 @@
 // ── lower_pat: literal patterns + record/tuple + HM polymorphism ──────────────
 
-use crate::*;
 use super::{make_module, tlc_of};
+use crate::*;
 
 #[test]
 fn inferred_tyvar_as_normalize_binder() {

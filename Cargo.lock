@@ -1188,6 +1188,7 @@ dependencies = [
  "zutai-semantic",
  "zutai-syntax",
  "zutai-thir",
+ "zutai-tlc",
 ]
 
 [[package]]

@@ -38,23 +38,96 @@ impl<'thir> Lowerer<'thir> {
                 }
             }
             ThirDeclKind::Function { sig, clauses, .. } => {
+                use crate::ir::{Kind, Row, TlcExpr, TlcType};
                 let scheme = self.thir.poly_schemes.get(&binding).cloned();
+                let explicit = self.fn_explicit_params.get(&binding).cloned();
                 let tlc_sig = self.lower_type(sig);
+
+                // Register dict params for bounded type params; collect (dict_binding, dict_ty).
+                let mut dict_params = Vec::new();
+                if let Some(ref ep) = explicit {
+                    for (type_param_binding, constraint_bindings) in ep.iter() {
+                        for &cst_binding in constraint_bindings.iter() {
+                            let dict_param = self.fresh_synth_binding();
+                            let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
+                            self.active_dict_params
+                                .insert((cst_binding.0, type_param_binding.0), dict_param);
+                            self.active_dict_types.insert(dict_param, dict_ty);
+                            dict_params.push((dict_param, dict_ty));
+                        }
+                    }
+                }
+
                 let raw_body = self.lower_function_clauses(sig, &clauses);
+
+                // Clear active dict params after lowering the body.
+                if let Some(ref ep) = explicit {
+                    for (type_param_binding, constraint_bindings) in ep.iter() {
+                        for &cst_binding in constraint_bindings.iter() {
+                            self.active_dict_params
+                                .remove(&(cst_binding.0, type_param_binding.0));
+                        }
+                    }
+                }
+
+                // Wrap with dict Lams (reversed so first constraint's dict is outermost).
+                let mut current_body = raw_body;
+                let mut current_ty = tlc_sig;
+                for &(dict_param, dict_ty) in dict_params.iter().rev() {
+                    let span = self.spans.get(&current_body).copied().unwrap_or_default();
+                    current_ty = self.alloc_type(TlcType::Fun(dict_ty, current_ty, Row::REmpty));
+                    current_body = self.alloc_expr(
+                        TlcExpr::Lam(dict_param, dict_ty, current_body),
+                        current_ty,
+                        span,
+                    );
+                }
+
+                // Wrap with TyLam/ForAll for each explicit type param (reversed → first param outermost).
+                if let Some(ref ep) = explicit {
+                    for (type_param_binding, _) in ep.iter().rev() {
+                        let tyvar = self.named_tyvar(*type_param_binding);
+                        let span = self.spans.get(&current_body).copied().unwrap_or_default();
+                        current_ty =
+                            self.alloc_type(TlcType::ForAll(tyvar, Kind::ground(), current_ty));
+                        current_body = self.alloc_expr(
+                            TlcExpr::TyLam(tyvar, Kind::ground(), current_body),
+                            current_ty,
+                            span,
+                        );
+                    }
+                }
+
+                // Wrap with HM poly vars if any remain from inference.
                 let (final_ty, final_body) = if let Some(vars) = scheme {
-                    self.wrap_poly(vars, tlc_sig, raw_body)
+                    self.wrap_poly(vars, current_ty, current_body)
                 } else {
-                    (tlc_sig, raw_body)
+                    (current_ty, current_body)
                 };
+
                 TlcDecl::Value {
                     binding,
                     ty: final_ty,
                     body: final_body,
                 }
             }
-            // Constraint/witness THIR decls are filtered before reaching here (D2′).
-            ThirDeclKind::Constraint { .. } | ThirDeclKind::Witness { .. } => {
-                unreachable!("constraint/witness decls are filtered before TLC lowering")
+            ThirDeclKind::Witness { fields, .. } => {
+                use crate::ir::{Row, TlcExpr, TlcType};
+                let tlc_fields: Vec<(String, crate::ir::TlcExprId)> = fields
+                    .iter()
+                    .map(|f| (f.name.clone(), self.lower_expr(f.value)))
+                    .collect();
+                let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
+                let span = zutai_syntax::Span::default();
+                let body = self.alloc_expr(TlcExpr::Record(tlc_fields), dict_ty, span);
+                TlcDecl::Value {
+                    binding,
+                    ty: dict_ty,
+                    body,
+                }
+            }
+            ThirDeclKind::Constraint { .. } => {
+                unreachable!("constraint decls are filtered before TLC lowering")
             }
         };
         self.alloc_decl(tlc_decl)

@@ -1883,10 +1883,13 @@ fn import_zt_union_module() {
 }
 
 #[test]
-#[should_panic(expected = "TypeKind::Type must not reach the TLC type arena")]
 fn import_zt_type_module() {
     // type_module.zt exports MyInt (a type alias reference) — ImportedType::Type in import.rs.
-    // The THIR intern_imported_type_with_source covers the Type arm; TLC then panics because
-    // TypeKind::Type cannot be a reified TLC type node (expected behaviour).
-    run_import("m := import \"type_module.zt\"\nm");
+    // TLC now maps TypeKind::Type to PrimTy::Nothing instead of panicking; the THIR evaluator
+    // returns Value::TypeValue for the imported type alias reference.
+    let v = run_import("m := import \"type_module.zt\"\nm");
+    assert!(
+        matches!(v, Value::TypeValue(_)),
+        "expected TypeValue for imported type alias, got {v:?}"
+    );
 }

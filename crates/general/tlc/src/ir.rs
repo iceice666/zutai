@@ -293,4 +293,6 @@ pub struct TlcModule {
     pub type_arena: Arena<TlcType>,
     pub expr_types: HashMap<TlcExprId, TlcTypeId>,
     pub spans: HashMap<TlcExprId, Span>,
+    /// The module's final expression — evaluated to produce the module's value.
+    pub final_expr: Option<TlcExprId>,
 }
