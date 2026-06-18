@@ -1,0 +1,321 @@
+// ── Additional lower/types.rs + lower/expr.rs + binop coverage ───────────────
+
+use crate::*;
+use super::tlc_of;
+
+#[test]
+fn float_literal_lowers_to_prim_float_type() {
+    let m = tlc_of("f :: Float = 1.5\nf");
+    // lower_types.rs: TypeKind::Float → TlcType::Prim(PrimTy::Float)
+    let has_float = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Prim(PrimTy::Float)));
+    assert!(has_float, "expected Prim(Float) for Float type");
+    // lower_expr.rs: ThirExprKind::Float → TlcExpr::Lit(Literal::Float)
+    let has_lit = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::Lit(Literal::Float(_))));
+    assert!(has_lit, "expected Lit(Float) for float literal expression");
+}
+
+#[test]
+fn string_literal_lowers_to_prim_str_type() {
+    let m = tlc_of(
+        r#"s :: Text = "hello"
+s"#,
+    );
+    // lower_types.rs: TypeKind::Text → TlcType::Prim(PrimTy::Str)
+    let has_str_ty = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Prim(PrimTy::Str)));
+    assert!(has_str_ty, "expected Prim(Str) for Text type");
+    // lower_expr.rs: ThirExprKind::String → TlcExpr::Lit(Literal::Str)
+    let has_lit = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::Lit(Literal::Str(_))));
+    assert!(has_lit, "expected Lit(Str) for string literal expression");
+}
+
+#[test]
+fn bool_type_annotation_lowers_to_prim_bool() {
+    let m = tlc_of("b :: Bool = true\nb");
+    // lower_types.rs: TypeKind::Bool → TlcType::Prim(PrimTy::Bool)
+    let has_bool = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Prim(PrimTy::Bool)));
+    assert!(has_bool, "expected Prim(Bool) for Bool annotation");
+}
+
+#[test]
+fn list_type_lowers_to_tlc_list() {
+    let m = tlc_of("xs :: List Int = [1; 2; 3;]\nxs");
+    // lower_types.rs: TypeKind::List(inner) → TlcType::List(inner_tlc)
+    let has_list = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::List(_)));
+    assert!(has_list, "expected TlcType::List for List Int");
+}
+
+#[test]
+fn optional_type_lowers_to_tlc_optional() {
+    let m = tlc_of("x :: Int? = #none\nx");
+    // lower_types.rs: TypeKind::Optional(inner) → TlcType::Optional(inner_tlc)
+    let has_opt = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Optional(_)));
+    assert!(has_opt, "expected TlcType::Optional for Int?");
+}
+
+#[test]
+fn positional_tuple_type_lowers_to_tlc_tuple() {
+    let m = tlc_of(
+        r#"p :: (Int, Text) = (1, "hi")
+p"#,
+    );
+    // lower_types.rs: TypeKind::Tuple with Positional → TlcType::Tuple with TlcTupleField::Positional
+    let has_tuple = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Tuple(_)));
+    assert!(
+        has_tuple,
+        "expected TlcType::Tuple for positional tuple type"
+    );
+    let has_positional_field = m.type_arena.iter().any(|(_, ty)| {
+        if let TlcType::Tuple(items) = ty {
+            items
+                .iter()
+                .any(|i| matches!(i, TlcTupleField::Positional(_)))
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_positional_field,
+        "expected TlcTupleField::Positional inside Tuple"
+    );
+}
+
+#[test]
+fn named_tuple_type_lowers_to_tlc_tuple_with_named_fields() {
+    let m = tlc_of("p :: (x : Int, y : Int) = (x = 1, y = 2)\np");
+    // lower_types.rs: TypeKind::Tuple with Named → TlcType::Tuple with TlcTupleField::Named
+    let has_named_field = m.type_arena.iter().any(|(_, ty)| {
+        if let TlcType::Tuple(items) = ty {
+            items
+                .iter()
+                .any(|i| matches!(i, TlcTupleField::Named { .. }))
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_named_field,
+        "expected TlcTupleField::Named inside Tuple for named tuple type"
+    );
+}
+
+#[test]
+fn float_pattern_lowers_to_lit_float_pat() {
+    let m = tlc_of(
+        r#"classify :: Float -> Text {
+  | 0.0 => "zero";
+  | _ => "other";
+}
+classify 1.0"#,
+    );
+    // lower_expr.rs: ThirPatKind::Float(f) → TlcPat::Lit(Literal::Float(f))
+    let has_float_pat = m.expr_arena.iter().any(|(_, e)| {
+        if let TlcExpr::Case(_, alts) = e {
+            alts.iter()
+                .any(|a| matches!(&a.pat, TlcPat::Lit(Literal::Float(_))))
+        } else {
+            false
+        }
+    });
+    assert!(has_float_pat, "expected Lit(Float) pattern in Case alts");
+}
+
+#[test]
+fn string_pattern_lowers_to_lit_str_pat() {
+    let m = tlc_of(
+        r#"greet :: Text -> Int {
+  | "hello" => 1;
+  | _ => 0;
+}
+greet "hi""#,
+    );
+    // lower_expr.rs: ThirPatKind::String(s) → TlcPat::Lit(Literal::Str(s))
+    let has_str_pat = m.expr_arena.iter().any(|(_, e)| {
+        if let TlcExpr::Case(_, alts) = e {
+            alts.iter()
+                .any(|a| matches!(&a.pat, TlcPat::Lit(Literal::Str(_))))
+        } else {
+            false
+        }
+    });
+    assert!(has_str_pat, "expected Lit(Str) pattern in Case alts");
+}
+
+#[test]
+fn atom_pattern_bare_union_lowers_to_atom_pat() {
+    // Bare union arm `#dev` / `#prod` (no payload) → ThirPatKind::Atom → TlcPat::Atom
+    let m = tlc_of(
+        r#"Profile :: type [ dev; prod; ]
+isProd :: Profile -> Bool {
+  | #prod => true;
+  | #dev => false;
+}
+isProd #prod"#,
+    );
+    // lower_expr.rs: ThirPatKind::Atom(s) → TlcPat::Atom(s)
+    let has_atom_pat = m.expr_arena.iter().any(|(_, e)| {
+        if let TlcExpr::Case(_, alts) = e {
+            alts.iter().any(|a| matches!(&a.pat, TlcPat::Atom(_)))
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_atom_pat,
+        "expected TlcPat::Atom for bare union arm patterns"
+    );
+}
+
+#[test]
+fn wildcard_lambda_param_uses_fresh_synthetic_binding() {
+    // `\\ _ . body` — the `_` wildcard is ThirPatKind::Wildcard (non-Bind)
+    // lower_lambda's else branch creates a fresh synthetic binding.
+    let m = tlc_of("const42 :: Int -> Int = \\_ . 42\nconst42 1");
+    let has_lam = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::Lam(_, _, _)));
+    assert!(has_lam, "expected TlcExpr::Lam from wildcard-param lambda");
+}
+
+#[test]
+fn optional_access_lowers_to_get_field() {
+    // `cfg?.port` where cfg :: Config? → ThirExprKind::OptionalAccess → TlcExpr::GetField
+    let m = tlc_of(
+        "Config :: type { port : Int; }
+cfg :: Config? = #none
+n :: Int? = cfg?.port
+n",
+    );
+    let has_get_field = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::GetField(_, _)));
+    assert!(
+        has_get_field,
+        "expected TlcExpr::GetField from OptionalAccess"
+    );
+}
+
+#[test]
+fn sub_mul_div_binops_lower_to_builtin() {
+    let m = tlc_of("f x y = x - y\nf 5 3");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Sub, _, _))),
+        "expected Builtin(Sub)"
+    );
+    let m = tlc_of("f x y = x * y\nf 2 3");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Mul, _, _))),
+        "expected Builtin(Mul)"
+    );
+    let m = tlc_of("f x y = x / y\nf 6 2");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Div, _, _))),
+        "expected Builtin(Div)"
+    );
+}
+
+#[test]
+fn comparison_binops_lower_to_builtin() {
+    let m = tlc_of("f x y = x == y\nf 1 1");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Eq, _, _))),
+        "expected Builtin(Eq)"
+    );
+    let m = tlc_of("f x y = x != y\nf 1 2");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Ne, _, _))),
+        "expected Builtin(Ne)"
+    );
+    let m = tlc_of("f x y = x < y\nf 1 2");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Lt, _, _))),
+        "expected Builtin(Lt)"
+    );
+    let m = tlc_of("f x y = x <= y\nf 1 2");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Le, _, _))),
+        "expected Builtin(Le)"
+    );
+    let m = tlc_of("f x y = x > y\nf 2 1");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Gt, _, _))),
+        "expected Builtin(Gt)"
+    );
+    let m = tlc_of("f x y = x >= y\nf 2 1");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Ge, _, _))),
+        "expected Builtin(Ge)"
+    );
+}
+
+#[test]
+fn logical_and_or_coalesce_lower_to_builtin() {
+    let m = tlc_of("f x y = x && y\nf true false");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::And, _, _))),
+        "expected Builtin(And)"
+    );
+    let m = tlc_of("f x y = x || y\nf true false");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Or, _, _))),
+        "expected Builtin(Or)"
+    );
+    // Coalesce (??) on an Optional record field — placed in a declaration body so
+    // TLC lowers it (the `final_expr` slot is not visited by the TLC lowerer).
+    let m = tlc_of(
+        "Server :: type { port? : Int; }\nget :: Server -> Int = \\s. s.port ?? 8080\nget {}",
+    );
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Coalesce, _, _))),
+        "expected Builtin(Coalesce)"
+    );
+}
