@@ -206,6 +206,12 @@ impl<'hir> Lowerer<'hir> {
             pat_arena: std::mem::take(&mut self.pat_arena),
             type_arena: std::mem::take(&mut self.type_arena),
             poly_schemes: std::mem::take(&mut self.poly_schemes),
+            binding_names: self
+                .hir
+                .bindings
+                .iter()
+                .map(|binding| binding.name.clone())
+                .collect(),
         };
         let diagnostics = std::mem::take(&mut self.diagnostics);
 

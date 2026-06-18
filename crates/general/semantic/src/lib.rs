@@ -16,7 +16,7 @@ use std::rc::Rc;
 
 mod import;
 
-pub use import::{ImportDiagnostic, ImportDiagnosticKind};
+pub use import::{ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 
 #[derive(Debug)]
 pub struct Analysis {
@@ -32,6 +32,7 @@ pub struct Analysis {
     pub import_modules: HashMap<zutai_thir::ImportKey, Rc<Analysis>>,
     /// TLC module produced by lowering THIR; `None` when THIR is incomplete.
     pub tlc: Option<zutai_tlc::TlcModule>,
+    pub witness_exports: Vec<WitnessExport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,9 +119,11 @@ pub fn analyze_with_options(input: &str, options: AnalysisOptions) -> Analysis {
 pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
     let input = std::fs::read_to_string(path)?;
     let mut ctx = import::ImportContext::with_root(path);
+    let current = std::fs::canonicalize(path).ok();
     Ok(analyze_inner(
         &input,
         path.parent(),
+        current.as_deref(),
         AnalysisOptions::default(),
         &mut ctx,
     ))
@@ -132,7 +135,7 @@ pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
 /// points, REPL) means imports cannot be resolved and yield a diagnostic.
 pub fn analyze_with_base(input: &str, base: Option<&Path>, options: AnalysisOptions) -> Analysis {
     let mut ctx = import::ImportContext::default();
-    analyze_inner(input, base, options, &mut ctx)
+    analyze_inner(input, base, None, options, &mut ctx)
 }
 
 /// Analyze `input`, threading the recursive-import `ctx` (cycle stack + module
@@ -140,6 +143,7 @@ pub fn analyze_with_base(input: &str, base: Option<&Path>, options: AnalysisOpti
 pub(crate) fn analyze_inner(
     input: &str,
     base: Option<&Path>,
+    current: Option<&Path>,
     options: AnalysisOptions,
     ctx: &mut import::ImportContext,
 ) -> Analysis {
@@ -164,6 +168,7 @@ pub(crate) fn analyze_inner(
             import_values: HashMap::new(),
             import_modules: HashMap::new(),
             tlc: None,
+            witness_exports: Vec::new(),
         };
     }
 
@@ -177,6 +182,7 @@ pub(crate) fn analyze_inner(
             import_values: HashMap::new(),
             import_modules: HashMap::new(),
             tlc: None,
+            witness_exports: Vec::new(),
         };
     };
 
@@ -208,6 +214,7 @@ pub(crate) fn analyze_inner(
 
     let mut import_values = HashMap::new();
     let mut import_modules = HashMap::new();
+    let mut imported_witnesses = Vec::new();
     let thir =
         if hir.diagnostics.is_empty() {
             // Resolve imports before THIR lowering: the resolved types feed type
@@ -223,6 +230,7 @@ pub(crate) fn analyze_inner(
             }));
             import_values = resolved.values;
             import_modules = resolved.modules;
+            imported_witnesses = resolved.witnesses;
 
             let lowered = zutai_thir::lower_hir_with_options(
                 &hir.file,
@@ -252,10 +260,29 @@ pub(crate) fn analyze_inner(
             None
         };
 
+    let local_witnesses = thir
+        .as_ref()
+        .and_then(|t| t.file.as_ref())
+        .map(|file| {
+            let origin = current.unwrap_or_else(|| Path::new("<input>"));
+            import::local_witness_exports(&hir.file, file, origin)
+        })
+        .unwrap_or_default();
+    let (witness_exports, witness_diagnostics) =
+        import::merge_witness_exports(imported_witnesses, local_witnesses);
+    diagnostics.extend(
+        witness_diagnostics
+            .into_iter()
+            .map(|diagnostic| SemanticDiagnostic {
+                stage: SemanticStage::Import,
+                kind: SemanticDiagnosticKind::Import(diagnostic),
+            }),
+    );
+
     let tlc = thir
         .as_ref()
         .and_then(|t| t.file.as_ref())
-        .map(|file| zutai_tlc::lower_thir(file));
+        .map(zutai_tlc::lower_thir);
 
     Analysis {
         ast: Some(ast),
@@ -266,6 +293,7 @@ pub(crate) fn analyze_inner(
         import_values,
         import_modules,
         tlc,
+        witness_exports,
     }
 }
 
@@ -439,6 +467,87 @@ mod tests {
         assert!(
             analysis.is_thir_complete(),
             "expected complete THIR, got diagnostics: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn cross_module_conflicting_witnesses_report_import_error() {
+        let analysis = analyze_in_imports(
+            r#"
+a := import "witness_eq_int_a.zt"
+b := import "witness_eq_int_b.zt"
+(a, b)
+"#,
+        );
+
+        assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
+            &diagnostic.kind,
+            SemanticDiagnosticKind::Import(import)
+                if matches!(
+                    &import.kind,
+                    ImportDiagnosticKind::ConflictingWitness { constraint, target }
+                        if constraint == "Eq" && target == "Int"
+                )
+        )));
+        assert!(analysis.blocking_diagnostics().next().is_some());
+    }
+
+    #[test]
+    fn imported_witness_conflicts_with_local_witness() {
+        let analysis = analyze_in_imports(
+            r#"
+a := import "witness_eq_int_a.zt"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. true; }
+a
+"#,
+        );
+
+        assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
+            &diagnostic.kind,
+            SemanticDiagnosticKind::Import(import)
+                if matches!(
+                    &import.kind,
+                    ImportDiagnosticKind::ConflictingWitness { constraint, target }
+                        if constraint == "Eq" && target == "Int"
+                )
+        )));
+        assert!(analysis.blocking_diagnostics().next().is_some());
+    }
+
+    #[test]
+    fn cross_module_distinct_witness_targets_complete() {
+        let analysis = analyze_in_imports(
+            r#"
+a := import "witness_eq_int_a.zt"
+b := import "witness_eq_bool.zt"
+(a, b)
+"#,
+        );
+
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn cross_module_same_witness_reexport_is_deduped() {
+        let analysis = analyze_in_imports(
+            r#"
+a := import "witness_reexport_a.zt"
+b := import "witness_reexport_b.zt"
+(a, b)
+"#,
+        );
+
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
             analysis.diagnostics
         );
     }

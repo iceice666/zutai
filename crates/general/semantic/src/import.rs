@@ -19,9 +19,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use zutai_hir::{HirExprKind, HirFile, HirImportSource};
+use zutai_hir::{BindingId, HirExprKind, HirFile, HirImportSource};
 use zutai_syntax::Span;
-use zutai_thir::{ImportKey, ImportedField, ImportedType, ThirExprKind, ThirFile};
+use zutai_thir::{
+    ImportKey, ImportedField, ImportedTupleItem, ImportedType, ThirDeclKind, ThirExprKind, ThirFile,
+};
 
 use crate::{Analysis, AnalysisOptions};
 
@@ -54,7 +56,17 @@ pub(crate) struct ResolvedImports {
     pub values: HashMap<ImportKey, zutai_im::Value>,
     /// Analyzed `.zt` sub-modules, keyed by import source — evaluated recursively.
     pub modules: HashMap<ImportKey, Rc<Analysis>>,
+    /// Witnesses exported by imported `.zt` modules, including re-exports.
+    pub witnesses: Vec<WitnessExport>,
     pub diagnostics: Vec<ImportDiagnostic>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessExport {
+    pub origin: PathBuf,
+    pub constraint: String,
+    pub target_key: String,
+    pub target_display: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +110,11 @@ pub enum ImportDiagnosticKind {
         path: String,
         reason: &'static str,
     },
+    /// Two distinct imported witnesses claim the same `(Constraint, Type)` pair.
+    ConflictingWitness {
+        constraint: String,
+        target: String,
+    },
 }
 
 enum Kind {
@@ -110,6 +127,8 @@ struct Resolver<'a> {
     types: HashMap<ImportKey, ImportedType>,
     values: HashMap<ImportKey, zutai_im::Value>,
     modules: HashMap<ImportKey, Rc<Analysis>>,
+    witnesses: Vec<WitnessExport>,
+    witness_keys: HashMap<(String, String), PathBuf>,
     diagnostics: Vec<ImportDiagnostic>,
 }
 
@@ -124,6 +143,8 @@ pub(crate) fn resolve_imports(
         types: HashMap::new(),
         values: HashMap::new(),
         modules: HashMap::new(),
+        witnesses: Vec::new(),
+        witness_keys: HashMap::new(),
         diagnostics: Vec::new(),
     };
 
@@ -142,6 +163,7 @@ pub(crate) fn resolve_imports(
         types: resolver.types,
         values: resolver.values,
         modules: resolver.modules,
+        witnesses: resolver.witnesses,
         diagnostics: resolver.diagnostics,
     }
 }
@@ -236,12 +258,14 @@ impl Resolver<'_> {
                 let analysis = crate::analyze_inner(
                     &contents,
                     canonical.parent(),
+                    Some(canonical),
                     AnalysisOptions::default(),
                     ctx,
                 );
                 ctx.in_progress.pop();
 
-                if !analysis.is_thir_complete() {
+                if analysis.blocking_diagnostics().next().is_some() || !analysis.is_thir_complete()
+                {
                     // A cycle is first detected on the back-edge, one module
                     // deeper; propagate it so every level on the chain reports
                     // the cycle rather than a vague "module has errors".
@@ -279,6 +303,7 @@ impl Resolver<'_> {
 
         match exported {
             Ok(ty) => {
+                self.merge_witnesses(&module.witness_exports, span);
                 self.types.insert(source.clone(), ty);
                 self.modules.insert(source.clone(), module);
             }
@@ -305,6 +330,28 @@ impl Resolver<'_> {
     fn diag(&mut self, kind: ImportDiagnosticKind, span: Span) {
         self.diagnostics.push(ImportDiagnostic { kind, span });
     }
+
+    fn merge_witnesses(&mut self, witnesses: &[WitnessExport], span: Span) {
+        for witness in witnesses {
+            let key = (witness.constraint.clone(), witness.target_key.clone());
+            match self.witness_keys.get(&key) {
+                Some(origin) if origin != &witness.origin => {
+                    self.diag(
+                        ImportDiagnosticKind::ConflictingWitness {
+                            constraint: witness.constraint.clone(),
+                            target: witness.target_display.clone(),
+                        },
+                        span,
+                    );
+                }
+                Some(_) => {}
+                None => {
+                    self.witness_keys.insert(key, witness.origin.clone());
+                    self.witnesses.push(witness.clone());
+                }
+            }
+        }
+    }
 }
 
 /// Whether `analysis` failed (at least in part) because of an import cycle.
@@ -316,6 +363,120 @@ fn contains_cycle(analysis: &Analysis) -> bool {
                 if matches!(import.kind, ImportDiagnosticKind::ImportCycle { .. })
         )
     })
+}
+
+pub(crate) fn merge_witness_exports(
+    imported: Vec<WitnessExport>,
+    local: Vec<WitnessExport>,
+) -> (Vec<WitnessExport>, Vec<ImportDiagnostic>) {
+    let mut merged = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut keys: HashMap<(String, String), PathBuf> = HashMap::new();
+    for witness in imported.into_iter().chain(local) {
+        let key = (witness.constraint.clone(), witness.target_key.clone());
+        match keys.get(&key) {
+            Some(origin) if origin != &witness.origin => {
+                diagnostics.push(ImportDiagnostic {
+                    kind: ImportDiagnosticKind::ConflictingWitness {
+                        constraint: witness.constraint.clone(),
+                        target: witness.target_display.clone(),
+                    },
+                    span: witness.span,
+                });
+            }
+            Some(_) => {}
+            None => {
+                keys.insert(key, witness.origin.clone());
+                merged.push(witness);
+            }
+        }
+    }
+    (merged, diagnostics)
+}
+
+pub(crate) fn local_witness_exports(
+    hir: &HirFile,
+    file: &ThirFile,
+    origin: &Path,
+) -> Vec<WitnessExport> {
+    let mut out = Vec::new();
+    for (_, decl) in file.decl_arena.iter() {
+        let ThirDeclKind::Witness {
+            constraint: Some(constraint),
+            target,
+            ..
+        } = &decl.kind
+        else {
+            continue;
+        };
+        let Ok(target) = zutai_thir::export_type(file, *target) else {
+            continue;
+        };
+        let constraint = binding_name(hir, *constraint).to_string();
+        let target_key = imported_type_key(&target);
+        out.push(WitnessExport {
+            origin: origin.to_path_buf(),
+            constraint,
+            target_display: target_key.clone(),
+            target_key,
+            span: decl.span,
+        });
+    }
+    out
+}
+
+fn binding_name(hir: &HirFile, binding: BindingId) -> &str {
+    &hir.bindings[binding.0 as usize].name
+}
+
+fn imported_type_key(ty: &ImportedType) -> String {
+    match ty {
+        ImportedType::Bool => "Bool".to_string(),
+        ImportedType::Int => "Int".to_string(),
+        ImportedType::Float => "Float".to_string(),
+        ImportedType::Text => "Text".to_string(),
+        ImportedType::Atom(name) => format!("#{name}"),
+        ImportedType::List(inner) => format!("[{}]", imported_type_key(inner)),
+        ImportedType::Optional(inner) => format!("{}?", imported_type_key(inner)),
+        ImportedType::Record(fields) => {
+            let mut parts: Vec<String> = fields
+                .iter()
+                .map(|field| {
+                    let marker = if field.optional { "?:" } else { ":" };
+                    format!("{}{}{}", field.name, marker, imported_type_key(&field.ty))
+                })
+                .collect();
+            parts.sort();
+            format!("{{{}}}", parts.join(","))
+        }
+        ImportedType::Tuple(items) => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|item| match item {
+                    ImportedTupleItem::Named { name, ty } => {
+                        format!("{}:{}", name, imported_type_key(ty))
+                    }
+                    ImportedTupleItem::Positional(ty) => imported_type_key(ty),
+                })
+                .collect();
+            format!("({})", parts.join(","))
+        }
+        ImportedType::Union(variants) => {
+            let parts: Vec<String> = variants
+                .iter()
+                .map(|variant| match &variant.payload {
+                    Some(payload) => format!("{}({})", variant.name, imported_type_key(payload)),
+                    None => variant.name.clone(),
+                })
+                .collect();
+            format!("<{}>", parts.join("|"))
+        }
+        ImportedType::Function { from, to } => {
+            format!("({}->{})", imported_type_key(from), imported_type_key(to))
+        }
+        ImportedType::Type(inner) => format!("Type({})", imported_type_key(inner)),
+        ImportedType::Unknown => "?".to_string(),
+    }
 }
 
 /// Turn an import source into a relative path string.
@@ -409,10 +570,10 @@ fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedTy
         }
         // The THIR field value must be a TypeValue to carry a denotation.
         let value_expr = &file.expr_arena[thir_field.value];
-        if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind {
-            if let Ok(denotation) = zutai_thir::export_type(file, denotation_tid) {
-                imp_field.ty = ImportedType::Type(Box::new(denotation));
-            }
+        if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind
+            && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
+        {
+            imp_field.ty = ImportedType::Type(Box::new(denotation));
         }
     }
 

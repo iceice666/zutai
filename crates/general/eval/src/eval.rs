@@ -32,6 +32,13 @@ use crate::{
 /// A slice of all evaluated modules for this run, keyed by position = `ModuleId`.
 pub type ModuleRegistry = Vec<Arc<ThirFile>>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeWitness {
+    pub module: ModuleId,
+    pub constraint: String,
+    pub target_key: String,
+}
+
 /// Holds read-only access to the THIR arenas while evaluating.
 ///
 /// `Evaluator` is cheaply `Copy` — it's two references plus a `usize`.
@@ -47,6 +54,7 @@ pub struct Evaluator<'a> {
     /// Pre-resolved import values (`.zti` data + `.zt` final-expr values),
     /// keyed by import source.  An `Import` node looks up its source here.
     pub imports: &'a HashMap<ImportKey, Value>,
+    pub witnesses: &'a [RuntimeWitness],
 }
 
 impl<'a> Evaluator<'a> {
@@ -55,12 +63,14 @@ impl<'a> Evaluator<'a> {
         registry: &'a [Arc<ThirFile>],
         active_module: ModuleId,
         imports: &'a HashMap<ImportKey, Value>,
+        witnesses: &'a [RuntimeWitness],
     ) -> Self {
         Self {
             file,
             registry,
             active_module,
             imports,
+            witnesses,
         }
     }
 
@@ -74,6 +84,7 @@ impl<'a> Evaluator<'a> {
             active_module: m,
             registry: self.registry,
             imports: self.imports,
+            witnesses: self.witnesses,
         }
     }
 
@@ -869,6 +880,13 @@ impl<'a> Evaluator<'a> {
                 }
             }
 
+            let constraint_name = self.binding_name(constraint_binding);
+            if let Some(value) =
+                self.eval_imported_witness_field(constraint_name, &method_name, &key)?
+            {
+                return Ok(Some(value));
+            }
+
             if found_witness {
                 // Matching witness exists but omitted this method — check for a
                 // default body in the constraint declaration.
@@ -974,25 +992,79 @@ impl<'a> Evaluator<'a> {
     ) -> Result<Option<Value>, EvalError> {
         for &decl_id in &self.file.decls {
             let decl = self.decl(decl_id);
-            if let ThirDeclKind::Witness { target, fields, .. } = &decl.kind {
-                if type_key(&self.file.type_arena, aliases, *target) == key {
-                    for field in fields {
-                        if field.is_operator && field.name == op_name {
-                            let fv = self.eval(field.value, env)?;
-                            match fv {
-                                Value::Closure(c) => {
-                                    let args =
-                                        vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
-                                    return Ok(Some(self.apply_closure(&c, args)?));
-                                }
-                                _ => return Ok(None),
+            if let ThirDeclKind::Witness { target, fields, .. } = &decl.kind
+                && type_key(&self.file.type_arena, aliases, *target) == key
+            {
+                for field in fields {
+                    if field.is_operator && field.name == op_name {
+                        let fv = self.eval(field.value, env)?;
+                        match fv {
+                            Value::Closure(c) => {
+                                let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                                return Ok(Some(self.apply_closure(&c, args)?));
                             }
+                            _ => return Ok(None),
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(fv) = self.eval_imported_witness_field("", op_name, key)? {
+            match fv {
+                Value::Closure(c) => {
+                    let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                    return Ok(Some(self.apply_closure(&c, args)?));
+                }
+                _ => return Ok(None),
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn eval_imported_witness_field(
+        &self,
+        constraint_name: &str,
+        field_name: &str,
+        target_key: &str,
+    ) -> Result<Option<Value>, EvalError> {
+        for witness in self.witnesses {
+            if witness.module == self.active_module || witness.target_key != target_key {
+                continue;
+            }
+            if !constraint_name.is_empty() && witness.constraint != constraint_name {
+                continue;
+            }
+            let ev = self.for_module(witness.module);
+            let top = ev.build_top_env();
+            let aliases = ev.build_alias_map();
+            for &decl_id in &ev.file.decls {
+                let decl = ev.decl(decl_id);
+                if let ThirDeclKind::Witness {
+                    constraint: Some(c),
+                    target,
+                    fields,
+                    ..
+                } = &decl.kind
+                    && ev.binding_name(*c) == witness.constraint
+                    && type_key(&ev.file.type_arena, &aliases, *target) == witness.target_key
+                {
+                    for field in fields {
+                        if field.name == field_name {
+                            return Ok(Some(ev.eval(field.value, &top)?));
                         }
                     }
                 }
             }
         }
         Ok(None)
+    }
+
+    fn binding_name(&self, binding: BindingId) -> &str {
+        self.file
+            .binding_names
+            .get(binding.0 as usize)
+            .map_or("", String::as_str)
     }
 
     /// Build a map from alias `BindingId` to its underlying `TypeId` for

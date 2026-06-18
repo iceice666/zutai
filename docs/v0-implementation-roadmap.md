@@ -66,7 +66,7 @@ The `constraint` / `witness` declarations from `docs/v1_spec/03-constraints.md` 
 
 - [ ] **Dictionary-passing in TLC**: the correct solution for polymorphic dispatch through indirect calls. The interpreter currently returns `EvalError::UnresolvedWitness` for bounded functions called from within other functions; TLC elaboration will thread witness arguments as implicit parameters, eliminating this limitation.
 - [ ] **Conditional / higher-kinded witnesses**: `Eq @(List A)` where `A: Eq`; blocked by parametric `AliasApply` targets in `type_key`.
-- [ ] **Cross-module witnesses + orphan rule**: `import.rs` / `export.rs` have no constraint/witness handling.
+- [x] **Cross-module witnesses + orphan rule**: `import.rs` / `export.rs` have no constraint/witness handling.
 - [ ] **`derive` synthesis**: `Witness { derive: true }` currently lowers to an empty-fields no-op in the interpreter.
 - [ ] **Method-level type params** (`<A,B>` on individual methods): dropped at THIR.
 

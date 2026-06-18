@@ -3,7 +3,9 @@
 //! These tests double as the differential-testing oracle for future LLVM
 //! codegen: any LLVM output that disagrees with these is a codegen bug.
 
-use crate::{EvalError, Value, eval_file, thunk, value};
+use std::path::Path;
+
+use crate::{EvalError, Value, eval_file, eval_with_base, thunk, value};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -13,6 +15,12 @@ fn run(src: &str) -> Value {
 
 fn run_err(src: &str) -> EvalError {
     eval_file(src).expect_err(&format!("expected error for:\n{src}"))
+}
+
+fn run_in_imports(src: &str) -> Value {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports");
+    eval_with_base(src, Some(&base))
+        .unwrap_or_else(|e| panic!("eval_with_base failed for:\n{src}\nerror: {e}"))
 }
 
 // ─── arithmetic ───────────────────────────────────────────────────────────────
@@ -794,6 +802,16 @@ eq 1 2
     assert_eq!(run(src), Value::Bool(true));
 }
 
+#[test]
+fn dispatch_imported_named_witness() {
+    let src = r#"
+w := import "witness_eq_int_a.zt"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+eq 1 2
+"#;
+    assert_eq!(run_in_imports(src), Value::Bool(true));
+}
+
 /// Type-directed selection: two witnesses for the same constraint, each with a
 /// different target type — the dispatch must pick the right one per call site.
 #[test]
@@ -840,6 +858,15 @@ Eq @Int :: { (==) = \\a b. false; }
 1 == 1
 ";
     assert_eq!(run(src), Value::Bool(false));
+}
+
+#[test]
+fn op_dispatch_imported_witness_overrides_builtin() {
+    let src = r#"
+w := import "witness_eq_int_operator.zt"
+1 == 1
+"#;
+    assert_eq!(run_in_imports(src), Value::Bool(false));
 }
 
 /// `!=` negates the `(==)` field when no `(!=)` field is present.

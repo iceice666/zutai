@@ -307,6 +307,9 @@ fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) -> String {
         ImportCycle { path } => format!("import cycle through {path}"),
         ModuleHasErrors { path } => format!("imported module {path} has errors"),
         UnsupportedExport { path, reason } => format!("cannot import {path}: {reason}"),
+        ConflictingWitness { constraint, target } => {
+            format!("conflicting imported witnesses for {constraint} {target}")
+        }
     }
 }
 
@@ -459,7 +462,7 @@ mod tests {
         assert_eq!(count_decls_in("x := 1\ny := 2\nx\n"), 2);
     }
 
-    // ── format_import_diagnostic — all 8 arms ────────────────────────────────
+    // ── format_import_diagnostic — all arms ─────────────────────────────────
 
     fn make_diag(kind: zutai_semantic::ImportDiagnosticKind) -> zutai_semantic::ImportDiagnostic {
         zutai_semantic::ImportDiagnostic {
@@ -552,6 +555,17 @@ mod tests {
         });
         let s = format_import_diagnostic(&d);
         assert!(s.contains("mod.zti") && s.contains("not a type"), "{s}");
+    }
+
+    #[test]
+    fn format_import_diag_conflicting_witness() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::ConflictingWitness {
+            constraint: "Eq".to_string(),
+            target: "Int".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(s.contains("conflicting imported witnesses"), "{s}");
+        assert!(s.contains("Eq") && s.contains("Int"), "{s}");
     }
 
     // ── ZtParseDiagnostic span clamping ──────────────────────────────────────

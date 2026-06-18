@@ -29,7 +29,7 @@ pub mod value;
 mod tests;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use zutai_hir::BindingId;
@@ -37,7 +37,7 @@ use zutai_thir::{ImportKey, ThirExprKind, ThirFile};
 
 pub use value::Value;
 
-use eval::{Evaluator, ModuleRegistry};
+use eval::{Evaluator, ModuleRegistry, RuntimeWitness};
 use value::ModuleId;
 
 // ─── errors ───────────────────────────────────────────────────────────────────
@@ -119,12 +119,7 @@ pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, 
         let thir_msgs: Vec<String> = analysis
             .thir
             .as_ref()
-            .map(|lt| {
-                lt.diagnostics
-                    .iter()
-                    .map(|d| format_thir_diagnostic(d))
-                    .collect()
-            })
+            .map(|lt| lt.diagnostics.iter().map(format_thir_diagnostic).collect())
             .unwrap_or_default();
         return Err(EvalError::TypeCheckFailed(thir_msgs));
     }
@@ -338,12 +333,14 @@ pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalEr
 /// applied across a module boundary.
 fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
     let mut registry: ModuleRegistry = Vec::new();
+    let mut module_paths: HashMap<PathBuf, ModuleId> = HashMap::new();
     let mut imports: HashMap<ImportKey, Value> = HashMap::new();
-    eval_analysis_into(analysis, &mut registry, &mut imports)?;
+    eval_analysis_into(analysis, &mut registry, &mut module_paths, &mut imports)?;
+    let witnesses = runtime_witnesses(analysis, &module_paths);
     // The root module is the last entry in the registry.
     let root_id = ModuleId(registry.len() - 1);
     let root_file = Arc::clone(registry.last().unwrap());
-    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports);
+    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports, &witnesses);
     let top = evaluator.build_top_env();
     let result = evaluator.eval(root_file.final_expr, &top)?;
     force_deep(result, &evaluator)
@@ -354,6 +351,7 @@ fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError
 fn eval_analysis_into(
     analysis: &zutai_semantic::Analysis,
     registry: &mut ModuleRegistry,
+    module_paths: &mut HashMap<PathBuf, ModuleId>,
     imports: &mut HashMap<ImportKey, Value>,
 ) -> Result<ModuleId, EvalError> {
     let file = check_runnable(analysis)?;
@@ -370,10 +368,11 @@ fn eval_analysis_into(
         if !imports.contains_key(key) {
             // Recurse: register the dependency, building its top-env stamped
             // with its own ModuleId so closures carry the correct home.
-            let dep_id = eval_analysis_into(module, registry, imports)?;
+            let dep_id = eval_analysis_into(module, registry, module_paths, imports)?;
             // Now evaluate the dependency's final expression in its own module.
             let dep_file = Arc::clone(&registry[dep_id.0]);
-            let dep_ev = Evaluator::new(&dep_file, registry, dep_id, imports);
+            let witnesses = runtime_witnesses(module, module_paths);
+            let dep_ev = Evaluator::new(&dep_file, registry, dep_id, imports, &witnesses);
             let dep_top = dep_ev.build_top_env();
             let dep_result = dep_ev.eval(dep_file.final_expr, &dep_top)?;
             let dep_value = force_deep(dep_result, &dep_ev)?;
@@ -384,7 +383,28 @@ fn eval_analysis_into(
     // Register this module and return its id.
     let id = ModuleId(registry.len());
     registry.push(Arc::new(file.clone()));
+    for witness in &analysis.witness_exports {
+        module_paths.entry(witness.origin.clone()).or_insert(id);
+    }
     Ok(id)
+}
+
+fn runtime_witnesses(
+    analysis: &zutai_semantic::Analysis,
+    module_paths: &HashMap<PathBuf, ModuleId>,
+) -> Vec<RuntimeWitness> {
+    analysis
+        .witness_exports
+        .iter()
+        .filter_map(|witness| {
+            let module = module_paths.get(&witness.origin).copied()?;
+            Some(RuntimeWitness {
+                module,
+                constraint: witness.constraint.clone(),
+                target_key: witness.target_key.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Evaluate a `.zt` source string using the TLC eager evaluator.
@@ -421,7 +441,8 @@ pub fn eval_thir_with_imports(
     imports: &HashMap<ImportKey, Value>,
 ) -> Result<Value, EvalError> {
     let registry: ModuleRegistry = vec![Arc::new(file.clone())];
-    let evaluator = Evaluator::new(file, &registry, ModuleId(0), imports);
+    let witnesses = Vec::new();
+    let evaluator = Evaluator::new(file, &registry, ModuleId(0), imports, &witnesses);
     let top = evaluator.build_top_env();
     let result = evaluator.eval(file.final_expr, &top)?;
     force_deep(result, &evaluator)
