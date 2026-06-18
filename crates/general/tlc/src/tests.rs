@@ -1001,6 +1001,86 @@ fn effect_row_permutation_equality_holds() {
     );
 }
 
+// ── Phase 4 tests: effect-row eraser ─────────────────────────────────────────
+
+/// `erase_effects` is a no-op on a module where every `Fun` already has `REmpty`.
+/// This is the invariant that holds for all v0 programs.
+#[test]
+fn effect_eraser_is_noop_for_pure_functions() {
+    let mut m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    // Precondition: v0 lowering sets every Fun eff to REmpty already.
+    let before: Vec<Row> = m
+        .type_arena
+        .iter()
+        .filter_map(|(_, ty)| {
+            if let TlcType::Fun(_, _, eff) = ty {
+                Some(eff.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        before.iter().all(|r| *r == Row::REmpty),
+        "precondition: all v0 Fun effect rows must already be REmpty before erasing"
+    );
+    m.erase_effects();
+    let after: Vec<Row> = m
+        .type_arena
+        .iter()
+        .filter_map(|(_, ty)| {
+            if let TlcType::Fun(_, _, eff) = ty {
+                Some(eff.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    // No-op: the two snapshots must be identical.
+    assert_eq!(
+        before, after,
+        "erase_effects must be a no-op when all Fun rows are already REmpty"
+    );
+}
+
+/// `erase_effects` clears a non-empty effect row: any `Fun(A, B, {e: T})` becomes
+/// `Fun(A, B, REmpty)`. This tests the active path through the eraser — the only
+/// way to reach it in v0 is via a hand-built `TlcModule`.
+#[test]
+fn effect_eraser_clears_nonempty_effect_row() {
+    use la_arena::Arena;
+    let mut type_arena: Arena<TlcType> = Arena::new();
+    let int_ty = type_arena.alloc(TlcType::Prim(PrimTy::Int));
+    let bool_placeholder = type_arena.alloc(TlcType::Prim(PrimTy::Bool));
+    // Fun(Int, Int, {e: Bool}) — non-empty effect row.
+    let effectful_id = type_arena.alloc(TlcType::Fun(
+        int_ty,
+        int_ty,
+        Row::RExtend {
+            label: "e".to_string(),
+            ty: bool_placeholder,
+            optional: false,
+            tail: Box::new(Row::REmpty),
+        },
+    ));
+    let mut m = make_module(type_arena);
+    // Before: the Fun has a non-empty effect row.
+    assert!(
+        matches!(
+            &m.type_arena[effectful_id],
+            TlcType::Fun(_, _, Row::RExtend { .. })
+        ),
+        "precondition: Fun must have non-empty eff row before erasing"
+    );
+    m.erase_effects();
+    // After: every Fun effect row must be REmpty.
+    assert!(
+        matches!(&m.type_arena[effectful_id], TlcType::Fun(_, _, Row::REmpty)),
+        "Fun effect row must be REmpty after erase_effects, got {:?}",
+        m.type_arena[effectful_id]
+    );
+}
+
 // ── Additional lower/types.rs coverage ───────────────────────────────────────
 
 #[test]

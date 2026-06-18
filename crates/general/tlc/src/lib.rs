@@ -1,3 +1,4 @@
+mod erase;
 mod ir;
 mod lower;
 mod normalize;
