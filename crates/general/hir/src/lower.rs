@@ -7,10 +7,11 @@ use zutai_syntax::ast;
 use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
     Binding, BindingId, BindingKind, HirClause, HirConstraintMethod, HirDecl, HirDeclId,
-    HirDeclKind, HirExpr, HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding,
-    HirPat, HirPatId, HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem,
-    HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam, HirTypeRecordField, HirTypeTupleItem,
-    HirUnionVariant, HirWitnessField,
+    HirDeclKind, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind, HirFile,
+    HirHandleClause, HirHandleOp, HirImportSource, HirLocalBinding, HirPat, HirPatId, HirPatKind,
+    HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField, HirTupleItem,
+    HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam, HirTypeRecordField,
+    HirTypeTupleItem, HirUnionVariant, HirWitnessField,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 
@@ -50,6 +51,14 @@ struct Scope {
     names: HashMap<String, BindingId>,
 }
 
+/// Tracks the lexically-nearest `handle` clause body during lowering so that
+/// `resume` can be validated: it is legal only inside an *operation* clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandlerClauseKind {
+    Value,
+    Operation,
+}
+
 struct Lowerer {
     bindings: Vec<Binding>,
     decl_arena: Arena<HirDecl>,
@@ -61,6 +70,9 @@ struct Lowerer {
     /// Maps each constraint's `BindingId` to the index-aligned vector of
     /// per-method bindings allocated in Pass 1.  `None` entries are operator methods.
     constraint_method_bindings: HashMap<BindingId, Vec<Option<BindingId>>>,
+    /// The lexically-nearest enclosing `handle` clause body, if any. `resume`
+    /// is only valid when this is `Some(HandlerClauseKind::Operation)`.
+    handler_clause: Option<HandlerClauseKind>,
 }
 
 impl Lowerer {
@@ -74,6 +86,7 @@ impl Lowerer {
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
             constraint_method_bindings: HashMap::new(),
+            handler_clause: None,
         };
         for name in ["Type", "Text", "Bool", "Int", "Float", "List"] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
@@ -592,30 +605,38 @@ impl Lowerer {
             },
             ast::Expr::Import { source, .. } => HirExprKind::Import(clone_import_source(source)),
             ast::Expr::TypeForm { ty, .. } => HirExprKind::TypeForm(self.lower_type(ty)),
-            ast::Expr::Select { receiver, .. } => {
-                self.lower_expr(receiver);
-                HirExprKind::UnsupportedSurface
+            ast::Expr::Select {
+                receiver, fields, ..
+            } => {
+                let receiver = self.lower_expr(receiver);
+                let fields = self.lower_select_fields(fields);
+                HirExprKind::Select { receiver, fields }
             }
-            ast::Expr::Perform { arg, .. } => {
-                self.lower_expr(arg);
-                HirExprKind::UnsupportedSurface
-            }
+            ast::Expr::Perform { op, arg, .. } => HirExprKind::Perform {
+                op: op.clone(),
+                arg: self.lower_expr(arg),
+            },
             ast::Expr::Handle { expr, clauses, .. } => {
-                self.lower_expr(expr);
-                for clause in clauses {
-                    self.lower_expr(&clause.body);
-                }
-                HirExprKind::UnsupportedSurface
+                let expr = self.lower_expr(expr);
+                let clauses = clauses
+                    .iter()
+                    .map(|clause| self.lower_handle_clause(clause))
+                    .collect();
+                HirExprKind::Handle { expr, clauses }
             }
             ast::Expr::Resume { value, .. } => {
-                self.lower_expr(value);
-                HirExprKind::UnsupportedSurface
+                if self.handler_clause != Some(HandlerClauseKind::Operation) {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::ResumeOutsideHandler,
+                        span,
+                    });
+                }
+                HirExprKind::Resume {
+                    value: self.lower_expr(value),
+                }
             }
             ast::Expr::Sequence { items, .. } => {
-                for item in items {
-                    self.lower_expr(item);
-                }
-                HirExprKind::UnsupportedSurface
+                HirExprKind::Sequence(items.iter().map(|item| self.lower_expr(item)).collect())
             }
             ast::Expr::Apply { func, arg, .. } => HirExprKind::Apply {
                 func: self.lower_expr(func),
@@ -669,6 +690,89 @@ impl Lowerer {
                 HirExprKind::UnresolvedIdent(name.to_string())
             }
         }
+    }
+
+    fn lower_select_fields(&mut self, fields: &[ast::SelectField]) -> Vec<HirSelectField> {
+        fields
+            .iter()
+            .map(|field| HirSelectField {
+                name: field.name.clone(),
+                span: field.span,
+            })
+            .collect()
+    }
+
+    fn lower_handle_clause(&mut self, clause: &ast::HandleClause) -> HirHandleClause {
+        // `value` is the special final-value handler clause; every other path
+        // names a performed operation. Only operation clauses license `resume`.
+        let op = if clause.op.len() == 1 && clause.op[0] == "value" {
+            HirHandleOp::Value
+        } else {
+            HirHandleOp::Operation(clause.op.clone())
+        };
+        let clause_kind = match &op {
+            HirHandleOp::Value => HandlerClauseKind::Value,
+            HirHandleOp::Operation(_) => HandlerClauseKind::Operation,
+        };
+        let saved = self.handler_clause;
+        self.handler_clause = Some(clause_kind);
+        let body = self.lower_expr(&clause.body);
+        self.handler_clause = saved;
+        HirHandleClause {
+            op,
+            body,
+            span: clause.span,
+        }
+    }
+
+    fn lower_effect_row(&mut self, row: &ast::EffectRow) -> HirEffectRow {
+        let ops = row
+            .ops
+            .iter()
+            .map(|op| HirEffectOp {
+                path: op.path.clone(),
+                payload: op.payload.as_ref().map(|payload| self.lower_type(payload)),
+                signature: op.signature.as_ref().map(|sig| self.lower_type(sig)),
+                span: op.span,
+            })
+            .collect();
+        HirEffectRow {
+            ops,
+            span: row.span,
+        }
+    }
+
+    /// Lower a row tail, distinguishing a row variable (`...Rest`, an in-scope
+    /// type parameter) from a named-type spread (`...Shape`). A tail naming a
+    /// non-type binding is reported as an invalid row-tail target.
+    fn lower_row_tail(&mut self, tail: &ast::RowTail) -> HirRowTail {
+        let span = tail.span();
+        let kind = match tail {
+            ast::RowTail::Anonymous { .. } => HirRowTailKind::Anonymous,
+            ast::RowTail::Named { name, .. } => match self.resolve(name) {
+                Some(binding) => match self.bindings[binding.0 as usize].kind {
+                    BindingKind::TypeParam => HirRowTailKind::Var(binding),
+                    BindingKind::TopType | BindingKind::BuiltinType => {
+                        HirRowTailKind::Spread(binding)
+                    }
+                    _ => {
+                        self.diagnostics.push(HirDiagnostic {
+                            kind: HirDiagnosticKind::InvalidRowTailTarget { name: name.clone() },
+                            span,
+                        });
+                        HirRowTailKind::Unresolved(name.clone())
+                    }
+                },
+                None => {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::UnknownIdentifier { name: name.clone() },
+                        span,
+                    });
+                    HirRowTailKind::Unresolved(name.clone())
+                }
+            },
+        };
+        HirRowTail { kind, span }
     }
 
     fn lower_pattern(&mut self, pattern: &ast::Pattern) -> HirPatId {
@@ -745,57 +849,39 @@ impl Lowerer {
                 }
             },
             ast::TypeExpr::Record { fields, tail, .. } => {
-                for field in fields {
-                    self.lower_type(&field.ty);
-                }
-                if tail.is_some() {
-                    HirTypeKind::UnsupportedSurface
-                } else {
-                    HirTypeKind::Record(
-                        fields
-                            .iter()
-                            .map(|field| HirTypeRecordField {
-                                name: field.name.clone(),
-                                optional: field.optional,
-                                ty: self.lower_type(&field.ty),
-                                span: field.span,
-                            })
-                            .collect(),
-                    )
-                }
+                let fields = fields
+                    .iter()
+                    .map(|field| HirTypeRecordField {
+                        name: field.name.clone(),
+                        optional: field.optional,
+                        ty: self.lower_type(&field.ty),
+                        span: field.span,
+                    })
+                    .collect();
+                let tail = tail.as_ref().map(|tail| self.lower_row_tail(tail));
+                HirTypeKind::Record { fields, tail }
             }
             ast::TypeExpr::Union { variants, tail, .. } => {
-                for variant in variants {
-                    if let Some(fields) = &variant.payload {
-                        for field in fields {
-                            self.lower_type(&field.ty);
-                        }
-                    }
-                }
-                if tail.is_some() {
-                    HirTypeKind::UnsupportedSurface
-                } else {
-                    HirTypeKind::Union(
-                        variants
-                            .iter()
-                            .map(|v| HirUnionVariant {
-                                name: v.name.clone(),
-                                payload: v.payload.as_ref().map(|fields| {
-                                    fields
-                                        .iter()
-                                        .map(|field| HirTypeRecordField {
-                                            name: field.name.clone(),
-                                            optional: field.optional,
-                                            ty: self.lower_type(&field.ty),
-                                            span: field.span,
-                                        })
-                                        .collect()
-                                }),
-                                span: v.span,
-                            })
-                            .collect(),
-                    )
-                }
+                let variants = variants
+                    .iter()
+                    .map(|v| HirUnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.as_ref().map(|fields| {
+                            fields
+                                .iter()
+                                .map(|field| HirTypeRecordField {
+                                    name: field.name.clone(),
+                                    optional: field.optional,
+                                    ty: self.lower_type(&field.ty),
+                                    span: field.span,
+                                })
+                                .collect()
+                        }),
+                        span: v.span,
+                    })
+                    .collect();
+                let tail = tail.as_ref().map(|tail| self.lower_row_tail(tail));
+                HirTypeKind::Union { variants, tail }
             }
             ast::TypeExpr::Tuple { items, .. } => HirTypeKind::Tuple(
                 items
@@ -818,20 +904,16 @@ impl Lowerer {
                 to: self.lower_type(to),
             },
             ast::TypeExpr::Effect { base, effects, .. } => {
-                self.lower_type(base);
-                for op in &effects.ops {
-                    if let Some(payload) = &op.payload {
-                        self.lower_type(payload);
-                    }
-                    if let Some(signature) = &op.signature {
-                        self.lower_type(signature);
-                    }
-                }
-                HirTypeKind::UnsupportedSurface
+                let base = self.lower_type(base);
+                let row = self.lower_effect_row(effects);
+                HirTypeKind::Effect { base, row }
             }
-            ast::TypeExpr::Select { receiver, .. } => {
-                self.lower_type(receiver);
-                HirTypeKind::UnsupportedSurface
+            ast::TypeExpr::Select {
+                receiver, fields, ..
+            } => {
+                let receiver = self.lower_type(receiver);
+                let fields = self.lower_select_fields(fields);
+                HirTypeKind::Select { receiver, fields }
             }
             ast::TypeExpr::Apply { func, arg, .. } => HirTypeKind::Apply {
                 func: self.lower_type(func),

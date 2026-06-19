@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
-    HirExprKind, HirFile, HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem,
-    HirTuplePatItem, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
+    HirExprKind, HirFile, HirPatKind, HirRecordField, HirRecordPatField, HirSelectField,
+    HirTupleItem, HirTuplePatItem, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
 };
 use crate::pass::HirPass;
 
@@ -24,6 +24,9 @@ impl HirPass for StructuralKeyValidationPass {
                 HirExprKind::Tuple(items) => {
                     validate_tuple_items(items, diagnostics);
                 }
+                HirExprKind::Select { fields, .. } => {
+                    validate_select_fields(fields, diagnostics);
+                }
                 _ => {}
             }
         }
@@ -42,11 +45,14 @@ impl HirPass for StructuralKeyValidationPass {
 
         for (_, ty) in file.type_arena.iter() {
             match &ty.kind {
-                HirTypeKind::Record(fields) => {
+                HirTypeKind::Record { fields, .. } => {
                     validate_type_record_fields(fields, diagnostics);
                 }
                 HirTypeKind::Tuple(items) => {
                     validate_type_tuple_items(items, diagnostics);
+                }
+                HirTypeKind::Select { fields, .. } => {
+                    validate_select_fields(fields, diagnostics);
                 }
                 _ => {}
             }
@@ -167,6 +173,23 @@ fn validate_tuple_pattern_items(items: &[HirTuplePatItem], diagnostics: &mut Vec
             });
         } else {
             seen.insert(name.clone(), *span);
+        }
+    }
+}
+
+fn validate_select_fields(fields: &[HirSelectField], diagnostics: &mut Vec<HirDiagnostic>) {
+    let mut seen = HashMap::new();
+    for field in fields {
+        if let Some(first_span) = seen.get(&field.name).copied() {
+            diagnostics.push(HirDiagnostic {
+                kind: HirDiagnosticKind::DuplicateSelectField {
+                    name: field.name.clone(),
+                    first_span,
+                },
+                span: field.span,
+            });
+        } else {
+            seen.insert(field.name.clone(), field.span);
         }
     }
 }

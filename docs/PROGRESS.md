@@ -190,11 +190,11 @@ _Updated after Phase 7 completion. The v1 parser frontend is now surface-only co
 
 Goal: lower parsed v1 syntax into resolved, source-preserving HIR with diagnostics, without type-dependent checking.
 
-- [ ] Add HIR representation for record and union row tails: anonymous `...`, named `...Rest`, and spread `...Shape`.
-- [ ] Resolve row variables from type parameter scopes and distinguish row variables from type aliases used as spreads.
-- [ ] Add HIR for value/type `select`, preserving selected field order.
-- [ ] Add HIR for function effect rows, `perform`, `handle ... with { ... }`, and `resume`.
-- [ ] Diagnose syntax-context errors before THIR: duplicate selected fields, duplicate explicit row fields, invalid row-tail placement, and `resume` outside operation handler clauses.
+- [x] Add HIR representation for record and union row tails: anonymous `...`, named `...Rest`, and spread `...Shape`.
+- [x] Resolve row variables from type parameter scopes and distinguish row variables from type aliases used as spreads.
+- [x] Add HIR for value/type `select`, preserving selected field order.
+- [x] Add HIR for function effect rows, `perform`, `handle ... with { ... }`, and `resume`.
+- [x] Diagnose syntax-context errors before THIR: duplicate selected fields, duplicate explicit row fields, invalid row-tail placement, and `resume` outside operation handler clauses.
 
 Verification gate: v1 parser examples lower through HIR with stable source spans and precise diagnostics; no raw parser-only v1 forms leak into semantic entry points.
 
@@ -336,7 +336,7 @@ Recommended initial policy:
 - [x] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; LLVM IR text emission (v0 uses i64 universal representation, no inkwell/llvm-sys dependency).
 - [x] **CLI `compile` subcommand** — wire the full pipeline; add `check`, `compile [-o output]`, and `dataflow` subcommands with source-located diagnostics.
 - [x] **v1 parser frontend** — Phase 7 above.
-- [ ] **v1 HIR lowering** — Phase 8 above.
+- [x] **v1 HIR lowering** — Phase 8 above.
 - [ ] **row-polymorphic THIR** — Phase 9 above.
 - [ ] **THIR→TLC row elaboration** — Phase 10 above.
 - [ ] **`select` semantics and compile support** — Phase 11 above.

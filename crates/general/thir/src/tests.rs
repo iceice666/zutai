@@ -3936,3 +3936,32 @@ id
         "unconstrained type param A should produce an empty bounds list"
     );
 }
+
+// ── Phase 8: v1 forms are rejected at the semantic entry point ───────────────
+
+fn rejects_as_unsupported(src: &str) {
+    let lowered = lower(src);
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.kind, ThirDiagnosticKind::UnsupportedFeature { .. })),
+        "expected an unsupported-feature diagnostic for {src:?}, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn open_record_type_is_unsupported_in_thir() {
+    rejects_as_unsupported("f :: { host : Text; ...; } -> Text {\n  | x => \"ok\";\n}\nf");
+}
+
+#[test]
+fn value_select_is_unsupported_in_thir() {
+    rejects_as_unsupported("s := { a = 1; }\nselect s { a; }");
+}
+
+#[test]
+fn perform_is_unsupported_in_thir() {
+    rejects_as_unsupported("err := 1\nperform fail err");
+}

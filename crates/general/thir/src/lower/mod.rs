@@ -317,6 +317,11 @@ impl<'hir> Lowerer<'hir> {
         });
     }
 
+    fn unsupported_type(&mut self, feature: &'static str, span: Span) -> TypeId {
+        self.unsupported(feature, span);
+        self.error_type
+    }
+
     fn invalid_type(&mut self, reason: &'static str, span: Span) -> TypeId {
         self.diagnostics.push(ThirDiagnostic {
             kind: ThirDiagnosticKind::InvalidTypeExpression { reason },

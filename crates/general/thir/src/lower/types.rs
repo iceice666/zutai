@@ -16,7 +16,10 @@ impl<'hir> Lowerer<'hir> {
         let ty = self.hir_type(id);
         match &ty.kind {
             HirTypeKind::BindingRef(binding) => self.alias_or_builtin_type(*binding, ty.span),
-            HirTypeKind::Record(fields) => {
+            HirTypeKind::Record { fields, tail } => {
+                if tail.is_some() {
+                    return self.unsupported_type("open record types", ty.span);
+                }
                 let fields = fields
                     .iter()
                     .map(|field| self.lower_type_record_field(field))
@@ -26,7 +29,10 @@ impl<'hir> Lowerer<'hir> {
                     span: ty.span,
                 })
             }
-            HirTypeKind::Union(variants) => {
+            HirTypeKind::Union { variants, tail } => {
+                if tail.is_some() {
+                    return self.unsupported_type("open union types", ty.span);
+                }
                 let variants = variants
                     .iter()
                     .map(|v: &HirUnionVariant| UnionVariant {
@@ -81,15 +87,10 @@ impl<'hir> Lowerer<'hir> {
                 })
             }
             HirTypeKind::Apply { func, arg } => self.lower_type_apply(*func, *arg, ty.span),
-            HirTypeKind::UnsupportedSurface => {
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::UnsupportedFeature {
-                        feature: "v1 parser-only type form",
-                    },
-                    span: ty.span,
-                });
-                self.error_type
+            HirTypeKind::Effect { .. } => {
+                self.unsupported_type("effect rows in function types", ty.span)
             }
+            HirTypeKind::Select { .. } => self.unsupported_type("type-level select", ty.span),
             HirTypeKind::Atom(name) => self.alloc_type(Type {
                 kind: TypeKind::Atom(name.clone()),
                 span: ty.span,

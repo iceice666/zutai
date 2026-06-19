@@ -174,7 +174,22 @@ pub enum HirExprKind {
     },
     Import(HirImportSource),
     TypeForm(HirTypeId),
-    UnsupportedSurface,
+    Select {
+        receiver: HirExprId,
+        fields: Vec<HirSelectField>,
+    },
+    Perform {
+        op: Vec<String>,
+        arg: HirExprId,
+    },
+    Handle {
+        expr: HirExprId,
+        clauses: Vec<HirHandleClause>,
+    },
+    Resume {
+        value: HirExprId,
+    },
+    Sequence(Vec<HirExprId>),
     Apply {
         func: HirExprId,
         arg: HirExprId,
@@ -275,14 +290,36 @@ pub struct HirTypeExpr {
 pub enum HirTypeKind {
     BindingRef(BindingId),
     UnresolvedIdent(String),
-    Record(Vec<HirTypeRecordField>),
-    Union(Vec<HirUnionVariant>),
+    Record {
+        fields: Vec<HirTypeRecordField>,
+        tail: Option<HirRowTail>,
+    },
+    Union {
+        variants: Vec<HirUnionVariant>,
+        tail: Option<HirRowTail>,
+    },
     Tuple(Vec<HirTypeTupleItem>),
     Optional(HirTypeId),
-    Arrow { from: HirTypeId, to: HirTypeId },
-    Apply { func: HirTypeId, arg: HirTypeId },
-    Access { receiver: HirTypeId, field: String },
-    UnsupportedSurface,
+    Arrow {
+        from: HirTypeId,
+        to: HirTypeId,
+    },
+    Apply {
+        func: HirTypeId,
+        arg: HirTypeId,
+    },
+    Access {
+        receiver: HirTypeId,
+        field: String,
+    },
+    Effect {
+        base: HirTypeId,
+        row: HirEffectRow,
+    },
+    Select {
+        receiver: HirTypeId,
+        fields: Vec<HirSelectField>,
+    },
     Atom(String),
     True,
     False,
@@ -312,4 +349,65 @@ pub enum HirTypeTupleItem {
         span: Span,
     },
     Positional(HirTypeId),
+}
+
+/// A field name selected by a value- or type-level `select` projection.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirSelectField {
+    pub name: String,
+    pub span: Span,
+}
+
+/// The row tail of an open record or union type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirRowTail {
+    pub kind: HirRowTailKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirRowTailKind {
+    /// Anonymous open row tail `...`: accepts any extra fields/members but does
+    /// not name them.
+    Anonymous,
+    /// Named row variable `...Rest` resolved to an in-scope type parameter.
+    Var(BindingId),
+    /// Spread `...Shape` of a named record/union type into this row.
+    Spread(BindingId),
+    /// `...Name` whose `Name` did not resolve to a type parameter or a type.
+    Unresolved(String),
+}
+
+/// An effect row `! { op ...; }` annotating an effectful function type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirEffectRow {
+    pub ops: Vec<HirEffectOp>,
+    pub span: Span,
+}
+
+/// A single operation in an effect row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirEffectOp {
+    /// Operation name path: a plain operation (`fail`) or a dotted capability
+    /// operation (`fs.read`). Effect operations are not bindings in v0/v1 HIR.
+    pub path: Vec<String>,
+    pub payload: Option<HirTypeId>,
+    pub signature: Option<HirTypeId>,
+    pub span: Span,
+}
+
+/// A clause of a `handle ... with { ... }` expression.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirHandleClause {
+    pub op: HirHandleOp,
+    pub body: HirExprId,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirHandleOp {
+    /// The special `value = ...` clause handling the final value.
+    Value,
+    /// An operation clause handling a performed operation by name path.
+    Operation(Vec<String>),
 }

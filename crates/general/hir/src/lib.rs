@@ -16,9 +16,11 @@ mod tests;
 pub use diagnostic::{HirDiagnostic, HirDiagnosticKind};
 pub use ir::{
     BUILTIN_VALUE_NAMES, Binding, BindingId, BindingKind, HirClause, HirDecl, HirDeclId,
-    HirDeclKind, HirExpr, HirExprId, HirExprKind, HirFile, HirImportSource, HirLocalBinding,
-    HirPat, HirPatId, HirPatKind, HirRecordField, HirRecordPatField, HirTupleItem, HirTuplePatItem,
-    HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
+    HirDeclKind, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind, HirFile,
+    HirHandleClause, HirHandleOp, HirImportSource, HirLocalBinding, HirPat, HirPatId, HirPatKind,
+    HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField, HirTupleItem,
+    HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
+    HirUnionVariant,
 };
 pub use lower::{HirLowerOptions, LoweredHir, lower_file, lower_file_with_options};
 pub use pass::{
