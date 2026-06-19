@@ -156,6 +156,44 @@ fn record_equality() {
     assert_eq!(run("{ x = 1; } == { x = 2; }"), Value::Bool(false));
 }
 
+// ─── select projection ─────────────────────────────────────────────────────────
+
+#[test]
+fn select_projects_fields_in_requested_order() {
+    // `select` projects exactly the named fields, in the requested order,
+    // dropping the unselected `name`.
+    let v = run("s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    match v {
+        Value::Record(fields) => {
+            let names: Vec<&str> = fields.iter().map(|(n, _)| n.as_ref()).collect();
+            assert_eq!(names, ["port", "host"]);
+        }
+        other => panic!("expected record, got {other:?}"),
+    }
+}
+
+#[test]
+fn select_preserves_field_values() {
+    assert_eq!(
+        run("s := { host = \"h\"; port = 8080; }\n(select s { port; }).port"),
+        Value::Int(8080)
+    );
+}
+
+#[test]
+fn select_unknown_field_is_type_check_failure() {
+    // An unknown selected field is a type error, so the interpreter refuses to
+    // evaluate (evaluation is gated on complete typed IR).
+    let err = run_err("s := { host = \"h\"; }\nselect s { missing; }");
+    let EvalError::TypeCheckFailed(msgs) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        msgs.iter().any(|m| m.contains("missing")),
+        "expected an unknown-field diagnostic mentioning `missing`, got {msgs:?}"
+    );
+}
+
 // ─── lists ────────────────────────────────────────────────────────────────────
 
 #[test]

@@ -319,6 +319,68 @@ fn compile_arithmetic_emits_add() {
         .stdout(predicate::str::contains("add i64"));
 }
 
+// ─── `select` projection (check / run / compile) ───────────────────────────────
+
+const SELECT_SRC: &str =
+    "s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }\n";
+const SELECT_BAD_SRC: &str = "s := { host = \"h\"; }\nselect s { missing; }\n";
+
+#[test]
+fn check_select_passes() {
+    let path = write_tmp("cli_test_check_select.zt", SELECT_SRC);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
+#[test]
+fn run_select_projects_record() {
+    let path = write_tmp("cli_test_run_select.zt", SELECT_SRC);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("8080"))
+        .stdout(predicate::str::contains("name").not());
+}
+
+#[test]
+fn compile_select_emits_record_projection() {
+    let path = write_tmp("cli_test_compile_select.zt", SELECT_SRC);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        // Match the call sites (not the always-present runtime `declare`s): a
+        // `record_get` projection per selected field and a `record_new` to build
+        // the projected record — neither appears unless `select` actually lowered.
+        .stdout(predicate::str::contains("call i64 @zutai.record_get"))
+        .stdout(predicate::str::contains("call i64 @zutai.record_new"));
+}
+
+#[test]
+fn check_select_unknown_field_exits_nonzero() {
+    let path = write_tmp("cli_test_check_select_bad.zt", SELECT_BAD_SRC);
+    cli().arg("check").arg(&path).assert().failure();
+}
+
+#[test]
+fn run_select_unknown_field_exits_nonzero() {
+    let path = write_tmp("cli_test_run_select_bad.zt", SELECT_BAD_SRC);
+    cli().arg("run").arg(&path).assert().failure();
+}
+
+#[test]
+fn compile_select_unknown_field_exits_nonzero() {
+    let path = write_tmp("cli_test_compile_select_bad.zt", SELECT_BAD_SRC);
+    cli().arg("compile").arg(&path).assert().failure();
+}
+
 // ─── `dataflow` subcommand ─────────────────────────────────────────────────────
 
 #[test]

@@ -229,10 +229,10 @@ Verification gate: semantic facade tests prove v1 row examples produce valid TLC
 
 Goal: make `select` a typed, executable projection form for records and record type values.
 
-- [ ] Lower value-level `select` to record projection plus record construction.
-- [ ] Lower type-level `select` to closed record type construction after normalization.
-- [ ] Reject unknown selected fields with source-located diagnostics.
-- [ ] Compile value-level `select` through Dataflow Core, ANF, SSA, and LLVM when the input row is concretely known.
+- [x] Lower value-level `select` to record projection plus record construction.
+- [x] Lower type-level `select` to closed record type construction after normalization.
+- [x] Reject unknown selected fields with source-located diagnostics.
+- [x] Compile value-level `select` through Dataflow Core, ANF, SSA, and LLVM when the input row is concretely known.
 
 Verification gate: `check`, `run`, and `compile` cover successful selection, field ordering, and unknown-field failures.
 
@@ -339,7 +339,7 @@ Recommended initial policy:
 - [x] **v1 HIR lowering** — Phase 8 above.
 - [x] **row-polymorphic THIR** — Phase 9 above.
 - [x] **THIR→TLC row elaboration** — Phase 10 above.
-- [ ] **`select` semantics and compile support** — Phase 11 above.
+- [x] **`select` semantics and compile support** — Phase 11 above.
 - [ ] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
 - [ ] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
 - [ ] **reflection builtins** — `fields` / `schema`; Phase 17 above.
