@@ -138,6 +138,27 @@ Ord @Int :: { lt = \a b. a < b; gt = \a b. a > b; }
     );
 }
 
+#[test]
+fn derive_witness_synthesizes_method_field() {
+    let m = tlc_of(
+        r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 2; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+eq p1 p2
+"#,
+    );
+    let has_eq_field = m.expr_arena.iter().any(|(_, e)| {
+        matches!(e, TlcExpr::Record(fields) if fields.iter().any(|(name, _)| name == "eq"))
+    });
+    assert!(
+        has_eq_field,
+        "derive witness should synthesize an `eq` field"
+    );
+}
+
 /// Every expression in the module still has a type entry after Phase 5 elaboration.
 #[test]
 fn every_expr_has_type_after_phase5() {

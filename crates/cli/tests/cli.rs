@@ -319,6 +319,25 @@ fn compile_arithmetic_emits_add() {
         .stdout(predicate::str::contains("add i64"));
 }
 
+#[test]
+fn compile_derive_witness_program_passes() {
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 2; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+eq p1 p2
+"#;
+    let path = write_tmp("cli_test_compile_derive.zt", src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("define i64 @__entry"));
+}
+
 // ─── `select` projection (check / run / compile) ───────────────────────────────
 
 const SELECT_SRC: &str =

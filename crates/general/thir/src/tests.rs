@@ -1796,9 +1796,9 @@ fn witness_unknown_field_emits_diagnostic() {
     );
 }
 
-/// Derive witnesses skip checking entirely — no missing/mismatch diagnostics.
+/// Derive witnesses have no explicit fields but still run derive-specific validation.
 #[test]
-fn derive_witness_skips_field_checking() {
+fn derive_witness_keeps_no_explicit_fields() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
     let lowered = lower(src);
     assert!(
@@ -1814,7 +1814,71 @@ fn derive_witness_skips_field_checking() {
                     | ThirDiagnosticKind::WitnessFieldTypeMismatch { .. }
             )
         }),
-        "derive witness should emit no checking diagnostics; diagnostics: {:?}",
+        "derive witness should emit no ordinary field diagnostics; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn derive_witness_rejects_non_derivable_constraint() {
+    let lowered = lower("Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: derive\n1");
+    assert!(
+        lowered.file.is_none(),
+        "non-derivable constraint should reject derive witness"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::DeriveConstraintNotDerivable { constraint } if constraint == "Eq"
+        )),
+        "expected DeriveConstraintNotDerivable; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn derive_witness_requires_component_witness() {
+    let lowered = lower(
+        "Box :: type { value : Text; }\nPair :: type { box : Box; }\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Pair :: derive\n1",
+    );
+    assert!(
+        lowered.file.is_none(),
+        "component without witness should reject derive witness"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::DeriveComponentMissingWitness { constraint, .. } if constraint == "Eq"
+        )),
+        "expected DeriveComponentMissingWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn derive_witness_accepts_component_witness() {
+    let file = completed_file(
+        "Box :: type { value : Text; }\nPair :: type { box : Box; }\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Box :: derive\nEq @Pair :: derive\n1",
+    );
+    let _ = file;
+}
+
+#[test]
+fn derive_witness_rejects_non_equality_method() {
+    // `compare` has no structural derivation recipe; deriving it must be refused.
+    let lowered =
+        lower("Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1");
+    assert!(
+        lowered.file.is_none(),
+        "deriving a non-equality method should reject"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::DeriveUnsupportedMethod { constraint, method }
+                if constraint == "Ord" && method == "compare"
+        )),
+        "expected DeriveUnsupportedMethod for compare; diagnostics: {:?}",
         lowered.diagnostics
     );
 }

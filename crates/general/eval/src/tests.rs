@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::{EvalError, Value, eval_file, eval_with_base, thunk, value};
+use crate::{EvalError, Value, eval_file, eval_tlc_file, eval_with_base, thunk, value};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -830,6 +830,51 @@ fn t_inv_derive_witness_does_not_break_eval() {
     // Use builtin type `Int` so target resolves without error
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
     assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn tlc_derive_int_eq_dispatches() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\neq 1 1";
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn tlc_derive_record_eq_compares_fields() {
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 3; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+eq p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn tlc_derive_neq_is_true_negation() {
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 3; }
+Eq :: <A> @A { eq :: A -> A -> Bool; neq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+neq p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn tlc_derive_union_eq_compares_shape_and_payload() {
+    let src = r#"
+Status :: type [ ok : { code : Int; }; err : { msg : Text; }; ]
+ok :: Status = #ok { code = 200; }
+err :: Status = #err { msg = "no"; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Status :: derive
+eq ok err
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
 }
 
 // Increment 5: method-name resolution — eval invariant tests

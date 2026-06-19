@@ -196,6 +196,22 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         }
         MissingWitnessField { name } => format!("missing witness field `{name}`"),
         UnknownWitnessField { name } => format!("unknown witness field `{name}`"),
+        DeriveConstraintNotDerivable { constraint } => {
+            format!("constraint `{constraint}` does not support derive")
+        }
+        DeriveComponentMissingWitness {
+            constraint,
+            component,
+        } => {
+            format!(
+                "cannot derive `{constraint}` because component type `{component}` has no witness"
+            )
+        }
+        DeriveUnsupportedMethod { constraint, method } => {
+            format!(
+                "cannot derive `{constraint}`: method `{method}` has no structural derivation recipe"
+            )
+        }
         ConflictingWitness { constraint, target } => {
             format!("conflicting witnesses for constraint `{constraint}` at type `{target}`")
         }

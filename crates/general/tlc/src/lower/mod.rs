@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use la_arena::Arena;
 use zutai_hir::BindingId;
 use zutai_syntax::Span;
-use zutai_thir::{ThirFile, TypeId, TypeKind};
+use zutai_thir::{RowTail, ThirFile, TypeId, TypeKind, TypeTupleItem};
 
 use crate::ir::{
     TlcDecl, TlcDeclId, TlcExpr, TlcExprId, TlcModule, TlcType, TlcTypeId, TlcTypeVar,
@@ -31,6 +31,7 @@ pub(crate) enum WitnessTargetKey {
     Atom,
     /// Named type alias or generic alias application, keyed by BindingId.0.
     Named(u32),
+    Structural(String),
 }
 
 struct Lowerer<'thir> {
@@ -157,11 +158,15 @@ impl<'thir> Lowerer<'thir> {
                     constraint, target, ..
                 } => {
                     // Register witness decl for lookup at concrete call sites.
-                    if let Some(cst_binding) = constraint
-                        && let Some(key) = self.thir_type_to_witness_key(*target)
-                    {
-                        self.witness_bindings
-                            .insert((cst_binding.0, key), decl.binding);
+                    if let Some(cst_binding) = constraint {
+                        if let Some(key) = self.thir_type_to_witness_key(*target) {
+                            self.witness_bindings
+                                .insert((cst_binding.0, key), decl.binding);
+                        }
+                        if let Some(key) = self.thir_type_to_resolved_witness_key(*target) {
+                            self.witness_bindings
+                                .insert((cst_binding.0, key), decl.binding);
+                        }
                     }
                     // Witness values are not in poly_schemes; register their THIR type
                     // as a Record of field types so `get_dict_expr` can find the TLC type.
@@ -211,8 +216,140 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Atom(_) => Some(WitnessTargetKey::Atom),
             TypeKind::Alias(b) => Some(WitnessTargetKey::Named(b.0)),
             TypeKind::AliasApply { binding, .. } => Some(WitnessTargetKey::Named(binding.0)),
+            TypeKind::Record(_, _)
+            | TypeKind::Tuple(_)
+            | TypeKind::Union(_, _)
+            | TypeKind::List(_)
+            | TypeKind::Optional(_)
+            | TypeKind::Function { .. } => self.thir_type_to_resolved_witness_key(ty),
             _ => None,
         }
+    }
+
+    fn thir_type_to_resolved_witness_key(&self, ty: TypeId) -> Option<WitnessTargetKey> {
+        let key = self.structural_witness_key(ty, &mut HashSet::new())?;
+        match key.as_str() {
+            "Int" => Some(WitnessTargetKey::Int),
+            "Float" => Some(WitnessTargetKey::Float),
+            "Bool" => Some(WitnessTargetKey::Bool),
+            "Text" => Some(WitnessTargetKey::Str),
+            "Atom" => Some(WitnessTargetKey::Atom),
+            _ => Some(WitnessTargetKey::Structural(key)),
+        }
+    }
+
+    fn structural_witness_key(&self, ty: TypeId, seen: &mut HashSet<BindingId>) -> Option<String> {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Int => Some("Int".to_string()),
+            TypeKind::Float => Some("Float".to_string()),
+            TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
+            TypeKind::Text => Some("Text".to_string()),
+            TypeKind::Atom(name) => Some(format!("#{name}")),
+            TypeKind::List(inner) => {
+                Some(format!("[{}]", self.structural_witness_key(inner, seen)?))
+            }
+            TypeKind::Optional(inner) => {
+                Some(format!("{}?", self.structural_witness_key(inner, seen)?))
+            }
+            TypeKind::Record(fields, tail) => {
+                let mut parts: Vec<String> = fields
+                    .into_iter()
+                    .map(|field| {
+                        let key = self.structural_witness_key(field.ty, seen)?;
+                        let marker = if field.optional { "?:" } else { ":" };
+                        Some(format!("{}{}{}", field.name, marker, key))
+                    })
+                    .collect::<Option<_>>()?;
+                parts.sort();
+                Some(format!("{{{}{}}}", parts.join(","), row_tail_key(tail)))
+            }
+            TypeKind::Union(variants, tail) => {
+                let parts: Vec<String> = variants
+                    .into_iter()
+                    .map(|variant| match variant.payload {
+                        Some(payload) => Some(format!(
+                            "{}({})",
+                            variant.name,
+                            self.structural_witness_key(payload, seen)?
+                        )),
+                        None => Some(variant.name),
+                    })
+                    .collect::<Option<_>>()?;
+                Some(format!("<{}{}>", parts.join("|"), row_tail_key(tail)))
+            }
+            TypeKind::Tuple(items) => {
+                let parts: Vec<String> = items
+                    .into_iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named { name, ty, .. } => Some(format!(
+                            "{}:{}",
+                            name,
+                            self.structural_witness_key(ty, seen)?
+                        )),
+                        TypeTupleItem::Positional(ty) => self.structural_witness_key(ty, seen),
+                    })
+                    .collect::<Option<_>>()?;
+                Some(format!("({})", parts.join(",")))
+            }
+            TypeKind::Function { from, to } => Some(format!(
+                "({}->{})",
+                self.structural_witness_key(from, seen)?,
+                self.structural_witness_key(to, seen)?
+            )),
+            TypeKind::Alias(binding) => {
+                if !seen.insert(binding) {
+                    return None;
+                }
+                let body = self.type_alias_body(binding)?;
+                self.structural_witness_key(body, seen)
+            }
+            TypeKind::AliasApply { binding, args } => {
+                if !seen.insert(binding) {
+                    return None;
+                }
+                let (params, body) = self.type_alias_params_body(binding)?;
+                self.structural_witness_key_subst(
+                    body,
+                    &params.into_iter().zip(args).collect(),
+                    seen,
+                )
+            }
+            TypeKind::TypeVar(binding) => Some(format!("@{}", binding.0)),
+            TypeKind::InferVar(v) => Some(format!("?{v}")),
+            TypeKind::Type | TypeKind::Error => None,
+        }
+    }
+
+    fn structural_witness_key_subst(
+        &self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+        seen: &mut HashSet<BindingId>,
+    ) -> Option<String> {
+        match self.thir.type_arena[ty.0 as usize].kind {
+            TypeKind::TypeVar(binding) => subst
+                .get(&binding)
+                .copied()
+                .map(|replacement| self.structural_witness_key(replacement, seen))
+                .unwrap_or_else(|| Some(format!("@{}", binding.0))),
+            _ => self.structural_witness_key(ty, seen),
+        }
+    }
+
+    fn type_alias_body(&self, binding: BindingId) -> Option<TypeId> {
+        self.type_alias_params_body(binding).map(|(_, body)| body)
+    }
+
+    fn type_alias_params_body(&self, binding: BindingId) -> Option<(Vec<BindingId>, TypeId)> {
+        self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding == binding
+                && let zutai_thir::ThirDeclKind::TypeAlias { params, ty } = &decl.kind
+            {
+                return Some((params.clone(), *ty));
+            }
+            None
+        })
     }
 
     /// Build a TLC expression for passing the witness dict at a call site.
@@ -265,5 +402,14 @@ impl<'thir> Lowerer<'thir> {
                 }
             }
         }
+    }
+}
+
+fn row_tail_key(tail: RowTail) -> String {
+    match tail {
+        RowTail::Closed => String::new(),
+        RowTail::Open => "...".to_string(),
+        RowTail::Param(b) => format!("...#{}", b.0),
+        RowTail::Infer(v) => format!("...?{v}"),
     }
 }

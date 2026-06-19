@@ -513,22 +513,37 @@ impl<'hir> Lowerer<'hir> {
     fn check_witnesses(&mut self) {
         // Phase 1: immutable scan — collect owned data to avoid borrow conflicts.
 
-        // constraint binding → (params, methods: (name, optional, has_default, sig))
-        #[allow(clippy::type_complexity)]
-        let mut constraint_map: HashMap<
-            BindingId,
-            (Vec<BindingId>, Vec<(String, bool, bool, TypeId)>),
-        > = HashMap::new();
+        #[derive(Clone)]
+        struct ConstraintInfo {
+            name: String,
+            params: Vec<BindingId>,
+            methods: Vec<(String, bool, bool, TypeId)>,
+            derivable: bool,
+        }
+
+        let mut constraint_map: HashMap<BindingId, ConstraintInfo> = HashMap::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Constraint {
-                params, methods, ..
+                params,
+                methods,
+                derivable,
+                ..
             } = &decl.kind
             {
                 let owned_methods: Vec<(String, bool, bool, TypeId)> = methods
                     .iter()
                     .map(|m| (m.name.clone(), m.optional, m.default.is_some(), m.sig))
                     .collect();
-                constraint_map.insert(decl.binding, (params.clone(), owned_methods));
+                let name = self.hir.bindings[decl.binding.0 as usize].name.clone();
+                constraint_map.insert(
+                    decl.binding,
+                    ConstraintInfo {
+                        name,
+                        params: params.clone(),
+                        methods: owned_methods,
+                        derivable: *derivable,
+                    },
+                );
             }
         }
 
@@ -539,7 +554,16 @@ impl<'hir> Lowerer<'hir> {
             methods: Vec<(String, bool, bool, TypeId)>,
             fields: Vec<(String, TypeId, Span)>,
         }
+        struct DeriveTask {
+            span: Span,
+            target: TypeId,
+            constraint: BindingId,
+            constraint_name: String,
+            methods: Vec<(String, bool, bool, TypeId)>,
+            derivable: bool,
+        }
         let mut tasks: Vec<WitnessTask> = Vec::new();
+        let mut derive_tasks: Vec<DeriveTask> = Vec::new();
         // Multi-param constraint names and their witness spans, collected for
         // diagnostic emission after the immutable scan loop ends.
         let mut multi_param_errors: Vec<(String, Span)> = Vec::new();
@@ -552,20 +576,27 @@ impl<'hir> Lowerer<'hir> {
                 ..
             } = &decl.kind
             {
-                if *derive {
-                    continue;
-                }
                 let Some(cst_binding) = constraint else {
                     continue;
                 };
-                let Some((cst_params, cst_methods)) = constraint_map.get(cst_binding) else {
+                let Some(cst_info) = constraint_map.get(cst_binding) else {
                     continue;
                 };
-                if cst_params.len() != 1 {
+                if cst_info.params.len() != 1 {
                     // Multi-param constraints are not yet supported: collect for
                     // diagnostic emission below (outside the immutable-borrow loop).
-                    let cst_name = self.hir.bindings[cst_binding.0 as usize].name.clone();
-                    multi_param_errors.push((cst_name, decl.span));
+                    multi_param_errors.push((cst_info.name.clone(), decl.span));
+                    continue;
+                }
+                if *derive {
+                    derive_tasks.push(DeriveTask {
+                        span: decl.span,
+                        target: *target,
+                        constraint: *cst_binding,
+                        constraint_name: cst_info.name.clone(),
+                        methods: cst_info.methods.clone(),
+                        derivable: cst_info.derivable,
+                    });
                     continue;
                 }
                 let fields_owned: Vec<(String, TypeId, Span)> = fields
@@ -575,8 +606,8 @@ impl<'hir> Lowerer<'hir> {
                 tasks.push(WitnessTask {
                     span: decl.span,
                     target: *target,
-                    constraint_param: cst_params[0],
-                    methods: cst_methods.clone(),
+                    constraint_param: cst_info.params[0],
+                    methods: cst_info.methods.clone(),
                     fields: fields_owned,
                 });
             }
@@ -638,6 +669,159 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
         }
+
+        let explicit_witnesses = self.collect_explicit_witness_keys();
+        for task in derive_tasks {
+            if !task.derivable {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::DeriveConstraintNotDerivable {
+                        constraint: task.constraint_name.clone(),
+                    },
+                    span: task.span,
+                });
+                continue;
+            }
+            let has_eq_method = task
+                .methods
+                .iter()
+                .any(|(name, _, _, _)| derive_method_is_eq(name));
+            let mut unsupported = false;
+            for (name, optional, has_default, _) in &task.methods {
+                if *optional || *has_default {
+                    continue;
+                }
+                // A method is structurally derivable only if it is equality-family
+                // AND a positive `eq`/`==` recipe exists to build on (a lone
+                // `neq`/`!=` cannot be derived: there is nothing to negate).
+                if !derive_method_is_equality(name) || !has_eq_method {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::DeriveUnsupportedMethod {
+                            constraint: task.constraint_name.clone(),
+                            method: name.clone(),
+                        },
+                        span: task.span,
+                    });
+                    unsupported = true;
+                }
+            }
+            if unsupported {
+                continue;
+            }
+            for component in self.derive_components(task.target) {
+                if !self.derive_component_has_witness(
+                    task.constraint,
+                    component,
+                    &task.methods,
+                    &explicit_witnesses,
+                ) {
+                    let component_name = self.type_name(component);
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::DeriveComponentMissingWitness {
+                            constraint: task.constraint_name.clone(),
+                            component: component_name,
+                        },
+                        span: task.span,
+                    });
+                }
+            }
+        }
+    }
+
+    fn collect_explicit_witness_keys(&mut self) -> HashSet<(BindingId, String)> {
+        let witnesses: Vec<(BindingId, TypeId)> = self
+            .decl_arena
+            .iter()
+            .filter_map(|(_, decl)| {
+                if let ThirDeclKind::Witness {
+                    constraint: Some(constraint),
+                    target,
+                    ..
+                } = &decl.kind
+                {
+                    Some((*constraint, *target))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        witnesses
+            .into_iter()
+            .map(|(constraint, target)| (constraint, self.witness_target_key(target)))
+            .collect()
+    }
+
+    fn derive_components(&mut self, target: TypeId) -> Vec<TypeId> {
+        let span = self.type_arena[target.0 as usize].span;
+        let target = self.resolve_alias(target, &mut HashSet::new(), span);
+        match self.type_arena[target.0 as usize].kind.clone() {
+            TypeKind::Record(fields, _) => fields.into_iter().map(|field| field.ty).collect(),
+            TypeKind::Tuple(items) => items
+                .into_iter()
+                .map(|item| match item {
+                    TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => ty,
+                })
+                .collect(),
+            TypeKind::Union(variants, _) => {
+                let mut components = Vec::new();
+                for variant in variants {
+                    if let Some(payload) = variant.payload {
+                        let payload_span = self.type_arena[payload.0 as usize].span;
+                        let payload =
+                            self.resolve_alias(payload, &mut HashSet::new(), payload_span);
+                        match self.type_arena[payload.0 as usize].kind.clone() {
+                            TypeKind::Record(fields, _) => {
+                                components.extend(fields.into_iter().map(|field| field.ty));
+                            }
+                            _ => components.push(payload),
+                        }
+                    }
+                }
+                components
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn derive_component_has_witness(
+        &mut self,
+        constraint: BindingId,
+        component: TypeId,
+        methods: &[(String, bool, bool, TypeId)],
+        witness_keys: &HashSet<(BindingId, String)>,
+    ) -> bool {
+        if self.derive_can_use_builtin_leaf(component, methods) {
+            return true;
+        }
+
+        let key = self.witness_target_key(component);
+        witness_keys.contains(&(constraint, key))
+    }
+
+    fn derive_can_use_builtin_leaf(
+        &mut self,
+        ty: TypeId,
+        methods: &[(String, bool, bool, TypeId)],
+    ) -> bool {
+        if !methods
+            .iter()
+            .any(|(name, _, _, _)| derive_method_is_equality(name))
+        {
+            return false;
+        }
+
+        let span = self.type_arena[ty.0 as usize].span;
+        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        matches!(
+            self.type_arena[ty.0 as usize].kind,
+            TypeKind::Bool
+                | TypeKind::True
+                | TypeKind::False
+                | TypeKind::Text
+                | TypeKind::Int
+                | TypeKind::Float
+                | TypeKind::Atom(_)
+        )
     }
 
     /// Enforce coherence: at most one witness per `(Constraint, Type)` pair.
@@ -713,4 +897,12 @@ impl<'hir> Lowerer<'hir> {
             }
         }
     }
+}
+
+fn derive_method_is_equality(method_name: &str) -> bool {
+    matches!(method_name, "eq" | "==" | "neq" | "!=")
+}
+
+fn derive_method_is_eq(method_name: &str) -> bool {
+    matches!(method_name, "eq" | "==")
 }

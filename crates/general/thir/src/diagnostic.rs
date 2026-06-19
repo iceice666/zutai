@@ -99,6 +99,17 @@ pub enum ThirDiagnosticKind {
     UnknownWitnessField {
         name: String,
     },
+    DeriveConstraintNotDerivable {
+        constraint: String,
+    },
+    DeriveComponentMissingWitness {
+        constraint: String,
+        component: String,
+    },
+    DeriveUnsupportedMethod {
+        constraint: String,
+        method: String,
+    },
     /// Two witnesses claim the same `(Constraint, Type)` pair.
     ConflictingWitness {
         constraint: String,

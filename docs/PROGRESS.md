@@ -84,7 +84,7 @@ The `constraint` / `witness` declarations from `docs/v1_spec/03-constraints.md` 
 - [x] **Dictionary-passing in TLC**: polymorphic dispatch through indirect calls. TLC elaboration threads witness dictionaries as implicit `Lam(dict, …)` parameters and injects them at call sites; constraint-method calls lower to `GetField` on the dict. Completed in TLC Phase 5; `zutai-eval` walks TLC (`eval_tlc.rs`), so `UnresolvedWitness` no longer arises for bounded indirect calls.
 - [ ] **Conditional / higher-kinded witnesses**: `Eq @(List A)` where `A: Eq`; blocked by parametric `AliasApply` targets in `type_key`.
 - [x] **Cross-module witnesses + orphan rule**: `import.rs` / `export.rs` have no constraint/witness handling.
-- [ ] **`derive` synthesis**: `Witness { derive: true }` currently lowers to an empty-fields no-op in the interpreter.
+- [x] **`derive` synthesis**: structural witness synthesis for the equality family (`eq`/`==`, `neq`/`!=`). THIR `check_witnesses` rejects derive on non-derivable constraints, requires every structural component to have a same-constraint witness (or be a builtin leaf), and refuses non-equality required methods (`DeriveUnsupportedMethod`). TLC `lower_decl` synthesizes the dict: records fold field equality with `&&`, tuples/unions match on shape, `neq`/`!=` is the negation of structural equality, component witnesses dispatch via `GetField`. Runs on the TLC eval and compile paths (Phase 12).
 - [ ] **Method-level type params** (`<A,B>` on individual methods): dropped at THIR.
 
 Verification gate: `cargo test --workspace` includes spec-shaped parser, HIR, THIR, and semantic facade tests for every v0 chapter. ✅
@@ -240,11 +240,11 @@ Verification gate: `check`, `run`, and `compile` cover successful selection, fie
 
 Goal: replace `derive` no-op witnesses with real structural witness synthesis.
 
-- [ ] Reject `Witness { derive: true }` when the constraint is not marked derivable.
-- [ ] Synthesize record witnesses field-by-field, resolving component witnesses.
-- [ ] Synthesize union witnesses by member shape and tuple-field comparison.
-- [ ] Emit synthesized witness bodies before TLC dictionary-passing.
-- [ ] Fail with precise diagnostics when any component type lacks the required witness.
+- [x] Reject `Witness { derive: true }` when the constraint is not marked derivable.
+- [x] Synthesize record witnesses field-by-field, resolving component witnesses.
+- [x] Synthesize union witnesses by member shape and tuple-field comparison.
+- [x] Emit synthesized witness bodies before TLC dictionary-passing.
+- [x] Fail with precise diagnostics when any component type lacks the required witness.
 
 Verification gate: derived `Eq`/`Ord`-shaped witnesses behave identically to hand-written witnesses in `check`, TLC eval, and compile paths where supported.
 
