@@ -30,10 +30,10 @@ pub fn parse_pattern(input: &mut &str) -> Result<Pattern> {
 fn parse_wildcard(input: &mut &str) -> Result<Pattern> {
     let (_, span) = spanned('_').parse_next(input)?;
     // Verify not followed by ident continuation
-    if let Some(c) = input.chars().next() {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            return fail.parse_next(input);
-        }
+    if let Some(c) = input.chars().next()
+        && (c.is_ascii_alphanumeric() || c == '_')
+    {
+        return fail.parse_next(input);
     }
     Ok(Pattern::Wildcard(span))
 }
@@ -101,11 +101,9 @@ fn parse_tuple_pattern_inner(input: &mut &str) -> Result<Vec<TuplePatternItem>> 
     let _guard = enter_delimiter();
     ws(input)?;
 
-    if peek(opt(one_of(')'))).parse_next(input)?.is_some() {
-        if input.starts_with(')') {
-            ')'.parse_next(input)?;
-            return Ok(vec![]);
-        }
+    if peek(opt(one_of(')'))).parse_next(input)?.is_some() && input.starts_with(')') {
+        ')'.parse_next(input)?;
+        return Ok(vec![]);
     }
 
     let first = parse_tuple_pattern_item(input)?;

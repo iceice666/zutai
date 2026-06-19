@@ -1244,10 +1244,10 @@ impl<'hir> Lowerer<'hir> {
             span,
         });
 
-        if let Some(expected_ty) = expected {
-            if !self.type_matches(expected_ty, ty) {
-                self.type_mismatch(expected_ty, ty, span);
-            }
+        if let Some(expected_ty) = expected
+            && !self.type_matches(expected_ty, ty)
+        {
+            self.type_mismatch(expected_ty, ty, span);
         }
 
         self.alloc_expr(ThirExpr {

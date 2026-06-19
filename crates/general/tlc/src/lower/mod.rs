@@ -152,11 +152,11 @@ impl<'thir> Lowerer<'thir> {
                     constraint, target, ..
                 } => {
                     // Register witness decl for lookup at concrete call sites.
-                    if let Some(cst_binding) = constraint {
-                        if let Some(key) = self.thir_type_to_witness_key(*target) {
-                            self.witness_bindings
-                                .insert((cst_binding.0, key), decl.binding);
-                        }
+                    if let Some(cst_binding) = constraint
+                        && let Some(key) = self.thir_type_to_witness_key(*target)
+                    {
+                        self.witness_bindings
+                            .insert((cst_binding.0, key), decl.binding);
                     }
                     // Witness values are not in poly_schemes; register their THIR type
                     // as a Record of field types so `get_dict_expr` can find the TLC type.

@@ -357,7 +357,7 @@ impl<'hir> Lowerer<'hir> {
         &mut self,
         items: &[ThirTuplePatItem],
         col_ty: TypeId,
-        span: Span,
+        _span: Span,
     ) -> DeconPat {
         // An ill-typed pattern whose field count disagrees with its expected
         // shape already produced a diagnostic; treat it as a wildcard so it can

@@ -53,10 +53,8 @@ pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>
                     }
                 }
             }
-            DfNodeKind::GlobalRef(name) => {
-                if !graph.globals.contains_key(name.as_str()) {
-                    stray_refs.push(name.clone());
-                }
+            DfNodeKind::GlobalRef(name) if !graph.globals.contains_key(name.as_str()) => {
+                stray_refs.push(name.clone());
             }
             _ => {}
         }

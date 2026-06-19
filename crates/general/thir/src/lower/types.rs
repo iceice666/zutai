@@ -140,13 +140,12 @@ impl<'hir> Lowerer<'hir> {
                 // If this binding is a known import and the field carries a
                 // registered type denotation, return the concrete type so that
                 // annotation-position use (`x : serverLib.Server`) type-checks.
-                if let Some(import_source) = self.binding_import_key.get(&binding).cloned() {
-                    if let Some(&denotation) = self
+                if let Some(import_source) = self.binding_import_key.get(&binding).cloned()
+                    && let Some(&denotation) = self
                         .import_type_denotations
                         .get(&(import_source, field.clone()))
-                    {
-                        return denotation;
-                    }
+                {
+                    return denotation;
                 }
                 record_field.ty
             }
@@ -534,8 +533,7 @@ impl<'hir> Lowerer<'hir> {
                 let Some(body) = self.aliases.get(&binding).copied() else {
                     return ty;
                 };
-                let subst: HashMap<BindingId, TypeId> =
-                    params.into_iter().zip(args.into_iter()).collect();
+                let subst: HashMap<BindingId, TypeId> = params.into_iter().zip(args).collect();
                 let expanded = self.instantiate_type_vars(body, &subst);
                 self.resolve_alias(expanded, seen, span)
             }

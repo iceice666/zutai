@@ -1589,7 +1589,7 @@ get_port #none
 // ── v1 Constraint / Witness THIR representation (Increment 2) ────────────────
 
 /// Helper: find the first decl in `file.decls` whose kind matches the predicate.
-fn find_decl_kind<'a, F>(file: &'a ThirFile, pred: F) -> Option<&'a ThirDeclKind>
+fn find_decl_kind<F>(file: &ThirFile, pred: F) -> Option<&ThirDeclKind>
 where
     F: Fn(&ThirDeclKind) -> bool,
 {

@@ -545,12 +545,12 @@ impl<'hir> Lowerer<'hir> {
         let mut triples: Vec<(BindingId, TypeId, Span)> = Vec::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Witness {
-                constraint, target, ..
+                constraint: Some(cst),
+                target,
+                ..
             } = &decl.kind
             {
-                if let Some(cst) = constraint {
-                    triples.push((*cst, *target, decl.span));
-                }
+                triples.push((*cst, *target, decl.span));
             }
         }
 
@@ -559,7 +559,9 @@ impl<'hir> Lowerer<'hir> {
         for (cst, target, span) in triples {
             let target_key = self.witness_target_key(target);
             let key = (cst, target_key);
-            if seen.contains_key(&key) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = seen.entry(key) {
+                entry.insert(());
+            } else {
                 let constraint_name = self.hir.bindings[cst.0 as usize].name.clone();
                 let target_name = self.type_name(target);
                 self.diagnostics.push(ThirDiagnostic {
@@ -569,8 +571,6 @@ impl<'hir> Lowerer<'hir> {
                     },
                     span,
                 });
-            } else {
-                seen.insert(key, ());
             }
         }
     }

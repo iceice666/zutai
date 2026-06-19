@@ -46,10 +46,10 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
             break;
         };
 
-        if let Some(last) = last_dir {
-            if last != dir {
-                return fail.parse_next(input);
-            }
+        if let Some(last) = last_dir
+            && last != dir
+        {
+            return fail.parse_next(input);
         }
 
         if dir == PipelineDir::Forward {

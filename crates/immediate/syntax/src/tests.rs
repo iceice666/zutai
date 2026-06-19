@@ -170,32 +170,32 @@ fn test_parse_complex_fixture_matches_final_ast() {
 
     let app = as_block(field(&parsed, "app"));
     assert_eq!(app.len(), 13);
-    assert_eq!(as_string(field(&app, "name")), "Zutai Edge Service");
-    assert_eq!(as_string(field(&app, "slug")), "zutai-edge");
-    assert_eq!(as_integer(field(&app, "version")), 4);
-    assert_float_eq(as_float(field(&app, "patch")), 0.11);
+    assert_eq!(as_string(field(app, "name")), "Zutai Edge Service");
+    assert_eq!(as_string(field(app, "slug")), "zutai-edge");
+    assert_eq!(as_integer(field(app, "version")), 4);
+    assert_float_eq(as_float(field(app, "patch")), 0.11);
 
-    let build = as_block(field(&app, "build"));
-    assert_eq!(as_string(field(&build, "revision")), "2026.05.22");
+    let build = as_block(field(app, "build"));
+    assert_eq!(as_string(field(build, "revision")), "2026.05.22");
 
-    let compiler = as_block(field(&build, "compiler"));
-    assert_eq!(as_string(field(&compiler, "name")), "zti-compiler");
+    let compiler = as_block(field(build, "compiler"));
+    assert_eq!(as_string(field(compiler, "name")), "zti-compiler");
     assert_eq!(
-        as_string(field(&compiler, "target")),
+        as_string(field(compiler, "target")),
         "x86_64-unknown-linux-gnu"
     );
-    assert!(as_bool(field(&compiler, "incremental")));
-    assert!(!as_bool(field(&compiler, "optimize")));
-    assert_eq!(as_integer(field(&compiler, "optimization-level")), 3);
+    assert!(as_bool(field(compiler, "incremental")));
+    assert!(!as_bool(field(compiler, "optimize")));
+    assert_eq!(as_integer(field(compiler, "optimization-level")), 3);
 
-    let features = as_array(field(&compiler, "features"));
+    let features = as_array(field(compiler, "features"));
     assert_eq!(features.len(), 4);
     assert_eq!(as_atom(&features[0]), "fast-path");
     assert_eq!(as_atom(&features[1]), "arena-alloc");
     assert_eq!(as_atom(&features[2]), "inline-caches");
     assert_eq!(as_atom(&features[3]), "simd");
 
-    let flags = as_array(field(&compiler, "flags"));
+    let flags = as_array(field(compiler, "flags"));
     assert_eq!(flags.len(), 5);
     assert_eq!(as_string(&flags[0]), "--deny=warnings");
     assert_eq!(as_string(&flags[1]), "--cap-lto=thin");
@@ -203,95 +203,95 @@ fn test_parse_complex_fixture_matches_final_ast() {
     assert_eq!(as_string(&flags[3]), "json:\"log\"");
     assert_eq!(as_atom(&flags[4]), "none");
 
-    let artifact = as_block(field(&build, "artifact"));
-    let outputs = as_array(field(&artifact, "outputs"));
+    let artifact = as_block(field(build, "artifact"));
+    let outputs = as_array(field(artifact, "outputs"));
     assert_eq!(outputs.len(), 2);
 
     let wasm_output = as_block(&outputs[1]);
     assert_eq!(
-        as_string(field(&wasm_output, "path")),
+        as_string(field(wasm_output, "path")),
         "dist/zutai-edge.wasm"
     );
-    assert_eq!(as_integer(field(&wasm_output, "size-bytes")), 81_920);
-    assert_eq!(as_bool(field(&wasm_output, "compressed")), false);
+    assert_eq!(as_integer(field(wasm_output, "size-bytes")), 81_920);
+    assert!(!as_bool(field(wasm_output, "compressed")));
 
-    let runtime = as_block(field(&app, "runtime"));
-    let service = as_block(field(&runtime, "service"));
-    assert_eq!(as_atom(field(&service, "name")), "api-gateway");
-    assert_eq!(as_atom(field(&service, "protocol")), "http");
-    let endpoints = as_array(field(&service, "endpoints"));
+    let runtime = as_block(field(app, "runtime"));
+    let service = as_block(field(runtime, "service"));
+    assert_eq!(as_atom(field(service, "name")), "api-gateway");
+    assert_eq!(as_atom(field(service, "protocol")), "http");
+    let endpoints = as_array(field(service, "endpoints"));
     assert_eq!(endpoints.len(), 2);
     let status_endpoint = as_block(&endpoints[0]);
-    assert_eq!(as_string(field(&status_endpoint, "name")), "status");
-    assert_eq!(as_atom(field(&status_endpoint, "method")), "get");
+    assert_eq!(as_string(field(status_endpoint, "name")), "status");
+    assert_eq!(as_atom(field(status_endpoint, "method")), "get");
 
     let submit_endpoint = as_block(&endpoints[1]);
-    assert!(as_bool(field(&submit_endpoint, "auth")));
-    let rate_limits = as_array(field(&submit_endpoint, "rate-limits"));
+    assert!(as_bool(field(submit_endpoint, "auth")));
+    let rate_limits = as_array(field(submit_endpoint, "rate-limits"));
     assert_eq!(as_integer(&rate_limits[0]), 120);
     assert_float_eq(as_float(&rate_limits[1]), 10.0);
 
-    let response = as_block(field(&submit_endpoint, "response"));
-    assert_eq!(as_atom(field(&response, "schema")), "submission-result");
+    let response = as_block(field(submit_endpoint, "response"));
+    assert_eq!(as_atom(field(response, "schema")), "submission-result");
 
-    let storage = as_block(field(&runtime, "storage"));
-    let primary = as_block(field(&storage, "primary"));
-    assert_eq!(as_atom(field(&primary, "backend")), "postgres");
-    let shards = as_array(field(&primary, "shards"));
+    let storage = as_block(field(runtime, "storage"));
+    let primary = as_block(field(storage, "primary"));
+    assert_eq!(as_atom(field(primary, "backend")), "postgres");
+    let shards = as_array(field(primary, "shards"));
     assert_eq!(shards.len(), 3);
     assert_eq!(as_integer(field(as_block(&shards[2]), "id")), 2);
 
-    let cache = as_block(field(&storage, "cache"));
-    let nodes = as_array(field(&cache, "nodes"));
+    let cache = as_block(field(storage, "cache"));
+    let nodes = as_array(field(cache, "nodes"));
     assert_eq!(as_string(field(as_block(&nodes[0]), "host")), "cache-a");
     assert_float_eq(as_float(field(as_block(&nodes[0]), "weight")), 1.0);
 
-    let observability = as_block(field(&runtime, "observability"));
-    let metrics = as_block(field(&observability, "metrics"));
-    assert_eq!(as_string(field(&metrics, "endpoint")), "/metrics");
-    let collect = as_block(field(&metrics, "collect"));
-    let gauges = as_array(field(&collect, "gauges"));
+    let observability = as_block(field(runtime, "observability"));
+    let metrics = as_block(field(observability, "metrics"));
+    assert_eq!(as_string(field(metrics, "endpoint")), "/metrics");
+    let collect = as_block(field(metrics, "collect"));
+    let gauges = as_array(field(collect, "gauges"));
     assert_eq!(as_atom(&gauges[1]), "queue-depth");
 
-    let scheduler = as_block(field(&app, "scheduler"));
-    let workers = as_array(field(&scheduler, "workers"));
+    let scheduler = as_block(field(app, "scheduler"));
+    let workers = as_array(field(scheduler, "workers"));
     assert_eq!(workers.len(), 2);
     let ingestion = as_block(&workers[0]);
-    assert_eq!(as_atom(field(&ingestion, "name")), "ingestion");
-    let ingestion_queues = as_array(field(&ingestion, "queues"));
+    assert_eq!(as_atom(field(ingestion, "name")), "ingestion");
+    let ingestion_queues = as_array(field(ingestion, "queues"));
     assert_eq!(
         as_string(field(as_block(&ingestion_queues[0]), "name")),
         "ingest.incoming"
     );
 
-    let security = as_block(field(&app, "security"));
-    let auth = as_block(field(&security, "auth"));
-    let providers = as_array(field(&auth, "providers"));
+    let security = as_block(field(app, "security"));
+    let auth = as_block(field(security, "auth"));
+    let providers = as_array(field(auth, "providers"));
     assert_eq!(providers.len(), 2);
     let jwt_provider = as_block(&providers[0]);
-    assert_eq!(as_atom(field(&jwt_provider, "type")), "jwt");
-    let audiences = as_array(field(&jwt_provider, "audiences"));
+    assert_eq!(as_atom(field(jwt_provider, "type")), "jwt");
+    let audiences = as_array(field(jwt_provider, "audiences"));
     assert_eq!(as_atom(&audiences[1]), "edge");
 
-    let metadata = as_block(field(&app, "metadata"));
-    assert_eq!(as_string(field(&metadata, "notes")), "Line1\\nLine2\nLine3",);
+    let metadata = as_block(field(app, "metadata"));
+    assert_eq!(as_string(field(metadata, "notes")), "Line1\\nLine2\nLine3",);
     assert_eq!(
-        as_string(field(&metadata, "summary")),
+        as_string(field(metadata, "summary")),
         "Unicode and escapes: Hello 🚀",
     );
 
-    let experiments = as_array(field(&app, "experiments"));
+    let experiments = as_array(field(app, "experiments"));
     let experiment = as_block(&experiments[1]);
-    assert_eq!(as_string(field(&experiment, "id")), "EX-13");
-    assert_float_eq(as_float(field(&experiment, "rollout")), 0.0);
+    assert_eq!(as_string(field(experiment, "id")), "EX-13");
+    assert_float_eq(as_float(field(experiment, "rollout")), 0.0);
 
-    let diagnostics = as_block(field(&app, "diagnostics"));
-    let checks = as_array(field(&diagnostics, "checks"));
+    let diagnostics = as_block(field(app, "diagnostics"));
+    let checks = as_array(field(diagnostics, "checks"));
     let first_check = as_block(&checks[0]);
-    assert_eq!(as_string(field(&first_check, "name")), "schema-valid");
-    assert!(as_bool(field(&first_check, "result")));
+    assert_eq!(as_string(field(first_check, "name")), "schema-valid");
+    assert!(as_bool(field(first_check, "result")));
 
-    let history = as_array(field(&diagnostics, "history"));
+    let history = as_array(field(diagnostics, "history"));
     assert_eq!(history.len(), 4);
     assert_eq!(as_atom(&history[3]), "none");
 }

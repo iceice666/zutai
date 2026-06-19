@@ -76,35 +76,27 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
             fail.parse_next(input)
         }
         _ => {
-            if input.starts_with("true") {
-                if let Ok((_, span)) = spanned(kw("true")).parse_next(input) {
-                    return Ok(Expr::True(span));
-                }
+            if input.starts_with("true")
+                && let Ok((_, span)) = spanned(kw("true")).parse_next(input)
+            {
+                return Ok(Expr::True(span));
             }
-            if input.starts_with("false") {
-                if let Ok((_, span)) = spanned(kw("false")).parse_next(input) {
-                    return Ok(Expr::False(span));
-                }
+            if input.starts_with("false")
+                && let Ok((_, span)) = spanned(kw("false")).parse_next(input)
+            {
+                return Ok(Expr::False(span));
             }
-            if input.starts_with("if") {
-                if let Ok(_) = peek(kw("if")).parse_next(input) {
-                    return parse_if(input);
-                }
+            if input.starts_with("if") && peek(kw("if")).parse_next(input).is_ok() {
+                return parse_if(input);
             }
-            if input.starts_with("match") {
-                if let Ok(_) = peek(kw("match")).parse_next(input) {
-                    return parse_match(input);
-                }
+            if input.starts_with("match") && peek(kw("match")).parse_next(input).is_ok() {
+                return parse_match(input);
             }
-            if input.starts_with("import") {
-                if let Ok(_) = peek(kw("import")).parse_next(input) {
-                    return parse_import(input);
-                }
+            if input.starts_with("import") && peek(kw("import")).parse_next(input).is_ok() {
+                return parse_import(input);
             }
-            if input.starts_with("type") {
-                if let Ok(_) = peek(kw("type")).parse_next(input) {
-                    return parse_type_form(input);
-                }
+            if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
+                return parse_type_form(input);
             }
             let (name, span) = spanned(parse_ident).parse_next(input)?;
             Ok(Expr::Ident { name, span })
@@ -174,15 +166,14 @@ fn parse_record_or_block(input: &mut &str) -> Result<Expr> {
     let checkpoint = *input;
     let is_record = {
         let mut tmp = *input;
-        let looks_like_record = if let Ok(_name) = parse_field_name(&mut tmp) {
+        if let Ok(_name) = parse_field_name(&mut tmp) {
             while tmp.starts_with(|c: char| c.is_whitespace()) {
                 tmp = &tmp[1..];
             }
             tmp.starts_with('=') && !tmp.starts_with("==")
         } else {
             false
-        };
-        looks_like_record
+        }
     };
 
     if is_record {
@@ -233,15 +224,14 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
         let checkpoint = *input;
         let is_binding = {
             let mut tmp = *input;
-            let ok = if let Ok(_name) = parse_ident(&mut tmp) {
+            if let Ok(_name) = parse_ident(&mut tmp) {
                 while tmp.starts_with(|c: char| c.is_whitespace()) {
                     tmp = &tmp[1..];
                 }
                 tmp.starts_with(":=")
             } else {
                 false
-            };
-            ok
+            }
         };
 
         if is_binding {

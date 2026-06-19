@@ -8,11 +8,8 @@ use crate::ast::{
 impl fmt::Display for File {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "File")?;
-        let n = self.decls.len();
-        for (i, decl) in self.decls.iter().enumerate() {
-            let is_last = i + 1 == n;
-            let prefix = if is_last { "├─" } else { "├─" };
-            write_decl(f, decl, prefix, "│  ")?;
+        for decl in &self.decls {
+            write_decl(f, decl, "├─", "│  ")?;
         }
         write_expr(f, &self.final_expr, "└─ final: ", "   ")
     }

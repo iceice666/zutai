@@ -259,7 +259,7 @@ fn unescaped_quote_mask(quote: u64, backslash: u64, len: usize, escape_carry: &m
     //   len odd  → even_starts runs escape at odd positions
     *escape_carry = if len == 64 {
         odd_overflow as u64 // len=64 is always even
-    } else if len % 2 == 0 {
+    } else if len.is_multiple_of(2) {
         (odd_carries >> len) & 1
     } else {
         (even_carries >> len) & 1

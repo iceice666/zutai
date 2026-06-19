@@ -137,18 +137,16 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
     }
 
     // Type alias: `:: [<params>] type TypeExpr`
-    if input.starts_with("type") {
-        if let Ok(_) = kw("type").parse_next(input) {
-            ws(input)?;
-            let ty = parse_type_expr(input)?;
-            let span = name_span.merge(ty.span());
-            return Ok(Decl::TypeAlias {
-                name,
-                params,
-                ty,
-                span,
-            });
-        }
+    if input.starts_with("type") && kw("type").parse_next(input).is_ok() {
+        ws(input)?;
+        let ty = parse_type_expr(input)?;
+        let span = name_span.merge(ty.span());
+        return Ok(Decl::TypeAlias {
+            name,
+            params,
+            ty,
+            span,
+        });
     }
 
     // Typed binding or function: parse TypeExpr, then peek `=` or `{`
