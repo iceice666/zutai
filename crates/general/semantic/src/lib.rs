@@ -644,4 +644,58 @@ b := import "witness_reexport_b.zt"
             "expected no TLC module for type-error program"
         );
     }
+
+    /// Walk to the tail of a TLC row, returning its row variable if open.
+    fn row_tail_var(row: &zutai_tlc::Row) -> Option<zutai_tlc::TlcTypeVar> {
+        match row {
+            zutai_tlc::Row::RVar(v) => Some(*v),
+            zutai_tlc::Row::RExtend { tail, .. } => row_tail_var(tail),
+            zutai_tlc::Row::REmpty => None,
+        }
+    }
+
+    #[test]
+    fn tlc_emits_row_variable_for_named_row_tail() {
+        let analysis = analyze(
+            "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+        );
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        let tlc = analysis
+            .tlc
+            .expect("expected TLC module for a complete row program");
+        // The row-polymorphic function quantifies its `<Rest>` tail with Kind::Row.
+        let has_row_forall = tlc
+            .type_arena
+            .iter()
+            .any(|(_, t)| matches!(t, zutai_tlc::TlcType::ForAll(_, zutai_tlc::Kind::Row(_), _)));
+        assert!(
+            has_row_forall,
+            "expected a ForAll quantifying a row variable with Kind::Row"
+        );
+        // A record row ends in a named row variable (`...Rest`).
+        let has_named_rvar = tlc.type_arena.iter().any(|(_, t)| {
+            matches!(t, zutai_tlc::TlcType::Record(row)
+                if matches!(row_tail_var(row), Some(zutai_tlc::TlcTypeVar::Named(_))))
+        });
+        assert!(
+            has_named_rvar,
+            "expected a record row ending in RVar(Named)"
+        );
+    }
+
+    #[test]
+    fn tlc_closed_record_has_no_free_row_variable() {
+        let analysis =
+            analyze("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; }\ns");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        let tlc = analysis.tlc.expect("expected TLC module");
+        for (_, t) in tlc.type_arena.iter() {
+            if let zutai_tlc::TlcType::Record(row) = t {
+                assert!(
+                    row_tail_var(row).is_none(),
+                    "closed record must contain no row variable: {row:?}"
+                );
+            }
+        }
+    }
 }

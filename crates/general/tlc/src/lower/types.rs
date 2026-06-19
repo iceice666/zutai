@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use zutai_hir::BindingId;
-use zutai_thir::{ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
+use zutai_thir::{RowTail, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
 use crate::ir::{Kind, Literal, PrimTy, Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
@@ -38,12 +38,15 @@ impl<'thir> Lowerer<'thir> {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::Optional(inner_tlc))
             }
-            TypeKind::Record(fields, _) => {
+            TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
                     .map(|f| (f.name.clone(), self.lower_type(f.ty), f.optional))
                     .collect();
-                self.alloc_type(TlcType::Record(Row::from_record_fields(row_fields)))
+                let row_tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::Record(Row::from_record_fields_with_tail(
+                    row_fields, row_tail,
+                )))
             }
             TypeKind::Tuple(items) => {
                 let tlc_items: Vec<TlcTupleField> = items
@@ -61,7 +64,7 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_type(TlcType::Tuple(tlc_items))
             }
             // Union / sum type — build a VariantT row (Phase 0 bug fix).
-            TypeKind::Union(variants, _) => {
+            TypeKind::Union(variants, tail) => {
                 let fields: Vec<(String, TlcTypeId)> = variants
                     .iter()
                     .map(|v| {
@@ -76,7 +79,10 @@ impl<'thir> Lowerer<'thir> {
                         (v.name.clone(), arm_ty)
                     })
                     .collect();
-                self.alloc_type(TlcType::VariantT(Row::from_fields(fields)))
+                let row_tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::VariantT(Row::from_fields_with_tail(
+                    fields, row_tail,
+                )))
             }
             TypeKind::TypeVar(binding) => {
                 let tyvar = self.named_tyvar(binding);
@@ -115,6 +121,71 @@ impl<'thir> Lowerer<'thir> {
 
     fn resolve_thir(&self, ty: TypeId) -> TypeId {
         ty
+    }
+
+    /// Convert a THIR row tail into a TLC row tail: a closed row ends in `REmpty`;
+    /// every open form ends in an `RVar` — anonymous `...` gets a fresh variable,
+    /// a `<Rest>` parameter maps to `Named`, and a flexible tail to `Inferred`.
+    fn thir_row_tail(&mut self, tail: RowTail) -> Row {
+        match tail {
+            RowTail::Closed => Row::REmpty,
+            RowTail::Open => Row::RVar(self.fresh_row_var()),
+            RowTail::Param(binding) => Row::RVar(TlcTypeVar::Named(binding.0)),
+            RowTail::Infer(v) => Row::RVar(TlcTypeVar::Inferred(v)),
+        }
+    }
+
+    /// Collect the bindings of every `<Rest>` row parameter used as a row tail in
+    /// `sig`. These quantify with `Kind::Row`, unlike ordinary type parameters.
+    pub(super) fn sig_row_param_bindings(&self, sig: TypeId) -> HashSet<u32> {
+        let mut out = HashSet::new();
+        self.collect_sig_row_params(sig, &mut out);
+        out
+    }
+
+    fn collect_sig_row_params(&self, ty: TypeId, out: &mut HashSet<u32>) {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Function { from, to } => {
+                self.collect_sig_row_params(from, out);
+                self.collect_sig_row_params(to, out);
+            }
+            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+                self.collect_sig_row_params(inner, out);
+            }
+            TypeKind::Record(fields, tail) => {
+                for f in &fields {
+                    self.collect_sig_row_params(f.ty, out);
+                }
+                if let RowTail::Param(b) = tail {
+                    out.insert(b.0);
+                }
+            }
+            TypeKind::Union(variants, tail) => {
+                for v in &variants {
+                    if let Some(p) = v.payload {
+                        self.collect_sig_row_params(p, out);
+                    }
+                }
+                if let RowTail::Param(b) = tail {
+                    out.insert(b.0);
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in &items {
+                    let inner = match item {
+                        TypeTupleItem::Named { ty, .. } => *ty,
+                        TypeTupleItem::Positional(ty) => *ty,
+                    };
+                    self.collect_sig_row_params(inner, out);
+                }
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for a in &args {
+                    self.collect_sig_row_params(*a, out);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Returns the kind for an alias head: `Type(0)` for a 0-ary alias;

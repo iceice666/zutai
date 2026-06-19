@@ -217,11 +217,11 @@ Verification gate: examples from `docs/v1_spec/01-row-polymorphism.md` parse, lo
 
 Goal: elaborate THIR row-polymorphic types into TLC rows using the existing `RVar` and row-kind machinery.
 
-- [ ] Lower THIR open records/unions to TLC `Row` values.
-- [ ] Emit TLC `RVar` for named row tails.
-- [ ] Extend zonking/substitution coverage for row variables introduced in THIR.
-- [ ] Ensure closed-type positions contain no unresolved row variables after elaboration.
-- [ ] Preserve field order for `select` lowering.
+- [x] Lower THIR open records/unions to TLC `Row` values.
+- [x] Emit TLC `RVar` for named row tails.
+- [x] Extend zonking/substitution coverage for row variables introduced in THIR.
+- [x] Ensure closed-type positions contain no unresolved row variables after elaboration.
+- [x] Preserve field order for `select` lowering.
 
 Verification gate: semantic facade tests prove v1 row examples produce valid TLC with expected `RVar` use and no free type variables in closed positions.
 
@@ -338,7 +338,7 @@ Recommended initial policy:
 - [x] **v1 parser frontend** — Phase 7 above.
 - [x] **v1 HIR lowering** — Phase 8 above.
 - [x] **row-polymorphic THIR** — Phase 9 above.
-- [ ] **THIR→TLC row elaboration** — Phase 10 above.
+- [x] **THIR→TLC row elaboration** — Phase 10 above.
 - [ ] **`select` semantics and compile support** — Phase 11 above.
 - [ ] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
 - [ ] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.

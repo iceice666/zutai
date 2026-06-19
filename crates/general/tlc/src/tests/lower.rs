@@ -319,3 +319,85 @@ fn logical_and_or_coalesce_lower_to_builtin() {
         "expected Builtin(Coalesce)"
     );
 }
+
+// ── Phase 10: THIR→TLC row elaboration ───────────────────────────────────────
+
+/// Walk to the tail of a row, returning its row variable if the row is open.
+fn row_tail_var(row: &Row) -> Option<TlcTypeVar> {
+    match row {
+        Row::RVar(v) => Some(*v),
+        Row::RExtend { tail, .. } => row_tail_var(tail),
+        Row::REmpty => None,
+    }
+}
+
+#[test]
+fn named_row_tail_emits_rvar_quantified_by_row_kind() {
+    let m = tlc_of(
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+    );
+    let TlcDecl::Value { ty, .. } = &m.decl_arena[m.decls[0]] else {
+        panic!("expected Value decl");
+    };
+    let TlcType::ForAll(_, kind, _) = &m.type_arena[*ty] else {
+        panic!(
+            "expected ForAll for a row-polymorphic function, got {:?}",
+            m.type_arena[*ty]
+        );
+    };
+    assert!(
+        matches!(kind, Kind::Row(_)),
+        "named row tail must quantify with Kind::Row, got {kind:?}"
+    );
+    let has_named_rvar = m.type_arena.iter().any(|(_, t)| {
+        matches!(t, TlcType::Record(row) if matches!(row_tail_var(row), Some(TlcTypeVar::Named(_))))
+    });
+    assert!(
+        has_named_rvar,
+        "expected a record row ending in RVar(Named)"
+    );
+}
+
+#[test]
+fn anonymous_open_record_emits_rvar_tail() {
+    let m = tlc_of(
+        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; }",
+    );
+    let has_rvar = m
+        .type_arena
+        .iter()
+        .any(|(_, t)| matches!(t, TlcType::Record(row) if row_tail_var(row).is_some()));
+    assert!(
+        has_rvar,
+        "anonymous open record must lower to a row with an RVar tail"
+    );
+}
+
+#[test]
+fn closed_records_have_no_row_variable() {
+    let m = tlc_of("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; }\ns");
+    for (_, t) in m.type_arena.iter() {
+        if let TlcType::Record(row) = t {
+            assert!(
+                row_tail_var(row).is_none(),
+                "closed record must not carry an RVar tail: {row:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn value_select_preserves_field_order_in_tlc() {
+    let m = tlc_of("s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    let has_ordered = m.expr_arena.iter().any(|(_, e)| {
+        if let TlcExpr::Record(fields) = e {
+            fields.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>() == ["port", "host"]
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_ordered,
+        "value select must lower to a record with fields in requested order [port, host]"
+    );
+}

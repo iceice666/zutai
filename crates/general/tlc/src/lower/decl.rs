@@ -85,13 +85,21 @@ impl<'thir> Lowerer<'thir> {
 
                 // Wrap with TyLam/ForAll for each explicit type param (reversed → first param outermost).
                 if let Some(ref ep) = explicit {
+                    let row_params = self.sig_row_param_bindings(sig);
                     for (type_param_binding, _) in ep.iter().rev() {
                         let tyvar = self.named_tyvar(*type_param_binding);
+                        // A `<Rest>` parameter used as a row tail quantifies with
+                        // `Kind::Row`; an ordinary type parameter with the ground kind.
+                        let kind = if row_params.contains(&type_param_binding.0) {
+                            Kind::Row(Box::new(Kind::ground()))
+                        } else {
+                            Kind::ground()
+                        };
                         let span = self.spans.get(&current_body).copied().unwrap_or_default();
                         current_ty =
-                            self.alloc_type(TlcType::ForAll(tyvar, Kind::ground(), current_ty));
+                            self.alloc_type(TlcType::ForAll(tyvar, kind.clone(), current_ty));
                         current_body = self.alloc_expr(
-                            TlcExpr::TyLam(tyvar, Kind::ground(), current_body),
+                            TlcExpr::TyLam(tyvar, kind, current_body),
                             current_ty,
                             span,
                         );

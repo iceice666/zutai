@@ -59,6 +59,10 @@ struct Lowerer<'thir> {
     active_dict_params: HashMap<(u32, u32), BindingId>,
     /// dict Lam BindingId → its TLC type (Record placeholder).
     active_dict_types: HashMap<BindingId, TlcTypeId>,
+    /// Next fresh row-variable id for anonymous open rows (`...`). Allocated from
+    /// the top of the id space and mapped to `TlcTypeVar::Inferred`, so it never
+    /// collides with a THIR `InferVar` id (small, counted from zero).
+    next_row_var: u32,
 }
 
 impl<'thir> Lowerer<'thir> {
@@ -80,6 +84,7 @@ impl<'thir> Lowerer<'thir> {
             fn_explicit_params: HashMap::new(),
             active_dict_params: HashMap::new(),
             active_dict_types: HashMap::new(),
+            next_row_var: u32::MAX,
         }
     }
 
@@ -186,6 +191,13 @@ impl<'thir> Lowerer<'thir> {
         let id = self.next_synth;
         self.next_synth -= 1;
         BindingId(id)
+    }
+
+    /// Mint a fresh row variable for an anonymous open row tail (`...`).
+    fn fresh_row_var(&mut self) -> TlcTypeVar {
+        let id = self.next_row_var;
+        self.next_row_var -= 1;
+        TlcTypeVar::Inferred(id)
     }
 
     /// Map a THIR TypeId to a `WitnessTargetKey` for witness lookup.

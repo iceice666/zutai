@@ -62,11 +62,20 @@ pub enum Row {
 impl Row {
     /// Build a closed row from `(label, ty)` pairs with `optional = false` (used for variant arms).
     pub fn from_fields(fields: impl IntoIterator<Item = (String, TlcTypeId)>) -> Self {
+        Row::from_fields_with_tail(fields, Row::REmpty)
+    }
+
+    /// Like `from_fields` but folds the fields over an explicit `tail` row
+    /// (`REmpty` for closed rows, `RVar` for open/row-polymorphic ones).
+    pub fn from_fields_with_tail(
+        fields: impl IntoIterator<Item = (String, TlcTypeId)>,
+        tail: Row,
+    ) -> Self {
         let mut fields: Vec<_> = fields.into_iter().collect();
         fields.reverse();
         fields
             .into_iter()
-            .fold(Row::REmpty, |tail, (label, ty)| Row::RExtend {
+            .fold(tail, |tail, (label, ty)| Row::RExtend {
                 label,
                 ty,
                 optional: false,
@@ -76,11 +85,19 @@ impl Row {
 
     /// Build a closed row from `(label, ty, optional)` triples (used for record types).
     pub fn from_record_fields(fields: impl IntoIterator<Item = (String, TlcTypeId, bool)>) -> Self {
+        Row::from_record_fields_with_tail(fields, Row::REmpty)
+    }
+
+    /// Like `from_record_fields` but folds the fields over an explicit `tail` row.
+    pub fn from_record_fields_with_tail(
+        fields: impl IntoIterator<Item = (String, TlcTypeId, bool)>,
+        tail: Row,
+    ) -> Self {
         let mut fields: Vec<_> = fields.into_iter().collect();
         fields.reverse();
         fields
             .into_iter()
-            .fold(Row::REmpty, |tail, (label, ty, optional)| Row::RExtend {
+            .fold(tail, |tail, (label, ty, optional)| Row::RExtend {
                 label,
                 ty,
                 optional,
