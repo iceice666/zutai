@@ -81,6 +81,15 @@ impl<'hir> Lowerer<'hir> {
                 })
             }
             HirTypeKind::Apply { func, arg } => self.lower_type_apply(*func, *arg, ty.span),
+            HirTypeKind::UnsupportedSurface => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::UnsupportedFeature {
+                        feature: "v1 parser-only type form",
+                    },
+                    span: ty.span,
+                });
+                self.error_type
+            }
             HirTypeKind::Atom(name) => self.alloc_type(Type {
                 kind: TypeKind::Atom(name.clone()),
                 span: ty.span,

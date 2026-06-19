@@ -589,6 +589,31 @@ impl Lowerer {
             },
             ast::Expr::Import { source, .. } => HirExprKind::Import(clone_import_source(source)),
             ast::Expr::TypeForm { ty, .. } => HirExprKind::TypeForm(self.lower_type(ty)),
+            ast::Expr::Select { receiver, .. } => {
+                self.lower_expr(receiver);
+                HirExprKind::UnsupportedSurface
+            }
+            ast::Expr::Perform { arg, .. } => {
+                self.lower_expr(arg);
+                HirExprKind::UnsupportedSurface
+            }
+            ast::Expr::Handle { expr, clauses, .. } => {
+                self.lower_expr(expr);
+                for clause in clauses {
+                    self.lower_expr(&clause.body);
+                }
+                HirExprKind::UnsupportedSurface
+            }
+            ast::Expr::Resume { value, .. } => {
+                self.lower_expr(value);
+                HirExprKind::UnsupportedSurface
+            }
+            ast::Expr::Sequence { items, .. } => {
+                for item in items {
+                    self.lower_expr(item);
+                }
+                HirExprKind::UnsupportedSurface
+            }
             ast::Expr::Apply { func, arg, .. } => HirExprKind::Apply {
                 func: self.lower_expr(func),
                 arg: self.lower_expr(arg),
@@ -716,37 +741,59 @@ impl Lowerer {
                     HirTypeKind::UnresolvedIdent(name.clone())
                 }
             },
-            ast::TypeExpr::Record { fields, .. } => HirTypeKind::Record(
-                fields
-                    .iter()
-                    .map(|field| HirTypeRecordField {
-                        name: field.name.clone(),
-                        optional: field.optional,
-                        ty: self.lower_type(&field.ty),
-                        span: field.span,
-                    })
-                    .collect(),
-            ),
-            ast::TypeExpr::Union { variants, .. } => HirTypeKind::Union(
-                variants
-                    .iter()
-                    .map(|v| HirUnionVariant {
-                        name: v.name.clone(),
-                        payload: v.payload.as_ref().map(|fields| {
-                            fields
-                                .iter()
-                                .map(|field| HirTypeRecordField {
-                                    name: field.name.clone(),
-                                    optional: field.optional,
-                                    ty: self.lower_type(&field.ty),
-                                    span: field.span,
-                                })
-                                .collect()
-                        }),
-                        span: v.span,
-                    })
-                    .collect(),
-            ),
+            ast::TypeExpr::Record { fields, tail, .. } => {
+                for field in fields {
+                    self.lower_type(&field.ty);
+                }
+                if tail.is_some() {
+                    HirTypeKind::UnsupportedSurface
+                } else {
+                    HirTypeKind::Record(
+                        fields
+                            .iter()
+                            .map(|field| HirTypeRecordField {
+                                name: field.name.clone(),
+                                optional: field.optional,
+                                ty: self.lower_type(&field.ty),
+                                span: field.span,
+                            })
+                            .collect(),
+                    )
+                }
+            }
+            ast::TypeExpr::Union { variants, tail, .. } => {
+                for variant in variants {
+                    if let Some(fields) = &variant.payload {
+                        for field in fields {
+                            self.lower_type(&field.ty);
+                        }
+                    }
+                }
+                if tail.is_some() {
+                    HirTypeKind::UnsupportedSurface
+                } else {
+                    HirTypeKind::Union(
+                        variants
+                            .iter()
+                            .map(|v| HirUnionVariant {
+                                name: v.name.clone(),
+                                payload: v.payload.as_ref().map(|fields| {
+                                    fields
+                                        .iter()
+                                        .map(|field| HirTypeRecordField {
+                                            name: field.name.clone(),
+                                            optional: field.optional,
+                                            ty: self.lower_type(&field.ty),
+                                            span: field.span,
+                                        })
+                                        .collect()
+                                }),
+                                span: v.span,
+                            })
+                            .collect(),
+                    )
+                }
+            }
             ast::TypeExpr::Tuple { items, .. } => HirTypeKind::Tuple(
                 items
                     .iter()
@@ -767,6 +814,22 @@ impl Lowerer {
                 from: self.lower_type(from),
                 to: self.lower_type(to),
             },
+            ast::TypeExpr::Effect { base, effects, .. } => {
+                self.lower_type(base);
+                for op in &effects.ops {
+                    if let Some(payload) = &op.payload {
+                        self.lower_type(payload);
+                    }
+                    if let Some(signature) = &op.signature {
+                        self.lower_type(signature);
+                    }
+                }
+                HirTypeKind::UnsupportedSurface
+            }
+            ast::TypeExpr::Select { receiver, .. } => {
+                self.lower_type(receiver);
+                HirTypeKind::UnsupportedSurface
+            }
             ast::TypeExpr::Apply { func, arg, .. } => HirTypeKind::Apply {
                 func: self.lower_type(func),
                 arg: self.lower_type(arg),

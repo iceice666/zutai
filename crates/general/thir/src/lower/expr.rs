@@ -129,6 +129,10 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Block { bindings, result } => {
                 self.lower_block_expr(id, bindings, *result, None)
             }
+            HirExprKind::UnsupportedSurface => {
+                self.unsupported("v1 parser-only surface form", expr.span);
+                self.error_expr(id, expr.span)
+            }
             HirExprKind::Apply { func, arg } => self.lower_apply_expr(id, *func, *arg, expr.span),
             HirExprKind::If {
                 cond,

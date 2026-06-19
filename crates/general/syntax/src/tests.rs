@@ -1743,6 +1743,186 @@ fn display_type_expr_expr_escape() {
     assert!(s.contains("Int(1)"), "escaped expression value");
 }
 
+// ── V1 parser frontend surface syntax ─────────────────────────────────────────
+
+#[test]
+fn v1_record_row_tails_parse() {
+    let e = parse_expr_str("type { host : Text; ...; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record { fields, tail, .. } => {
+                assert_eq!(fields[0].name, "host");
+                assert!(matches!(tail, Some(RowTail::Anonymous { .. })));
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { host : Text; ...Rest; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record { tail, .. } => {
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Rest"));
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_row_tail_overlapping_record_field_rejected() {
+    assert!(parse("T :: type { host : Text; ...host; }\n1").has_errors());
+}
+
+#[test]
+fn v1_record_row_tail_must_be_last_and_unique() {
+    assert!(parse("T :: type { ...Rest; host : Text; }\n1").has_errors());
+    assert!(parse("T :: type { ...A; ...B; }\n1").has_errors());
+}
+
+#[test]
+fn v1_union_payload_row_tail_rejected() {
+    assert!(parse("T :: type [ ok: { value : Int; ...Rest; }; ]\n1").has_errors());
+}
+
+#[test]
+fn v1_union_row_tails_and_spreads_parse() {
+    let e = parse_expr_str("type [ #dev; #test; ...Rest; ]");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, tail, .. } => {
+                assert_eq!(
+                    variants.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
+                    ["dev", "test"]
+                );
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Rest"));
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type [ ...Shape; (#sphere, radius : Float); ]");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, tail, .. } => {
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Shape"));
+                assert_eq!(variants[0].name, "sphere");
+                assert_eq!(
+                    variants[0].payload.as_ref().expect("payload")[0].name,
+                    "radius"
+                );
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_value_select_preserves_field_order() {
+    let e = parse_expr_str("select server { host; port; }");
+    match e {
+        Expr::Select {
+            receiver, fields, ..
+        } => {
+            assert_eq!(as_ident(&receiver), "server");
+            assert_eq!(
+                fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                ["host", "port"]
+            );
+        }
+        other => panic!("expected Select, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_type_select_preserves_field_order() {
+    let e = parse_expr_str("type select Server { host; port; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Select {
+                receiver, fields, ..
+            } => {
+                assert!(
+                    matches!(receiver.as_ref(), TypeExpr::Ident { name, .. } if name == "Server")
+                );
+                assert_eq!(
+                    fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                    ["host", "port"]
+                );
+            }
+            other => panic!("expected TySelect, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_effect_row_syntax_parses() {
+    let f = parse_str("parse :: Text -> Config ! { fail ParseError } { | text => text; }\nparse");
+    let (_, _, sig, _) = as_function(decl_by(&f, "parse"));
+    let TypeExpr::Arrow { to, .. } = sig else {
+        panic!("expected Arrow, got {sig:?}");
+    };
+    match to.as_ref() {
+        TypeExpr::Effect { effects, .. } => {
+            assert_eq!(effects.ops[0].path, vec!["fail"]);
+            assert!(effects.ops[0].payload.is_some());
+        }
+        other => panic!("expected TyEffect, got {other:?}"),
+    }
+
+    let f = parse_str(
+        "load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError } { | fs path => path; }\nload",
+    );
+    let (_, _, sig, _) = as_function(decl_by(&f, "load"));
+    assert!(format!("{sig:?}").contains("fs"));
+}
+
+#[test]
+fn v1_effect_row_requires_operation_separators() {
+    assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic } { | text => text; }\nparse").has_errors());
+}
+
+#[test]
+fn v1_perform_handle_resume_parse() {
+    let e = parse_expr_str("perform fail err");
+    match e {
+        Expr::Perform { op, arg, .. } => {
+            assert_eq!(op, vec!["fail"]);
+            assert_eq!(as_ident(&arg), "err");
+        }
+        other => panic!("expected Perform, got {other:?}"),
+    }
+
+    let e = parse_expr_str(
+        "handle check cfg with { warn = \\diagnostic => { perform log diagnostic; resume (); }; }",
+    );
+    match e {
+        Expr::Handle { clauses, .. } => {
+            assert_eq!(clauses[0].op, vec!["warn"]);
+            assert!(format!("{:?}", clauses[0].body).contains("Resume"));
+        }
+        other => panic!("expected Handle, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_reflection_builtins_parse_as_application() {
+    let fields_expr = parse_expr_str("fields Server");
+    let (func, arg) = as_apply(&fields_expr);
+    assert_eq!(as_ident(func), "fields");
+    assert_eq!(as_ident(arg), "Server");
+
+    let schema_expr = parse_expr_str("schema Server");
+    let (func, arg) = as_apply(&schema_expr);
+    assert_eq!(as_ident(func), "schema");
+    assert_eq!(as_ident(arg), "Server");
+}
+
 // ── Lexer coverage: v1 keywords, @, scientific notation, unknown token ────────
 
 /// V1 future-reserved keywords produce their own SyntaxKind variants.

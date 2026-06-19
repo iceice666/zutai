@@ -164,6 +164,7 @@ pub enum HirExprKind {
     },
     Import(HirImportSource),
     TypeForm(HirTypeId),
+    UnsupportedSurface,
     Apply {
         func: HirExprId,
         arg: HirExprId,
@@ -271,6 +272,7 @@ pub enum HirTypeKind {
     Arrow { from: HirTypeId, to: HirTypeId },
     Apply { func: HirTypeId, arg: HirTypeId },
     Access { receiver: HirTypeId, field: String },
+    UnsupportedSurface,
     Atom(String),
     True,
     False,

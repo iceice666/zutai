@@ -2,7 +2,9 @@ use winnow::Parser;
 use winnow::Result;
 use winnow::combinator::{fail, peek};
 
-use crate::ast::{Expr, FuncClause, LocalBinding, RecordField, TupleItem};
+use crate::ast::{
+    Expr, FuncClause, HandleClause, LocalBinding, RecordField, SelectField, TupleItem,
+};
 use crate::span::Span;
 
 use crate::parser::lex::{
@@ -98,6 +100,18 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
             if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
                 return parse_type_form(input);
             }
+            if input.starts_with("select") && peek(kw("select")).parse_next(input).is_ok() {
+                return parse_select(input);
+            }
+            if input.starts_with("perform") && peek(kw("perform")).parse_next(input).is_ok() {
+                return parse_perform(input);
+            }
+            if input.starts_with("handle") && peek(kw("handle")).parse_next(input).is_ok() {
+                return parse_handle(input);
+            }
+            if input.starts_with("resume") && peek(kw("resume")).parse_next(input).is_ok() {
+                return parse_resume(input);
+            }
             let (name, span) = spanned(parse_ident).parse_next(input)?;
             Ok(Expr::Ident { name, span })
         }
@@ -114,13 +128,13 @@ fn parse_lambda(input: &mut &str) -> Result<Expr> {
     let mut params = vec![];
     loop {
         ws(input)?;
-        if input.starts_with('.') {
+        if input.starts_with('.') || input.starts_with("=>") {
             break;
         }
         let pat = parse_pattern(input)?;
         params.push(pat);
         ws(input)?;
-        if input.starts_with('.') {
+        if input.starts_with('.') || input.starts_with("=>") {
             break;
         }
     }
@@ -129,9 +143,13 @@ fn parse_lambda(input: &mut &str) -> Result<Expr> {
         return fail.parse_next(input);
     }
 
-    '.'.parse_next(input)?;
-    if !input.starts_with(|c: char| c.is_whitespace()) {
-        return fail.parse_next(input);
+    if input.starts_with("=>") {
+        "=>".parse_next(input)?;
+    } else {
+        '.'.parse_next(input)?;
+        if !input.starts_with(|c: char| c.is_whitespace()) {
+            return fail.parse_next(input);
+        }
     }
     ws(input)?;
 
@@ -250,9 +268,31 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
         }
     }
     ws(input)?;
-    let result = super::parse_expr(input)?;
+    let first = super::parse_expr(input)?;
+    let mut items = vec![first];
+    loop {
+        ws(input)?;
+        if !input.starts_with(';') {
+            break;
+        }
+        ';'.parse_next(input)?;
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        items.push(super::parse_expr(input)?);
+    }
     ws(input)?;
     let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
+    let result = if items.len() == 1 {
+        items.pop().expect("one item checked above")
+    } else {
+        let start_span = items.first().map(Expr::span).unwrap_or(end_span);
+        Expr::Sequence {
+            items,
+            span: start_span.merge(end_span),
+        }
+    };
     let span = result.span().merge(end_span);
     Ok(Expr::Block {
         bindings,
@@ -496,4 +536,136 @@ fn parse_type_form(input: &mut &str) -> Result<Expr> {
         ty: Box::new(ty),
         span,
     })
+}
+
+// ---------------------------------------------------------------------------
+// V1 frontend forms
+// ---------------------------------------------------------------------------
+
+fn parse_select(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("select")).parse_next(input)?;
+    ws(input)?;
+    let receiver = super::parse_postfix(input)?;
+    ws(input)?;
+    let fields = parse_select_fields(input)?;
+    let span = fields
+        .last()
+        .map(|field| start_span.merge(field.span))
+        .unwrap_or_else(|| start_span.merge(receiver.span()));
+    Ok(Expr::Select {
+        receiver: Box::new(receiver),
+        fields,
+        span,
+    })
+}
+
+fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut fields = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        fields.push(SelectField {
+            name,
+            span: name_span,
+        });
+    }
+    ws(input)?;
+    '}'.parse_next(input)?;
+    Ok(fields)
+}
+
+fn parse_perform(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("perform")).parse_next(input)?;
+    ws(input)?;
+    let op = parse_effect_path(input)?;
+    ws(input)?;
+    let arg = super::parse_expr(input)?;
+    let span = start_span.merge(arg.span());
+    Ok(Expr::Perform {
+        op,
+        arg: Box::new(arg),
+        span,
+    })
+}
+
+fn parse_handle(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("handle")).parse_next(input)?;
+    ws(input)?;
+    let expr = super::parse_expr(input)?;
+    ws(input)?;
+    kw("with").parse_next(input)?;
+    ws(input)?;
+    let clauses = parse_handle_clauses(input)?;
+    let span = clauses
+        .last()
+        .map(|clause| start_span.merge(clause.span))
+        .unwrap_or_else(|| start_span.merge(expr.span()));
+    Ok(Expr::Handle {
+        expr: Box::new(expr),
+        clauses,
+        span,
+    })
+}
+
+fn parse_handle_clauses(input: &mut &str) -> Result<Vec<HandleClause>> {
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut clauses = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        let (op, op_span) = spanned(parse_effect_path).parse_next(input)?;
+        ws(input)?;
+        '='.parse_next(input)?;
+        ws(input)?;
+        let body = super::parse_expr(input)?;
+        ws(input)?;
+        let (_, end_span) = spanned(|i: &mut &str| ';'.parse_next(i)).parse_next(input)?;
+        clauses.push(HandleClause {
+            op,
+            body: Box::new(body),
+            span: op_span.merge(end_span),
+        });
+    }
+    ws(input)?;
+    '}'.parse_next(input)?;
+    Ok(clauses)
+}
+
+fn parse_resume(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("resume")).parse_next(input)?;
+    ws(input)?;
+    let value = super::parse_expr(input)?;
+    let span = start_span.merge(value.span());
+    Ok(Expr::Resume {
+        value: Box::new(value),
+        span,
+    })
+}
+
+fn parse_effect_path(input: &mut &str) -> Result<Vec<String>> {
+    let first = parse_field_name(input)?;
+    let mut path = vec![first];
+    loop {
+        let checkpoint = *input;
+        ws(input)?;
+        if input.starts_with('.') && !input.starts_with("..") {
+            '.'.parse_next(input)?;
+            ws(input)?;
+            path.push(parse_field_name(input)?);
+        } else {
+            *input = checkpoint;
+            break;
+        }
+    }
+    Ok(path)
 }

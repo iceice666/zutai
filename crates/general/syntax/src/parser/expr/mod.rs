@@ -345,7 +345,7 @@ pub fn parse_application(input: &mut &str) -> Result<Expr> {
 // Level 1: postfix `.field`, `?.field`
 // ---------------------------------------------------------------------------
 
-fn parse_postfix(input: &mut &str) -> Result<Expr> {
+pub(super) fn parse_postfix(input: &mut &str) -> Result<Expr> {
     let mut node = parse_atom_expr(input)?;
 
     loop {

@@ -195,6 +195,33 @@ pub enum ImportSource {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct SelectField {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct EffectOp {
+    pub path: Vec<String>,
+    pub payload: Option<Box<TypeExpr>>,
+    pub signature: Option<Box<TypeExpr>>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct EffectRow {
+    pub ops: Vec<EffectOp>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct HandleClause {
+    pub op: Vec<String>,
+    pub body: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     True(Span),
     False(Span),
@@ -264,6 +291,29 @@ pub enum Expr {
         ty: Box<TypeExpr>,
         span: Span,
     },
+    Select {
+        receiver: Box<Expr>,
+        fields: Vec<SelectField>,
+        span: Span,
+    },
+    Perform {
+        op: Vec<String>,
+        arg: Box<Expr>,
+        span: Span,
+    },
+    Handle {
+        expr: Box<Expr>,
+        clauses: Vec<HandleClause>,
+        span: Span,
+    },
+    Resume {
+        value: Box<Expr>,
+        span: Span,
+    },
+    Sequence {
+        items: Vec<Expr>,
+        span: Span,
+    },
     Apply {
         func: Box<Expr>,
         arg: Box<Expr>,
@@ -312,6 +362,11 @@ impl Expr {
             | Expr::Match { span, .. }
             | Expr::Import { span, .. }
             | Expr::TypeForm { span, .. }
+            | Expr::Select { span, .. }
+            | Expr::Perform { span, .. }
+            | Expr::Handle { span, .. }
+            | Expr::Resume { span, .. }
+            | Expr::Sequence { span, .. }
             | Expr::Apply { span, .. }
             | Expr::Access { span, .. }
             | Expr::OptAccess { span, .. }
@@ -410,6 +465,20 @@ pub struct TypeRecordField {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum RowTail {
+    Anonymous { span: Span },
+    Named { name: String, span: Span },
+}
+
+impl RowTail {
+    pub fn span(&self) -> Span {
+        match self {
+            RowTail::Anonymous { span } | RowTail::Named { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum TypeTupleItem {
     Named {
         name: String,
@@ -427,10 +496,12 @@ pub enum TypeExpr {
     },
     Record {
         fields: Vec<TypeRecordField>,
+        tail: Option<RowTail>,
         span: Span,
     },
     Union {
         variants: Vec<UnionVariant>,
+        tail: Option<RowTail>,
         span: Span,
     },
     Tuple {
@@ -444,6 +515,16 @@ pub enum TypeExpr {
     Arrow {
         from: Box<TypeExpr>,
         to: Box<TypeExpr>,
+        span: Span,
+    },
+    Effect {
+        base: Box<TypeExpr>,
+        effects: EffectRow,
+        span: Span,
+    },
+    Select {
+        receiver: Box<TypeExpr>,
+        fields: Vec<SelectField>,
         span: Span,
     },
     Apply {
@@ -475,6 +556,8 @@ impl TypeExpr {
             | TypeExpr::Tuple { span, .. }
             | TypeExpr::Optional { span, .. }
             | TypeExpr::Arrow { span, .. }
+            | TypeExpr::Effect { span, .. }
+            | TypeExpr::Select { span, .. }
             | TypeExpr::Apply { span, .. }
             | TypeExpr::Access { span, .. }
             | TypeExpr::Atom { span, .. } => *span,

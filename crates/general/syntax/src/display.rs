@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::ast::{
-    Decl, Expr, File, FuncClause, ImportSource, Pattern, PipelineDir, TupleItem, TuplePatternItem,
-    TypeExpr, TypeTupleItem,
+    Decl, Expr, File, FuncClause, ImportSource, Pattern, PipelineDir, RowTail, TupleItem,
+    TuplePatternItem, TypeExpr, TypeTupleItem,
 };
 
 impl fmt::Display for File {
@@ -256,6 +256,54 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             writeln!(f, "{prefix}TypeForm")?;
             write_type_expr(f, ty, &format!("{indent}└─ "), &format!("{indent}   "))
         }
+        Expr::Select {
+            receiver, fields, ..
+        } => {
+            writeln!(f, "{prefix}Select")?;
+            write_expr(
+                f,
+                receiver,
+                &format!("{indent}├─ receiver: "),
+                &format!("{indent}│  "),
+            )?;
+            for field in fields {
+                writeln!(f, "{indent}├─ field: {}", field.name)?;
+            }
+            Ok(())
+        }
+        Expr::Perform { op, arg, .. } => {
+            writeln!(f, "{prefix}Perform({})", op.join("."))?;
+            write_expr(f, arg, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
+        Expr::Handle { expr, clauses, .. } => {
+            writeln!(f, "{prefix}Handle")?;
+            write_expr(
+                f,
+                expr,
+                &format!("{indent}├─ expr: "),
+                &format!("{indent}│  "),
+            )?;
+            for clause in clauses {
+                write_expr(
+                    f,
+                    &clause.body,
+                    &format!("{indent}├─ {}: ", clause.op.join(".")),
+                    &format!("{indent}│  "),
+                )?;
+            }
+            Ok(())
+        }
+        Expr::Resume { value, .. } => {
+            writeln!(f, "{prefix}Resume")?;
+            write_expr(f, value, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
+        Expr::Sequence { items, .. } => {
+            writeln!(f, "{prefix}Sequence")?;
+            for item in items {
+                write_expr(f, item, &format!("{indent}├─ "), &format!("{indent}│  "))?;
+            }
+            Ok(())
+        }
         Expr::Apply { func, arg, .. } => {
             writeln!(f, "{prefix}Apply")?;
             write_expr(
@@ -382,7 +430,7 @@ fn write_type_expr(
         TypeExpr::Atom { name, .. } => writeln!(f, "{prefix}TyAtom(#{name})"),
         TypeExpr::True(_) => writeln!(f, "{prefix}TyTrue"),
         TypeExpr::False(_) => writeln!(f, "{prefix}TyFalse"),
-        TypeExpr::Record { fields, .. } => {
+        TypeExpr::Record { fields, tail, .. } => {
             writeln!(f, "{prefix}TyRecord")?;
             for field in fields {
                 let opt = if field.optional { "?" } else { "" };
@@ -393,9 +441,9 @@ fn write_type_expr(
                     &format!("{indent}│  "),
                 )?;
             }
-            Ok(())
+            write_row_tail(f, tail.as_ref(), indent)
         }
-        TypeExpr::Union { variants, .. } => {
+        TypeExpr::Union { variants, tail, .. } => {
             writeln!(f, "{prefix}TyUnion")?;
             for v in variants {
                 if let Some(fields) = &v.payload {
@@ -413,7 +461,7 @@ fn write_type_expr(
                     writeln!(f, "{indent}├─ {}", v.name)?;
                 }
             }
-            Ok(())
+            write_row_tail(f, tail.as_ref(), indent)
         }
         TypeExpr::Tuple { items, .. } => {
             writeln!(f, "{prefix}TyTuple")?;
@@ -446,6 +494,51 @@ fn write_type_expr(
             )?;
             write_type_expr(f, to, &format!("{indent}└─ to: "), &format!("{indent}   "))
         }
+        TypeExpr::Effect { base, effects, .. } => {
+            writeln!(f, "{prefix}TyEffect")?;
+            write_type_expr(
+                f,
+                base,
+                &format!("{indent}├─ base: "),
+                &format!("{indent}│  "),
+            )?;
+            for op in &effects.ops {
+                let path = op.path.join(".");
+                if let Some(signature) = &op.signature {
+                    write_type_expr(
+                        f,
+                        signature,
+                        &format!("{indent}├─ effect {path}: "),
+                        &format!("{indent}│  "),
+                    )?;
+                } else if let Some(payload) = &op.payload {
+                    write_type_expr(
+                        f,
+                        payload,
+                        &format!("{indent}├─ effect {path}: "),
+                        &format!("{indent}│  "),
+                    )?;
+                } else {
+                    writeln!(f, "{indent}├─ effect {path}")?;
+                }
+            }
+            Ok(())
+        }
+        TypeExpr::Select {
+            receiver, fields, ..
+        } => {
+            writeln!(f, "{prefix}TySelect")?;
+            write_type_expr(
+                f,
+                receiver,
+                &format!("{indent}├─ receiver: "),
+                &format!("{indent}│  "),
+            )?;
+            for field in fields {
+                writeln!(f, "{indent}├─ field: {}", field.name)?;
+            }
+            Ok(())
+        }
         TypeExpr::Apply { func, arg, .. } => {
             writeln!(f, "{prefix}TyApply")?;
             write_type_expr(
@@ -476,5 +569,13 @@ fn write_type_expr(
             writeln!(f, "{prefix}TyExprEscape")?;
             write_expr(f, e, &format!("{indent}└─ "), &format!("{indent}   "))
         }
+    }
+}
+
+fn write_row_tail(f: &mut fmt::Formatter<'_>, tail: Option<&RowTail>, indent: &str) -> fmt::Result {
+    match tail {
+        Some(RowTail::Anonymous { .. }) => writeln!(f, "{indent}└─ ..."),
+        Some(RowTail::Named { name, .. }) => writeln!(f, "{indent}└─ ...{name}"),
+        None => Ok(()),
     }
 }

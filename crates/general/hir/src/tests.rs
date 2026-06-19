@@ -531,3 +531,14 @@ fn h12_operator_method_gets_binding() {
         "operator method must have Some(binding) after D6/4b, got None"
     );
 }
+
+#[test]
+fn h13_row_tail_type_lowers_to_unsupported_surface() {
+    let lowered = lower("T :: type { host : Text; ...; }\nT");
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {
+        panic!("expected TypeAlias, got {:?}", decl.kind);
+    };
+    let ty = &lowered.file.type_arena[ty];
+    assert!(matches!(ty.kind, HirTypeKind::UnsupportedSurface));
+}

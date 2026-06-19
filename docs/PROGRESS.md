@@ -157,10 +157,10 @@ Goal: parse the v1 surface constructs in `docs/v1_spec/` into AST/CST. Scope is 
 
 Already parsed during the v0 cycle (no work needed): constraint declarations, witness declarations, `derive`, bounded type params (`<A: Eq + Show>`), kinded type params (`<F :: Type -> Type>`), parenthesised operator method names. The v1 keywords `select`, `perform`, `handle`, `with`, `resume` are already lexed but not yet parsed into AST nodes.
 
-- [ ] **B1 — Ellipsis token + row tails**: lex `...` (`SyntaxKind::DotDotDot`); add anonymous (`...`), named (`...Rest`), and union-spread (`...Shape`) tails to `TypeExpr::Record` / `TypeExpr::Union`; reject row tails that overlap declared fields. Foundation for B2.
-- [ ] **B2 — `select` projection**: `Expr::Select { receiver, fields }` (value position) and the type-level `select` form (type position); preserve field order; defer unknown-field checks to semantics.
-- [ ] **B3 — Algebraic-effects surface**: `Expr::Perform`, `Expr::Handle { expr, clauses }` with `with { value = …, op = … }`, `Expr::Resume`; effect-row syntax `! { fail E }` on function types in `TypeExpr`.
-- [ ] **B4 — Reflection builtins**: confirm `fields` / `schema` parse as ordinary application; add tests; introduce dedicated syntax only if required.
+- [x] **B1 — Ellipsis token + row tails**: lex `...` (`SyntaxKind::DotDotDot`); add anonymous (`...`), named (`...Rest`), and union-spread (`...Shape`) tails to `TypeExpr::Record` / `TypeExpr::Union`; reject row tails that overlap declared fields. Foundation for B2.
+- [x] **B2 — `select` projection**: `Expr::Select { receiver, fields }` (value position) and the type-level `select` form (type position); preserve field order; defer unknown-field checks to semantics.
+- [x] **B3 — Algebraic-effects surface**: `Expr::Perform`, `Expr::Handle { expr, clauses }` with `with { value = …, op = … }`, `Expr::Resume`; effect-row syntax `! { fail E }` on function types in `TypeExpr`.
+- [x] **B4 — Reflection builtins**: confirm `fields` / `schema` parse as ordinary application; add tests; introduce dedicated syntax only if required.
 
 Verification gate: parser tests cover every example in `docs/v1_spec/01-row-polymorphism.md`, `04-metaprogramming.md`, and `05-effects.md`; the v1 keywords already lexed are exercised end-to-end through the AST.
 
@@ -178,5 +178,5 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [x] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; LLVM IR text emission (v0 uses i64 universal representation, no inkwell/llvm-sys dependency).
 - [x] **CLI `compile` subcommand** — wire the full pipeline; add `check`, `compile [-o output]`, and `dataflow` subcommands with source-located diagnostics.
-- [ ] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
+- [x] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
 - [ ] **Deferred constraint/witness milestones** — `derive` synthesis; method-level type params (`<A,B>` dropped at THIR); conditional / higher-kinded witnesses (`Eq @(List A)`, blocked by parametric `AliasApply` in `type_key`). Independent of the v1 parser frontend; schedulable alongside the backend.
