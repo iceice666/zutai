@@ -47,6 +47,21 @@ fn run_valid_zt_file_prints_result() {
 }
 
 #[test]
+fn run_deep_recursion_does_not_overflow_stack() {
+    // Regression: the tree-walking interpreter runs on a large worker stack so
+    // deep (but finite) recursion completes instead of aborting the process.
+    // `count 5000` overflows the default ~8 MiB main-thread stack.
+    let src = "count :: Int -> Int {\n  | 0 => 0;\n  | n => 1 + count (n - 1);\n}\ncount 5000\n";
+    let path = write_tmp("cli_test_deep_recursion.zt", src);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("5000"));
+}
+
+#[test]
 fn run_zt_parse_error_exits_nonzero() {
     // `[1; 2]` is an invalid Zutai expression (list items need semicolons
     // but the outer `[` is parsed as union type syntax).

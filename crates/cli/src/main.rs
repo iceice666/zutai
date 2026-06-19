@@ -89,8 +89,8 @@ fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     // Resolve imports relative to the file's directory.
     let base = Path::new(path).parent();
-    match zutai_eval::eval_with_base(&contents, base) {
-        Ok(value) => println!("{value}"),
+    match eval_to_string(&contents, base) {
+        Ok(rendered) => println!("{rendered}"),
         Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
             // These are parse/HIR/import errors — render with miette if possible,
             // otherwise fall back to the semantic analyzer for pretty output.
@@ -142,6 +142,29 @@ fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
         }
     }
     Ok(())
+}
+
+/// Evaluate `contents` on a worker thread with a large stack.
+///
+/// The interim interpreter is a tree-walker that uses native recursion, so deep
+/// (but finite) recursion — including per-element recursion over a long list —
+/// can overflow the default ~8 MiB main-thread stack and abort the process. A
+/// 256 MiB worker stack lets realistic recursion complete. The forced `Value`
+/// holds `Rc`s and is not `Send`, so it is rendered to its `Display` string
+/// inside the worker; only the `String` (or the `Send` `EvalError`) crosses the
+/// join boundary.
+fn eval_to_string(contents: &str, base: Option<&Path>) -> Result<String, zutai_eval::EvalError> {
+    const EVAL_STACK_SIZE: usize = 256 * 1024 * 1024;
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(EVAL_STACK_SIZE)
+            .spawn_scoped(scope, || {
+                zutai_eval::eval_with_base(contents, base).map(|value| value.to_string())
+            })
+            .expect("failed to spawn evaluation thread")
+            .join()
+            .expect("evaluation thread panicked")
+    })
 }
 
 /// Parse a `.zt` file and print the AST (the old default behavior).
