@@ -320,9 +320,11 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Int(n) => write!(f, "{n}"),
             Value::Float(x) => {
-                // Always include a decimal point for clarity.
-                let s = format!("{x:?}"); // uses Rust's shortest round-trip repr
-                if s.contains('.') || s.contains('e') || s.contains('E') {
+                // Non-finite floats (`inf`, `-inf`, `NaN`) have no integer
+                // ambiguity, so emit the bare form rather than appending `.0`
+                // (which would produce the malformed `inf.0` / `NaN.0`).
+                let s = format!("{x:?}"); // Rust's shortest round-trip repr
+                if !x.is_finite() || s.contains('.') || s.contains('e') || s.contains('E') {
                     write!(f, "{s}")
                 } else {
                     write!(f, "{s}.0")

@@ -322,6 +322,27 @@ server.port ?? 8080
     assert_eq!(run(src), Value::Int(9000));
 }
 
+#[test]
+fn coalesce_explicit_none_takes_default() {
+    // Regression: an explicit `#none` optional value must default, not pass
+    // through. `??` is spec-defined as `match v { #none => d; #some {value=x} => x; }`.
+    let src = "x :: Int? = #none\nx ?? 5";
+    assert_eq!(run(src), Value::Int(5));
+}
+
+#[test]
+fn coalesce_explicit_some_unwraps_value() {
+    // Regression: an explicit `#some { value = x }` must unwrap to `x`.
+    let src = "x :: Int? = #some { value = 9; }\nx ?? 5";
+    assert_eq!(run(src), Value::Int(9));
+}
+
+#[test]
+fn coalesce_explicit_some_text_unwraps() {
+    let src = "x :: Text? = #some { value = \"hi\"; }\nx ?? \"def\"";
+    assert_eq!(run(src), Value::Text("hi".into()));
+}
+
 // ─── atom patterns in function clauses ───────────────────────────────────────
 
 #[test]
@@ -1076,6 +1097,15 @@ fn display_float_with_decimal() {
 fn display_float_integer_value_adds_dot_zero() {
     // 2.0 stored as float — must print with ".0" suffix
     assert_eq!(run("2.0").to_string(), "2.0");
+}
+
+#[test]
+fn display_non_finite_floats_have_no_dot_zero() {
+    // Regression: `inf`/`-inf`/`NaN` must not get a `.0` suffix (`inf.0` is
+    // malformed and not valid float syntax).
+    assert_eq!(run("1.0 / 0.0").to_string(), "inf");
+    assert_eq!(run("(0.0 - 1.0) / 0.0").to_string(), "-inf");
+    assert_eq!(run("0.0 / 0.0").to_string(), "NaN");
 }
 
 #[test]

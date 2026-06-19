@@ -387,7 +387,20 @@ fn eval_builtin(op: BuiltinOp, lhs: Value, rhs: Value) -> Result<Value, EvalErro
         // reaching this function; these arms are unreachable in normal execution.
         BuiltinOp::And | BuiltinOp::Or => unreachable!("And/Or are short-circuited in eval_expr"),
         BuiltinOp::Coalesce => match lhs {
+            // Absent optional (implicit Nothing or explicit `#none`) → fallback.
             Value::Nothing => Ok(rhs),
+            Value::Atom(a) if a.as_ref() == "none" => Ok(rhs),
+            Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => Ok(rhs),
+            // Explicit `#some { value = x }` → unwrap to `x` (spec desugaring).
+            Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
+                match payload.iter().find(|(n, _)| n.as_ref() == "value") {
+                    Some((_, thunk)) => thunk
+                        .peek()
+                        .ok_or(EvalError::Internal("unforced #some payload in TLC")),
+                    None => Ok(Value::TaggedValue { tag, payload }),
+                }
+            }
+            // Present optional already unwrapped to a bare value → pass through.
             other => Ok(other),
         },
     }

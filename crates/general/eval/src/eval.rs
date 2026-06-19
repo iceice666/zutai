@@ -502,7 +502,20 @@ impl<'a> Evaluator<'a> {
             BinOp::Coalesce => {
                 let lv = self.eval(lhs, env)?;
                 return match lv {
+                    // Absent optional: implicit `Value::Nothing` or an explicit
+                    // `#none` value (atom or zero-payload tagged) → fallback.
                     Value::Nothing => self.eval(rhs, env),
+                    Value::Atom(a) if a.as_ref() == "none" => self.eval(rhs, env),
+                    Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => self.eval(rhs, env),
+                    // Explicit `#some { value = x }` → unwrap to `x`, matching the
+                    // spec desugaring `match v { #none => d; #some { value = x } => x; }`.
+                    Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
+                        match payload.iter().find(|(n, _)| n.as_ref() == "value") {
+                            Some((_, thunk)) => thunk.force(self),
+                            None => Ok(Value::TaggedValue { tag, payload }),
+                        }
+                    }
+                    // A present optional already unwrapped to a bare value → pass through.
                     other => Ok(other),
                 };
             }
