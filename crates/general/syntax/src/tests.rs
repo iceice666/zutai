@@ -406,6 +406,37 @@ fn parse_comparison_non_assoc_error() {
 }
 
 #[test]
+fn comparisons_around_logical_ops_are_not_chained() {
+    // Regression: comparisons on both sides of a lower-precedence operator
+    // (`&&`, `||`, `??`, pipelines) are independent operands, not a chain.
+    // The diagnostic scanner used to flag `a < b && c < d` as a false chain.
+    for src in [
+        "1 < 2 && 3 < 4",
+        "1 < 2 || 3 < 4",
+        "1 < 2 && 3 < 4 && 5 < 6",
+        "1 > 2 || 3 >= 4",
+        "1 <= 2 && 3 != 4",
+    ] {
+        assert!(
+            !parse_kinds(src).contains(&ParseErrorKind::ChainedComparison),
+            "{src:?} should not be flagged as a chained comparison"
+        );
+    }
+}
+
+#[test]
+fn genuine_chained_comparison_still_rejected() {
+    // A comparison directly followed by another comparison (no looser-binding
+    // operator between them) is still the non-associative error.
+    for src in ["1 < 2 < 3", "1 > 2 > 3", "1 <= 2 <= 3", "1 != 2 != 3"] {
+        assert!(
+            parse_kinds(src).contains(&ParseErrorKind::ChainedComparison),
+            "{src:?} should be a chained comparison error"
+        );
+    }
+}
+
+#[test]
 fn parse_pipeline_forward() {
     let e = parse_expr_str("x |> f");
     let (dir, lhs, rhs) = as_pipeline(&e);

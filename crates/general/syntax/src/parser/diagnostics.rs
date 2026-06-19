@@ -97,6 +97,22 @@ impl<'a> Scanner<'a> {
                 b'\\' => self.scan_lambda(),
                 b'<' | b'>' | b'!' => self.scan_operator(),
                 b'|' => self.scan_pipeline(),
+                b'&' => {
+                    if self.starts_with("&&") {
+                        self.break_compare_chain();
+                        self.pos += 2;
+                    } else {
+                        self.pos += 1;
+                    }
+                }
+                b'?' => {
+                    if self.starts_with("??") {
+                        self.break_compare_chain();
+                        self.pos += 2;
+                    } else {
+                        self.pos += 1;
+                    }
+                }
                 _ => self.pos += self.char_len_at(self.pos),
             }
         }
@@ -224,6 +240,10 @@ impl<'a> Scanner<'a> {
     fn scan_pipeline(&mut self) {
         if self.starts_with("|>") {
             self.note_pipeline(PipelineDir::Forward, self.pos);
+            self.break_compare_chain();
+            self.pos += 2;
+        } else if self.starts_with("||") {
+            self.break_compare_chain();
             self.pos += 2;
         } else {
             self.pos += 1;
@@ -244,6 +264,7 @@ impl<'a> Scanner<'a> {
     fn operator_at(&mut self, offset: usize) -> Option<(usize, bool)> {
         if self.starts_at(offset, "<|") {
             self.note_pipeline(PipelineDir::Backward, offset);
+            self.break_compare_chain();
             return Some((2, false));
         }
         if offset > 0 && matches!(self.bytes[offset - 1], b'-' | b'=') {
@@ -300,6 +321,14 @@ impl<'a> Scanner<'a> {
 
     fn reset_segment(&mut self) {
         *self.current_segment_mut() = Segment::default();
+    }
+
+    /// Operators that bind looser than comparison (`&&`, `||`, `??`, `|>`, `<|`)
+    /// separate independent comparison operands, so a comparison after one of
+    /// them does not chain with a comparison before it. Reset the chained-
+    /// comparison tracker without disturbing pipeline-direction tracking.
+    fn break_compare_chain(&mut self) {
+        self.current_segment_mut().first_compare = None;
     }
 
     fn push(&mut self, start: usize, end: usize, kind: ParseErrorKind) {
