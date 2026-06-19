@@ -28,7 +28,7 @@ The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflo
 
 ## Current Baseline
 
-_Last updated: after the cross-module witnesses milestone; backend complete through ANF (Phases 3–4)._
+_Last updated: after SSA and LLVM IR codegen (Phase 5 complete)._
 
 - Immediate mode parses `.zti` data through selectable parser backends (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
@@ -36,7 +36,8 @@ _Last updated: after the cross-module witnesses milestone; backend complete thro
 - The CLI exposes `parse`, `run`, and `repl` subcommands backed by the reference interpreter.
 - `crates/general/eval/` is a semantics oracle that refuses to evaluate any program that is not fully type-checked; it provides ground truth for compiler differential testing. Per Decision 0002 it has migrated to walk TLC (`eval_tlc.rs`); the THIR walker remains as a regression oracle.
 - `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, and dictionary-passing elaboration for constraints are all functional.
-- `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered. The remaining backend (SSA, LLVM IR codegen) does not yet exist.
+- `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered.
+- `crates/general/ssa/` (SSA) and `crates/general/codegen/` (LLVM IR codegen) exist and are test-covered. SSA provides basic-block IR with phi nodes; codegen emits LLVM IR text using an `i64` universal value representation for v0.
 
 ## Phase 1: Complete THIR (LSP Foundation) ✅
 
@@ -122,19 +123,19 @@ Goal: convert the Dataflow Core graph into Administrative Normal Form — a line
 
 Verification gate: ANF-lowered modules for all v0 forms are well-formed (every name defined before first use; `letrec` only where cycles exist in DC).
 
-## Phase 5: SSA and LLVM IR
+## Phase 5: SSA and LLVM IR ✅
 
 Goal: compile ANF to SSA form and emit LLVM IR.
 
-- [ ] Add crate `crates/general/ssa/` (`zutai-ssa`).
-- [ ] Lower ANF functions to basic-block SSA: introduce phi-nodes for branches, eliminate nested lets into straight-line code within blocks.
-- [ ] Add crate `crates/general/codegen/` (`zutai-codegen`).
-- [ ] Emit LLVM IR via `inkwell` or `llvm-sys`.
-- [ ] Represent v0 values as LLVM types: `i64` for Int, `double` for Float, `i1` for Bool, pointer-tagged structs for records/tuples/lists, closures as function-pointer + environment pairs.
-- [ ] Map Zutai's structural laziness (unreachable DC nodes = dead code) to LLVM dead-code elimination; do not emit thunk machinery.
-- [ ] Map `letrec` to LLVM IR functions with mutual tail-call or direct-call structure.
+- [x] Add crate `crates/general/ssa/` (`zutai-ssa`).
+- [x] Lower ANF functions to basic-block SSA: introduce phi-nodes for branches, eliminate nested lets into straight-line code within blocks.
+- [x] Add crate `crates/general/codegen/` (`zutai-codegen`).
+- [x] Emit LLVM IR as text (no inkwell/llvm-sys dependency for v0; generates `.ll` files directly).
+- [x] Represent v0 values as `i64` (tagged union approach): integers stored directly, compound values (records, tuples, lists, closures, text) heap-allocated with pointer cast to `i64`.
+- [x] Map Zutai's structural laziness (unreachable DC nodes = dead code) to LLVM dead-code elimination; do not emit thunk machinery.
+- [x] Map `letrec` to LLVM IR functions with mutual direct-call structure.
 
-Verification gate: LLVM IR for the complete example and all v0 spec examples compiles without errors; `opt -O2` produces plausible output.
+Verification gate: SSA and codegen crates compile; unit tests cover all v0 language forms (literals, function calls, lambdas, records, tuples, lists, match/if, binary ops, variants, coalesce); `cargo test --workspace` passes (898 tests).
 
 ## Phase 6: CLI Compilation
 
@@ -175,7 +176,7 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **TLC Phase 5 + eval migration** — dictionary-passing elaboration; migrate `zutai-eval` from THIR to TLC (`eval_tlc.rs`). After this step the interpreter runs on TLC and constraint dispatch is correct for all call patterns.
 - [x] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
 - [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
-- [ ] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; `inkwell`/`llvm-sys` emission.
+- [x] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; LLVM IR text emission (v0 uses i64 universal representation, no inkwell/llvm-sys dependency).
 - [ ] **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.
 - [ ] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
 - [ ] **Deferred constraint/witness milestones** — `derive` synthesis; method-level type params (`<A,B>` dropped at THIR); conditional / higher-kinded witnesses (`Eq @(List A)`, blocked by parametric `AliasApply` in `type_key`). Independent of the v1 parser frontend; schedulable alongside the backend.

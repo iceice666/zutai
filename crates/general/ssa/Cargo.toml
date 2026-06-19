@@ -1,0 +1,15 @@
+[package]
+name = "zutai-ssa"
+description = "SSA IR and ANF→SSA lowering for Zutai."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zutai-anf = { path = "../anf" }
+
+[dev-dependencies]
+zutai-syntax = { path = "../syntax" }
+zutai-hir = { path = "../hir" }
+zutai-thir = { path = "../thir" }
+zutai-tlc = { path = "../tlc" }
+zutai-dataflow = { path = "../dataflow" }

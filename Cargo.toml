@@ -2,10 +2,12 @@
 members = [
   "crates/cli",
   "crates/general/anf",
+  "crates/general/codegen",
   "crates/general/dataflow",
   "crates/general/eval",
   "crates/general/hir",
   "crates/general/semantic",
+  "crates/general/ssa",
   "crates/general/syntax",
   "crates/general/tlc",
   "crates/general/thir",

@@ -1212,6 +1212,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zutai-codegen"
+version = "0.1.0"
+dependencies = [
+ "zutai-ssa",
+]
+
+[[package]]
 name = "zutai-dataflow"
 version = "0.1.0"
 dependencies = [
@@ -1280,6 +1287,18 @@ version = "0.1.0"
 dependencies = [
  "zutai-hir",
  "zutai-im",
+ "zutai-syntax",
+ "zutai-thir",
+ "zutai-tlc",
+]
+
+[[package]]
+name = "zutai-ssa"
+version = "0.1.0"
+dependencies = [
+ "zutai-anf",
+ "zutai-dataflow",
+ "zutai-hir",
  "zutai-syntax",
  "zutai-thir",
  "zutai-tlc",
