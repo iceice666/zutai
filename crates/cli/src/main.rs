@@ -1,61 +1,85 @@
-use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::Path;
-use thiserror::Error;
 
+use clap::Parser;
 use miette::{Diagnostic, LabeledSpan, NamedSource, SourceCode};
-
+use thiserror::Error;
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    // Route to the appropriate subcommand.
-    match args.as_slice() {
-        // `zutai-cli repl` — interactive REPL
-        [cmd] if cmd == "repl" => {
-            run_repl()?;
+    let cli = Cli::parse();
+    match cli.command {
+        Some(Commands::Run { path }) => run_file(&path)?,
+        Some(Commands::Parse { path }) => run_parse(&path)?,
+        Some(Commands::Check { path }) => run_check(&path)?,
+        Some(Commands::Compile { path, output }) => {
+            run_compile(&path, output.as_deref())?;
         }
-        // `zutai-cli parse <path>` — print AST
-        [cmd, path] if cmd == "parse" => {
-            run_parse(path)?;
-        }
-        // `zutai-cli run <path>` — evaluate and print result
-        [cmd, path] if cmd == "run" => {
-            run_file(path)?;
-        }
-        // `zutai-cli check <path>` — type-check and print diagnostics
-        [cmd, path] if cmd == "check" => {
-            run_check(path)?;
-        }
-        // `zutai-cli compile <path>` — compile to LLVM IR; optional -o <output>
-        [cmd, path] if cmd == "compile" => {
-            run_compile(path, None)?;
-        }
-        [cmd, path, flag, output] if cmd == "compile" && flag == "-o" => {
-            run_compile(path, Some(output))?;
-        }
-        // `zutai-cli dataflow <path>` — print Dataflow Core graph
-        [cmd, path] if cmd == "dataflow" => {
-            run_dataflow(path)?;
-        }
-        // `zutai-cli <path>` — bare path: `.zt` → run, `.zti` → parse/print AST
-        [path] if !path.starts_with('-') => {
-            let ext = extension_or_error(path)?.to_ascii_lowercase();
-            match ext.as_str() {
-                "zt" => run_file(path)?,
-                "zti" => run_parse_zti(path)?,
-                other => return Err(format!("Unsupported extension: {other}").into()),
-            }
-        }
-        _ => {
-            return Err(
-                "usage: zutai-cli [run <path>|parse <path>|check <path>|compile <path> [-o output]|dataflow <path>|repl|<path>]".into(),
-            );
+        Some(Commands::Dataflow { path }) => run_dataflow(&path)?,
+        Some(Commands::Repl) => run_repl()?,
+        None => {
+            let path = cli.path.expect("clap requires a subcommand or path");
+            run_bare_path(&path)?;
         }
     }
-
     Ok(())
+}
+
+// ─── CLI definition ──────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+#[command(
+    name = "zutai-cli",
+    about = "Zutai language compiler and interpreter",
+    arg_required_else_help = true
+)]
+struct Cli {
+    /// Legacy shorthand: run .zt files or parse .zti files without a subcommand.
+    path: Option<String>,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(clap::Subcommand)]
+enum Commands {
+    /// Evaluate a .zt file and print the result
+    Run {
+        /// Path to the .zt file
+        path: String,
+    },
+    /// Parse a file and print the AST
+    Parse {
+        /// Path to the .zt or .zti file
+        path: String,
+    },
+    /// Type-check a .zt file and print diagnostics
+    Check {
+        /// Path to the .zt file
+        path: String,
+    },
+    /// Compile a .zt file to LLVM IR
+    Compile {
+        /// Path to the .zt file
+        path: String,
+        /// Output file path (default: stdout)
+        #[arg(short)]
+        output: Option<String>,
+    },
+    /// Print the Dataflow Core graph for a .zt file
+    Dataflow {
+        /// Path to the .zt file
+        path: String,
+    },
+    /// Run an interactive REPL
+    Repl,
+}
+
+fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {
+    match extension_or_error(path)?.as_str() {
+        "zt" => run_file(path),
+        "zti" => run_parse_zti(path),
+        other => Err(format!("Unsupported file extension: .{other}").into()),
+    }
 }
 
 // ─── subcommand implementations ───────────────────────────────────────────────

@@ -21,7 +21,7 @@ fn no_args_shows_usage() {
     cli()
         .assert()
         .failure()
-        .stderr(predicate::str::contains("usage:"));
+        .stderr(predicate::str::contains("Usage:"));
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn unknown_args_shows_usage() {
         .arg("--unknown")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("usage:"));
+        .stderr(predicate::str::contains("Usage:"));
 }
 
 // ─── `run` subcommand ─────────────────────────────────────────────────────────
