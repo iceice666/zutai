@@ -82,9 +82,11 @@ Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
 - Prefer small, focused changes.
 - Do not overwrite user changes you did not make.
 - Read the relevant files in `docs/v0_spec/` before implementing v0 language syntax or semantics; read `docs/v1_spec/` as design context only when working on deferred v1 features.
+- After the v1 parser frontend, treat `docs/PROGRESS.md`'s post-frontend roadmap as the implementation order: HIR lowering first, then THIR row semantics, THIR→TLC row elaboration, `select` semantics, deferred constraint/witness milestones, effects, and reflection.
+- For v1 features, do not extend parser syntax further until the existing surface forms have HIR/THIR/TLC semantics. Prefer check-only support with precise unsupported-feature diagnostics before claiming compiler or interpreter support.
 - Keep parser syntax in `general/syntax`, name resolution and syntax-only normalization in `general/hir`, and type-dependent checking/elaboration in `general/thir`.
 - Keep constraint solving, zonking, and TyLam/TyApp elaboration in `general/tlc`; keep graph construction and TLC→DC lowering in `general/dataflow`; keep ANF scheduling in `general/anf`; keep SSA and LLVM emission in `general/ssa` and `general/codegen` respectively.
 - Route end-to-end general-mode semantic behavior through `general/semantic` where practical so callers can inspect parse, HIR, THIR, and diagnostics consistently.
-- Runtime evaluation semantics live in `general/eval` (`zutai-eval`). All evaluation entry points must remain gated on `is_thir_complete()` — never evaluate a program with a THIR error node or incomplete type information. The interpreter is a semantics oracle; a wrong value is worse than a refused evaluation.
+- Runtime evaluation semantics live in `general/eval` (`zutai-eval`). All evaluation entry points must remain gated on complete typed IR — never evaluate a program with a THIR error node, TLC elaboration failure, or incomplete type information. The interpreter is a semantics oracle; a wrong value is worse than a refused evaluation.
 - Keep crate descriptions and README layout in sync when crates are renamed or added.
 - Use Rust 2024 edition conventions from the workspace configuration.

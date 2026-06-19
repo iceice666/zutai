@@ -166,9 +166,149 @@ Verification gate: parser tests cover every example in `docs/v1_spec/01-row-poly
 
 Out of scope (follow-on "v1 semantics" milestone): extend HIR & THIR `TypeKind::Record`/`Union` with row tails; wire THIR→TLC to emit the existing `RVar`; type-check open rows, effects, and `select`.
 
-## Near-Term Implementation Order
+## Post-v1 Frontend Roadmap
 
-_Updated to reflect current state and agreed goal: complete TLC → Dataflow Core → ANF → SSA/LLVM IR, with the interpreter migrating from THIR to TLC during Phase 5._
+_Updated after Phase 7 completion. The v1 parser frontend is now surface-only complete; the next work is semantic lowering and typed behavior for the already-parsed forms. Do not add more parser surface area until these forms have HIR/THIR/TLC coverage._
+
+### Phase 8: v1 HIR Lowering
+
+Goal: lower parsed v1 syntax into resolved, source-preserving HIR with diagnostics, without type-dependent checking.
+
+- [ ] Add HIR representation for record and union row tails: anonymous `...`, named `...Rest`, and spread `...Shape`.
+- [ ] Resolve row variables from type parameter scopes and distinguish row variables from type aliases used as spreads.
+- [ ] Add HIR for value/type `select`, preserving selected field order.
+- [ ] Add HIR for function effect rows, `perform`, `handle ... with { ... }`, and `resume`.
+- [ ] Diagnose syntax-context errors before THIR: duplicate selected fields, duplicate explicit row fields, invalid row-tail placement, and `resume` outside operation handler clauses.
+
+Verification gate: v1 parser examples lower through HIR with stable source spans and precise diagnostics; no raw parser-only v1 forms leak into semantic entry points.
+
+### Phase 9: Row-Polymorphic THIR
+
+Goal: type-check v1 open records/unions and row-polymorphic APIs.
+
+- [ ] Extend THIR `TypeKind::Record` / `TypeKind::Union` with row tails.
+- [ ] Add row-variable kinding for record rows and union rows.
+- [ ] Implement first-order row unification for closed rows, anonymous open rows, and named row tails.
+- [ ] Reject duplicate/overlapping explicit fields and row tails.
+- [ ] Type-check field access through open record/view types.
+- [ ] Type-check value-level `select receiver { fields; }` as closed record construction preserving requested order.
+- [ ] Type-check type-level `select Type { fields; }` after type-level normalization.
+- [ ] Require explicit annotations when row-polymorphic inference is not principal or obvious.
+
+Verification gate: examples from `docs/v1_spec/01-row-polymorphism.md` parse, lower, and type-check through THIR with expected success/failure diagnostics.
+
+### Phase 10: THIR→TLC Row Elaboration
+
+Goal: elaborate THIR row-polymorphic types into TLC rows using the existing `RVar` and row-kind machinery.
+
+- [ ] Lower THIR open records/unions to TLC `Row` values.
+- [ ] Emit TLC `RVar` for named row tails.
+- [ ] Extend zonking/substitution coverage for row variables introduced in THIR.
+- [ ] Ensure closed-type positions contain no unresolved row variables after elaboration.
+- [ ] Preserve field order for `select` lowering.
+
+Verification gate: semantic facade tests prove v1 row examples produce valid TLC with expected `RVar` use and no free type variables in closed positions.
+
+### Phase 11: `select` Semantics and Compile Support
+
+Goal: make `select` a typed, executable projection form for records and record type values.
+
+- [ ] Lower value-level `select` to record projection plus record construction.
+- [ ] Lower type-level `select` to closed record type construction after normalization.
+- [ ] Reject unknown selected fields with source-located diagnostics.
+- [ ] Compile value-level `select` through Dataflow Core, ANF, SSA, and LLVM when the input row is concretely known.
+
+Verification gate: `check`, `run`, and `compile` cover successful selection, field ordering, and unknown-field failures.
+
+### Phase 12: `derive` Synthesis
+
+Goal: replace `derive` no-op witnesses with real structural witness synthesis.
+
+- [ ] Reject `Witness { derive: true }` when the constraint is not marked derivable.
+- [ ] Synthesize record witnesses field-by-field, resolving component witnesses.
+- [ ] Synthesize union witnesses by member shape and tuple-field comparison.
+- [ ] Emit synthesized witness bodies before TLC dictionary-passing.
+- [ ] Fail with precise diagnostics when any component type lacks the required witness.
+
+Verification gate: derived `Eq`/`Ord`-shaped witnesses behave identically to hand-written witnesses in `check`, TLC eval, and compile paths where supported.
+
+### Phase 13: Conditional Witnesses
+
+Goal: support witnesses for parameterized types with bounds, such as `Eq @(List A) :: <A: Eq>`.
+
+- [ ] Fix parametric `AliasApply` targets in `type_key`.
+- [ ] Represent witness predicates with required type-parameter bounds.
+- [ ] Resolve witnesses recursively through type arguments.
+- [ ] Detect and report recursive or ambiguous witness search.
+
+Verification gate: bounded witnesses for list-like aliases resolve at direct and indirect polymorphic call sites without `UnresolvedWitness`.
+
+### Phase 14: Method-Level Type Params and Higher-Kinded Constraints
+
+Goal: preserve and elaborate polymorphic constraint methods and constructor-kinded witnesses.
+
+- [ ] Preserve method-level type parameters (`<A, B>`) in HIR and THIR.
+- [ ] Elaborate polymorphic methods to TLC `TyLam` / `TyApp`.
+- [ ] Extend dictionary-passing to handle polymorphic methods.
+- [ ] Kind-check constraint targets of kind `Type -> Type`.
+- [ ] Support partial type application in witness targets, such as `Functor @(Result E)`.
+
+Verification gate: `Functor`/`Foldable`-shaped examples from `docs/v1_spec/03-constraints.md` type-check and elaborate to TLC with explicit method polymorphism.
+
+### Phase 15: Effect Typing (check-only first)
+
+Goal: type-check algebraic effects while refusing execution/compilation until ordering semantics are implemented.
+
+- [ ] Represent function effect rows in THIR and TLC.
+- [ ] Kind and unify effect rows.
+- [ ] Type-check `perform` against the ambient or locally handled effect row.
+- [ ] Type-check standard aliases (`fail`, `warn`, `log`, `ask`) and dotted capability operations (`fs.read`).
+- [ ] Type-check `handle` so handled operations are removed and unhandled operations are forwarded.
+- [ ] Type-check `resume` result types and enforce the v1 one-shot rule.
+- [ ] Make `run`/`compile` reject effectful programs with precise unsupported-feature diagnostics until sequencing is designed.
+
+Verification gate: `check` accepts/rejects examples from `docs/v1_spec/05-effects.md`; `run` and `compile` refuse effectful programs explicitly rather than miscompiling them.
+
+### Phase 16: Effect Evaluation and Compilation Design
+
+Goal: define and implement explicit ordering for effectful computations without breaking Zutai's lazy pure core.
+
+- [ ] Specify forcing and sequencing rules for `perform`, `handle`, `with`, and `resume`.
+- [ ] Decide whether effects lower through a dedicated IR marker, Dataflow Core extension, or ANF sequencing boundary.
+- [ ] Implement TLC reference evaluation for handled effects after the ordering model is written.
+- [ ] Extend compile pipeline only after interpreter behavior is deterministic and test-covered.
+
+Verification gate: effect examples run deterministically under the reference interpreter and have matching compiled behavior before LLVM support is claimed.
+
+### Phase 17: Reflection Builtins (`fields` / `schema`)
+
+Goal: implement compile-time reflection over normalized type values.
+
+- [ ] Add compiler-known builtins for `fields T` and `schema T` while keeping their surface syntax as ordinary application.
+- [ ] Implement record reflection first, then union reflection after row/variant representation is stable.
+- [ ] Define the exact `fields` result shape, including embedded `Type` values.
+- [ ] Define the serializable `schema` output shape.
+- [ ] Decide whether open rows are rejected initially or encoded explicitly in schema output.
+
+Verification gate: examples from `docs/v1_spec/04-metaprogramming.md` evaluate to deterministic compile-time values; schema output is ordinary serializable data.
+
+### Backend Support Policy for v1 Features
+
+Each v1 feature must declare one of these support levels before landing:
+
+1. **Check-only** — parser, HIR, THIR, and diagnostics work; `run`/`compile` reject with precise unsupported-feature diagnostics.
+2. **Reference interpreter** — TLC evaluation works; compiler backend may still reject.
+3. **Full compile support** — Dataflow Core, ANF, SSA, and LLVM emission are implemented and tested.
+
+Recommended initial policy:
+
+- Row polymorphism: full compile support after THIR→TLC normalizes rows to concrete record/union shapes.
+- `select`: full compile support early because it lowers to projection plus record construction.
+- `derive`: full support after synthesized witness bodies feed existing dictionary-passing.
+- Effects: check-only first; interpreter second; LLVM last.
+- `fields` / `schema`: compile-time/reference support first; full compile support only when outputs are ordinary values after elaboration.
+
+## Near-Term Implementation Order
 
 - [x] **Finish THIR** — complete (lambda, match, optional access, HM polymorphism, constraints/witnesses).
 - [x] **TLC Phase 3** — row kind + `RVar`; capture-avoiding `subst`; open-record/union lowering.
@@ -178,5 +318,11 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [x] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; LLVM IR text emission (v0 uses i64 universal representation, no inkwell/llvm-sys dependency).
 - [x] **CLI `compile` subcommand** — wire the full pipeline; add `check`, `compile [-o output]`, and `dataflow` subcommands with source-located diagnostics.
-- [x] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
-- [ ] **Deferred constraint/witness milestones** — `derive` synthesis; method-level type params (`<A,B>` dropped at THIR); conditional / higher-kinded witnesses (`Eq @(List A)`, blocked by parametric `AliasApply` in `type_key`). Independent of the v1 parser frontend; schedulable alongside the backend.
+- [x] **v1 parser frontend** — Phase 7 above.
+- [ ] **v1 HIR lowering** — Phase 8 above.
+- [ ] **row-polymorphic THIR** — Phase 9 above.
+- [ ] **THIR→TLC row elaboration** — Phase 10 above.
+- [ ] **`select` semantics and compile support** — Phase 11 above.
+- [ ] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
+- [ ] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
+- [ ] **reflection builtins** — `fields` / `schema`; Phase 17 above.
