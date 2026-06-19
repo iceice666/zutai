@@ -202,6 +202,12 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         UnsupportedMultiParamConstraint { name } => {
             format!("multi-param constraint `{name}` is not yet supported")
         }
+        OverlappingRowField { name } => {
+            format!("row tail introduces a field already declared: `{name}`")
+        }
+        RowAnnotationRequired => {
+            "row-polymorphic inference is not principal here; add a type annotation".to_string()
+        }
     }
 }
 

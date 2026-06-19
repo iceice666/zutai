@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 use zutai_hir::BindingId;
 
 use crate::import::{ImportedField, ImportedTupleItem, ImportedType, ImportedUnionVariant};
-use crate::ir::{ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
+use crate::ir::{RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
 
 /// A type that cannot be exported across a module import in this phase.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +61,12 @@ fn export(
         TypeKind::Optional(inner) => Ok(ImportedType::Optional(Box::new(export(
             file, aliases, inner, seen,
         )?))),
-        TypeKind::Record(fields) => {
+        TypeKind::Record(fields, tail) => {
+            if tail != RowTail::Closed {
+                return Err(ExportUnsupported {
+                    reason: "cannot export an open record type across a module boundary",
+                });
+            }
             let mut out = Vec::with_capacity(fields.len());
             for field in &fields {
                 out.push(ImportedField {
@@ -87,7 +92,12 @@ fn export(
             }
             Ok(ImportedType::Tuple(out))
         }
-        TypeKind::Union(variants) => {
+        TypeKind::Union(variants, tail) => {
+            if tail != RowTail::Closed {
+                return Err(ExportUnsupported {
+                    reason: "cannot export an open union type across a module boundary",
+                });
+            }
             let mut out = Vec::with_capacity(variants.len());
             for variant in &variants {
                 let payload = match variant.payload {

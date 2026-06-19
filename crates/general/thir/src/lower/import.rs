@@ -3,7 +3,8 @@ use zutai_syntax::Span;
 
 use crate::import::{ImportedTupleItem, ImportedType};
 use crate::ir::{
-    ThirExpr, ThirExprId, ThirExprKind, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+    RowTail, ThirExpr, ThirExprId, ThirExprKind, Type, TypeId, TypeKind, TypeRecordField,
+    TypeTupleItem,
 };
 
 use super::Lowerer;
@@ -92,7 +93,7 @@ impl<'hir> Lowerer<'hir> {
                     });
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Record(thir_fields),
+                    kind: TypeKind::Record(thir_fields, RowTail::Closed),
                     span,
                 })
             }
@@ -128,7 +129,7 @@ impl<'hir> Lowerer<'hir> {
                     })
                     .collect();
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(variants),
+                    kind: TypeKind::Union(variants, RowTail::Closed),
                     span,
                 })
             }

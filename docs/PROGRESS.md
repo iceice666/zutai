@@ -202,14 +202,14 @@ Verification gate: v1 parser examples lower through HIR with stable source spans
 
 Goal: type-check v1 open records/unions and row-polymorphic APIs.
 
-- [ ] Extend THIR `TypeKind::Record` / `TypeKind::Union` with row tails.
-- [ ] Add row-variable kinding for record rows and union rows.
-- [ ] Implement first-order row unification for closed rows, anonymous open rows, and named row tails.
-- [ ] Reject duplicate/overlapping explicit fields and row tails.
-- [ ] Type-check field access through open record/view types.
-- [ ] Type-check value-level `select receiver { fields; }` as closed record construction preserving requested order.
-- [ ] Type-check type-level `select Type { fields; }` after type-level normalization.
-- [ ] Require explicit annotations when row-polymorphic inference is not principal or obvious.
+- [x] Extend THIR `TypeKind::Record` / `TypeKind::Union` with row tails.
+- [x] Add row-variable kinding for record rows and union rows.
+- [x] Implement first-order row unification for closed rows, anonymous open rows, and named row tails.
+- [x] Reject duplicate/overlapping explicit fields and row tails.
+- [x] Type-check field access through open record/view types.
+- [x] Type-check value-level `select receiver { fields; }` as closed record construction preserving requested order.
+- [x] Type-check type-level `select Type { fields; }` after type-level normalization.
+- [x] Require explicit annotations when row-polymorphic inference is not principal or obvious.
 
 Verification gate: examples from `docs/v1_spec/01-row-polymorphism.md` parse, lower, and type-check through THIR with expected success/failure diagnostics.
 
@@ -337,7 +337,7 @@ Recommended initial policy:
 - [x] **CLI `compile` subcommand** — wire the full pipeline; add `check`, `compile [-o output]`, and `dataflow` subcommands with source-located diagnostics.
 - [x] **v1 parser frontend** — Phase 7 above.
 - [x] **v1 HIR lowering** — Phase 8 above.
-- [ ] **row-polymorphic THIR** — Phase 9 above.
+- [x] **row-polymorphic THIR** — Phase 9 above.
 - [ ] **THIR→TLC row elaboration** — Phase 10 above.
 - [ ] **`select` semantics and compile support** — Phase 11 above.
 - [ ] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.

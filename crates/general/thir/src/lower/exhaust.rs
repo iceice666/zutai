@@ -23,8 +23,8 @@ use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
-    ThirClause, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId, TypeKind,
-    TypeTupleItem, UnionVariant,
+    RowTail, ThirClause, ThirPatId, ThirPatKind, ThirRecordPatField, ThirTuplePatItem, TypeId,
+    TypeKind, TypeTupleItem, UnionVariant,
 };
 
 use super::Lowerer;
@@ -283,11 +283,14 @@ impl<'hir> Lowerer<'hir> {
                 ctor: Ctor::Struct,
                 fields: items.iter().map(tuple_item_ty).collect(),
             }]),
-            TypeKind::Record(fields) => Some(vec![SigCtor {
+            TypeKind::Record(fields, _) => Some(vec![SigCtor {
                 ctor: Ctor::Struct,
                 fields: fields.iter().map(|f| f.ty).collect(),
             }]),
-            TypeKind::Union(members) => self.union_signature(&members, span),
+            TypeKind::Union(members, RowTail::Closed) => self.union_signature(&members, span),
+            // An open or row-polymorphic union has unknown extra members, so only
+            // a wildcard can complete coverage.
+            TypeKind::Union(_, _) => None,
             // Infinite or opaque: only a wildcard completes coverage.
             _ => None,
         };
@@ -305,7 +308,7 @@ impl<'hir> Lowerer<'hir> {
                 Some(record_ty) => {
                     let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
                     match self.ty(resolved).kind.clone() {
-                        TypeKind::Record(fields) => fields.iter().map(|f| f.ty).collect(),
+                        TypeKind::Record(fields, _) => fields.iter().map(|f| f.ty).collect(),
                         _ => return None,
                     }
                 }
@@ -338,7 +341,7 @@ impl<'hir> Lowerer<'hir> {
             ThirPatKind::Atom(name) => {
                 if name == "none" && matches!(self.ty(col_ty).kind, TypeKind::Optional(_)) {
                     DeconPat::nullary(Ctor::OptNone)
-                } else if matches!(self.ty(col_ty).kind, TypeKind::Union(_)) {
+                } else if matches!(self.ty(col_ty).kind, TypeKind::Union(_, _)) {
                     // Atom pattern against a union: pure enum variant with no payload.
                     DeconPat::nullary(Ctor::Tagged(name))
                 } else {
@@ -383,7 +386,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn decon_record_pattern(&mut self, fields: &[ThirRecordPatField], col_ty: TypeId) -> DeconPat {
-        let TypeKind::Record(type_fields) = self.ty(col_ty).kind.clone() else {
+        let TypeKind::Record(type_fields, _) = self.ty(col_ty).kind.clone() else {
             return DeconPat::Wild;
         };
         let by_name: HashMap<&str, ThirPatId> = fields
@@ -456,7 +459,7 @@ impl<'hir> Lowerer<'hir> {
                     fields: vec![pat],
                 }
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, _) => {
                 let variant = variants.iter().find(|v| v.name == tag).cloned();
                 match variant {
                     None => DeconPat::Wild,
@@ -464,7 +467,7 @@ impl<'hir> Lowerer<'hir> {
                         None => DeconPat::nullary(Ctor::Tagged(tag)),
                         Some(record_ty) => {
                             let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
-                            let TypeKind::Record(type_fields) = self.ty(resolved).kind.clone()
+                            let TypeKind::Record(type_fields, _) = self.ty(resolved).kind.clone()
                             else {
                                 return DeconPat::Wild;
                             };

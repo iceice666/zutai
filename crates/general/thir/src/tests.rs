@@ -2819,7 +2819,7 @@ fn type_matches_record_to_record_exercises_record_types_match() {
     // `f :: { x : Int; } -> { x : Int; } = \\r. r` forces type_matches on two
     // distinct Record TypeIds with the same structure.
     let file = completed_file("f :: { x : Int; } -> { x : Int; } = \\r. r\nf { x = 1; }");
-    assert!(matches!(final_type_kind(&file), TypeKind::Record(_)));
+    assert!(matches!(final_type_kind(&file), TypeKind::Record(_, _)));
 }
 
 #[test]
@@ -3952,16 +3952,185 @@ fn rejects_as_unsupported(src: &str) {
 }
 
 #[test]
-fn open_record_type_is_unsupported_in_thir() {
-    rejects_as_unsupported("f :: { host : Text; ...; } -> Text {\n  | x => \"ok\";\n}\nf");
-}
-
-#[test]
-fn value_select_is_unsupported_in_thir() {
-    rejects_as_unsupported("s := { a = 1; }\nselect s { a; }");
-}
-
-#[test]
 fn perform_is_unsupported_in_thir() {
     rejects_as_unsupported("err := 1\nperform fail err");
+}
+
+// ── Phase 9: row-polymorphic THIR ────────────────────────────────────────────
+
+#[test]
+fn view_type_function_accepts_records_with_extra_fields() {
+    completed_file(
+        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; port = 8080; }",
+    );
+}
+
+#[test]
+fn view_type_function_accepts_exact_record() {
+    completed_file(
+        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; }",
+    );
+}
+
+#[test]
+fn view_type_function_rejects_record_missing_required_field() {
+    let lowered = lower(
+        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { port = 8080; }",
+    );
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::MissingRecordField { name } if name == "host"
+    )));
+}
+
+#[test]
+fn named_row_tail_identity_function_type_checks() {
+    completed_file(
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+    );
+}
+
+#[test]
+fn named_row_tail_application_preserves_extra_fields() {
+    let file = completed_file(
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost { host = \"h\"; port = 8080; }",
+    );
+    let TypeKind::Record(fields, tail) = final_type_kind(&file) else {
+        panic!("expected record result, got {:?}", final_type_kind(&file));
+    };
+    let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        names.contains(&"host") && names.contains(&"port"),
+        "named tail must preserve the extra `port`, got {names:?}"
+    );
+    assert_eq!(*tail, RowTail::Closed);
+}
+
+#[test]
+fn value_select_builds_ordered_closed_record() {
+    let file = completed_file(
+        "s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }",
+    );
+    let TypeKind::Record(fields, tail) = final_type_kind(&file) else {
+        panic!("expected record, got {:?}", final_type_kind(&file));
+    };
+    let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["port", "host"]);
+    assert_eq!(*tail, RowTail::Closed);
+}
+
+#[test]
+fn value_select_unknown_field_is_rejected() {
+    let lowered = lower("s := { host = \"h\"; }\nselect s { missing; }");
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind, ThirDiagnosticKind::UnknownField { name } if name == "missing"
+    )));
+}
+
+#[test]
+fn type_select_projects_usable_closed_record_type() {
+    completed_file(
+        "Server :: type { host : Text; port : Int; }\nT :: type select Server { host; }\nx :: T = { host = \"h\"; }\nx",
+    );
+}
+
+#[test]
+fn type_select_unknown_field_is_rejected() {
+    let lowered = lower("Server :: type { host : Text; }\nT :: type select Server { missing; }\nT");
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind, ThirDiagnosticKind::UnknownField { name } if name == "missing"
+    )));
+}
+
+#[test]
+fn open_union_match_with_wildcard_is_exhaustive() {
+    completed_file(
+        "classify :: [ #dev; #test; ...; ] -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n  | _ => \"o\";\n}\nclassify #dev",
+    );
+}
+
+#[test]
+fn open_union_match_without_wildcard_is_non_exhaustive() {
+    let lowered = lower(
+        "classify :: [ #dev; #test; ...; ] -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n}\nclassify #dev",
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::NonExhaustiveMatch { .. }))
+    );
+}
+
+#[test]
+fn union_spread_merges_members_into_new_union() {
+    // `Shape3D` spreads `Shape`; `#a` only type-checks against it if the spread
+    // merged `Shape`'s members.
+    completed_file(
+        "Shape :: type [ #a; #b; ]\nShape3D :: type [ ...Shape; #c; ]\nx :: Shape3D = #a\nx",
+    );
+}
+
+#[test]
+fn union_spread_overlapping_member_is_rejected() {
+    let lowered = lower("Shape :: type [ #a; #b; ]\nBad :: type [ #a; ...Shape; ]\nBad");
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind, ThirDiagnosticKind::OverlappingRowField { name } if name == "a"
+    )));
+}
+
+#[test]
+fn field_access_on_uninferred_value_requires_annotation() {
+    let lowered = lower("f x = x.host\nf");
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.kind, ThirDiagnosticKind::RowAnnotationRequired))
+    );
+}
+
+#[test]
+fn named_tail_result_field_is_accessible() {
+    // The `port` preserved by the named tail must be visible to a later field
+    // access, even before final zonking (record_fields flattens the solved tail).
+    completed_file(
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\n(idHost { host = \"h\"; port = 8080; }).port",
+    );
+}
+
+#[test]
+fn named_union_tail_application_captures_extra_member() {
+    // `echo` forwards a named union tail; calling it with an extra member #prod
+    // must succeed and the result must include #prod (captured by Rest).
+    let file = completed_file(
+        "echo :: <Rest> [ #dev; ...Rest; ] -> [ #dev; ...Rest; ] {\n  | x => x;\n}\necho #prod",
+    );
+    let TypeKind::Union(variants, tail) = final_type_kind(&file) else {
+        panic!("expected union result, got {:?}", final_type_kind(&file));
+    };
+    let names: Vec<&str> = variants.iter().map(|v| v.name.as_str()).collect();
+    assert!(
+        names.contains(&"prod"),
+        "named union tail must capture #prod, got {names:?}"
+    );
+    assert_eq!(*tail, RowTail::Closed);
+}
+
+#[test]
+fn function_param_is_contravariant_for_open_records() {
+    // `apply` invokes its callback with only `{ host }`; a callback that also
+    // demands `port` must be rejected — function parameters are contravariant,
+    // which is required for soundness once records have width subtyping.
+    let lowered = lower(
+        "apply :: ({ host : Text; ...; } -> Text) -> Text {\n  | f => f { host = \"h\"; };\n}\ng :: { host : Text; port : Int; } -> Text {\n  | r => r.host;\n}\napply g",
+    );
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. }))
+    );
 }

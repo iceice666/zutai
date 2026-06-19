@@ -10,8 +10,8 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
-    ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirPat,
-    ThirPatId, Type, TypeId, TypeKind, TypeTupleItem,
+    RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile,
+    ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant,
 };
 
 pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
@@ -75,6 +75,21 @@ pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptio
     lowered
 }
 
+/// The solution of a flexible row variable (`RowTail::Infer`): the extra
+/// fields/members it captured plus the residual tail. Solved during row
+/// unification and flattened away by zonking.
+#[derive(Debug, Clone, PartialEq)]
+enum RowSolution {
+    Record {
+        fields: Vec<TypeRecordField>,
+        tail: RowTail,
+    },
+    Union {
+        variants: Vec<UnionVariant>,
+        tail: RowTail,
+    },
+}
+
 struct Lowerer<'hir> {
     hir: &'hir HirFile,
     imports: HashMap<ImportKey, ImportedType>,
@@ -89,6 +104,11 @@ struct Lowerer<'hir> {
     type_type: TypeId,
     next_infer_var: u32,
     infer_subst: HashMap<u32, TypeId>,
+    /// Next flexible row-variable id (`RowTail::Infer`). A separate id space from
+    /// `next_infer_var` because row variables range over fields/members, not types.
+    next_row_var: u32,
+    /// Solutions for flexible row variables, mirroring `infer_subst` for types.
+    row_subst: HashMap<u32, RowSolution>,
     /// HM let-generalization schemes: for each generalized binding, the list of
     /// `InferVar` ids quantified over. A reference instantiates these with fresh
     /// independent `InferVar`s so unifying one use site does not monomorphize others.
@@ -138,6 +158,8 @@ impl<'hir> Lowerer<'hir> {
             type_type: TypeId(0),
             next_infer_var: 0,
             infer_subst: HashMap::new(),
+            next_row_var: 0,
+            row_subst: HashMap::new(),
             poly_schemes: HashMap::new(),
             alias_params: HashMap::new(),
             type_param_scope: HashSet::new(),
@@ -350,6 +372,56 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    /// Mint a fresh flexible row variable.
+    pub(super) fn fresh_row_var(&mut self) -> RowTail {
+        let id = self.next_row_var;
+        self.next_row_var += 1;
+        RowTail::Infer(id)
+    }
+
+    /// Flatten a record row `(fields, tail)` by appending every solved flexible
+    /// tail's captured fields until the tail is rigid or unsolved.
+    fn flatten_record_row(
+        &self,
+        mut fields: Vec<TypeRecordField>,
+        mut tail: RowTail,
+    ) -> (Vec<TypeRecordField>, RowTail) {
+        while let RowTail::Infer(r) = tail {
+            match self.row_subst.get(&r) {
+                Some(RowSolution::Record {
+                    fields: extra,
+                    tail: next,
+                }) => {
+                    fields.extend(extra.iter().cloned());
+                    tail = *next;
+                }
+                _ => break,
+            }
+        }
+        (fields, tail)
+    }
+
+    /// Flatten a union row, analogous to `flatten_record_row`.
+    fn flatten_union_row(
+        &self,
+        mut variants: Vec<UnionVariant>,
+        mut tail: RowTail,
+    ) -> (Vec<UnionVariant>, RowTail) {
+        while let RowTail::Infer(r) = tail {
+            match self.row_subst.get(&r) {
+                Some(RowSolution::Union {
+                    variants: extra,
+                    tail: next,
+                }) => {
+                    variants.extend(extra.iter().cloned());
+                    tail = *next;
+                }
+                _ => break,
+            }
+        }
+        (variants, tail)
+    }
+
     /// Chase InferVar substitution chains to find the canonical representative.
     pub(super) fn resolve(&self, ty: TypeId) -> TypeId {
         let mut current = ty;
@@ -374,7 +446,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::InferVar(v) => v == var_id,
             TypeKind::Function { from, to } => self.occurs(var_id, from) || self.occurs(var_id, to),
             TypeKind::List(inner) | TypeKind::Optional(inner) => self.occurs(var_id, inner),
-            TypeKind::Union(variants) => variants
+            TypeKind::Union(variants, _) => variants
                 .iter()
                 .any(|v| v.payload.is_some_and(|p| self.occurs(var_id, p))),
             TypeKind::Tuple(items) => items.iter().any(|item| {
@@ -384,7 +456,7 @@ impl<'hir> Lowerer<'hir> {
                 };
                 self.occurs(var_id, inner)
             }),
-            TypeKind::Record(fields) => fields.iter().any(|f| self.occurs(var_id, f.ty)),
+            TypeKind::Record(fields, _) => fields.iter().any(|f| self.occurs(var_id, f.ty)),
             _ => false,
         }
     }
@@ -623,6 +695,21 @@ impl<'hir> Lowerer<'hir> {
                     let resolved_kind = self.type_arena[resolved.0 as usize].kind.clone();
                     self.type_arena[i].kind = resolved_kind;
                 }
+            }
+        }
+        // Flatten solved flexible row tails in record/union types so consumers
+        // see the captured fields/members inline with a rigid residual tail.
+        for i in 0..self.type_arena.len() {
+            match self.type_arena[i].kind.clone() {
+                TypeKind::Record(fields, tail @ RowTail::Infer(_)) => {
+                    let (fields, tail) = self.flatten_record_row(fields, tail);
+                    self.type_arena[i].kind = TypeKind::Record(fields, tail);
+                }
+                TypeKind::Union(variants, tail @ RowTail::Infer(_)) => {
+                    let (variants, tail) = self.flatten_union_row(variants, tail);
+                    self.type_arena[i].kind = TypeKind::Union(variants, tail);
+                }
+                _ => {}
             }
         }
     }

@@ -369,7 +369,7 @@ impl<'hir> Lowerer<'hir> {
         let kind = self.ty(resolved).kind.clone();
 
         let lowered_payload: Vec<ThirRecordPatField> = match kind {
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, _) => {
                 match variants.iter().find(|v| v.name == tag).cloned() {
                     Some(v) => match v.payload {
                         None => {

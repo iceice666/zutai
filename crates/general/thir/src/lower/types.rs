@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
-    BindingId, BindingKind, HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem,
-    HirUnionVariant,
+    BindingId, BindingKind, HirRowTail, HirRowTailKind, HirTypeId, HirTypeKind, HirTypeRecordField,
+    HirTypeTupleItem, HirUnionVariant,
 };
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant};
+use crate::ir::{RowTail, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant};
 
-use super::Lowerer;
+use super::{Lowerer, RowSolution};
 
 impl<'hir> Lowerer<'hir> {
     pub(super) fn lower_type(&mut self, id: HirTypeId) -> TypeId {
@@ -17,23 +17,18 @@ impl<'hir> Lowerer<'hir> {
         match &ty.kind {
             HirTypeKind::BindingRef(binding) => self.alias_or_builtin_type(*binding, ty.span),
             HirTypeKind::Record { fields, tail } => {
-                if tail.is_some() {
-                    return self.unsupported_type("open record types", ty.span);
-                }
-                let fields = fields
+                let mut thir_fields: Vec<TypeRecordField> = fields
                     .iter()
                     .map(|field| self.lower_type_record_field(field))
                     .collect();
+                let row_tail = self.lower_record_tail(tail.as_ref(), &mut thir_fields);
                 self.alloc_type(Type {
-                    kind: TypeKind::Record(fields),
+                    kind: TypeKind::Record(thir_fields, row_tail),
                     span: ty.span,
                 })
             }
             HirTypeKind::Union { variants, tail } => {
-                if tail.is_some() {
-                    return self.unsupported_type("open union types", ty.span);
-                }
-                let variants = variants
+                let mut thir_variants: Vec<UnionVariant> = variants
                     .iter()
                     .map(|v: &HirUnionVariant| UnionVariant {
                         name: v.name.clone(),
@@ -43,15 +38,16 @@ impl<'hir> Lowerer<'hir> {
                                 .map(|f| self.lower_type_record_field(f))
                                 .collect();
                             self.alloc_type(Type {
-                                kind: TypeKind::Record(field_types),
+                                kind: TypeKind::Record(field_types, RowTail::Closed),
                                 span: v.span,
                             })
                         }),
                         span: v.span,
                     })
                     .collect();
+                let row_tail = self.lower_union_tail(tail.as_ref(), &mut thir_variants);
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(variants),
+                    kind: TypeKind::Union(thir_variants, row_tail),
                     span: ty.span,
                 })
             }
@@ -90,7 +86,32 @@ impl<'hir> Lowerer<'hir> {
             HirTypeKind::Effect { .. } => {
                 self.unsupported_type("effect rows in function types", ty.span)
             }
-            HirTypeKind::Select { .. } => self.unsupported_type("type-level select", ty.span),
+            HirTypeKind::Select { receiver, fields } => {
+                let receiver_ty = self.lower_type(*receiver);
+                let resolved = self.resolve_alias(receiver_ty, &mut HashSet::new(), ty.span);
+                match self.ty(resolved).kind.clone() {
+                    TypeKind::Record(rec_fields, _) => {
+                        let mut selected = Vec::with_capacity(fields.len());
+                        for sf in fields {
+                            match rec_fields.iter().find(|f| f.name == sf.name) {
+                                Some(rf) => selected.push(rf.clone()),
+                                None => self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::UnknownField {
+                                        name: sf.name.clone(),
+                                    },
+                                    span: sf.span,
+                                }),
+                            }
+                        }
+                        self.alloc_type(Type {
+                            kind: TypeKind::Record(selected, RowTail::Closed),
+                            span: ty.span,
+                        })
+                    }
+                    TypeKind::Error => self.error_type,
+                    _ => self.invalid_type("type-level select requires a record type", ty.span),
+                }
+            }
             HirTypeKind::Atom(name) => self.alloc_type(Type {
                 kind: TypeKind::Atom(name.clone()),
                 span: ty.span,
@@ -171,6 +192,100 @@ impl<'hir> Lowerer<'hir> {
             optional: field.optional,
             ty: self.lower_type(field.ty),
             span: field.span,
+        }
+    }
+
+    /// Lower a record row tail, expanding `...Shape` spreads into `fields` and
+    /// returning the resulting `RowTail`. Anonymous `...` becomes `Open`; a
+    /// `<Rest>` row variable becomes a rigid `Param`.
+    fn lower_record_tail(
+        &mut self,
+        tail: Option<&HirRowTail>,
+        fields: &mut Vec<TypeRecordField>,
+    ) -> RowTail {
+        let Some(tail) = tail else {
+            return RowTail::Closed;
+        };
+        match &tail.kind {
+            HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
+            HirRowTailKind::Var(binding) => RowTail::Param(*binding),
+            HirRowTailKind::Spread(binding) => {
+                let spread = self.alias_or_builtin_type(*binding, tail.span);
+                let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
+                match self.ty(resolved).kind.clone() {
+                    TypeKind::Record(spread_fields, spread_tail) => {
+                        for sf in spread_fields {
+                            if fields.iter().any(|f| f.name == sf.name) {
+                                self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::OverlappingRowField {
+                                        name: sf.name.clone(),
+                                    },
+                                    span: tail.span,
+                                });
+                            } else {
+                                fields.push(sf);
+                            }
+                        }
+                        spread_tail
+                    }
+                    TypeKind::Error => RowTail::Closed,
+                    _ => {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::InvalidTypeExpression {
+                                reason: "record spread requires a record type",
+                            },
+                            span: tail.span,
+                        });
+                        RowTail::Closed
+                    }
+                }
+            }
+        }
+    }
+
+    /// Lower a union row tail, expanding `...Shape` spreads into `variants`.
+    fn lower_union_tail(
+        &mut self,
+        tail: Option<&HirRowTail>,
+        variants: &mut Vec<UnionVariant>,
+    ) -> RowTail {
+        let Some(tail) = tail else {
+            return RowTail::Closed;
+        };
+        match &tail.kind {
+            HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
+            HirRowTailKind::Var(binding) => RowTail::Param(*binding),
+            HirRowTailKind::Spread(binding) => {
+                let spread = self.alias_or_builtin_type(*binding, tail.span);
+                let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
+                match self.ty(resolved).kind.clone() {
+                    TypeKind::Union(spread_variants, spread_tail) => {
+                        for sv in spread_variants {
+                            if variants.iter().any(|v| v.name == sv.name) {
+                                self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::OverlappingRowField {
+                                        name: sv.name.clone(),
+                                    },
+                                    span: tail.span,
+                                });
+                            } else {
+                                variants.push(sv);
+                            }
+                        }
+                        spread_tail
+                    }
+                    TypeKind::Error => RowTail::Closed,
+                    _ => {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::InvalidTypeExpression {
+                                reason: "union spread requires a union type",
+                            },
+                            span: tail.span,
+                        });
+                        RowTail::Closed
+                    }
+                }
+            }
         }
     }
 
@@ -328,9 +443,21 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn record_fields(&mut self, ty: TypeId, span: Span) -> Option<Vec<TypeRecordField>> {
+        // Flatten any solved flexible tail so fields captured by a named row tail
+        // (e.g. the result of a row-polymorphic call) are visible before zonking.
+        self.record_row(ty, span).map(|(fields, _)| fields)
+    }
+
+    /// Like `record_fields` but also returns the row tail, with any solved
+    /// flexible tail flattened in. Used by record checking to honour open rows.
+    pub(super) fn record_row(
+        &mut self,
+        ty: TypeId,
+        span: Span,
+    ) -> Option<(Vec<TypeRecordField>, RowTail)> {
         let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
-        match &self.ty(resolved).kind {
-            TypeKind::Record(fields) => Some(fields.clone()),
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Record(fields, tail) => Some(self.flatten_record_row(fields, tail)),
             _ => None,
         }
     }
@@ -422,56 +549,161 @@ impl<'hir> Lowerer<'hir> {
             }
 
             (TypeKind::Bool, TypeKind::True | TypeKind::False) => true,
-            (TypeKind::Union(variants), TypeKind::Atom(ref name)) => variants
-                .iter()
-                .any(|v| v.name == *name && v.payload.is_none()),
-            (TypeKind::Union(variants), TypeKind::Union(ref other)) => {
-                variants.len() == other.len()
-                    && variants.iter().zip(other.iter()).all(|(a, b)| {
-                        a.name == b.name
-                            && match (a.payload, b.payload) {
-                                (Some(pa), Some(pb)) => self.type_matches(pa, pb),
-                                (None, None) => true,
-                                _ => false,
-                            }
-                    })
+            (TypeKind::Union(ev, et), TypeKind::Atom(ref name)) => {
+                // Treat the atom as a singleton closed union so the row logic
+                // decides membership: an explicit nullary member matches, and an
+                // open/flexible tail absorbs (and captures) an extra member.
+                let found = [UnionVariant {
+                    name: name.clone(),
+                    payload: None,
+                    span: Span::default(),
+                }];
+                self.union_rows_match(&ev, et, &found, RowTail::Closed)
+            }
+            (TypeKind::Union(ev, et), TypeKind::Union(fv, ft)) => {
+                if et == RowTail::Closed && ft == RowTail::Closed {
+                    // Closed v0 unions match exactly (same members, same order).
+                    ev.len() == fv.len()
+                        && ev.iter().zip(fv.iter()).all(|(a, b)| {
+                            a.name == b.name
+                                && match (a.payload, b.payload) {
+                                    (Some(pa), Some(pb)) => self.type_matches(pa, pb),
+                                    (None, None) => true,
+                                    _ => false,
+                                }
+                        })
+                } else {
+                    self.union_rows_match(&ev, et, &fv, ft)
+                }
             }
             // #none is always a valid value of Optional(T)
             (TypeKind::Optional(_), TypeKind::Atom(ref name)) if name == "none" => true,
             (TypeKind::List(e), TypeKind::List(f))
             | (TypeKind::Optional(e), TypeKind::Optional(f)) => self.type_matches(e, f),
-            (TypeKind::Record(ef), TypeKind::Record(ff)) => self.record_types_match(&ef, &ff),
+            (TypeKind::Record(ef, et), TypeKind::Record(ff, ft)) => {
+                self.record_rows_match(&ef, et, &ff, ft)
+            }
             (TypeKind::Tuple(ei), TypeKind::Tuple(fi)) => self.tuple_types_match(&ei, &fi),
             (TypeKind::Function { from: ef, to: et }, TypeKind::Function { from: ff, to: ft }) => {
-                self.type_matches(ef, ff) && self.type_matches(et, ft)
+                // Parameters are contravariant, results covariant. Contravariance
+                // is required for soundness now that records have width subtyping:
+                // a function accepting an open record may stand in for one that
+                // takes a wider closed record, but never the reverse.
+                self.type_matches(ff, ef) && self.type_matches(et, ft)
             }
             (left, right) => left == right,
         }
     }
 
-    fn record_types_match(
+    /// Row-aware record assignability: `found` is assignable to `expected` when
+    /// it provides every required field of `expected` (with matching types).
+    /// Extra found fields are accepted only if `expected`'s tail is open: an
+    /// anonymous tail discards them, a flexible row variable captures them, and a
+    /// rigid tail requires the same variable with no extras.
+    fn record_rows_match(
         &mut self,
-        expected_fields: &[TypeRecordField],
-        found_fields: &[TypeRecordField],
+        ef: &[TypeRecordField],
+        et: RowTail,
+        ff: &[TypeRecordField],
+        ft: RowTail,
     ) -> bool {
-        let found_by_name: HashMap<_, _> = found_fields
-            .iter()
-            .map(|field| (field.name.as_str(), field))
-            .collect();
-        for expected in expected_fields {
-            let Some(found) = found_by_name.get(expected.name.as_str()) else {
-                if expected.optional {
-                    continue;
+        let (ef, et) = self.flatten_record_row(ef.to_vec(), et);
+        let (ff, ft) = self.flatten_record_row(ff.to_vec(), ft);
+        let found_by_name: HashMap<&str, &TypeRecordField> =
+            ff.iter().map(|f| (f.name.as_str(), f)).collect();
+        for e in &ef {
+            match found_by_name.get(e.name.as_str()) {
+                Some(f) => {
+                    if !self.type_matches(e.ty, f.ty) {
+                        return false;
+                    }
                 }
-                return false;
-            };
-            if !self.type_matches(expected.ty, found.ty) {
-                return false;
+                None => {
+                    if !e.optional {
+                        return false;
+                    }
+                }
             }
         }
-        found_fields
+        let expected_names: HashSet<&str> = ef.iter().map(|f| f.name.as_str()).collect();
+        let extras: Vec<TypeRecordField> = ff
             .iter()
-            .all(|found| expected_fields.iter().any(|field| field.name == found.name))
+            .filter(|f| !expected_names.contains(f.name.as_str()))
+            .cloned()
+            .collect();
+        match et {
+            RowTail::Closed => extras.is_empty() && ft == RowTail::Closed,
+            RowTail::Open => true,
+            RowTail::Param(p) => extras.is_empty() && ft == RowTail::Param(p),
+            RowTail::Infer(r) => {
+                if ft == RowTail::Infer(r) {
+                    extras.is_empty()
+                } else {
+                    self.row_subst.insert(
+                        r,
+                        RowSolution::Record {
+                            fields: extras,
+                            tail: ft,
+                        },
+                    );
+                    true
+                }
+            }
+        }
+    }
+
+    /// Row-aware union assignability — the dual of `record_rows_match`. A value
+    /// of union type `found` is assignable to `expected` when every member
+    /// `found` may be is accounted for by `expected`: it either matches an
+    /// explicit member (with matching payload) or is absorbed by `expected`'s
+    /// tail (discarded by an anonymous tail, captured by a flexible row variable,
+    /// rejected by a closed or rigid tail). Explicit `expected` members absent
+    /// from `found` are fine — a handler may cover cases the value never takes.
+    fn union_rows_match(
+        &mut self,
+        ev: &[UnionVariant],
+        et: RowTail,
+        fv: &[UnionVariant],
+        ft: RowTail,
+    ) -> bool {
+        let (ev, et) = self.flatten_union_row(ev.to_vec(), et);
+        let (fv, ft) = self.flatten_union_row(fv.to_vec(), ft);
+        let expected_by_name: HashMap<&str, &UnionVariant> =
+            ev.iter().map(|v| (v.name.as_str(), v)).collect();
+        let mut extras: Vec<UnionVariant> = Vec::new();
+        for f in &fv {
+            match expected_by_name.get(f.name.as_str()) {
+                Some(e) => match (e.payload, f.payload) {
+                    (Some(pe), Some(pf)) => {
+                        if !self.type_matches(pe, pf) {
+                            return false;
+                        }
+                    }
+                    (None, None) => {}
+                    _ => return false,
+                },
+                None => extras.push(f.clone()),
+            }
+        }
+        match et {
+            RowTail::Closed => extras.is_empty() && ft == RowTail::Closed,
+            RowTail::Open => true,
+            RowTail::Param(p) => extras.is_empty() && ft == RowTail::Param(p),
+            RowTail::Infer(r) => {
+                if ft == RowTail::Infer(r) {
+                    extras.is_empty()
+                } else {
+                    self.row_subst.insert(
+                        r,
+                        RowSolution::Union {
+                            variants: extras,
+                            tail: ft,
+                        },
+                    );
+                    true
+                }
+            }
+        }
     }
 
     fn tuple_types_match(
@@ -573,8 +805,8 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::False => "false".to_string(),
             TypeKind::List(inner) => format!("List {}", self.type_name(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.type_name(inner)),
-            TypeKind::Record(_) => "record".to_string(),
-            TypeKind::Union(_) => "union".to_string(),
+            TypeKind::Record(_, _) => "record".to_string(),
+            TypeKind::Union(_, _) => "union".to_string(),
             TypeKind::Tuple(_) => "tuple".to_string(),
             TypeKind::Function { .. } => "function".to_string(),
             TypeKind::TypeVar(binding) | TypeKind::Alias(binding) => {
@@ -610,7 +842,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::False => "false".to_string(),
             TypeKind::List(inner) => format!("[{}]", self.witness_target_key(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.witness_target_key(inner)),
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, tail) => {
                 // Sort by name — records are order-independent.
                 let mut parts: Vec<String> = fields
                     .iter()
@@ -624,9 +856,9 @@ impl<'hir> Lowerer<'hir> {
                     })
                     .collect();
                 parts.sort();
-                format!("{{{}}}", parts.join(","))
+                format!("{{{}{}}}", parts.join(","), row_tail_key(tail))
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, tail) => {
                 let parts: Vec<String> = variants
                     .iter()
                     .map(|v| match v.payload {
@@ -634,7 +866,7 @@ impl<'hir> Lowerer<'hir> {
                         None => v.name.clone(),
                     })
                     .collect();
-                format!("<{}>", parts.join("|"))
+                format!("<{}{}>", parts.join("|"), row_tail_key(tail))
             }
             TypeKind::Tuple(items) => {
                 let parts: Vec<String> = items
@@ -687,7 +919,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) | TypeKind::Optional(inner) => {
                 self.collect_type_vars_into(inner, out);
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, _) => {
                 for v in variants {
                     if let Some(payload) = v.payload {
                         self.collect_type_vars_into(payload, out);
@@ -703,7 +935,7 @@ impl<'hir> Lowerer<'hir> {
                     self.collect_type_vars_into(inner, out);
                 }
             }
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, _) => {
                 for f in fields {
                     self.collect_type_vars_into(f.ty, out);
                 }
@@ -711,6 +943,63 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::AliasApply { args, .. } => {
                 for a in args {
                     self.collect_type_vars_into(a, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect all rigid row variables (`RowTail::Param`) appearing in `ty`, in a
+    /// deduped stable order. These `<Rest>` row parameters are instantiated with
+    /// fresh flexible row variables at each call site, like type parameters.
+    pub(super) fn collect_row_params(&self, ty: TypeId) -> Vec<BindingId> {
+        let mut vars: Vec<BindingId> = Vec::new();
+        self.collect_row_params_into(ty, &mut vars);
+        vars.sort_by_key(|b| b.0);
+        vars.dedup();
+        vars
+    }
+
+    fn collect_row_params_into(&self, ty: TypeId, out: &mut Vec<BindingId>) {
+        let ty = self.resolve(ty);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Function { from, to } => {
+                self.collect_row_params_into(from, out);
+                self.collect_row_params_into(to, out);
+            }
+            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+                self.collect_row_params_into(inner, out);
+            }
+            TypeKind::Record(fields, tail) => {
+                for f in &fields {
+                    self.collect_row_params_into(f.ty, out);
+                }
+                if let RowTail::Param(b) = tail {
+                    out.push(b);
+                }
+            }
+            TypeKind::Union(variants, tail) => {
+                for v in &variants {
+                    if let Some(payload) = v.payload {
+                        self.collect_row_params_into(payload, out);
+                    }
+                }
+                if let RowTail::Param(b) = tail {
+                    out.push(b);
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in &items {
+                    let inner = match item {
+                        TypeTupleItem::Named { ty, .. } => *ty,
+                        TypeTupleItem::Positional(ty) => *ty,
+                    };
+                    self.collect_row_params_into(inner, out);
+                }
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for a in &args {
+                    self.collect_row_params_into(*a, out);
                 }
             }
             _ => {}
@@ -765,7 +1054,7 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, tail) => {
                 let new_variants: Vec<UnionVariant> = variants
                     .iter()
                     .map(|v| UnionVariant {
@@ -782,7 +1071,7 @@ impl<'hir> Lowerer<'hir> {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(new_variants),
+                    kind: TypeKind::Union(new_variants, tail),
                     span,
                 })
             }
@@ -812,7 +1101,7 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, tail) => {
                 let new_fields: Vec<TypeRecordField> = fields
                     .iter()
                     .map(|f| TypeRecordField {
@@ -826,7 +1115,7 @@ impl<'hir> Lowerer<'hir> {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Record(new_fields),
+                    kind: TypeKind::Record(new_fields, tail),
                     span,
                 })
             }
@@ -843,6 +1132,116 @@ impl<'hir> Lowerer<'hir> {
                         binding,
                         args: new_args,
                     },
+                    span,
+                })
+            }
+            _ => ty,
+        }
+    }
+
+    /// Replace rigid row variables (`RowTail::Param`) in `ty` with the flexible
+    /// row variables given by `subst`, rebuilding only structural nodes.
+    pub(super) fn instantiate_row_params(
+        &mut self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, RowTail>,
+    ) -> TypeId {
+        if subst.is_empty() {
+            return ty;
+        }
+        let span = self.type_arena[ty.0 as usize].span;
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Function { from, to } => {
+                let nf = self.instantiate_row_params(from, subst);
+                let nt = self.instantiate_row_params(to, subst);
+                if nf == from && nt == to {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Function { from: nf, to: nt },
+                    span,
+                })
+            }
+            TypeKind::List(inner) => {
+                let ni = self.instantiate_row_params(inner, subst);
+                if ni == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::List(ni),
+                    span,
+                })
+            }
+            TypeKind::Optional(inner) => {
+                let ni = self.instantiate_row_params(inner, subst);
+                if ni == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Optional(ni),
+                    span,
+                })
+            }
+            TypeKind::Record(fields, tail) => {
+                let new_fields: Vec<TypeRecordField> = fields
+                    .iter()
+                    .map(|f| TypeRecordField {
+                        name: f.name.clone(),
+                        optional: f.optional,
+                        ty: self.instantiate_row_params(f.ty, subst),
+                        span: f.span,
+                    })
+                    .collect();
+                let new_tail = match tail {
+                    RowTail::Param(b) => subst.get(&b).copied().unwrap_or(tail),
+                    _ => tail,
+                };
+                if new_fields == fields && new_tail == tail {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Record(new_fields, new_tail),
+                    span,
+                })
+            }
+            TypeKind::Union(variants, tail) => {
+                let new_variants: Vec<UnionVariant> = variants
+                    .iter()
+                    .map(|v| UnionVariant {
+                        name: v.name.clone(),
+                        payload: v.payload.map(|p| self.instantiate_row_params(p, subst)),
+                        span: v.span,
+                    })
+                    .collect();
+                let new_tail = match tail {
+                    RowTail::Param(b) => subst.get(&b).copied().unwrap_or(tail),
+                    _ => tail,
+                };
+                self.alloc_type(Type {
+                    kind: TypeKind::Union(new_variants, new_tail),
+                    span,
+                })
+            }
+            TypeKind::Tuple(items) => {
+                let new_items: Vec<TypeTupleItem> = items
+                    .iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named {
+                            name,
+                            ty: inner,
+                            span: s,
+                        } => TypeTupleItem::Named {
+                            name: name.clone(),
+                            ty: self.instantiate_row_params(*inner, subst),
+                            span: *s,
+                        },
+                        TypeTupleItem::Positional(inner) => {
+                            TypeTupleItem::Positional(self.instantiate_row_params(*inner, subst))
+                        }
+                    })
+                    .collect();
+                self.alloc_type(Type {
+                    kind: TypeKind::Tuple(new_items),
                     span,
                 })
             }
@@ -874,7 +1273,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) | TypeKind::Optional(inner) => {
                 self.free_infer_vars_into(inner, out);
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, _) => {
                 for v in variants {
                     if let Some(payload) = v.payload {
                         self.free_infer_vars_into(payload, out);
@@ -890,7 +1289,7 @@ impl<'hir> Lowerer<'hir> {
                     self.free_infer_vars_into(inner, out);
                 }
             }
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, _) => {
                 for f in fields {
                     self.free_infer_vars_into(f.ty, out);
                 }
@@ -988,7 +1387,7 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, tail) => {
                 let new_variants: Vec<UnionVariant> = variants
                     .iter()
                     .map(|v| UnionVariant {
@@ -1005,7 +1404,7 @@ impl<'hir> Lowerer<'hir> {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Union(new_variants),
+                    kind: TypeKind::Union(new_variants, tail),
                     span,
                 })
             }
@@ -1035,7 +1434,7 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, tail) => {
                 let new_fields: Vec<TypeRecordField> = fields
                     .iter()
                     .map(|f| TypeRecordField {
@@ -1049,7 +1448,7 @@ impl<'hir> Lowerer<'hir> {
                     return ty;
                 }
                 self.alloc_type(Type {
-                    kind: TypeKind::Record(new_fields),
+                    kind: TypeKind::Record(new_fields, tail),
                     span,
                 })
             }
@@ -1064,5 +1463,18 @@ impl<'hir> Lowerer<'hir> {
             kind: ThirDiagnosticKind::TypeMismatch { expected, found },
             span,
         });
+    }
+}
+
+/// Encode a row tail into a structural coherence/dispatch key suffix. `Closed`
+/// adds nothing, so closed (concrete) witness targets key exactly as before;
+/// open and row-variable tails get a distinct marker so they never collide with
+/// a closed target. Must stay in sync with the evaluator's `type_key`.
+fn row_tail_key(tail: RowTail) -> String {
+    match tail {
+        RowTail::Closed => String::new(),
+        RowTail::Open => "...".to_string(),
+        RowTail::Param(b) => format!("...#{}", b.0),
+        RowTail::Infer(v) => format!("...?{v}"),
     }
 }

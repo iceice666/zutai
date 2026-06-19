@@ -19,7 +19,7 @@ use zutai_thir::{
     ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
 };
 use zutai_thir::{
-    ThirPatKind, ThirTupleItem, ThirTuplePatItem, Type, TypeId, TypeKind, TypeTupleItem,
+    RowTail, ThirPatKind, ThirTupleItem, ThirTuplePatItem, Type, TypeId, TypeKind, TypeTupleItem,
 };
 
 use crate::{
@@ -1201,15 +1201,15 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
         TypeKind::Atom(a) => format!("#{a}"),
         TypeKind::List(inner) => format!("[{}]", type_key(type_arena, aliases, *inner)),
         TypeKind::Optional(inner) => format!("{}?", type_key(type_arena, aliases, *inner)),
-        TypeKind::Record(fields) => {
+        TypeKind::Record(fields, tail) => {
             let mut parts: Vec<String> = fields
                 .iter()
                 .map(|f| format!("{}:{}", f.name, type_key(type_arena, aliases, f.ty)))
                 .collect();
             parts.sort();
-            format!("{{{}}}", parts.join(","))
+            format!("{{{}{}}}", parts.join(","), row_tail_key(*tail))
         }
-        TypeKind::Union(variants) => {
+        TypeKind::Union(variants, tail) => {
             let parts: Vec<String> = variants
                 .iter()
                 .map(|v| match v.payload {
@@ -1217,7 +1217,7 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
                     None => v.name.clone(),
                 })
                 .collect();
-            format!("<{}>", parts.join("|"))
+            format!("<{}{}>", parts.join("|"), row_tail_key(*tail))
         }
         TypeKind::Tuple(items) => {
             let parts: Vec<String> = items
@@ -1248,6 +1248,18 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
         }
         TypeKind::InferVar(v) => format!("?{v}"),
         TypeKind::Error => "<error>".into(),
+    }
+}
+
+/// Row-tail key suffix, mirroring the THIR lowerer's `row_tail_key`. `Closed`
+/// adds nothing so concrete witness targets key exactly as before; open and
+/// row-variable tails get a distinct marker.
+fn row_tail_key(tail: RowTail) -> String {
+    match tail {
+        RowTail::Closed => String::new(),
+        RowTail::Open => "...".to_string(),
+        RowTail::Param(b) => format!("...#{}", b.0),
+        RowTail::Infer(v) => format!("...?{v}"),
     }
 }
 

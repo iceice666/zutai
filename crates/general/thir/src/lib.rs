@@ -18,10 +18,10 @@ pub use diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 pub use export::{ExportUnsupported, export_type};
 pub use import::{ImportKey, ImportedField, ImportedTupleItem, ImportedType};
 pub use ir::{
-    ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
-    ThirExprKind, ThirFile, ThirLocalBinding, ThirPat, ThirPatId, ThirPatKind, ThirRecordField,
-    ThirRecordPatField, ThirTupleItem, ThirTuplePatItem, ThirWitnessField, Type, TypeId, TypeKind,
-    TypeRecordField, TypeTupleItem,
+    RowTail, ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr,
+    ThirExprId, ThirExprKind, ThirFile, ThirLocalBinding, ThirPat, ThirPatId, ThirPatKind,
+    ThirRecordField, ThirRecordPatField, ThirTupleItem, ThirTuplePatItem, ThirWitnessField, Type,
+    TypeId, TypeKind, TypeRecordField, TypeTupleItem,
 };
 pub use lower::{LoweredThir, ThirLowerOptions, lower_hir, lower_hir_with_options};
 pub use pass::{ThirPass, ThirPassReport, run_default_passes, run_passes};

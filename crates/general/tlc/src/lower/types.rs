@@ -38,7 +38,7 @@ impl<'thir> Lowerer<'thir> {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::Optional(inner_tlc))
             }
-            TypeKind::Record(fields) => {
+            TypeKind::Record(fields, _) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
                     .map(|f| (f.name.clone(), self.lower_type(f.ty), f.optional))
@@ -61,7 +61,7 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_type(TlcType::Tuple(tlc_items))
             }
             // Union / sum type — build a VariantT row (Phase 0 bug fix).
-            TypeKind::Union(variants) => {
+            TypeKind::Union(variants, _) => {
                 let fields: Vec<(String, TlcTypeId)> = variants
                     .iter()
                     .map(|v| {

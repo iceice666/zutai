@@ -2,18 +2,18 @@ use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirDeclKind, HirExprId, HirExprKind, HirLocalBinding, HirRecordField,
-    HirTupleItem,
+    HirSelectField, HirTupleItem,
 };
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
-    ThirExpr, ThirExprId, ThirExprKind, ThirLocalBinding, ThirRecordField, Type, TypeId, TypeKind,
-    TypeRecordField, TypeTupleItem,
+    RowTail, ThirExpr, ThirExprId, ThirExprKind, ThirLocalBinding, ThirRecordField, Type, TypeId,
+    TypeKind, TypeRecordField, TypeTupleItem,
 };
 
-use super::Lowerer;
+use super::{Lowerer, RowSolution};
 
 impl<'hir> Lowerer<'hir> {
     pub(super) fn check_expr(&mut self, id: HirExprId, expected: TypeId) -> ThirExprId {
@@ -129,8 +129,8 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Block { bindings, result } => {
                 self.lower_block_expr(id, bindings, *result, None)
             }
-            HirExprKind::Select { .. } => {
-                self.unsupported_expr(id, "value-level select", expr.span)
+            HirExprKind::Select { receiver, fields } => {
+                self.lower_select_expr(id, *receiver, fields, expr.span)
             }
             HirExprKind::Perform { .. } => self.unsupported_expr(id, "effect perform", expr.span),
             HirExprKind::Handle { .. } => self.unsupported_expr(id, "effect handlers", expr.span),
@@ -268,6 +268,30 @@ impl<'hir> Lowerer<'hir> {
             (new_from, new_to, inst)
         };
 
+        // Instantiate rigid row variables (`<Rest>`) with fresh flexible row
+        // variables so each call site solves the row independently. The same
+        // fresh variable is shared across `from` and `to`, preserving the tail.
+        let row_params: Vec<_> = {
+            let mut v = self.collect_row_params(from);
+            let mut from_to = self.collect_row_params(to);
+            from_to.retain(|b| !v.contains(b));
+            v.extend(from_to);
+            v.sort_by_key(|b| b.0);
+            v.dedup();
+            v
+        };
+        let (from, to) = if row_params.is_empty() {
+            (from, to)
+        } else {
+            let mut row_subst = HashMap::new();
+            for var in &row_params {
+                row_subst.insert(*var, self.fresh_row_var());
+            }
+            let new_from = self.instantiate_row_params(from, &row_subst);
+            let new_to = self.instantiate_row_params(to, &row_subst);
+            (new_from, new_to)
+        };
+
         let arg = self.check_expr(arg, from);
         // Resolve the return type: InferVars introduced for TypeVars may now be
         // solved after checking the argument.
@@ -359,7 +383,7 @@ impl<'hir> Lowerer<'hir> {
             });
         }
         let ty = self.alloc_type(Type {
-            kind: TypeKind::Record(type_fields),
+            kind: TypeKind::Record(type_fields, RowTail::Closed),
             span,
         });
         self.alloc_expr(ThirExpr {
@@ -828,7 +852,7 @@ impl<'hir> Lowerer<'hir> {
         expected: TypeId,
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
-        let Some(expected_fields) = self.record_fields(expected, span) else {
+        let Some((expected_fields, expected_tail)) = self.record_row(expected, span) else {
             let found = self.type_name(expected);
             self.diagnostics.push(ThirDiagnostic {
                 kind: ThirDiagnosticKind::ExpectedRecord { found },
@@ -855,15 +879,30 @@ impl<'hir> Lowerer<'hir> {
         }
 
         let mut thir_fields = Vec::with_capacity(fields.len());
+        // Extra actual fields not named by `expected`: rejected for a closed or
+        // rigid row, discarded for an anonymous open row, and captured by a
+        // flexible row variable so a named tail preserves them.
+        let mut captured_extras: Vec<TypeRecordField> = Vec::new();
         for field in fields {
             let Some(expected_field) = expected_by_name.get(field.name.as_str()) else {
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::UnexpectedRecordField {
-                        name: field.name.clone(),
-                    },
-                    span: field.span,
-                });
                 let value = self.infer_expr(field.value);
+                match expected_tail {
+                    RowTail::Open => {}
+                    RowTail::Infer(_) => captured_extras.push(TypeRecordField {
+                        name: field.name.clone(),
+                        optional: false,
+                        ty: self.expr(value).ty,
+                        span: field.span,
+                    }),
+                    RowTail::Closed | RowTail::Param(_) => {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::UnexpectedRecordField {
+                                name: field.name.clone(),
+                            },
+                            span: field.span,
+                        });
+                    }
+                }
                 thir_fields.push(ThirRecordField {
                     name: field.name.clone(),
                     value,
@@ -877,6 +916,18 @@ impl<'hir> Lowerer<'hir> {
                 value,
                 span: field.span,
             });
+        }
+
+        // Solve a flexible expected tail with whatever the literal supplied beyond
+        // the named fields, so a row-polymorphic call preserves the extras.
+        if let RowTail::Infer(r) = expected_tail {
+            self.row_subst.insert(
+                r,
+                RowSolution::Record {
+                    fields: captured_extras,
+                    tail: RowTail::Closed,
+                },
+            );
         }
 
         self.alloc_expr(ThirExpr {
@@ -897,11 +948,21 @@ impl<'hir> Lowerer<'hir> {
         let receiver = self.infer_expr(receiver);
         let receiver_ty = self.expr(receiver).ty;
         let Some(fields) = self.record_fields(receiver_ty, span) else {
-            let found = self.type_name(receiver_ty);
-            self.diagnostics.push(ThirDiagnostic {
-                kind: ThirDiagnosticKind::ExpectedRecord { found },
-                span,
-            });
+            let resolved = self.resolve(receiver_ty);
+            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                // Field access on an un-inferred value: row-polymorphic inference
+                // is not principal here, so an explicit annotation is required.
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::RowAnnotationRequired,
+                    span,
+                });
+            } else {
+                let found = self.type_name(receiver_ty);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedRecord { found },
+                    span,
+                });
+            }
             return self.error_expr(id, span);
         };
         let Some(record_field) = fields.iter().find(|candidate| candidate.name == field) else {
@@ -925,6 +986,76 @@ impl<'hir> Lowerer<'hir> {
                 receiver,
                 field: field.to_string(),
             },
+            span,
+        })
+    }
+
+    /// Type-check `select receiver { f1; f2; }` as a closed record built from the
+    /// selected fields in requested order. Desugars to record construction over
+    /// field accesses so downstream stages reuse existing record/access nodes.
+    fn lower_select_expr(
+        &mut self,
+        id: HirExprId,
+        receiver: HirExprId,
+        fields: &[HirSelectField],
+        span: Span,
+    ) -> ThirExprId {
+        let receiver = self.infer_expr(receiver);
+        let receiver_ty = self.expr(receiver).ty;
+        let Some(rec_fields) = self.record_fields(receiver_ty, span) else {
+            let found = self.type_name(receiver_ty);
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::ExpectedRecord { found },
+                span,
+            });
+            return self.error_expr(id, span);
+        };
+        let mut thir_fields = Vec::with_capacity(fields.len());
+        let mut type_fields = Vec::with_capacity(fields.len());
+        for sf in fields {
+            let Some(rf) = rec_fields.iter().find(|f| f.name == sf.name) else {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::UnknownField {
+                        name: sf.name.clone(),
+                    },
+                    span: sf.span,
+                });
+                continue;
+            };
+            let field_ty = if rf.optional {
+                self.optional_type(rf.ty, rf.span)
+            } else {
+                rf.ty
+            };
+            let access = self.alloc_expr(ThirExpr {
+                source: id,
+                ty: field_ty,
+                kind: ThirExprKind::Access {
+                    receiver,
+                    field: sf.name.clone(),
+                },
+                span: sf.span,
+            });
+            thir_fields.push(ThirRecordField {
+                name: sf.name.clone(),
+                value: access,
+                span: sf.span,
+            });
+            type_fields.push(TypeRecordField {
+                name: sf.name.clone(),
+                optional: false,
+                ty: field_ty,
+                span: sf.span,
+            });
+        }
+        let ty = self.alloc_type(Type {
+            kind: TypeKind::Record(type_fields, RowTail::Closed),
+            span,
+        });
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty,
+            kind: ThirExprKind::Record(thir_fields),
             span,
         })
     }
@@ -1189,7 +1320,7 @@ impl<'hir> Lowerer<'hir> {
             let kind = self.ty(resolved).kind.clone();
 
             match kind {
-                TypeKind::Union(variants) => {
+                TypeKind::Union(variants, _) => {
                     let variant = variants.iter().find(|v| v.name == tag).cloned();
                     match variant {
                         Some(v) => {
@@ -1217,12 +1348,15 @@ impl<'hir> Lowerer<'hir> {
                 }
                 TypeKind::Optional(inner) if tag == "some" => {
                     let record_ty = self.alloc_type(crate::ir::Type {
-                        kind: TypeKind::Record(vec![TypeRecordField {
-                            name: "value".to_string(),
-                            optional: false,
-                            ty: inner,
-                            span,
-                        }]),
+                        kind: TypeKind::Record(
+                            vec![TypeRecordField {
+                                name: "value".to_string(),
+                                optional: false,
+                                ty: inner,
+                                span,
+                            }],
+                            RowTail::Closed,
+                        ),
                         span,
                     });
                     let payload_expr = self.check_expr(payload, record_ty);
@@ -1249,7 +1383,7 @@ impl<'hir> Lowerer<'hir> {
             span,
         };
         let ty = self.alloc_type(crate::ir::Type {
-            kind: TypeKind::Union(vec![variant]),
+            kind: TypeKind::Union(vec![variant], RowTail::Closed),
             span,
         });
 

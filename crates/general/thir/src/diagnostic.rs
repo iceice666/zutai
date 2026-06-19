@@ -109,4 +109,12 @@ pub enum ThirDiagnosticKind {
     UnsupportedMultiParamConstraint {
         name: String,
     },
+    /// A row tail (spread or row variable) would introduce a field or member
+    /// that the row already declares explicitly.
+    OverlappingRowField {
+        name: String,
+    },
+    /// Row-polymorphic inference is not principal here; an explicit type
+    /// annotation is required.
+    RowAnnotationRequired,
 }

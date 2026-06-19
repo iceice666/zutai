@@ -260,8 +260,8 @@ pub enum TypeKind {
     False,
     List(TypeId),
     Optional(TypeId),
-    Record(Vec<TypeRecordField>),
-    Union(Vec<UnionVariant>),
+    Record(Vec<TypeRecordField>, RowTail),
+    Union(Vec<UnionVariant>, RowTail),
     Tuple(Vec<TypeTupleItem>),
     Function {
         from: TypeId,
@@ -284,6 +284,20 @@ pub enum TypeKind {
         args: Vec<TypeId>,
     },
     Error,
+}
+
+/// The tail of a record or union row: whether the listed fields/members are the
+/// exact contents (`Closed`) or the row is open to additional ones. Open rows
+/// carry either no name (`Open`, an anonymous `...`), a rigid row variable from
+/// a `<Rest>` type parameter (`Param`), or a flexible metavariable solved during
+/// unification (`Infer`). Mirrors the rigid `TypeVar` / flexible `InferVar` split
+/// for ordinary types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowTail {
+    Closed,
+    Open,
+    Param(BindingId),
+    Infer(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
