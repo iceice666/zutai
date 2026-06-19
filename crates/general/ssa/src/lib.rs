@@ -42,7 +42,10 @@ pub enum SsaOp {
     /// Function call: dest = func(arg).
     Call { func: SsaValue, arg: SsaValue },
     /// Type application (erased in v0 — just returns the polymorphic value).
-    TyApp { poly: SsaValue, ty_args: Vec<DfTyId> },
+    TyApp {
+        poly: SsaValue,
+        ty_args: Vec<DfTyId>,
+    },
     /// Record construction: dest = { field1 = v1, field2 = v2, ... }.
     Record { fields: Vec<(String, SsaValue)> },
     /// Tuple construction.
@@ -54,7 +57,11 @@ pub enum SsaOp {
     /// Variant construction: dest = tag(value).
     Variant { tag: String, value: SsaValue },
     /// Binary builtin operation.
-    Builtin { op: DfBuiltinOp, lhs: SsaValue, rhs: SsaValue },
+    Builtin {
+        op: DfBuiltinOp,
+        lhs: SsaValue,
+        rhs: SsaValue,
+    },
     /// Optional coalesce: dest = value ?? fallback.
     Coalesce { value: SsaValue, fallback: SsaValue },
     /// Error sentinel.

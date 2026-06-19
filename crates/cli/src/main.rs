@@ -3,9 +3,9 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use thiserror::Error;
 
 use miette::{Diagnostic, LabeledSpan, NamedSource, SourceCode};
-use thiserror::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -16,29 +16,45 @@ fn main() -> Result<(), Box<dyn Error>> {
         [cmd] if cmd == "repl" => {
             run_repl()?;
         }
-        // `zutai-cli parse <path>` — print AST (backwards-compat)
+        // `zutai-cli parse <path>` — print AST
         [cmd, path] if cmd == "parse" => {
-            run_parse(&path.clone())?;
+            run_parse(path)?;
         }
         // `zutai-cli run <path>` — evaluate and print result
         [cmd, path] if cmd == "run" => {
-            run_file(&path.clone())?;
+            run_file(path)?;
+        }
+        // `zutai-cli check <path>` — type-check and print diagnostics
+        [cmd, path] if cmd == "check" => {
+            run_check(path)?;
+        }
+        // `zutai-cli compile <path>` — compile to LLVM IR; optional -o <output>
+        [cmd, path] if cmd == "compile" => {
+            run_compile(path, None)?;
+        }
+        [cmd, path, flag, output] if cmd == "compile" && flag == "-o" => {
+            run_compile(path, Some(output))?;
+        }
+        // `zutai-cli dataflow <path>` — print Dataflow Core graph
+        [cmd, path] if cmd == "dataflow" => {
+            run_dataflow(path)?;
         }
         // `zutai-cli <path>` — bare path: `.zt` → run, `.zti` → parse/print AST
         [path] if !path.starts_with('-') => {
             let ext = extension_or_error(path)?.to_ascii_lowercase();
             match ext.as_str() {
-                "zt" => run_file(&path.clone())?,
-                "zti" => run_parse_zti(&path.clone())?,
+                "zt" => run_file(path)?,
+                "zti" => run_parse_zti(path)?,
                 other => return Err(format!("Unsupported extension: {other}").into()),
             }
         }
         _ => {
-            return Err("usage: zutai-cli [run <path>|parse <path>|repl|<path>]".into());
+            return Err(
+                "usage: zutai-cli [run <path>|parse <path>|check <path>|compile <path> [-o output]|dataflow <path>|repl|<path>]".into(),
+            );
         }
     }
 
-    let _ = args; // suppress unused binding warning
     Ok(())
 }
 
@@ -155,6 +171,163 @@ fn run_parse_zti(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let ast = zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
     print_ast("zti", &ast);
+    Ok(())
+}
+
+/// Run the type-checker on a `.zt` file and print diagnostics.
+fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string(path)?;
+    let base = Path::new(path).parent();
+    let analysis = zutai_semantic::analyze_with_base(
+        &contents,
+        base,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    let parse_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter_map(|d| match &d.kind {
+            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    if !parse_errors.is_empty() {
+        print_zt_errors(path, &contents, &parse_errors);
+        std::process::exit(1);
+    }
+    let semantic_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.stage,
+                zutai_semantic::SemanticStage::Hir
+                    | zutai_semantic::SemanticStage::Thir
+                    | zutai_semantic::SemanticStage::Import
+            )
+        })
+        .collect();
+    if !semantic_errors.is_empty() {
+        print_semantic_errors(&semantic_errors);
+        std::process::exit(1);
+    }
+    if analysis.is_thir_complete() {
+        println!("check passed: {path}");
+    } else {
+        eprintln!("check incomplete: THIR has errors");
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Compile a `.zt` file to LLVM IR. Writes to stdout or `-o <output>`.
+fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string(path)?;
+    let base = Path::new(path).parent();
+    let analysis = zutai_semantic::analyze_with_base(
+        &contents,
+        base,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    // Gate on parse and semantic errors.
+    let parse_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter_map(|d| match &d.kind {
+            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    if !parse_errors.is_empty() {
+        print_zt_errors(path, &contents, &parse_errors);
+        std::process::exit(1);
+    }
+    let semantic_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.stage,
+                zutai_semantic::SemanticStage::Hir
+                    | zutai_semantic::SemanticStage::Thir
+                    | zutai_semantic::SemanticStage::Import
+            )
+        })
+        .collect();
+    if !semantic_errors.is_empty() {
+        print_semantic_errors(&semantic_errors);
+        std::process::exit(1);
+    }
+    if !analysis.is_thir_complete() {
+        eprintln!("compile error: THIR incomplete");
+        std::process::exit(1);
+    }
+    let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
+    let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+
+    // TLC lowering.
+    let module = zutai_tlc::lower_thir(thir);
+
+    // DC → ANF → SSA → LLVM IR pipeline.
+    let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
+    let anf = zutai_anf::lower_dc(&graph);
+    let ssa = zutai_ssa::lower_anf(&anf);
+    let llvm_ir = zutai_codegen::emit_llvm(&ssa);
+
+    match output_path {
+        Some(out) => fs::write(out, &llvm_ir)?,
+        None => println!("{llvm_ir}"),
+    }
+    Ok(())
+}
+
+/// Print the Dataflow Core graph for a `.zt` file.
+fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string(path)?;
+    let base = Path::new(path).parent();
+    let analysis = zutai_semantic::analyze_with_base(
+        &contents,
+        base,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    let parse_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter_map(|d| match &d.kind {
+            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    if !parse_errors.is_empty() {
+        print_zt_errors(path, &contents, &parse_errors);
+        std::process::exit(1);
+    }
+    let semantic_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.stage,
+                zutai_semantic::SemanticStage::Hir
+                    | zutai_semantic::SemanticStage::Thir
+                    | zutai_semantic::SemanticStage::Import
+            )
+        })
+        .collect();
+    if !semantic_errors.is_empty() {
+        print_semantic_errors(&semantic_errors);
+        std::process::exit(1);
+    }
+    if !analysis.is_thir_complete() {
+        eprintln!("error: cannot lower incomplete THIR");
+        std::process::exit(1);
+    }
+    let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
+    let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+
+    let module = zutai_tlc::lower_thir(thir);
+    let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
+    println!("{graph:#?}");
     Ok(())
 }
 

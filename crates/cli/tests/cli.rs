@@ -224,3 +224,101 @@ fn parse_zt_with_type_error_exits_nonzero() {
         .failure()
         .stderr(predicate::str::contains("error"));
 }
+
+// ─── `check` subcommand ────────────────────────────────────────────────────────
+
+#[test]
+fn check_valid_zt_file_passes() {
+    let path = write_tmp("cli_test_check_valid.zt", "1 + 2\n");
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
+#[test]
+fn check_zt_parse_error_exits_nonzero() {
+    let path = write_tmp("cli_test_check_parse_err.zt", "[1; 2]\n");
+    cli().arg("check").arg(&path).assert().failure();
+}
+
+#[test]
+fn check_zt_type_error_exits_nonzero() {
+    let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    cli().arg("check").arg(&path).assert().failure();
+}
+
+// ─── `compile` subcommand ──────────────────────────────────────────────────────
+
+#[test]
+fn compile_valid_zt_file_emits_llvm_ir() {
+    let path = write_tmp("cli_test_compile_valid.zt", "42\n");
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("define i64 @__entry"));
+}
+
+#[test]
+fn compile_zt_parse_error_exits_nonzero() {
+    let path = write_tmp("cli_test_compile_parse_err.zt", "[1; 2]\n");
+    cli().arg("compile").arg(&path).assert().failure();
+}
+
+#[test]
+fn compile_zt_type_error_exits_nonzero() {
+    let path = write_tmp("cli_test_compile_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    cli().arg("compile").arg(&path).assert().failure();
+}
+
+#[test]
+fn compile_writes_to_output_file() {
+    let path = write_tmp("cli_test_compile_out.zt", "1 + 1\n");
+    let out = write_tmp("cli_test_compile_out.ll", "");
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("define i64 @__entry"),
+        "output should contain LLVM IR function definitions"
+    );
+}
+
+#[test]
+fn compile_arithmetic_emits_add() {
+    let path = write_tmp("cli_test_compile_arith.zt", "3 + 4\n");
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("add i64"));
+}
+
+// ─── `dataflow` subcommand ─────────────────────────────────────────────────────
+
+#[test]
+fn dataflow_valid_zt_file_prints_graph() {
+    let path = write_tmp("cli_test_dataflow_valid.zt", "42\n");
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("DataflowGraph"));
+}
+
+#[test]
+fn dataflow_zt_parse_error_exits_nonzero() {
+    let path = write_tmp("cli_test_dataflow_parse_err.zt", "[1; 2]\n");
+    cli().arg("dataflow").arg(&path).assert().failure();
+}

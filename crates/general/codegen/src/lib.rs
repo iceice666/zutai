@@ -278,8 +278,9 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
         SsaOp::Tuple { items } => {
             for item in items {
                 match item {
-                    SsaTupleItem::Named { name: _, value }
-                    | SsaTupleItem::Positional(value) => collect_from_value(value, constants),
+                    SsaTupleItem::Named { name: _, value } | SsaTupleItem::Positional(value) => {
+                        collect_from_value(value, constants)
+                    }
                 }
             }
         }
@@ -443,8 +444,9 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             ));
             for (idx, item) in items.iter().enumerate() {
                 let value = match item {
-                    SsaTupleItem::Named { name: _, value }
-                    | SsaTupleItem::Positional(value) => value,
+                    SsaTupleItem::Named { name: _, value } | SsaTupleItem::Positional(value) => {
+                        value
+                    }
                 };
                 out.push_str(&format!(
                     "  call void @zutai.tuple_set(i64 %{}.tup, i64 {}, i64 ",
@@ -509,10 +511,7 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 out.push_str(", ");
                 fmt_value(rhs, out);
                 out.push('\n');
-                out.push_str(&format!(
-                    "  %{} = zext i1 {} to i64\n",
-                    dest, cmp_tmp
-                ));
+                out.push_str(&format!("  %{} = zext i1 {} to i64\n", dest, cmp_tmp));
             } else {
                 // Arithmetic / bitwise on i64.
                 out.push_str(&format!("  %{} = {} i64 ", dest, builtin_ir_op(op)));
@@ -558,10 +557,7 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
         // ── MatchDiscriminant ───────────────────────────────────────────────
         SsaOp::MatchDiscriminant { scrutinee } => {
-            out.push_str(&format!(
-                "  %{} = call i64 @zutai.variant_tag(i64 ",
-                dest
-            ));
+            out.push_str(&format!("  %{} = call i64 @zutai.variant_tag(i64 ", dest));
             fmt_value(scrutinee, out);
             out.push_str(")\n");
         }

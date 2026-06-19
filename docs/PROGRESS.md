@@ -137,19 +137,19 @@ Goal: compile ANF to SSA form and emit LLVM IR.
 
 Verification gate: SSA and codegen crates compile; unit tests cover all v0 language forms (literals, function calls, lambdas, records, tuples, lists, match/if, binary ops, variants, coalesce); `cargo test --workspace` passes (898 tests).
 
-## Phase 6: CLI Compilation
+## Phase 6: CLI Compilation ✅
 
 Goal: make `zutai-cli` a usable compiler for `.zt` files.
 
-- [ ] Replace the single positional mode with subcommands:
-  - [ ] `parse <path>` — print AST or parse diagnostics.
-  - [ ] `check <path>` — run parse, HIR, THIR, and semantic diagnostics (THIR output; no TLC needed).
-  - [ ] `compile <path> [-o output]` — compile to a native binary via LLVM.
-  - [ ] `dataflow <path>` — print the Dataflow Core graph (debugging aid).
-- [ ] Add output rendering for diagnostics with source locations.
-- [ ] Keep diagnostics source-located through the semantic facade.
+- [x] Replace the single positional mode with subcommands:
+  - [x] `parse <path>` — print AST or parse diagnostics.
+  - [x] `check <path>` — run parse, HIR, THIR, and semantic diagnostics (THIR output; no TLC needed).
+  - [x] `compile <path> [-o output]` — compile through the full pipeline (semantic → TLC → DC → ANF → SSA → LLVM IR text).
+  - [x] `dataflow <path>` — print the Dataflow Core graph (debugging aid).
+- [x] Add output rendering for diagnostics with source locations.
+- [x] Keep diagnostics source-located through the semantic facade.
 
-Verification gate: CLI integration tests cover successful `.zt` compile + run, parse errors, semantic errors, and a check-only invocation.
+Verification gate: CLI integration tests cover successful `.zt` compile, check-only invocation, dataflow output, parse errors, semantic errors, and `-o` flag for output files. `cargo test --workspace` passes (908 tests).
 
 ## Phase 7: v1 Parser Frontend (surface syntax only)
 
@@ -177,6 +177,6 @@ _Updated to reflect current state and agreed goal: complete TLC → Dataflow Cor
 - [x] **Dataflow Core** — new crate `crates/general/dataflow/`; TLC→DC lowering per `docs/dataflow-core.md` (spec is complete and buildable).
 - [x] **ANF lowering** — new crate `crates/general/anf/`; write `docs/anf.md` first; SCC analysis, topological sort, let/letrec introduction.
 - [x] **SSA + LLVM IR** — new crates `crates/general/ssa/` and `crates/general/codegen/`; basic-block lowering; LLVM IR text emission (v0 uses i64 universal representation, no inkwell/llvm-sys dependency).
-- [ ] **CLI `compile` subcommand** — wire the full pipeline; add output rendering for diagnostics with source locations.
+- [x] **CLI `compile` subcommand** — wire the full pipeline; add `check`, `compile [-o output]`, and `dataflow` subcommands with source-located diagnostics.
 - [ ] **v1 parser frontend** — Phase 7 above; runs in parallel with SSA/LLVM (disjoint files). Internal order: B1 (ellipsis / row tails) first, then B2/B3/B4 in any order.
 - [ ] **Deferred constraint/witness milestones** — `derive` synthesis; method-level type params (`<A,B>` dropped at THIR); conditional / higher-kinded witnesses (`Eq @(List A)`, blocked by parametric `AliasApply` in `type_key`). Independent of the v1 parser frontend; schedulable alongside the backend.

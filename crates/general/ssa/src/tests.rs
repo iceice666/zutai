@@ -146,7 +146,8 @@ fn block_let_binding_produces_instructions() {
     let ops = op_names(&m.entry);
     assert!(
         ops.contains(&"Builtin".to_string()),
-        "should have a Builtin(Add) instruction: {:?}", ops
+        "should have a Builtin(Add) instruction: {:?}",
+        ops
     );
 }
 
@@ -180,7 +181,10 @@ fn lambda_creates_separate_function() {
 #[test]
 fn top_level_let_produces_func_decl() {
     let m = ssa_of("x := 42\nx");
-    let has_x_func = m.decls.iter().any(|d| matches!(d, SsaDecl::Func(f) if f.name == "x"));
+    let has_x_func = m
+        .decls
+        .iter()
+        .any(|d| matches!(d, SsaDecl::Func(f) if f.name == "x"));
     assert!(
         has_x_func,
         "should have a Func decl named 'x': {:?}",
@@ -314,7 +318,10 @@ fn match_expression_produces_multiple_blocks() {
     assert!(
         match_func.is_some(),
         "should have a function with ≥3 blocks (arms + join), got: {:?}",
-        funcs.iter().map(|f| (&f.name, f.blocks.len())).collect::<Vec<_>>()
+        funcs
+            .iter()
+            .map(|f| (&f.name, f.blocks.len()))
+            .collect::<Vec<_>>()
     );
 }
 

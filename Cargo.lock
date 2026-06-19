@@ -1204,10 +1204,15 @@ dependencies = [
  "predicates",
  "rustyline",
  "thiserror",
+ "zutai-anf",
+ "zutai-codegen",
+ "zutai-dataflow",
  "zutai-eval",
  "zutai-im",
  "zutai-semantic",
+ "zutai-ssa",
  "zutai-syntax",
+ "zutai-tlc",
  "zutai-types",
 ]
 

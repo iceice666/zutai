@@ -4,7 +4,10 @@
 
 use crate::*;
 use std::collections::HashSet;
-use zutai_anf::{AnfArm, AnfAtom, AnfBody, AnfDecl, AnfExpr, AnfModule, AnfPattern, AnfTupleItem, AnfTuplePatItem};
+use zutai_anf::{
+    AnfArm, AnfAtom, AnfBody, AnfDecl, AnfExpr, AnfModule, AnfPattern, AnfTupleItem,
+    AnfTuplePatItem,
+};
 
 // ── Counter for fresh names ────────────────────────────────────────────────────
 
@@ -333,7 +336,11 @@ fn lower_match(
         // arm_fb.active now has the arm label and any instrs from fb.
 
         // Bind pattern variables from the scrutinee register.
-        bind_pattern(&arm.pattern, &SsaValue::Reg(scrut_reg.clone()), &mut arm_fb.active);
+        bind_pattern(
+            &arm.pattern,
+            &SsaValue::Reg(scrut_reg.clone()),
+            &mut arm_fb.active,
+        );
 
         // Lower the arm body.
         let arm_result = lower_body(&arm.body, &mut arm_fb, ctx);
@@ -361,7 +368,9 @@ fn lower_match(
     fb.active = BlockBuilder::new(join_label.clone());
     fb.push(SsaInstr {
         dest: dest.to_string(),
-        op: SsaOp::Phi { branches: phi_branches },
+        op: SsaOp::Phi {
+            branches: phi_branches,
+        },
     });
     // The join block's terminator will be set by subsequent lowering
     // (or by the function's Return terminator at the end).
@@ -384,7 +393,10 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
         AnfPattern::Tuple(items) => {
             for (i, item) in items.iter().enumerate() {
                 match item {
-                    AnfTuplePatItem::Named { name, pattern: inner } => {
+                    AnfTuplePatItem::Named {
+                        name,
+                        pattern: inner,
+                    } => {
                         let tmp = format!("__tup_{i}_{name}");
                         bb.instrs.push(SsaInstr {
                             dest: tmp.clone(),
@@ -463,10 +475,7 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             fv
         }
         AnfExpr::TyLam { ty_params: _, body } => free_vars_body(body),
-        AnfExpr::Record(fields) => fields
-            .iter()
-            .flat_map(|(_, a)| free_vars_atom(a))
-            .collect(),
+        AnfExpr::Record(fields) => fields.iter().flat_map(|(_, a)| free_vars_atom(a)).collect(),
         AnfExpr::Tuple(items) => items
             .iter()
             .flat_map(|i| match i {
