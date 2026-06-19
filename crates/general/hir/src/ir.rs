@@ -7,6 +7,12 @@ pub type HirExprId = Idx<HirExpr>;
 pub type HirPatId = Idx<HirPat>;
 pub type HirTypeId = Idx<HirTypeExpr>;
 
+/// Names of the compiler-provided value bindings seeded into every module's
+/// root scope ("the prelude"). Currently just the string-only `print`
+/// debugging builtin. Single source of truth shared by HIR seeding, THIR type
+/// assignment, and the reference interpreter.
+pub const BUILTIN_VALUE_NAMES: &[&str] = &["print"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
 
@@ -32,6 +38,10 @@ pub struct Binding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BindingKind {
     BuiltinType,
+    /// A compiler-provided value binding seeded into the root scope (e.g. the
+    /// `print` prelude builtin). Reserved like builtin types: a top-level user
+    /// redefinition raises `DuplicateBinding`.
+    BuiltinValue,
     TopValue,
     TopFunction,
     TopType,

@@ -309,6 +309,13 @@ fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Erro
         eprintln!("compile error: THIR incomplete");
         std::process::exit(1);
     }
+    if let Some(name) = analysis.compiler_unsupported_builtin() {
+        eprintln!(
+            "compile error: `{name}` is an interpreter-only builtin and cannot be compiled; \
+             the v0 compiled core has no ambient effects (use `run` instead)"
+        );
+        std::process::exit(1);
+    }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
@@ -367,6 +374,12 @@ fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     }
     if !analysis.is_thir_complete() {
         eprintln!("error: cannot lower incomplete THIR");
+        std::process::exit(1);
+    }
+    if let Some(name) = analysis.compiler_unsupported_builtin() {
+        eprintln!(
+            "error: `{name}` is an interpreter-only builtin and cannot be lowered to Dataflow Core"
+        );
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();

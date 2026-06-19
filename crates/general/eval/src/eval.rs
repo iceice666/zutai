@@ -26,7 +26,7 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{Closure, ModuleId, TupleField, Value, values_equal},
+    value::{BuiltinFn, Closure, ModuleId, TupleField, Value, values_equal},
 };
 
 /// A slice of all evaluated modules for this run, keyed by position = `ModuleId`.
@@ -359,6 +359,21 @@ impl<'a> Evaluator<'a> {
                         } else {
                             // All arguments present — try each clause.
                             self.apply_closure(&c, applied)
+                        }
+                    }
+                    Value::Builtin(BuiltinFn::Print) => {
+                        // `print :: Text -> Text` — arity 1, applied immediately.
+                        // Side effect: write the text plus a newline to stdout;
+                        // return the argument unchanged so it stays inspectable.
+                        match self.eval(*arg, env)? {
+                            Value::Text(s) => {
+                                println!("{s}");
+                                Ok(Value::Text(s))
+                            }
+                            other => Err(EvalError::TypeMismatch {
+                                expected: "Text",
+                                found: value_type_name(&other),
+                            }),
                         }
                     }
                     other => Err(EvalError::TypeMismatch {
@@ -1116,6 +1131,20 @@ impl<'a> Evaluator<'a> {
     /// mutual recursion works.
     pub fn build_top_env(&self) -> Env {
         let top = Env::empty();
+        // Seed prelude builtins (e.g. `print`). HIR seeds these into the root
+        // scope first, so the lowest-id binding for each name is the prelude
+        // one (a user lambda param sharing the name lives at a higher id and is
+        // shadowed in a child frame at apply time).
+        for &name in zutai_hir::BUILTIN_VALUE_NAMES {
+            if let Some(builtin) = BuiltinFn::from_name(name)
+                && let Some(index) = self.file.binding_names.iter().position(|n| n == name)
+            {
+                top.insert(
+                    zutai_hir::BindingId(index as u32),
+                    Thunk::ready(Value::Builtin(builtin)),
+                );
+            }
+        }
         for &decl_id in &self.file.decls {
             let decl = self.decl(decl_id);
             match &decl.kind {
@@ -1264,6 +1293,7 @@ fn value_type_name(v: &Value) -> &'static str {
         Value::Record(_) => "Record",
         Value::Closure(_) => "Function",
         Value::TlcClosure(_) => "Function",
+        Value::Builtin(_) => "Function",
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",

@@ -420,6 +420,19 @@ pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
     let module = zutai_tlc::lower_thir(thir_file);
     let ev = eval_tlc::TlcEvaluator::new(&module);
     let top = ev.build_top_env()?;
+    // Seed prelude builtins (e.g. `print`). TLC carries no binding kinds, so we
+    // resolve the prelude binding ids from the THIR binding-name table (HIR
+    // seeds builtins first, so the lowest-id match is the prelude one).
+    for &name in zutai_hir::BUILTIN_VALUE_NAMES {
+        if let Some(builtin) = value::BuiltinFn::from_name(name)
+            && let Some(index) = thir_file.binding_names.iter().position(|n| n == name)
+        {
+            top.insert(
+                BindingId(index as u32),
+                thunk::Thunk::ready(Value::Builtin(builtin)),
+            );
+        }
+    }
     let final_id = module
         .final_expr
         .ok_or(EvalError::Internal("TLC module has no final expression"))?;

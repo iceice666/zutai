@@ -19,7 +19,7 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{TlcClosure, TupleField, Value},
+    value::{BuiltinFn, TlcClosure, TupleField, Value},
 };
 
 pub struct TlcEvaluator<'a> {
@@ -220,6 +220,16 @@ impl<'a> TlcEvaluator<'a> {
                 child.insert(c.param, Thunk::ready(arg));
                 self.eval_expr(c.body, &child)
             }
+            Value::Builtin(BuiltinFn::Print) => match arg {
+                Value::Text(s) => {
+                    println!("{s}");
+                    Ok(Value::Text(s))
+                }
+                other => Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&other),
+                }),
+            },
             other => Err(EvalError::TypeMismatch {
                 expected: "Function",
                 found: value_type_name(&other),
@@ -358,7 +368,7 @@ fn value_type_name(v: &Value) -> &'static str {
         Value::List(_) => "List",
         Value::Tuple(_) => "Tuple",
         Value::Record(_) => "Record",
-        Value::Closure(_) | Value::TlcClosure(_) => "Function",
+        Value::Closure(_) | Value::TlcClosure(_) | Value::Builtin(_) => "Function",
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",

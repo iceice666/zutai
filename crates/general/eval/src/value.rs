@@ -54,6 +54,28 @@ pub enum Value {
     /// body and its captured environment.  Distinct from `Closure` (which is
     /// THIR-based) so the two evaluators never confuse each other's closures.
     TlcClosure(Rc<TlcClosure>),
+    /// A compiler-provided builtin function value (the prelude). Seeded into the
+    /// top-level environment by name; applied specially by both evaluators.
+    Builtin(BuiltinFn),
+}
+
+/// A compiler-provided builtin function. v0 has exactly one: the string-only
+/// `print` debugging builtin (`Text -> Text`) that writes its argument plus a
+/// newline to stdout and returns the argument unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinFn {
+    Print,
+}
+
+impl BuiltinFn {
+    /// Resolve a prelude builtin by its binding name. Mirrors
+    /// `zutai_hir::BUILTIN_VALUE_NAMES`; returns `None` for any other name.
+    pub fn from_name(name: &str) -> Option<BuiltinFn> {
+        match name {
+            "print" => Some(BuiltinFn::Print),
+            _ => None,
+        }
+    }
 }
 
 /// A single-parameter closure produced by the TLC eager evaluator.
@@ -185,6 +207,7 @@ impl PartialEq for Value {
             }
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             (Value::TlcClosure(a), Value::TlcClosure(b)) => Rc::ptr_eq(a, b),
+            (Value::Builtin(a), Value::Builtin(b)) => a == b,
             // WitnessDicts are opaque to user-level equality.
             (Value::WitnessDict(_), _) | (_, Value::WitnessDict(_)) => false,
             _ => false,
@@ -416,6 +439,7 @@ impl fmt::Display for Value {
             Value::TlcClosure(_) => write!(f, "<function/1>"),
             Value::TypeValue(_) => write!(f, "<type>"),
             Value::WitnessDict(_) => write!(f, "<witness>"),
+            Value::Builtin(BuiltinFn::Print) => write!(f, "<builtin print>"),
         }
     }
 }

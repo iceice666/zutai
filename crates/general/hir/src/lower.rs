@@ -78,6 +78,9 @@ impl Lowerer {
         for name in ["Type", "Text", "Bool", "Int", "Float", "List"] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }
+        for name in crate::ir::BUILTIN_VALUE_NAMES {
+            lowerer.define_current((*name).to_string(), BindingKind::BuiltinValue, file_span);
+        }
         lowerer
     }
 

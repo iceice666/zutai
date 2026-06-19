@@ -223,11 +223,43 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn seed_builtin_value_types(&mut self) {
-        for (index, binding) in self.hir.bindings.iter().enumerate() {
-            if binding.kind == BindingKind::BuiltinType {
-                self.value_types
-                    .insert(BindingId(index as u32), self.type_type);
+        for index in 0..self.hir.bindings.len() {
+            let (kind, name) = {
+                let binding = &self.hir.bindings[index];
+                (binding.kind, binding.name.clone())
+            };
+            let id = BindingId(index as u32);
+            match kind {
+                BindingKind::BuiltinType => {
+                    self.value_types.insert(id, self.type_type);
+                }
+                BindingKind::BuiltinValue => {
+                    if let Some(ty) = self.builtin_value_type(&name) {
+                        self.value_types.insert(id, ty);
+                    }
+                }
+                _ => {}
             }
+        }
+    }
+
+    /// Type of a compiler-provided value binding (the prelude). `print` is the
+    /// only one in v0: a string-only `Text -> Text` debugging builtin that
+    /// returns its argument.
+    fn builtin_value_type(&mut self, name: &str) -> Option<TypeId> {
+        let span = self.hir.span;
+        match name {
+            "print" => {
+                let text = self.text_type(span);
+                Some(self.alloc_type(Type {
+                    kind: TypeKind::Function {
+                        from: text,
+                        to: text,
+                    },
+                    span,
+                }))
+            }
+            _ => None,
         }
     }
 

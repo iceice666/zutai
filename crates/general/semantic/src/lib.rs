@@ -105,6 +105,41 @@ impl Analysis {
             )
         })
     }
+
+    /// Returns the name of a prelude builtin that the program references and
+    /// that the compiler backend cannot lower, or `None` if there is none.
+    ///
+    /// v0's compiled pure core has no ambient effects (see
+    /// `docs/v0_spec/04-general-mode/laziness-and-purity.md`), so the
+    /// side-effecting `print` builtin is interpreter-only. `run`/`repl` accept
+    /// it; `compile`/`dataflow` must reject programs that use it rather than
+    /// silently lowering it to a dead `Error` node.
+    pub fn compiler_unsupported_builtin(&self) -> Option<&str> {
+        let hir = self.hir.as_ref()?;
+        let thir = self.thir.as_ref()?.file.as_ref()?;
+        let builtin_ids: Vec<zutai_hir::BindingId> = hir
+            .file
+            .bindings
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.kind == zutai_hir::BindingKind::BuiltinValue)
+            .map(|(index, _)| zutai_hir::BindingId(index as u32))
+            .collect();
+        if builtin_ids.is_empty() {
+            return None;
+        }
+        for (_, expr) in thir.expr_arena.iter() {
+            if let zutai_thir::ThirExprKind::BindingRef(binding) = &expr.kind
+                && builtin_ids.contains(binding)
+            {
+                return thir
+                    .binding_names
+                    .get(binding.0 as usize)
+                    .map(String::as_str);
+            }
+        }
+        None
+    }
 }
 
 pub fn analyze(input: &str) -> Analysis {

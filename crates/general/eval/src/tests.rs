@@ -1950,3 +1950,69 @@ fn import_zt_type_module() {
         "expected TypeValue for imported type alias, got {v:?}"
     );
 }
+
+// ─── prelude `print` builtin (string-only) ────────────────────────────────────
+
+#[test]
+fn print_returns_its_argument() {
+    // `print :: Text -> Text` writes to stdout (captured by the test harness)
+    // and returns the argument unchanged so it stays inspectable.
+    assert_eq!(run(r#"print "hello""#), Value::Text("hello".into()));
+}
+
+#[test]
+fn print_via_forward_pipeline() {
+    // `"x" |> print` desugars to `print "x"`.
+    assert_eq!(run(r#""piped" |> print"#), Value::Text("piped".into()));
+}
+
+#[test]
+fn print_in_list_returns_all_elements() {
+    // force_deep forces every element, so each `print` fires and the list value
+    // is the list of returned texts.
+    match run(r#"[print "a"; print "b"; print "c";]"#) {
+        Value::List(items) => {
+            let texts: Vec<_> = items.iter().filter_map(|t| t.peek()).collect();
+            assert_eq!(
+                texts,
+                vec![
+                    Value::Text("a".into()),
+                    Value::Text("b".into()),
+                    Value::Text("c".into()),
+                ]
+            );
+        }
+        other => panic!("expected List, got {other:?}"),
+    }
+}
+
+#[test]
+fn print_result_is_usable_text() {
+    // The returned text composes with ordinary text operations.
+    assert_eq!(run(r#"print "z" < "a""#), Value::Bool(false));
+}
+
+#[test]
+fn print_lambda_param_shadows_builtin() {
+    // A lambda parameter named `print` shadows the prelude builtin; applying it
+    // is ordinary variable application, not the builtin effect.
+    let src = "apply :: (Text -> Text) -> Text -> Text {\n  | f x => f x;\n}\napply (\\print. print) \"shadowed\"";
+    assert_eq!(run(src), Value::Text("shadowed".into()));
+}
+
+#[test]
+fn print_unapplied_is_a_value() {
+    // Referencing `print` without applying it yields the builtin function value.
+    assert!(matches!(
+        run("print"),
+        Value::Builtin(value::BuiltinFn::Print)
+    ));
+}
+
+#[test]
+fn redefining_print_at_top_level_is_rejected() {
+    // `print` is reserved in the root scope, so a top-level redefinition is a
+    // DuplicateBinding error and the program refuses to run.
+    let err = run_err("print := 5\nprint");
+    assert!(matches!(err, EvalError::NotRunnable(_)), "got {err:?}");
+}

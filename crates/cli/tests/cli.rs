@@ -337,3 +337,53 @@ fn dataflow_zt_parse_error_exits_nonzero() {
     let path = write_tmp("cli_test_dataflow_parse_err.zt", "[1; 2]\n");
     cli().arg("dataflow").arg(&path).assert().failure();
 }
+
+// ─── prelude `print` builtin ───────────────────────────────────────────────────
+
+#[test]
+fn run_print_writes_to_stdout() {
+    // The side effect emits `hello`; the returned value displays as `"hello"`.
+    let path = write_tmp("cli_test_print.zt", "print \"hello\"\n");
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello").and(predicate::str::contains("\"hello\"")));
+}
+
+#[test]
+fn run_print_list_emits_each_line() {
+    let path = write_tmp(
+        "cli_test_print_list.zt",
+        "[print \"a\"; print \"b\"; print \"c\";]\n",
+    );
+    cli().arg("run").arg(&path).assert().success().stdout(
+        predicate::str::contains("a")
+            .and(predicate::str::contains("b"))
+            .and(predicate::str::contains("c")),
+    );
+}
+
+#[test]
+fn compile_print_program_is_rejected() {
+    // The v0 compiled core has no ambient effects; `print` is interpreter-only.
+    let path = write_tmp("cli_test_print_compile.zt", "print \"x\"\n");
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("interpreter-only"));
+}
+
+#[test]
+fn dataflow_print_program_is_rejected() {
+    let path = write_tmp("cli_test_print_dataflow.zt", "print \"x\"\n");
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("interpreter-only"));
+}
