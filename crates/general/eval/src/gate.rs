@@ -48,7 +48,7 @@ pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, 
 }
 
 fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
-    use zutai_thir::ThirDiagnosticKind::*;
+    use zutai_thir::{RowOverlapItem, ThirDiagnosticKind::*};
     match &d.kind {
         TypeMismatch { expected, found } => {
             format!("type mismatch: expected {expected}, found {found}")
@@ -138,8 +138,27 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         UnsupportedMultiParamConstraint { name } => {
             format!("multi-param constraint `{name}` is not yet supported")
         }
-        OverlappingRowField { name } => {
-            format!("row tail introduces a field already declared: `{name}`")
+        OverlappingRowField {
+            item: RowOverlapItem::RecordField,
+            source,
+            name,
+            existing,
+            incoming,
+        } => {
+            format!(
+                "record row tail `...{source}` overlaps explicit field `{name}`: existing `{existing}`, incoming `{incoming}`"
+            )
+        }
+        OverlappingRowField {
+            item: RowOverlapItem::UnionMember,
+            source,
+            name,
+            existing,
+            incoming,
+        } => {
+            format!(
+                "union row tail `...{source}` overlaps explicit member `#{name}`: existing `{existing}`, incoming `{incoming}`"
+            )
         }
         RowAnnotationRequired => {
             "row-polymorphic inference is not principal here; add a type annotation".to_string()

@@ -396,11 +396,17 @@ t :: T = { x = 1; }
 f t
 "#,
     );
-    // Type mismatch: T is missing field y from S → record_types_match returns false.
-    assert!(
-        !lowered.diagnostics.is_empty(),
-        "expected type diagnostic; got none"
-    );
+    let mismatch = lowered
+        .diagnostics
+        .iter()
+        .find_map(|d| match &d.kind {
+            ThirDiagnosticKind::TypeMismatch { expected, found } => {
+                Some((expected.as_str(), found.as_str()))
+            }
+            _ => None,
+        })
+        .expect("expected TypeMismatch diagnostic");
+    assert_eq!(mismatch, ("{ x : Int; y : Text; }", "{ x : Int; }"));
 }
 
 /// Passing a record where a shared field has the wrong type triggers the
@@ -417,11 +423,41 @@ t :: T = { x = "bad"; }
 f t
 "#,
     );
-    // Type mismatch: field x has type Text but S expects Int.
-    assert!(
-        !lowered.diagnostics.is_empty(),
-        "expected type diagnostic; got none"
+    let mismatch = lowered
+        .diagnostics
+        .iter()
+        .find_map(|d| match &d.kind {
+            ThirDiagnosticKind::TypeMismatch { expected, found } => {
+                Some((expected.as_str(), found.as_str()))
+            }
+            _ => None,
+        })
+        .expect("expected TypeMismatch diagnostic");
+    assert_eq!(mismatch, ("{ x : Int; }", "{ x : Text; }"));
+}
+
+#[test]
+fn diagnostic_polish_record_mismatch_shows_open_tail() {
+    let lowered = lower(
+        r#"
+getHost :: { host : Text; ...; } -> Text
+  = x => x.host;
+PortOnly :: type { port : Int; }
+p :: PortOnly = { port = 8080; }
+getHost p
+"#,
     );
+    let mismatch = lowered
+        .diagnostics
+        .iter()
+        .find_map(|d| match &d.kind {
+            ThirDiagnosticKind::TypeMismatch { expected, found } => {
+                Some((expected.as_str(), found.as_str()))
+            }
+            _ => None,
+        })
+        .expect("expected TypeMismatch diagnostic");
+    assert_eq!(mismatch, ("{ host : Text; ...; }", "{ port : Int; }"));
 }
 
 // ── thir/lower/expr.rs: tagged-value infer-mode path (lines 1235–1261) ────────

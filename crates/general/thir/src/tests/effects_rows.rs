@@ -597,6 +597,30 @@ fn type_select_unknown_field_is_rejected() {
 }
 
 #[test]
+fn diagnostic_polish_record_spread_overlap_shows_existing_and_incoming() {
+    let lowered = lower(
+        r#"
+Base :: type { host : Text; port : Int; }
+Bad :: type { host : Int; ...Base; }
+Bad
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::OverlappingRowField {
+            item: RowOverlapItem::RecordField,
+            source,
+            name,
+            existing,
+            incoming,
+        } if source == "Base"
+            && name == "host"
+            && existing == "host : Int"
+            && incoming == "host : Text"
+    )));
+}
+
+#[test]
 fn open_union_match_with_wildcard_is_exhaustive() {
     completed_file(
         "classify :: { #dev; #test; ...; } -> Text\n  = #dev => \"d\";\n  = #test => \"t\";\n  = _ => \"o\";\nclassify #dev",
@@ -626,10 +650,20 @@ fn union_spread_merges_members_into_new_union() {
 }
 
 #[test]
-fn union_spread_overlapping_member_is_rejected() {
+fn diagnostic_polish_union_spread_overlap_shows_existing_and_incoming() {
     let lowered = lower("Shape :: type { #a; #b; }\nBad :: type { #a; ...Shape; }\nBad");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
-        &d.kind, ThirDiagnosticKind::OverlappingRowField { name } if name == "a"
+        &d.kind,
+        ThirDiagnosticKind::OverlappingRowField {
+            item: RowOverlapItem::UnionMember,
+            source,
+            name,
+            existing,
+            incoming,
+        } if source == "Shape"
+            && name == "a"
+            && existing == "#a"
+            && incoming == "#a"
     )));
 }
 

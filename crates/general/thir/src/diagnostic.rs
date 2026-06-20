@@ -6,6 +6,12 @@ pub struct ThirDiagnostic {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowOverlapItem {
+    RecordField,
+    UnionMember,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThirDiagnosticKind {
     TypeCheckerNotImplemented,
@@ -135,7 +141,11 @@ pub enum ThirDiagnosticKind {
     /// A row tail (spread or row variable) would introduce a field or member
     /// that the row already declares explicitly.
     OverlappingRowField {
+        item: RowOverlapItem,
+        source: String,
         name: String,
+        existing: String,
+        incoming: String,
     },
     /// Row-polymorphic inference is not principal here; an explicit type
     /// annotation is required.

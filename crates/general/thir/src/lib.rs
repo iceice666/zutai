@@ -14,7 +14,7 @@ pub mod pass;
 #[cfg(test)]
 mod tests;
 
-pub use diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
+pub use diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 pub use export::{ExportUnsupported, export_type};
 pub use import::{ImportKey, ImportedField, ImportedTupleItem, ImportedType};
 pub use ir::{

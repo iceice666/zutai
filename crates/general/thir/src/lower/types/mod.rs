@@ -6,7 +6,7 @@ use zutai_hir::{
 };
 use zutai_syntax::Span;
 
-use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
+use crate::diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
     EffectOp, EffectRow, Kind, RowTail, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
     UnionVariant,

@@ -120,7 +120,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::False => "false".to_string(),
             TypeKind::List(inner) => format!("List {}", self.type_name(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.type_name(inner)),
-            TypeKind::Record(_, _) => "record".to_string(),
+            TypeKind::Record(fields, tail) => self.record_type_name(fields, tail),
             TypeKind::Union(_, _) => "union".to_string(),
             TypeKind::Tuple(_) => "tuple".to_string(),
             TypeKind::Function { .. } => "function".to_string(),
@@ -143,6 +143,60 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
         }
+    }
+
+    fn record_type_name(&mut self, fields: Vec<TypeRecordField>, tail: RowTail) -> String {
+        let (fields, tail) = self.flatten_record_row(fields, tail);
+        let mut rendered = String::from("{ ");
+
+        for field in &fields {
+            rendered.push_str(&self.record_field_type_name(field));
+            rendered.push_str("; ");
+        }
+
+        match tail {
+            RowTail::Closed => {}
+            RowTail::Open => rendered.push_str("...; "),
+            RowTail::Param(binding) => {
+                rendered.push_str("...");
+                rendered.push_str(&self.hir.bindings[binding.0 as usize].name);
+                rendered.push_str("; ");
+            }
+            RowTail::Infer(id) => {
+                rendered.push_str("...?");
+                rendered.push_str(&id.to_string());
+                rendered.push_str("; ");
+            }
+        }
+
+        rendered.push('}');
+        rendered
+    }
+
+    pub(in crate::lower) fn record_field_type_name(&mut self, field: &TypeRecordField) -> String {
+        let ty = self.type_name(field.ty);
+        let mut rendered = String::with_capacity(field.name.len() + ty.len() + 4);
+        rendered.push_str(&field.name);
+        if field.optional {
+            rendered.push_str("? : ");
+        } else {
+            rendered.push_str(" : ");
+        }
+        rendered.push_str(&ty);
+        rendered
+    }
+
+    pub(in crate::lower) fn union_variant_type_name(&mut self, variant: &UnionVariant) -> String {
+        let mut rendered = String::with_capacity(variant.name.len() + 1);
+        rendered.push('#');
+        rendered.push_str(&variant.name);
+        if let Some(payload) = variant.payload {
+            let ty = self.type_name(payload);
+            rendered.reserve(ty.len() + 3);
+            rendered.push_str(" : ");
+            rendered.push_str(&ty);
+        }
+        rendered
     }
 
     /// Structural coherence key for a witness target type.

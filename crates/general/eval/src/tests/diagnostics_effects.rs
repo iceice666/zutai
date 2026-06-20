@@ -5,12 +5,46 @@ use super::*;
 // Each test exercises one arm of `format_thir_diagnostic` in lib.rs by
 // feeding a program that passes parse + HIR but fails THIR.
 
-fn assert_type_check_failed(src: &str) {
+fn type_check_messages(src: &str) -> Vec<String> {
     let err = run_err(src);
+    let EvalError::TypeCheckFailed(msgs) = err else {
+        panic!("expected TypeCheckFailed for:\n{src}\ngot: {err:?}");
+    };
+    msgs
+}
+
+fn assert_type_check_failed(src: &str) {
+    let _ = type_check_messages(src);
+}
+
+#[test]
+fn diagnostic_polish_eval_record_mismatch_message() {
+    let src = r#"
+S :: type { x : Int; y : Text; }
+T :: type { x : Int; }
+f :: S -> Int
+  = _ => 0;
+t :: T = { x = 1; }
+f t
+"#;
+    let msgs = type_check_messages(src);
     assert!(
-        matches!(err, EvalError::TypeCheckFailed(_)),
-        "expected TypeCheckFailed for:\n{src}\ngot: {err:?}"
+        msgs.iter()
+            .any(|m| { m == "type mismatch: expected { x : Int; y : Text; }, found { x : Int; }" })
     );
+}
+
+#[test]
+fn diagnostic_polish_eval_row_tail_overlap_message() {
+    let src = r#"
+Base :: type { host : Text; port : Int; }
+Bad :: type { host : Int; ...Base; }
+Bad
+"#;
+    let msgs = type_check_messages(src);
+    assert!(msgs.iter().any(|m| {
+        m == "record row tail `...Base` overlaps explicit field `host`: existing `host : Int`, incoming `host : Text`"
+    }));
 }
 
 #[test]

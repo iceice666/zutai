@@ -347,5 +347,5 @@ Recommended initial policy:
 These are post-roadmap stabilization items, not unchecked roadmap milestones.
 
 - [x] **v0 spec conformance sweep** — automated extraction now scans every `docs/v0_spec/` code fence and runs `.zt` survivors through `check`/`run` plus `.zti` survivors through the immediate parser; the stable survivor set is promoted into `crates/general/eval/tests/v0_spec.rs` acceptance coverage.
-- **Diagnostic polish** — render structural details for record-vs-record type mismatches and row-tail errors instead of collapsing both sides to generic `record` labels.
+- [x] **Diagnostic polish** — record-vs-record type mismatches now render source-like record shapes, including optional fields and row tails; row-tail spread overlaps report the spread source plus existing/incoming record-field or union-member shapes.
 - [x] **TLC-first evaluator cutover** — default evaluation runs through TLC for executable value programs; THIR remains the explicit regression oracle and runtime Type/reflection boundary. Parity gates cover constraints, optionals, imports, effects, and reflection/type-value boundaries.

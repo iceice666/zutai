@@ -279,15 +279,24 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
             HirRowTailKind::Spread(binding) => {
+                let source = self.hir.bindings[binding.0 as usize].name.clone();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
                 let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Record(spread_fields, spread_tail) => {
                         for sf in spread_fields {
-                            if fields.iter().any(|f| f.name == sf.name) {
+                            if let Some(existing) =
+                                fields.iter().find(|f| f.name == sf.name).cloned()
+                            {
+                                let existing = self.record_field_type_name(&existing);
+                                let incoming = self.record_field_type_name(&sf);
                                 self.diagnostics.push(ThirDiagnostic {
                                     kind: ThirDiagnosticKind::OverlappingRowField {
+                                        item: RowOverlapItem::RecordField,
+                                        source: source.clone(),
                                         name: sf.name.clone(),
+                                        existing,
+                                        incoming,
                                     },
                                     span: tail.span,
                                 });
@@ -325,15 +334,24 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
             HirRowTailKind::Spread(binding) => {
+                let source = self.hir.bindings[binding.0 as usize].name.clone();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
                 let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Union(spread_variants, spread_tail) => {
                         for sv in spread_variants {
-                            if variants.iter().any(|v| v.name == sv.name) {
+                            if let Some(existing) =
+                                variants.iter().find(|v| v.name == sv.name).cloned()
+                            {
+                                let existing = self.union_variant_type_name(&existing);
+                                let incoming = self.union_variant_type_name(&sv);
                                 self.diagnostics.push(ThirDiagnostic {
                                     kind: ThirDiagnosticKind::OverlappingRowField {
+                                        item: RowOverlapItem::UnionMember,
+                                        source: source.clone(),
                                         name: sv.name.clone(),
+                                        existing,
+                                        incoming,
                                     },
                                     span: tail.span,
                                 });
