@@ -129,7 +129,9 @@ fn export(
         TypeKind::InferVar(_) | TypeKind::TypeVar(_) => Ok(ImportedType::Unknown),
         // Parametric constructors cannot cross module boundaries unapplied; treat
         // as unknown at the import boundary (the same fallback as TypeVar).
-        TypeKind::AliasApply { .. } => Ok(ImportedType::Unknown),
+        TypeKind::AliasApply { .. } | TypeKind::Apply { .. } | TypeKind::Con(_) => {
+            Ok(ImportedType::Unknown)
+        }
         TypeKind::Function { from, to } => Ok(ImportedType::Function {
             from: Box::new(export(file, aliases, from, seen)?),
             to: Box::new(export(file, aliases, to, seen)?),

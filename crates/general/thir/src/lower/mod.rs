@@ -3,15 +3,16 @@ use std::collections::{HashMap, HashSet};
 use la_arena::Arena;
 use zutai_hir::{
     BindingId, BindingKind, HirDecl, HirDeclId, HirDeclKind, HirExpr, HirExprId, HirFile, HirPat,
-    HirPatId, HirTypeExpr, HirTypeId,
+    HirPatId, HirTypeExpr, HirTypeId, HirTypeKind,
 };
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
-    RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile,
-    ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant,
+    Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind,
+    ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+    UnionVariant,
 };
 
 pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
@@ -115,6 +116,10 @@ struct Lowerer<'hir> {
     /// Bindings absent here are monomorphic (used at a single type, or shared with
     /// the surrounding environment).
     poly_schemes: HashMap<BindingId, Vec<u32>>,
+    /// Declared kind of each type parameter, from `<F :: Type -> Type>` kind
+    /// annotations. Absent params are `Star`. Used for kind-checking higher-kinded
+    /// constraints/witnesses and carried into `ThirFile` for TLC.
+    type_param_kinds: HashMap<BindingId, Kind>,
     /// Params of each parametric type constructor (generic alias or type-level
     /// function), keyed by binding. Presence marks the binding as a parametric
     /// constructor applied via `AliasApply` at use sites.
@@ -161,6 +166,7 @@ impl<'hir> Lowerer<'hir> {
             next_row_var: 0,
             row_subst: HashMap::new(),
             poly_schemes: HashMap::new(),
+            type_param_kinds: HashMap::new(),
             alias_params: HashMap::new(),
             type_param_scope: HashSet::new(),
             type_eval_fuel: 10_000,
@@ -180,6 +186,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn lower_file(&mut self) -> LoweredThir {
+        self.collect_type_param_kinds();
         self.predeclare_decl_types();
         // D5: Two-phase lowering.  Witness field RHSs may forward-reference later
         // top-level bindings that are unannotated (not pre-declared by
@@ -237,6 +244,7 @@ impl<'hir> Lowerer<'hir> {
             pat_arena: std::mem::take(&mut self.pat_arena),
             type_arena: std::mem::take(&mut self.type_arena),
             poly_schemes: std::mem::take(&mut self.poly_schemes),
+            type_param_kinds: std::mem::take(&mut self.type_param_kinds),
             binding_names: self
                 .hir
                 .bindings
@@ -250,6 +258,188 @@ impl<'hir> Lowerer<'hir> {
             file: diagnostics.is_empty().then_some(file),
             diagnostics,
             pass_reports: Vec::new(),
+        }
+    }
+    /// Populate `type_param_kinds` from every type parameter's `<.. :: Kind>`
+    /// annotation across constraint, witness, function, and constraint-method
+    /// param lists. Params without an annotation default to `Star` (absent).
+    fn collect_type_param_kinds(&mut self) {
+        let mut pending: Vec<(BindingId, Kind)> = Vec::new();
+        for &decl_id in &self.hir.decls {
+            let decl = self.hir_decl(decl_id);
+            match &decl.kind {
+                HirDeclKind::Constraint {
+                    params, methods, ..
+                } => {
+                    for p in params {
+                        if let Some(kind_ty) = p.kind {
+                            pending.push((p.binding, self.hir_kind_of(kind_ty)));
+                        }
+                    }
+                    for m in methods {
+                        for p in &m.params {
+                            if let Some(kind_ty) = p.kind {
+                                pending.push((p.binding, self.hir_kind_of(kind_ty)));
+                            }
+                        }
+                    }
+                }
+                HirDeclKind::Witness { params, .. } | HirDeclKind::Function { params, .. } => {
+                    for p in params {
+                        if let Some(kind_ty) = p.kind {
+                            pending.push((p.binding, self.hir_kind_of(kind_ty)));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (binding, kind) in pending {
+            self.type_param_kinds.insert(binding, kind);
+        }
+    }
+
+    /// Interpret a kind annotation type-expression: `Type -> Type` → `Arrow`,
+    /// everything else (the `Type` leaf) → `Star`.
+    fn hir_kind_of(&self, hir_ty: HirTypeId) -> Kind {
+        match &self.hir_type(hir_ty).kind {
+            HirTypeKind::Arrow { from, to } => Kind::Arrow(
+                Box::new(self.hir_kind_of(*from)),
+                Box::new(self.hir_kind_of(*to)),
+            ),
+            _ => Kind::Star,
+        }
+    }
+
+    /// Compute the kind of a type. `TypeVar` looks up its declared kind; `Con`
+    /// (builtin `List`/`Optional`) is `Type -> Type`; a bare named `Alias` is the
+    /// arrow chain of its arity; `Apply` drops one arrow off its head's kind.
+    /// All saturated/ground forms are `Star`.
+    pub(super) fn kind_of(&self, ty: TypeId) -> Kind {
+        let ty = self.resolve(ty);
+        match &self.type_arena[ty.0 as usize].kind {
+            TypeKind::TypeVar(b) => self.type_param_kinds.get(b).cloned().unwrap_or(Kind::Star),
+            TypeKind::Con(_) => Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star)),
+            TypeKind::Alias(b) => {
+                let arity = self.alias_params.get(b).map(|p| p.len()).unwrap_or(0);
+                (0..arity).fold(Kind::Star, |acc, _| {
+                    Kind::Arrow(Box::new(Kind::Star), Box::new(acc))
+                })
+            }
+            TypeKind::Apply { func, .. } => match self.kind_of(*func) {
+                Kind::Arrow(_, res) => *res,
+                Kind::Star => Kind::Star,
+            },
+            _ => Kind::Star,
+        }
+    }
+    /// Verify a type used in a value position (value annotation, function
+    /// signature) is fully applied — kind `Star`. A partial application
+    /// (`Pair Text`, kind `Type -> Type`) is not a value type; re-emit the
+    /// `TypeConstructorArityMismatch` so v1's new partial-application support
+    /// does not silently accept under-applied constructors outside witness
+    /// targets. A saturated `F A` (kind `Star`) is fine; recurse its arguments.
+    pub(super) fn require_ground_type(&mut self, ty: TypeId, span: Span) {
+        let r = self.resolve(ty);
+        match self.type_arena[r.0 as usize].kind.clone() {
+            TypeKind::Function { from, to } => {
+                self.require_ground_type(from, span);
+                self.require_ground_type(to, span);
+            }
+            TypeKind::List(e) | TypeKind::Optional(e) => self.require_ground_type(e, span),
+            TypeKind::Record(fields, _) => {
+                for f in fields {
+                    self.require_ground_type(f.ty, span);
+                }
+            }
+            TypeKind::Union(variants, _) => {
+                for v in variants {
+                    if let Some(p) = v.payload {
+                        self.require_ground_type(p, span);
+                    }
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in items {
+                    let t = match item {
+                        TypeTupleItem::Named { ty, .. } => ty,
+                        TypeTupleItem::Positional(ty) => ty,
+                    };
+                    self.require_ground_type(t, span);
+                }
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for a in args {
+                    self.require_ground_type(a, span);
+                }
+            }
+            TypeKind::Apply { .. } => {
+                if self.kind_of(r) == Kind::Star {
+                    let (_, args) = self.app_spine(r);
+                    for a in args {
+                        self.require_ground_type(a, span);
+                    }
+                } else {
+                    self.report_underapplied(r, span);
+                }
+            }
+            TypeKind::Con(binding) => {
+                let name = self.hir.bindings[binding.0 as usize].name.clone();
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                        name,
+                        expected: 1,
+                        found: 0,
+                    },
+                    span,
+                });
+            }
+            TypeKind::Alias(_) if self.kind_of(r) != Kind::Star => {
+                self.report_underapplied(r, span);
+            }
+            _ => {}
+        }
+    }
+
+    /// Emit a `TypeConstructorArityMismatch` for an under-applied constructor
+    /// spine (`Pair Text` → expected 2, found 1).
+    fn report_underapplied(&mut self, ty: TypeId, span: Span) {
+        let (head, args) = self.app_spine(ty);
+        let head = self.resolve(head);
+        match self.type_arena[head.0 as usize].kind.clone() {
+            TypeKind::Alias(b) => {
+                let name = self.hir.bindings[b.0 as usize].name.clone();
+                let expected = self
+                    .alias_params
+                    .get(&b)
+                    .map(|p| p.len())
+                    .unwrap_or(args.len());
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                        name,
+                        expected,
+                        found: args.len(),
+                    },
+                    span,
+                });
+            }
+            TypeKind::Con(b) => {
+                let name = self.hir.bindings[b.0 as usize].name.clone();
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                        name,
+                        expected: 1,
+                        found: args.len(),
+                    },
+                    span,
+                });
+            }
+            _ => {
+                self.invalid_type(
+                    "higher-kinded type used where a concrete type is required",
+                    span,
+                );
+            }
         }
     }
 
@@ -466,6 +656,8 @@ impl<'hir> Lowerer<'hir> {
                 self.occurs(var_id, inner)
             }),
             TypeKind::Record(fields, _) => fields.iter().any(|f| self.occurs(var_id, f.ty)),
+            TypeKind::Apply { func, arg } => self.occurs(var_id, func) || self.occurs(var_id, arg),
+            TypeKind::AliasApply { args, .. } => args.iter().any(|&a| self.occurs(var_id, a)),
             _ => false,
         }
     }
@@ -506,7 +698,40 @@ impl<'hir> Lowerer<'hir> {
 
             (TypeKind::Optional(e1), TypeKind::Optional(e2)) => self.unify(e1, e2, span),
 
+            // Higher-kinded application: decompose head and argument. Required so
+            // method-level / constraint type params solve when unifying `F A`
+            // shapes (`F A ~ F B`, `?f A ~ F A`). Structural `!=` would spuriously
+            // mismatch two separately-built but equal `Apply` nodes.
+            (TypeKind::Apply { func: f1, arg: a1 }, TypeKind::Apply { func: f2, arg: a2 }) => {
+                self.unify(f1, f2, span);
+                self.unify(a1, a2, span);
+            }
+
             (left, right) => {
+                // Cross-form applications: canonicalize via `resolve_alias` (folds
+                // builtin `Con` apps and expands saturated named-alias apps) so a
+                // saturated `Apply`/`AliasApply` meets its concrete form. Only retry
+                // when reduction made progress, else fall through to mismatch.
+                let app_like = |k: &TypeKind| {
+                    matches!(
+                        k,
+                        TypeKind::Apply { .. } | TypeKind::AliasApply { .. } | TypeKind::Con(_)
+                    )
+                };
+                if app_like(&left) || app_like(&right) {
+                    let r1 = self.resolve_alias(t1, &mut HashSet::new(), span);
+                    let r2 = self.resolve_alias(t2, &mut HashSet::new(), span);
+                    if r1 != t1 || r2 != t2 {
+                        self.unify(r1, r2, span);
+                        return;
+                    }
+                }
+                // NOTE: an abstract-headed application against a concrete
+                // constructor (`Apply{?f, X} ~ List Y`) is intentionally *not*
+                // bridged here (would need Miller-pattern `?f := Con(List)` then
+                // `unify(X, Y)`). Concrete higher-kinded application is outside the
+                // Phase 14 gate and a refused check is the safe direction; the arm
+                // belongs to the later concrete-HKT-dispatch milestone.
                 if left != right {
                     self.type_mismatch(t1, t2, span);
                 }
@@ -527,6 +752,7 @@ impl<'hir> Lowerer<'hir> {
             name: String,
             params: Vec<BindingId>,
             methods: Vec<(String, bool, bool, TypeId)>,
+            method_params: HashMap<String, Vec<BindingId>>,
             derivable: bool,
         }
 
@@ -543,6 +769,10 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|m| (m.name.clone(), m.optional, m.default.is_some(), m.sig))
                     .collect();
+                let owned_method_params: HashMap<String, Vec<BindingId>> = methods
+                    .iter()
+                    .map(|m| (m.name.clone(), m.params.clone()))
+                    .collect();
                 let name = self.hir.bindings[decl.binding.0 as usize].name.clone();
                 constraint_map.insert(
                     decl.binding,
@@ -550,6 +780,7 @@ impl<'hir> Lowerer<'hir> {
                         name,
                         params: params.clone(),
                         methods: owned_methods,
+                        method_params: owned_method_params,
                         derivable: *derivable,
                     },
                 );
@@ -559,7 +790,9 @@ impl<'hir> Lowerer<'hir> {
             span: Span,
             target: TypeId,
             constraint_param: BindingId,
+            constraint_name: String,
             methods: Vec<(String, bool, bool, TypeId)>,
+            method_params: HashMap<String, Vec<BindingId>>,
             fields: Vec<(String, ThirExprId, Span)>,
         }
         struct DeriveTask {
@@ -638,7 +871,9 @@ impl<'hir> Lowerer<'hir> {
                     span: decl.span,
                     target: *target,
                     constraint_param: cst_info.params[0],
+                    constraint_name: cst_info.name.clone(),
                     methods: cst_info.methods.clone(),
+                    method_params: cst_info.method_params.clone(),
                     fields: fields_owned,
                 });
             }
@@ -674,6 +909,26 @@ impl<'hir> Lowerer<'hir> {
 
         // Phase 2: mutable checks over owned task data.
         for task in tasks {
+            // Kind-check the witness target against the constraint's target kind
+            // (`Functor @Int` is rejected: `Int : Type` but `Functor` wants
+            // `Type -> Type`). Skip field checks for a mis-kinded witness.
+            let expected_kind = self
+                .type_param_kinds
+                .get(&task.constraint_param)
+                .cloned()
+                .unwrap_or(Kind::Star);
+            let target_kind = self.kind_of(task.target);
+            if expected_kind != target_kind {
+                let target_name = self.type_name(task.target);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::WitnessTargetKindMismatch {
+                        constraint: task.constraint_name.clone(),
+                        target: target_name,
+                    },
+                    span: task.span,
+                });
+                continue;
+            }
             let subst: HashMap<BindingId, TypeId> =
                 [(task.constraint_param, task.target)].into_iter().collect();
 
@@ -684,7 +939,15 @@ impl<'hir> Lowerer<'hir> {
                 if let Some((_, _, _, method_sig)) =
                     task.methods.iter().find(|(n, _, _, _)| n == fname)
                 {
-                    let expected = self.instantiate_type_vars(*method_sig, &subst);
+                    let mut field_subst = subst.clone();
+                    if let Some(mps) = task.method_params.get(fname) {
+                        let mspan = self.ty(*method_sig).span;
+                        for &mp in mps {
+                            let fresh = self.fresh_infer_var(mspan);
+                            field_subst.insert(mp, fresh);
+                        }
+                    }
+                    let expected = self.instantiate_type_vars(*method_sig, &field_subst);
                     let found = self.expr(*value_expr).ty;
                     let expected_name = self.type_name(expected);
                     let found_name = self.type_name(found);

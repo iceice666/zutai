@@ -220,6 +220,9 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
                 "recursive witness for constraint `{constraint}`: target is one of its own type parameters"
             )
         }
+        WitnessTargetKindMismatch { constraint, target } => {
+            format!("witness target `{target}` has the wrong kind for constraint `{constraint}`")
+        }
         UnsupportedMultiParamConstraint { name } => {
             format!("multi-param constraint `{name}` is not yet supported")
         }

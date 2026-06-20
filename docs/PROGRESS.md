@@ -263,11 +263,11 @@ Verification gate: bounded witnesses for list-like aliases resolve at direct and
 
 Goal: preserve and elaborate polymorphic constraint methods and constructor-kinded witnesses.
 
-- [ ] Preserve method-level type parameters (`<A, B>`) in HIR and THIR.
-- [ ] Elaborate polymorphic methods to TLC `TyLam` / `TyApp`.
-- [ ] Extend dictionary-passing to handle polymorphic methods.
-- [ ] Kind-check constraint targets of kind `Type -> Type`.
-- [ ] Support partial type application in witness targets, such as `Functor @(Result E)`.
+- [x] Preserve method-level type parameters (`<A, B>`) in HIR and THIR.
+- [x] Elaborate polymorphic methods to TLC `TyLam` / `TyApp`.
+- [x] Extend dictionary-passing to handle polymorphic methods.
+- [x] Kind-check constraint targets of kind `Type -> Type`.
+- [x] Support partial type application in witness targets, such as `Functor @(Result E)`.
 
 Verification gate: `Functor`/`Foldable`-shaped examples from `docs/v1_spec/03-constraints.md` type-check and elaborate to TLC with explicit method polymorphism.
 
@@ -340,6 +340,6 @@ Recommended initial policy:
 - [x] **row-polymorphic THIR** — Phase 9 above.
 - [x] **THIR→TLC row elaboration** — Phase 10 above.
 - [x] **`select` semantics and compile support** — Phase 11 above.
-- [ ] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
+- [x] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
 - [ ] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
 - [ ] **reflection builtins** — `fields` / `schema`; Phase 17 above.

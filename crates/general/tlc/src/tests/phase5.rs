@@ -178,3 +178,114 @@ same 1 1
         );
     }
 }
+
+/// A higher-kinded witness method (`Functor @List { map = \f xs. xs; }`) wraps
+/// the field body in a `TyLam` per method-level param. The witness is not
+/// conditional and there is no bounded function, so the only `TyLam` source is
+/// the method-polymorphism wrapping — its presence verifies that path.
+#[test]
+fn hkt_witness_method_wrapped_in_tylam() {
+    let m = tlc_of(
+        r#"
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @List :: { map = \f xs. xs; }
+1
+"#,
+    );
+    let has_tylam = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::TyLam(_, _, _)));
+    assert!(
+        has_tylam,
+        "expected a TyLam wrapping the polymorphic `map` witness field"
+    );
+}
+
+/// A polymorphic constraint-method call (`map f …` inside `mapTwice`) elaborates
+/// to `TyApp` on the dict-fetched method, instantiating its method-level params.
+#[test]
+fn hkt_method_call_elaborates_tyapp() {
+    let m = tlc_of(
+        r#"
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @List :: { map = \f xs. xs; }
+mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }
+1
+"#,
+    );
+    let has_tyapp = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::TyApp(_, _)));
+    assert!(
+        has_tyapp,
+        "expected TyApp at the polymorphic `map` call site"
+    );
+}
+
+/// A partial-application witness target (`Functor @(Result E)`) elaborates to a
+/// TLC module without error — every expr gets a type and the witness method is
+/// `TyLam`-wrapped.
+#[test]
+fn hkt_partial_application_witness_elaborates() {
+    let m = tlc_of(
+        r#"
+Result :: <E, A> type { ok : A; err : E; }
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @(Result E) :: <E> { map = \f r. r; }
+1
+"#,
+    );
+    let has_tylam = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::TyLam(_, _, _)));
+    assert!(has_tylam, "expected TyLam for the polymorphic `map` field");
+    for (id, _) in m.expr_arena.iter() {
+        assert!(m.expr_types.contains_key(&id), "expr {id:?} missing a type");
+    }
+}
+
+/// A constraint method may declare a type param it never uses in its signature
+/// (`phantom :: <A, B> F A -> F A` — `B` is unused). The witness field must be
+/// wrapped in one `TyLam` per param that actually appears in the signature (here
+/// just `A`), matching the call site's `TyApp` count. Wrapping per *declared*
+/// param instead leaves a residual type abstraction the call site never
+/// instantiates — an ill-typed TLC term.
+#[test]
+fn hkt_unused_method_param_wraps_only_signature_params() {
+    let m = tlc_of(
+        r#"
+Functor :: <F :: Type -> Type> @F { phantom :: <A, B> F A -> F A; }
+Functor @List :: { phantom = \xs. xs; }
+useIt :: <F: Functor, A> F A -> F A { | xs => phantom xs; }
+1
+"#,
+    );
+    fn count_leading_tylam(m: &TlcModule, mut id: TlcExprId) -> usize {
+        let mut n = 0;
+        while let TlcExpr::TyLam(_, _, body) = &m.expr_arena[id] {
+            n += 1;
+            id = *body;
+        }
+        n
+    }
+    let field = m
+        .expr_arena
+        .iter()
+        .find_map(|(_, e)| match e {
+            TlcExpr::Record(fields) => fields
+                .iter()
+                .find(|(name, _)| name == "phantom")
+                .map(|(_, eid)| *eid),
+            _ => None,
+        })
+        .expect("witness dict must carry a `phantom` field");
+    assert_eq!(
+        count_leading_tylam(&m, field),
+        1,
+        "`phantom` declares <A, B> but uses only A; its witness field must be \
+         wrapped in exactly 1 TyLam (signature-present params), not 2 (declared)"
+    );
+}

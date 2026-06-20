@@ -12,6 +12,14 @@ pub type ThirPatId = Idx<ThirPat>;
 /// (`next_infer_var` / `infer_subst` in the lowerer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(pub u32);
+/// The kind of a type: `Star` is the kind of ordinary types (`Int`, `List Int`);
+/// `Arrow` is the kind of a type constructor (`List : Type -> Type`). Used to
+/// kind-check higher-kinded constraints/witnesses. Mirrors TLC's richer `Kind`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kind {
+    Star,
+    Arrow(Box<Kind>, Box<Kind>),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThirFile {
@@ -22,6 +30,10 @@ pub struct ThirFile {
     pub pat_arena: Arena<ThirPat>,
     pub type_arena: Vec<Type>,
     pub poly_schemes: std::collections::HashMap<zutai_hir::BindingId, Vec<u32>>,
+    /// Declared kind of each type parameter (`<F :: Type -> Type>` → `Arrow`),
+    /// keyed by the param's `BindingId`. Absent params have kind `Star`. Carried
+    /// for TLC so higher-kinded quantifiers/vars get the right kind.
+    pub type_param_kinds: std::collections::HashMap<zutai_hir::BindingId, Kind>,
     pub binding_names: Vec<String>,
 }
 
@@ -82,13 +94,19 @@ pub enum ThirDeclKind {
 
 /// A single method in a constraint definition.
 /// D6: operator bindings and default bodies are now carried through.
-/// Method-level type params (`<A,B>`) are still deferred.
+/// Phase 14: method-level type params (`<A,B>`) are preserved in `params`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThirConstraintMethod {
     pub name: String,
     pub is_operator: bool,
     pub optional: bool,
     pub sig: TypeId,
+    /// Method-level type parameters (`<A, B>` on the method itself), distinct from
+    /// the constraint's own params. Source of truth for how many `TyLam` wrap the
+    /// witness field and how many `TyApp` apply at a call site.
+    pub params: Vec<BindingId>,
+    /// Per-method-param constraint bounds, parallel to `params`.
+    pub param_bounds: Vec<Vec<BindingId>>,
     pub span: Span,
     /// `BindingId` for this method. Both named and operator methods now get `Some(_)` (D6/4b).
     pub binding: Option<BindingId>,
@@ -288,6 +306,24 @@ pub enum TypeKind {
         binding: BindingId,
         args: Vec<TypeId>,
     },
+    /// Curried application of a type constructor to a single argument — the
+    /// representation for higher-kinded application (`F A`) and partial
+    /// application (`Result E`). The `func` head is a `TypeId` so it composes
+    /// under substitution: a `TypeVar(F)` head becomes an `InferVar` at a call
+    /// site, then a concrete constructor once solved. Reduced by `resolve_alias`,
+    /// which spine-walks, folds builtin `Con` applications (`Apply{Con(List),X}`
+    /// → `List(X)`), expands saturated named aliases, and leaves abstract or
+    /// under-saturated heads inert. Compared via `app_view` at every boundary so
+    /// it is canonicalization-equivalent to the saturated `AliasApply`.
+    Apply {
+        func: TypeId,
+        arg: TypeId,
+    },
+    /// A bare, unapplied builtin type constructor (`List`, `Optional`) used as a
+    /// higher-kinded witness/constraint target (`Functor @List`). Named aliases
+    /// use `Alias(binding)` for their bare head; `Con` exists only for builtins
+    /// that have no alias body.
+    Con(BindingId),
     Error,
 }
 

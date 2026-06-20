@@ -121,6 +121,12 @@ pub enum ThirDiagnosticKind {
     RecursiveWitness {
         constraint: String,
     },
+    /// A witness target's kind does not match the constraint's expected kind
+    /// (e.g. `Functor @Int` where `Functor` constrains a `Type -> Type`).
+    WitnessTargetKindMismatch {
+        constraint: String,
+        target: String,
+    },
     /// A constraint definition uses more than one type parameter.  Multi-param
     /// constraints are not yet supported; witness checking is skipped for them.
     UnsupportedMultiParamConstraint {

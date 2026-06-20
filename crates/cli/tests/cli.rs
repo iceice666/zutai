@@ -264,6 +264,25 @@ fn check_zt_type_error_exits_nonzero() {
     let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\"\nx\n");
     cli().arg("check").arg(&path).assert().failure();
 }
+#[test]
+fn check_higher_kinded_constraint_passes() {
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }\n1\n";
+    let path = write_tmp("cli_test_check_hkt.zt", src);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
+#[test]
+fn check_witness_kind_mismatch_exits_nonzero() {
+    // `Functor @Int` — `Int : Type` but `Functor` constrains a `Type -> Type`.
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @Int :: { map = \\f x. x; }\n1\n";
+    let path = write_tmp("cli_test_check_hkt_badkind.zt", src);
+    cli().arg("check").arg(&path).assert().failure();
+}
 
 // ─── `compile` subcommand ──────────────────────────────────────────────────────
 

@@ -322,10 +322,10 @@ impl<'hir> Lowerer<'hir> {
             _ => {}
         }
 
-        // Generic alias or type-level function: arity-check and build a lazy
-        // AliasApply node. Expansion happens on demand in resolve_alias.
+        // Named parametric alias.
         if let Some(params) = self.alias_params.get(&binding).cloned() {
-            if params.len() != args.len() {
+            if args.len() > params.len() {
+                // Over-application: more arguments than the constructor accepts.
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
                         name,
@@ -336,13 +336,47 @@ impl<'hir> Lowerer<'hir> {
                 });
                 return self.error_type;
             }
-            return self.alloc_type(Type {
-                kind: TypeKind::AliasApply { binding, args },
+            if args.len() == params.len() {
+                // Saturated: keep the direct-write `AliasApply` representation
+                // (canonicalization-equivalent to the Apply-spine via `app_view`).
+                return self.alloc_type(Type {
+                    kind: TypeKind::AliasApply { binding, args },
+                    span,
+                });
+            }
+            // Partial application (`Result E`): curried `Apply` spine over the bare
+            // alias head. `resolve_alias` leaves it inert until saturated.
+            let head_ty = self.alias_type(binding, span);
+            return self.fold_apply(head_ty, &args, span);
+        }
+
+        // Higher-kinded type-variable application (`F A`, F a type param of kind
+        // `Type -> Type`). Curried `Apply` over the var head so it composes under
+        // substitution (`F := Result E` makes `F A` reduce to `Result E A`).
+        if matches!(
+            self.hir.bindings[binding.0 as usize].kind,
+            BindingKind::TypeParam
+        ) {
+            let head_ty = self.alloc_type(Type {
+                kind: TypeKind::TypeVar(binding),
                 span,
             });
+            return self.fold_apply(head_ty, &args, span);
         }
 
         self.invalid_type("type is not a parametric constructor", span)
+    }
+
+    /// Build a curried `Apply` spine: `fold_apply(F, [A, B])` → `Apply{Apply{F,A},B}`.
+    fn fold_apply(&mut self, head: TypeId, args: &[TypeId], span: Span) -> TypeId {
+        let mut spine = head;
+        for &arg in args {
+            spine = self.alloc_type(Type {
+                kind: TypeKind::Apply { func: spine, arg },
+                span,
+            });
+        }
+        spine
     }
 
     fn alias_or_builtin_type(&mut self, binding: BindingId, span: Span) -> TypeId {
@@ -363,9 +397,17 @@ impl<'hir> Lowerer<'hir> {
         }
         let binding_info = &self.hir.bindings[binding.0 as usize];
         match binding_info.kind {
-            BindingKind::BuiltinType => self
-                .builtin_type_by_name(&binding_info.name, span)
-                .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),
+            BindingKind::BuiltinType => match binding_info.name.as_str() {
+                // Bare `List`/`Optional` constructors (kind `Type -> Type`), used
+                // unapplied as higher-kinded witness/constraint targets.
+                "List" | "Optional" => self.alloc_type(Type {
+                    kind: TypeKind::Con(binding),
+                    span,
+                }),
+                name => self
+                    .builtin_type_by_name(name, span)
+                    .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),
+            },
             BindingKind::TopType => self.alias_type(binding, span),
             BindingKind::TypeParam => self.alloc_type(Type {
                 kind: TypeKind::TypeVar(binding),
@@ -605,6 +647,11 @@ impl<'hir> Lowerer<'hir> {
                 // takes a wider closed record, but never the reverse.
                 self.type_matches(ff, ef) && self.type_matches(et, ft)
             }
+            // Higher-kinded application: match head and argument structurally,
+            // solving infer vars on either side (both already alias-resolved).
+            (TypeKind::Apply { func: ef, arg: ea }, TypeKind::Apply { func: ff, arg: fa }) => {
+                self.type_matches(ef, ff) && self.type_matches(ea, fa)
+            }
             (left, right) => left == right,
         }
     }
@@ -751,6 +798,20 @@ impl<'hir> Lowerer<'hir> {
             })
     }
 
+    /// Flatten a curried `Apply` chain into its head and left-to-right argument
+    /// list. Does not resolve aliases or infer vars or fold builtins — it is a
+    /// pure structural walk. `F A B` → `(F, [A, B])`; a non-application → `(ty, [])`.
+    pub(super) fn app_spine(&self, ty: TypeId) -> (TypeId, Vec<TypeId>) {
+        let mut args: Vec<TypeId> = Vec::new();
+        let mut cur = ty;
+        while let TypeKind::Apply { func, arg } = self.type_arena[cur.0 as usize].kind {
+            args.push(arg);
+            cur = func;
+        }
+        args.reverse();
+        (cur, args)
+    }
+
     pub(super) fn resolve_alias(
         &mut self,
         ty: TypeId,
@@ -786,12 +847,63 @@ impl<'hir> Lowerer<'hir> {
                 let Some(params) = self.alias_params.get(&binding).cloned() else {
                     return ty; // not registered → leave inert (arity already diagnosed)
                 };
+                if params.len() != args.len() {
+                    return ty; // partial application → leave inert (not a saturated type)
+                }
                 let Some(body) = self.aliases.get(&binding).copied() else {
                     return ty;
                 };
                 let subst: HashMap<BindingId, TypeId> = params.into_iter().zip(args).collect();
                 let expanded = self.instantiate_type_vars(body, &subst);
                 self.resolve_alias(expanded, seen, span)
+            }
+            TypeKind::Apply { .. } => {
+                // Canonical reducer for curried applications: fold builtin `Con`
+                // applications, expand saturated named-alias applications, and
+                // leave abstract (var-headed) or under-saturated heads inert.
+                let (head, spine_args) = self.app_spine(ty);
+                let head = self.resolve(head);
+                match self.type_arena[head.0 as usize].kind.clone() {
+                    TypeKind::Con(b) => {
+                        let name = self.hir.bindings[b.0 as usize].name.clone();
+                        match (name.as_str(), spine_args.len()) {
+                            ("List", 1) => self.alloc_type(Type {
+                                kind: TypeKind::List(spine_args[0]),
+                                span,
+                            }),
+                            ("Optional", 1) => self.optional_type(spine_args[0], span),
+                            _ => ty, // partial/over-applied builtin → inert
+                        }
+                    }
+                    TypeKind::Alias(b) => {
+                        let Some(params) = self.alias_params.get(&b).cloned() else {
+                            return ty;
+                        };
+                        if params.len() != spine_args.len() {
+                            return ty; // partial → inert
+                        }
+                        if !seen.insert(b) {
+                            self.push_alias_cycle(b, span);
+                            return self.error_type;
+                        }
+                        if self.type_eval_fuel == 0 {
+                            self.diagnostics.push(ThirDiagnostic {
+                                kind: ThirDiagnosticKind::TypeLevelEvalLimitExceeded,
+                                span,
+                            });
+                            return self.error_type;
+                        }
+                        self.type_eval_fuel -= 1;
+                        let Some(body) = self.aliases.get(&b).copied() else {
+                            return ty;
+                        };
+                        let subst: HashMap<BindingId, TypeId> =
+                            params.into_iter().zip(spine_args).collect();
+                        let expanded = self.instantiate_type_vars(body, &subst);
+                        self.resolve_alias(expanded, seen, span)
+                    }
+                    _ => ty, // abstract head (TypeVar / InferVar) → inert
+                }
             }
             _ => ty,
         }
@@ -830,6 +942,10 @@ impl<'hir> Lowerer<'hir> {
                 let head = self.hir.bindings[binding.0 as usize].name.clone();
                 let parts: Vec<String> = args.iter().map(|&a| self.type_name(a)).collect();
                 format!("{head} {}", parts.join(" "))
+            }
+            TypeKind::Con(binding) => self.hir.bindings[binding.0 as usize].name.clone(),
+            TypeKind::Apply { func, arg } => {
+                format!("{} {}", self.type_name(func), self.type_name(arg))
             }
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
@@ -929,6 +1045,23 @@ impl<'hir> Lowerer<'hir> {
                     .collect();
                 format!("${}[{}]", binding.0, parts.join(","))
             }
+            TypeKind::Con(binding) => format!("@{}", binding.0),
+            TypeKind::Apply { .. } => {
+                let (head, args) = self.app_spine(ty);
+                let head_key = match self.type_arena[head.0 as usize].kind.clone() {
+                    TypeKind::TypeVar(b) => match norm.get(&b) {
+                        Some(i) => format!("#{i}"),
+                        None => format!("@{}", b.0),
+                    },
+                    TypeKind::Alias(b) | TypeKind::Con(b) => format!("@{}", b.0),
+                    _ => self.witness_target_key_with(head, norm),
+                };
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|&a| self.witness_target_key_with(a, norm))
+                    .collect();
+                format!("{}[{}]", head_key, parts.join(","))
+            }
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
         }
@@ -980,6 +1113,10 @@ impl<'hir> Lowerer<'hir> {
                 for a in args {
                     self.collect_type_vars_into(a, out);
                 }
+            }
+            TypeKind::Apply { func, arg } => {
+                self.collect_type_vars_into(func, out);
+                self.collect_type_vars_into(arg, out);
             }
             _ => {}
         }
@@ -1037,6 +1174,10 @@ impl<'hir> Lowerer<'hir> {
                 for a in &args {
                     self.collect_row_params_into(*a, out);
                 }
+            }
+            TypeKind::Apply { func, arg } => {
+                self.collect_row_params_into(func, out);
+                self.collect_row_params_into(arg, out);
             }
             _ => {}
         }
@@ -1171,6 +1312,20 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::Apply { func, arg } => {
+                let new_func = self.instantiate_type_vars(func, subst);
+                let new_arg = self.instantiate_type_vars(arg, subst);
+                if new_func == func && new_arg == arg {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Apply {
+                        func: new_func,
+                        arg: new_arg,
+                    },
+                    span,
+                })
+            }
             _ => ty,
         }
     }
@@ -1281,6 +1436,33 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::Apply { func, arg } => {
+                let nf = self.instantiate_row_params(func, subst);
+                let na = self.instantiate_row_params(arg, subst);
+                if nf == func && na == arg {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Apply { func: nf, arg: na },
+                    span,
+                })
+            }
+            TypeKind::AliasApply { binding, args } => {
+                let new_args: Vec<TypeId> = args
+                    .iter()
+                    .map(|&a| self.instantiate_row_params(a, subst))
+                    .collect();
+                if new_args == args {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::AliasApply {
+                        binding,
+                        args: new_args,
+                    },
+                    span,
+                })
+            }
             _ => ty,
         }
     }
@@ -1334,6 +1516,10 @@ impl<'hir> Lowerer<'hir> {
                 for a in args {
                     self.free_infer_vars_into(a, out);
                 }
+            }
+            TypeKind::Apply { func, arg } => {
+                self.free_infer_vars_into(func, out);
+                self.free_infer_vars_into(arg, out);
             }
             _ => {}
         }
@@ -1485,6 +1671,36 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Record(new_fields, tail),
+                    span,
+                })
+            }
+            TypeKind::Apply { func, arg } => {
+                let new_func = self.instantiate_infer_vars(func, subst);
+                let new_arg = self.instantiate_infer_vars(arg, subst);
+                if new_func == func && new_arg == arg {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Apply {
+                        func: new_func,
+                        arg: new_arg,
+                    },
+                    span,
+                })
+            }
+            TypeKind::AliasApply { binding, args } => {
+                let new_args: Vec<TypeId> = args
+                    .iter()
+                    .map(|&a| self.instantiate_infer_vars(a, subst))
+                    .collect();
+                if new_args == args {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::AliasApply {
+                        binding,
+                        args: new_args,
+                    },
                     span,
                 })
             }

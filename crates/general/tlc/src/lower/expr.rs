@@ -139,20 +139,54 @@ impl<'thir> Lowerer<'thir> {
 
                 if let Some((binding, func_thir_ty, func_span)) = func_binding_info {
                     // Constraint method call: dispatch via GetField on the active dict param.
-                    if let Some((cst_binding, method_name)) =
-                        self.constraint_methods.get(&binding).cloned()
+                    if let Some(info) = self.constraint_methods.get(&binding).cloned()
                         && !instantiation.is_empty()
                     {
-                        let dict_expr =
-                            self.get_dict_expr(cst_binding, instantiation[0], func_span);
+                        // Recover the method sig's exact type-var order (deduped,
+                        // sorted by binding id) — this reproduces THIR's
+                        // `collect_type_vars` and is positionally aligned with
+                        // `instantiation`, even when the method omits some declared
+                        // param. Fall back to constraint-param + method-params if the
+                        // sig is unavailable.
+                        let vars: Vec<BindingId> = self
+                            .method_sig_for(info.constraint, &info.name)
+                            .map(|sig| self.collect_thir_type_vars(sig))
+                            .filter(|v| !v.is_empty())
+                            .unwrap_or_else(|| {
+                                let mut v: Vec<BindingId> =
+                                    Vec::with_capacity(1 + info.method_params.len());
+                                v.push(info.constraint_param);
+                                v.extend(info.method_params.iter().copied());
+                                v.sort_by_key(|b| b.0);
+                                v.dedup();
+                                v
+                            });
+                        let index_of = |b: BindingId| vars.iter().position(|v| *v == b);
+
+                        // The constraint param's instantiation selects the dict.
+                        let dict_inst = index_of(info.constraint_param)
+                            .and_then(|i| instantiation.get(i).copied())
+                            .unwrap_or(instantiation[0]);
+                        let dict_expr = self.get_dict_expr(info.constraint, dict_inst, func_span);
                         let method_ty = self.lower_type(func_thir_ty);
-                        let get_field = self.alloc_expr(
-                            TlcExpr::GetField(dict_expr, method_name),
+                        let mut acc = self.alloc_expr(
+                            TlcExpr::GetField(dict_expr, info.name),
                             method_ty,
                             span,
                         );
+                        // Each method-level type param becomes a `TyApp`, in
+                        // declaration order, so the dict's `TyLam`-wrapped method is
+                        // instantiated at the call site's inferred type arguments.
+                        for &mp in &info.method_params {
+                            if let Some(i) = index_of(mp)
+                                && let Some(&inst_ty) = instantiation.get(i)
+                            {
+                                let ty_arg = self.lower_type(inst_ty);
+                                acc = self.alloc_expr(TlcExpr::TyApp(acc, ty_arg), method_ty, span);
+                            }
+                        }
                         let arg_tlc = self.lower_expr(arg);
-                        return self.alloc_expr(TlcExpr::App(get_field, arg_tlc), tlc_ty, span);
+                        return self.alloc_expr(TlcExpr::App(acc, arg_tlc), tlc_ty, span);
                     }
 
                     // Explicit-params function call: inject TyApp + dict App before value arg.

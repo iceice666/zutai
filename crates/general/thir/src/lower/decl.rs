@@ -83,6 +83,10 @@ impl<'hir> Lowerer<'hir> {
                     .get(&decl.binding)
                     .copied()
                     .unwrap_or_else(|| self.lower_type(*ty));
+                // Partial application is only legal in witness targets; an
+                // under-applied constructor buried in an alias body (e.g. a field
+                // typed `Pair Int`) must still be diagnosed.
+                self.require_ground_type(ty, decl.span);
                 ThirDeclKind::TypeAlias {
                     params: params.clone(),
                     ty,
@@ -97,6 +101,7 @@ impl<'hir> Lowerer<'hir> {
                     self.binding_import_key.insert(decl.binding, source.clone());
                 }
                 let ty = self.lower_type(*annotation);
+                self.require_ground_type(ty, decl.span);
                 let value = self.check_expr(*value, ty);
                 self.value_types.insert(decl.binding, ty);
                 ThirDeclKind::Value { ty, value }
@@ -126,6 +131,7 @@ impl<'hir> Lowerer<'hir> {
                     .copied()
                     .unwrap_or(self.error_type);
                 let clauses = if sig != self.error_type {
+                    self.require_ground_type(sig, decl.span);
                     let clauses = self.lower_function_clauses(clauses, sig);
                     self.generalize_if_polymorphic(decl.binding, sig);
                     clauses
@@ -158,6 +164,7 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|m| {
                         let sig = self.lower_type(m.sig);
+                        self.require_ground_type(sig, m.span);
                         // D6/4a: lower default clause body if present.
                         // Use lower_function_clauses against the method sig so the
                         // clauses are type-checked. Skip when empty (no default).
@@ -171,6 +178,8 @@ impl<'hir> Lowerer<'hir> {
                             is_operator: m.is_operator,
                             optional: m.optional,
                             sig,
+                            params: m.params.iter().map(|p| p.binding).collect(),
+                            param_bounds: m.params.iter().map(|p| p.bounds.clone()).collect(),
                             span: m.span,
                             binding: m.binding,
                             default,
@@ -251,8 +260,10 @@ impl<'hir> Lowerer<'hir> {
                     params, methods, ..
                 } = &decl.kind
             {
-                let sigs: Vec<(String, TypeId)> =
-                    methods.iter().map(|m| (m.name.clone(), m.sig)).collect();
+                let sigs: Vec<(String, TypeId, Vec<zutai_hir::BindingId>)> = methods
+                    .iter()
+                    .map(|m| (m.name.clone(), m.sig, m.params.clone()))
+                    .collect();
                 return Some((params.clone(), sigs));
             }
             None
@@ -263,10 +274,22 @@ impl<'hir> Lowerer<'hir> {
         if params.len() != 1 {
             return std::collections::HashMap::new();
         }
-        let subst: std::collections::HashMap<zutai_hir::BindingId, TypeId> =
-            [(params[0], target)].into_iter().collect();
         sigs.into_iter()
-            .map(|(name, sig)| (name, self.instantiate_type_vars(sig, &subst)))
+            .map(|(name, sig, method_params)| {
+                let mut subst: std::collections::HashMap<zutai_hir::BindingId, TypeId> =
+                    [(params[0], target)].into_iter().collect();
+                // Method-level type params become fresh InferVars per field so a
+                // witness implementation need not be parametric in them (e.g.
+                // `Functor @List { map = \f xs. xs; }` checks even though it is not
+                // `(A->B)->List A->List B`). Gate-scoped leniency: eval/compile
+                // still refuse HKT execution, so no unsound value is produced.
+                let span = self.ty(sig).span;
+                for &mp in &method_params {
+                    let fresh = self.fresh_infer_var(span);
+                    subst.insert(mp, fresh);
+                }
+                (name, self.instantiate_type_vars(sig, &subst))
+            })
             .collect()
     }
 

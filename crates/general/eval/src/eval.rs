@@ -1307,6 +1307,34 @@ fn type_key_subst(
                 .collect();
             format!("${}[{}]", binding.0, arg_parts.join(","))
         }
+        TypeKind::Con(b) => format!("@{}", b.0),
+        TypeKind::Apply { .. } => {
+            // Flatten the curried spine to head + args.
+            let mut args_acc: Vec<TypeId> = Vec::new();
+            let mut cur = ty;
+            while let TypeKind::Apply { func, arg } = &type_arena[cur.0 as usize].kind {
+                args_acc.push(*arg);
+                cur = *func;
+            }
+            args_acc.reverse();
+            // Saturated named-alias head: expand + substitute (mirror AliasApply).
+            if let TypeKind::Alias(b) = &type_arena[cur.0 as usize].kind
+                && let Some((params, body)) = aliases.get(b)
+                && params.len() == args_acc.len()
+            {
+                let mut child = subst.clone();
+                for (p, a) in params.iter().zip(args_acc.iter()) {
+                    child.insert(*p, *a);
+                }
+                return type_key_subst(type_arena, aliases, &child, *body, d);
+            }
+            let head_key = type_key_subst(type_arena, aliases, subst, cur, d);
+            let arg_parts: Vec<String> = args_acc
+                .iter()
+                .map(|a| type_key_subst(type_arena, aliases, subst, *a, d))
+                .collect();
+            format!("{}[{}]", head_key, arg_parts.join(","))
+        }
         TypeKind::InferVar(v) => format!("?{v}"),
         TypeKind::Error => "<error>".into(),
     }

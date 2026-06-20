@@ -107,6 +107,18 @@ impl<'thir> Lowerer<'thir> {
                 }
                 spine
             }
+            TypeKind::Con(binding) => {
+                // A bare builtin constructor (`List`, `Optional`) — kind `Type -> Type`.
+                let tyvar = self.named_tyvar(binding);
+                let kind = Kind::Arrow(Box::new(Kind::ground()), Box::new(Kind::ground()));
+                self.alloc_type(TlcType::TyVar(tyvar, kind))
+            }
+            TypeKind::Apply { func, arg } => {
+                // Curried higher-kinded / partial application maps 1:1 to TyApp.
+                let func_tlc = self.lower_type(func);
+                let arg_tlc = self.lower_type(arg);
+                self.alloc_type(TlcType::TyApp(func_tlc, arg_tlc))
+            }
             // TLC is only produced when THIR is complete — Error cannot appear.
             TypeKind::Error => unreachable!(
                 "TypeKind::Error must not reach TLC lowering; only call lower_thir when is_thir_complete()"

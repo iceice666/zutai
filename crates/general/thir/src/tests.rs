@@ -1160,6 +1160,42 @@ x
             if *expected == 2 && *found == 0
     )));
 }
+#[test]
+fn partial_application_in_alias_body_reports_error() {
+    // An under-applied constructor buried in a type-alias body (a field typed
+    // `Pair Int`) must still emit TypeConstructorArityMismatch — partial
+    // application is only legal in witness targets.
+    let lowered = lower(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+Bad :: type { x : Pair Int; }
+1
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::TypeConstructorArityMismatch { name, expected, found }
+            if name == "Pair" && *expected == 2 && *found == 1
+    )));
+}
+
+#[test]
+fn partial_application_in_method_signature_reports_error() {
+    // An under-applied constructor in a constraint method signature must emit
+    // TypeConstructorArityMismatch.
+    let lowered = lower(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+C :: <T> @T { bad :: T -> Pair Int; }
+1
+"#,
+    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::TypeConstructorArityMismatch { name, expected, found }
+            if name == "Pair" && *expected == 2 && *found == 1
+    )));
+}
 
 // ── Type-level evaluation fuel limit ────────────────────────────────────────
 
@@ -1981,6 +2017,72 @@ fn witness_target_is_param_bounded_by_other_constraint_not_recursive() {
             .iter()
             .any(|d| matches!(&d.kind, ThirDiagnosticKind::RecursiveWitness { .. })),
         "witness bounded by a different constraint should not emit RecursiveWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+// ── Phase 14: higher-kinded constraints & method-level type params ───────────
+
+#[test]
+fn hkt_constraint_method_sig_checks() {
+    // `F A` applies a higher-kinded type param; the method has its own `<A, B>`.
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "HKT constraint should check clean: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn method_level_type_params_preserved() {
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\n1";
+    let file = completed_file(src);
+    let has_params = file.decl_arena.iter().any(|(_, d)| {
+        matches!(&d.kind, ThirDeclKind::Constraint { methods, .. }
+            if methods.iter().any(|m| m.name == "map" && m.params.len() == 2))
+    });
+    assert!(
+        has_params,
+        "method `map` should keep its 2 method-level params in THIR"
+    );
+}
+
+#[test]
+fn functor_witness_and_polymorphic_use_checks() {
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "Functor witness + polymorphic use should check clean: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn partial_application_witness_target_checks() {
+    // `Functor @(Result E)` — partial application of a 2-arg constructor yields a
+    // `Type -> Type` witness target.
+    let src = "Result :: <E, A> type { ok : A; err : E; }\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @(Result E) :: <E> { map = \\f r. r; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "partial-application witness target should check clean: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn witness_target_kind_mismatch_rejected() {
+    // `Functor @Int` — `Int : Type` but `Functor` constrains a `Type -> Type`.
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @Int :: { map = \\f x. x; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::WitnessTargetKindMismatch { constraint, .. } if constraint == "Functor"
+        )),
+        "expected WitnessTargetKindMismatch for `Functor @Int`; got {:?}",
         lowered.diagnostics
     );
 }

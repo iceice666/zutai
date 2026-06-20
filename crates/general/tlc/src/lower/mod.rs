@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use la_arena::Arena;
 use zutai_hir::BindingId;
 use zutai_syntax::Span;
-use zutai_thir::{RowTail, ThirFile, TypeId, TypeKind, TypeTupleItem};
+use zutai_thir::{RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
 
 use crate::ir::{
     TlcDecl, TlcDeclId, TlcExpr, TlcExprId, TlcModule, TlcType, TlcTypeId, TlcTypeVar,
@@ -54,6 +54,21 @@ pub(crate) struct ConditionalWitness {
     /// `App` of the recursively resolved component dict.
     param_bounds: Vec<Vec<BindingId>>,
 }
+/// Per-constraint-method dispatch info, keyed by the method's `BindingId`.
+/// Lets the Apply arm split a call site's `instantiation` vector into the
+/// constraint-param entry (selects the dict) and the method-level params
+/// (each becomes a `TyApp` on the fetched method).
+#[derive(Clone)]
+pub(crate) struct ConstraintMethodInfo {
+    /// The constraint's own `BindingId` (for dict lookup).
+    constraint: BindingId,
+    /// Method name (the dict field to `GetField`).
+    name: String,
+    /// The constraint's type parameter (`@F`); its instantiation selects the dict.
+    constraint_param: BindingId,
+    /// The method's own type parameters (`<A, B>`); each becomes a `TyApp`.
+    method_params: Vec<BindingId>,
+}
 
 struct Lowerer<'thir> {
     thir: &'thir ThirFile,
@@ -69,7 +84,7 @@ struct Lowerer<'thir> {
     next_synth: u32,
     /// constraint method BindingId → (constraint BindingId, method name).
     /// Used in the Apply arm to dispatch to `GetField` on the active dict param.
-    constraint_methods: HashMap<BindingId, (BindingId, String)>,
+    constraint_methods: HashMap<BindingId, ConstraintMethodInfo>,
     /// (constraint BindingId.0, WitnessTargetKey) → witness decl BindingId.
     /// Populated for every `Witness` THIR decl; queried at concrete call sites.
     witness_bindings: HashMap<(u32, WitnessTargetKey), BindingId>,
@@ -174,12 +189,25 @@ impl<'thir> Lowerer<'thir> {
                         self.fn_explicit_params.insert(decl.binding, entries);
                     }
                 }
-                zutai_thir::ThirDeclKind::Constraint { methods, .. } => {
+                zutai_thir::ThirDeclKind::Constraint {
+                    params, methods, ..
+                } => {
                     // Register every method binding so the Apply arm can dispatch.
+                    // The constraint's first param is the `@F` target param.
+                    let Some(&constraint_param) = params.first() else {
+                        continue;
+                    };
                     for method in methods {
                         if let Some(binding) = method.binding {
-                            self.constraint_methods
-                                .insert(binding, (decl.binding, method.name.clone()));
+                            self.constraint_methods.insert(
+                                binding,
+                                ConstraintMethodInfo {
+                                    constraint: decl.binding,
+                                    name: method.name.clone(),
+                                    constraint_param,
+                                    method_params: method.params.clone(),
+                                },
+                            );
                         }
                     }
                 }
@@ -266,6 +294,14 @@ impl<'thir> Lowerer<'thir> {
             | TypeKind::List(_)
             | TypeKind::Optional(_)
             | TypeKind::Function { .. } => self.thir_type_to_resolved_witness_key(ty),
+            TypeKind::Con(b) => Some(WitnessTargetKey::Named(b.0)),
+            TypeKind::Apply { .. } => {
+                let (head, _) = self.thir_app_spine(ty);
+                match &self.thir.type_arena[head.0 as usize].kind {
+                    TypeKind::Alias(b) | TypeKind::Con(b) => Some(WitnessTargetKey::Named(b.0)),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -279,6 +315,84 @@ impl<'thir> Lowerer<'thir> {
             "Text" => Some(WitnessTargetKey::Str),
             "Atom" => Some(WitnessTargetKey::Atom),
             _ => Some(WitnessTargetKey::Structural(key)),
+        }
+    }
+
+    /// Flatten a curried THIR `Apply` chain into head + left-to-right args.
+    fn thir_app_spine(&self, ty: TypeId) -> (TypeId, Vec<TypeId>) {
+        let mut args: Vec<TypeId> = Vec::new();
+        let mut cur = ty;
+        while let TypeKind::Apply { func, arg } = self.thir.type_arena[cur.0 as usize].kind {
+            args.push(arg);
+            cur = func;
+        }
+        args.reverse();
+        (cur, args)
+    }
+    /// The THIR signature of constraint method `name`, by scanning the constraint
+    /// decl. Used at a call site to recover the method's exact type-var order.
+    fn method_sig_for(&self, constraint: BindingId, name: &str) -> Option<TypeId> {
+        self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding == constraint
+                && let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+            {
+                return methods.iter().find(|m| m.name == name).map(|m| m.sig);
+            }
+            None
+        })
+    }
+
+    /// Collect the `TypeVar` bindings free in a THIR type, deduped and sorted by
+    /// binding id — exactly reproducing THIR's `collect_type_vars` order, so the
+    /// result is positionally aligned with a call site's `instantiation` vector.
+    fn collect_thir_type_vars(&self, ty: TypeId) -> Vec<BindingId> {
+        let mut out: Vec<BindingId> = Vec::new();
+        self.collect_thir_type_vars_into(ty, &mut out);
+        out.sort_by_key(|b| b.0);
+        out.dedup();
+        out
+    }
+
+    fn collect_thir_type_vars_into(&self, ty: TypeId, out: &mut Vec<BindingId>) {
+        match &self.thir.type_arena[ty.0 as usize].kind {
+            TypeKind::TypeVar(b) => out.push(*b),
+            TypeKind::Function { from, to } => {
+                self.collect_thir_type_vars_into(*from, out);
+                self.collect_thir_type_vars_into(*to, out);
+            }
+            TypeKind::List(e) | TypeKind::Optional(e) => self.collect_thir_type_vars_into(*e, out),
+            TypeKind::Apply { func, arg } => {
+                self.collect_thir_type_vars_into(*func, out);
+                self.collect_thir_type_vars_into(*arg, out);
+            }
+            TypeKind::AliasApply { args, .. } => {
+                for &a in args {
+                    self.collect_thir_type_vars_into(a, out);
+                }
+            }
+            TypeKind::Record(fields, _) => {
+                for f in fields {
+                    self.collect_thir_type_vars_into(f.ty, out);
+                }
+            }
+            TypeKind::Union(variants, _) => {
+                for v in variants {
+                    if let Some(p) = v.payload {
+                        self.collect_thir_type_vars_into(p, out);
+                    }
+                }
+            }
+            TypeKind::Tuple(items) => {
+                for item in items {
+                    let t = match item {
+                        TypeTupleItem::Named { ty, .. } => *ty,
+                        TypeTupleItem::Positional(ty) => *ty,
+                    };
+                    self.collect_thir_type_vars_into(t, out);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -357,6 +471,31 @@ impl<'thir> Lowerer<'thir> {
                     &params.into_iter().zip(args).collect(),
                     seen,
                 )
+            }
+            TypeKind::Con(binding) => Some(format!("@{}", binding.0)),
+            TypeKind::Apply { .. } => {
+                let (head, args) = self.thir_app_spine(ty);
+                // Saturated named-alias application keys like the AliasApply arm.
+                if let TypeKind::Alias(binding) = self.thir.type_arena[head.0 as usize].kind {
+                    if !seen.insert(binding) {
+                        return None;
+                    }
+                    if let Some((params, body)) = self.type_alias_params_body(binding)
+                        && params.len() == args.len()
+                    {
+                        return self.structural_witness_key_subst(
+                            body,
+                            &params.into_iter().zip(args).collect(),
+                            seen,
+                        );
+                    }
+                }
+                let head_key = self.structural_witness_key(head, seen)?;
+                let arg_keys: Vec<String> = args
+                    .iter()
+                    .map(|&a| self.structural_witness_key(a, seen))
+                    .collect::<Option<_>>()?;
+                Some(format!("{}[{}]", head_key, arg_keys.join(",")))
             }
             TypeKind::TypeVar(binding) => Some(format!("@{}", binding.0)),
             TypeKind::InferVar(v) => Some(format!("?{v}")),

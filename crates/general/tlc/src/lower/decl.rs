@@ -181,10 +181,46 @@ impl<'thir> Lowerer<'thir> {
                         .map(|constraint| self.synthesize_derive_fields(constraint, target))
                         .unwrap_or_default()
                 } else {
-                    fields
-                        .iter()
-                        .map(|f| (f.name.clone(), self.lower_expr(f.value)))
-                        .collect()
+                    let span = zutai_syntax::Span::default();
+                    let mut out: Vec<(String, TlcExprId)> = Vec::with_capacity(fields.len());
+                    for f in fields {
+                        let mut value_expr = self.lower_expr(f.value);
+                        // A polymorphic method's body is wrapped in `TyLam` per
+                        // method param (outer = first declared) so the dict field
+                        // has a `ForAll` type the call site instantiates via `TyApp`.
+                        if let Some(c) = constraint {
+                            // Wrap one TyLam per method param that actually
+                            // appears in the signature — the same set the call
+                            // site applies via TyApp (expr.rs `index_of` filter),
+                            // keeping ForAll-binder and TyApp counts in lockstep
+                            // even for a method that declares an unused param.
+                            let sig_vars = self
+                                .method_sig_for(c, &f.name)
+                                .map(|s| self.collect_thir_type_vars(s))
+                                .unwrap_or_default();
+                            let mparams: Vec<BindingId> = self
+                                .method_params_for(c, &f.name)
+                                .into_iter()
+                                .filter(|p| sig_vars.contains(p))
+                                .collect();
+                            for &mp in mparams.iter().rev() {
+                                let tyvar = self.named_tyvar(mp);
+                                let body_ty = self.expr_types[&value_expr];
+                                let forall_ty = self.alloc_type(TlcType::ForAll(
+                                    tyvar,
+                                    Kind::ground(),
+                                    body_ty,
+                                ));
+                                value_expr = self.alloc_expr(
+                                    TlcExpr::TyLam(tyvar, Kind::ground(), value_expr),
+                                    forall_ty,
+                                    span,
+                                );
+                            }
+                        }
+                        out.push((f.name.clone(), value_expr));
+                    }
+                    out
                 };
 
                 for key in registered {
@@ -338,6 +374,26 @@ impl<'thir> Lowerer<'thir> {
                 let arg_tlc_ty = self.lower_type(pat_ty);
                 self.alloc_expr(TlcExpr::Lam(arg, arg_tlc_ty, inner), sig_tlc, span)
             })
+    }
+    /// The method-level type params of constraint method `name`, by scanning the
+    /// THIR constraint decl. Empty if the method has none or is not found.
+    fn method_params_for(&self, constraint: BindingId, name: &str) -> Vec<BindingId> {
+        self.thir
+            .decls
+            .iter()
+            .find_map(|&decl_id| {
+                let decl = &self.thir.decl_arena[decl_id];
+                if decl.binding == constraint
+                    && let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+                {
+                    return methods
+                        .iter()
+                        .find(|m| m.name == name)
+                        .map(|m| m.params.clone());
+                }
+                None
+            })
+            .unwrap_or_default()
     }
 
     fn synthesize_derive_fields(
