@@ -115,6 +115,358 @@ server
 }
 
 #[test]
+fn record_update_required_field_type_checks() {
+    let file = completed_file(
+        r#"
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+server :: Server = {
+  host = "localhost";
+  port = 8080;
+}
+
+server with { port = 9090; }
+"#,
+    );
+
+    let update = &file.expr_arena[file.final_expr];
+    let ThirExprKind::RecordUpdate { receiver, fields } = &update.kind else {
+        panic!("expected RecordUpdate, got {:?}", update.kind);
+    };
+    assert_eq!(fields[0].name, "port");
+    assert_eq!(update.ty, file.expr_arena[*receiver].ty);
+    assert!(matches!(final_type_kind(&file), TypeKind::Alias(_)));
+}
+
+#[test]
+fn record_update_field_type_mismatch_is_reported() {
+    let lowered = lower(
+        r#"
+Server :: type {
+  port : Int;
+}
+
+server :: Server = {
+  port = 8080;
+}
+
+server with { port = "bad"; }
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(&diagnostic.kind, ThirDiagnosticKind::TypeMismatch { .. }))
+    );
+}
+
+#[test]
+fn record_update_unknown_field_is_reported() {
+    let lowered = lower(
+        r#"
+Server :: type {
+  port : Int;
+}
+
+server :: Server = {
+  port = 8080;
+}
+
+server with { missing = 1; }
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::UnknownField { name } if name == "missing"
+        )
+    }));
+}
+
+#[test]
+fn record_update_uninferred_receiver_requires_row_annotation() {
+    let lowered = lower("f x = x with { host = \"localhost\"; }\nf");
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(diagnostic.kind, ThirDiagnosticKind::RowAnnotationRequired))
+    );
+}
+
+#[test]
+fn record_update_duplicate_field_is_hir_diagnostic() {
+    let parsed = zutai_syntax::parse("s := { a = 1; }\ns with { a = 2; a = 3; }");
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    assert!(hir.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            zutai_hir::HirDiagnosticKind::DuplicateRecordField { name, .. } if name == "a"
+        )
+    }));
+}
+
+#[test]
+fn record_update_optional_field_accepts_payload_type() {
+    let file = completed_file(
+        r#"
+Server :: type {
+  host : Text;
+  port? : Int;
+}
+
+server :: Server = {
+  host = "localhost";
+}
+
+server with { port = 8080; }
+"#,
+    );
+
+    let update = &file.expr_arena[file.final_expr];
+    let ThirExprKind::RecordUpdate { fields, .. } = &update.kind else {
+        panic!("expected RecordUpdate, got {:?}", update.kind);
+    };
+    assert_eq!(fields[0].name, "port");
+    assert!(matches!(
+        file.type_arena[file.expr_arena[fields[0].value].ty.0 as usize].kind,
+        TypeKind::Int
+    ));
+}
+
+#[test]
+fn record_update_empty_block_is_rejected() {
+    let lowered = lower(
+        r#"
+Server :: type {
+  port : Int;
+}
+
+server :: Server = {
+  port = 8080;
+}
+
+server with {}
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::UnsupportedFeature { feature } if *feature == "empty record update"
+        )
+    }));
+}
+
+#[test]
+fn patch_record_accepts_subset_fields() {
+    let file = completed_file(
+        r#"
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+patch :: Patch Server = {
+  port = 8080;
+}
+
+patch
+"#,
+    );
+
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::Patch { deep: false, .. }
+    ));
+}
+
+#[test]
+fn patch_record_rejects_unknown_closed_field() {
+    let lowered = lower(
+        r#"
+Server :: type {
+  port : Int;
+}
+
+patch :: Patch Server = {
+  missing = 1;
+}
+
+patch
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::UnexpectedRecordField { name } if name == "missing"
+        )
+    }));
+}
+
+#[test]
+fn deep_patch_record_accepts_nested_record_patch() {
+    let file = completed_file(
+        r#"
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+Config :: type {
+  server : Server;
+  name : Text;
+}
+
+patch :: DeepPatch Config = {
+  server = {
+    port = 8080;
+  };
+}
+
+patch
+"#,
+    );
+
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::Patch { deep: true, .. }
+    ));
+}
+
+#[test]
+fn patch_requires_record_target() {
+    let lowered = lower(
+        r#"
+patch :: Patch Int = {}
+patch
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::InvalidTypeExpression { reason }
+                if *reason == "Patch requires a record type"
+        )
+    }));
+}
+
+#[test]
+fn deep_patch_requires_record_target() {
+    let lowered = lower(
+        r#"
+patch :: DeepPatch Int = {}
+patch
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::InvalidTypeExpression { reason }
+                if *reason == "DeepPatch requires a record type"
+        )
+    }));
+}
+
+#[test]
+fn overlay_accepts_inline_base_and_patch() {
+    let file = completed_file(
+        r#"
+overlay {
+  host = "localhost";
+  port = 80;
+} {
+  port = 8080;
+}
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Record(_, _)));
+}
+
+#[test]
+fn overlay_rejects_unknown_patch_field() {
+    let lowered = lower(
+        r#"
+overlay {
+  port = 80;
+} {
+  missing = 1;
+}
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::UnexpectedRecordField { name } if name == "missing"
+        )
+    }));
+}
+
+#[test]
+fn overlay_deep_accepts_nested_patch() {
+    let file = completed_file(
+        r#"
+overlayDeep {
+  server = {
+    host = "localhost";
+    port = 80;
+  };
+  name = "dev";
+} {
+  server = {
+    port = 8080;
+  };
+}
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Record(_, _)));
+}
+
+#[test]
+fn overlay_deep_checks_nested_patch_field_type() {
+    let lowered = lower(
+        r#"
+overlayDeep {
+  server = {
+    port = 80;
+  };
+} {
+  server = {
+    port = "bad";
+  };
+}
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(&diagnostic.kind, ThirDiagnosticKind::TypeMismatch { .. }))
+    );
+}
+#[test]
 fn required_field_access_yields_field_type() {
     let file = completed_file(
         r#"

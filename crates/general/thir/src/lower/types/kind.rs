@@ -56,9 +56,10 @@ impl<'hir> Lowerer<'hir> {
                     self.require_ground_type(op.result, span);
                 }
             }
-            TypeKind::List(e) | TypeKind::Optional(e) | TypeKind::Maybe(e) => {
-                self.require_ground_type(e, span)
-            }
+            TypeKind::List(e)
+            | TypeKind::Optional(e)
+            | TypeKind::Maybe(e)
+            | TypeKind::Patch { target: e, .. } => self.require_ground_type(e, span),
             TypeKind::Record(fields, _) => {
                 for f in fields {
                     self.require_ground_type(f.ty, span);

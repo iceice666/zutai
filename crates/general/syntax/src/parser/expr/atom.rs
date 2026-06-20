@@ -15,9 +15,13 @@ use crate::parser::pattern::parse_pattern;
 use crate::parser::type_expr::parse_type_expr;
 use winnow::token::take_while;
 
-use super::fix_number_span;
+use super::{ExprOptions, fix_number_span};
 
 pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
+    parse_atom_expr_with_options(input, ExprOptions::DEFAULT)
+}
+
+pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     ws(input)?;
 
     if input.is_empty() {
@@ -39,7 +43,7 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
             let checkpoint = *input;
             take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
             if input.starts_with('{') {
-                match parse_record_or_block(input) {
+                match parse_record_or_block(input, options) {
                     Ok(payload) => {
                         let span = atom_span.merge(payload.span());
                         return Ok(Expr::TaggedValue {
@@ -53,7 +57,7 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
                     }
                 }
             } else if input.starts_with('(') {
-                match parse_tagged_tuple_payload(input) {
+                match parse_tagged_tuple_payload(input, options) {
                     Ok(payload) => {
                         let span = atom_span.merge(payload.span());
                         return Ok(Expr::TaggedValue {
@@ -74,10 +78,10 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
                 span: atom_span,
             })
         }
-        '\\' => parse_lambda(input),
-        '(' => parse_tuple_or_group(input),
-        '[' => parse_list_value(input),
-        '{' => parse_record_or_block(input),
+        '\\' => parse_lambda(input, options),
+        '(' => parse_tuple_or_group(input, options),
+        '[' => parse_list_value(input, options),
+        '{' => parse_record_or_block(input, options),
         '0'..='9' => {
             let (expr, span) = spanned(parse_number_value).parse_next(input)?;
             Ok(fix_number_span(expr, span))
@@ -104,10 +108,10 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
                 return Ok(Expr::False(span));
             }
             if input.starts_with("if") && peek(kw("if")).parse_next(input).is_ok() {
-                return parse_if(input);
+                return parse_if(input, options);
             }
             if input.starts_with("match") && peek(kw("match")).parse_next(input).is_ok() {
-                return parse_match(input);
+                return parse_match(input, options);
             }
             if input.starts_with("import") && peek(kw("import")).parse_next(input).is_ok() {
                 return parse_import(input);
@@ -116,16 +120,16 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
                 return parse_type_form(input);
             }
             if input.starts_with("select") && peek(kw("select")).parse_next(input).is_ok() {
-                return parse_select(input);
+                return parse_select(input, options);
             }
             if input.starts_with("perform") && peek(kw("perform")).parse_next(input).is_ok() {
-                return parse_perform(input);
+                return parse_perform(input, options);
             }
             if input.starts_with("handle") && peek(kw("handle")).parse_next(input).is_ok() {
                 return parse_handle(input);
             }
             if input.starts_with("resume") && peek(kw("resume")).parse_next(input).is_ok() {
-                return parse_resume(input);
+                return parse_resume(input, options);
             }
             let (name, span) = spanned(parse_ident).parse_next(input)?;
             Ok(Expr::Ident { name, span })
@@ -137,7 +141,7 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
 // Lambda: `\pat+ . body`
 // ---------------------------------------------------------------------------
 
-fn parse_lambda(input: &mut &str) -> Result<Expr> {
+fn parse_lambda(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned('\\').parse_next(input)?;
 
     let mut params = vec![];
@@ -168,7 +172,7 @@ fn parse_lambda(input: &mut &str) -> Result<Expr> {
     }
     ws(input)?;
 
-    let body = super::parse_expr(input)?;
+    let body = super::parse_expr_with_options(input, options)?;
     let span = start_span.merge(body.span());
 
     Ok(Expr::Lambda {
@@ -182,7 +186,7 @@ fn parse_lambda(input: &mut &str) -> Result<Expr> {
 // Record or block: `{ ... }`
 // ---------------------------------------------------------------------------
 
-fn parse_record_or_block(input: &mut &str) -> Result<Expr> {
+fn parse_record_or_block(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let start = *input;
     '{'.parse_next(input)?;
     ws(input)?;
@@ -211,14 +215,14 @@ fn parse_record_or_block(input: &mut &str) -> Result<Expr> {
 
     if is_record {
         *input = checkpoint;
-        parse_record_value_tail(input, start)
+        parse_record_value_tail(input, start, options)
     } else {
         *input = checkpoint;
-        parse_block_expr_tail(input, start)
+        parse_block_expr_tail(input, start, options)
     }
 }
 
-fn parse_record_value_tail(input: &mut &str, _start: &str) -> Result<Expr> {
+fn parse_record_value_tail(input: &mut &str, _start: &str, options: ExprOptions) -> Result<Expr> {
     let _guard = enter_delimiter();
     let mut fields = vec![];
     loop {
@@ -234,7 +238,7 @@ fn parse_record_value_tail(input: &mut &str, _start: &str) -> Result<Expr> {
             return fail.parse_next(input);
         }
         ws(input)?;
-        let value = super::parse_expr(input)?;
+        let value = super::parse_expr_with_options(input, options)?;
         ws(input)?;
         ';'.parse_next(input)?;
         let span = name_span.merge(value.span());
@@ -246,7 +250,7 @@ fn parse_record_value_tail(input: &mut &str, _start: &str) -> Result<Expr> {
     Ok(Expr::Record { fields, span })
 }
 
-fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
+fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -> Result<Expr> {
     let _guard = enter_delimiter();
     let mut bindings = vec![];
     loop {
@@ -272,7 +276,7 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
             ws(input)?;
             ":=".parse_next(input)?;
             ws(input)?;
-            let value = super::parse_expr(input)?;
+            let value = super::parse_expr_with_options(input, options)?;
             ws(input)?;
             ';'.parse_next(input)?;
             let span = name_span.merge(value.span());
@@ -283,7 +287,7 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
         }
     }
     ws(input)?;
-    let first = super::parse_expr(input)?;
+    let first = super::parse_expr_with_options(input, options)?;
     let mut items = vec![first];
     loop {
         ws(input)?;
@@ -295,7 +299,7 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
         if input.starts_with('}') {
             break;
         }
-        items.push(super::parse_expr(input)?);
+        items.push(super::parse_expr_with_options(input, options)?);
     }
     ws(input)?;
     let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
@@ -320,16 +324,16 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str) -> Result<Expr> {
 // Tuple or group
 // ---------------------------------------------------------------------------
 
-fn parse_tuple_or_group(input: &mut &str) -> Result<Expr> {
+fn parse_tuple_or_group(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let checkpoint = *input;
-    match parse_tuple(input) {
+    match parse_tuple(input, options) {
         Ok(e) => return Ok(e),
         Err(_) => *input = checkpoint,
     }
     parse_group(input)
 }
 
-fn parse_tuple(input: &mut &str) -> Result<Expr> {
+fn parse_tuple(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     '('.parse_next(input)?;
     let _guard = enter_delimiter();
     ws(input)?;
@@ -342,7 +346,7 @@ fn parse_tuple(input: &mut &str) -> Result<Expr> {
         });
     }
 
-    let first = parse_tuple_item(input)?;
+    let first = parse_tuple_item(input, options)?;
     ws(input)?;
 
     if !input.starts_with(',') {
@@ -356,7 +360,7 @@ fn parse_tuple(input: &mut &str) -> Result<Expr> {
         if input.starts_with(')') {
             break;
         }
-        items.push(parse_tuple_item(input)?);
+        items.push(parse_tuple_item(input, options)?);
         ws(input)?;
     }
     ws(input)?;
@@ -365,7 +369,7 @@ fn parse_tuple(input: &mut &str) -> Result<Expr> {
     Ok(Expr::Tuple { items, span })
 }
 
-fn parse_tagged_tuple_payload(input: &mut &str) -> Result<Expr> {
+fn parse_tagged_tuple_payload(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     '('.parse_next(input)?;
     let _guard = enter_delimiter();
     ws(input)?;
@@ -378,7 +382,7 @@ fn parse_tagged_tuple_payload(input: &mut &str) -> Result<Expr> {
         });
     }
 
-    let mut items = vec![parse_tuple_item(input)?];
+    let mut items = vec![parse_tuple_item(input, options)?];
     ws(input)?;
     while input.starts_with(',') {
         ','.parse_next(input)?;
@@ -386,7 +390,7 @@ fn parse_tagged_tuple_payload(input: &mut &str) -> Result<Expr> {
         if input.starts_with(')') {
             break;
         }
-        items.push(parse_tuple_item(input)?);
+        items.push(parse_tuple_item(input, options)?);
         ws(input)?;
     }
     let (_, end_span) = spanned(|i: &mut &str| ')'.parse_next(i)).parse_next(input)?;
@@ -394,20 +398,20 @@ fn parse_tagged_tuple_payload(input: &mut &str) -> Result<Expr> {
     Ok(Expr::Tuple { items, span })
 }
 
-fn parse_tuple_item(input: &mut &str) -> Result<TupleItem> {
+fn parse_tuple_item(input: &mut &str, options: ExprOptions) -> Result<TupleItem> {
     let checkpoint = *input;
     if let Ok(name) = parse_field_name(input) {
         ws(input)?;
         if input.starts_with('=') && !input.starts_with("==") {
             '='.parse_next(input)?;
             ws(input)?;
-            let value = super::parse_expr(input)?;
+            let value = super::parse_expr_with_options(input, options)?;
             let span = value.span();
             return Ok(TupleItem::Named { name, value, span });
         }
     }
     *input = checkpoint;
-    let e = super::parse_expr(input)?;
+    let e = super::parse_expr_with_options(input, options)?;
     Ok(TupleItem::Positional(e))
 }
 
@@ -425,12 +429,12 @@ fn parse_group(input: &mut &str) -> Result<Expr> {
 // List
 // ---------------------------------------------------------------------------
 
-fn parse_list_value(input: &mut &str) -> Result<Expr> {
-    let (items, span) = spanned(parse_list_inner).parse_next(input)?;
+fn parse_list_value(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let (items, span) = spanned(|i: &mut &str| parse_list_inner(i, options)).parse_next(input)?;
     Ok(Expr::List { items, span })
 }
 
-fn parse_list_inner(input: &mut &str) -> Result<Vec<Expr>> {
+fn parse_list_inner(input: &mut &str, options: ExprOptions) -> Result<Vec<Expr>> {
     '['.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut items = vec![];
@@ -439,7 +443,7 @@ fn parse_list_inner(input: &mut &str) -> Result<Vec<Expr>> {
         if input.starts_with(']') {
             break;
         }
-        let e = super::parse_expr(input)?;
+        let e = super::parse_expr_with_options(input, options)?;
         ws(input)?;
         ';'.parse_next(input)?;
         items.push(e);
@@ -453,18 +457,18 @@ fn parse_list_inner(input: &mut &str) -> Result<Vec<Expr>> {
 // If
 // ---------------------------------------------------------------------------
 
-fn parse_if(input: &mut &str) -> Result<Expr> {
+fn parse_if(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("if")).parse_next(input)?;
     ws(input)?;
-    let cond = super::parse_expr(input)?;
+    let cond = super::parse_expr_with_options(input, options)?;
     ws(input)?;
     kw("then").parse_next(input)?;
     ws(input)?;
-    let then_branch = super::parse_expr(input)?;
+    let then_branch = super::parse_expr_with_options(input, options)?;
     ws(input)?;
     kw("else").parse_next(input)?;
     ws(input)?;
-    let else_branch = super::parse_expr(input)?;
+    let else_branch = super::parse_expr_with_options(input, options)?;
     let span = start_span.merge(else_branch.span());
     Ok(Expr::If {
         cond: Box::new(cond),
@@ -478,12 +482,12 @@ fn parse_if(input: &mut &str) -> Result<Expr> {
 // Match
 // ---------------------------------------------------------------------------
 
-fn parse_match(input: &mut &str) -> Result<Expr> {
+fn parse_match(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("match")).parse_next(input)?;
     ws(input)?;
-    let scrutinee = super::parse_expr(input)?;
+    let scrutinee = super::parse_expr_with_options(input, options)?;
     ws(input)?;
-    let arms = parse_clause_block(input)?;
+    let arms = parse_clause_block_with_options(input, options)?;
     let end_span = arms.last().map(|a| a.span).unwrap_or(scrutinee.span());
     let span = start_span.merge(end_span);
     Ok(Expr::Match {
@@ -494,6 +498,13 @@ fn parse_match(input: &mut &str) -> Result<Expr> {
 }
 
 pub fn parse_clause_block(input: &mut &str) -> Result<Vec<FuncClause>> {
+    parse_clause_block_with_options(input, ExprOptions::DEFAULT)
+}
+
+fn parse_clause_block_with_options(
+    input: &mut &str,
+    options: ExprOptions,
+) -> Result<Vec<FuncClause>> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut clauses = vec![];
@@ -527,7 +538,7 @@ pub fn parse_clause_block(input: &mut &str) -> Result<Vec<FuncClause>> {
             if input.starts_with("if ") || input.starts_with("if\t") || input.starts_with("if\n") {
                 kw("if").parse_next(input)?;
                 ws(input)?;
-                Some(super::parse_expr(input)?)
+                Some(super::parse_expr_with_options(input, options)?)
             } else {
                 None
             };
@@ -535,7 +546,7 @@ pub fn parse_clause_block(input: &mut &str) -> Result<Vec<FuncClause>> {
         ws(input)?;
         "=>".parse_next(input)?;
         ws(input)?;
-        let body = super::parse_expr(input)?;
+        let body = super::parse_expr_with_options(input, options)?;
         ws(input)?;
         ';'.parse_next(input)?;
         let span = patterns
@@ -586,10 +597,10 @@ fn parse_type_form(input: &mut &str) -> Result<Expr> {
 // V1 frontend forms
 // ---------------------------------------------------------------------------
 
-fn parse_select(input: &mut &str) -> Result<Expr> {
+fn parse_select(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("select")).parse_next(input)?;
     ws(input)?;
-    let receiver = super::parse_postfix(input)?;
+    let receiver = super::parse_postfix_with_options(input, options)?;
     ws(input)?;
     let fields = parse_select_fields(input)?;
     let span = fields
@@ -625,12 +636,12 @@ fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
     Ok(fields)
 }
 
-fn parse_perform(input: &mut &str) -> Result<Expr> {
+fn parse_perform(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("perform")).parse_next(input)?;
     ws(input)?;
     let op = parse_effect_path(input)?;
     ws(input)?;
-    let arg = super::parse_expr(input)?;
+    let arg = super::parse_expr_with_options(input, options)?;
     let span = start_span.merge(arg.span());
     Ok(Expr::Perform {
         op,
@@ -642,7 +653,7 @@ fn parse_perform(input: &mut &str) -> Result<Expr> {
 fn parse_handle(input: &mut &str) -> Result<Expr> {
     let (_, start_span) = spanned(kw("handle")).parse_next(input)?;
     ws(input)?;
-    let expr = super::parse_expr(input)?;
+    let expr = super::parse_expr_with_options(input, ExprOptions::NO_RECORD_UPDATE)?;
     ws(input)?;
     kw("with").parse_next(input)?;
     ws(input)?;
@@ -685,10 +696,10 @@ fn parse_handle_clauses(input: &mut &str) -> Result<Vec<HandleClause>> {
     Ok(clauses)
 }
 
-fn parse_resume(input: &mut &str) -> Result<Expr> {
+fn parse_resume(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("resume")).parse_next(input)?;
     ws(input)?;
-    let value = super::parse_expr(input)?;
+    let value = super::parse_expr_with_options(input, options)?;
     let span = start_span.merge(value.span());
     Ok(Expr::Resume {
         value: Box::new(value),

@@ -537,6 +537,78 @@ fn compile_select_emits_record_projection() {
 }
 
 #[test]
+fn compile_record_update_emits_record_update_call() {
+    let src = r#"
+Server :: type { host : Text; port : Int; }
+server :: Server = { host = "localhost"; port = 80; }
+server with { port = 8080; }
+"#;
+    let path = write_tmp("cli_test_compile_record_update.zt", src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("call i64 @zutai.record_update"));
+}
+
+const OVERLAY_SRC: &str = r#"
+Config :: type { host : Text; port : Int; }
+base :: Config = { host = "localhost"; port = 80; }
+patch :: Patch Config = { port = 8080; }
+(overlay base patch).port
+"#;
+const OVERLAY_BACKEND_GATE: &str = "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet";
+
+#[test]
+fn check_overlay_passes() {
+    let path = write_tmp("cli_test_check_overlay.zt", OVERLAY_SRC);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
+#[test]
+fn run_overlay_merges_record() {
+    let path = write_tmp("cli_test_run_overlay.zt", OVERLAY_SRC);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("8080"));
+}
+
+#[test]
+fn compile_overlay_program_is_rejected() {
+    let path = write_tmp("cli_test_compile_overlay.zt", OVERLAY_SRC);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "compile error: {OVERLAY_BACKEND_GATE}"
+        )));
+}
+
+#[test]
+fn dataflow_overlay_program_is_rejected() {
+    let path = write_tmp("cli_test_dataflow_overlay.zt", OVERLAY_SRC);
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "error: {OVERLAY_BACKEND_GATE}"
+        )));
+}
+
+#[test]
 fn check_select_unknown_field_exits_nonzero() {
     let path = write_tmp("cli_test_check_select_bad.zt", SELECT_BAD_SRC);
     cli().arg("check").arg(&path).assert().failure();

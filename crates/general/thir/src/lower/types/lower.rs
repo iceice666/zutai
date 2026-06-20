@@ -400,18 +400,35 @@ impl<'hir> Lowerer<'hir> {
         let HirTypeKind::BindingRef(binding) = self.hir_type(head).kind else {
             return self.invalid_type("only named type constructors can be applied", span);
         };
-
-        // Built-in single-arg constructors keep existing handling.
         let name = self.hir.bindings[binding.0 as usize].name.clone();
+
+        // Built-in single-arg constructors keep existing handling and report
+        // arity precisely instead of falling through to "not parametric".
         match name.as_str() {
-            "List" if args.len() == 1 => {
-                return self.alloc_type(Type {
-                    kind: TypeKind::List(args[0]),
-                    span,
-                });
+            "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => {
+                if args.len() != 1 {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                            name,
+                            expected: 1,
+                            found: args.len(),
+                        },
+                        span,
+                    });
+                    return self.error_type;
+                }
+                return match name.as_str() {
+                    "List" => self.alloc_type(Type {
+                        kind: TypeKind::List(args[0]),
+                        span,
+                    }),
+                    "Optional" => self.optional_type(args[0], span),
+                    "Maybe" => self.maybe_type(args[0], span),
+                    "Patch" => self.patch_type(args[0], false, span),
+                    "DeepPatch" => self.patch_type(args[0], true, span),
+                    _ => unreachable!(),
+                };
             }
-            "Optional" if args.len() == 1 => return self.optional_type(args[0], span),
-            "Maybe" if args.len() == 1 => return self.maybe_type(args[0], span),
             _ => {}
         }
 
@@ -500,9 +517,9 @@ impl<'hir> Lowerer<'hir> {
         let binding_info = &self.hir.bindings[binding.0 as usize];
         match binding_info.kind {
             BindingKind::BuiltinType => match binding_info.name.as_str() {
-                // Bare `List`/`Optional`/`Maybe` constructors (kind `Type -> Type`), used
+                // Bare single-argument builtins (kind `Type -> Type`), used
                 // unapplied as higher-kinded witness/constraint targets.
-                "List" | "Optional" | "Maybe" => self.alloc_type(Type {
+                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => self.alloc_type(Type {
                     kind: TypeKind::Con(binding),
                     span,
                 }),
@@ -591,5 +608,82 @@ impl<'hir> Lowerer<'hir> {
             kind: TypeKind::Maybe(inner),
             span,
         })
+    }
+
+    pub(in crate::lower) fn patch_type(
+        &mut self,
+        target: TypeId,
+        deep: bool,
+        span: Span,
+    ) -> TypeId {
+        let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+        match self.ty(resolved).kind {
+            TypeKind::Record(_, _)
+            | TypeKind::InferVar(_)
+            | TypeKind::TypeVar(_)
+            | TypeKind::Alias(_)
+            | TypeKind::AliasApply { .. }
+            | TypeKind::Apply { .. }
+            | TypeKind::Con(_)
+            | TypeKind::Error => {}
+            _ => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason: if deep {
+                            "DeepPatch requires a record type"
+                        } else {
+                            "Patch requires a record type"
+                        },
+                    },
+                    span,
+                });
+            }
+        }
+        self.alloc_type(Type {
+            kind: TypeKind::Patch { target, deep },
+            span,
+        })
+    }
+
+    pub(in crate::lower) fn expand_patch_type(
+        &mut self,
+        target: TypeId,
+        deep: bool,
+        span: Span,
+    ) -> Option<(Vec<TypeRecordField>, RowTail)> {
+        let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+        let TypeKind::Record(fields, tail) = self.ty(resolved).kind.clone() else {
+            return None;
+        };
+        let (fields, tail) = self.flatten_record_row(fields, tail);
+        let patch_fields = fields
+            .into_iter()
+            .map(|field| {
+                let ty = if deep {
+                    let resolved_field =
+                        self.resolve_alias(field.ty, &mut HashSet::new(), field.span);
+                    if matches!(self.ty(resolved_field).kind, TypeKind::Record(_, _)) {
+                        self.alloc_type(Type {
+                            kind: TypeKind::Patch {
+                                target: field.ty,
+                                deep: true,
+                            },
+                            span: field.span,
+                        })
+                    } else {
+                        field.ty
+                    }
+                } else {
+                    field.ty
+                };
+                TypeRecordField {
+                    name: field.name,
+                    optional: true,
+                    ty,
+                    span: field.span,
+                }
+            })
+            .collect();
+        Some((patch_fields, tail))
     }
 }

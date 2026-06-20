@@ -107,6 +107,10 @@ pub enum DfNodeKind {
 
     // ── Data construction ──
     Record(Vec<(String, NodeId)>),
+    RecordUpdate {
+        base: NodeId,
+        updates: Vec<(String, NodeId)>,
+    },
     Tuple(Vec<DfTupleNodeItem>),
     List(Vec<NodeId>),
     Variant(String, NodeId),

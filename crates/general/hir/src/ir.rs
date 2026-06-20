@@ -11,7 +11,7 @@ pub type HirTypeId = Idx<HirTypeExpr>;
 /// root scope ("the prelude"). `print` is a compatibility binding over the
 /// `io.print` effect. Single source of truth shared by HIR seeding, THIR type
 /// assignment, and the reference interpreter.
-pub const BUILTIN_VALUE_NAMES: &[&str] = &["print", "fields", "schema"];
+pub const BUILTIN_VALUE_NAMES: &[&str] = &["print", "fields", "schema", "overlay", "overlayDeep"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
@@ -153,6 +153,10 @@ pub enum HirExprKind {
     BindingRef(BindingId),
     UnresolvedIdent(String),
     Record(Vec<HirRecordField>),
+    RecordUpdate {
+        receiver: HirExprId,
+        fields: Vec<HirRecordField>,
+    },
     Tuple(Vec<HirTupleItem>),
     List(Vec<HirExprId>),
     Block {

@@ -130,11 +130,12 @@ fn export(
         // Free inference / type variables represent unconstrained positions; the
         // importer re-introduces a fresh variable for them.
         TypeKind::InferVar(_) | TypeKind::TypeVar(_) => Ok(ImportedType::Unknown),
-        // Parametric constructors cannot cross module boundaries unapplied; treat
-        // as unknown at the import boundary (the same fallback as TypeVar).
-        TypeKind::AliasApply { .. } | TypeKind::Apply { .. } | TypeKind::Con(_) => {
-            Ok(ImportedType::Unknown)
-        }
+        // Parametric constructors and patch markers do not cross module
+        // boundaries as concrete exported data in this phase.
+        TypeKind::AliasApply { .. }
+        | TypeKind::Apply { .. }
+        | TypeKind::Con(_)
+        | TypeKind::Patch { .. } => Ok(ImportedType::Unknown),
         TypeKind::Function { from, to } => Ok(ImportedType::Function {
             from: Box::new(export(file, aliases, from, seen)?),
             to: Box::new(export(file, aliases, to, seen)?),

@@ -93,7 +93,16 @@ impl Lowerer {
             handler_clause: None,
         };
         for name in [
-            "Type", "Text", "Bool", "Int", "Float", "List", "Optional", "Maybe",
+            "Type",
+            "Text",
+            "Bool",
+            "Int",
+            "Float",
+            "List",
+            "Optional",
+            "Maybe",
+            "Patch",
+            "DeepPatch",
         ] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }

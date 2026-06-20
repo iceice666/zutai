@@ -174,6 +174,9 @@ impl<'a> Evaluator<'a> {
             TypeKind::List(inner) => Ok(RuntimeTypeView::List(ty.with_ty(inner))),
             TypeKind::Optional(inner) => Ok(RuntimeTypeView::Optional(ty.with_ty(inner))),
             TypeKind::Maybe(inner) => Ok(RuntimeTypeView::Maybe(ty.with_ty(inner))),
+            TypeKind::Patch { .. } => Err(EvalError::ReflectionUnsupported(
+                "patch types cannot be reflected in this phase".to_string(),
+            )),
             TypeKind::Record(fields, tail) => Ok(RuntimeTypeView::Record(
                 reflect_record_fields(ty, fields),
                 tail,

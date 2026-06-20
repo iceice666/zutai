@@ -277,6 +277,13 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Apply { func, arg } => self.max_resumes(*func) + self.max_resumes(*arg),
             HirExprKind::Binary { lhs, rhs, .. } => self.max_resumes(*lhs) + self.max_resumes(*rhs),
             HirExprKind::Record(fields) => fields.iter().map(|f| self.max_resumes(f.value)).sum(),
+            HirExprKind::RecordUpdate { receiver, fields } => {
+                self.max_resumes(*receiver)
+                    + fields
+                        .iter()
+                        .map(|field| self.max_resumes(field.value))
+                        .sum::<usize>()
+            }
             HirExprKind::Tuple(items) => items
                 .iter()
                 .map(|item| match item {

@@ -111,6 +111,35 @@ fn value_select_preserves_field_order() {
 }
 
 #[test]
+fn record_update_preserves_receiver_and_field_order() {
+    let lowered = lower("s := { a = 1; b = 2; c = 3; }\ns with { c = 30; a = 10; }");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::RecordUpdate { receiver, fields } = &expr.kind else {
+        panic!("expected RecordUpdate, got {:?}", expr.kind);
+    };
+    assert!(matches!(
+        lowered.file.expr_arena[*receiver].kind,
+        HirExprKind::BindingRef(_)
+    ));
+    let names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["c", "a"]);
+}
+
+#[test]
+fn duplicate_record_update_field_is_reported() {
+    let lowered = lower("s := { a = 1; }\ns with { a = 2; a = 3; }");
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, HirDiagnosticKind::DuplicateRecordField { name, .. } if name == "a")),
+        "{:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
 fn duplicate_select_field_is_reported() {
     let lowered = lower("s := { a = 1; }\nselect s { a; a; }");
     assert!(

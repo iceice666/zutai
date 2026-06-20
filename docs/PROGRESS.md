@@ -28,13 +28,14 @@ The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflo
 
 ## Current Baseline
 
-_Last updated: after Maybe/Optional runtime split._
+_Last updated: after record update plus Patch/DeepPatch and config overlay prelude support._
 
 - Immediate mode parses `.zti` data through selectable parser backends (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
-- THIR is feature-complete for v0: scalar/record/tuple/list literals and patterns, optional access and defaulting, `if`, binary operators, type aliases, block locals, lambda lowering, HM-style unification, match exhaustiveness, let-generalization, predicative polymorphism with call-site `instantiation`, generic type aliases, cross-module imports, and constraints/witnesses (parsing → HIR resolution → THIR type-checking → coherence checking → named-method and operator dispatch in the interpreter).
+- THIR is feature-complete for v0: scalar/record/tuple/list literals and patterns, record update (`base with { field = value; }`), optional access and defaulting, `if`, binary operators, type aliases, block locals, lambda lowering, HM-style unification, match exhaustiveness, let-generalization, predicative polymorphism with call-site `instantiation`, generic type aliases, cross-module imports, and constraints/witnesses (parsing → HIR resolution → THIR type-checking → coherence checking → named-method and operator dispatch in the interpreter).
+- The prelude now includes config patch helpers: `Patch T` / `DeepPatch T` type constructors expand record-shaped partial updates, and `overlay : A -> Patch A -> A` / `overlayDeep : A -> DeepPatch A -> A` execute in the THIR and TLC reference evaluators. `compile`/`dataflow` reject overlay builtins before backend lowering until a pure IR lowering exists.
 - The CLI exposes `parse`, `run`, and `repl` subcommands backed by the reference interpreter.
-- `crates/general/eval/` contains both the THIR oracle and the TLC-first default evaluator. The differential battery covers constraints, optionals, `.zti` imports, `.zt` imports, imported functions, transitive imports, and imported witness dictionaries; effects are TLC/default-only; runtime Type/reflection cases are pinned to the THIR boundary.
+- `crates/general/eval/` contains both the THIR oracle and the TLC-first default evaluator. The differential battery covers constraints, optionals, `.zti` imports, `.zt` imports, imported functions, transitive imports, imported witness dictionaries, record update, and config overlay; effects are TLC/default-only; runtime Type/reflection cases are pinned to the THIR boundary.
 - `print` remains seeded in the prelude (`zutai_hir::BUILTIN_VALUE_NAMES`) as a compatibility binding, but its type is now `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it as an `io.print` effect: source handlers can intercept it, and the host `run` boundary handles residual `io.print`. `compile`/`dataflow` reject residual effect markers or non-empty function effect rows after TLC lowering.
 - `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5 plus operator-witness parity: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, dictionary-passing elaboration for named constraint methods, and witnessed comparison-operator lowering are all functional.
 - `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered.

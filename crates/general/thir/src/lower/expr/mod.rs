@@ -120,6 +120,9 @@ impl<'hir> Lowerer<'hir> {
             }
             HirExprKind::BindingRef(binding) => self.lower_binding_ref(id, *binding, expr.span),
             HirExprKind::Record(fields) => self.infer_record_expr(id, fields, expr.span),
+            HirExprKind::RecordUpdate { receiver, fields } => {
+                self.lower_record_update_expr(id, *receiver, fields, expr.span)
+            }
             HirExprKind::Tuple(items) => self.infer_tuple_expr(id, items, expr.span),
             HirExprKind::List(items) => self.infer_list_expr(id, items, expr.span),
             HirExprKind::TypeForm(ty) => {

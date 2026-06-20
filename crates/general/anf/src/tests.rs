@@ -190,6 +190,19 @@ fn record_literal_root_has_record_binding() {
     assert!(has_record, "expected Record binding in root body");
 }
 
+#[test]
+fn record_update_root_has_record_update_binding() {
+    let m = anf_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let has_update = m.root.bindings.iter().any(|(_, e)| {
+        matches!(
+            e,
+            AnfExpr::RecordUpdate { updates, .. }
+                if updates.iter().any(|(name, _)| name == "x")
+        )
+    });
+    assert!(has_update, "expected RecordUpdate binding in root body");
+}
+
 // ── Tuple literal ─────────────────────────────────────────────────────────────
 
 #[test]

@@ -295,9 +295,10 @@ impl<'thir> Lowerer<'thir> {
                     self.collect_thir_type_vars_into(op.result, out);
                 }
             }
-            TypeKind::List(e) | TypeKind::Optional(e) | TypeKind::Maybe(e) => {
-                self.collect_thir_type_vars_into(*e, out)
-            }
+            TypeKind::List(e)
+            | TypeKind::Optional(e)
+            | TypeKind::Maybe(e)
+            | TypeKind::Patch { target: e, .. } => self.collect_thir_type_vars_into(*e, out),
             TypeKind::Apply { func, arg } => {
                 self.collect_thir_type_vars_into(*func, out);
                 self.collect_thir_type_vars_into(*arg, out);
@@ -349,6 +350,13 @@ impl<'thir> Lowerer<'thir> {
                 "Maybe[{}]",
                 self.structural_witness_key(inner, seen)?
             )),
+            TypeKind::Patch { target, deep } => {
+                let head = if deep { "DeepPatch" } else { "Patch" };
+                Some(format!(
+                    "{head}[{}]",
+                    self.structural_witness_key(target, seen)?
+                ))
+            }
             TypeKind::Record(fields, tail) => {
                 let mut parts: Vec<String> = fields
                     .into_iter()
@@ -614,6 +622,16 @@ impl<'thir> Lowerer<'thir> {
             (TypeKind::Maybe(ti), TypeKind::Maybe(ci)) => {
                 self.unify_env(ti, &tenv, ci, &cenv, holes, subst, depth + 1)
             }
+            (
+                TypeKind::Patch {
+                    target: tt,
+                    deep: td,
+                },
+                TypeKind::Patch {
+                    target: ct,
+                    deep: cd,
+                },
+            ) => td == cd && self.unify_env(tt, &tenv, ct, &cenv, holes, subst, depth + 1),
             (TypeKind::Tuple(ti), TypeKind::Tuple(ci)) => {
                 ti.len() == ci.len()
                     && ti.iter().zip(ci.iter()).all(|(t, c)| match (t, c) {

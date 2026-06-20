@@ -247,6 +247,10 @@ pub(crate) fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), B
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
+    if let Some(reason) = analysis.config_overlay_builtin_program() {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
 
     // TLC lowering.
     let module = zutai_tlc::lower_thir(thir);
@@ -313,6 +317,10 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     if let Some(reason) = analysis.reflection_builtin_program() {
+        eprintln!("error: {reason}");
+        std::process::exit(1);
+    }
+    if let Some(reason) = analysis.config_overlay_builtin_program() {
         eprintln!("error: {reason}");
         std::process::exit(1);
     }

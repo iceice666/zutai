@@ -19,7 +19,10 @@ impl<'hir> Lowerer<'hir> {
                 self.collect_type_vars_into(from, out);
                 self.collect_type_vars_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => {
                 self.collect_type_vars_into(inner, out);
             }
             TypeKind::Union(variants, _) => {
@@ -81,7 +84,10 @@ impl<'hir> Lowerer<'hir> {
                 self.collect_row_params_into(from, out);
                 self.collect_row_params_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => {
                 self.collect_row_params_into(inner, out);
             }
             TypeKind::Record(fields, tail) => {
@@ -189,6 +195,19 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Maybe(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Patch { target, deep } => {
+                let new_target = self.instantiate_type_vars(target, subst);
+                if new_target == target {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Patch {
+                        target: new_target,
+                        deep,
+                    },
                     span,
                 })
             }
@@ -370,6 +389,19 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::Patch { target, deep } => {
+                let new_target = self.instantiate_row_params(target, subst);
+                if new_target == target {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Patch {
+                        target: new_target,
+                        deep,
+                    },
+                    span,
+                })
+            }
             TypeKind::Record(fields, tail) => {
                 let new_fields: Vec<TypeRecordField> = fields
                     .iter()
@@ -515,7 +547,10 @@ impl<'hir> Lowerer<'hir> {
                 self.free_infer_vars_into(from, out);
                 self.free_infer_vars_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => {
                 self.free_infer_vars_into(inner, out);
             }
             TypeKind::Union(variants, _) => {
@@ -650,6 +685,19 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Maybe(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Patch { target, deep } => {
+                let new_target = self.instantiate_infer_vars(target, subst);
+                if new_target == target {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Patch {
+                        target: new_target,
+                        deep,
+                    },
                     span,
                 })
             }

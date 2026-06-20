@@ -147,6 +147,26 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             }
             Ok(())
         }
+        Expr::RecordUpdate {
+            receiver, fields, ..
+        } => {
+            writeln!(f, "{prefix}RecordUpdate")?;
+            write_expr(
+                f,
+                receiver,
+                &format!("{indent}├─ receiver: "),
+                &format!("{indent}│  "),
+            )?;
+            for field in fields {
+                write_expr(
+                    f,
+                    &field.value,
+                    &format!("{indent}├─ field {}: ", field.name),
+                    &format!("{indent}│  "),
+                )?;
+            }
+            Ok(())
+        }
         Expr::Tuple { items, .. } => {
             writeln!(f, "{prefix}Tuple")?;
             for item in items {

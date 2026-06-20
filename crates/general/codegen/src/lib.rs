@@ -168,6 +168,7 @@ fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.record_new(i64)\n");
     out.push_str("declare void @zutai.record_set(i64, i64, i64)\n");
     out.push_str("declare i64 @zutai.record_get(i64, i64)\n");
+    out.push_str("declare i64 @zutai.record_update(i64, i64, i64)\n");
 
     // Tuple operations
     out.push_str("declare i64 @zutai.tuple_new(i64)\n");
@@ -275,6 +276,12 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
         SsaOp::Record { fields } => {
             for (_, v) in fields {
                 collect_from_value(v, constants);
+            }
+        }
+        SsaOp::RecordUpdate { base, updates } => {
+            collect_from_value(base, constants);
+            for (_, value) in updates {
+                collect_from_value(value, constants);
             }
         }
         SsaOp::Tuple { items } => {
@@ -435,6 +442,30 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 out.push_str(")\n");
             }
             out.push_str(&format!("  %{} = add i64 %{}.rec, 0\n", dest, dest));
+        }
+
+        // ── Record update ───────────────────────────────────────────────────
+        SsaOp::RecordUpdate { base, updates } => {
+            if updates.is_empty() {
+                out.push_str(&format!("  %{} = add i64 ", dest));
+                fmt_value(base, out);
+                out.push_str(", 0\n");
+            } else {
+                let mut prev = String::new();
+                fmt_value(base, &mut prev);
+                for (idx, (field, value)) in updates.iter().enumerate() {
+                    let tmp_name = format!("%{}.upd{}", dest, idx);
+                    let field_key = u64::from_str_radix(&str_hash(field), 16).unwrap_or(0);
+                    out.push_str(&format!(
+                        "  {} = call i64 @zutai.record_update(i64 {}, i64 {}, i64 ",
+                        tmp_name, prev, field_key
+                    ));
+                    fmt_value(value, out);
+                    out.push_str(")\n");
+                    prev = tmp_name;
+                }
+                out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, prev));
+            }
         }
 
         // ── Tuple ──────────────────────────────────────────────────────────
@@ -638,5 +669,31 @@ mod tests {
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("call i64 @zutai.coalesce"));
         assert!(!llvm.contains("icmp ne i64"), "{llvm}");
+    }
+
+    #[test]
+    fn record_update_emits_runtime_helper_call() {
+        let module = SsaModule {
+            decls: Vec::new(),
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "result".to_string(),
+                        op: SsaOp::RecordUpdate {
+                            base: SsaValue::Reg("base".to_string()),
+                            updates: vec![("port".to_string(), SsaValue::Lit(DfLit::Int(8080)))],
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+                }],
+            },
+        };
+
+        let llvm = emit_llvm(&module);
+        assert!(llvm.contains("declare i64 @zutai.record_update"));
+        assert!(llvm.contains("call i64 @zutai.record_update"));
     }
 }

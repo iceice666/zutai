@@ -62,6 +62,8 @@ impl<'hir> Lowerer<'hir> {
                             }),
                             ("Optional", 1) => self.optional_type(spine_args[0], span),
                             ("Maybe", 1) => self.maybe_type(spine_args[0], span),
+                            ("Patch", 1) => self.patch_type(spine_args[0], false, span),
+                            ("DeepPatch", 1) => self.patch_type(spine_args[0], true, span),
                             _ => ty, // partial/over-applied builtin → inert
                         }
                     }
@@ -122,6 +124,10 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) => format!("List {}", self.type_name(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.type_name(inner)),
             TypeKind::Maybe(inner) => format!("Maybe {}", self.type_name(inner)),
+            TypeKind::Patch { target, deep } => {
+                let head = if deep { "DeepPatch" } else { "Patch" };
+                format!("{head} {}", self.type_name(target))
+            }
             TypeKind::Record(fields, tail) => self.record_type_name(fields, tail),
             TypeKind::Union(_, _) => "union".to_string(),
             TypeKind::Tuple(_) => "tuple".to_string(),
@@ -237,6 +243,10 @@ impl<'hir> Lowerer<'hir> {
             }
             TypeKind::Maybe(inner) => {
                 format!("Maybe[{}]", self.witness_target_key_with(inner, norm))
+            }
+            TypeKind::Patch { target, deep } => {
+                let head = if deep { "DeepPatch" } else { "Patch" };
+                format!("{head}[{}]", self.witness_target_key_with(target, norm))
             }
             TypeKind::Record(fields, tail) => {
                 // Sort by name — records are order-independent.

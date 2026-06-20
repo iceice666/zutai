@@ -62,6 +62,11 @@ pub enum AnfExpr {
     },
     /// Record literal; all field values are atoms.
     Record(Vec<(String, AnfAtom)>),
+    /// Record update; base and update values are atoms.
+    RecordUpdate {
+        base: AnfAtom,
+        updates: Vec<(String, AnfAtom)>,
+    },
     /// Tuple literal.
     Tuple(Vec<AnfTupleItem>),
     /// List literal; all elements are atoms.

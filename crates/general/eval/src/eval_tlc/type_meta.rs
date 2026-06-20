@@ -92,6 +92,31 @@ impl<'a> TlcEvaluator<'a> {
         }
     }
 
+    pub(super) fn tlc_record_field_order(&self, ty_id: TlcTypeId) -> Option<Vec<(String, bool)>> {
+        let ty_id = self.resolve_tlc_alias_chain(ty_id);
+        match &self.module.type_arena[ty_id] {
+            TlcType::Record(row) => {
+                let mut fields = Vec::new();
+                let mut current = row;
+                loop {
+                    match current {
+                        Row::REmpty | Row::RVar(_) => return Some(fields),
+                        Row::RExtend {
+                            label,
+                            optional,
+                            tail,
+                            ..
+                        } => {
+                            fields.push((label.clone(), *optional));
+                            current = tail;
+                        }
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn tlc_type_wrapper_kind(&self, ty_id: TlcTypeId) -> Option<TlcWrapperKind> {
         let ty_id = self.resolve_tlc_alias_chain(ty_id);
         match &self.module.type_arena[ty_id] {

@@ -229,6 +229,14 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
                 .collect(),
         },
 
+        AnfExpr::RecordUpdate { base, updates } => SsaOp::RecordUpdate {
+            base: atom_to_value(base),
+            updates: updates
+                .iter()
+                .map(|(name, value)| (name.clone(), atom_to_value(value)))
+                .collect(),
+        },
+
         AnfExpr::Tuple(items) => SsaOp::Tuple {
             items: items.iter().map(tuple_item_to_ssa).collect(),
         },
@@ -476,6 +484,13 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
         }
         AnfExpr::TyLam { ty_params: _, body } => free_vars_body(body),
         AnfExpr::Record(fields) => fields.iter().flat_map(|(_, a)| free_vars_atom(a)).collect(),
+        AnfExpr::RecordUpdate { base, updates } => {
+            let mut fv = free_vars_atom(base);
+            for (_, value) in updates {
+                fv.extend(free_vars_atom(value));
+            }
+            fv
+        }
         AnfExpr::Tuple(items) => items
             .iter()
             .flat_map(|i| match i {

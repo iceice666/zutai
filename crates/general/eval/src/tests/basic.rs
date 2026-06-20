@@ -133,6 +133,127 @@ fn record_equality() {
     assert_eq!(run("{ x = 1; } == { x = 2; }"), Value::Bool(false));
 }
 
+#[test]
+fn record_update_replaces_only_named_field() {
+    let v = run(r#"{ host = "h"; port = 80; } with { port = 8080; }"#);
+    assert_eq!(record_field_value(&v, "host"), Value::Text("h".into()));
+    assert_eq!(record_field_value(&v, "port"), Value::Int(8080));
+}
+
+#[test]
+fn record_update_does_not_force_unchanged_fields() {
+    let src = r#"
+bad :: Int = bad
+({ host = "h"; port = bad; } with { host = "new"; }).host
+"#;
+    assert_eq!(eval_file(src).unwrap(), Value::Text("new".into()));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("new".into()));
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Text("new".into()));
+}
+
+#[test]
+fn record_update_preserves_present_optional_field_in_both_evaluators() {
+    let src = r#"
+S :: type { x : Int; y? : Int; }
+s :: S = { x = 1; y = 2; }
+(s with { x = 3; }).y
+"#;
+    assert_eq!(eval_file(src).unwrap().to_string(), "#present (2)");
+    assert_eq!(eval_tlc_file(src).unwrap().to_string(), "#present (2)");
+    assert_eq!(eval_thir_file(src).unwrap().to_string(), "#present (2)");
+}
+
+#[test]
+fn record_update_preserves_absent_optional_field_in_both_evaluators() {
+    let src = r#"
+S :: type { x : Int; y? : Int; }
+s :: S = { x = 1; }
+(s with { x = 3; }).y
+"#;
+    assert_eq!(eval_file(src).unwrap().to_string(), "#absent");
+    assert_eq!(eval_tlc_file(src).unwrap().to_string(), "#absent");
+    assert_eq!(eval_thir_file(src).unwrap().to_string(), "#absent");
+}
+
+#[test]
+fn overlay_replaces_patch_fields_in_both_evaluators() {
+    let src = r#"
+Config :: type {
+  host : Text;
+  port : Int;
+}
+base :: Config = { host = "localhost"; port = 80; }
+patch :: Patch Config = { port = 8080; }
+(overlay base patch).port
+"#;
+    assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(8080));
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Int(8080));
+}
+
+#[test]
+fn overlay_does_not_force_unchanged_fields() {
+    let src = r#"
+Config :: type {
+  host : Text;
+  port : Int;
+}
+bad :: Int = bad
+base :: Config = { host = "localhost"; port = bad; }
+patch :: Patch Config = { host = "patched"; }
+(overlay base patch).host
+"#;
+    assert_eq!(eval_file(src).unwrap(), Value::Text("patched".into()));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("patched".into()));
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Text("patched".into()));
+}
+
+#[test]
+fn overlay_deep_merges_nested_records_in_both_evaluators() {
+    let src = r#"
+Server :: type {
+  host : Text;
+  port : Int;
+}
+Config :: type {
+  server : Server;
+  name : Text;
+}
+base :: Config = {
+  server = { host = "localhost"; port = 80; };
+  name = "dev";
+}
+
+patch :: DeepPatch Config = {
+  server = { port = 8080; };
+}
+(overlayDeep base patch).server.host
+"#;
+    assert_eq!(eval_file(src).unwrap(), Value::Text("localhost".into()));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("localhost".into()));
+    assert_eq!(
+        eval_thir_file(src).unwrap(),
+        Value::Text("localhost".into())
+    );
+}
+
+#[test]
+fn overlay_partial_application_runs_in_both_evaluators() {
+    let src = r#"
+Config :: type {
+  host : Text;
+  port : Int;
+}
+base :: Config = { host = "localhost"; port = 80; }
+applyBase := overlay base
+patch :: Patch Config = { port = 8080; }
+(applyBase patch).port
+"#;
+    assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(8080));
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Int(8080));
+}
+
 // ─── select projection ─────────────────────────────────────────────────────────
 
 #[test]

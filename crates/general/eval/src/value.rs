@@ -12,7 +12,7 @@ use zutai_hir::BindingId;
 use zutai_thir::{ThirClause, TypeId};
 use zutai_tlc::TlcExprId;
 
-use crate::{EvalError, env::Env};
+use crate::{EvalError, env::Env, thunk::Thunk};
 
 /// Index into the module registry held by the evaluator.
 ///
@@ -86,17 +86,24 @@ pub enum Value {
     /// A compiler-provided builtin function value (the prelude). Seeded into the
     /// top-level environment by name; applied specially by both evaluators.
     Builtin(BuiltinFn),
+    BuiltinPartial {
+        func: BuiltinFn,
+        args: Vec<Thunk>,
+    },
 }
 
 /// A compiler-provided builtin function. `print` is re-pointed to the
 /// `io.print` effect by the TLC evaluator; source handlers can intercept it and
 /// the host run boundary handles residual `io.print`. `fields` and `schema`
-/// reflect normalized type values through the THIR evaluator.
+/// reflect normalized type values through the THIR evaluator. `overlay` and
+/// `overlayDeep` merge config-shaped record values in the reference evaluators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinFn {
     Print,
     Fields,
     Schema,
+    Overlay,
+    OverlayDeep,
 }
 
 impl BuiltinFn {
@@ -107,7 +114,26 @@ impl BuiltinFn {
             "print" => Some(BuiltinFn::Print),
             "fields" => Some(BuiltinFn::Fields),
             "schema" => Some(BuiltinFn::Schema),
+            "overlay" => Some(BuiltinFn::Overlay),
+            "overlayDeep" => Some(BuiltinFn::OverlayDeep),
             _ => None,
+        }
+    }
+
+    pub fn arity(self) -> usize {
+        match self {
+            BuiltinFn::Print | BuiltinFn::Fields | BuiltinFn::Schema => 1,
+            BuiltinFn::Overlay | BuiltinFn::OverlayDeep => 2,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BuiltinFn::Print => "print",
+            BuiltinFn::Fields => "fields",
+            BuiltinFn::Schema => "schema",
+            BuiltinFn::Overlay => "overlay",
+            BuiltinFn::OverlayDeep => "overlayDeep",
         }
     }
 }
@@ -153,6 +179,119 @@ impl Value {
                     .collect(),
             )),
         }
+    }
+}
+
+pub(crate) fn update_record_value(
+    metadata: &[(String, bool)],
+    base_fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+    updates: &[(String, Thunk)],
+) -> Value {
+    let mut fields = Vec::with_capacity(metadata.len());
+    for (name, optional) in metadata {
+        if let Some((_, thunk)) = updates.iter().find(|(field, _)| field == name) {
+            fields.push((Rc::from(name.as_str()), thunk.clone()));
+        } else if let Some((runtime_name, thunk)) = base_fields
+            .iter()
+            .find(|(field, _)| field.as_ref() == name.as_str())
+        {
+            fields.push((runtime_name.clone(), thunk.clone()));
+        } else if !optional {
+            // Well-typed source cannot create a missing required field here.
+        }
+    }
+    Value::Record(Rc::new(fields))
+}
+
+pub(crate) fn overlay_value<F>(
+    base: Value,
+    patch: Value,
+    deep: bool,
+    force: &mut F,
+) -> Result<Value, EvalError>
+where
+    F: FnMut(&Thunk) -> Result<Value, EvalError>,
+{
+    let Value::Record(base_fields) = base else {
+        return Err(EvalError::TypeMismatch {
+            expected: "Record",
+            found: runtime_value_type_name(&base),
+        });
+    };
+    let Value::Record(patch_fields) = patch else {
+        return Err(EvalError::TypeMismatch {
+            expected: "Record",
+            found: runtime_value_type_name(&patch),
+        });
+    };
+    overlay_record_fields(&base_fields, &patch_fields, deep, force)
+}
+
+fn overlay_record_fields<F>(
+    base_fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+    patch_fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+    deep: bool,
+    force: &mut F,
+) -> Result<Value, EvalError>
+where
+    F: FnMut(&Thunk) -> Result<Value, EvalError>,
+{
+    let mut out = Vec::with_capacity(base_fields.len() + patch_fields.len());
+    for (base_name, base_thunk) in base_fields.iter() {
+        let thunk = match patch_fields
+            .iter()
+            .find(|(patch_name, _)| patch_name.as_ref() == base_name.as_ref())
+        {
+            Some((_, patch_thunk)) if deep => {
+                let patch_value = force(patch_thunk)?;
+                if let Value::Record(patch_nested) = patch_value {
+                    match force(base_thunk)? {
+                        Value::Record(base_nested) => Thunk::ready(overlay_record_fields(
+                            &base_nested,
+                            &patch_nested,
+                            true,
+                            force,
+                        )?),
+                        _ => patch_thunk.clone(),
+                    }
+                } else {
+                    patch_thunk.clone()
+                }
+            }
+            Some((_, patch_thunk)) => patch_thunk.clone(),
+            None => base_thunk.clone(),
+        };
+        out.push((base_name.clone(), thunk));
+    }
+    for (patch_name, patch_thunk) in patch_fields.iter() {
+        if base_fields
+            .iter()
+            .all(|(base_name, _)| base_name.as_ref() != patch_name.as_ref())
+        {
+            out.push((patch_name.clone(), patch_thunk.clone()));
+        }
+    }
+    Ok(Value::Record(Rc::new(out)))
+}
+
+fn runtime_value_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Bool(_) => "Bool",
+        Value::Int(_) => "Int",
+        Value::Float(_) => "Float",
+        Value::Text(_) => "Text",
+        Value::Atom(_) => "Atom",
+        Value::List(_) => "List",
+        Value::Tuple(_) => "Tuple",
+        Value::Record(_) => "Record",
+        Value::Closure(_)
+        | Value::TlcClosure(_)
+        | Value::Builtin(_)
+        | Value::BuiltinPartial { .. } => "Function",
+        Value::TypeValue(_) => "Type",
+        Value::TaggedValue { .. } => "TaggedValue",
+        Value::Nothing => "Nothing",
+        Value::WitnessDict(_) => "WitnessDict",
     }
 }
 
@@ -243,6 +382,10 @@ impl PartialEq for Value {
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             (Value::TlcClosure(a), Value::TlcClosure(b)) => Rc::ptr_eq(a, b),
             (Value::Builtin(a), Value::Builtin(b)) => a == b,
+            (
+                Value::BuiltinPartial { func: af, args: aa },
+                Value::BuiltinPartial { func: bf, args: ba },
+            ) => af == bf && aa.len() == ba.len(),
             // WitnessDicts are opaque to user-level equality.
             (Value::WitnessDict(_), _) | (_, Value::WitnessDict(_)) => false,
             _ => false,
@@ -492,9 +635,10 @@ impl fmt::Display for Value {
             Value::TlcClosure(_) => write!(f, "<function/1>"),
             Value::TypeValue(_) => write!(f, "<type>"),
             Value::WitnessDict(_) => write!(f, "<witness>"),
-            Value::Builtin(BuiltinFn::Print) => write!(f, "<builtin print>"),
-            Value::Builtin(BuiltinFn::Fields) => write!(f, "<builtin fields>"),
-            Value::Builtin(BuiltinFn::Schema) => write!(f, "<builtin schema>"),
+            Value::Builtin(func) => write!(f, "<builtin {}>", func.name()),
+            Value::BuiltinPartial { func, args } => {
+                write!(f, "<builtin {}/{}>", func.name(), func.arity() - args.len())
+            }
         }
     }
 }

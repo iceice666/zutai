@@ -169,6 +169,37 @@ impl Analysis {
             None
         }
     }
+
+    pub fn config_overlay_builtin_program(&self) -> Option<&'static str> {
+        if self
+            .import_modules
+            .values()
+            .any(|module| module.as_ref().config_overlay_builtin_program().is_some())
+        {
+            return Some(
+                "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet",
+            );
+        }
+        let hir = &self.hir.as_ref()?.file;
+        let file = self.thir.as_ref()?.file.as_ref()?;
+        let uses_overlay = file.expr_arena.iter().any(|(_, expr)| {
+            let zutai_thir::ThirExprKind::BindingRef(binding) = expr.kind else {
+                return false;
+            };
+            let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
+                return false;
+            };
+            hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                && (hir_binding.name == "overlay" || hir_binding.name == "overlayDeep")
+        });
+        if uses_overlay {
+            Some(
+                "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet",
+            )
+        } else {
+            None
+        }
+    }
 }
 
 pub fn analyze(input: &str) -> Analysis {

@@ -28,7 +28,10 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{BuiltinFn, Closure, ModuleId, RuntimeType, TupleField, Value, values_equal},
+    value::{
+        BuiltinFn, Closure, ModuleId, RuntimeType, TupleField, Value, overlay_value,
+        update_record_value, values_equal,
+    },
 };
 
 mod apply;

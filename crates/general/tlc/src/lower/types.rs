@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_hir::BindingId;
-use zutai_thir::{EffectRow, RowTail, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
+use zutai_thir::{
+    EffectRow, RowTail, ThirDeclKind, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+};
 
 use crate::ir::{Kind, Literal, PrimTy, Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
@@ -49,6 +51,9 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Maybe(inner) => {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::Maybe(inner_tlc))
+            }
+            TypeKind::Patch { target, deep } => {
+                self.lower_patch_type_with_subst(target, deep, &HashMap::new())
             }
             TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
@@ -248,6 +253,9 @@ impl<'thir> Lowerer<'thir> {
                 let inner = self.lower_type_with_subst(inner, subst);
                 self.alloc_type(TlcType::Maybe(inner))
             }
+            TypeKind::Patch { target, deep } => {
+                self.lower_patch_type_with_subst(target, deep, subst)
+            }
             TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
@@ -346,7 +354,10 @@ impl<'thir> Lowerer<'thir> {
                 self.collect_sig_row_params(from, out);
                 self.collect_sig_row_params(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => {
                 self.collect_sig_row_params(inner, out);
             }
             TypeKind::Record(fields, tail) => {
@@ -383,6 +394,66 @@ impl<'thir> Lowerer<'thir> {
             }
             _ => {}
         }
+    }
+
+    fn lower_patch_type_with_subst(
+        &mut self,
+        target: TypeId,
+        deep: bool,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> TlcTypeId {
+        let Some((fields, tail, env)) = self.record_shape_with_subst(target, subst) else {
+            return self.alloc_type(TlcType::Record(Row::REmpty));
+        };
+        let row_fields: Vec<(String, TlcTypeId, bool)> = fields
+            .iter()
+            .map(|field| {
+                let field_ty = if deep && self.record_shape_with_subst(field.ty, &env).is_some() {
+                    self.lower_patch_type_with_subst(field.ty, true, &env)
+                } else {
+                    self.lower_type_with_subst(field.ty, &env)
+                };
+                (field.name.clone(), field_ty, true)
+            })
+            .collect();
+        let row_tail = self.thir_row_tail(tail);
+        self.alloc_type(TlcType::Record(Row::from_record_fields_with_tail(
+            row_fields, row_tail,
+        )))
+    }
+
+    fn record_shape_with_subst(
+        &self,
+        target: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> Option<(Vec<TypeRecordField>, RowTail, HashMap<BindingId, TypeId>)> {
+        let mut ty = target;
+        let mut env = subst.clone();
+        let mut fuel = 64u32;
+        while fuel > 0 {
+            fuel -= 1;
+            match self.thir.type_arena[ty.0 as usize].kind.clone() {
+                TypeKind::TypeVar(binding) => {
+                    ty = *env.get(&binding)?;
+                }
+                TypeKind::Alias(binding) => {
+                    ty = self.type_alias_body(binding)?;
+                }
+                TypeKind::AliasApply { binding, args } => {
+                    let (params, body) = self.type_alias_params_body(binding)?;
+                    if params.len() != args.len() {
+                        return None;
+                    }
+                    for (param, arg) in params.into_iter().zip(args) {
+                        env.insert(param, arg);
+                    }
+                    ty = body;
+                }
+                TypeKind::Record(fields, tail) => return Some((fields, tail, env)),
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Returns the kind for an alias head: `Type(0)` for a 0-ary alias;
@@ -466,6 +537,19 @@ impl<'thir> Lowerer<'thir> {
             Optional(ti) => {
                 if let Optional(ii) = self.thir.type_arena[instance.0 as usize].kind.clone() {
                     self.match_types(ti, ii, out);
+                }
+            }
+            Patch {
+                target: tt,
+                deep: td,
+            } => {
+                if let Patch {
+                    target: it,
+                    deep: id,
+                } = self.thir.type_arena[instance.0 as usize].kind.clone()
+                    && td == id
+                {
+                    self.match_types(tt, it, out);
                 }
             }
             _ => {}

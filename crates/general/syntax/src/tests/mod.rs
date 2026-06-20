@@ -84,6 +84,15 @@ fn as_record(e: &Expr) -> &Vec<RecordField> {
     }
 }
 
+fn as_record_update(e: &Expr) -> (&Expr, &Vec<RecordField>) {
+    match e {
+        Expr::RecordUpdate {
+            receiver, fields, ..
+        } => (receiver, fields),
+        other => panic!("expected RecordUpdate, got {other:?}"),
+    }
+}
+
 fn as_list(e: &Expr) -> &Vec<Expr> {
     match e {
         Expr::List { items, .. } => items,

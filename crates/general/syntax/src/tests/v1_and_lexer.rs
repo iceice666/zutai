@@ -181,6 +181,37 @@ fn v1_perform_handle_resume_parse() {
 }
 
 #[test]
+fn v1_handle_with_clause_is_not_record_update() {
+    let e = parse_expr_str(
+        "handle check cfg with { warn = \\diagnostic => { perform log diagnostic; resume (); }; }",
+    );
+    match e {
+        Expr::Handle { expr, clauses, .. } => {
+            let (func, arg) = as_apply(&expr);
+            assert_eq!(as_ident(func), "check");
+            assert_eq!(as_ident(arg), "cfg");
+            assert_eq!(clauses[0].op, vec!["warn"]);
+        }
+        other => panic!("expected Handle, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_config_names_parse_as_identifiers() {
+    for name in ["Patch", "DeepPatch", "overlay", "overlayDeep"] {
+        let e = parse_expr_str(name);
+        assert_eq!(as_ident(&e), name);
+    }
+
+    let ty_source = "PatchAlias :: type Patch\nDeepPatchAlias :: type DeepPatch\nPatch";
+    let f = parse_str(ty_source);
+    let (_, _, ty) = as_alias(decl_by(&f, "PatchAlias"));
+    assert!(matches!(ty, TypeExpr::Ident { name, .. } if name == "Patch"));
+    let (_, _, ty) = as_alias(decl_by(&f, "DeepPatchAlias"));
+    assert!(matches!(ty, TypeExpr::Ident { name, .. } if name == "DeepPatch"));
+}
+
+#[test]
 fn v1_reflection_builtins_parse_as_application() {
     let fields_expr = parse_expr_str("fields Server");
     let (func, arg) = as_apply(&fields_expr);

@@ -153,6 +153,14 @@ fn display_expr_record() {
 }
 
 #[test]
+fn display_expr_record_update() {
+    let s = parse_str("{ host = \"h\"; } with { host = \"n\"; }").to_string();
+    assert!(s.contains("RecordUpdate"), "record update expression");
+    assert!(s.contains("receiver:"), "record update receiver");
+    assert!(s.contains("field host:"), "record update field");
+}
+
+#[test]
 fn display_expr_tuple_positional() {
     let s = parse_str("(1, 2)").to_string();
     assert!(s.contains("Tuple"), "tuple expression");

@@ -42,6 +42,74 @@ impl<'a> TlcEvaluator<'a> {
         self.eval_expr_values(ids, env, resume, 0, Vec::new(), finish)
     }
 
+    pub(super) fn eval_record_update<'eval>(
+        self,
+        receiver: TlcExprId,
+        fields: Vec<(String, TlcExprId)>,
+        env: Env,
+        resume: Option<EvalCont<'eval>>,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        let metadata = self
+            .module
+            .expr_types
+            .get(&receiver)
+            .copied()
+            .and_then(|ty| self.tlc_record_field_order(ty));
+        let updates = Rc::new(fields);
+        let receiver_control = self.eval_control(receiver, &env, resume.clone())?;
+        self.bind_control(receiver_control, move |base, this| {
+            let Value::Record(base_fields) = base else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Record",
+                    found: value_type_name(&base),
+                });
+            };
+            let metadata = metadata.clone().unwrap_or_else(|| {
+                base_fields
+                    .iter()
+                    .map(|(name, _)| (name.to_string(), false))
+                    .collect()
+            });
+            if this.defer_aggregates {
+                let update_thunks: Vec<(String, Thunk)> = updates
+                    .iter()
+                    .map(|(name, id)| {
+                        (
+                            name.clone(),
+                            Thunk::tlc_deferred(*id, env.clone(), this.active_module),
+                        )
+                    })
+                    .collect();
+                return Ok(EvalControl::Value(update_record_value(
+                    &metadata,
+                    &base_fields,
+                    &update_thunks,
+                )));
+            }
+
+            let names = Rc::new(
+                updates
+                    .iter()
+                    .map(|(name, _)| name.clone())
+                    .collect::<Vec<_>>(),
+            );
+            let ids = Rc::new(updates.iter().map(|(_, id)| *id).collect::<Vec<_>>());
+            let finish: FinishValues<'eval> = Rc::new(move |values| {
+                let update_thunks: Vec<(String, Thunk)> = names
+                    .iter()
+                    .cloned()
+                    .zip(values)
+                    .map(|(name, value)| (name, Thunk::ready(value)))
+                    .collect();
+                update_record_value(&metadata, &base_fields, &update_thunks)
+            });
+            this.eval_expr_values(ids, env.clone(), resume.clone(), 0, Vec::new(), finish)
+        })
+    }
+
     pub(super) fn eval_tuple<'eval>(
         self,
         items: Vec<TlcTupleItem>,

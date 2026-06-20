@@ -254,6 +254,11 @@ pub enum Expr {
         fields: Vec<RecordField>,
         span: Span,
     },
+    RecordUpdate {
+        receiver: Box<Expr>,
+        fields: Vec<RecordField>,
+        span: Span,
+    },
     Tuple {
         items: Vec<TupleItem>,
         span: Span,
@@ -354,6 +359,7 @@ impl Expr {
             | Expr::TaggedValue { span, .. }
             | Expr::Ident { span, .. }
             | Expr::Record { span, .. }
+            | Expr::RecordUpdate { span, .. }
             | Expr::Tuple { span, .. }
             | Expr::List { span, .. }
             | Expr::Block { span, .. }

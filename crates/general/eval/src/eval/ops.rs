@@ -12,7 +12,7 @@ pub(super) fn value_type_name(v: &Value) -> &'static str {
         Value::Record(_) => "Record",
         Value::Closure(_) => "Function",
         Value::TlcClosure(_) => "Function",
-        Value::Builtin(_) => "Function",
+        Value::Builtin(_) | Value::BuiltinPartial { .. } => "Function",
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",

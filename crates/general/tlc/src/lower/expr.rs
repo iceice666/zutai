@@ -40,6 +40,21 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 self.alloc_expr(TlcExpr::Record(tlc_fields), tlc_ty, span)
             }
+            ThirExprKind::RecordUpdate { receiver, fields } => {
+                let receiver = self.lower_expr(receiver);
+                let tlc_fields: Vec<(String, TlcExprId)> = fields
+                    .iter()
+                    .map(|f| (f.name.clone(), self.lower_expr(f.value)))
+                    .collect();
+                self.alloc_expr(
+                    TlcExpr::RecordUpdate {
+                        receiver,
+                        fields: tlc_fields,
+                    },
+                    tlc_ty,
+                    span,
+                )
+            }
             ThirExprKind::Tuple(items) => {
                 let tlc_items: Vec<TlcTupleItem> = items
                     .iter()

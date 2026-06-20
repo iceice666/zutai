@@ -43,6 +43,12 @@ fn collect_global_refs(
                 collect_global_refs(graph, *v, out, visited);
             }
         }
+        DfNodeKind::RecordUpdate { base, updates } => {
+            collect_global_refs(graph, *base, out, visited);
+            for (_, value) in updates {
+                collect_global_refs(graph, *value, out, visited);
+            }
+        }
         DfNodeKind::Tuple(items) => {
             let ids: Vec<NodeId> = items
                 .iter()

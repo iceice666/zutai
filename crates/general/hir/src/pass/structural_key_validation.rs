@@ -18,7 +18,7 @@ impl HirPass for StructuralKeyValidationPass {
     fn run(&mut self, file: &mut HirFile, diagnostics: &mut Vec<HirDiagnostic>) {
         for (_, expr) in file.expr_arena.iter() {
             match &expr.kind {
-                HirExprKind::Record(fields) => {
+                HirExprKind::Record(fields) | HirExprKind::RecordUpdate { fields, .. } => {
                     validate_record_fields(fields, diagnostics);
                 }
                 HirExprKind::Tuple(items) => {

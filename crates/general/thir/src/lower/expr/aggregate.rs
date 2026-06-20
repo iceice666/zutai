@@ -350,6 +350,83 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    pub(super) fn lower_record_update_expr(
+        &mut self,
+        id: HirExprId,
+        receiver: HirExprId,
+        fields: &[HirRecordField],
+        span: Span,
+    ) -> ThirExprId {
+        let receiver = self.infer_expr(receiver);
+        let receiver_ty = self.expr(receiver).ty;
+        let Some((record_fields, _tail)) = self.record_row(receiver_ty, span) else {
+            let resolved = self.resolve(receiver_ty);
+            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::RowAnnotationRequired,
+                    span,
+                });
+            } else {
+                let found = self.type_name(receiver_ty);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedRecord { found },
+                    span,
+                });
+            }
+            return self.error_expr(id, span);
+        };
+
+        if fields.is_empty() {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnsupportedFeature {
+                    feature: "empty record update",
+                },
+                span,
+            });
+            return self.error_expr(id, span);
+        }
+
+        let by_name: HashMap<&str, &TypeRecordField> = record_fields
+            .iter()
+            .map(|field| (field.name.as_str(), field))
+            .collect();
+        let mut thir_fields = Vec::with_capacity(fields.len());
+        let mut had_unknown = false;
+        for field in fields {
+            let Some(record_field) = by_name.get(field.name.as_str()) else {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::UnknownField {
+                        name: field.name.clone(),
+                    },
+                    span: field.span,
+                });
+                self.infer_expr(field.value);
+                had_unknown = true;
+                continue;
+            };
+            let value = self.check_expr(field.value, record_field.ty);
+            thir_fields.push(ThirRecordField {
+                name: field.name.clone(),
+                value,
+                span: field.span,
+            });
+        }
+
+        if had_unknown {
+            return self.error_expr(id, span);
+        }
+
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: receiver_ty,
+            kind: ThirExprKind::RecordUpdate {
+                receiver,
+                fields: thir_fields,
+            },
+            span,
+        })
+    }
+
     pub(super) fn lower_access_expr(
         &mut self,
         id: HirExprId,

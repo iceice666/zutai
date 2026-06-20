@@ -2,31 +2,51 @@ use winnow::Parser;
 use winnow::Result;
 use winnow::combinator::fail;
 
-use crate::ast::{BinOp, Expr, TypeExpr};
+use crate::ast::{BinOp, Expr, RecordField, TypeExpr};
 use crate::span::Span;
 
-use super::lex::{application_ws, at_depth_0, ws};
+use super::lex::{application_ws, at_depth_0, kw, ws};
 
 mod atom;
 
 pub use atom::{parse_atom_expr, parse_clause_block};
+
+use atom::parse_atom_expr_with_options;
+
+#[derive(Clone, Copy)]
+pub(super) struct ExprOptions {
+    allow_record_update: bool,
+}
+
+impl ExprOptions {
+    const DEFAULT: Self = Self {
+        allow_record_update: true,
+    };
+    const NO_RECORD_UPDATE: Self = Self {
+        allow_record_update: false,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Public entry
 // ---------------------------------------------------------------------------
 
 pub fn parse_expr(input: &mut &str) -> Result<Expr> {
+    parse_expr_with_options(input, ExprOptions::DEFAULT)
+}
+
+pub(super) fn parse_expr_with_options(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     ws(input)?;
-    parse_pipeline_level(input)
+    parse_pipeline_level(input, options)
 }
 
 // ---------------------------------------------------------------------------
 // Level 9: pipeline `|>` and `<|`
 // ---------------------------------------------------------------------------
 
-fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
+fn parse_pipeline_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     use crate::ast::PipelineDir;
-    let mut lhs = parse_coalesce_level(input)?;
+    let mut lhs = parse_coalesce_level(input, options)?;
 
     let mut last_dir: Option<PipelineDir> = None;
 
@@ -58,7 +78,7 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
             "<|".parse_next(input)?;
         }
         ws(input)?;
-        let rhs = parse_coalesce_level(input)?;
+        let rhs = parse_coalesce_level(input, options)?;
         let span = lhs.span().merge(rhs.span());
         lhs = Expr::Pipeline {
             dir,
@@ -76,14 +96,14 @@ fn parse_pipeline_level(input: &mut &str) -> Result<Expr> {
 // Level 8: coalesce `??` (right-assoc)
 // ---------------------------------------------------------------------------
 
-fn parse_coalesce_level(input: &mut &str) -> Result<Expr> {
-    let lhs = parse_or_level(input)?;
+fn parse_coalesce_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let lhs = parse_or_level(input, options)?;
     let checkpoint = *input;
     ws(input)?;
     if input.starts_with("??") {
         "??".parse_next(input)?;
         ws(input)?;
-        let rhs = parse_coalesce_level(input)?;
+        let rhs = parse_coalesce_level(input, options)?;
         let span = lhs.span().merge(rhs.span());
         return Ok(Expr::Binary {
             op: BinOp::Coalesce,
@@ -100,15 +120,15 @@ fn parse_coalesce_level(input: &mut &str) -> Result<Expr> {
 // Level 7: `||` (left-assoc)
 // ---------------------------------------------------------------------------
 
-fn parse_or_level(input: &mut &str) -> Result<Expr> {
-    let mut lhs = parse_and_level(input)?;
+fn parse_or_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut lhs = parse_and_level(input, options)?;
     loop {
         let ws_checkpoint = *input;
         ws(input)?;
         if input.starts_with("||") {
             "||".parse_next(input)?;
             ws(input)?;
-            let rhs = parse_and_level(input)?;
+            let rhs = parse_and_level(input, options)?;
             let span = lhs.span().merge(rhs.span());
             lhs = Expr::Binary {
                 op: BinOp::Or,
@@ -128,15 +148,15 @@ fn parse_or_level(input: &mut &str) -> Result<Expr> {
 // Level 6: `&&` (left-assoc)
 // ---------------------------------------------------------------------------
 
-fn parse_and_level(input: &mut &str) -> Result<Expr> {
-    let mut lhs = parse_compare_level(input)?;
+fn parse_and_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut lhs = parse_compare_level(input, options)?;
     loop {
         let ws_checkpoint = *input;
         ws(input)?;
         if input.starts_with("&&") {
             "&&".parse_next(input)?;
             ws(input)?;
-            let rhs = parse_compare_level(input)?;
+            let rhs = parse_compare_level(input, options)?;
             let span = lhs.span().merge(rhs.span());
             lhs = Expr::Binary {
                 op: BinOp::And,
@@ -184,14 +204,14 @@ fn parse_compare_op(input: &mut &str) -> Result<BinOp> {
     fail.parse_next(input)
 }
 
-fn parse_compare_level(input: &mut &str) -> Result<Expr> {
-    let lhs = parse_add_level(input)?;
+fn parse_compare_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let lhs = parse_add_level(input, options)?;
 
     let checkpoint = *input;
     ws(input)?;
     if let Ok(op_val) = parse_compare_op(input) {
         ws(input)?;
-        let rhs = parse_add_level(input)?;
+        let rhs = parse_add_level(input, options)?;
         let span = lhs.span().merge(rhs.span());
         let node = Expr::Binary {
             op: op_val,
@@ -217,8 +237,8 @@ fn parse_compare_level(input: &mut &str) -> Result<Expr> {
 // Level 4: `+` `-` (left-assoc)
 // ---------------------------------------------------------------------------
 
-fn parse_add_level(input: &mut &str) -> Result<Expr> {
-    let mut lhs = parse_mul_level(input)?;
+fn parse_add_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut lhs = parse_mul_level(input, options)?;
     loop {
         let ws_checkpoint = *input;
         ws(input)?;
@@ -233,7 +253,7 @@ fn parse_add_level(input: &mut &str) -> Result<Expr> {
             break;
         };
         ws(input)?;
-        let rhs = parse_mul_level(input)?;
+        let rhs = parse_mul_level(input, options)?;
         let span = lhs.span().merge(rhs.span());
         lhs = Expr::Binary {
             op: op_val,
@@ -249,8 +269,8 @@ fn parse_add_level(input: &mut &str) -> Result<Expr> {
 // Level 3: `*` `/` (left-assoc)
 // ---------------------------------------------------------------------------
 
-fn parse_mul_level(input: &mut &str) -> Result<Expr> {
-    let mut lhs = parse_application(input)?;
+fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut lhs = parse_application_with_options(input, options)?;
     loop {
         let ws_checkpoint = *input;
         ws(input)?;
@@ -265,7 +285,7 @@ fn parse_mul_level(input: &mut &str) -> Result<Expr> {
             break;
         };
         ws(input)?;
-        let rhs = parse_application(input)?;
+        let rhs = parse_application_with_options(input, options)?;
         let span = lhs.span().merge(rhs.span());
         lhs = Expr::Binary {
             op: op_val,
@@ -311,14 +331,18 @@ fn can_start_atom(input: &str, had_application_ws: bool) -> bool {
 }
 
 pub fn parse_application(input: &mut &str) -> Result<Expr> {
-    let mut func = parse_postfix(input)?;
+    parse_application_with_options(input, ExprOptions::DEFAULT)
+}
+
+fn parse_application_with_options(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut func = parse_postfix_with_options(input, options)?;
 
     loop {
         let saved = *input;
         application_ws(input)?;
         let had_application_ws = saved.len() != input.len();
         if can_start_atom(input, had_application_ws) {
-            match parse_postfix(input) {
+            match parse_postfix_with_options(input, options) {
                 Ok(arg) => {
                     let span = func.span().merge(arg.span());
                     func = Expr::Apply {
@@ -345,8 +369,8 @@ pub fn parse_application(input: &mut &str) -> Result<Expr> {
 // Level 1: postfix `.field`, `?.field`
 // ---------------------------------------------------------------------------
 
-pub(super) fn parse_postfix(input: &mut &str) -> Result<Expr> {
-    let mut node = parse_atom_expr(input)?;
+pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut node = parse_atom_expr_with_options(input, options)?;
 
     loop {
         let saved = *input;
@@ -374,6 +398,19 @@ pub(super) fn parse_postfix(input: &mut &str) -> Result<Expr> {
                 field,
                 span,
             };
+        } else if options.allow_record_update && kw("with").parse_next(input).is_ok() {
+            ws(input)?;
+            let (fields, closing_span) = parse_record_update_fields(input)?;
+            let end_span = fields
+                .last()
+                .map(|field| field.span)
+                .unwrap_or(closing_span);
+            let span = node.span().merge(end_span);
+            node = Expr::RecordUpdate {
+                receiver: Box::new(node),
+                fields,
+                span,
+            };
         } else {
             *input = saved;
             break;
@@ -381,6 +418,36 @@ pub(super) fn parse_postfix(input: &mut &str) -> Result<Expr> {
     }
 
     Ok(node)
+}
+
+fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Span)> {
+    use super::lex::{enter_delimiter, parse_field_name, spanned};
+
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut fields = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        ws(input)?;
+        if input.starts_with('=') && !input.starts_with("==") {
+            '='.parse_next(input)?;
+        } else {
+            return fail.parse_next(input);
+        }
+        ws(input)?;
+        let value = parse_expr(input)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        let span = name_span.merge(value.span());
+        fields.push(RecordField { name, value, span });
+    }
+    ws(input)?;
+    let (_, closing_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
+    Ok((fields, closing_span))
 }
 
 pub(super) fn fix_number_span(expr: Expr, span: Span) -> Expr {

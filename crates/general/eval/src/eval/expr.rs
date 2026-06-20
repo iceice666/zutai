@@ -22,6 +22,20 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    pub(super) fn record_field_order(&self, ty: TypeId) -> Option<Vec<(String, bool)>> {
+        let aliases = self.build_alias_map();
+        let resolved = resolve_alias_chain(&self.file.type_arena, &aliases, ty);
+        match &self.file.type_arena[resolved.0 as usize].kind {
+            TypeKind::Record(fields, _) => Some(
+                fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field.optional))
+                    .collect(),
+            ),
+            _ => None,
+        }
+    }
+
     pub(super) fn type_wrapper_kind(&self, ty: TypeId) -> Option<RuntimeWrapperKind> {
         let aliases = self.build_alias_map();
         let resolved = resolve_alias_chain(&self.file.type_arena, &aliases, ty);
@@ -106,6 +120,33 @@ impl<'a> Evaluator<'a> {
                     .map(|f| (Rc::from(f.name.as_str()), self.defer(f.value, env.clone())))
                     .collect();
                 Ok(Value::Record(Rc::new(vec)))
+            }
+            ThirExprKind::RecordUpdate { receiver, fields } => {
+                let rv = self.eval(*receiver, env)?;
+                let Value::Record(base_fields) = rv else {
+                    return Err(EvalError::TypeMismatch {
+                        expected: "Record",
+                        found: value_type_name(&rv),
+                    });
+                };
+                let metadata = self
+                    .record_field_order(self.expr(*receiver).ty)
+                    .unwrap_or_else(|| {
+                        base_fields
+                            .iter()
+                            .map(|(name, _)| (name.to_string(), false))
+                            .collect()
+                    });
+                let updates: Vec<(String, Thunk)> = fields
+                    .iter()
+                    .map(|field| {
+                        (
+                            field.name.clone(),
+                            self.defer(field.value, env.clone()),
+                        )
+                    })
+                    .collect();
+                Ok(update_record_value(&metadata, &base_fields, &updates))
             }
             ThirExprKind::Tuple(items) => {
                 let fields: Rc<[TupleField]> = items
@@ -309,28 +350,9 @@ impl<'a> Evaluator<'a> {
                             self.apply_closure(&c, applied)
                         }
                     }
-                    Value::Builtin(BuiltinFn::Print) => {
-                        // `print :: Text -> Text` — arity 1, applied immediately.
-                        // Side effect: write the text plus a newline to stdout;
-                        // return the argument unchanged so it stays inspectable.
-                        match self.eval(*arg, env)? {
-                            Value::Text(s) => {
-                                println!("{s}");
-                                Ok(Value::Text(s))
-                            }
-                            other => Err(EvalError::TypeMismatch {
-                                expected: "Text",
-                                found: value_type_name(&other),
-                            }),
-                        }
-                    }
-                    Value::Builtin(BuiltinFn::Fields) => {
-                        let arg = self.eval(*arg, env)?;
-                        self.reflect_fields_value(arg)
-                    }
-                    Value::Builtin(BuiltinFn::Schema) => {
-                        let arg = self.eval(*arg, env)?;
-                        self.reflect_schema_value(arg)
+                    Value::Builtin(func) => self.apply_builtin_expr(func, Vec::new(), *arg, env),
+                    Value::BuiltinPartial { func, args } => {
+                        self.apply_builtin_expr(func, args, *arg, env)
                     }
                     other => Err(EvalError::TypeMismatch {
                         expected: "Function",
@@ -488,6 +510,55 @@ impl<'a> Evaluator<'a> {
     }
 
     // ── binary operator dispatch ──────────────────────────────────────────────
+
+    fn apply_builtin_expr(
+        &self,
+        func: BuiltinFn,
+        mut args: Vec<Thunk>,
+        arg: ThirExprId,
+        env: &Env,
+    ) -> Result<Value, EvalError> {
+        args.push(self.defer(arg, env.clone()));
+        if args.len() < func.arity() {
+            return Ok(Value::BuiltinPartial { func, args });
+        }
+        if args.len() != func.arity() {
+            return Err(EvalError::TypeMismatch {
+                expected: "Function",
+                found: "Function",
+            });
+        }
+        self.eval_builtin(func, &args)
+    }
+
+    fn eval_builtin(&self, func: BuiltinFn, args: &[Thunk]) -> Result<Value, EvalError> {
+        match func {
+            BuiltinFn::Print => match args[0].force(self)? {
+                Value::Text(s) => {
+                    println!("{s}");
+                    Ok(Value::Text(s))
+                }
+                other => Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&other),
+                }),
+            },
+            BuiltinFn::Fields => {
+                let arg = args[0].force(self)?;
+                self.reflect_fields_value(arg)
+            }
+            BuiltinFn::Schema => {
+                let arg = args[0].force(self)?;
+                self.reflect_schema_value(arg)
+            }
+            BuiltinFn::Overlay | BuiltinFn::OverlayDeep => {
+                let base = args[0].force(self)?;
+                let patch = args[1].force(self)?;
+                let mut force = |thunk: &Thunk| thunk.force(self);
+                overlay_value(base, patch, func == BuiltinFn::OverlayDeep, &mut force)
+            }
+        }
+    }
 
     pub(super) fn eval_binary(
         &self,

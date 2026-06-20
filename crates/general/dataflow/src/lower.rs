@@ -328,6 +328,15 @@ impl<'m> Lowerer<'m> {
                 self.alloc_node(DfNodeKind::Record(df_fields), df_ty, span)
             }
 
+            TlcExpr::RecordUpdate { receiver, fields } => {
+                let base = self.lower_expr(receiver);
+                let updates: Vec<(String, NodeId)> = fields
+                    .iter()
+                    .map(|(name, expr_id)| (name.clone(), self.lower_expr(*expr_id)))
+                    .collect();
+                self.alloc_node(DfNodeKind::RecordUpdate { base, updates }, df_ty, span)
+            }
+
             TlcExpr::GetField(expr, field) => {
                 let base_node = self.lower_expr(expr);
                 self.alloc_node(

@@ -100,6 +100,9 @@ impl<'a> TlcEvaluator<'a> {
             }
 
             TlcExpr::Record(fields) => self.eval_record(fields, env.clone(), resume),
+            TlcExpr::RecordUpdate { receiver, fields } => {
+                self.eval_record_update(receiver, fields, env.clone(), resume)
+            }
             TlcExpr::Tuple(items) => self.eval_tuple(items, env.clone(), resume),
             TlcExpr::List(items) => self.eval_list(items, env.clone(), resume),
 

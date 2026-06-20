@@ -25,7 +25,9 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{BuiltinFn, ModuleId, TlcClosure, TupleField, Value},
+    value::{
+        BuiltinFn, ModuleId, TlcClosure, TupleField, Value, overlay_value, update_record_value,
+    },
 };
 
 type EvalCont<'eval> = Rc<dyn Fn(Value) -> Result<EvalControl<'eval>, EvalError> + 'eval>;

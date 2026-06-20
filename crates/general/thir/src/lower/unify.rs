@@ -85,9 +85,10 @@ impl<'hir> Lowerer<'hir> {
         match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::InferVar(v) => v == var_id,
             TypeKind::Function { from, to } => self.occurs(var_id, from) || self.occurs(var_id, to),
-            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
-                self.occurs(var_id, inner)
-            }
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => self.occurs(var_id, inner),
             TypeKind::Union(variants, _) => variants
                 .iter()
                 .any(|v| v.payload.is_some_and(|p| self.occurs(var_id, p))),
@@ -153,6 +154,16 @@ impl<'hir> Lowerer<'hir> {
 
             (TypeKind::Optional(e1), TypeKind::Optional(e2)) => self.unify(e1, e2, span),
             (TypeKind::Maybe(e1), TypeKind::Maybe(e2)) => self.unify(e1, e2, span),
+            (
+                TypeKind::Patch {
+                    target: t1,
+                    deep: d1,
+                },
+                TypeKind::Patch {
+                    target: t2,
+                    deep: d2,
+                },
+            ) if d1 == d2 => self.unify(t1, t2, span),
 
             // Higher-kinded application: decompose head and argument. Required so
             // method-level / constraint type params solve when unifying `F A`

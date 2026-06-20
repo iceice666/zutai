@@ -252,6 +252,12 @@ fn has_reachable_error(file: &ThirFile) -> bool {
                     stack.push(f.value);
                 }
             }
+            ThirExprKind::RecordUpdate { receiver, fields } => {
+                stack.push(*receiver);
+                for field in fields {
+                    stack.push(field.value);
+                }
+            }
             ThirExprKind::Tuple(items) => {
                 for item in items {
                     match item {

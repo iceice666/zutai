@@ -26,6 +26,20 @@ impl Lowerer {
                     })
                     .collect(),
             ),
+            ast::Expr::RecordUpdate {
+                receiver, fields, ..
+            } => {
+                let receiver = self.lower_expr(receiver);
+                let fields = fields
+                    .iter()
+                    .map(|field| HirRecordField {
+                        name: field.name.clone(),
+                        value: self.lower_expr(&field.value),
+                        span: field.span,
+                    })
+                    .collect();
+                HirExprKind::RecordUpdate { receiver, fields }
+            }
             ast::Expr::Tuple { items, .. } => HirExprKind::Tuple(
                 items
                     .iter()

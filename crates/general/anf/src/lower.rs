@@ -143,6 +143,14 @@ impl<'g> BodyLowerer<'g> {
                     .collect();
                 AnfExpr::Record(anf_fields)
             }
+            DfNodeKind::RecordUpdate { base, updates } => {
+                let base = self.lower_to_atom(base);
+                let updates = updates
+                    .into_iter()
+                    .map(|(name, value)| (name, self.lower_to_atom(value)))
+                    .collect();
+                AnfExpr::RecordUpdate { base, updates }
+            }
             DfNodeKind::Tuple(items) => {
                 let anf_items: Vec<AnfTupleItem> = items
                     .into_iter()

@@ -215,6 +215,19 @@ fn record_literal_produces_record_node() {
 }
 
 #[test]
+fn record_update_produces_record_update_node() {
+    let g = dc_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let has_update = g.nodes.iter().any(|(_, n)| {
+        matches!(
+            &n.kind,
+            DfNodeKind::RecordUpdate { updates, .. }
+                if updates.iter().any(|(name, _)| name == "x")
+        )
+    });
+    assert!(has_update, "expected RecordUpdate node");
+}
+
+#[test]
 fn record_field_access_produces_select_node() {
     let g = dc_of("r := { x = 1; }\nr.x");
     let has_select = g

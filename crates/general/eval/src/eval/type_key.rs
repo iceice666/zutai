@@ -52,6 +52,13 @@ pub(super) fn type_key_subst(
                 type_key_subst(type_arena, aliases, subst, *inner, d)
             )
         }
+        TypeKind::Patch { target, deep } => {
+            let head = if *deep { "DeepPatch" } else { "Patch" };
+            format!(
+                "{head}[{}]",
+                type_key_subst(type_arena, aliases, subst, *target, d)
+            )
+        }
         TypeKind::Record(fields, tail) => {
             let mut parts: Vec<String> = fields
                 .iter()

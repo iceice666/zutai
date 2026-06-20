@@ -15,6 +15,10 @@ impl<'hir> Lowerer<'hir> {
                 BindingKind::BuiltinValue => {
                     if let Some(ty) = self.builtin_value_type(&name) {
                         self.value_types.insert(id, ty);
+                        let scheme = self.free_infer_vars_in(ty);
+                        if !scheme.is_empty() {
+                            self.poly_schemes.insert(id, scheme);
+                        }
                     }
                 }
                 _ => {}
@@ -46,8 +50,29 @@ impl<'hir> Lowerer<'hir> {
             }
             "fields" => Some(self.fields_builtin_type(span)),
             "schema" => Some(self.schema_builtin_type(span)),
+            "overlay" => Some(self.overlay_builtin_type(span, false)),
+            "overlayDeep" => Some(self.overlay_builtin_type(span, true)),
             _ => None,
         }
+    }
+
+    pub(in crate::lower) fn overlay_builtin_type(&mut self, span: Span, deep: bool) -> TypeId {
+        let target = self.fresh_infer_var(span);
+        let patch = self.patch_type(target, deep, span);
+        let tail = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: patch,
+                to: target,
+            },
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: target,
+                to: tail,
+            },
+            span,
+        })
     }
 
     pub(in crate::lower) fn fields_builtin_type(&mut self, span: Span) -> TypeId {

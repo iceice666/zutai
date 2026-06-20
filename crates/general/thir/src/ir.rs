@@ -155,6 +155,10 @@ pub enum ThirExprKind {
     },
     BindingRef(BindingId),
     Record(Vec<ThirRecordField>),
+    RecordUpdate {
+        receiver: ThirExprId,
+        fields: Vec<ThirRecordField>,
+    },
     Tuple(Vec<ThirTupleItem>),
     List(Vec<ThirExprId>),
     Block {
@@ -335,6 +339,10 @@ pub enum TypeKind {
     List(TypeId),
     Optional(TypeId),
     Maybe(TypeId),
+    Patch {
+        target: TypeId,
+        deep: bool,
+    },
     Record(Vec<TypeRecordField>, RowTail),
     Union(Vec<UnionVariant>, RowTail),
     Tuple(Vec<TypeTupleItem>),

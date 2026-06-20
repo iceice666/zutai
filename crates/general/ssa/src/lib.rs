@@ -48,6 +48,11 @@ pub enum SsaOp {
     },
     /// Record construction: dest = { field1 = v1, field2 = v2, ... }.
     Record { fields: Vec<(String, SsaValue)> },
+    /// Record update: dest = base with { field = value; ... }.
+    RecordUpdate {
+        base: SsaValue,
+        updates: Vec<(String, SsaValue)>,
+    },
     /// Tuple construction.
     Tuple { items: Vec<SsaTupleItem> },
     /// List construction.

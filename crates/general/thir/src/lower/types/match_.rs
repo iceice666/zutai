@@ -28,6 +28,7 @@ impl<'hir> Lowerer<'hir> {
         let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
         match self.ty(resolved).kind.clone() {
             TypeKind::Record(fields, tail) => Some(self.flatten_record_row(fields, tail)),
+            TypeKind::Patch { target, deep } => self.expand_patch_type(target, deep, span),
             _ => None,
         }
     }
@@ -189,6 +190,19 @@ impl<'hir> Lowerer<'hir> {
             (TypeKind::List(e), TypeKind::List(f))
             | (TypeKind::Optional(e), TypeKind::Optional(f))
             | (TypeKind::Maybe(e), TypeKind::Maybe(f)) => self.type_matches(e, f),
+            (
+                TypeKind::Patch {
+                    target: e,
+                    deep: ed,
+                },
+                TypeKind::Patch {
+                    target: f,
+                    deep: fd,
+                },
+            ) => ed == fd && self.type_matches(e, f),
+            (TypeKind::Patch { target, deep }, TypeKind::Record(ff, ft)) => self
+                .expand_patch_type(target, deep, e_span)
+                .is_some_and(|(ef, et)| self.record_rows_match(&ef, et, &ff, ft)),
             (TypeKind::Record(ef, et), TypeKind::Record(ff, ft)) => {
                 self.record_rows_match(&ef, et, &ff, ft)
             }

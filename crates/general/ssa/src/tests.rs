@@ -35,6 +35,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::Call { .. } => "Call".to_string(),
             SsaOp::TyApp { .. } => "TyApp".to_string(),
             SsaOp::Record { .. } => "Record".to_string(),
+            SsaOp::RecordUpdate { .. } => "RecordUpdate".to_string(),
             SsaOp::Tuple { .. } => "Tuple".to_string(),
             SsaOp::List { .. } => "List".to_string(),
             SsaOp::Select { .. } => "Select".to_string(),
@@ -214,6 +215,17 @@ fn record_literal_produces_record_op() {
     assert!(
         ops.contains(&"Record".to_string()),
         "should have a Record op: {:?}",
+        ops
+    );
+}
+
+#[test]
+fn record_update_produces_record_update_op() {
+    let m = ssa_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let ops = all_op_names(&m);
+    assert!(
+        ops.contains(&"RecordUpdate".to_string()),
+        "should have a RecordUpdate op: {:?}",
         ops
     );
 }

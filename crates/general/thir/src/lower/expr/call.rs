@@ -1,5 +1,11 @@
 use super::*;
 
+struct OverlayApply {
+    builtin: HirExprId,
+    base: HirExprId,
+    deep: bool,
+}
+
 impl<'hir> Lowerer<'hir> {
     pub(super) fn lower_apply_expr(
         &mut self,
@@ -8,6 +14,9 @@ impl<'hir> Lowerer<'hir> {
         arg: HirExprId,
         span: Span,
     ) -> ThirExprId {
+        if let Some(overlay) = self.overlay_full_apply(func) {
+            return self.lower_overlay_apply_expr(id, func, arg, span, overlay);
+        }
         let func = self.infer_expr(func);
         let func_ty = self.expr(func).ty;
         let Some((from, to)) = self.function_input_output(func_ty, span) else {
@@ -105,6 +114,86 @@ impl<'hir> Lowerer<'hir> {
                 func,
                 arg,
                 instantiation,
+            },
+            span,
+        })
+    }
+
+    fn overlay_full_apply(&self, func: HirExprId) -> Option<OverlayApply> {
+        let HirExprKind::Apply {
+            func: builtin,
+            arg: base,
+        } = self.hir_expr(func).kind.clone()
+        else {
+            return None;
+        };
+        let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
+            return None;
+        };
+        let binding_info = &self.hir.bindings[binding.0 as usize];
+        if binding_info.kind != BindingKind::BuiltinValue {
+            return None;
+        }
+        match binding_info.name.as_str() {
+            "overlay" => Some(OverlayApply {
+                builtin,
+                base,
+                deep: false,
+            }),
+            "overlayDeep" => Some(OverlayApply {
+                builtin,
+                base,
+                deep: true,
+            }),
+            _ => None,
+        }
+    }
+
+    fn lower_overlay_apply_expr(
+        &mut self,
+        id: HirExprId,
+        inner_source: HirExprId,
+        patch: HirExprId,
+        span: Span,
+        overlay: OverlayApply,
+    ) -> ThirExprId {
+        let OverlayApply {
+            builtin,
+            base,
+            deep,
+        } = overlay;
+        let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
+            return self.error_expr(id, span);
+        };
+        let builtin_ref = self.lower_binding_ref(builtin, binding, self.hir_expr(builtin).span);
+        let base_expr = self.infer_expr(base);
+        let target = self.expr(base_expr).ty;
+        let patch_ty = self.patch_type(target, deep, span);
+        let patch_expr = self.check_expr(patch, patch_ty);
+        let inner_ty = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: patch_ty,
+                to: target,
+            },
+            span,
+        });
+        let inner = self.alloc_expr(ThirExpr {
+            source: inner_source,
+            ty: inner_ty,
+            kind: ThirExprKind::Apply {
+                func: builtin_ref,
+                arg: base_expr,
+                instantiation: Vec::new(),
+            },
+            span,
+        });
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: target,
+            kind: ThirExprKind::Apply {
+                func: inner,
+                arg: patch_expr,
+                instantiation: Vec::new(),
             },
             span,
         })

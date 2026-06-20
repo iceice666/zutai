@@ -219,6 +219,10 @@ pub enum TlcExpr {
     },
     Case(TlcExprId, Vec<TlcAlt>),
     Record(Vec<(String, TlcExprId)>),
+    RecordUpdate {
+        receiver: TlcExprId,
+        fields: Vec<(String, TlcExprId)>,
+    },
     GetField(TlcExprId, String),
     Tuple(Vec<TlcTupleItem>),
     List(Vec<TlcExprId>),
