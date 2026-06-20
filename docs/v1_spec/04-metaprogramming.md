@@ -7,12 +7,11 @@ Metaprogramming is based on reflection and schema reification over v0 type value
 ## Type Values
 
 ```zt
-WithId :: Type -> Type {
-  | T => type {
+WithId :: Type -> Type
+  = T => type {
     id : Text;
     value : T;
   };
-}
 ```
 
 Type functions are available in v0; metaprogramming APIs can consume the type values they produce.
@@ -20,7 +19,7 @@ Type functions are available in v0; metaprogramming APIs can consume the type va
 Usage:
 
 ```zt
-NamedText : Type = WithId Text
+NamedText :: Type = WithId Text
 ```
 
 ---

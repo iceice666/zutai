@@ -173,7 +173,7 @@ fn starts_braced_type_atom(input: &str) -> bool {
     let Some(rest) = input.strip_prefix('{') else {
         return false;
     };
-    // Function and method clause blocks start with `{ | ... }` after a signature.
+    // Match clause blocks start with `{ | ... }`.
     // Do not let type-application parsing consume those as record/union type args.
     !rest.trim_start().starts_with('|')
 }

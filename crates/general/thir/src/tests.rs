@@ -217,9 +217,8 @@ fn no_signature_multi_param_function_completes_thir() {
 fn generic_identity_function_applied_to_int() {
     let file = completed_file(
         r#"
-id :: <A> A -> A {
-  | x => x;
-}
+id :: <A> A -> A
+  = x => x;
 
 id 99
 "#,
@@ -231,9 +230,8 @@ id 99
 fn generic_identity_function_applied_to_text() {
     let file = completed_file(
         r#"
-id :: <A> A -> A {
-  | x => x;
-}
+id :: <A> A -> A
+  = x => x;
 
 id "hello"
 "#,
@@ -245,9 +243,8 @@ id "hello"
 fn generic_const_function_returns_first_arg() {
     let file = completed_file(
         r#"
-const :: <A, B> A -> B -> A {
-  | x _ => x;
-}
+const :: <A, B> A -> B -> A
+  = x _ => x;
 
 const 42 "ignored"
 "#,
@@ -259,9 +256,8 @@ const 42 "ignored"
 fn monomorphic_function_application_yields_return_type() {
     let file = completed_file(
         r#"
-id :: Int -> Int {
-  | x => x;
-}
+id :: Int -> Int
+  = x => x;
 
 id 41
 "#,
@@ -274,9 +270,8 @@ id 41
 fn curried_function_application_yields_final_return_type() {
     let file = completed_file(
         r#"
-first :: Int -> Text -> Int {
-  | x _ => x;
-}
+first :: Int -> Text -> Int
+  = x _ => x;
 
 first 1 "ignored"
 "#,
@@ -289,13 +284,11 @@ first 1 "ignored"
 fn function_can_reference_later_function_signature() {
     let file = completed_file(
         r#"
-useLater :: Int -> Int {
-  | x => later x;
-}
+useLater :: Int -> Int
+  = x => later x;
 
-later :: Int -> Int {
-  | y => y;
-}
+later :: Int -> Int
+  = y => y;
 
 useLater 3
 "#,
@@ -308,9 +301,8 @@ useLater 3
 fn function_return_mismatch_reports_type_error() {
     let lowered = lower(
         r#"
-bad :: Int -> Text {
-  | x => x;
-}
+bad :: Int -> Text
+  = x => x;
 
 bad 1
 "#,
@@ -330,9 +322,8 @@ bad 1
 fn function_argument_mismatch_reports_type_error() {
     let lowered = lower(
         r#"
-id :: Int -> Int {
-  | x => x;
-}
+id :: Int -> Int
+  = x => x;
 
 id "bad"
 "#,
@@ -496,12 +487,11 @@ Server :: type {
   port : Int;
 }
 
-make :: Text -> Server {
-  | host => {
+make :: Text -> Server
+  = host => {
     host = host;
     port = 8080;
   };
-}
 
 make "localhost"
 "#,
@@ -514,9 +504,8 @@ make "localhost"
 fn function_clause_arity_mismatch_is_reported() {
     let lowered = lower(
         r#"
-bad :: Int -> Int {
-  | x y => x;
-}
+bad :: Int -> Int
+  = x y => x;
 
 1
 "#,
@@ -543,10 +532,9 @@ Profile :: type {
   #prod;
 }
 
-isProd :: Profile -> Bool {
-  | #prod => true;
-  | #dev => false;
-}
+isProd :: Profile -> Bool
+  = #prod => true;
+  = #dev => false;
 
 isProd #prod
 "#,
@@ -593,9 +581,8 @@ fn runs_thir_passes_in_order() {
 fn tuple_pattern_in_function_clause() {
     let file = completed_file(
         r#"
-pair_first :: (#tag, Int) -> Int {
-  | (#tag, x) => x;
-}
+pair_first :: (#tag, Int) -> Int
+  = (#tag, x) => x;
 
 pair_first (#tag, 42)
 "#,
@@ -607,9 +594,8 @@ pair_first (#tag, 42)
 fn positional_tuple_pattern_in_function_clause() {
     let file = completed_file(
         r#"
-add_pair :: (Int, Int) -> Int {
-  | (a, b) => a + b;
-}
+add_pair :: (Int, Int) -> Int
+  = (a, b) => a + b;
 
 add_pair (1, 2)
 "#,
@@ -621,9 +607,8 @@ add_pair (1, 2)
 fn tuple_pattern_arity_mismatch_reports_error() {
     let lowered = lower(
         r#"
-fst :: (Int, Int) -> Int {
-  | (a, b, c) => a;
-}
+fst :: (Int, Int) -> Int
+  = (a, b, c) => a;
 
 fst (1, 2)
 "#,
@@ -645,9 +630,8 @@ fn record_pattern_in_function_clause() {
         r#"
 Point :: type { x : Int; y : Int; }
 
-get_x :: Point -> Int {
-  | { x = v; y = _; } => v;
-}
+get_x :: Point -> Int
+  = { x = v; y = _; } => v;
 
 get_x { x = 10; y = 20; }
 "#,
@@ -661,9 +645,8 @@ fn record_pattern_unknown_field_reports_error() {
         r#"
 Point :: type { x : Int; y : Int; }
 
-get_x :: Point -> Int {
-  | { x = v; z = _; } => v;
-}
+get_x :: Point -> Int
+  = { x = v; z = _; } => v;
 
 get_x { x = 1; y = 2; }
 "#,
@@ -722,12 +705,11 @@ fn match_on_atom_union_lowers_correctly() {
         r#"
 Status :: type {#ok; #err;}
 
-describe :: Status -> Text {
-  | s => match s {
+describe :: Status -> Text
+  = s => match s {
     | #ok => "ok";
     | #err => "error";
   };
-}
 
 describe #ok
 "#,
@@ -739,13 +721,12 @@ describe #ok
 fn match_with_guard_lowers_correctly() {
     let file = completed_file(
         r#"
-classify :: Int -> Text {
-  | n => match n {
+classify :: Int -> Text
+  = n => match n {
     | x if x > 0 => "positive";
     | x if x < 0 => "negative";
     | _ => "zero";
   };
-}
 
 classify 5
 "#,
@@ -757,11 +738,10 @@ classify 5
 fn match_with_tuple_arm_lowers_correctly() {
     let file = completed_file(
         r#"
-extract :: (#tag, Int) -> Int {
-  | pair => match pair {
+extract :: (#tag, Int) -> Int
+  = pair => match pair {
     | (#tag, n) => n;
   };
-}
 
 extract (#tag, 7)
 "#,
@@ -790,10 +770,9 @@ fn exhaustive_atom_union_passes() {
     completed_file(
         r#"
 Profile :: type {#dev; #prod;}
-isProd :: Profile -> Bool {
-  | #dev => false;
-  | #prod => true;
-}
+isProd :: Profile -> Bool
+  = #dev => false;
+  = #prod => true;
 isProd #dev
 "#,
     );
@@ -804,9 +783,8 @@ fn non_exhaustive_atom_union_reports_witness() {
     let lowered = lower(
         r#"
 Profile :: type {#dev; #prod;}
-isProd :: Profile -> Bool {
-  | #prod => true;
-}
+isProd :: Profile -> Bool
+  = #prod => true;
 isProd #prod
 "#,
     );
@@ -819,10 +797,9 @@ fn wildcard_catch_all_is_exhaustive() {
     let lowered = lower(
         r#"
 Profile :: type {#dev; #prod;}
-isProd :: Profile -> Bool {
-  | #prod => true;
-  | _ => false;
-}
+isProd :: Profile -> Bool
+  = #prod => true;
+  = _ => false;
 isProd #dev
 "#,
     );
@@ -834,10 +811,9 @@ fn redundant_arm_after_catch_all_is_unreachable() {
     let lowered = lower(
         r#"
 Profile :: type {#dev; #prod;}
-classify :: Profile -> Bool {
-  | _ => false;
-  | #prod => true;
-}
+classify :: Profile -> Bool
+  = _ => false;
+  = #prod => true;
 classify #dev
 "#,
     );
@@ -848,10 +824,9 @@ classify #dev
 fn bool_match_exhaustive_passes() {
     completed_file(
         r#"
-negate :: Bool -> Bool {
-  | true => false;
-  | false => true;
-}
+negate :: Bool -> Bool
+  = true => false;
+  = false => true;
 negate true
 "#,
     );
@@ -861,9 +836,8 @@ negate true
 fn bool_match_non_exhaustive_reports_false() {
     let lowered = lower(
         r#"
-f :: Bool -> Bool {
-  | true => false;
-}
+f :: Bool -> Bool
+  = true => false;
 f true
 "#,
     );
@@ -874,10 +848,9 @@ f true
 fn int_match_requires_wildcard() {
     let lowered = lower(
         r#"
-f :: Int -> Int {
-  | 1 => 10;
-  | 2 => 20;
-}
+f :: Int -> Int
+  = 1 => 10;
+  = 2 => 20;
 f 1
 "#,
     );
@@ -888,10 +861,9 @@ f 1
 fn int_match_with_wildcard_is_exhaustive() {
     completed_file(
         r#"
-f :: Int -> Int {
-  | 1 => 10;
-  | _ => 0;
-}
+f :: Int -> Int
+  = 1 => 10;
+  = _ => 0;
 f 1
 "#,
     );
@@ -902,10 +874,9 @@ fn guarded_arm_does_not_cover() {
     let lowered = lower(
         r#"
 Profile :: type {#dev; #prod;}
-f :: Profile -> Bool {
-  | #dev => false;
-  | #prod if true => true;
-}
+f :: Profile -> Bool
+  = #dev => false;
+  = #prod if true => true;
 f #dev
 "#,
     );
@@ -917,11 +888,10 @@ fn plain_arm_after_guarded_same_pattern_is_reachable() {
     let lowered = lower(
         r#"
 Profile :: type {#dev; #prod;}
-f :: Profile -> Bool {
-  | #dev => false;
-  | #prod if true => true;
-  | #prod => false;
-}
+f :: Profile -> Bool
+  = #dev => false;
+  = #prod if true => true;
+  = #prod => false;
 f #dev
 "#,
     );
@@ -932,11 +902,10 @@ f #dev
 fn multi_clause_function_exhaustive_passes() {
     completed_file(
         r#"
-pick :: Bool -> Bool -> Text {
-  | true true => "tt";
-  | true false => "tf";
-  | false _ => "f";
-}
+pick :: Bool -> Bool -> Text
+  = true true => "tt";
+  = true false => "tf";
+  = false _ => "f";
 pick true false
 "#,
     );
@@ -946,10 +915,9 @@ pick true false
 fn multi_clause_function_non_exhaustive_reports() {
     let lowered = lower(
         r#"
-pick :: Bool -> Bool -> Text {
-  | true true => "tt";
-  | true false => "tf";
-}
+pick :: Bool -> Bool -> Text
+  = true true => "tt";
+  = true false => "tf";
 pick true false
 "#,
     );
@@ -964,10 +932,9 @@ Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
 }
-area :: Shape -> Int {
-  | #circle { radius = r; } => r;
-  | #square { side = s; } => s;
-}
+area :: Shape -> Int
+  = #circle { radius = r; } => r;
+  = #square { side = s; } => s;
 area
 "#,
     );
@@ -981,9 +948,8 @@ Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
 }
-area :: Shape -> Int {
-  | #circle { radius = r; } => r;
-}
+area :: Shape -> Int
+  = #circle { radius = r; } => r;
 area
 "#,
     );
@@ -1001,10 +967,9 @@ Pair :: type {
   #pair: (Int, Int);
   #empty;
 }
-sum :: Pair -> Int {
-  | #pair (x, y) => x + y;
-  | #empty => 0;
-}
+sum :: Pair -> Int
+  = #pair (x, y) => x + y;
+  = #empty => 0;
 sum
 "#,
     );
@@ -1018,9 +983,8 @@ Pair :: type {
   #pair: (Int, Int);
   #empty;
 }
-sum :: Pair -> Int {
-  | #empty => 0;
-}
+sum :: Pair -> Int
+  = #empty => 0;
 sum
 "#,
     );
@@ -1034,10 +998,9 @@ sum
 fn optional_match_exhaustive_passes() {
     completed_file(
         r#"
-unwrap :: Int? -> Int {
-  | #none => 0;
-  | (#some, value = x) => x;
-}
+unwrap :: Int? -> Int
+  = #none => 0;
+  = (#some, value = x) => x;
 unwrap #none
 "#,
     );
@@ -1047,9 +1010,8 @@ unwrap #none
 fn optional_match_missing_none_reports_witness() {
     let lowered = lower(
         r#"
-unwrap :: Int? -> Int {
-  | (#some, value = x) => x;
-}
+unwrap :: Int? -> Int
+  = (#some, value = x) => x;
 unwrap #none
 "#,
     );
@@ -1060,9 +1022,8 @@ unwrap #none
 fn optional_match_missing_some_reports_witness() {
     let lowered = lower(
         r#"
-unwrap :: Int? -> Int {
-  | #none => 0;
-}
+unwrap :: Int? -> Int
+  = #none => 0;
 unwrap #none
 "#,
     );
@@ -1080,9 +1041,8 @@ fn opt_access_on_optional_record() {
         r#"
 Server :: type { port : Int; }
 
-get_port :: Server? -> Int? {
-  | s => s?.port;
-}
+get_port :: Server? -> Int?
+  = s => s?.port;
 
 get_port #none
 "#,
@@ -1096,9 +1056,8 @@ fn opt_access_optional_field_flattens() {
         r#"
 Server :: type { port? : Int; }
 
-get_port :: Server? -> Int? {
-  | s => s?.port;
-}
+get_port :: Server? -> Int?
+  = s => s?.port;
 
 get_port #none
 "#,
@@ -1112,9 +1071,8 @@ fn opt_access_on_non_optional_reports_error() {
         r#"
 Server :: type { port : Int; }
 
-get_port :: Server -> Int? {
-  | s => s?.port;
-}
+get_port :: Server -> Int?
+  = s => s?.port;
 
 get_port { port = 80; }
 "#,
@@ -1155,9 +1113,8 @@ fn generic_alias_used_in_function_signature() {
     let file = completed_file(
         r#"
 Pair :: <A, B> type { first : A; second : B; }
-fst :: Pair Int Int -> Int {
-  | p => p.first;
-}
+fst :: Pair Int Int -> Int
+  = p => p.first;
 fst { first = 1; second = 2; }
 "#,
     );
@@ -1296,9 +1253,8 @@ fn function_field_in_record_called_correctly() {
         r#"
 Callback :: type { fn : Int -> Int; }
 
-runCallback :: Callback -> Int -> Int {
-  | cb x => cb.fn x;
-}
+runCallback :: Callback -> Int -> Int
+  = cb x => cb.fn x;
 
 runCallback { fn = \n. n * 2; } 5
 "#,
@@ -1313,9 +1269,8 @@ fn two_function_fields_composed_via_pipeline() {
         r#"
 Fns :: type { first : Int -> Int; second : Int -> Int; }
 
-applyBoth :: Fns -> Int -> Int {
-  | fns x => x |> fns.first |> fns.second;
-}
+applyBoth :: Fns -> Int -> Int
+  = fns x => x |> fns.first |> fns.second;
 
 applyBoth { first = \n. n + 1; second = \n. n * 2; } 4
 "#,
@@ -1327,9 +1282,8 @@ applyBoth { first = \n. n + 1; second = \n. n * 2; } 4
 fn function_stored_in_let_binding_is_callable() {
     let file = completed_file(
         r#"
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
 {
   fn := inc;
@@ -1347,9 +1301,8 @@ fn calling_non_function_field_reports_error() {
         r#"
 Rec :: type { val : Int; }
 
-apply :: Rec -> Int -> Int {
-  | r x => r.val x;
-}
+apply :: Rec -> Int -> Int
+  = r x => r.val x;
 
 apply { val = 1; } 2
 "#,
@@ -1368,13 +1321,11 @@ apply { val = 1; } 2
 fn forward_pipeline_chain_yields_correct_type() {
     let file = completed_file(
         r#"
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
 3 |> inc |> double
 "#,
@@ -1387,9 +1338,8 @@ fn backward_pipeline_single_step_yields_correct_type() {
     // Single `<|` step: `double <| 3` desugars to `double 3`.
     let file = completed_file(
         r#"
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
 double <| 3
 "#,
@@ -1403,13 +1353,11 @@ fn backward_pipeline_chained_via_application_yields_int() {
     // Application binds tighter, so this is `double <| (inc 3)`.
     let file = completed_file(
         r#"
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
 double <| inc 3
 "#,
@@ -1423,13 +1371,12 @@ double <| inc 3
 fn block_with_local_bindings_in_function_body() {
     let file = completed_file(
         r#"
-compute :: Int -> Int {
-  | n => {
+compute :: Int -> Int
+  = n => {
     doubled := n * 2;
     incremented := doubled + 1;
     incremented
   };
-}
 
 compute 5
 "#,
@@ -1441,13 +1388,12 @@ compute 5
 fn block_result_type_propagates_to_caller() {
     let file = completed_file(
         r#"
-makeLabel :: Int -> Text {
-  | n => {
+makeLabel :: Int -> Text
+  = n => {
     prefix := "value-";
     _ := n;
     prefix
   };
-}
 
 makeLabel 42
 "#,
@@ -1548,9 +1494,8 @@ fn hof_apply_with_signature_returns_int() {
     // the body's `f x` fail with ExpectedFunction.
     let file = completed_file(
         r#"
-apply :: (Int -> Int) -> Int -> Int {
-  | f x => f x;
-}
+apply :: (Int -> Int) -> Int -> Int
+  = f x => f x;
 
 apply (\n. n * 3) 4
 "#,
@@ -1578,9 +1523,8 @@ fn hof_apply_twice_with_signature_returns_int() {
     // `applyTwice :: (Int -> Int) -> Int -> Int` — exercises Fix A.
     let file = completed_file(
         r#"
-applyTwice :: (Int -> Int) -> Int -> Int {
-  | f x => f (f x);
-}
+applyTwice :: (Int -> Int) -> Int -> Int
+  = f x => f (f x);
 
 applyTwice (\n. n + 1) 5
 "#,
@@ -1594,12 +1538,13 @@ fn hof_compose_with_generic_signature_returns_int() {
     // for grouped types inside a polymorphic signature.
     let file = completed_file(
         r#"
-compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C {
-  | f g x => f (g x);
-}
+compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
+  = f g x => f (g x);
 
-inc :: Int -> Int { | n => n + 1; }
-double :: Int -> Int { | n => n * 2; }
+inc :: Int -> Int
+  = n => n + 1;
+double :: Int -> Int
+  = n => n * 2;
 
 compose double inc 3
 "#,
@@ -1612,9 +1557,8 @@ fn hof_wrong_argument_type_reports_type_mismatch() {
     // Passing `Text` where `(Int -> Int)` is expected must produce TypeMismatch.
     let lowered = lower(
         r#"
-apply :: (Int -> Int) -> Int -> Int {
-  | f x => f x;
-}
+apply :: (Int -> Int) -> Int -> Int
+  = f x => f x;
 
 apply "not-a-function" 5
 "#,
@@ -1649,9 +1593,8 @@ fn opt_access_chained_with_coalesce() {
         r#"
 Server :: type { port : Int; }
 
-get_port :: Server? -> Int {
-  | s => s?.port ?? 80;
-}
+get_port :: Server? -> Int
+  = s => s?.port ?? 80;
 
 get_port #none
 "#,
@@ -2087,7 +2030,7 @@ fn method_level_type_params_preserved() {
 
 #[test]
 fn functor_witness_and_polymorphic_use_checks() {
-    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }\n1";
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A\n  = f xs => map f (map f xs);\n1";
     let lowered = lower(src);
     assert!(
         lowered.diagnostics.is_empty(),
@@ -2221,10 +2164,9 @@ fn thir_constraint_method_binding_is_some_for_named() {
 fn float_pattern_in_function_clause_type_checks() {
     let file = completed_file(
         r#"
-classify :: Float -> Text {
-  | 0.0 => "zero";
-  | _ => "nonzero";
-}
+classify :: Float -> Text
+  = 0.0 => "zero";
+  = _ => "nonzero";
 classify 1.5
 "#,
     );
@@ -2239,10 +2181,9 @@ classify 1.5
 fn string_pattern_in_function_clause_type_checks() {
     let file = completed_file(
         r#"
-greet :: Text -> Text {
-  | "hello" => "hi";
-  | _ => "?";
-}
+greet :: Text -> Text
+  = "hello" => "hi";
+  = _ => "?";
 greet "hello"
 "#,
     );
@@ -2260,9 +2201,8 @@ fn tuple_pattern_on_non_tuple_type_reports_expected_tuple() {
     // Pattern `(x, y)` used where `Int` is expected → ExpectedTuple.
     let lowered = lower(
         r#"
-f :: Int -> Int {
-  | (x, y) => x;
-}
+f :: Int -> Int
+  = (x, y) => x;
 1
 "#,
     );
@@ -2282,9 +2222,8 @@ fn named_tuple_pattern_wrong_field_name_in_clause_reports_mismatch() {
     // TupleFieldNameMismatch (site 1: Named vs Named with different name).
     let lowered = lower(
         r#"
-f :: (x : Int, y : Int) -> Int {
-  | (a = m, b = n) => m;
-}
+f :: (x : Int, y : Int) -> Int
+  = (a = m, b = n) => m;
 1
 "#,
     );
@@ -2304,9 +2243,8 @@ fn named_tuple_pattern_on_positional_type_reports_mismatch() {
     // TupleFieldNameMismatch (site 2: Named pattern vs Positional type).
     let lowered = lower(
         r#"
-f :: (Int, Int) -> Int {
-  | (a = m, b = n) => m;
-}
+f :: (Int, Int) -> Int
+  = (a = m, b = n) => m;
 1
 "#,
     );
@@ -2329,9 +2267,8 @@ fn positional_tuple_pattern_on_named_type_reports_mismatch() {
     // TupleFieldNameMismatch (site 3: Positional pattern vs Named type).
     let lowered = lower(
         r#"
-f :: (x : Int, y : Int) -> Int {
-  | (m, n) => m;
-}
+f :: (x : Int, y : Int) -> Int
+  = (m, n) => m;
 1
 "#,
     );
@@ -2355,9 +2292,8 @@ fn record_pattern_on_non_record_type_reports_expected_record() {
     // Pattern `{ x = v; }` against `Int` expected type → ExpectedRecord.
     let lowered = lower(
         r#"
-f :: Int -> Int {
-  | { x = v; } => v;
-}
+f :: Int -> Int
+  = { x = v; } => v;
 1
 "#,
     );
@@ -2380,10 +2316,9 @@ fn tagged_value_pattern_unknown_union_variant_reports_type_mismatch() {
     let lowered = lower(
         r#"
 Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; }
-f :: Status -> Int {
-  | #unknown { code = _; } => 1;
-  | _ => 0;
-}
+f :: Status -> Int
+  = #unknown { code = _; } => 1;
+  = _ => 0;
 1
 "#,
     );
@@ -2403,10 +2338,9 @@ fn tagged_value_pattern_on_non_union_type_reports_type_mismatch() {
     // (the `_` fallthrough arm of check_tagged_value_pattern).
     let lowered = lower(
         r#"
-f :: Int -> Int {
-  | #foo { x = _; } => 1;
-  | _ => 0;
-}
+f :: Int -> Int
+  = #foo { x = _; } => 1;
+  = _ => 0;
 1
 "#,
     );
@@ -2427,10 +2361,9 @@ fn union_no_payload_variant_tagged_pattern_with_fields_reports_unexpected_field(
     let lowered = lower(
         r#"
 Status :: type { #ok; #err; }
-f :: Status -> Int {
-  | #ok { x = _; } => 1;
-  | _ => 0;
-}
+f :: Status -> Int
+  = #ok { x = _; } => 1;
+  = _ => 0;
 1
 "#,
     );
@@ -2449,10 +2382,9 @@ fn optional_some_pattern_with_value_field_lowers_correctly() {
     // `#some { value = n; }` is the tagged-value pattern for `T?` (Optional T).
     let file = completed_file(
         r#"
-unwrap :: Int? -> Int {
-  | #some { value = n; } => n;
-  | #none => 0;
-}
+unwrap :: Int? -> Int
+  = #some { value = n; } => n;
+  = #none => 0;
 unwrap #some { value = 42; }
 "#,
     );
@@ -2468,10 +2400,9 @@ fn optional_some_pattern_with_unknown_field_reports_unknown_field() {
     // `#some { badfield = n; }` — field must be named `value` → UnknownField.
     let lowered = lower(
         r#"
-f :: Int? -> Int {
-  | #some { badfield = n; } => n;
-  | #none => 0;
-}
+f :: Int? -> Int
+  = #some { badfield = n; } => n;
+  = #none => 0;
 1
 "#,
     );
@@ -2490,10 +2421,9 @@ fn optional_invalid_tag_in_pattern_reports_type_mismatch() {
     // `#foo` is not `#none` or `#some` for `Int?` → TypeMismatch.
     let lowered = lower(
         r#"
-f :: Int? -> Int {
-  | #foo { x = _; } => 1;
-  | _ => 0;
-}
+f :: Int? -> Int
+  = #foo { x = _; } => 1;
+  = _ => 0;
 1
 "#,
     );
@@ -2516,9 +2446,8 @@ fn alias_cycle_reports_diagnostic() {
     let lowered = lower(
         r#"
 A :: type A
-f :: A -> A {
-  | n => n;
-}
+f :: A -> A
+  = n => n;
 1
 "#,
     );
@@ -3427,9 +3356,8 @@ fn instantiate_infer_vars_list_arm_via_wrap() {
     // hitting both the Function and List arms.
     let file = completed_file(
         r#"
-wrap :: <A> A -> List A {
-  | x => [x;];
-}
+wrap :: <A> A -> List A
+  = x => [x;];
 wrap 42
 "#,
     );
@@ -3443,9 +3371,8 @@ fn instantiate_infer_vars_record_arm_via_polymorphic_record() {
     let file = completed_file(
         r#"
 Wrapper :: <A> type { value : A; }
-make :: <A> A -> Wrapper A {
-  | x => { value = x; };
-}
+make :: <A> A -> Wrapper A
+  = x => { value = x; };
 make 42
 "#,
     );
@@ -3489,9 +3416,8 @@ fn record_types_match_missing_required_field_returns_false() {
         r#"
 S :: type { x : Int; y : Text; }
 T :: type { x : Int; }
-f :: S -> Int {
-  | _ => 0;
-}
+f :: S -> Int
+  = _ => 0;
 t :: T = { x = 1; }
 f t
 "#,
@@ -3511,9 +3437,8 @@ fn record_types_match_field_type_mismatch_returns_false() {
         r#"
 S :: type { x : Int; }
 T :: type { x : Text; }
-f :: S -> Int {
-  | _ => 0;
-}
+f :: S -> Int
+  = _ => 0;
 t :: T = { x = "bad"; }
 f t
 "#,
@@ -3786,10 +3711,9 @@ fn collect_type_vars_union_arm_via_generic_fn_call() {
     // `is_ok #ok {v = 42;}`, THIR collects TypeVars from the Union arm.
     let file = completed_file(
         r#"
-is_ok :: <A> { #ok : { v : A; }; #fail; } -> Bool {
-  | #ok { v = _; } => true;
-  | #fail => false;
-}
+is_ok :: <A> { #ok : { v : A; }; #fail; } -> Bool
+  = #ok { v = _; } => true;
+  = #fail => false;
 is_ok #ok { v = 42; }
 "#,
     );
@@ -3804,9 +3728,8 @@ is_ok #ok { v = 42; }
 fn collect_type_vars_tuple_arm_via_generic_fn_call() {
     let file = completed_file(
         r#"
-fst :: <A, B> (A, B) -> A {
-  | (x, _) => x;
-}
+fst :: <A, B> (A, B) -> A
+  = (x, _) => x;
 fst (42, "hi")
 "#,
     );
@@ -3819,9 +3742,8 @@ fst (42, "hi")
 fn collect_type_vars_record_arm_via_generic_fn_call() {
     let file = completed_file(
         r#"
-get :: <A> { value : A; } -> A {
-  | { value = x; } => x;
-}
+get :: <A> { value : A; } -> A
+  = { value = x; } => x;
 get { value = 42; }
 "#,
     );
@@ -3842,10 +3764,9 @@ fn instantiate_type_vars_union_body_with_payload_substitution() {
     let file = completed_file(
         r#"
 Result :: <A, E> type { #ok: { v : A; }; #err: { e : E; }; }
-is_ok :: <A, E> Result A E -> Bool {
-  | #ok { v = _; } => true;
-  | #err { e = _; } => false;
-}
+is_ok :: <A, E> Result A E -> Bool
+  = #ok { v = _; } => true;
+  = #err { e = _; } => false;
 is_ok #ok { v = 99; }
 "#,
     );
@@ -4052,8 +3973,8 @@ fn operator_method_gets_binding_in_thir() {
 #[test]
 fn constraint_method_default_body_lowered_to_thir() {
     // A non-optional method with a default clause body.
-    // The body `| _ _ => true;` typechecks against `A -> A -> Bool`.
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }\n1";
+    // The body `= _ _ => true;` typechecks against `A -> A -> Bool`.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool = _ _ => true; }\n1";
     let file = completed_file(src);
     let cst = find_decl_kind(&file, |k| matches!(k, ThirDeclKind::Constraint { .. }))
         .expect("expected ThirDeclKind::Constraint");
@@ -4082,7 +4003,8 @@ fn witness_omitting_method_with_default_body_no_missing_field_diagnostic() {
     // `eq` is non-optional but has a default body.  The witness omits `eq`.
     let src = r#"
 Eq :: <A> @A {
-  eq :: A -> A -> Bool { | _ _ => true; };
+  eq :: A -> A -> Bool
+    = _ _ => true;
 }
 Eq @Int :: {}
 1
@@ -4115,7 +4037,8 @@ fn function_type_param_bounds_are_recorded_in_thir() {
 Eq :: <A> @A {
   eq :: A -> A -> Bool;
 }
-same :: <A: Eq> A -> A -> A { | x _ => x; }
+same :: <A: Eq> A -> A -> A
+  = x _ => x;
 same
 "#,
     );
@@ -4153,7 +4076,8 @@ same
 fn function_type_param_without_bounds_has_empty_param_bounds() {
     let file = completed_file(
         r#"
-id :: <A> A -> A { | x => x; }
+id :: <A> A -> A
+  = x => x;
 id
 "#,
     );
@@ -4202,9 +4126,8 @@ fn effectful_function_perform_fail_checks() {
         r#"
 Config :: type { value : Text; }
 ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError } {
-  | text => perform fail text;
-}
+parse :: Text -> Config ! { fail ParseError }
+  = text => perform fail text;
 parse
 "#,
     );
@@ -4230,9 +4153,8 @@ fn effect_alias_return_is_discharged_at_call_site() {
         r#"
 Config :: type { value : Text; }
 EffConfig :: type Config ! { fail Text }
-parse :: Text -> EffConfig {
-  | text => perform fail text;
-}
+parse :: Text -> EffConfig
+  = text => perform fail text;
 parse "bad"
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fail"),
@@ -4243,12 +4165,11 @@ parse "bad"
 fn if_inference_uses_else_type_when_then_branch_is_never() {
     completed_file(
         r#"
-choose :: Bool -> Text ! { fail Text } {
-  | b => {
+choose :: Bool -> Text ! { fail Text }
+  = b => {
     x := if b then perform fail "bad" else "ok";
     x
   };
-}
 choose
 "#,
     );
@@ -4259,15 +4180,14 @@ fn match_inference_uses_later_type_when_first_arm_is_never() {
     completed_file(
         r#"
 Status :: type { #bad; #good; }
-choose :: Status -> Text ! { fail Text } {
-  | s => {
+choose :: Status -> Text ! { fail Text }
+  = s => {
     x := match s {
       | #bad => perform fail "bad";
       | #good => "ok";
     };
     x
   };
-}
 choose
 "#,
     );
@@ -4279,12 +4199,10 @@ fn handler_forwards_unhandled_effects_and_resumes() {
         r#"
 Diagnostic :: type Text
 Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic } {
-  | cfg => { perform warn cfg.value; cfg };
-}
-handleWarn :: Config -> Config ! { log Diagnostic } {
-  | cfg => handle check cfg with { warn = \d. { perform log d; resume (); }; };
-}
+check :: Config -> Config ! { warn Diagnostic }
+  = cfg => { perform warn cfg.value; cfg };
+handleWarn :: Config -> Config ! { log Diagnostic }
+  = cfg => handle check cfg with { warn = \d. { perform log d; resume (); }; };
 handleWarn
 "#,
     );
@@ -4296,12 +4214,10 @@ fn nested_handler_resume_does_not_count_against_outer_handler() {
         r#"
 Diagnostic :: type Text
 Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic } {
-  | cfg => { perform warn cfg.value; cfg };
-}
-nested :: Config -> Config {
-  | cfg => handle check cfg with { warn = \d. { handle check cfg with { warn = \x. resume (); }; resume (); }; };
-}
+check :: Config -> Config ! { warn Diagnostic }
+  = cfg => { perform warn cfg.value; cfg };
+nested :: Config -> Config
+  = cfg => handle check cfg with { warn = \d. { handle check cfg with { warn = \x. resume (); }; resume (); }; };
 nested
 "#,
     );
@@ -4311,12 +4227,10 @@ nested
 fn explicit_standard_named_effect_signature_drives_resume_type() {
     completed_file(
         r#"
-f :: Text -> Int ! { fail : Text -> Int } {
-  | text => perform fail text;
-}
-handled :: Text -> Int {
-  | text => handle f text with { fail = \e. resume 1; };
-}
+f :: Text -> Int ! { fail : Text -> Int }
+  = text => perform fail text;
+handled :: Text -> Int
+  = text => handle f text with { fail = \e. resume 1; };
 handled
 "#,
     );
@@ -4326,9 +4240,8 @@ handled
 fn direct_standard_warn_handler_uses_unit_resume_type() {
     rejects_with(
         r#"
-bad :: Text -> Text {
-  | d => handle { perform warn d; "ok" } with { warn = \x. resume 42; };
-}
+bad :: Text -> Text
+  = d => handle { perform warn d; "ok" } with { warn = \x. resume 42; };
 bad
 "#,
         |kind| {
@@ -4345,9 +4258,8 @@ fn dotted_capability_effect_checks() {
 FsRead :: type { token : Text; }
 Path :: type Text
 IOError :: type Text
-load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError } {
-  | fs path => perform fs.read path;
-}
+load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }
+  = fs path => perform fs.read path;
 load
 "#,
     );
@@ -4386,9 +4298,8 @@ f
 fn perform_in_pure_function_reports_effect_not_in_row() {
     rejects_with(
         r#"
-f :: Text -> Text {
-  | x => perform fail x;
-}
+f :: Text -> Text
+  = x => perform fail x;
 f
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fail"),
@@ -4400,9 +4311,8 @@ fn perform_argument_mismatch_reports_type_mismatch() {
     rejects_with(
         r#"
 Config :: type { value : Text; }
-parse :: Text -> Config ! { fail Text } {
-  | text => perform fail 1;
-}
+parse :: Text -> Config ! { fail Text }
+  = text => perform fail 1;
 parse
 "#,
         |kind| {
@@ -4418,12 +4328,10 @@ fn resume_argument_mismatch_reports_resume_type_mismatch() {
         r#"
 Diagnostic :: type Text
 Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic } {
-  | cfg => { perform warn cfg.value; cfg };
-}
-bad :: Config -> Config {
-  | cfg => handle check cfg with { warn = \d. resume 42; };
-}
+check :: Config -> Config ! { warn Diagnostic }
+  = cfg => { perform warn cfg.value; cfg };
+bad :: Config -> Config
+  = cfg => handle check cfg with { warn = \d. resume 42; };
 bad
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::ResumeTypeMismatch { found, .. } if found == "Int"),
@@ -4436,12 +4344,10 @@ fn handler_clause_wrong_arity_reports_diagnostic() {
         r#"
 Diagnostic :: type Text
 Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic } {
-  | cfg => { perform warn cfg.value; cfg };
-}
-bad :: Config -> Config {
-  | cfg => handle check cfg with { warn = \a b. resume (); };
-}
+check :: Config -> Config ! { warn Diagnostic }
+  = cfg => { perform warn cfg.value; cfg };
+bad :: Config -> Config
+  = cfg => handle check cfg with { warn = \a b. resume (); };
 bad
 "#,
         |kind| {
@@ -4457,12 +4363,10 @@ fn handler_clause_multiple_resume_reports_diagnostic() {
         r#"
 Diagnostic :: type Text
 Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic } {
-  | cfg => { perform warn cfg.value; cfg };
-}
-bad :: Config -> Config {
-  | cfg => handle check cfg with { warn = \d. { resume (); resume (); }; };
-}
+check :: Config -> Config ! { warn Diagnostic }
+  = cfg => { perform warn cfg.value; cfg };
+bad :: Config -> Config
+  = cfg => handle check cfg with { warn = \d. { resume (); resume (); }; };
 bad
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::MultipleResume { op } if op == "warn"),
@@ -4473,9 +4377,8 @@ bad
 fn malformed_effect_op_reports_diagnostic() {
     rejects_with(
         r#"
-bad :: Text -> Text ! { foo Text } {
-  | x => x;
-}
+bad :: Text -> Text ! { foo Text }
+  = x => x;
 bad
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::MalformedEffectOp { op, .. } if op == "foo"),
@@ -4498,9 +4401,8 @@ fn resume_outside_handler_remains_a_hir_error() {
 fn resume_in_nested_value_clause_remains_a_hir_error() {
     let parsed = zutai_syntax::parse(
         r#"
-outer :: Text -> Text ! { warn Text } {
-  | d => handle { perform warn d; "ok" } with { warn = \x. { handle "ok" with { value = \v. resume (); }; resume (); }; };
-}
+outer :: Text -> Text ! { warn Text }
+  = d => handle { perform warn d; "ok" } with { warn = \x. { handle "ok" with { value = \v. resume (); }; resume (); }; };
 outer
 "#,
     );
@@ -4518,21 +4420,21 @@ outer
 #[test]
 fn view_type_function_accepts_records_with_extra_fields() {
     completed_file(
-        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; port = 8080; }",
+        "getHost :: { host : Text; ...; } -> Text\n  = x => x.host;\ngetHost { host = \"h\"; port = 8080; }",
     );
 }
 
 #[test]
 fn view_type_function_accepts_exact_record() {
     completed_file(
-        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; }",
+        "getHost :: { host : Text; ...; } -> Text\n  = x => x.host;\ngetHost { host = \"h\"; }",
     );
 }
 
 #[test]
 fn view_type_function_rejects_record_missing_required_field() {
     let lowered = lower(
-        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { port = 8080; }",
+        "getHost :: { host : Text; ...; } -> Text\n  = x => x.host;\ngetHost { port = 8080; }",
     );
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|d| matches!(
@@ -4544,14 +4446,14 @@ fn view_type_function_rejects_record_missing_required_field() {
 #[test]
 fn named_row_tail_identity_function_type_checks() {
     completed_file(
-        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }\n  = x => x;\nidHost",
     );
 }
 
 #[test]
 fn named_row_tail_application_preserves_extra_fields() {
     let file = completed_file(
-        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost { host = \"h\"; port = 8080; }",
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }\n  = x => x;\nidHost { host = \"h\"; port = 8080; }",
     );
     let TypeKind::Record(fields, tail) = final_type_kind(&file) else {
         panic!("expected record result, got {:?}", final_type_kind(&file));
@@ -4603,14 +4505,14 @@ fn type_select_unknown_field_is_rejected() {
 #[test]
 fn open_union_match_with_wildcard_is_exhaustive() {
     completed_file(
-        "classify :: { #dev; #test; ...; } -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n  | _ => \"o\";\n}\nclassify #dev",
+        "classify :: { #dev; #test; ...; } -> Text\n  = #dev => \"d\";\n  = #test => \"t\";\n  = _ => \"o\";\nclassify #dev",
     );
 }
 
 #[test]
 fn open_union_match_without_wildcard_is_non_exhaustive() {
     let lowered = lower(
-        "classify :: { #dev; #test; ...; } -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n}\nclassify #dev",
+        "classify :: { #dev; #test; ...; } -> Text\n  = #dev => \"d\";\n  = #test => \"t\";\nclassify #dev",
     );
     assert!(
         lowered
@@ -4653,7 +4555,7 @@ fn named_tail_result_field_is_accessible() {
     // The `port` preserved by the named tail must be visible to a later field
     // access, even before final zonking (record_fields flattens the solved tail).
     completed_file(
-        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\n(idHost { host = \"h\"; port = 8080; }).port",
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }\n  = x => x;\n(idHost { host = \"h\"; port = 8080; }).port",
     );
 }
 
@@ -4662,7 +4564,7 @@ fn named_union_tail_application_captures_extra_member() {
     // `echo` forwards a named union tail; calling it with an extra member #prod
     // must succeed and the result must include #prod (captured by Rest).
     let file = completed_file(
-        "echo :: <Rest> { #dev; ...Rest; } -> { #dev; ...Rest; } {\n  | x => x;\n}\necho #prod",
+        "echo :: <Rest> { #dev; ...Rest; } -> { #dev; ...Rest; }\n  = x => x;\necho #prod",
     );
     let TypeKind::Union(variants, tail) = final_type_kind(&file) else {
         panic!("expected union result, got {:?}", final_type_kind(&file));
@@ -4681,7 +4583,7 @@ fn function_param_is_contravariant_for_open_records() {
     // demands `port` must be rejected — function parameters are contravariant,
     // which is required for soundness once records have width subtyping.
     let lowered = lower(
-        "apply :: ({ host : Text; ...; } -> Text) -> Text {\n  | f => f { host = \"h\"; };\n}\ng :: { host : Text; port : Int; } -> Text {\n  | r => r.host;\n}\napply g",
+        "apply :: ({ host : Text; ...; } -> Text) -> Text\n  = f => f { host = \"h\"; };\ng :: { host : Text; port : Int; } -> Text\n  = r => r.host;\napply g",
     );
     assert!(lowered.file.is_none());
     assert!(

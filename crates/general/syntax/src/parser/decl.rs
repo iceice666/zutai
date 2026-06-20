@@ -4,11 +4,12 @@ use winnow::combinator::fail;
 use winnow::token::take_till;
 
 use crate::ast::{
-    ConstraintMethod, Decl, File, MethodName, TypeParam, TypeParamBound, WitnessBody, WitnessField,
+    ConstraintMethod, Decl, File, FuncClause, MethodName, TypeParam, TypeParamBound, WitnessBody,
+    WitnessField,
 };
 use crate::span::Span;
 
-use super::expr::{parse_clause_block, parse_expr};
+use super::expr::parse_expr;
 use super::lex::{kw, parse_ident, spanned, ws};
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
@@ -149,9 +150,31 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
         });
     }
 
-    // Typed binding or function: parse TypeExpr, then peek `=` or `{`
+    // Typed binding or function: parse TypeExpr, then peek `=`.
     let sig = parse_type_expr(input)?;
     ws(input)?;
+
+    // Function with equals-prefixed clauses:
+    //
+    //     name :: A -> B
+    //       = pat => body;
+    //
+    // Try this before typed value parsing because both forms start with `=`.
+    // If the text after `=` is not a pattern list followed by `=>`, restore
+    // and parse it as `name :: Type = expr`.
+    let function_checkpoint = *input;
+    if let Ok(clauses) = parse_function_clauses(input) {
+        let end_span = clauses.last().map(|c| c.span).unwrap_or(sig.span());
+        let span = name_span.merge(end_span);
+        return Ok(Decl::Function {
+            name,
+            params,
+            sig,
+            clauses,
+            span,
+        });
+    }
+    *input = function_checkpoint;
 
     if input.starts_with('=') && !input.starts_with("==") {
         // Typed value binding
@@ -166,20 +189,6 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
             name,
             ty: sig,
             value,
-            span,
-        });
-    }
-
-    if input.starts_with('{') {
-        // Function with clause block
-        let clauses = parse_clause_block(input)?;
-        let end_span = clauses.last().map(|c| c.span).unwrap_or(sig.span());
-        let span = name_span.merge(end_span);
-        return Ok(Decl::Function {
-            name,
-            params,
-            sig,
-            clauses,
             span,
         });
     }
@@ -256,6 +265,72 @@ fn parse_type_param(input: &mut &str) -> Result<TypeParam> {
         name,
         bounds: vec![],
         kind: None,
+        span,
+    })
+}
+fn parse_function_clauses(input: &mut &str) -> Result<Vec<FuncClause>> {
+    let mut clauses = vec![];
+    loop {
+        ws(input)?;
+        if !input.starts_with('=') || input.starts_with("==") {
+            break;
+        }
+        clauses.push(parse_function_clause(input)?);
+    }
+    if clauses.is_empty() {
+        return fail.parse_next(input);
+    }
+    Ok(clauses)
+}
+
+fn parse_function_clause(input: &mut &str) -> Result<FuncClause> {
+    '='.parse_next(input)?;
+    ws(input)?;
+
+    let mut patterns = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with("if ")
+            || input.starts_with("=>")
+            || input.starts_with("if\t")
+            || input.starts_with("if\n")
+        {
+            break;
+        }
+        let pat = parse_pattern(input)?;
+        patterns.push(pat);
+    }
+    if patterns.is_empty() {
+        return fail.parse_next(input);
+    }
+
+    ws(input)?;
+    let guard =
+        if input.starts_with("if ") || input.starts_with("if\t") || input.starts_with("if\n") {
+            kw("if").parse_next(input)?;
+            ws(input)?;
+            Some(parse_expr(input)?)
+        } else {
+            None
+        };
+
+    ws(input)?;
+    "=>".parse_next(input)?;
+    ws(input)?;
+    let body = parse_expr(input)?;
+    ws(input)?;
+    if input.starts_with(';') {
+        ';'.parse_next(input)?;
+    }
+    let span = patterns
+        .first()
+        .map(|p| p.span())
+        .unwrap_or(body.span())
+        .merge(body.span());
+    Ok(FuncClause {
+        patterns,
+        guard,
+        body,
         span,
     })
 }
@@ -351,14 +426,16 @@ fn parse_constraint_method(input: &mut &str) -> Result<ConstraintMethod> {
     };
     let sig = parse_type_expr(input)?;
     ws(input)?;
-    // Optional default clause block
-    let default = if input.starts_with('{') {
-        parse_clause_block(input)?
+    // Optional default clauses.
+    let default = if input.starts_with('=') && !input.starts_with("==") {
+        parse_function_clauses(input)?
     } else {
         vec![]
     };
     ws(input)?;
-    ';'.parse_next(input)?;
+    if default.is_empty() || input.starts_with(';') {
+        ';'.parse_next(input)?;
+    }
     let end_span = if let Some(last) = default.last() {
         last.span
     } else {

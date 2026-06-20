@@ -781,7 +781,7 @@ fn parse_type_alias() {
 
 #[test]
 fn parse_function_decl() {
-    let src = "id :: Int -> Int {\n  | x => x;\n}\n#unit";
+    let src = "id :: Int -> Int\n  = x => x\n#unit";
     let f = parse_str(src);
     let (name, _params, _sig, clauses) = as_function(decl_by(&f, "id"));
     assert_eq!(name, "id");
@@ -791,7 +791,7 @@ fn parse_function_decl() {
 
 #[test]
 fn parse_polymorphic_function_decl() {
-    let src = "id :: <A> A -> A {\n  | x => x;\n}\n#unit";
+    let src = "id :: <A> A -> A\n  = x => x;\n#unit";
     let f = parse_str(src);
     let (_, params, _, _) = as_function(decl_by(&f, "id"));
     assert_eq!(params.len(), 1);
@@ -819,7 +819,7 @@ fn parse_single_colon_binding_rejected() {
 fn single_positional_type_paren_is_arrow_not_tuple() {
     // `(Int -> Int) -> Int -> Int` — the `(Int -> Int)` in the first position
     // should be an Arrow type, not a 1-element Tuple.
-    let file = parse_str("f :: (Int -> Int) -> Int -> Int { | x => x; }\nf");
+    let file = parse_str("f :: (Int -> Int) -> Int -> Int\n  = x => x;\nf");
     let decl = decl_by(&file, "f");
     let (_, _, sig, _) = as_function(decl);
     // Top-level sig is `Arrow { from: (Int -> Int), to: (Int -> Int) }`.
@@ -862,7 +862,7 @@ fn optional_of_grouped_arrow_type_is_optional_arrow() {
 #[test]
 fn two_element_paren_type_is_tuple() {
     // `(Int, Text)` must still be a 2-element Tuple.
-    let file = parse_str("f :: (Int, Text) -> Int { | _ => 0; }\nf");
+    let file = parse_str("f :: (Int, Text) -> Int\n  = _ => 0;\nf");
     let decl = decl_by(&file, "f");
     let (_, _, sig, _) = as_function(decl);
     let TypeExpr::Arrow { from, .. } = sig else {
@@ -878,7 +878,7 @@ fn two_element_paren_type_is_tuple() {
 #[test]
 fn empty_type_paren_is_empty_tuple() {
     // `()` must still be an empty Tuple (unit type).
-    let file = parse_str("f :: () -> Int { | _ => 0; }\nf");
+    let file = parse_str("f :: () -> Int\n  = _ => 0;\nf");
     let decl = decl_by(&file, "f");
     let (_, _, sig, _) = as_function(decl);
     let TypeExpr::Arrow { from, .. } = sig else {
@@ -1251,6 +1251,13 @@ fn p7_optional_method() {
     assert!(methods[1].optional);
 }
 
+#[test]
+fn parse_constraint_method_default_clauses() {
+    let f = parse_str("Eq :: <A> @A { eq :: A -> A -> Bool = _ _ => true; }\n1");
+    let (_, _, _, methods, _) = as_constraint(decl_by(&f, "Eq"));
+    assert_eq!(methods[0].default.len(), 1);
+}
+
 /// P8: trailing `derive` marker on constraint def
 #[test]
 fn p8_constraint_derivable() {
@@ -1322,7 +1329,7 @@ fn p13_partial_app_target() {
 /// P14: plain function with bound `contains :: <A: Eq>`  — zero pre-pass diagnostics
 #[test]
 fn p14_plain_fn_bound_no_diagnostic() {
-    let kinds = parse_kinds("contains :: <A: Eq> List -> A -> Bool\n{ | xs x => false; }\n1");
+    let kinds = parse_kinds("contains :: <A: Eq> List -> A -> Bool\n  = xs x => false;\n1");
     assert!(kinds.is_empty(), "expected no diagnostics, got {kinds:?}");
 }
 
@@ -1419,7 +1426,7 @@ fn display_decl_type_alias_with_params() {
 
 #[test]
 fn display_decl_function() {
-    let s = parse_str("id :: Int -> Int {\n  | x => x;\n}\nid 1").to_string();
+    let s = parse_str("id :: Int -> Int\n  = x => x;\nid 1").to_string();
     assert!(s.contains("Function \"id\" <>"), "function decl name");
     assert!(s.contains("TyArrow"), "function signature");
     assert!(s.contains("Clause"), "function clause");
@@ -1427,8 +1434,7 @@ fn display_decl_function() {
 
 #[test]
 fn display_decl_function_clause_with_guard() {
-    let s =
-        parse_str("pos :: Int -> Int {\n  | x if x > 0 => x;\n  | _ => 0;\n}\npos 3").to_string();
+    let s = parse_str("pos :: Int -> Int\n  = x if x > 0 => x;\n  = _ => 0;\npos 3").to_string();
     assert!(s.contains("guard:"), "clause guard label");
     assert!(s.contains("Binary("), "guard binary expression");
 }
@@ -1764,7 +1770,7 @@ fn display_type_expr_union_with_and_without_payload() {
 
 #[test]
 fn display_type_expr_tuple_positional() {
-    let s = parse_str("f :: (Int, Text) -> Int { | _ => 0; }\nf").to_string();
+    let s = parse_str("f :: (Int, Text) -> Int\n  = _ => 0;\nf").to_string();
     assert!(s.contains("TyTuple"), "positional type tuple");
 }
 
@@ -1784,7 +1790,7 @@ fn display_type_expr_optional() {
 
 #[test]
 fn display_type_expr_arrow() {
-    let s = parse_str("f :: Int -> Text { | _ => \"x\"; }\nf").to_string();
+    let s = parse_str("f :: Int -> Text\n  = _ => \"x\";\nf").to_string();
     assert!(s.contains("TyArrow"), "arrow type");
     assert!(s.contains("from:"), "arrow from");
     assert!(s.contains("to:"), "arrow to");
@@ -1942,7 +1948,7 @@ fn v1_type_select_preserves_field_order() {
 
 #[test]
 fn v1_effect_row_syntax_parses() {
-    let f = parse_str("parse :: Text -> Config ! { fail ParseError } { | text => text; }\nparse");
+    let f = parse_str("parse :: Text -> Config ! { fail ParseError }\n  = text => text;\nparse");
     let (_, _, sig, _) = as_function(decl_by(&f, "parse"));
     let TypeExpr::Arrow { to, .. } = sig else {
         panic!("expected Arrow, got {sig:?}");
@@ -1956,7 +1962,7 @@ fn v1_effect_row_syntax_parses() {
     }
 
     let f = parse_str(
-        "load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError } { | fs path => path; }\nload",
+        "load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }\n  = fs path => path;\nload",
     );
     let (_, _, sig, _) = as_function(decl_by(&f, "load"));
     assert!(format!("{sig:?}").contains("fs"));
@@ -1964,7 +1970,7 @@ fn v1_effect_row_syntax_parses() {
 
 #[test]
 fn v1_effect_row_requires_operation_separators() {
-    assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic } { | text => text; }\nparse").has_errors());
+    assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic }\n  = text => text;\nparse").has_errors());
 }
 
 #[test]

@@ -28,10 +28,9 @@ fn inferred_tyvar_as_normalize_binder() {
 fn true_false_literal_patterns_lower_to_lit_bool() {
     // A function matching on `true` and `false` — exercises TlcPat::Lit(Bool(true/false)).
     let m = tlc_of(
-        r#"toInt :: Bool -> Int {
-  | true => 1;
-  | false => 0;
-}
+        r#"toInt :: Bool -> Int
+  = true => 1;
+  = false => 0;
 toInt true"#,
     );
     assert!(
@@ -47,9 +46,8 @@ fn record_pattern_lowers_to_tlc_record_pat() {
     // Record pattern in a match arm exercises ThirPatKind::Record → TlcPat::Record.
     let m = tlc_of(
         r#"Point :: type { x : Int; y : Int; }
-getX :: Point -> Int {
-  | { x = v; y = _; } => v;
-}
+getX :: Point -> Int
+  = { x = v; y = _; } => v;
 getX { x = 42; y = 0; }"#,
     );
     assert!(
@@ -123,9 +121,8 @@ fn polymorphic_identity_with_optional_covers_match_types_optional_arm() {
 fn tuple_pattern_lowers_to_tlc_tuple_pat() {
     // Positional tuple pattern in a function clause exercises TlcPat::Tuple.
     let m = tlc_of(
-        r#"fst :: (Int, Int) -> Int {
-  | (x, _) => x;
-}
+        r#"fst :: (Int, Int) -> Int
+  = (x, _) => x;
 fst (1, 2)"#,
     );
     assert!(

@@ -2,10 +2,8 @@
 -- binding `inc` defined in the same module.  Used to verify that the
 -- multi-module evaluator correctly switches arenas when a cross-module closure
 -- body contains a BindingRef to another declaration in its defining file.
-inc :: Int -> Int {
-  | n => n + 1;
-}
-add2 :: Int -> Int {
-  | n => inc (inc n);
-}
+inc :: Int -> Int
+  = n => n + 1;
+add2 :: Int -> Int
+  = n => inc (inc n);
 add2

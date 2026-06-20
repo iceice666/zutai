@@ -14,30 +14,24 @@ Either :: <A, B> type {
   #right: { value: B; };
 }
 
-fst :: <A, B> Pair A B -> A {
-  | p => p.first;
-}
+fst :: <A, B> Pair A B -> A
+  = p => p.first;
 
-snd :: <A, B> Pair A B -> B {
-  | p => p.second;
-}
+snd :: <A, B> Pair A B -> B
+  = p => p.second;
 
-swap :: <A, B> Pair A B -> Pair B A {
-  | p => { first = p.second; second = p.first; };
-}
+swap :: <A, B> Pair A B -> Pair B A
+  = p => { first = p.second; second = p.first; };
 
-unbox :: <A> Box A -> A {
-  | b => b.value;
-}
+unbox :: <A> Box A -> A
+  = b => b.value;
 
-mapBox :: <A, B> (A -> B) -> Box A -> Box B {
-  | f b => { value = f b.value; };
-}
+mapBox :: <A, B> (A -> B) -> Box A -> Box B
+  = f b => { value = f b.value; };
 
-isLeft :: <A, B> Either A B -> Bool {
-  | #left { value = _; } => true;
-  | #right { value = _; } => false;
-}
+isLeft :: <A, B> Either A B -> Bool
+  = #left { value = _; } => true;
+  = #right { value = _; } => false;
 
 intPair :: Pair Int Int = { first = 1; second = 2; }
 strPair :: Pair Text Text = { first = "hello"; second = "world"; }

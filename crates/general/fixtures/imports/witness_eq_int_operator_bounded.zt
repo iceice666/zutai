@@ -1,4 +1,5 @@
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x == y;
 same 1 1

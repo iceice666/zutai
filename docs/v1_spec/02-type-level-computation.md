@@ -6,7 +6,7 @@ v0 already treats types as first-class compile-time values and allows pure type-
 
 ## v0 Baseline: `Type` Values
 
-In v0 and later, types are first-class compile-time values. A `:: type` alias or a binding annotated `: Type` holds a type:
+In v0 and later, types are first-class compile-time values. A `:: type` alias or a binding annotated `:: Type` holds a type:
 
 ```zt
 Server :: type {
@@ -18,12 +18,11 @@ Server :: type {
 Type constructors are functions that return `Type`:
 
 ```zt
-Pair :: Type -> Type -> Type {
-  | A B => type {
+Pair :: Type -> Type -> Type
+  = A B => type {
     first : A;
     second : B;
   };
-}
 ```
 
 Usage:
@@ -31,7 +30,7 @@ Usage:
 ```zt
 TextIntPair :: type Pair Text Int
 
-pair : TextIntPair = {
+pair :: TextIntPair = {
   first = "hello";
   second = 42;
 }
@@ -46,7 +45,7 @@ Generic type aliases with `<A, B>` remain the preferred compact spelling for nam
 Because types are first-class, type annotations are type expressions that evaluate to types:
 
 ```zt
-port : Int = 8080
+port :: Int = 8080
 ```
 
 A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It is also a type context: bare `{ field : Type; }` and `{ #tag; }` are parsed as record and union type literals without a repeated `type` keyword.
@@ -54,14 +53,13 @@ A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It
 Example:
 
 ```zt
-Response :: Type -> Type {
-  | Body => type {
+Response :: Type -> Type
+  = Body => type {
     status : Int;
     body : Body?;
   };
-}
 
-value : Response Text = {
+value :: Response Text = {
   status = 200;
   body = "ok";
 }
@@ -76,19 +74,18 @@ Type-level computation uses the same pure expression language.
 Example:
 
 ```zt
-Response :: Type -> Type {
-  | Body => type {
+Response :: Type -> Type
+  = Body => type {
     status : Int;
     body : Body?;
   };
-}
 
 User :: type {
   id : Text;
   name : Text;
 }
 
-UserResponse : Type = Response User
+UserResponse :: Type = Response User
 ```
 
 Zutai does not require the type-level language to be total.
@@ -98,11 +95,10 @@ Instead, it uses pragmatic compile-time evaluation with deterministic evaluator 
 This is syntactically allowed:
 
 ```zt
-Loop :: Type -> Type {
-  | T => Loop T;
-}
+Loop :: Type -> Type
+  = T => Loop T;
 
-Bad : Type = Loop Int
+Bad :: Type = Loop Int
 ```
 
 but it fails during type evaluation:
@@ -122,14 +118,13 @@ Type annotations are type expressions that evaluate to types. A type expression 
 Example:
 
 ```zt
-Response :: Type -> Type {
-  | Body => type {
+Response :: Type -> Type
+  = Body => type {
     status : Int;
     body : Body?;
   };
-}
 
-A : Type = Response Text
+A :: Type = Response Text
 B :: type { status : Int; body : Text?; }
 ```
 
@@ -148,9 +143,9 @@ The implementation should use internal universe levels to avoid literal unsoundn
 Conceptually, users write:
 
 ```zt
-Int : Type
-Text : Type
-Server : Type
+Int :: Type
+Text :: Type
+Server :: Type
 ```
 
 Internally, the implementation may model this as:

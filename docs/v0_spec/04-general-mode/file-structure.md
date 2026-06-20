@@ -40,12 +40,11 @@ name := expr
 name :: TypeExpr = expr
 ```
 
-**Function or type definition** — uses `::` for the signature; a `{ }` block contains `|` clauses:
+**Function definition** — uses `::` for the signature, followed by one or more `=` clauses:
 
 ```zt
-name :: TypeSignature {
-  | pattern₁ pattern₂ => body;
-}
+name :: TypeSignature
+  = pattern₁ pattern₂ => body;
 ```
 
 Type aliases use `:: type` and do not have implementation clauses:
@@ -61,9 +60,8 @@ x := 42
 
 port :: Int = 8080
 
-add :: Int -> Int -> Int {
-  | a b => a + b;
-}
+add :: Int -> Int -> Int
+  = a b => a + b;
 
 Server :: type { host : Text; port : Int; }
 ```
@@ -80,30 +78,27 @@ Everything is one of the three declaration forms.
 
 ### Function definitions
 
-A named function consists of a type signature followed by a `{ }` block of `|` clauses:
+A named function consists of a type signature followed by one or more `=` clauses:
 
 ```zt
-factorial :: Int -> Int {
-  | 0 => 1;
-  | n => n * factorial (n - 1);
-}
+factorial :: Int -> Int
+  = 0 => 1;
+  = n => n * factorial (n - 1);
 ```
 
 Multi-argument curried functions list all parameters in the clause:
 
 ```zt
-add :: Int -> Int -> Int {
-  | a b => a + b;
-}
+add :: Int -> Int -> Int
+  = a b => a + b;
 ```
 
 Pattern-matching multi-clause example:
 
 ```zt
-unwrapOr :: <T> T? -> T -> T {
-  | #none              d => d;
-  | #some { value = v; } _ => v;
-}
+unwrapOr :: <T> T? -> T -> T
+  = #none              d => d;
+  = #some { value = v; } _ => v;
 ```
 
 The type signature is optional when the type can be inferred and only one clause is needed:
@@ -153,10 +148,9 @@ Top-level declarations in a `.zt` file are in one recursive scope.
 This allows functions to refer to themselves:
 
 ```zt
-factorial :: Int -> Int {
-  | 0 => 1;
-  | n => n * factorial (n - 1);
-}
+factorial :: Int -> Int
+  = 0 => 1;
+  = n => n * factorial (n - 1);
 
 factorial 5
 ```
@@ -168,14 +162,13 @@ It also allows mutually recursive top-level bindings, subject to type-checking a
 Inside function bodies, `:=` introduces a local immutable binding:
 
 ```zt
-normalize :: RawServer -> Server {
-  | raw => {
+normalize :: RawServer -> Server
+  = raw => {
     host := raw.host ?? "127.0.0.1";
     port := raw.port ?? 8080;
     tls  := raw.tls ?? false;
     { host = host; port = port; tls = tls; }
   };
-}
 ```
 
 A local binding is scoped to the remainder of the block.

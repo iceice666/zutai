@@ -14,30 +14,27 @@ Packet :: type {
   };
 }
 
-unwrapOr :: MaybeInt -> Int -> Int {
-  | #none fallback => fallback;
-  | #some { value = value; } _ => value;
-}
+unwrapOr :: MaybeInt -> Int -> Int
+  = #none fallback => fallback;
+  = #some { value = value; } _ => value;
 
-classify :: Int -> Text {
-  | n if n > 0 => "positive";
-  | 0 => "zero";
-  | _ => "negative";
-}
+classify :: Int -> Text
+  = n if n > 0 => "positive";
+  = 0 => "zero";
+  = _ => "negative";
 
-describe :: Packet -> Text {
-  | { status = #ok; payload = #some { value = n; }; meta = { retry-count = 0; label = #none; }; } =>
+describe :: Packet -> Text
+  = { status = #ok; payload = #some { value = n; }; meta = { retry-count = 0; label = #none; }; } =>
       classify n;
-  | { status = #ok; payload = #none; meta = _; } =>
+  = { status = #ok; payload = #none; meta = _; } =>
       "empty-ok";
-  | { status = #err; payload = value; meta = { retry-count = retries; label = _; }; } =>
+  = { status = #err; payload = value; meta = { retry-count = retries; label = _; }; } =>
       match retries {
         | 0 => "fresh-error";
         | n if n > 3 => "stale-error";
         | _ => classify (unwrapOr value -1);
       };
-  | _ => "pending";
-}
+  = _ => "pending";
 
 sample :: Packet = {
   status = #err;

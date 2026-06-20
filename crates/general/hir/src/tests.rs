@@ -106,7 +106,7 @@ fn resolves_local_binding_only_after_its_value() {
 
 #[test]
 fn resolves_function_type_params_in_signature_and_body_type_form() {
-    let lowered = lower("id :: <A> A -> A { | x => type A; }\nid");
+    let lowered = lower("id :: <A> A -> A\n  = x => type A;\nid");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
@@ -563,7 +563,7 @@ fn type_kind(file: &HirFile, id: HirTypeId) -> &HirTypeKind {
 
 #[test]
 fn named_row_tail_resolves_to_type_param_as_var() {
-    let lowered = lower("f :: <Rest> { host : Text; ...Rest; } -> Text {\n  | x => \"ok\";\n}\nf");
+    let lowered = lower("f :: <Rest> { host : Text; ...Rest; } -> Text\n  = x => \"ok\";\nf");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
     let HirDeclKind::Function { sig: Some(sig), .. } = &decl.kind else {
@@ -733,7 +733,7 @@ fn resume_at_top_level_is_rejected() {
 #[test]
 fn effect_row_lowers_to_effect_type() {
     let lowered = lower(
-        "Config :: type Text\nParseError :: type Text\nparse :: Text -> Config ! { fail ParseError } {\n  | text => text;\n}\nparse",
+        "Config :: type Text\nParseError :: type Text\nparse :: Text -> Config ! { fail ParseError }\n  = text => text;\nparse",
     );
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[2]];

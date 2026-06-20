@@ -1,29 +1,23 @@
 -- higher_order_functions.zt: Higher-order functions, composition, currying.
 
-compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C {
-  | f g x => f (g x);
-}
+compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
+  = f g x => f (g x);
 
-flip :: <A, B, C> (A -> B -> C) -> B -> A -> C {
-  | f b a => f a b;
-}
+flip :: <A, B, C> (A -> B -> C) -> B -> A -> C
+  = f b a => f a b;
 
-applyTwice :: <A> (A -> A) -> A -> A {
-  | f x => f (f x);
-}
+applyTwice :: <A> (A -> A) -> A -> A
+  = f x => f (f x);
 
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
-negate :: Bool -> Bool {
-  | true => false;
-  | false => true;
-}
+negate :: Bool -> Bool
+  = true => false;
+  = false => true;
 
 {
   inc-then-double = compose double inc 3;

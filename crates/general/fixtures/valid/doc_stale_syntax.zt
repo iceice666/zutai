@@ -28,16 +28,14 @@ Shape :: type {
   #rect: { width: Int; height: Int; };
 }
 
-unwrapOr :: <T> T? -> T -> T {
-  | #none fallback => fallback;
-  | #some { value = value; } _ => value;
-}
+unwrapOr :: <T> T? -> T -> T
+  = #none fallback => fallback;
+  = #some { value = value; } _ => value;
 
-area :: Shape -> Int {
-  | #circle { radius = r; } => r * r;
-  | #square { length = l; } => l * l;
-  | #rect { width = w; height = h; } => w * h;
-}
+area :: Shape -> Int
+  = #circle { radius = r; } => r * r;
+  = #square { length = l; } => l * l;
+  = #rect { width = w; height = h; } => w * h;
 
 raw :: RawServer = {
   host = "localhost";

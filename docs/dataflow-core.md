@@ -226,7 +226,7 @@ Top-level declarations are lowered into the `globals` map. When a top-level `Bin
 
 ### Function declarations
 
-A function `f :: <A, B> A -> B -> A { | x _ => x; }` is lowered as:
+A function `f :: <A, B> A -> B -> A` with clause `= x _ => x;` is lowered as:
 
 1. Create `Bind` node `p1` (parameter `x`, type `A`).
 2. Create `Bind` node `p2` (parameter `_`, type `B`).
@@ -241,11 +241,10 @@ A function `f :: <A, B> A -> B -> A { | x _ => x; }` is lowered as:
 A function with multiple clauses is desugared into a Match on a synthetic tuple of all parameters:
 
 ```zt
-area :: Shape -> Float {
-  | (#circle, radius = r) => r * r * 3.14159;
-  | (#square, length = l) => l * l;
-  | (#rect, width = w, height = h) => w * h;
-}
+area :: Shape -> Float
+  = (#circle, radius = r) => r * r * 3.14159;
+  = (#square, length = l) => l * l;
+  = (#rect, width = w, height = h) => w * h;
 ```
 
 Becomes (conceptually):

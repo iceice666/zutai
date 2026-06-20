@@ -56,19 +56,17 @@ Hash :: <A: Eq + Show> @A {
 
 ## Default Methods
 
-A method may have a default implementation. Mark it optional with `?` and follow immediately with an anonymous `::` clause providing the default:
+A method may have a default implementation. Mark it optional with `?` and follow its signature with one or more `=` clauses:
 
 ```zt
 Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
 
-  max? :: A -> A -> A {
-    | a b => if a >= b then a else b;
-  };
+  max? :: A -> A -> A
+    = a b => if a >= b then a else b;
 
-  min? :: A -> A -> A {
-    | a b => if a <= b then a else b;
-  };
+  min? :: A -> A -> A
+    = a b => if a <= b then a else b;
 }
 ```
 
@@ -131,33 +129,28 @@ Ord @(List A) :: <A: Ord> {
 Type parameters and their constraints are declared in `<...>` immediately after `::`:
 
 ```zt
-contains :: <A: Eq> List A -> A -> Bool {
-  | xs x => containsImpl xs x;
-}
+contains :: <A: Eq> List A -> A -> Bool
+  = xs x => containsImpl xs x;
 
-sort :: <A: Ord> List A -> List A {
-  | xs => sortImpl xs;
-}
+sort :: <A: Ord> List A -> List A
+  = xs => sortImpl xs;
 ```
 
 Unconstrained parameters omit the `:` bound:
 
 ```zt
-id      :: <A> A -> A {
-  | x => x;
-}
+id      :: <A> A -> A
+  = x => x;
 
-mapList :: <A, B> (A -> B) -> List A -> List B {
-  | f xs => mapListImpl f xs;
-}
+mapList :: <A, B> (A -> B) -> List A -> List B
+  = f xs => mapListImpl f xs;
 ```
 
 Multiple parameters with independent constraints:
 
 ```zt
-zipWith :: <A, B, C> (A -> B -> C) -> List A -> List B -> List C {
-  | f xs ys => zipWithImpl f xs ys;
-}
+zipWith :: <A, B, C> (A -> B -> C) -> List A -> List B -> List C
+  = f xs ys => zipWithImpl f xs ys;
 ```
 
 Witnesses are resolved implicitly at call sites — callers do not pass them explicitly.
@@ -193,9 +186,8 @@ Foldable :: <F :: Type -> Type> @F {
 `F :: Type -> Type` means F must be a type constructor — it takes one type and produces a type. The kind annotation is written in the constraint definition. At use sites, the kind is inferred from the constraint so callers need not repeat it:
 
 ```zt
-mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A {
-  | f xs => map f (map f xs);
-}
+mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A
+  = f xs => map f (map f xs);
 ```
 
 Witnesses target the type constructor without arguments:
@@ -242,12 +234,10 @@ Eq :: <A> @A {
 
 Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
-  max? :: A -> A -> A {
-    | a b => if a >= b then a else b;
-  };
-  min? :: A -> A -> A {
-    | a b => if a <= b then a else b;
-  };
+  max? :: A -> A -> A
+    = a b => if a >= b then a else b;
+  min? :: A -> A -> A
+    = a b => if a <= b then a else b;
 } derive
 ```
 

@@ -352,9 +352,8 @@ Eq :: <A> @A {
   eq :: A -> A -> Bool;
 }
 
-eqBoth :: <A: Eq> A -> A -> A -> Bool {
-  | x y z => eq x y && eq y z;
-}
+eqBoth :: <A: Eq> A -> A -> A -> Bool
+  = x y z => eq x y && eq y z;
 ```
 elaborates to a function that takes an extra dictionary argument:
 ```
@@ -466,7 +465,7 @@ Each `TyApp` reduction step consumes one unit of fuel. Default limit: 1 000 step
 ```
 error: type-level computation exceeded evaluation limit
 ```
-This handles recursive type functions like `Loop :: Type -> Type { | T => Loop T; }` (see `v1_spec/02-type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
+This handles recursive type functions like `Loop :: Type -> Type` with clause `= T => Loop T;` (see `v1_spec/02-type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
 
 ### Coercion boundary
 
@@ -622,7 +621,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Lists `[T]`, list literals | `ListT(T)`, `List([…])` | 0 |
 | Tuples `(label: T, T)` | `TupleT(…)`, `Tuple(…)` | 0 |
 | Function type `A -> B` | `Fun(A, B, REmpty)` | 0 |
-| Function value `\| x => e` | `Lam(x, T, e)` | 0 |
+| Function value `\x. e` | `Lam(x, T, e)` | 0 |
 | Multi-clause function | `Lam(x, T, Case(Var x, alts))` (desugared) | 0 |
 | `if/else` | `Case(cond, [Alt(Singleton(true), t), Alt(Singleton(false), e)])` | 0 |
 | `Block { locals; tail }` | nested `Let` | 0 |
@@ -647,7 +646,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Constraint `<A: Eq>` | extra dict `Lam(dict: {eq: A -> A -> Bool}, …)` | 5 |
 | Witness `Eq @Int :: { … }` / operator method `(==)` | `Record([("eq", Var(eqIntImpl))])`; operator fields use names like `"=="` and calls lower through `GetField` + `App` | 5 |
 | `} derive` / `@T :: derive` | elaboration emit; no new nodes | 5 |
-| Recursive type function (`Loop :: Type -> Type { \| T => Loop T; }`) | `TyLamK` + `TyApp` + NbE fuel | 2 |
+| Recursive type function (`Loop :: Type -> Type` with `= T => Loop T;`) | `TyLamK` + `TyApp` + NbE fuel | 2 |
 | Type equality by normalization | NbE kernel | 2 |
 | Universe levels `Type 0 : Type 1` | `Kind::Type(ℓ)` | 1 |
 | Type-level `select` | elaboration → `RecordT` projection | 3 |

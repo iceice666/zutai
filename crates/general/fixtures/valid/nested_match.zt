@@ -13,36 +13,32 @@ Shape :: type {
   #triangle: { base: Int; height: Int; };
 }
 
-colorName :: Color -> Text {
-  | #red   => "red";
-  | #green => "green";
-  | #blue  => "blue";
-  | #custom { r = 0; g = 0; b = 0; } => "black";
-  | #custom { r = 255; g = 255; b = 255; } => "white";
-  | #custom { r = _; g = _; b = _; } => "custom";
-}
+colorName :: Color -> Text
+  = #red   => "red";
+  = #green => "green";
+  = #blue  => "blue";
+  = #custom { r = 0; g = 0; b = 0; } => "black";
+  = #custom { r = 255; g = 255; b = 255; } => "white";
+  = #custom { r = _; g = _; b = _; } => "custom";
 
-area :: Shape -> Int {
-  | #circle { radius = r; }          => r * r;
-  | #rect { width = w; height = h; } => w * h;
-  | #triangle { base = b; height = h; } => b * h;
-}
+area :: Shape -> Int
+  = #circle { radius = r; }          => r * r;
+  = #rect { width = w; height = h; } => w * h;
+  = #triangle { base = b; height = h; } => b * h;
 
-classify :: Int -> Text {
-  | n if n < 0   => "negative";
-  | 0            => "zero";
-  | n if n < 10  => "small";
-  | n if n < 100 => "medium";
-  | _            => "large";
-}
+classify :: Int -> Text
+  = n if n < 0   => "negative";
+  = 0            => "zero";
+  = n if n < 10  => "small";
+  = n if n < 100 => "medium";
+  = _            => "large";
 
-describeShape :: Shape -> Text {
-  | #circle { radius = r; } if r > 100 => "big circle";
-  | #circle { radius = _; }            => "circle";
-  | #rect { width = w; height = h; } if w == h => "square";
-  | #rect { width = _; height = _; }            => "rectangle";
-  | _                                          => "triangle";
-}
+describeShape :: Shape -> Text
+  = #circle { radius = r; } if r > 100 => "big circle";
+  = #circle { radius = _; }            => "circle";
+  = #rect { width = w; height = h; } if w == h => "square";
+  = #rect { width = _; height = _; }            => "rectangle";
+  = _                                          => "triangle";
 
 {
   c1 = colorName #red;

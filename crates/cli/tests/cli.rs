@@ -51,7 +51,7 @@ fn run_deep_recursion_does_not_overflow_stack() {
     // Regression: the tree-walking interpreter runs on a large worker stack so
     // deep (but finite) recursion completes instead of aborting the process.
     // `count 5000` overflows the default ~8 MiB main-thread stack.
-    let src = "count :: Int -> Int {\n  | 0 => 0;\n  | n => 1 + count (n - 1);\n}\ncount 5000\n";
+    let src = "count :: Int -> Int\n  = 0 => 0;\n  = n => 1 + count (n - 1);\ncount 5000\n";
     let path = write_tmp("cli_test_deep_recursion.zt", src);
     cli()
         .arg("run")
@@ -105,8 +105,10 @@ fn run_indirect_bounded_constraint_uses_tlc_default() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
-wrapper :: Int -> Bool { | n => same n n; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
+wrapper :: Int -> Bool
+  = n => same n n;
 wrapper 1
 
 "#;
@@ -276,7 +278,7 @@ fn run_imported_value_can_flow_through_print_effect() {
 fn run_imported_function_can_flow_through_print_effect() {
     write_tmp(
         "cli_test_func_import.zt",
-        "add :: Int -> Int -> Int {\n  | a b => a + b;\n}\nadd\n",
+        "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
     );
     let path = write_tmp(
         "cli_test_func_print_import.zt",
@@ -307,9 +309,8 @@ fn parse_zt_with_type_error_exits_nonzero() {
 const EFFECT_SRC: &str = r#"
 Config :: type { value : Text; }
 ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError } {
-  | text => perform fail text;
-}
+parse :: Text -> Config ! { fail ParseError }
+  = text => perform fail text;
 parse
 "#;
 
@@ -353,7 +354,7 @@ fn check_effect_program_passes() {
 }
 #[test]
 fn check_higher_kinded_constraint_passes() {
-    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }\n1\n";
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A\n  = f xs => map f (map f xs);\n1\n";
     let path = write_tmp("cli_test_check_hkt.zt", src);
     cli()
         .arg("check")

@@ -45,9 +45,8 @@ A `type_expr` is a type-level expression. In v0, type expressions are pure expre
 Example:
 
 ```zt
-getPort :: { port : Int } -> Int {
-  | server => server.port;
-}
+getPort :: { port : Int } -> Int
+  = server => server.port;
 ```
 
 ### Type aliases and generic types
@@ -106,12 +105,11 @@ Type parameters are uppercase. A generic type alias is instantiated at use sites
 Type constructors may also be ordinary functions returning `Type`:
 
 ```zt
-PairFn :: Type -> Type -> Type {
-  | A B => type {
+PairFn :: Type -> Type -> Type
+  = A B => type {
     first : A;
     second : B;
   };
-}
 ```
 
 ### Typing approach

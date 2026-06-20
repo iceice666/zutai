@@ -24,83 +24,66 @@ AppConfig :: type {
   debug-mode : Bool?;
 }
 
-identity :: <A> A -> A {
-  | x => x;
-}
+identity :: <A> A -> A
+  = x => x;
 
-constFn :: <A, B> A -> B -> A {
-  | a _ => a;
-}
+constFn :: <A, B> A -> B -> A
+  = a _ => a;
 
-flip :: <A, B, C> (A -> B -> C) -> B -> A -> C {
-  | f b a => f a b;
-}
+flip :: <A, B, C> (A -> B -> C) -> B -> A -> C
+  = f b a => f a b;
 
-compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C {
-  | f g x => f (g x);
-}
+compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
+  = f g x => f (g x);
 
-applyIf :: Bool -> (Int -> Int) -> Int -> Int {
-  | true f x  => f x;
-  | false _ x => x;
-}
+applyIf :: Bool -> (Int -> Int) -> Int -> Int
+  = true f x  => f x;
+  = false _ x => x;
 
-logLevelValue :: LogLevel -> Int {
-  | #debug => 0;
-  | #info  => 1;
-  | #warn  => 2;
-  | #error => 3;
-}
+logLevelValue :: LogLevel -> Int
+  = #debug => 0;
+  = #info  => 1;
+  = #warn  => 2;
+  = #error => 3;
 
-isAtLeast :: LogLevel -> LogLevel -> Bool {
-  | target level => logLevelValue level >= logLevelValue target;
-}
+isAtLeast :: LogLevel -> LogLevel -> Bool
+  = target level => logLevelValue level >= logLevelValue target;
 
-shouldLog :: AppConfig -> LogLevel -> Bool {
-  | cfg level => isAtLeast cfg.log-level level;
-}
+shouldLog :: AppConfig -> LogLevel -> Bool
+  = cfg level => isAtLeast cfg.log-level level;
 
-defaultPort :: ServiceConfig -> Int {
-  | svc => svc.port;
-}
+defaultPort :: ServiceConfig -> Int
+  = svc => svc.port;
 
-effectiveTimeout :: ServiceConfig -> Int {
-  | svc => svc.timeout-ms ?? 5000;
-}
+effectiveTimeout :: ServiceConfig -> Int
+  = svc => svc.timeout-ms ?? 5000;
 
-maxConnections :: ServiceConfig -> Int {
-  | svc => svc.max-connections ?? 100;
-}
+maxConnections :: ServiceConfig -> Int
+  = svc => svc.max-connections ?? 100;
 
-isSecure :: ServiceConfig -> Bool {
-  | svc => svc.tls ?? false;
-}
+isSecure :: ServiceConfig -> Bool
+  = svc => svc.tls ?? false;
 
-debugMode :: AppConfig -> Bool {
-  | cfg => cfg.debug-mode ?? false;
-}
+debugMode :: AppConfig -> Bool
+  = cfg => cfg.debug-mode ?? false;
 
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
-square :: Int -> Int {
-  | n => n * n;
-}
+square :: Int -> Int
+  = n => n * n;
 
-clamp :: Int -> Int -> Int -> Int {
-  | lo hi n => match (n < lo) {
+clamp :: Int -> Int -> Int -> Int
+  = lo hi n => match (n < lo) {
       | true => lo;
       | false => match (n > hi) {
           | true => hi;
           | false => n;
         };
     };
-}
 
 primary :: ServiceConfig = {
   host = "api.example.com";

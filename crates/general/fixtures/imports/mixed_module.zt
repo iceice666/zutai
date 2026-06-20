@@ -1,9 +1,8 @@
 -- mixed_module.zt: exports a record that carries both a data field and a
 -- function field.  Used to verify that mixed-content modules export cleanly
 -- and that both field kinds are usable across the import boundary.
-double :: Int -> Int {
-  | n => n + n;
-}
+double :: Int -> Int
+  = n => n + n;
 {
   version = 1;
   double = double;

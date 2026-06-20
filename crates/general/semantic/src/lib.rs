@@ -692,9 +692,8 @@ b := import "witness_reexport_b.zt"
             r#"
 Config :: type { value : Text; }
 ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError } {
-  | text => perform fail text;
-}
+parse :: Text -> Config ! { fail ParseError }
+  = text => perform fail text;
 parse
 "#,
         );
@@ -716,9 +715,8 @@ parse
             r#"
 Config :: type { value : Text; }
 Eff :: <A> type A ! { fail Text }
-parse :: Text -> Eff Config {
-  | text => perform fail text;
-}
+parse :: Text -> Eff Config
+  = text => perform fail text;
 parse
 "#,
         );
@@ -746,7 +744,7 @@ parse
     #[test]
     fn tlc_emits_row_variable_for_named_row_tail() {
         let analysis = analyze(
-            "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+            "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }\n  = x => x;\nidHost",
         );
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         let tlc = analysis

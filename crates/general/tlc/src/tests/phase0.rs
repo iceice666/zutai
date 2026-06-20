@@ -133,10 +133,9 @@ Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
 }
-area :: Shape -> Int {
-  | #circle { radius = r; } => r;
-  | #square { side = s; } => s;
-}
+area :: Shape -> Int
+  = #circle { radius = r; } => r;
+  = #square { side = s; } => s;
 area
 "#,
     );
@@ -158,10 +157,9 @@ fn module_walk_invariant_no_forbidden_residuals() {
     let m = tlc_of(
         r#"
 Color :: type { #red; #green; #blue; }
-is_red :: Color -> Bool {
-  | #red => true;
-  | _ => false;
-}
+is_red :: Color -> Bool
+  = #red => true;
+  = _ => false;
 is_red #green
 "#,
     );

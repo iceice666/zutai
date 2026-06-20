@@ -12,7 +12,7 @@ This specification is split into multiple files, grouped by chapter.
 
 - [Lexical conventions](02-lexical/conventions.md)
 - [Operator precedence](02-lexical/operator-precedence.md)
-- [Core grammar sketch](02-lexical/grammar-sketch.md)
+- [Core grammar reference](02-lexical/grammar-reference.md)
 
 ## Chapter 3 — Immediate Mode
 

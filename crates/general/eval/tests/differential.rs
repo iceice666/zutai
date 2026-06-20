@@ -22,12 +22,12 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ("list_eq", "[1; 2; 3;] == [1; 2; 3;]"),
         (
             "factorial",
-            "f :: Int -> Int {\n  | 0 => 1;\n  | n => n * f (n - 1);\n}\nf 5",
+            "f :: Int -> Int\n  = 0 => 1;\n  = n => n * f (n - 1);\nf 5",
         ),
         ("lambda", "(\\x. x * 2) 21"),
         (
             "curry",
-            "add :: Int -> Int -> Int {\n  | a b => a + b;\n}\nadd 3 4",
+            "add :: Int -> Int -> Int\n  = a b => a + b;\nadd 3 4",
         ),
         (
             "coalesce_absent",
@@ -60,11 +60,11 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "match_union",
-            "Shape :: type { #c: { r: Int; }; #s: { v: Int; }; }\nf :: Shape -> Int {\n  | #c { r = r; } => r;\n  | #s { v = v; } => v;\n}\nf (#c { r = 7; })",
+            "Shape :: type { #c: { r: Int; }; #s: { v: Int; }; }\nf :: Shape -> Int\n  = #c { r = r; } => r;\n  = #s { v = v; } => v;\nf (#c { r = 7; })",
         ),
         (
             "guard",
-            "f :: Int -> Text {\n  | n if n > 0 => \"pos\";\n  | _ => \"nonpos\";\n}\nf 5",
+            "f :: Int -> Text\n  = n if n > 0 => \"pos\";\n  = _ => \"nonpos\";\nf 5",
         ),
         (
             "lazy_record_projection",
@@ -84,21 +84,24 @@ Eq @Int :: { (==) = \a b. false; }
             "operator_witness_bounded_eq",
             r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x == y;
 same 1 1"#,
         ),
         (
             "operator_witness_bounded_ne_from_eq",
             r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x != y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x != y;
 same 1 1"#,
         ),
         (
             "operator_witness_bounded_lt",
             r#"Ord :: <A> @A { (<) :: A -> A -> Bool; }
 Ord @Int :: { (<) = \a b. true; }
-less :: <A: Ord> A -> A -> Bool { | x y => x < y; }
+less :: <A: Ord> A -> A -> Bool
+  = x y => x < y;
 less 2 1"#,
         ),
     ]

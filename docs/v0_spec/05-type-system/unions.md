@@ -99,21 +99,19 @@ match profile {
 Record payloads match with a record destructure:
 
 ```zt
-area :: Shape -> Float {
-  | #circle { radius = r; }           => r * r * 3.14159;
-  | #square { length = l; }           => l * l;
-  | #rect   { width = w; height = h; } => w * h;
-}
+area :: Shape -> Float
+  = #circle { radius = r; }           => r * r * 3.14159;
+  = #square { length = l; }           => l * l;
+  = #rect   { width = w; height = h; } => w * h;
 ```
 
 Positional payloads match with a tuple destructure:
 
 ```zt
-describe :: Message -> Text {
-  | #quit => "quit";
-  | #move (x, y) => "move";
-  | #write (text) => text;
-}
+describe :: Message -> Text
+  = #quit => "quit";
+  = #move (x, y) => "move";
+  = #write (text) => text;
 ```
 
 For finite union types, `match` must be exhaustive over all tags. See

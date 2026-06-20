@@ -20,14 +20,12 @@ Callbacks :: type {
   };
 }
 
-identity :: <A> A -> A {
-  | x => x;
-}
+identity :: <A> A -> A
+  = x => x;
 
-choose :: Bool -> Int -> Int -> Int {
-  | true yes _ => yes;
-  | false _ no => no;
-}
+choose :: Bool -> Int -> Int -> Int
+  = true yes _ => yes;
+  = false _ no => no;
 
 wrap value = #single { value = value; }
 

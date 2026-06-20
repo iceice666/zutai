@@ -272,11 +272,10 @@ answer
 
 #[test]
 fn top_level_function_call() {
-    // Function declarations use curly-brace clause syntax: `{ | params => body; }`
+    // Function declarations use equals-prefixed clauses after the signature.
     let src = "
-inc :: Int -> Int {
-  | x => x + 1;
-}
+inc :: Int -> Int
+  = x => x + 1;
 inc 41
 ";
     assert_eq!(run(src), Value::Int(42));
@@ -285,9 +284,8 @@ inc 41
 #[test]
 fn curried_two_arg_function() {
     let src = "
-add :: Int -> Int -> Int {
-  | x y => x + y;
-}
+add :: Int -> Int -> Int
+  = x y => x + y;
 add 2 3
 ";
     assert_eq!(run(src), Value::Int(5));
@@ -296,9 +294,8 @@ add 2 3
 #[test]
 fn partial_application_returns_closure() {
     let src = "
-add :: Int -> Int -> Int {
-  | x y => x + y;
-}
+add :: Int -> Int -> Int
+  = x y => x + y;
 add_two := add 2
 add_two 3
 ";
@@ -311,10 +308,9 @@ add_two 3
 fn factorial_recursion() {
     // Integer literal patterns in clauses: `| 0 => 1;`
     let src = "
-fac :: Int -> Int {
-  | 0 => 1;
-  | n => n * fac (n - 1);
-}
+fac :: Int -> Int
+  = 0 => 1;
+  = n => n * fac (n - 1);
 fac 5
 ";
     assert_eq!(run(src), Value::Int(120));
@@ -435,10 +431,9 @@ Profile :: type {
   #dev;
   #prod;
 }
-isProd :: Profile -> Bool {
-  | #prod => true;
-  | #dev => false;
-}
+isProd :: Profile -> Bool
+  = #prod => true;
+  = #dev => false;
 isProd #prod
 ";
     assert_eq!(run(src), Value::Bool(true));
@@ -449,14 +444,12 @@ isProd #prod
 #[test]
 fn mutual_recursion() {
     let src = "
-isEven :: Int -> Bool {
-  | 0 => true;
-  | n => isOdd (n - 1);
-}
-isOdd :: Int -> Bool {
-  | 0 => false;
-  | n => isEven (n - 1);
-}
+isEven :: Int -> Bool
+  = 0 => true;
+  = n => isOdd (n - 1);
+isOdd :: Int -> Bool
+  = 0 => false;
+  = n => isEven (n - 1);
 isEven 4
 ";
     assert_eq!(run(src), Value::Bool(true));
@@ -467,11 +460,10 @@ isEven 4
 #[test]
 fn function_with_guard() {
     let src = "
-classify :: Int -> Int {
-  | n if n > 0 => 1;
-  | 0 => 0;
-  | _ => -1;
-}
+classify :: Int -> Int
+  = n if n > 0 => 1;
+  = 0 => 0;
+  = _ => -1;
 classify 5
 ";
     assert_eq!(run(src), Value::Int(1));
@@ -805,7 +797,7 @@ fn match_bool_patterns() {
 fn match_function_using_match_expr() {
     // match expression inside a lambda stored as a value binding
     let src = "
-is_zero :: Int -> Bool = \\n . match n {
+is_zero :: Int -> Bool = \\n. match n {
   | 0 => true;
   | _ => false;
 }
@@ -823,10 +815,9 @@ Pair :: type {
   #pair: (Int, Int);
   #empty;
 }
-sum :: Pair -> Int {
-  | #pair (x, y) => x + y;
-  | #empty => 0;
-}
+sum :: Pair -> Int
+  = #pair (x, y) => x + y;
+  = #empty => 0;
 sum #pair (2, 3)
 "#;
     assert_eq!(run(src), Value::Int(5));
@@ -839,9 +830,8 @@ fn single_positional_union_payload_constructs_and_matches() {
 Boxed :: type {
   #boxed: (Int);
 }
-get :: Boxed -> Int {
-  | #boxed (x) => x;
-}
+get :: Boxed -> Int
+  = #boxed (x) => x;
 get #boxed (9)
 "#;
     assert_eq!(run(src), Value::Int(9));
@@ -1108,7 +1098,8 @@ fn tlc_conditional_list_witness_indirect() {
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
-useEq :: <A: Eq> List A -> List A -> Bool { | xs ys => eq xs ys; }
+useEq :: <A: Eq> List A -> List A -> Bool
+  = xs ys => eq xs ys;
 useEq [1;] [1;]
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
@@ -1126,7 +1117,8 @@ Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Pair :: <A> type { fst : A; snd : A; }
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-samePair :: <A: Eq> Pair A -> Pair A -> Bool { | p q => eq p q; }
+samePair :: <A: Eq> Pair A -> Pair A -> Bool
+  = p q => eq p q;
 p1 :: Pair Int = { fst = 1; snd = 2; }
 p2 :: Pair Int = { fst = 1; snd = 9; }
 samePair p1 p2
@@ -1143,7 +1135,8 @@ Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Pair :: <A> type { fst : A; snd : A; }
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-samePair :: <A: Eq> Pair A -> Pair A -> Bool { | p q => eq p q; }
+samePair :: <A: Eq> Pair A -> Pair A -> Bool
+  = p q => eq p q;
 p1 :: Pair Int = { fst = 1; snd = 2; }
 p2 :: Pair Int = { fst = 7; snd = 2; }
 samePair p1 p2
@@ -1462,7 +1455,8 @@ fn op_dispatch_bounded_eq_uses_witness_dict() {
     let src = r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x == y;
 same 1 1
 "#;
     assert_eq!(run(src), Value::Bool(false));
@@ -1473,7 +1467,8 @@ fn op_dispatch_bounded_ne_negates_eq_witness() {
     let src = r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x != y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x != y;
 same 1 1
 "#;
     assert_eq!(run(src), Value::Bool(true));
@@ -1484,7 +1479,8 @@ fn op_dispatch_bounded_lt_uses_witness_dict() {
     let src = r#"
 Ord :: <A> @A { (<) :: A -> A -> Bool; }
 Ord @Int :: { (<) = \a b. true; }
-less :: <A: Ord> A -> A -> Bool { | x y => x < y; }
+less :: <A: Ord> A -> A -> Bool
+  = x y => x < y;
 less 2 1
 "#;
     assert_eq!(run(src), Value::Bool(true));
@@ -1500,7 +1496,8 @@ fn dispatch_polymorphic_method_inside_bounded_fn() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 same 1 1
 "#;
     assert_eq!(run(src), Value::Bool(true));
@@ -1508,11 +1505,11 @@ same 1 1
 
 /// Default-body fallback: a witness that omits the method uses the default body
 /// defined in the constraint.  Witness `Eq @Int :: {}` is valid (method has a
-/// default), and calling `eq 1 2` uses the default clause `| _ _ => true;`.
+/// default), and calling `eq 1 2` uses the default clause `= _ _ => true;`.
 #[test]
 fn dispatch_default_method_used_when_field_absent() {
     let src = r#"
-Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }
+Eq :: <A> @A { eq :: A -> A -> Bool = _ _ => true; }
 Eq @Int :: {}
 eq 1 2
 "#;
@@ -1527,8 +1524,10 @@ fn tlc_first_default_runs_indirect_bounded_call() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
-wrapper :: Int -> Bool { | n => same n n; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
+wrapper :: Int -> Bool
+  = n => same n n;
 wrapper 1
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Bool(true));
@@ -1547,10 +1546,12 @@ wrapper 1
 #[test]
 fn dispatch_default_not_used_when_witness_exists_but_indirect() {
     let src = r#"
-Eq :: <A> @A { eq :: A -> A -> Bool { | _ _ => true; }; }
+Eq :: <A> @A { eq :: A -> A -> Bool = _ _ => true; }
 Eq @Int :: { eq = \a b. a == b; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
-useit :: Int -> Bool { | _ => same 1 2; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
+useit :: Int -> Bool
+  = _ => same 1 2;
 useit 0
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Bool(false));
@@ -1710,9 +1711,8 @@ s
 fn display_closure_shows_remaining_arity() {
     // A function value displays as <function/N> where N = remaining arity
     let src = "
-inc :: Int -> Int {
-  | x => x + 1;
-}
+inc :: Int -> Int
+  = x => x + 1;
 inc
 ";
     assert_eq!(run(src).to_string(), "<function/1>");
@@ -1722,9 +1722,8 @@ inc
 fn display_closure_partial_application() {
     // After partial application arity decreases: <function/2> → <function/1>
     let src = "
-add :: Int -> Int -> Int {
-  | x y => x + y;
-}
+add :: Int -> Int -> Int
+  = x y => x + y;
 add 1
 ";
     assert_eq!(run(src).to_string(), "<function/1>");
@@ -1860,10 +1859,9 @@ Status :: type {
   #ok: { code : Int; };
   #err: { msg : Text; };
 }
-getCode :: Status -> Int {
-  | #ok { code = n; } => n;
-  | #err { msg = _; } => -1;
-}
+getCode :: Status -> Int
+  = #ok { code = n; } => n;
+  = #err { msg = _; } => -1;
 getCode (#ok { code = 200; })
 ";
     assert_eq!(run(src), Value::Int(200));
@@ -2007,7 +2005,7 @@ fn thir_diag_match_arm_pattern_count_mismatch() {
 #[test]
 fn thir_diag_function_clause_arity_mismatch() {
     // Function typed Int -> Int but clause has 2 patterns
-    assert_type_check_failed("f :: Int -> Int {\n  | x y => x;\n}\nf 1");
+    assert_type_check_failed("f :: Int -> Int\n  = x y => x;\nf 1");
 }
 
 #[test]
@@ -2121,11 +2119,10 @@ Eq @Int :: { (==) = \\a b. false; }
 #[test]
 fn match_float_pattern_in_function_clause() {
     let src = "
-classify :: Float -> Text {
-  | 0.0 => \"zero\";
-  | 1.5 => \"one-half\";
-  | _ => \"other\";
-}
+classify :: Float -> Text
+  = 0.0 => \"zero\";
+  = 1.5 => \"one-half\";
+  = _ => \"other\";
 classify 1.5
 ";
     assert_eq!(run(src), Value::Text("one-half".into()));
@@ -2134,11 +2131,10 @@ classify 1.5
 #[test]
 fn match_float_pattern_fallthrough() {
     let src = "
-classify :: Float -> Text {
-  | 0.0 => \"zero\";
-  | 1.5 => \"one-half\";
-  | _ => \"other\";
-}
+classify :: Float -> Text
+  = 0.0 => \"zero\";
+  = 1.5 => \"one-half\";
+  = _ => \"other\";
 classify 2.0
 ";
     assert_eq!(run(src), Value::Text("other".into()));
@@ -2149,11 +2145,10 @@ classify 2.0
 #[test]
 fn match_string_pattern_in_function_clause() {
     let src = "
-greet :: Text -> Text {
-  | \"hello\" => \"world\";
-  | \"hi\" => \"there\";
-  | _ => \"unknown\";
-}
+greet :: Text -> Text
+  = \"hello\" => \"world\";
+  = \"hi\" => \"there\";
+  = _ => \"unknown\";
 greet \"hello\"
 ";
     assert_eq!(run(src), Value::Text("world".into()));
@@ -2162,10 +2157,9 @@ greet \"hello\"
 #[test]
 fn match_string_pattern_fallthrough() {
     let src = "
-greet :: Text -> Text {
-  | \"hello\" => \"world\";
-  | _ => \"stranger\";
-}
+greet :: Text -> Text
+  = \"hello\" => \"world\";
+  = _ => \"stranger\";
 greet \"goodbye\"
 ";
     assert_eq!(run(src), Value::Text("stranger".into()));
@@ -2178,9 +2172,8 @@ fn match_atom_pattern_in_function_clause() {
     // The type `#foo` is a singleton atom type (Atom("foo")), not a union variant.
     // Pattern `#foo` in this context produces ThirPatKind::Atom.
     let src = "
-describe :: #foo -> Text {
-  | #foo => \"it is foo\";
-}
+describe :: #foo -> Text
+  = #foo => \"it is foo\";
 describe #foo
 ";
     assert_eq!(run(src), Value::Text("it is foo".into()));
@@ -2192,9 +2185,8 @@ describe #foo
 fn match_positional_tuple_pattern_in_function_clause() {
     // Positional tuple pattern `(x, y)` exercises ThirPatKind::Tuple Positional arm.
     let src = "
-fst :: (Int, Text) -> Int {
-  | (n, _) => n;
-}
+fst :: (Int, Text) -> Int
+  = (n, _) => n;
 fst (42, \"hi\")
 ";
     assert_eq!(run(src), Value::Int(42));
@@ -2219,9 +2211,8 @@ fn named_tuple_construction_and_named_pattern() {
     // Pattern `(x = v, y = _)` exercises ThirTuplePatItem::Named matching.
     let src = "
 Coord :: type (x : Int, y : Int)
-getX :: Coord -> Int {
-  | (x = v, y = _) => v;
-}
+getX :: Coord -> Int
+  = (x = v, y = _) => v;
 getX (x = 42, y = 99)
 ";
     assert_eq!(run(src), Value::Int(42));
@@ -2245,9 +2236,8 @@ fn match_record_pattern_in_function_clause() {
     // Record pattern `{ port = n; }` exercises ThirPatKind::Record in match_pattern.
     let src = "
 Server :: type { host : Text; port : Int; }
-getPort :: Server -> Int {
-  | { host = _; port = n; } => n;
-}
+getPort :: Server -> Int
+  = { host = _; port = n; } => n;
 getPort { host = \"localhost\"; port = 8080; }
 ";
     assert_eq!(run(src), Value::Int(8080));
@@ -2257,9 +2247,8 @@ getPort { host = \"localhost\"; port = 8080; }
 fn match_record_pattern_multiple_fields() {
     let src = "
 Point :: type { x : Int; y : Int; }
-sumCoords :: Point -> Int {
-  | { x = a; y = b; } => a + b;
-}
+sumCoords :: Point -> Int
+  = { x = a; y = b; } => a + b;
 sumCoords { x = 3; y = 4; }
 ";
     assert_eq!(run(src), Value::Int(7));
@@ -2271,11 +2260,10 @@ sumCoords { x = 3; y = 4; }
 fn function_clause_guard_false_falls_through() {
     // guard `n > 0` evaluates to false for negative input → falls through to next clause.
     let src = "
-classify :: Int -> Int {
-  | n if n > 0 => 1;
-  | 0 => 0;
-  | _ => -1;
-}
+classify :: Int -> Int
+  = n if n > 0 => 1;
+  = 0 => 0;
+  = _ => -1;
 classify (-1)
 ";
     assert_eq!(run(src), Value::Int(-1));
@@ -2285,11 +2273,10 @@ classify (-1)
 fn function_clause_guard_false_then_matching_clause() {
     // Guard on first clause fails; second clause (no guard) matches.
     let src = "
-safe_div :: Int -> Int -> Int {
-  | _ 0 => 0;
-  | n d if d > 0 => n / d;
-  | _ _ => 0;
-}
+safe_div :: Int -> Int -> Int
+  = _ 0 => 0;
+  = n d if d > 0 => n / d;
+  = _ _ => 0;
 safe_div 10 0
 ";
     assert_eq!(run(src), Value::Int(0));
@@ -2625,9 +2612,8 @@ result
 fn handled_effect_in_block_local_initializer_resumes() {
     assert_eq!(
         run(r#"
-compute :: Text -> Int ! { query : Text -> Int } {
-  | _ => { x := perform query "q"; x + 1 };
-}
+compute :: Text -> Int ! { query : Text -> Int }
+  = _ => { x := perform query "q"; x + 1 };
 handle compute "go" with { query = \u. resume 41; }
 "#,),
         Value::Int(42)
@@ -2668,9 +2654,8 @@ result
 fn non_tail_resume_reenters_suspended_expression() {
     assert_eq!(
         run(r#"
-compute :: Text -> Int ! { query : Text -> Int } {
-  | _ => (perform query "question") + 1;
-}
+compute :: Text -> Int ! { query : Text -> Int }
+  = _ => (perform query "question") + 1;
 result := handle compute "go" with { query = \u. resume 41; }
 result
 "#,),
@@ -2752,7 +2737,7 @@ fn print_result_is_usable_text() {
 fn print_lambda_param_shadows_builtin() {
     // A lambda parameter named `print` shadows the prelude builtin; applying it
     // is ordinary variable application, not the builtin effect.
-    let src = "apply :: (Text -> Text) -> Text -> Text {\n  | f x => f x;\n}\napply (\\print. print) \"shadowed\"";
+    let src = "apply :: (Text -> Text) -> Text -> Text\n  = f x => f x;\napply (\\print. print) \"shadowed\"";
     assert_eq!(run(src), Value::Text("shadowed".into()));
 }
 

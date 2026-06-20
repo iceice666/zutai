@@ -125,10 +125,9 @@ fn named_tuple_type_lowers_to_tlc_tuple_with_named_fields() {
 #[test]
 fn float_pattern_lowers_to_lit_float_pat() {
     let m = tlc_of(
-        r#"classify :: Float -> Text {
-  | 0.0 => "zero";
-  | _ => "other";
-}
+        r#"classify :: Float -> Text
+  = 0.0 => "zero";
+  = _ => "other";
 classify 1.0"#,
     );
     // lower_expr.rs: ThirPatKind::Float(f) → TlcPat::Lit(Literal::Float(f))
@@ -146,10 +145,9 @@ classify 1.0"#,
 #[test]
 fn string_pattern_lowers_to_lit_str_pat() {
     let m = tlc_of(
-        r#"greet :: Text -> Int {
-  | "hello" => 1;
-  | _ => 0;
-}
+        r#"greet :: Text -> Int
+  = "hello" => 1;
+  = _ => 0;
 greet "hi""#,
     );
     // lower_expr.rs: ThirPatKind::String(s) → TlcPat::Lit(Literal::Str(s))
@@ -169,10 +167,9 @@ fn atom_pattern_bare_union_lowers_to_atom_pat() {
     // Bare union arm `#dev` / `#prod` (no payload) → ThirPatKind::Atom → TlcPat::Atom
     let m = tlc_of(
         r#"Profile :: type { #dev; #prod; }
-isProd :: Profile -> Bool {
-  | #prod => true;
-  | #dev => false;
-}
+isProd :: Profile -> Bool
+  = #prod => true;
+  = #dev => false;
 isProd #prod"#,
     );
     // lower_expr.rs: ThirPatKind::Atom(s) → TlcPat::Atom(s)
@@ -334,7 +331,7 @@ fn row_tail_var(row: &Row) -> Option<TlcTypeVar> {
 #[test]
 fn named_row_tail_emits_rvar_quantified_by_row_kind() {
     let m = tlc_of(
-        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; } {\n  | x => x;\n}\nidHost",
+        "idHost :: <Rest> { host : Text; ...Rest; } -> { host : Text; ...Rest; }\n  = x => x;\nidHost",
     );
     let TlcDecl::Value { ty, .. } = &m.decl_arena[m.decls[0]] else {
         panic!("expected Value decl");
@@ -361,7 +358,7 @@ fn named_row_tail_emits_rvar_quantified_by_row_kind() {
 #[test]
 fn anonymous_open_record_emits_rvar_tail() {
     let m = tlc_of(
-        "getHost :: { host : Text; ...; } -> Text {\n  | x => x.host;\n}\ngetHost { host = \"h\"; }",
+        "getHost :: { host : Text; ...; } -> Text\n  = x => x.host;\ngetHost { host = \"h\"; }",
     );
     let has_rvar = m
         .type_arena

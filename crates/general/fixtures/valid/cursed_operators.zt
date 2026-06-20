@@ -1,20 +1,16 @@
 -- cursed_operators.zt: dense precedence, application, access, and pipeline forms.
 
-inc :: Int -> Int {
-  | n => n + 1;
-}
+inc :: Int -> Int
+  = n => n + 1;
 
-double :: Int -> Int {
-  | n => n * 2;
-}
+double :: Int -> Int
+  = n => n * 2;
 
-applyTwice :: (Int -> Int) -> Int -> Int {
-  | f x => f (f x);
-}
+applyTwice :: (Int -> Int) -> Int -> Int
+  = f x => f (f x);
 
-unwrapOr :: Int? -> Int -> Int {
-  | n d => n ?? d;
-}
+unwrapOr :: Int? -> Int -> Int
+  = n d => n ?? d;
 
 Server :: type {
   host-name : Text;

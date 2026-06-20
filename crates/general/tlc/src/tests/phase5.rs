@@ -45,7 +45,8 @@ fn bounded_function_gets_forall_and_dict_lam() {
         r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 same 1 1
 "#,
     );
@@ -71,7 +72,8 @@ fn constraint_method_call_lowers_to_get_field() {
         r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 same 1 1
 "#,
     );
@@ -112,7 +114,8 @@ fn bounded_operator_witness_binary_lowers_to_get_field() {
         r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => x == y;
 same 1 1
 "#,
     );
@@ -136,7 +139,8 @@ fn call_to_bounded_function_injects_tyapp() {
         r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 result :: Bool = same 1 1
 result
 "#,
@@ -158,7 +162,8 @@ fn bounded_function_body_contains_dict_lam() {
         r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 same 1 1
 "#,
     );
@@ -226,7 +231,8 @@ fn every_expr_has_type_after_phase5() {
         r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
-same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+same :: <A: Eq> A -> A -> Bool
+  = x y => eq x y;
 same 1 1
 "#,
     );
@@ -270,7 +276,8 @@ fn hkt_method_call_elaborates_tyapp() {
         r#"
 Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
 Functor @List :: { map = \f xs. xs; }
-mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A { | f xs => map f (map f xs); }
+mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A
+  = f xs => map f (map f xs);
 1
 "#,
     );
@@ -319,7 +326,8 @@ fn hkt_unused_method_param_wraps_only_signature_params() {
         r#"
 Functor :: <F :: Type -> Type> @F { phantom :: <A, B> F A -> F A; }
 Functor @List :: { phantom = \xs. xs; }
-useIt :: <F: Functor, A> F A -> F A { | xs => phantom xs; }
+useIt :: <F: Functor, A> F A -> F A
+  = xs => phantom xs;
 1
 "#,
     );
