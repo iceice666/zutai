@@ -168,6 +168,40 @@ fn binary_add_produces_builtin_node() {
     assert!(has_add, "expected Builtin(Add) node for '+'");
 }
 
+#[test]
+fn operator_witness_equality_lowers_to_select_apply_not_builtin() {
+    let g = dc_of(
+        r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+result :: Bool = 1 == 1
+result
+"#,
+    );
+
+    let has_select = g
+        .nodes
+        .iter()
+        .any(|(_, n)| matches!(&n.kind, DfNodeKind::Select { field, .. } if field == "=="));
+    assert!(has_select, "expected Select(\"==\") for witnessed equality");
+
+    let has_apply = g
+        .nodes
+        .iter()
+        .any(|(_, n)| matches!(&n.kind, DfNodeKind::Apply { .. }));
+    assert!(has_apply, "expected Apply nodes for witnessed equality");
+
+    let builtin_eq_count = g
+        .nodes
+        .iter()
+        .filter(|(_, n)| matches!(&n.kind, DfNodeKind::Builtin(DfBuiltinOp::Eq, _, _)))
+        .count();
+    assert_eq!(
+        builtin_eq_count, 0,
+        "witnessed equality must not lower to Builtin(Eq)"
+    );
+}
+
 // ── Record ────────────────────────────────────────────────────────────────────
 
 #[test]

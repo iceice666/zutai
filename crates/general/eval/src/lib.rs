@@ -1,4 +1,4 @@
-//! Interim THIR reference interpreter for Zutai general mode (`.zt`).
+//! Reference evaluators for Zutai general mode (`.zt`).
 //!
 //! ## Design
 //! This crate is a *semantics oracle*: it REFUSES to evaluate any program that
@@ -9,9 +9,9 @@
 //!
 //! ## IR-agnostic core
 //! The modules `value`, `thunk`, and `env` are independent of any specific IR.
-//! Only `eval` imports THIR types.  When the TLC crate exists, a parallel
-//! `eval_tlc` module can be added and the public `eval_file` function updated
-//! to drive it — no changes required in the runtime-core modules.
+//! `eval` implements the THIR tree walker used by the default pure-program `run`
+//! path, and `eval_tlc` implements the TLC eager walker used for compiler-path
+//! parity checks and effect syntax.
 //!
 //! ## Note on resource management
 //! Top-level evaluation builds a `letrec` environment where closures capture
@@ -561,9 +561,9 @@ fn runtime_witnesses(
 /// Evaluate a `.zt` source string using the TLC eager evaluator.
 ///
 /// Runs the full pipeline through TLC elaboration, then evaluates the TLC
-/// module's final expression with `eval_tlc::TlcEvaluator`.  This avoids the
-/// `EvalError::UnresolvedWitness` limitation of the THIR oracle for programs
-/// using bounded polymorphism (constraint/witness).
+/// module's final expression with `eval_tlc::TlcEvaluator`. This is the
+/// compiler-path parity oracle for dictionary-passing, witnessed operators, and
+/// other TLC-only elaboration behavior.
 pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
     let analysis =
         zutai_semantic::analyze_with_base(source, None, zutai_semantic::AnalysisOptions::default());

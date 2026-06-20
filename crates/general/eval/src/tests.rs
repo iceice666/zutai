@@ -1168,6 +1168,15 @@ w := import "witness_eq_int_operator.zt"
     assert_eq!(run_in_imports(src), Value::Bool(false));
 }
 
+#[test]
+fn op_dispatch_imported_bounded_operator_uses_witness() {
+    let src = r#"
+w := import "witness_eq_int_operator_bounded.zt"
+w
+"#;
+    assert_eq!(run_in_imports(src), Value::Bool(false));
+}
+
 /// `!=` negates the `(==)` field when no `(!=)` field is present.
 #[test]
 fn op_dispatch_ne_negates_eq() {
@@ -1276,6 +1285,39 @@ Ord @Point :: { (<) = \\a b. true; }
 { x = 2; y = 0; } < { x = 1; y = 0; }
 ";
     // Custom (<) always returns true even though 2 > 1.
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+#[test]
+fn op_dispatch_bounded_eq_uses_witness_dict() {
+    let src = r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same 1 1
+"#;
+    assert_eq!(run(src), Value::Bool(false));
+}
+
+#[test]
+fn op_dispatch_bounded_ne_negates_eq_witness() {
+    let src = r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+same :: <A: Eq> A -> A -> Bool { | x y => x != y; }
+same 1 1
+"#;
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+#[test]
+fn op_dispatch_bounded_lt_uses_witness_dict() {
+    let src = r#"
+Ord :: <A> @A { (<) :: A -> A -> Bool; }
+Ord @Int :: { (<) = \a b. true; }
+less :: <A: Ord> A -> A -> Bool { | x y => x < y; }
+less 2 1
+"#;
     assert_eq!(run(src), Value::Bool(true));
 }
 

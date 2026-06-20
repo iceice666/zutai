@@ -1,6 +1,6 @@
 # Dataflow Core IR
 
-The Dataflow Core (DC) is the graph-based intermediate representation that sits between the Typed High-Level IR (THIR / Type Lambda Calculus) and Administrative Normal Form (ANF).
+The Dataflow Core (DC) is the graph-based intermediate representation that sits between TLC (Type Lambda Calculus) and Administrative Normal Form (ANF).
 
 ## Pipeline position
 
@@ -202,11 +202,11 @@ DataflowGraph {
 
 ## TLC → DC lowering
 
-The lowering pass walks a THIR `ThirFile` and builds a `DataflowGraph`. The key invariant is:
+The lowering pass walks a `TlcModule` and builds a `DataflowGraph`. The key invariant is:
 
-> **Each THIR local binding is lowered exactly once. All references to that binding become edges to the same DC NodeId.**
+> **Each TLC local binding is lowered exactly once. All references to that binding become edges to the same DC NodeId.**
 
-This is the tree-to-graph transformation. In THIR, two uses of the same binding are two separate `BindingRef` nodes. In DC, they are two edges pointing to a single node.
+This is the tree-to-graph transformation. In TLC, two uses of the same binding are two separate `Var` nodes. In DC, they are two edges pointing to a single node.
 
 ### Local binding table
 

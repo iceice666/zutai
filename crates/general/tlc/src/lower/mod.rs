@@ -85,6 +85,8 @@ struct Lowerer<'thir> {
     /// constraint method BindingId → (constraint BindingId, method name).
     /// Used in the Apply arm to dispatch to `GetField` on the active dict param.
     constraint_methods: HashMap<BindingId, ConstraintMethodInfo>,
+    /// Constraint operator methods in declaration order for binary operator lowering.
+    operator_methods: Vec<ConstraintMethodInfo>,
     /// (constraint BindingId.0, WitnessTargetKey) → witness decl BindingId.
     /// Populated for every `Witness` THIR decl; queried at concrete call sites.
     witness_bindings: HashMap<(u32, WitnessTargetKey), BindingId>,
@@ -123,6 +125,7 @@ impl<'thir> Lowerer<'thir> {
             decl_thir_types: HashMap::new(),
             next_synth: u32::MAX,
             constraint_methods: HashMap::new(),
+            operator_methods: Vec::new(),
             witness_bindings: HashMap::new(),
             fn_explicit_params: HashMap::new(),
             active_dict_params: HashMap::new(),
@@ -199,15 +202,16 @@ impl<'thir> Lowerer<'thir> {
                     };
                     for method in methods {
                         if let Some(binding) = method.binding {
-                            self.constraint_methods.insert(
-                                binding,
-                                ConstraintMethodInfo {
-                                    constraint: decl.binding,
-                                    name: method.name.clone(),
-                                    constraint_param,
-                                    method_params: method.params.clone(),
-                                },
-                            );
+                            let info = ConstraintMethodInfo {
+                                constraint: decl.binding,
+                                name: method.name.clone(),
+                                constraint_param,
+                                method_params: method.params.clone(),
+                            };
+                            self.constraint_methods.insert(binding, info.clone());
+                            if method.is_operator {
+                                self.operator_methods.push(info);
+                            }
                         }
                     }
                 }
@@ -544,37 +548,33 @@ impl<'thir> Lowerer<'thir> {
         })
     }
 
-    /// Build a TLC expression for passing the witness dict at a call site.
+    /// Try to build a TLC expression for passing the witness dict at a call site.
     ///
     /// If `inst_type_id` is an abstract `TypeVar`, threads the active dict param.
-    /// If it is a concrete type, looks up the registered witness decl.
-    /// Returns a `Lit(Nothing)` placeholder on failure (undefined witness).
-    pub(crate) fn get_dict_expr(
+    /// If it is a concrete type, looks up the registered witness decl or a
+    /// matching conditional witness. Returns `None` when no dictionary resolves.
+    pub(crate) fn try_get_dict_expr(
         &mut self,
         cst_binding: BindingId,
         inst_type_id: TypeId,
         span: Span,
-    ) -> TlcExprId {
-        use crate::ir::{Literal, PrimTy, Row};
-        let thir_kind = self.thir.type_arena[inst_type_id.0 as usize].kind.clone();
+    ) -> Option<TlcExprId> {
+        use crate::ir::Row;
 
+        let thir_kind = self.thir.type_arena[inst_type_id.0 as usize].kind.clone();
         match thir_kind {
             TypeKind::TypeVar(tv_binding) => {
-                // Abstract type — thread the active dict param.
-                if let Some(&dp) = self.active_dict_params.get(&(cst_binding.0, tv_binding.0)) {
-                    let dp_ty = self
-                        .active_dict_types
-                        .get(&dp)
-                        .copied()
-                        .unwrap_or_else(|| self.alloc_type(TlcType::Record(Row::REmpty)));
-                    self.alloc_expr(TlcExpr::Var(dp), dp_ty, span)
-                } else {
-                    let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
-                    self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
-                }
+                let dp = *self
+                    .active_dict_params
+                    .get(&(cst_binding.0, tv_binding.0))?;
+                let dp_ty = self
+                    .active_dict_types
+                    .get(&dp)
+                    .copied()
+                    .unwrap_or_else(|| self.alloc_type(TlcType::Record(Row::REmpty)));
+                Some(self.alloc_expr(TlcExpr::Var(dp), dp_ty, span))
             }
             _ => {
-                // Concrete type — first try a directly registered witness.
                 if let Some(key) = self.thir_type_to_witness_key(inst_type_id)
                     && let Some(&wb) = self.witness_bindings.get(&(cst_binding.0, key))
                 {
@@ -584,19 +584,30 @@ impl<'thir> Lowerer<'thir> {
                         .copied()
                         .map(|thir_ty| self.lower_type(thir_ty))
                         .unwrap_or_else(|| self.alloc_type(TlcType::Record(Row::REmpty)));
-                    return self.alloc_expr(TlcExpr::Var(wb), wb_ty, span);
+                    return Some(self.alloc_expr(TlcExpr::Var(wb), wb_ty, span));
                 }
-                // Otherwise try to build the dict from a conditional witness whose
-                // target structurally matches this concrete type.
-                if let Some(dict) =
-                    self.resolve_conditional_witness(cst_binding, inst_type_id, span)
-                {
-                    return dict;
-                }
-                let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
-                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
+                self.resolve_conditional_witness(cst_binding, inst_type_id, span)
             }
         }
+    }
+
+    /// Build a TLC expression for passing the witness dict at a call site.
+    ///
+    /// Returns a `Lit(Nothing)` placeholder on failure (undefined witness) to
+    /// preserve existing named-method and bounded-call lowering behavior.
+    pub(crate) fn get_dict_expr(
+        &mut self,
+        cst_binding: BindingId,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> TlcExprId {
+        self.try_get_dict_expr(cst_binding, inst_type_id, span)
+            .unwrap_or_else(|| {
+                use crate::ir::{Literal, PrimTy};
+
+                let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
+                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
+            })
     }
 
     /// Build a dict expression for a concrete type from a conditional witness.
@@ -646,13 +657,12 @@ impl<'thir> Lowerer<'thir> {
                 let arg_ty = self.lower_type(arg_ty_id);
                 cur = self.alloc_expr(TlcExpr::TyApp(cur, arg_ty), placeholder, span);
                 for &bound in bounds {
-                    let dict = self.get_dict_expr(bound, arg_ty_id, span);
-                    if self.is_nothing_dict(dict) {
+                    let Some(dict) = self.try_get_dict_expr(bound, arg_ty_id, span) else {
                         // A required component witness is missing; this candidate
                         // cannot produce a usable dict.
                         ok = false;
                         break;
-                    }
+                    };
                     cur = self.alloc_expr(TlcExpr::App(cur, dict), placeholder, span);
                 }
                 if !ok {
@@ -666,15 +676,6 @@ impl<'thir> Lowerer<'thir> {
         }
         self.resolving_dicts.remove(&guard);
         result
-    }
-
-    /// True if `expr` is the `Lit(Nothing)` placeholder `get_dict_expr` returns
-    /// when no witness resolves.
-    fn is_nothing_dict(&self, expr: TlcExprId) -> bool {
-        matches!(
-            self.expr_arena[expr],
-            TlcExpr::Lit(crate::ir::Literal::Nothing)
-        )
     }
 
     /// Structurally match a witness `target` (with `holes` as wildcards) against

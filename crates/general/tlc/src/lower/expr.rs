@@ -3,8 +3,8 @@ use zutai_syntax::ast::BinOp;
 use zutai_thir::{ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId};
 
 use crate::ir::{
-    BuiltinOp, Literal, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
-    TlcTupleItem, TlcTypeId,
+    BuiltinOp, Literal, PrimTy, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
+    TlcTupleItem, TlcType, TlcTypeId,
 };
 
 use super::Lowerer;
@@ -72,6 +72,33 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::Binary { op, lhs, rhs } => {
                 let lhs_tlc = self.lower_expr(lhs);
                 let rhs_tlc = self.lower_expr(rhs);
+                let lhs_ty = self.thir.expr_arena[lhs].ty;
+
+                if op == BinOp::Ne {
+                    if let Some(expr) = self
+                        .lower_operator_method_call("!=", lhs_ty, lhs_tlc, rhs_tlc, tlc_ty, span)
+                    {
+                        return expr;
+                    }
+                    if let Some(eq_expr) = self
+                        .lower_operator_method_call("==", lhs_ty, lhs_tlc, rhs_tlc, tlc_ty, span)
+                    {
+                        let bool_ty = self.alloc_type(TlcType::Prim(PrimTy::Bool));
+                        let true_lit =
+                            self.alloc_expr(TlcExpr::Lit(Literal::Bool(true)), bool_ty, span);
+                        return self.alloc_expr(
+                            TlcExpr::Builtin(BuiltinOp::Ne, eq_expr, true_lit),
+                            tlc_ty,
+                            span,
+                        );
+                    }
+                } else if let Some(op_name) = binop_operator_method_name(op)
+                    && let Some(expr) = self
+                        .lower_operator_method_call(op_name, lhs_ty, lhs_tlc, rhs_tlc, tlc_ty, span)
+                {
+                    return expr;
+                }
+
                 let builtin = binop_to_builtin(op);
                 self.alloc_expr(TlcExpr::Builtin(builtin, lhs_tlc, rhs_tlc), tlc_ty, span)
             }
@@ -342,6 +369,45 @@ impl<'thir> Lowerer<'thir> {
         }
     }
 
+    fn binary_method_type(
+        &mut self,
+        operand_ty: TypeId,
+        result_ty: TlcTypeId,
+    ) -> (TlcTypeId, TlcTypeId) {
+        use crate::ir::Row;
+
+        let operand_tlc_ty = self.lower_type(operand_ty);
+        let after_first = self.alloc_type(TlcType::Fun(operand_tlc_ty, result_ty, Row::REmpty));
+        let full = self.alloc_type(TlcType::Fun(operand_tlc_ty, after_first, Row::REmpty));
+        (full, after_first)
+    }
+
+    fn lower_operator_method_call(
+        &mut self,
+        op_name: &str,
+        operand_ty: TypeId,
+        lhs_tlc: TlcExprId,
+        rhs_tlc: TlcExprId,
+        result_ty: TlcTypeId,
+        span: zutai_syntax::Span,
+    ) -> Option<TlcExprId> {
+        for info in self.operator_methods.clone() {
+            if info.name != op_name || !info.method_params.is_empty() {
+                continue;
+            }
+
+            let Some(dict) = self.try_get_dict_expr(info.constraint, operand_ty, span) else {
+                continue;
+            };
+            let (method_ty, after_first_ty) = self.binary_method_type(operand_ty, result_ty);
+            let method = self.alloc_expr(TlcExpr::GetField(dict, info.name), method_ty, span);
+            let first = self.alloc_expr(TlcExpr::App(method, lhs_tlc), after_first_ty, span);
+            return Some(self.alloc_expr(TlcExpr::App(first, rhs_tlc), result_ty, span));
+        }
+
+        None
+    }
+
     pub(super) fn lower_lambda(
         &mut self,
         params: Vec<ThirPatId>,
@@ -362,6 +428,18 @@ impl<'thir> Lowerer<'thir> {
             };
             self.alloc_expr(TlcExpr::Lam(param_binding, param_ty, inner), outer_ty, span)
         })
+    }
+}
+
+fn binop_operator_method_name(op: BinOp) -> Option<&'static str> {
+    match op {
+        BinOp::Eq => Some("=="),
+        BinOp::Ne => Some("!="),
+        BinOp::Lt => Some("<"),
+        BinOp::Le => Some("<="),
+        BinOp::Gt => Some(">"),
+        BinOp::Ge => Some(">="),
+        _ => None,
     }
 }
 

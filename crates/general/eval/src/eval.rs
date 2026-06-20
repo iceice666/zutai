@@ -1,8 +1,8 @@
-//! THIR tree-walk evaluator — the only THIR-specific file in this crate.
+//! THIR tree-walk evaluator — the THIR-specific reference oracle in this crate.
 //!
-//! This is deliberately the single "swappable" file: when TLC is built, a
-//! parallel `eval_tlc.rs` will be added here reusing everything in `value`,
-//! `thunk`, and `env` unchanged.
+//! The parallel `eval_tlc.rs` walker evaluates TLC modules for compiler-path
+//! parity checks while reusing the same `value`, `thunk`, and `env` runtime
+//! structures.
 //!
 //! The `Evaluator` holds a module registry (`&[ThirFile]`) plus an
 //! `active_module: ModuleId` index.  Arena helpers route through the active
@@ -1017,6 +1017,32 @@ impl<'a> Evaluator<'a> {
         let aliases = self.build_alias_map();
         let key = type_key(&self.file.type_arena, &aliases, operand_ty);
 
+        if key_is_ambiguous(&key) {
+            if op == BinOp::Ne {
+                let ne_err = match self.dispatch_operator_dict_field("!=", lv, rv, env) {
+                    Ok(Some(v)) => return Ok(Some(v)),
+                    Ok(None) => None,
+                    Err(err) => Some(err),
+                };
+                match self.dispatch_operator_dict_field("==", lv, rv, env) {
+                    Ok(Some(v)) => {
+                        return Ok(match v {
+                            Value::Bool(b) => Some(Value::Bool(!b)),
+                            _ => None,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(err) => return Err(err),
+                }
+                if let Some(err) = ne_err {
+                    return Err(err);
+                }
+                return Ok(None);
+            }
+
+            return self.dispatch_operator_dict_field(op_name, lv, rv, env);
+        }
+
         if op == BinOp::Ne {
             // Try (!=) first; fall back to negating (==).
             if let Some(v) = self.dispatch_operator_field("!=", &key, &aliases, lv, rv, env)? {
@@ -1074,6 +1100,46 @@ impl<'a> Evaluator<'a> {
         }
 
         Ok(None)
+    }
+
+    /// Find an operator constraint method's active dictionary field and apply it.
+    fn dispatch_operator_dict_field(
+        &self,
+        op_name: &str,
+        lv: &Value,
+        rv: &Value,
+        env: &Env,
+    ) -> Result<Option<Value>, EvalError> {
+        let mut found_operator_constraint = false;
+
+        for &decl_id in &self.file.decls {
+            let decl = self.decl(decl_id);
+            if let ThirDeclKind::Constraint { methods, .. } = &decl.kind {
+                let has_operator_method = methods
+                    .iter()
+                    .any(|method| method.is_operator && method.name == op_name);
+                if !has_operator_method {
+                    continue;
+                }
+
+                found_operator_constraint = true;
+                if let Ok(thunk) = env.lookup(decl.binding)
+                    && let Value::WitnessDict(dict) = thunk.force(self)?
+                    && let Some(Value::Closure(c)) = dict.get(op_name)
+                {
+                    let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                    return Ok(Some(self.apply_closure(c, args)?));
+                }
+            }
+        }
+
+        if found_operator_constraint {
+            Err(EvalError::UnresolvedWitness {
+                method: op_name.to_string(),
+            })
+        } else {
+            Ok(None)
+        }
     }
 
     fn eval_imported_witness_field(
@@ -1843,7 +1909,7 @@ fn resolve_alias_chain(
 /// (`?` for `InferVar`, `$` for `AliasApply`) that could cause a
 /// dispatch miss despite a witness being present.
 fn key_is_ambiguous(key: &str) -> bool {
-    key.contains('?') || key.contains('$')
+    key.starts_with('@') || key.contains('?') || key.contains('$')
 }
 
 fn value_type_name(v: &Value) -> &'static str {

@@ -30,4 +30,4 @@ Source → HIR → THIR → TLC
 - **SSA** — basic blocks with phi-nodes. Standard form for LLVM emission. Produced by `zutai-ssa`.
 - **LLVM IR** — final backend target. Emitted by `zutai-codegen`.
 - **Semantic facade** (`zutai-semantic`) — wires parse, HIR, THIR, and TLC into one staged API. Passes live in the IR crate they transform.
-- **Reference interpreter** (`zutai-eval`) — interim THIR tree-walking interpreter. A semantics oracle: runs only fully type-checked `.zt` programs; provides `run` and `repl` CLI subcommands; output is ground truth for differential testing of the LLVM backend.
+- **Reference interpreters** (`zutai-eval`) — semantics oracles over the completed typed IR. The default `run` path uses the THIR evaluator for pure programs; `eval_tlc_file` exercises the TLC lowering/evaluator path used for compiler parity checks. Both refuse programs that are not fully type-checked.

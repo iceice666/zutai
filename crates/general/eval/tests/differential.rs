@@ -43,6 +43,33 @@ fn battery() -> Vec<(&'static str, &'static str)> {
             "guard",
             "f :: Int -> Text {\n  | n if n > 0 => \"pos\";\n  | _ => \"nonpos\";\n}\nf 5",
         ),
+        (
+            "operator_witness_direct_eq",
+            r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+1 == 1"#,
+        ),
+        (
+            "operator_witness_bounded_eq",
+            r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same 1 1"#,
+        ),
+        (
+            "operator_witness_bounded_ne_from_eq",
+            r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+same :: <A: Eq> A -> A -> Bool { | x y => x != y; }
+same 1 1"#,
+        ),
+        (
+            "operator_witness_bounded_lt",
+            r#"Ord :: <A> @A { (<) :: A -> A -> Bool; }
+Ord @Int :: { (<) = \a b. true; }
+less :: <A: Ord> A -> A -> Bool { | x y => x < y; }
+less 2 1"#,
+        ),
     ]
 }
 
@@ -60,12 +87,30 @@ fn thir_and_tlc_walkers_agree() {
         if !agree {
             divergences.push(format!("{label}: THIR={thir:?} TLC={tlc:?}"));
         }
+        if let Some(expected) = expected_display(label) {
+            match (&thir, &tlc) {
+                (Ok(a), Ok(b)) if a.to_string() == expected && b.to_string() == expected => {}
+                _ => divergences.push(format!(
+                    "{label}: expected both walkers to display {expected:?}, got THIR={thir:?} TLC={tlc:?}"
+                )),
+            }
+        }
     }
     assert!(
         divergences.is_empty(),
         "THIR/TLC walker divergences:\n{}",
         divergences.join("\n")
     );
+}
+
+fn expected_display(label: &str) -> Option<&'static str> {
+    match label {
+        "operator_witness_direct_eq" => Some("false"),
+        "operator_witness_bounded_eq" => Some("false"),
+        "operator_witness_bounded_ne_from_eq" => Some("true"),
+        "operator_witness_bounded_lt" => Some("true"),
+        _ => None,
+    }
 }
 
 /// Compare two forced values structurally via their `Display` form (both

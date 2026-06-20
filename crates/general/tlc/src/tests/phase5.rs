@@ -3,6 +3,24 @@
 use super::tlc_of;
 use crate::*;
 
+fn has_get_field(m: &TlcModule, field_name: &str) -> bool {
+    m.expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::GetField(_, field) if field == field_name))
+}
+
+fn has_nested_binary_method_app(m: &TlcModule, field_name: &str) -> bool {
+    m.expr_arena.iter().any(|(_, e)| {
+        let TlcExpr::App(first, _) = e else {
+            return false;
+        };
+        let TlcExpr::App(method, _) = &m.expr_arena[*first] else {
+            return false;
+        };
+        matches!(&m.expr_arena[*method], TlcExpr::GetField(_, field) if field == field_name)
+    })
+}
+
 /// A constraint witness decl lowers to a `TlcDecl::Value` whose body is a `Record`.
 #[test]
 fn witness_decl_lowers_to_record_value() {
@@ -64,6 +82,48 @@ same 1 1
     assert!(
         has_get_field,
         "expected TlcExpr::GetField for constraint method call inside bounded function"
+    );
+}
+
+#[test]
+fn operator_witness_binary_lowers_to_get_field() {
+    let m = tlc_of(
+        r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+result :: Bool = 1 == 1
+result
+"#,
+    );
+
+    assert!(
+        has_get_field(&m, "=="),
+        "expected TlcExpr::GetField(_, \"==\") for witnessed equality"
+    );
+    assert!(
+        has_nested_binary_method_app(&m, "=="),
+        "expected nested App(App(GetField(_, \"==\"), _), _) for witnessed equality"
+    );
+}
+
+#[test]
+fn bounded_operator_witness_binary_lowers_to_get_field() {
+    let m = tlc_of(
+        r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. false; }
+same :: <A: Eq> A -> A -> Bool { | x y => x == y; }
+same 1 1
+"#,
+    );
+
+    assert!(
+        has_get_field(&m, "=="),
+        "expected TlcExpr::GetField(_, \"==\") in bounded witnessed equality"
+    );
+    assert!(
+        has_nested_binary_method_app(&m, "=="),
+        "expected nested App(App(GetField(_, \"==\"), _), _) in bounded witnessed equality"
     );
 }
 

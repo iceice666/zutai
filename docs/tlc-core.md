@@ -35,17 +35,7 @@ See [`docs/dataflow-core.md`](dataflow-core.md) for the next stage's IR specific
 
 **The fixpoint claim.** No new core IR nodes are needed for any planned frontend feature. Every hard surface feature maps to existing core mechanisms (or the two genuinely-new additions — `VariantT` type former and `Variant` term injection — that are unavoidable for sum types). This is proved by §6 (constraint witnesses) and §7 (algebraic effects).
 
-**Why the current lowering fails this contract.** Three live bugs in `crates/general/tlc/src/lower/types.rs` silently destroy information:
-
-| Location | Bug |
-|---|---|
-| `:64` | `TypeKind::Union(_) ⟹ TlcType::Record(Vec::new())` — every `type [...]` sum collapses to `{}` |
-| `:20–22` | `TypeKind::Bool \| TypeKind::True \| TypeKind::False ⟹ PrimTy::Bool` — `True`/`False` singleton discrimination lost |
-| `:83` | `TypeKind::Type \| TypeKind::Error ⟹ TlcType::Record(Vec::new())` — first-class `Type` erased incorrectly |
-
-And a fourth data-loss issue at `:24`: `TypeKind::Atom(_) ⟹ TlcType::Prim(PrimTy::Atom)` — the atom's symbol payload is discarded. Additionally, `lower/expr.rs` currently lowers `ThirPatKind::TaggedValue` to `TlcPat::Wildcard` as a stopgap, losing tagged-union patterns entirely.
-
-These are latent today because `zutai-eval` still walks THIR. They become correctness bugs the moment any downstream stage reads TLC. The root cause is the same for all: **the current `TlcType` enum has no sum former and no singleton-literal type former.** The design below adds both.
+**Historical lowering failures now covered by the implementation.** Early TLC lowering lost several source distinctions: unions collapsed to empty records, `true`/`false` singleton types collapsed to `Bool`, first-class `Type`/error types collapsed to empty records, atom singleton payloads collapsed to `Atom`, and tagged-value patterns temporarily lowered to wildcards. The current lowering has dedicated `VariantT`, `Singleton(Literal)`, atom-payload, and tagged-pattern support, so downstream stages no longer depend on the THIR evaluator to preserve these cases.
 
 **The fix.** Extend the core with exactly the nodes needed to express every v0 and v1 construct as elaboration:
 - Types and terms share one language, with `Type ℓ` universes separating levels.
@@ -76,7 +66,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | Record update (`with { field = v }`) | elaborates to `Record` literals (consistent with Decision 0001's stdlib-overlay stance) | none |
 | Modules / imports | resolved in HIR; TLC sees flat `BindingId`s | none |
 | Multi-clause functions | desugar to `Lam(x, Case(Var(x), alts))` | none |
-| `If`/`else`, `Block`, `Binary` | `Case`, nested `Let`, `Builtin` | none |
+| `If`/`else`, `Block`, `Binary` | `Case`, nested `Let`, `Builtin` for primitive operators; witnessed comparisons use `GetField` + `App` | none |
 
 The two genuinely new nodes — `VariantT` (type former) and `Variant` (term injection) — are unavoidable. Everything else is elaboration. The zero-new-node claims for constraint witnesses and effects are load-bearing and proved in §6 and §7.
 
@@ -389,13 +379,13 @@ TyApp(Var(eqBoth), Int)
   `App` Lit(Int 2)
   `App` Lit(Int 3)
 ```
-The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Record` value binding.
+The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Record` value binding. Operator methods use the same dictionary shape: `(==)` is stored under the field name `"=="`, and witnessed `x == y` lowers to `App(App(GetField(dict, "=="), x), y)`. If no matching dictionary resolves, scalar comparisons fall back to `BuiltinOp::*`.
 
 **Higher-kinded constraints** (`Functor :: <F :: Type -> Type> @F { … }`) add a `Kind` annotation to `ForAll` and `TyLam` nodes that already exist. The dictionary is still a `Record` whose fields are functions.
 
 **`} derive` / `@T :: derive`** (auto-generating witness implementations) is a compile-time elaboration pass that emits standard TLC term nodes. No core change.
 
-**Verdict.** Constraint witnesses require zero new `TlcExpr` variants and zero new `TlcType` variants. The only "change" is that the lowering pass emits additional `Record`, `GetField`, `TyLam(a:Kind)`, and `ForAll(a:Kind)` nodes that it already knows how to emit.
+**Verdict.** Constraint witnesses require zero new `TlcExpr` variants and zero new `TlcType` variants. The lowering pass emits ordinary `Record`, `GetField`, `App`, `TyLam(a:Kind)`, and `ForAll(a:Kind)` nodes.
 
 ---
 
@@ -636,7 +626,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Multi-clause function | `Lam(x, T, Case(Var x, alts))` (desugared) | 0 |
 | `if/else` | `Case(cond, [Alt(Singleton(true), t), Alt(Singleton(false), e)])` | 0 |
 | `Block { locals; tail }` | nested `Let` | 0 |
-| Binary operators | `Builtin(op, lhs, rhs)` | 0 |
+| Binary operators | primitive operators use `Builtin(op, lhs, rhs)`; witnessed comparisons use dictionary `GetField` + curried `App` | 0/5 |
 | Generic function `<A>` | `ForAll(A, Type0, body)` + `TyLam(A, Type0, e)` | 0 |
 | Generic type alias `<A, B>` | `TyLamK(A, Type0, TyLamK(B, Type0, body))` | 0 |
 | Type alias usage `Pair Text Int` | `TyApp(TyApp(TyVar(Pair), Text), Int)` → NbE | 2 |
@@ -655,7 +645,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Union extension `...Shape` | row spread, resolved at elaboration | 3 |
 | HKT param `F :: Type -> Type` | `ForAll(F, Type0 -> Type0, body)` | 1+3 |
 | Constraint `<A: Eq>` | extra dict `Lam(dict: {eq: A -> A -> Bool}, …)` | 5 |
-| Witness `Eq @Int :: { … }` | `Record([("eq", Var(eqIntImpl))])` | 5 |
+| Witness `Eq @Int :: { … }` / operator method `(==)` | `Record([("eq", Var(eqIntImpl))])`; operator fields use names like `"=="` and calls lower through `GetField` + `App` | 5 |
 | `} derive` / `@T :: derive` | elaboration emit; no new nodes | 5 |
 | Recursive type function (`Loop :: Type -> Type { \| T => Loop T; }`) | `TyLamK` + `TyApp` + NbE fuel | 2 |
 | Type equality by normalization | NbE kernel | 2 |

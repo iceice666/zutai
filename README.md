@@ -14,9 +14,13 @@ crates/
   cli/                 Command-line interface crate
   general/
     syntax/            Parser and AST definitions for general mode (`.zt`)
-    hir/               Resolved high-level IR for general mode
-    thir/              Typed high-level IR and partial type checking for general mode
-    semantic/          Facade wiring parse -> HIR -> THIR analysis
+    hir/               Name-resolved high-level IR and structural validation
+    thir/              Typed HIR, constraints/witness checking, diagnostics foundation
+    tlc/               Type Lambda Calculus lowering with explicit polymorphism/dictionaries
+    semantic/          Facade wiring parse -> HIR -> THIR -> TLC analysis
+    eval/              THIR and TLC reference evaluators
+    dataflow/          TLC-to-Dataflow Core graph lowering
+    anf/ ssa/ codegen/ Downstream compile pipeline stages
   immediate/
     core/              Immediate-mode facade over selectable parser backends
     syntax/            Parser and AST definitions for immediate mode (`.zti`)
@@ -58,10 +62,10 @@ The shell provides `cargo`, `rustc`, `rustfmt`, `clippy`, and `rust-analyzer`.
 
 ## Status
 
-Zutai is under active design. The docs describe the intended v0 language; implementation details may lag behind the specification.
+Zutai is under active design. The docs describe the intended v0 language plus selected v1-adjacent features already implemented during the v0 cycle.
 
 Current implementation highlights:
 
 - Immediate mode has syntax and SIMD parser crates behind the `zutai-im` facade.
-- General mode has parsing, HIR lowering/name resolution, a semantic facade, and early THIR/type-checking support.
-- THIR currently supports scalar values, non-generic type aliases, closed record checking, field access, atom unions, block locals, and explicitly typed monomorphic function declarations/application. Larger v0 features such as imports, optional chaining/defaulting, full pattern matching, lambdas, and polymorphism are still incomplete.
+- General mode parses `.zt`, lowers through HIR and THIR, elaborates to TLC, and has test-covered Dataflow Core, ANF, SSA, and LLVM IR text stages.
+- Constraints/witnesses support named methods and operator methods. Direct and bounded comparison-operator syntax (`==`, `!=`, `<`, `<=`, `>`, `>=`) now dispatches through the same witness dictionaries on the THIR evaluator, TLC evaluator, and import-free TLC→Dataflow path.
