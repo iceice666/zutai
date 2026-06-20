@@ -346,6 +346,6 @@ Recommended initial policy:
 
 These are post-roadmap stabilization items, not unchecked roadmap milestones.
 
-- **v0 spec conformance sweep** — known stale syntax examples are fixed by the doc/fixture sweep above; future work is automated extraction and running of every `docs/v0_spec/` code fence through `run` / `check`, then promoting surviving examples into acceptance tests.
+- [x] **v0 spec conformance sweep** — automated extraction now scans every `docs/v0_spec/` code fence and runs `.zt` survivors through `check`/`run` plus `.zti` survivors through the immediate parser; the stable survivor set is promoted into `crates/general/eval/tests/v0_spec.rs` acceptance coverage.
 - **Diagnostic polish** — render structural details for record-vs-record type mismatches and row-tail errors instead of collapsing both sides to generic `record` labels.
 - **TLC-first evaluator cutover plan** — define parity gates for constraints, optionals, imports, effects, and reflection boundaries; keep the THIR evaluator as the regression oracle until the differential suite is green.
