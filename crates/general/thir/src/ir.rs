@@ -334,6 +334,7 @@ pub enum TypeKind {
     False,
     List(TypeId),
     Optional(TypeId),
+    Maybe(TypeId),
     Record(Vec<TypeRecordField>, RowTail),
     Union(Vec<UnionVariant>, RowTail),
     Tuple(Vec<TypeTupleItem>),
@@ -375,7 +376,7 @@ pub enum TypeKind {
         func: TypeId,
         arg: TypeId,
     },
-    /// A bare, unapplied builtin type constructor (`List`, `Optional`) used as a
+    /// A bare, unapplied builtin type constructor (`List`, `Optional`, `Maybe`) used as a
     /// higher-kinded witness/constraint target (`Functor @List`). Named aliases
     /// use `Alias(binding)` for their bare head; `Con` exists only for builtins
     /// that have no alias body.

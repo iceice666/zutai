@@ -124,7 +124,7 @@ Union types may be generic:
 ```zt
 Optional :: <T> type {
   #none;
-  #some: { value: T; };
+  #some (T);
 }
 ```
 

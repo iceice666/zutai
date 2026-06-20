@@ -110,191 +110,62 @@ impl<'a> TlcEvaluator<'a> {
                     .get(&expr_id)
                     .copied()
                     .map(|ty_id| self.resolve_tlc_alias_chain(ty_id));
-                match recv_ty {
-                    Some(ty_id) => match &self.module.type_arena[ty_id] {
-                        TlcType::Optional(inner_id) => {
-                            let inner_id = *inner_id;
-                            let recv_control = self.eval_control(expr_id, env, resume)?;
-                            self.bind_control(recv_control, move |recv, this| match recv {
-                                Value::Atom(atom) if atom.as_ref() == "none" => {
-                                    Ok(EvalControl::Value(Value::Atom(Rc::from("none"))))
-                                }
-                                Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => {
-                                    Ok(EvalControl::Value(Value::Atom(Rc::from("none"))))
-                                }
-                                Value::Nothing => {
-                                    Ok(EvalControl::Value(Value::Atom(Rc::from("none"))))
-                                }
-                                Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
-                                    let inner = match payload
-                                        .iter()
-                                        .find(|(name, _)| name.as_ref() == "value")
-                                    {
-                                        Some((_, thunk)) => thunk.force_tlc(&this)?,
-                                        None => {
-                                            return Err(EvalError::TypeMismatch {
-                                                expected: "Record",
-                                                found: "TaggedValue",
-                                            });
-                                        }
-                                    };
-                                    match inner {
-                                        Value::Record(inner_fields) => {
-                                            if let Some((true, value_ty)) =
-                                                this.tlc_field_meta(inner_id, field.as_str())
-                                            {
-                                                return this
-                                                    .project_optional_field(
-                                                        &inner_fields,
-                                                        field.as_str(),
-                                                        this.tlc_type_is_optional(value_ty),
-                                                    )
-                                                    .map(EvalControl::Value);
-                                            }
-                                            match inner_fields
-                                                .iter()
-                                                .find(|(name, _)| name.as_ref() == field.as_str())
-                                            {
-                                                Some((_, thunk)) => {
-                                                    let value = thunk.force_tlc(&this)?;
-                                                    Ok(EvalControl::Value(Value::TaggedValue {
-                                                        tag: Rc::from("some"),
-                                                        payload: Rc::new(vec![(
-                                                            Rc::from("value"),
-                                                            Thunk::ready(value),
-                                                        )]),
-                                                    }))
-                                                }
-                                                None => Ok(EvalControl::Value(Value::Atom(
-                                                    Rc::from("none"),
-                                                ))),
-                                            }
-                                        }
-                                        other => Err(EvalError::TypeMismatch {
-                                            expected: "Record",
-                                            found: value_type_name(&other),
-                                        }),
-                                    }
-                                }
-                                Value::Record(inner_fields) => {
-                                    if let Some((true, value_ty)) =
-                                        this.tlc_field_meta(inner_id, field.as_str())
-                                    {
-                                        return this
-                                            .project_optional_field(
-                                                &inner_fields,
-                                                field.as_str(),
-                                                this.tlc_type_is_optional(value_ty),
-                                            )
-                                            .map(EvalControl::Value);
-                                    }
-                                    match inner_fields
-                                        .iter()
-                                        .find(|(name, _)| name.as_ref() == field.as_str())
-                                    {
-                                        Some((_, thunk)) => {
-                                            let value = thunk.force_tlc(&this)?;
-                                            Ok(EvalControl::Value(Value::TaggedValue {
-                                                tag: Rc::from("some"),
-                                                payload: Rc::new(vec![(
-                                                    Rc::from("value"),
-                                                    Thunk::ready(value),
-                                                )]),
-                                            }))
-                                        }
-                                        None => {
-                                            Ok(EvalControl::Value(Value::Atom(Rc::from("none"))))
-                                        }
-                                    }
-                                }
-                                other => Err(EvalError::TypeMismatch {
-                                    expected: "Record",
-                                    found: value_type_name(&other),
-                                }),
-                            })
-                        }
-                        TlcType::Record(_) => {
-                            let recv_control = self.eval_control(expr_id, env, resume)?;
-                            self.bind_control(recv_control, move |recv, this| match recv {
-                                Value::Record(fields) => {
-                                    if let Some((true, value_ty)) =
-                                        this.tlc_field_meta(ty_id, field.as_str())
-                                    {
-                                        return this
-                                            .project_optional_field(
-                                                &fields,
-                                                field.as_str(),
-                                                this.tlc_type_is_optional(value_ty),
-                                            )
-                                            .map(EvalControl::Value);
-                                    }
-                                    for (name, thunk) in fields.iter() {
-                                        if name.as_ref() == field.as_str() {
-                                            let value = thunk.force_tlc(&this)?;
-                                            return Ok(EvalControl::Value(value));
-                                        }
-                                    }
-                                    Ok(EvalControl::Value(Value::Nothing))
-                                }
-                                Value::Nothing => {
-                                    if let Some(method) =
-                                        this.imported_method_by_name(field.as_str())
-                                    {
-                                        Ok(EvalControl::Value(method))
-                                    } else {
-                                        Err(EvalError::UnboundBinding(zutai_hir::BindingId(
-                                            u32::MAX,
-                                        )))
-                                    }
-                                }
-                                other => Err(EvalError::TypeMismatch {
-                                    expected: "Record",
-                                    found: value_type_name(&other),
-                                }),
-                            })
-                        }
-                        _ => {
-                            let recv_control = self.eval_control(expr_id, env, resume)?;
-                            self.bind_control(recv_control, move |recv, this| match recv {
-                                Value::Record(fields) => {
-                                    for (name, thunk) in fields.iter() {
-                                        if name.as_ref() == field.as_str() {
-                                            let value = thunk.force_tlc(&this)?;
-                                            return Ok(EvalControl::Value(value));
-                                        }
-                                    }
-                                    Ok(EvalControl::Value(Value::Nothing))
-                                }
-                                Value::Nothing => {
-                                    if let Some(method) =
-                                        this.imported_method_by_name(field.as_str())
-                                    {
-                                        Ok(EvalControl::Value(method))
-                                    } else {
-                                        Err(EvalError::UnboundBinding(zutai_hir::BindingId(
-                                            u32::MAX,
-                                        )))
-                                    }
-                                }
-                                other => Err(EvalError::TypeMismatch {
-                                    expected: "Record",
-                                    found: value_type_name(&other),
-                                }),
-                            })
-                        }
-                    },
-                    None => {
+
+                if let Some(ty_id) = recv_ty {
+                    if let Some(wrapper_kind) = self.tlc_type_wrapper_kind(ty_id) {
+                        let wrapper_ty = self.resolve_tlc_alias_chain(ty_id);
+                        let inner_id = match &self.module.type_arena[wrapper_ty] {
+                            TlcType::Optional(inner) | TlcType::Maybe(inner) => *inner,
+                            _ => ty_id,
+                        };
+                        let (absent_tag, present_tag, expected) = match wrapper_kind {
+                            TlcWrapperKind::Optional => ("none", "some", "Optional"),
+                            TlcWrapperKind::Maybe => ("absent", "present", "Maybe"),
+                        };
                         let recv_control = self.eval_control(expr_id, env, resume)?;
-                        self.bind_control(recv_control, move |recv, this| match recv {
-                            Value::Record(fields) => {
-                                for (name, thunk) in fields.iter() {
-                                    if name.as_ref() == field.as_str() {
-                                        let value = thunk.force_tlc(&this)?;
-                                        return Ok(EvalControl::Value(value));
-                                    }
-                                }
-                                Ok(EvalControl::Value(Value::Nothing))
+                        return self.bind_control(recv_control, move |recv, this| match recv {
+                            Value::Atom(atom) if atom.as_ref() == absent_tag => {
+                                Ok(EvalControl::Value(Value::Atom(Rc::from(absent_tag))))
                             }
+                            Value::TaggedValue { tag, .. } if tag.as_ref() == absent_tag => {
+                                Ok(EvalControl::Value(Value::Atom(Rc::from(absent_tag))))
+                            }
+                            Value::Nothing => {
+                                Ok(EvalControl::Value(Value::Atom(Rc::from(absent_tag))))
+                            }
+                            Value::TaggedValue { tag, payload } if tag.as_ref() == present_tag => {
+                                let inner = tlc_force_tagged_slot(&payload, &this)?;
+                                match inner {
+                                    Value::Record(inner_fields) => {
+                                        let projected = this.project_record_field(
+                                            inner_id,
+                                            &inner_fields,
+                                            field.as_str(),
+                                        )?;
+                                        Ok(EvalControl::Value(tlc_tagged_slot_value(
+                                            present_tag,
+                                            projected,
+                                        )))
+                                    }
+                                    other => Err(EvalError::TypeMismatch {
+                                        expected: "Record",
+                                        found: value_type_name(&other),
+                                    }),
+                                }
+                            }
+                            other => Err(EvalError::TypeMismatch {
+                                expected,
+                                found: value_type_name(&other),
+                            }),
+                        });
+                    }
+
+                    if matches!(&self.module.type_arena[ty_id], TlcType::Record(_)) {
+                        let recv_control = self.eval_control(expr_id, env, resume)?;
+                        return self.bind_control(recv_control, move |recv, this| match recv {
+                            Value::Record(fields) => this
+                                .project_record_field(ty_id, &fields, field.as_str())
+                                .map(EvalControl::Value),
                             Value::Nothing => {
                                 if let Some(method) = this.imported_method_by_name(field.as_str()) {
                                     Ok(EvalControl::Value(method))
@@ -306,9 +177,33 @@ impl<'a> TlcEvaluator<'a> {
                                 expected: "Record",
                                 found: value_type_name(&other),
                             }),
-                        })
+                        });
                     }
                 }
+
+                let recv_control = self.eval_control(expr_id, env, resume)?;
+                self.bind_control(recv_control, move |recv, this| match recv {
+                    Value::Record(fields) => {
+                        for (name, thunk) in fields.iter() {
+                            if name.as_ref() == field.as_str() {
+                                let value = thunk.force_tlc(&this)?;
+                                return Ok(EvalControl::Value(value));
+                            }
+                        }
+                        Ok(EvalControl::Value(Value::Nothing))
+                    }
+                    Value::Nothing => {
+                        if let Some(method) = this.imported_method_by_name(field.as_str()) {
+                            Ok(EvalControl::Value(method))
+                        } else {
+                            Err(EvalError::UnboundBinding(zutai_hir::BindingId(u32::MAX)))
+                        }
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "Record",
+                        found: value_type_name(&other),
+                    }),
+                })
             }
 
             TlcExpr::Variant(tag, payload_id) => {
@@ -330,7 +225,7 @@ impl<'a> TlcEvaluator<'a> {
                                 .collect(),
                         ),
                         Value::Nothing => Rc::new(vec![]),
-                        v => Rc::new(vec![(Rc::from("value"), Thunk::ready(v))]),
+                        v => Rc::new(vec![(Rc::from("0"), Thunk::ready(v))]),
                     };
                     Ok(EvalControl::Value(Value::TaggedValue {
                         tag: Rc::from(tag.as_str()),
@@ -391,5 +286,25 @@ impl<'a> TlcEvaluator<'a> {
                 self.eval_expr_values(ids, env.clone(), resume, 0, Vec::new(), finish)
             }
         }
+    }
+}
+
+fn tlc_tagged_slot_value(tag: &'static str, value: Value) -> Value {
+    Value::TaggedValue {
+        tag: Rc::from(tag),
+        payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+    }
+}
+
+fn tlc_force_tagged_slot(
+    payload: &Rc<Vec<(Rc<str>, Thunk)>>,
+    evaluator: &TlcEvaluator<'_>,
+) -> Result<Value, EvalError> {
+    match payload.iter().find(|(name, _)| name.as_ref() == "0") {
+        Some((_, thunk)) => thunk.force_tlc(evaluator),
+        None => Err(EvalError::TypeMismatch {
+            expected: "Tuple slot 0",
+            found: "TaggedValue",
+        }),
     }
 }

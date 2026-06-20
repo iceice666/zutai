@@ -1,6 +1,12 @@
 use super::alias::row_tail_key;
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::lower) enum WrapperKind {
+    Optional,
+    Maybe,
+}
+
 impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn record_fields(
         &mut self,
@@ -48,6 +54,7 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    #[allow(dead_code)]
     pub(in crate::lower) fn optional_inner_type(
         &mut self,
         ty: TypeId,
@@ -56,6 +63,19 @@ impl<'hir> Lowerer<'hir> {
         let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
         match self.ty(resolved).kind {
             TypeKind::Optional(inner) => Some(inner),
+            _ => None,
+        }
+    }
+
+    pub(in crate::lower) fn optional_or_maybe_inner_type(
+        &mut self,
+        ty: TypeId,
+        span: Span,
+    ) -> Option<(WrapperKind, TypeId)> {
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        match self.ty(resolved).kind {
+            TypeKind::Optional(inner) => Some((WrapperKind::Optional, inner)),
+            TypeKind::Maybe(inner) => Some((WrapperKind::Maybe, inner)),
             _ => None,
         }
     }
@@ -163,10 +183,12 @@ impl<'hir> Lowerer<'hir> {
                     self.union_rows_match(&ev, et, &fv, ft)
                 }
             }
-            // #none is always a valid value of Optional(T)
+            // #none is always a valid value of Optional(T); #absent is valid for Maybe(T).
             (TypeKind::Optional(_), TypeKind::Atom(ref name)) if name == "none" => true,
+            (TypeKind::Maybe(_), TypeKind::Atom(ref name)) if name == "absent" => true,
             (TypeKind::List(e), TypeKind::List(f))
-            | (TypeKind::Optional(e), TypeKind::Optional(f)) => self.type_matches(e, f),
+            | (TypeKind::Optional(e), TypeKind::Optional(f))
+            | (TypeKind::Maybe(e), TypeKind::Maybe(f)) => self.type_matches(e, f),
             (TypeKind::Record(ef, et), TypeKind::Record(ff, ft)) => {
                 self.record_rows_match(&ef, et, &ff, ft)
             }

@@ -186,6 +186,7 @@ pub enum DfTy {
     // Composite
     List(DfTyId),
     Optional(DfTyId),
+    Maybe(DfTyId),
     Record(Vec<DfRecordField>),
     Union(Vec<DfTyId>),
     Tuple(Vec<DfTupleField>),

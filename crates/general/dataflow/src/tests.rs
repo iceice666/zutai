@@ -224,6 +224,24 @@ fn record_field_access_produces_select_node() {
     assert!(has_select, "expected Select node for 'r.x'");
 }
 
+#[test]
+fn optional_field_access_lowers_to_maybe_type() {
+    let g = dc_of("S :: type { p? : Int; }\ns :: S = {}\ns.p");
+    assert!(
+        matches!(g.types[g.nodes[g.root].ty], DfTy::Maybe(_)),
+        "expected optional field access to lower to DfTy::Maybe"
+    );
+}
+
+#[test]
+fn optional_value_lowers_to_optional_type() {
+    let g = dc_of("x :: Int? = #none\nx");
+    assert!(
+        matches!(g.types[g.nodes[g.root].ty], DfTy::Optional(_)),
+        "expected Int? to lower to DfTy::Optional"
+    );
+}
+
 // ── Tuple ─────────────────────────────────────────────────────────────────────
 
 #[test]

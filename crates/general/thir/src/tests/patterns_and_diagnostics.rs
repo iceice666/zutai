@@ -220,14 +220,14 @@ f :: Status -> Int
 }
 
 #[test]
-fn optional_some_pattern_with_value_field_lowers_correctly() {
-    // `#some { value = n; }` is the tagged-value pattern for `T?` (Optional T).
+fn optional_some_tuple_pattern_lowers_correctly() {
+    // `#some (n)` is the tagged-value pattern for `T?` (Optional T).
     let file = completed_file(
         r#"
 unwrap :: Int? -> Int
-  = #some { value = n; } => n;
+  = #some (n) => n;
   = #none => 0;
-unwrap #some { value = 42; }
+unwrap #some (42)
 "#,
     );
     assert!(
@@ -238,8 +238,8 @@ unwrap #some { value = 42; }
 }
 
 #[test]
-fn optional_some_pattern_with_unknown_field_reports_unknown_field() {
-    // `#some { badfield = n; }` — field must be named `value` → UnknownField.
+fn optional_some_pattern_with_record_field_reports_tuple_field_mismatch() {
+    // Builtin Optional uses tuple slot `0`; record payload fields are rejected.
     let lowered = lower(
         r#"
 f :: Int? -> Int
@@ -251,10 +251,30 @@ f :: Int? -> Int
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
-            ThirDiagnosticKind::UnknownField { name } if name == "badfield"
+            ThirDiagnosticKind::TupleFieldNameMismatch { expected, found }
+                if expected == "<positional>" && found == "badfield"
         )),
-        "expected UnknownField(badfield); got {:?}",
+        "expected TupleFieldNameMismatch(badfield); got {:?}",
         lowered.diagnostics
+    );
+}
+
+#[test]
+fn maybe_absent_and_present_patterns_lower_correctly() {
+    let file = completed_file(
+        r#"
+S :: type { p? : Int; }
+s :: S = { p = 42; }
+unwrap :: Maybe Int -> Int
+  = #present (n) => n;
+  = #absent => 0;
+unwrap s.p
+"#,
+    );
+    assert!(
+        matches!(final_type_kind(&file), TypeKind::Int),
+        "expected Int; got {:?}",
+        final_type_kind(&file)
     );
 }
 

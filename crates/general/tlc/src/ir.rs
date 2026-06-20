@@ -177,6 +177,7 @@ pub enum TlcType {
     Tuple(Vec<TlcTupleField>),
     List(TlcTypeId),
     Optional(TlcTypeId),
+    Maybe(TlcTypeId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

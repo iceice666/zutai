@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RuntimeWrapperKind {
+    Optional,
+    Maybe,
+}
+
 impl<'a> Evaluator<'a> {
     /// Returns (field_may_be_absent, field_value_ty) for `field` on the record
     /// type `ty` (alias-resolved), or None if `ty` is not a record or the field
@@ -16,28 +22,24 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    pub(super) fn type_is_optional(&self, ty: TypeId) -> bool {
+    pub(super) fn type_wrapper_kind(&self, ty: TypeId) -> Option<RuntimeWrapperKind> {
         let aliases = self.build_alias_map();
         let resolved = resolve_alias_chain(&self.file.type_arena, &aliases, ty);
-        matches!(
-            self.file.type_arena[resolved.0 as usize].kind,
-            TypeKind::Optional(_)
-        )
+        match &self.file.type_arena[resolved.0 as usize].kind {
+            TypeKind::Optional(_) => Some(RuntimeWrapperKind::Optional),
+            TypeKind::Maybe(_) => Some(RuntimeWrapperKind::Maybe),
+            _ => None,
+        }
     }
 
-    pub(super) fn project_optional_field(
+    pub(super) fn project_maybe_field(
         &self,
         fields: &Rc<Vec<(Rc<str>, Thunk)>>,
         field: &str,
-        value_already_optional: bool,
-    ) -> Result<Value, EvalError> {
+    ) -> Value {
         match fields.iter().find(|(name, _)| name.as_ref() == field) {
-            None => Ok(Value::Atom(Rc::from("none"))),
-            Some((_, thunk)) if value_already_optional => thunk.force(self),
-            Some((_, thunk)) => Ok(Value::TaggedValue {
-                tag: Rc::from("some"),
-                payload: Rc::new(vec![(Rc::from("value"), thunk.clone())]),
-            }),
+            None => Value::Atom(Rc::from("absent")),
+            Some((_, thunk)) => tagged_slot_thunk("present", thunk.clone()),
         }
     }
 
@@ -159,22 +161,14 @@ impl<'a> Evaluator<'a> {
                 let rv = self.eval(*receiver, env)?;
                 match rv {
                     Value::Record(fields) => {
-                        if let Some((true, value_ty)) =
-                            self.record_field_meta(self.expr(*receiver).ty, field)
-                        {
-                            return self.project_optional_field(
-                                &fields,
-                                field,
-                                self.type_is_optional(value_ty),
-                            );
+                        if let Some((true, _)) = self.record_field_meta(self.expr(*receiver).ty, field) {
+                            return Ok(self.project_maybe_field(&fields, field));
                         }
                         for (name, thunk) in fields.iter() {
                             if name.as_ref() == field.as_str() {
                                 return thunk.force(self);
                             }
                         }
-                        // Record field access on a record where the field is
-                        // absent means optional + was not present.
                         Ok(Value::Nothing)
                     }
                     Value::TaggedValue { tag, payload } => {
@@ -398,61 +392,80 @@ impl<'a> Evaluator<'a> {
                 )),
             },
             ThirExprKind::OptionalAccess { receiver, field } => {
+                let Some(wrapper_kind) = self.type_wrapper_kind(self.expr(*receiver).ty) else {
+                    return Err(EvalError::TypeMismatch {
+                        expected: "Optional or Maybe",
+                        found: "non-wrapper",
+                    });
+                };
                 let aliases = self.build_alias_map();
                 let receiver_ty =
                     resolve_alias_chain(&self.file.type_arena, &aliases, self.expr(*receiver).ty);
                 let inner_ty = match &self.file.type_arena[receiver_ty.0 as usize].kind {
-                    TypeKind::Optional(inner) => *inner,
+                    TypeKind::Optional(inner) | TypeKind::Maybe(inner) => *inner,
                     _ => receiver_ty,
                 };
                 let project_inner_field =
                     |fields: &Rc<Vec<(Rc<str>, Thunk)>>| -> Result<Value, EvalError> {
-                        if let Some((true, value_ty)) = self.record_field_meta(inner_ty, field) {
-                            return self.project_optional_field(
-                                fields,
-                                field,
-                                self.type_is_optional(value_ty),
-                            );
+                        if let Some((true, _)) = self.record_field_meta(inner_ty, field) {
+                            return Ok(self.project_maybe_field(fields, field));
                         }
                         match fields.iter().find(|(name, _)| name.as_ref() == field.as_str()) {
-                            Some((_, thunk)) => Ok(Value::TaggedValue {
-                                tag: Rc::from("some"),
-                                payload: Rc::new(vec![(Rc::from("value"), thunk.clone())]),
-                            }),
-                            None => Ok(Value::Atom(Rc::from("none"))),
+                            Some((_, thunk)) => thunk.force(self),
+                            None => Ok(Value::Nothing),
                         }
                     };
 
                 let rv = self.eval(*receiver, env)?;
-                match rv {
-                    Value::Atom(atom) if atom.as_ref() == "none" => Ok(Value::Atom(Rc::from("none"))),
-                    Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => {
-                        Ok(Value::Atom(Rc::from("none")))
-                    }
-                    Value::Nothing => Ok(Value::Atom(Rc::from("none"))),
-                    Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
-                        let inner = match payload.iter().find(|(name, _)| name.as_ref() == "value") {
-                            Some((_, thunk)) => thunk.force(self)?,
-                            None => {
-                                return Err(EvalError::TypeMismatch {
-                                    expected: "Record",
-                                    found: "TaggedValue",
-                                });
-                            }
-                        };
-                        match inner {
-                            Value::Record(inner_fields) => project_inner_field(&inner_fields),
-                            other => Err(EvalError::TypeMismatch {
-                                expected: "Record",
-                                found: value_type_name(&other),
-                            }),
+                match wrapper_kind {
+                    RuntimeWrapperKind::Optional => match rv {
+                        Value::Atom(atom) if atom.as_ref() == "none" => Ok(Value::Atom(Rc::from("none"))),
+                        Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => {
+                            Ok(Value::Atom(Rc::from("none")))
                         }
-                    }
-                    Value::Record(fields) => project_inner_field(&fields),
-                    other => Err(EvalError::TypeMismatch {
-                        expected: "Optional",
-                        found: value_type_name(&other),
-                    }),
+                        Value::Nothing => Ok(Value::Atom(Rc::from("none"))),
+                        Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
+                            let inner = force_tagged_slot(&payload, self)?;
+                            match inner {
+                                Value::Record(inner_fields) => {
+                                    let projected = project_inner_field(&inner_fields)?;
+                                    Ok(tagged_slot_value("some", projected))
+                                }
+                                other => Err(EvalError::TypeMismatch {
+                                    expected: "Record",
+                                    found: value_type_name(&other),
+                                }),
+                            }
+                        }
+                        other => Err(EvalError::TypeMismatch {
+                            expected: "Optional",
+                            found: value_type_name(&other),
+                        }),
+                    },
+                    RuntimeWrapperKind::Maybe => match rv {
+                        Value::Atom(atom) if atom.as_ref() == "absent" => Ok(Value::Atom(Rc::from("absent"))),
+                        Value::TaggedValue { tag, .. } if tag.as_ref() == "absent" => {
+                            Ok(Value::Atom(Rc::from("absent")))
+                        }
+                        Value::Nothing => Ok(Value::Atom(Rc::from("absent"))),
+                        Value::TaggedValue { tag, payload } if tag.as_ref() == "present" => {
+                            let inner = force_tagged_slot(&payload, self)?;
+                            match inner {
+                                Value::Record(inner_fields) => {
+                                    let projected = project_inner_field(&inner_fields)?;
+                                    Ok(tagged_slot_value("present", projected))
+                                }
+                                other => Err(EvalError::TypeMismatch {
+                                    expected: "Record",
+                                    found: value_type_name(&other),
+                                }),
+                            }
+                        }
+                        other => Err(EvalError::TypeMismatch {
+                            expected: "Maybe",
+                            found: value_type_name(&other),
+                        }),
+                    },
                 }
             }
             ThirExprKind::Sequence(items) => {
@@ -532,21 +545,24 @@ impl<'a> Evaluator<'a> {
             BinOp::Coalesce => {
                 let lv = self.eval(lhs, env)?;
                 return match lv {
-                    // Absent optional: implicit `Value::Nothing` or an explicit
-                    // `#none` value (atom or zero-payload tagged) → fallback.
                     Value::Nothing => self.eval(rhs, env),
-                    Value::Atom(a) if a.as_ref() == "none" => self.eval(rhs, env),
-                    Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => self.eval(rhs, env),
-                    // Explicit `#some { value = x }` → unwrap to `x`, matching the
-                    // spec desugaring `match v { #none => d; #some { value = x } => x; }`.
-                    Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
-                        match payload.iter().find(|(n, _)| n.as_ref() == "value") {
-                            Some((_, thunk)) => thunk.force(self),
-                            None => Ok(Value::TaggedValue { tag, payload }),
-                        }
+                    Value::Atom(a) if a.as_ref() == "none" || a.as_ref() == "absent" => {
+                        self.eval(rhs, env)
                     }
-                    // A present optional already unwrapped to a bare value → pass through.
-                    other => Ok(other),
+                    Value::TaggedValue { tag, .. }
+                        if tag.as_ref() == "none" || tag.as_ref() == "absent" =>
+                    {
+                        self.eval(rhs, env)
+                    }
+                    Value::TaggedValue { tag, payload }
+                        if tag.as_ref() == "some" || tag.as_ref() == "present" =>
+                    {
+                        force_tagged_slot(&payload, self)
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "Optional or Maybe",
+                        found: value_type_name(&other),
+                    }),
                 };
             }
             _ => {}
@@ -633,5 +649,29 @@ impl<'a> Evaluator<'a> {
             // Already handled above.
             BinOp::And | BinOp::Or | BinOp::Coalesce => unreachable!(),
         }
+    }
+}
+
+fn tagged_slot_thunk(tag: &'static str, thunk: Thunk) -> Value {
+    Value::TaggedValue {
+        tag: Rc::from(tag),
+        payload: Rc::new(vec![(Rc::from("0"), thunk)]),
+    }
+}
+
+fn tagged_slot_value(tag: &'static str, value: Value) -> Value {
+    tagged_slot_thunk(tag, Thunk::ready(value))
+}
+
+fn force_tagged_slot(
+    payload: &Rc<Vec<(Rc<str>, Thunk)>>,
+    evaluator: &Evaluator<'_>,
+) -> Result<Value, EvalError> {
+    match payload.iter().find(|(name, _)| name.as_ref() == "0") {
+        Some((_, thunk)) => thunk.force(evaluator),
+        None => Err(EvalError::TypeMismatch {
+            expected: "Tuple slot 0",
+            found: "TaggedValue",
+        }),
     }
 }

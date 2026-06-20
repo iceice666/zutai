@@ -92,27 +92,41 @@ impl<'a> TlcEvaluator<'a> {
         }
     }
 
-    pub(super) fn tlc_type_is_optional(&self, ty_id: TlcTypeId) -> bool {
+    pub(super) fn tlc_type_wrapper_kind(&self, ty_id: TlcTypeId) -> Option<TlcWrapperKind> {
         let ty_id = self.resolve_tlc_alias_chain(ty_id);
-        matches!(&self.module.type_arena[ty_id], TlcType::Optional(_))
+        match &self.module.type_arena[ty_id] {
+            TlcType::Optional(_) => Some(TlcWrapperKind::Optional),
+            TlcType::Maybe(_) => Some(TlcWrapperKind::Maybe),
+            _ => None,
+        }
     }
 
-    pub(super) fn project_optional_field(
+    pub(super) fn project_maybe_field(
         &self,
         fields: &Rc<Vec<(Rc<str>, Thunk)>>,
         field: &str,
-        value_already_optional: bool,
-    ) -> Result<Value, EvalError> {
+    ) -> Value {
         match fields.iter().find(|(name, _)| name.as_ref() == field) {
-            None => Ok(Value::Atom(Rc::from("none"))),
-            Some((_, thunk)) if value_already_optional => thunk.force_tlc(self),
-            Some((_, thunk)) => {
-                let value = thunk.force_tlc(self)?;
-                Ok(Value::TaggedValue {
-                    tag: Rc::from("some"),
-                    payload: Rc::new(vec![(Rc::from("value"), Thunk::ready(value))]),
-                })
-            }
+            None => Value::Atom(Rc::from("absent")),
+            Some((_, thunk)) => Value::TaggedValue {
+                tag: Rc::from("present"),
+                payload: Rc::new(vec![(Rc::from("0"), thunk.clone())]),
+            },
+        }
+    }
+
+    pub(super) fn project_record_field(
+        &self,
+        ty_id: TlcTypeId,
+        fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+        field: &str,
+    ) -> Result<Value, EvalError> {
+        if let Some((true, _)) = self.tlc_field_meta(ty_id, field) {
+            return Ok(self.project_maybe_field(fields, field));
+        }
+        match fields.iter().find(|(name, _)| name.as_ref() == field) {
+            Some((_, thunk)) => thunk.force_tlc(self),
+            None => Ok(Value::Nothing),
         }
     }
 }

@@ -38,7 +38,7 @@ pub enum ThirDiagnosticKind {
     ExpectedTuple {
         found: String,
     },
-    ExpectedOptional {
+    ExpectedOptionalOrMaybe {
         found: String,
     },
     EmptyListNeedsType,

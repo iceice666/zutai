@@ -105,7 +105,7 @@ DfNodeKind:
   -- Data elimination --
   Select { base: NodeId, field: Symbol }
     Record field projection. Returns the field's value.
-    For optional fields, returns `Optional(T)`.
+    For optional fields, returns `Maybe(T)`.
 
   Match { scrutinee: NodeId, arms: Vec<DfArm> }
     Pattern-matching / case analysis.
@@ -113,8 +113,8 @@ DfNodeKind:
     Used both for explicit `match` expressions and for multi-clause function dispatch.
 
   Coalesce { value: NodeId, fallback: NodeId }
-    Optional-unwrap: `value ?? fallback`.
-    `value` must have type `Optional(T)`; `fallback` must have type `T`.
+    Wrapper unwrap: `value ?? fallback`.
+    `value` must have type `Optional(T)` or `Maybe(T)`; `fallback` must have type `T`.
     Result has type `T`.
 ```
 
@@ -155,6 +155,7 @@ TyKind:
   -- Composite --
   List(TyId)
   Optional(TyId)
+  Maybe(TyId)
   Record(Vec<TyRecordField>)       -- TyRecordField { name, optional, ty }
   Union(Vec<TyId>)
   Tuple(Vec<TyTupleItem>)          -- TyTupleItem = Named{name,ty} | Positional(ty)

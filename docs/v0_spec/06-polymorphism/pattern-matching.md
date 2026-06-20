@@ -10,12 +10,12 @@ match profile {
 }
 ```
 
-Optional matching:
+Optional field presence matching:
 
 ```zt
 match raw.port {
-  | #none           => 8080;
-  | #some { value = value; } => value;
+  | #absent      => 8080;
+  | #present (v) => v;
 }
 ```
 
@@ -62,8 +62,8 @@ A wildcard pattern `_` or a catch-all binding may be used:
 
 ```zt
 match value {
-  | #none           => fallback;
-  | #some { value = x; } => x;
+  | #none     => fallback;
+  | #some (x) => x;
 }
 ```
 

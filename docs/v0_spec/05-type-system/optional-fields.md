@@ -20,7 +20,16 @@ raw :: RawServer = {
 }
 ```
 
-When accessed directly, an optional field evaluates to an optional value. If the field is absent, access returns `#none`; if the field is present, access returns `#some { value = field_value; }`, unless the field value is already optional and the access rule flattens it.
+When accessed directly, an optional field evaluates to `Maybe T`, preserving physical field presence:
+
+```zt
+Maybe :: <T> type {
+  #absent;
+  #present (T);
+}
+```
+
+If the field is absent, access returns `#absent`; if the field is present, access returns `#present (field_value)`.
 
 ```zt
 raw.port ?? 8080
@@ -34,28 +43,28 @@ These are different:
 tls : Bool?;
 ```
 
-means the field must exist, but must contain an explicit optional value such as `#none` or `#some { value = true; }`.
+means the field must exist, but must contain an explicit optional value such as `#none` or `#some (true)`.
 
 ```zt
 tls? : Bool;
 ```
 
-means the field may be absent.
+means the field may be absent. Direct access has type `Maybe Bool`.
 
 ```zt
 tls? : Bool?;
 ```
 
-means the field may be absent, and if present must contain an explicit optional `Bool`. Direct field access flattens the result to `Bool?`.
+means the field may be absent, and if present must contain an explicit optional `Bool`. Direct field access has type `Maybe (Optional Bool)`.
 
-### Double-optional flattening
+### Presence is not flattened
 
-When a field is declared `field? : T?`, two layers of optionality exist: the field may be absent, and the value (if present) is itself optional. The type system flattens both layers into a single `T?` during field access:
+When a field is declared `field? : T?`, two layers exist: the field may be absent, and the value (if present) is itself optional. Field access keeps both layers:
 
-- Field absent → `#none`
-- Field present, value is `#none` → `#none`
-- Field present, value is `#some { value = v; }` → `#some { value = v; }`
+- Field absent → `#absent`
+- Field present, value is `#none` → `#present (#none)`
+- Field present, value is `#some (v)` → `#present (#some (v))`
 
-The result type is always `T?`, never `(T?)?`. See [Field access and optional chaining](field-access.md) for the general optional-chaining type rule that applies this same flattening.
+The result type is `Maybe (Optional T)`, never plain `Optional T`. See [Field access and optional chaining](field-access.md) for the chaining rule.
 
 ---

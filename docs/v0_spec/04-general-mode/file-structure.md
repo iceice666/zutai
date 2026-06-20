@@ -97,8 +97,8 @@ Pattern-matching multi-clause example:
 
 ```zt
 unwrapOr :: <T> T? -> T -> T
-  = #none              d => d;
-  = #some { value = v; } _ => v;
+  = #none       d => d;
+  = #some (v)   _ => v;
 ```
 
 The type signature is optional when the type can be inferred and only one clause is needed:

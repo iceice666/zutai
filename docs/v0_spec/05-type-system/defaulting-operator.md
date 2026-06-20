@@ -6,12 +6,14 @@ The defaulting operator is:
 value ?? fallback
 ```
 
-It is shorthand for:
+It unwraps exactly one `Optional` or `Maybe` layer:
 
 ```zt
 match value {
-  | #none              => fallback;
-  | #some { value = x; } => x;
+  | #none        => fallback;
+  | #some (x)    => x;
+  | #absent      => fallback;
+  | #present (x) => x;
 }
 ```
 
@@ -21,8 +23,10 @@ Example:
 raw.port ?? 8080
 ```
 
-If `raw.port` is `#none`, the result is `8080`.
+If `raw.port` is `#absent`, the result is `8080`.
 
-If `raw.port` is `#some { value = p; }`, the result is `p`.
+If `raw.port` is `#present (p)`, the result is `p`.
+
+If the value is `#present (#none)`, the result is `#none`; `??` removes only the outer `Maybe`.
 
 ---

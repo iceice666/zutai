@@ -251,7 +251,7 @@ fn optional_match_exhaustive_passes() {
         r#"
 unwrap :: Int? -> Int
   = #none => 0;
-  = (#some, value = x) => x;
+  = #some (x) => x;
 unwrap #none
 "#,
     );
@@ -262,7 +262,7 @@ fn optional_match_missing_none_reports_witness() {
     let lowered = lower(
         r#"
 unwrap :: Int? -> Int
-  = (#some, value = x) => x;
+  = #some (x) => x;
 unwrap #none
 "#,
     );
@@ -280,7 +280,34 @@ unwrap #none
     );
     assert_eq!(
         nonexhaustive_witness(&lowered).as_deref(),
-        Some("#some { ... }")
+        Some("#some (...)")
+    );
+}
+
+#[test]
+fn maybe_match_missing_absent_reports_witness() {
+    let lowered = lower(
+        r#"
+unwrap :: Maybe Int -> Int
+  = #present (x) => x;
+unwrap #present (1)
+"#,
+    );
+    assert_eq!(nonexhaustive_witness(&lowered).as_deref(), Some("#absent"));
+}
+
+#[test]
+fn maybe_match_missing_present_reports_witness() {
+    let lowered = lower(
+        r#"
+unwrap :: Maybe Int -> Int
+  = #absent => 0;
+unwrap #absent
+"#,
+    );
+    assert_eq!(
+        nonexhaustive_witness(&lowered).as_deref(),
+        Some("#present (...)")
     );
 }
 
@@ -302,12 +329,12 @@ get_port #none
 }
 
 #[test]
-fn opt_access_optional_field_flattens() {
+fn opt_access_optional_field_preserves_presence() {
     let file = completed_file(
         r#"
 Server :: type { port? : Int; }
 
-get_port :: Server? -> Int?
+get_port :: Server? -> Optional (Maybe Int)
   = s => s?.port;
 
 get_port #none
@@ -332,6 +359,6 @@ get_port { port = 80; }
         lowered
             .diagnostics
             .iter()
-            .any(|d| matches!(&d.kind, ThirDiagnosticKind::ExpectedOptional { .. }))
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::ExpectedOptionalOrMaybe { .. }))
     );
 }

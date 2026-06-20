@@ -249,7 +249,7 @@ fn import_zti_empty_list_field() {
 #[test]
 fn import_zt_optional_module() {
     // optional_module.zt exports Int? — exercises ImportedType::Optional in import.rs
-    // cfg.port is absent so the result is #none.
+    // the exported value is #none.
     assert_eq!(
         run_import("m := import \"optional_module.zt\"\nm"),
         Value::Atom("none".into())

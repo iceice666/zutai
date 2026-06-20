@@ -131,12 +131,12 @@ For nested schemas, a deep patch type recursively turns record fields into patch
 DeepPatch Config
 ```
 
-`Patch T` and `DeepPatch T` must model field presence separately from field value. This preserves the distinction between these cases:
+`Patch T` and `DeepPatch T` model field presence with `Maybe`, separately from optional field values. This preserves the distinction between these cases:
 
 ```text
-field absent      = do not change the lower value
-field present X   = set the field to X
-field present #none = set the field to #none, if allowed by the field type
+field absent          = #absent; do not change the lower value
+field present X       = #present (X); set the field to X
+field present #none   = #present (#none); set the field to #none, if allowed by the field type
 ```
 
 Deletion is not part of `Patch` or `DeepPatch` in this initial post-v0 design.
@@ -189,8 +189,9 @@ This keeps defaulting, validation, and cross-field logic centralized in normaliz
 Absence and `#none` already mean different things:
 
 ```text
-absent field = no value provided
-#none        = explicit optional value
+#absent          = no field/value provided
+#none            = explicit Optional value
+#present (#none) = a present field whose value is #none
 ```
 
 Deletion must not overload either meaning.

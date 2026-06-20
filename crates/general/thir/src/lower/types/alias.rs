@@ -61,6 +61,7 @@ impl<'hir> Lowerer<'hir> {
                                 span,
                             }),
                             ("Optional", 1) => self.optional_type(spine_args[0], span),
+                            ("Maybe", 1) => self.maybe_type(spine_args[0], span),
                             _ => ty, // partial/over-applied builtin → inert
                         }
                     }
@@ -120,6 +121,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::False => "false".to_string(),
             TypeKind::List(inner) => format!("List {}", self.type_name(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.type_name(inner)),
+            TypeKind::Maybe(inner) => format!("Maybe {}", self.type_name(inner)),
             TypeKind::Record(fields, tail) => self.record_type_name(fields, tail),
             TypeKind::Union(_, _) => "union".to_string(),
             TypeKind::Tuple(_) => "tuple".to_string(),
@@ -232,6 +234,9 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) => format!("[{}]", self.witness_target_key_with(inner, norm)),
             TypeKind::Optional(inner) => {
                 format!("{}?", self.witness_target_key_with(inner, norm))
+            }
+            TypeKind::Maybe(inner) => {
+                format!("Maybe[{}]", self.witness_target_key_with(inner, norm))
             }
             TypeKind::Record(fields, tail) => {
                 // Sort by name — records are order-independent.

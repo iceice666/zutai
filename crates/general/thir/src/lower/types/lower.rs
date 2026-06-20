@@ -411,6 +411,7 @@ impl<'hir> Lowerer<'hir> {
                 });
             }
             "Optional" if args.len() == 1 => return self.optional_type(args[0], span),
+            "Maybe" if args.len() == 1 => return self.maybe_type(args[0], span),
             _ => {}
         }
 
@@ -499,9 +500,9 @@ impl<'hir> Lowerer<'hir> {
         let binding_info = &self.hir.bindings[binding.0 as usize];
         match binding_info.kind {
             BindingKind::BuiltinType => match binding_info.name.as_str() {
-                // Bare `List`/`Optional` constructors (kind `Type -> Type`), used
+                // Bare `List`/`Optional`/`Maybe` constructors (kind `Type -> Type`), used
                 // unapplied as higher-kinded witness/constraint targets.
-                "List" | "Optional" => self.alloc_type(Type {
+                "List" | "Optional" | "Maybe" => self.alloc_type(Type {
                     kind: TypeKind::Con(binding),
                     span,
                 }),
@@ -579,12 +580,15 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn optional_type(&mut self, inner: TypeId, span: Span) -> TypeId {
-        let normalized = self.resolve_alias(inner, &mut HashSet::new(), span);
-        if matches!(self.ty(normalized).kind, TypeKind::Optional(_)) {
-            return normalized;
-        }
         self.alloc_type(Type {
             kind: TypeKind::Optional(inner),
+            span,
+        })
+    }
+
+    pub(in crate::lower) fn maybe_type(&mut self, inner: TypeId, span: Span) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Maybe(inner),
             span,
         })
     }

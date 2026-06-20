@@ -27,7 +27,7 @@ cfg :: Config = {
   server = {
     host-name = "localhost";
     port = 8080;
-    tls = #some { value = false; };
+    tls = #some (false);
   };
   limits = [0; -1; 2 * 3 + 4 / 2;];
 }
@@ -48,7 +48,7 @@ cfg :: Config = {
   lambda-application = (\f x. f (x + 1)) (\n. n * n) 4;
   nested-block = {
     first := inc (double 2);
-    second := unwrapOr #some { value = first; } 0;
+    second := unwrapOr #some (first) 0;
     first + second
   };
 }

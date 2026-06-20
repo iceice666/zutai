@@ -34,6 +34,12 @@ type BindFn<'eval, 'module> =
 type FinishValues<'eval> = Rc<dyn Fn(Vec<Value>) -> Value + 'eval>;
 pub type TlcModuleRegistry<'a> = Vec<&'a TlcModule>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TlcWrapperKind {
+    Optional,
+    Maybe,
+}
+
 enum EvalControl<'eval> {
     Value(Value),
     Perform {

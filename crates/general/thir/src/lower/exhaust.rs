@@ -51,6 +51,10 @@ enum Ctor {
     OptNone,
     /// `#some` of an `Optional`, carrying the wrapped value.
     OptSome,
+    /// `#absent` of a `Maybe`.
+    MaybeAbsent,
+    /// `#present` of a `Maybe`, carrying the present value.
+    MaybePresent,
 }
 
 /// A pattern deconstructed into the matrix algebra: either a catch-all, or a
@@ -281,6 +285,13 @@ impl<'hir> Lowerer<'hir> {
                     fields: vec![inner],
                 },
             ]),
+            TypeKind::Maybe(inner) => Some(vec![
+                SigCtor::nullary(Ctor::MaybeAbsent),
+                SigCtor {
+                    ctor: Ctor::MaybePresent,
+                    fields: vec![inner],
+                },
+            ]),
             TypeKind::Tuple(items) => Some(vec![SigCtor {
                 ctor: Ctor::Struct,
                 fields: items.iter().map(tuple_item_ty).collect(),
@@ -344,6 +355,8 @@ impl<'hir> Lowerer<'hir> {
             ThirPatKind::Atom(name) => {
                 if name == "none" && matches!(self.ty(col_ty).kind, TypeKind::Optional(_)) {
                     DeconPat::nullary(Ctor::OptNone)
+                } else if name == "absent" && matches!(self.ty(col_ty).kind, TypeKind::Maybe(_)) {
+                    DeconPat::nullary(Ctor::MaybeAbsent)
                 } else if matches!(self.ty(col_ty).kind, TypeKind::Union(_, _)) {
                     // Atom pattern against a union: pure enum variant with no payload.
                     DeconPat::nullary(Ctor::Tagged(name))
@@ -376,13 +389,6 @@ impl<'hir> Lowerer<'hir> {
                     fields: self.decon_items_indexed(items, &field_tys),
                 }
             }
-            TypeKind::Optional(inner) => match self.pattern_leading_atom(items) {
-                Some(tag) if tag == "some" && items.len() == 2 => DeconPat::Ctor {
-                    tag: Ctor::OptSome,
-                    fields: self.decon_items_indexed(&items[1..], &[inner]),
-                },
-                _ => DeconPat::Wild,
-            },
             // A mismatch here was already reported by pattern checking.
             _ => DeconPat::Wild,
         }
@@ -429,17 +435,6 @@ impl<'hir> Lowerer<'hir> {
             .collect()
     }
 
-    /// The leading positional atom of a tuple *pattern* (the discriminating tag).
-    fn pattern_leading_atom(&self, items: &[ThirTuplePatItem]) -> Option<String> {
-        let ThirTuplePatItem::Positional(first) = items.first()? else {
-            return None;
-        };
-        match &self.pat_arena[*first].kind {
-            ThirPatKind::Atom(name) => Some(name.clone()),
-            _ => None,
-        }
-    }
-
     /// Deconstruct a `ThirPatKind::TaggedValue` pattern for the Maranget matrix.
     fn decon_tagged_value_pattern(
         &mut self,
@@ -454,11 +449,23 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Optional(inner) if tag == "some" => {
                 let pat = payload
                     .iter()
-                    .find(|f| f.name == "value")
+                    .find(|f| f.name == "0")
                     .map(|f| self.decon_pattern(f.pattern, inner))
                     .unwrap_or(DeconPat::Wild);
                 DeconPat::Ctor {
                     tag: Ctor::OptSome,
+                    fields: vec![pat],
+                }
+            }
+            TypeKind::Maybe(_) if tag == "absent" => DeconPat::nullary(Ctor::MaybeAbsent),
+            TypeKind::Maybe(inner) if tag == "present" => {
+                let pat = payload
+                    .iter()
+                    .find(|f| f.name == "0")
+                    .map(|f| self.decon_pattern(f.pattern, inner))
+                    .unwrap_or(DeconPat::Wild);
+                DeconPat::Ctor {
+                    tag: Ctor::MaybePresent,
                     fields: vec![pat],
                 }
             }
@@ -637,13 +644,9 @@ fn render_one(pat: &DeconPat) -> String {
             Ctor::FloatLit(bits) => f64::from_bits(*bits).to_string(),
             Ctor::StrLit(value) => format!("{value:?}"),
             Ctor::OptNone => "#none".to_string(),
-            Ctor::OptSome => {
-                if fields.is_empty() {
-                    "#some".to_string()
-                } else {
-                    format!("#some {{ {} }}", render_payload(fields))
-                }
-            }
+            Ctor::OptSome => format!("#some ({})", render_payload(fields)),
+            Ctor::MaybeAbsent => "#absent".to_string(),
+            Ctor::MaybePresent => format!("#present ({})", render_payload(fields)),
             Ctor::Tagged(tag) => {
                 if fields.is_empty() {
                     format!("#{tag}")

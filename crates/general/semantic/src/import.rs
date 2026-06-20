@@ -438,6 +438,7 @@ fn imported_type_key(ty: &ImportedType) -> String {
         ImportedType::Atom(name) => format!("#{name}"),
         ImportedType::List(inner) => format!("[{}]", imported_type_key(inner)),
         ImportedType::Optional(inner) => format!("{}?", imported_type_key(inner)),
+        ImportedType::Maybe(inner) => format!("Maybe[{}]", imported_type_key(inner)),
         ImportedType::Record(fields) => {
             let mut parts: Vec<String> = fields
                 .iter()

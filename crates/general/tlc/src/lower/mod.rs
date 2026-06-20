@@ -295,7 +295,9 @@ impl<'thir> Lowerer<'thir> {
                     self.collect_thir_type_vars_into(op.result, out);
                 }
             }
-            TypeKind::List(e) | TypeKind::Optional(e) => self.collect_thir_type_vars_into(*e, out),
+            TypeKind::List(e) | TypeKind::Optional(e) | TypeKind::Maybe(e) => {
+                self.collect_thir_type_vars_into(*e, out)
+            }
             TypeKind::Apply { func, arg } => {
                 self.collect_thir_type_vars_into(*func, out);
                 self.collect_thir_type_vars_into(*arg, out);
@@ -343,6 +345,10 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Optional(inner) => {
                 Some(format!("{}?", self.structural_witness_key(inner, seen)?))
             }
+            TypeKind::Maybe(inner) => Some(format!(
+                "Maybe[{}]",
+                self.structural_witness_key(inner, seen)?
+            )),
             TypeKind::Record(fields, tail) => {
                 let mut parts: Vec<String> = fields
                     .into_iter()
@@ -603,6 +609,9 @@ impl<'thir> Lowerer<'thir> {
                 self.unify_env(ti, &tenv, ci, &cenv, holes, subst, depth + 1)
             }
             (TypeKind::Optional(ti), TypeKind::Optional(ci)) => {
+                self.unify_env(ti, &tenv, ci, &cenv, holes, subst, depth + 1)
+            }
+            (TypeKind::Maybe(ti), TypeKind::Maybe(ci)) => {
                 self.unify_env(ti, &tenv, ci, &cenv, holes, subst, depth + 1)
             }
             (TypeKind::Tuple(ti), TypeKind::Tuple(ci)) => {

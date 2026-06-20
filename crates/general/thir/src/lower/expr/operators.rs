@@ -118,11 +118,11 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         let lhs = self.infer_expr(lhs);
         let lhs_ty = self.expr(lhs).ty;
-        let Some(inner) = self.optional_inner_type(lhs_ty, span) else {
+        let Some((_wrapper_kind, inner)) = self.optional_or_maybe_inner_type(lhs_ty, span) else {
             let found = self.type_name(lhs_ty);
             if !matches!(self.ty(lhs_ty).kind, TypeKind::Error) {
                 self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::ExpectedOptional { found },
+                    kind: ThirDiagnosticKind::ExpectedOptionalOrMaybe { found },
                     span,
                 });
             }

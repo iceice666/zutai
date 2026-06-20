@@ -10,18 +10,18 @@ Bool?
 
 `T?` is shorthand for `Optional T`.
 
-`Optional` is an ordinary generic tagged union defined in the standard library — it is not a compiler primitive. Any user could write an equivalent definition:
+`Optional` is a builtin generic union convention for value optionality:
 
 ```zt
 Optional :: <T> type {
   #none;
-  #some: { value: T; };
+  #some (T);
 }
 ```
 
-The compiler's only special knowledge of `Optional` is the `T?` → `Optional T` desugaring. All matching, construction, and type-checking behaviour follows from it being a normal generic tagged union.
+The compiler recognizes `Optional` as the meaning of postfix `T?`; matching and construction use the tuple-payload constructors above.
 
-There is no reserved `none` literal. `#none` and `#some` are ordinary atoms used by the `Optional` convention.
+There is no reserved `none` literal. `#none` and `#some` are atoms used by the `Optional` convention.
 
 So:
 
@@ -45,7 +45,7 @@ Server :: type {
 }
 ```
 
-The `tls` field is required, but its value must be either `#none` or `#some { value = true; }`.
+The `tls` field is required, but its value must be either `#none` or `#some (true)`.
 
 Valid:
 
@@ -53,7 +53,7 @@ Valid:
 server :: Server = {
   host = "localhost";
   port = 8080;
-  tls  = #some { value = true; };
+  tls  = #some (true);
 }
 ```
 

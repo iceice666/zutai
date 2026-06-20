@@ -119,6 +119,7 @@ impl<'a> Evaluator<'a> {
             RuntimeTypeView::Never => Ok("Never".to_string()),
             RuntimeTypeView::List(inner) => Ok(format!("[{}]", self.type_label(&inner)?)),
             RuntimeTypeView::Optional(inner) => Ok(format!("{}?", self.type_label(&inner)?)),
+            RuntimeTypeView::Maybe(inner) => Ok(format!("Maybe {}", self.type_label(&inner)?)),
             RuntimeTypeView::Record(_, RowTail::Closed) => Ok("record".to_string()),
             RuntimeTypeView::Record(_, _) => Err(open_row_reflection_error("record")),
             RuntimeTypeView::Union(_, RowTail::Closed) => Ok("union".to_string()),
@@ -172,6 +173,7 @@ impl<'a> Evaluator<'a> {
             TypeKind::Never => Ok(RuntimeTypeView::Never),
             TypeKind::List(inner) => Ok(RuntimeTypeView::List(ty.with_ty(inner))),
             TypeKind::Optional(inner) => Ok(RuntimeTypeView::Optional(ty.with_ty(inner))),
+            TypeKind::Maybe(inner) => Ok(RuntimeTypeView::Maybe(ty.with_ty(inner))),
             TypeKind::Record(fields, tail) => Ok(RuntimeTypeView::Record(
                 reflect_record_fields(ty, fields),
                 tail,
@@ -286,6 +288,11 @@ impl<'a> Evaluator<'a> {
             {
                 Ok(RuntimeTypeView::Optional(ty.with_ty(args[0])))
             }
+            TypeKind::Con(binding)
+                if binding_name_in_file(file, binding) == "Maybe" && args.len() == 1 =>
+            {
+                Ok(RuntimeTypeView::Maybe(ty.with_ty(args[0])))
+            }
             _ => Err(EvalError::ReflectionUnsupported(
                 "higher-kinded or partial type application cannot be reflected".to_string(),
             )),
@@ -330,6 +337,7 @@ enum RuntimeTypeView {
     Never,
     List(RuntimeType),
     Optional(RuntimeType),
+    Maybe(RuntimeType),
     Record(Vec<ReflectedRecordField>, RowTail),
     Union(Vec<ReflectedUnionVariant>, RowTail),
     Tuple(Vec<ReflectedTupleItem>),

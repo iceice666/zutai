@@ -178,6 +178,8 @@ fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.list_cons(i64, i64)\n");
     out.push_str("declare i64 @zutai.list_nil()\n");
 
+    // Optional/Maybe operations
+    out.push_str("declare i64 @zutai.coalesce(i64, i64)\n");
     // Variant operations
     out.push_str("declare i64 @zutai.variant_new(i64, i64)\n");
     out.push_str("declare i64 @zutai.variant_tag(i64)\n");
@@ -524,16 +526,13 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
         // ── Coalesce ────────────────────────────────────────────────────────
         SsaOp::Coalesce { value, fallback } => {
-            // Non-zero value → value, zero → fallback.
-            let cmp_tmp = alloc_tmp(tmp);
-            out.push_str(&format!("  {} = icmp ne i64 ", cmp_tmp));
+            // @zutai.coalesce unwraps one Optional or Maybe layer:
+            // #none/#absent choose fallback; #some (x)/#present (x) return x.
+            out.push_str(&format!("  %{} = call i64 @zutai.coalesce(i64 ", dest));
             fmt_value(value, out);
-            out.push_str(", 0\n");
-            out.push_str(&format!("  %{} = select i1 {}, i64 ", dest, cmp_tmp));
-            fmt_value(value, out);
-            out.push_str(", ");
+            out.push_str(", i64 ");
             fmt_value(fallback, out);
-            out.push('\n');
+            out.push_str(")\n");
         }
 
         // ── Error ───────────────────────────────────────────────────────────
@@ -609,4 +608,35 @@ fn emit_main(out: &mut String, entry_name: &str) {
         "define i32 @main() {{\n  %result = call i64 @{}()\n  call void @zutai.print_i64(i64 %result)\n  ret i32 0\n}}\n",
         entry
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coalesce_emits_runtime_helper_call() {
+        let module = SsaModule {
+            decls: Vec::new(),
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "result".to_string(),
+                        op: SsaOp::Coalesce {
+                            value: SsaValue::Lit(DfLit::Int(1)),
+                            fallback: SsaValue::Lit(DfLit::Int(2)),
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+                }],
+            },
+        };
+
+        let llvm = emit_llvm(&module);
+        assert!(llvm.contains("call i64 @zutai.coalesce"));
+        assert!(!llvm.contains("icmp ne i64"), "{llvm}");
+    }
 }

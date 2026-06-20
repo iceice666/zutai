@@ -18,8 +18,8 @@ Example with optionals:
 
 ```zt
 unwrapOr :: <T> T? -> T -> T
-  = #none              fallback => fallback;
-  = #some { value = v; } _        => v;
+  = #none       fallback => fallback;
+  = #some (v)   _        => v;
 ```
 
 Type variables are capitalized:

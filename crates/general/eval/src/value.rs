@@ -72,7 +72,7 @@ pub enum Value {
         tag: Rc<str>,
         payload: Rc<Vec<(Rc<str>, crate::thunk::Thunk)>>,
     },
-    /// Absent optional field / left-hand side of `??` that is absent.
+    /// Internal missing-field sentinel, not the public Optional `#none` case.
     Nothing,
     /// A resolved constraint witness dictionary mapping method/operator name to
     /// the evaluated closure for that field.  Injected into the environment at
@@ -403,7 +403,7 @@ impl fmt::Display for Value {
                 write!(f, "\"")
             }
             Value::Atom(a) => write!(f, "#{a}"),
-            Value::Nothing => write!(f, "#none"),
+            Value::Nothing => write!(f, "#absent"),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, t) in items.iter().enumerate() {

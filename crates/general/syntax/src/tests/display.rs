@@ -125,8 +125,8 @@ fn display_expr_atom() {
 
 #[test]
 fn display_expr_tagged_value() {
-    let s = parse_str("#some { val = 1; }").to_string();
-    assert!(s.contains("TaggedValue(#some)"), "tagged value tag");
+    let s = parse_str("#box { val = 1; }").to_string();
+    assert!(s.contains("TaggedValue(#box)"), "tagged value tag");
     assert!(s.contains("Record"), "tagged value payload is record");
 }
 
@@ -317,8 +317,8 @@ fn display_pattern_atom() {
 
 #[test]
 fn display_pattern_tagged_value() {
-    let s = parse_str("match #some { v = 1; } { | #some { v = x; } => x; | _ => 0; }").to_string();
-    assert!(s.contains("TaggedPat(#some)"), "tagged value pattern tag");
+    let s = parse_str("match #box { v = 1; } { | #box { v = x; } => x; | _ => 0; }").to_string();
+    assert!(s.contains("TaggedPat(#box)"), "tagged value pattern tag");
     assert!(s.contains("v="), "tagged pattern field");
 }
 

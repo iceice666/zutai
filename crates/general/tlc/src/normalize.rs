@@ -212,6 +212,10 @@ fn normalize_ty(
             let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Optional(ni)))
         }
+        TlcType::Maybe(inner_id) => {
+            let ni = normalize_ty(arena, alias_env, inner_id, fuel, fuel_limit, next_fresh)?;
+            Ok(arena.alloc(TlcType::Maybe(ni)))
+        }
         TlcType::Record(row) => {
             let new_row = normalize_row(arena, alias_env, &row, fuel, fuel_limit, next_fresh)?;
             Ok(arena.alloc(TlcType::Record(new_row)))
@@ -328,7 +332,7 @@ fn collect_free(
             collect_free(arena, to, bound, free);
             collect_free_row(arena, &eff, bound, free);
         }
-        TlcType::List(inner) | TlcType::Optional(inner) => {
+        TlcType::List(inner) | TlcType::Optional(inner) | TlcType::Maybe(inner) => {
             collect_free(arena, inner, bound, free);
         }
         TlcType::Record(row) | TlcType::VariantT(row) => {
@@ -415,6 +419,10 @@ fn alpha_rename(
         TlcType::Optional(inner) => {
             let ni = alpha_rename(arena, inner, old, fresh);
             arena.alloc(TlcType::Optional(ni))
+        }
+        TlcType::Maybe(inner) => {
+            let ni = alpha_rename(arena, inner, old, fresh);
+            arena.alloc(TlcType::Maybe(ni))
         }
         TlcType::Record(row) => {
             let new_row = alpha_rename_row(arena, row, old, fresh);
@@ -567,6 +575,10 @@ fn subst_inner(
             let ni = subst_inner(arena, inner, var, replacement, replacement_free, next_fresh);
             arena.alloc(TlcType::Optional(ni))
         }
+        TlcType::Maybe(inner) => {
+            let ni = subst_inner(arena, inner, var, replacement, replacement_free, next_fresh);
+            arena.alloc(TlcType::Maybe(ni))
+        }
         TlcType::Record(row) => {
             let new_row =
                 subst_row_inner(arena, &row, var, replacement, replacement_free, next_fresh);
@@ -684,6 +696,7 @@ fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeId) -> bool 
         }
         (TlcType::List(i1), TlcType::List(i2)) => types_equal_deep(arena, i1, i2),
         (TlcType::Optional(i1), TlcType::Optional(i2)) => types_equal_deep(arena, i1, i2),
+        (TlcType::Maybe(i1), TlcType::Maybe(i2)) => types_equal_deep(arena, i1, i2),
         (TlcType::TyApp(f1, a1), TlcType::TyApp(f2, a2)) => {
             types_equal_deep(arena, f1, f2) && types_equal_deep(arena, a1, a2)
         }

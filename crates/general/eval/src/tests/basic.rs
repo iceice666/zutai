@@ -324,7 +324,7 @@ fn gate_refuses_parse_error() {
 
 #[test]
 fn coalesce_absent_optional_field() {
-    // Optional record field `port?` is absent → #none → ?? returns default.
+    // Optional record field `port?` is absent → #absent → ?? returns default.
     let src = "
 RawServer :: type {
   port? : Int;
@@ -337,7 +337,7 @@ server.port ?? 8080
 
 #[test]
 fn coalesce_present_optional_field() {
-    // Optional record field is present → #some wraps the value → ?? unwraps it.
+    // Optional record field is present → #present wraps the value → ?? unwraps it.
     let src = "
 RawServer :: type {
   port? : Int;
@@ -353,22 +353,42 @@ server.port ?? 8080
 #[test]
 fn coalesce_explicit_none_takes_default() {
     // Regression: an explicit `#none` optional value must default, not pass
-    // through. `??` is spec-defined as `match v { #none => d; #some {value=x} => x; }`.
+    // through. `??` unwraps one Optional or Maybe wrapper.
     let src = "x :: Int? = #none\nx ?? 5";
     assert_eq!(run(src), Value::Int(5));
 }
 
 #[test]
 fn coalesce_explicit_some_unwraps_value() {
-    // Regression: an explicit `#some { value = x }` must unwrap to `x`.
-    let src = "x :: Int? = #some { value = 9; }\nx ?? 5";
+    // Regression: an explicit `#some (x)` must unwrap to `x`.
+    let src = "x :: Int? = #some (9)\nx ?? 5";
     assert_eq!(run(src), Value::Int(9));
 }
 
 #[test]
 fn coalesce_explicit_some_text_unwraps() {
-    let src = "x :: Text? = #some { value = \"hi\"; }\nx ?? \"def\"";
+    let src = "x :: Text? = #some (\"hi\")\nx ?? \"def\"";
     assert_eq!(run(src), Value::Text("hi".into()));
+}
+
+#[test]
+fn coalesce_maybe_absent_takes_default() {
+    let src = "
+S :: type { p? : Int; }
+s :: S = {}
+s.p ?? 5
+";
+    assert_eq!(run(src), Value::Int(5));
+}
+
+#[test]
+fn coalesce_maybe_present_unwraps_value() {
+    let src = "
+S :: type { p? : Int; }
+s :: S = { p = 9; }
+s.p ?? 5
+";
+    assert_eq!(run(src), Value::Int(9));
 }
 
 // ─── atom patterns in function clauses ───────────────────────────────────────

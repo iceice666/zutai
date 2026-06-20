@@ -48,19 +48,27 @@ impl<'hir> Lowerer<'hir> {
                     }
                 }
                 TypeKind::Optional(inner) if tag == "some" => {
-                    let record_ty = self.alloc_type(crate::ir::Type {
-                        kind: TypeKind::Record(
-                            vec![TypeRecordField {
-                                name: "value".to_string(),
-                                optional: false,
-                                ty: inner,
-                                span,
-                            }],
-                            RowTail::Closed,
-                        ),
+                    let tuple_ty = self.alloc_type(crate::ir::Type {
+                        kind: TypeKind::Tuple(vec![TypeTupleItem::Positional(inner)]),
                         span,
                     });
-                    let payload_expr = self.check_expr(payload, record_ty);
+                    let payload_expr = self.check_expr(payload, tuple_ty);
+                    return self.alloc_expr(ThirExpr {
+                        source: id,
+                        ty: expected_ty,
+                        kind: ThirExprKind::TaggedValue {
+                            tag: tag.to_string(),
+                            payload: payload_expr,
+                        },
+                        span,
+                    });
+                }
+                TypeKind::Maybe(inner) if tag == "present" => {
+                    let tuple_ty = self.alloc_type(crate::ir::Type {
+                        kind: TypeKind::Tuple(vec![TypeTupleItem::Positional(inner)]),
+                        span,
+                    });
+                    let payload_expr = self.check_expr(payload, tuple_ty);
                     return self.alloc_expr(ThirExpr {
                         source: id,
                         ty: expected_ty,

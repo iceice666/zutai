@@ -28,7 +28,7 @@ The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflo
 
 ## Current Baseline
 
-_Last updated: after canonical Optional runtime representation._
+_Last updated: after Maybe/Optional runtime split._
 
 - Immediate mode parses `.zti` data through selectable parser backends (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
@@ -44,7 +44,7 @@ _Last updated: after canonical Optional runtime representation._
 
 _Added after a v0 stress-test/validation pass: real `.zt` programs run through `run`/`compile`, plus a THIR-vs-TLC differential oracle (`crates/general/eval/tests/differential.rs`). Four bugs were fixed in that pass — chained-comparison false positive across `&&`/`||`/`??`/pipelines, `??` ignoring explicit `#none`/`#some`, deep-recursion native stack overflow (CLI now evaluates on a large-stack worker thread), and malformed `inf.0`/`NaN.0` float display. TLC/operator-witness parity was fixed afterwards: direct and bounded `==`/`!=`/`<`/`<=`/`>`/`>=` syntax now uses the same witness dictionaries as named methods on the THIR evaluator, TLC evaluator, and TLC→Dataflow path. The remaining items below are deferred work or corrections to claims elsewhere in this file._
 
-- **Canonical Optional runtime representation is fixed in the reference walkers.** Optional field access and `?.` now produce canonical `Optional` union values in both the THIR walker (`eval_file`) and TLC walker (`eval_tlc_file`): absent fields and explicit `#none` yield `#none`, present fields yield `#some { value = v }`, and `field? : T?` access flattens to the stored `T?` value. `??`, `?.`, and `match` consume that single representation. Deferred sliver: matching an absent optional field inside a record pattern still fails because the record-pattern matcher has no field name/value to hand to the subpattern when the field is absent.
+- **Maybe/Optional runtime split is fixed in the reference walkers.** Optional value syntax remains `T? = Optional T` with `#none` / `#some (v)`. Optional field access preserves physical presence as `Maybe T` with `#absent` / `#present (v)`, so `field? : T?` yields `Maybe (Optional T)`. `?.` works on both `Optional` and `Maybe` receivers without flattening, and `??` unwraps exactly one `Optional` or `Maybe` layer in both the THIR walker (`eval_file`) and TLC walker (`eval_tlc_file`).
 - **Spec example syntax sweep is fixed.** The v0 docs now use parser-accepted typed bindings (`name :: Type = value`) and semicolon-terminated record/tagged patterns (`#circle { radius = r; }`) in the known stale examples. Fixtures pin both sides: `valid/doc_stale_syntax.zt` covers the corrected source shape, while `invalid/top_level_single_colon.zt` and `invalid/record_pattern_missing_semicolon.zt` keep the rejected stale forms rejected.
 - **Minor:** `Int??` lexes as `Int` + `??` (defaulting), not a double optional — write `(Int?)?`. Type-mismatch diagnostics between two distinct record types render as the unhelpful "expected record, found record" (the type formatter collapses record structure).
 

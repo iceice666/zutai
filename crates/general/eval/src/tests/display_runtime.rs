@@ -80,14 +80,14 @@ fn display_atom_value() {
 }
 
 #[test]
-fn display_absent_optional_field_as_none() {
-    // Absent optional field access displays as #none.
+fn display_absent_optional_field_as_absent() {
+    // Absent optional field access displays as #absent.
     let src = "
 S :: type { port? : Int; }
 s :: S = {}
 s.port
 ";
-    assert_eq!(run(src).to_string(), "#none");
+    assert_eq!(run(src).to_string(), "#absent");
 }
 
 #[test]

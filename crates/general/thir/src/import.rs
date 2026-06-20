@@ -30,6 +30,7 @@ pub enum ImportedType {
     Atom(String),
     List(Box<ImportedType>),
     Optional(Box<ImportedType>),
+    Maybe(Box<ImportedType>),
     Record(Vec<ImportedField>),
     Tuple(Vec<ImportedTupleItem>),
     Union(Vec<ImportedUnionVariant>),

@@ -86,10 +86,10 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
         "docs/v0_spec/04-general-mode/values.md#12",
         "[\"alpha\"; \"beta\"; \"gamma\"]",
     ),
-    ("docs/v0_spec/05-type-system/field-access.md#03", "#none"),
+    ("docs/v0_spec/05-type-system/field-access.md#03", "#absent"),
     (
         "docs/v0_spec/05-type-system/field-access.md#04",
-        "#some { value = 8080 }",
+        "#present (8080)",
     ),
     (
         "docs/v0_spec/05-type-system/records.md#04",

@@ -454,7 +454,7 @@ server.port ?? 8080
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
         matches!(
             &diagnostic.kind,
-            ThirDiagnosticKind::ExpectedOptional { found } if found == "Int"
+            ThirDiagnosticKind::ExpectedOptionalOrMaybe { found } if found == "Int"
         )
     }));
 }

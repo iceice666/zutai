@@ -69,6 +69,7 @@ impl<'thir> Lowerer<'thir> {
             | TypeKind::Union(_, _)
             | TypeKind::List(_)
             | TypeKind::Optional(_)
+            | TypeKind::Maybe(_)
             | TypeKind::Function { .. } => self.thir_type_to_resolved_witness_key(ty),
             TypeKind::Con(b) => Some(WitnessTargetKey::Named(b.0)),
             TypeKind::Apply { .. } => {

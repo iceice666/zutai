@@ -61,6 +61,9 @@ fn export(
         TypeKind::Optional(inner) => Ok(ImportedType::Optional(Box::new(export(
             file, aliases, inner, seen,
         )?))),
+        TypeKind::Maybe(inner) => Ok(ImportedType::Maybe(Box::new(export(
+            file, aliases, inner, seen,
+        )?))),
         TypeKind::Record(fields, tail) => {
             if tail != RowTail::Closed {
                 return Err(ExportUnsupported {

@@ -45,13 +45,19 @@ fn export_type_list() {
 
 #[test]
 fn export_type_optional() {
-    // Optional field access produces an Optional type.
-    let file = completed_file("S :: type { v? : Int; }\ns :: S = {}\ns.v");
+    let file = completed_file("x :: Int? = #none\nx");
     let ty = file.expr_arena[file.final_expr].ty;
     assert!(matches!(
         export_type(&file, ty),
         Ok(ImportedType::Optional(_))
     ));
+}
+
+#[test]
+fn export_type_maybe() {
+    let file = completed_file("S :: type { v? : Int; }\ns :: S = {}\ns.v");
+    let ty = file.expr_arena[file.final_expr].ty;
+    assert!(matches!(export_type(&file, ty), Ok(ImportedType::Maybe(_))));
 }
 
 #[test]

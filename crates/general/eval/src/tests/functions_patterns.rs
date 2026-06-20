@@ -171,50 +171,50 @@ value
 
 #[test]
 fn optional_access_present() {
-    // `?.` chains through an optional record field that is present.
-    // outer.inner has type Optional(Inner); outer.inner?.val returns Optional(Int).
+    // `?.` chains through a present optional record field.
+    // outer.inner has type Maybe(Inner); outer.inner?.val returns Maybe(Int).
     let src = "
 Inner :: type { val : Int; }
 Outer :: type { inner? : Inner; }
 outer :: Outer = { inner = { val = 42; }; }
 outer.inner?.val
 ";
-    assert_eq!(run(src).to_string(), "#some { value = 42 }");
+    assert_eq!(run(src).to_string(), "#present (42)");
 }
 
 #[test]
 fn optional_access_absent() {
-    // When the optional record field is absent, ?.field returns #none.
+    // When the optional record field is absent, ?.field returns #absent.
     let src = "
 Inner :: type { val : Int; }
 Outer :: type { inner? : Inner; }
 outer :: Outer = {}
 outer.inner?.val
 ";
-    assert_eq!(run(src), Value::Atom("none".into()));
+    assert_eq!(run(src), Value::Atom("absent".into()));
 }
 
 #[test]
-fn match_optional_field_none() {
+fn match_optional_field_absent() {
     let src = "
 S :: type { p? : Int; }
 s :: S = {}
 match s.p {
-  | #none => 1;
-  | #some { value = n; } => n;
+  | #absent => 1;
+  | #present (n) => n;
 }
 ";
     assert_eq!(run(src), Value::Int(1));
 }
 
 #[test]
-fn match_optional_field_some() {
+fn match_optional_field_present() {
     let src = "
 S :: type { p? : Int; }
 s :: S = { p = 7; }
 match s.p {
-  | #none => 1;
-  | #some { value = n; } => n;
+  | #absent => 1;
+  | #present (n) => n;
 }
 ";
     assert_eq!(run(src), Value::Int(7));
@@ -223,10 +223,10 @@ match s.p {
 #[test]
 fn match_optional_explicit_some() {
     let src = "
-x :: Int? = #some { value = 9; }
+x :: Int? = #some (9)
 match x {
   | #none => 0;
-  | #some { value = n; } => n;
+  | #some (n) => n;
 }
 ";
     assert_eq!(run(src), Value::Int(9));
@@ -238,7 +238,7 @@ fn match_optional_explicit_none() {
 x :: Int? = #none
 match x {
   | #none => 0;
-  | #some { value = n; } => n;
+  | #some (n) => n;
 }
 ";
     assert_eq!(run(src), Value::Int(0));
@@ -248,10 +248,10 @@ match x {
 fn optional_access_explicit_some() {
     let src = "
 Inner :: type { val : Int; }
-cfg :: Inner? = #some { value = { val = 42; }; }
+cfg :: Inner? = #some ({ val = 42; })
 cfg?.val
 ";
-    assert_eq!(run(src).to_string(), "#some { value = 42 }");
+    assert_eq!(run(src).to_string(), "#some (42)");
 }
 
 #[test]
@@ -265,23 +265,45 @@ cfg?.val
 }
 
 #[test]
-fn optional_double_optional_field_flattens() {
+fn optional_double_optional_field_preserves_presence() {
     let src = "
 S :: type { p? : Int?; }
 s :: S = { p = #none; }
 s.p
 ";
-    assert_eq!(run(src), Value::Atom("none".into()));
+    assert_eq!(run(src).to_string(), "#present (#none)");
 }
 
 #[test]
-fn optional_double_optional_field_some_flattens() {
+fn optional_double_optional_field_some_preserves_presence() {
     let src = "
 S :: type { p? : Int?; }
-s :: S = { p = #some { value = 5; }; }
+s :: S = { p = #some (5); }
 s.p
 ";
-    assert_eq!(run(src).to_string(), "#some { value = 5 }");
+    assert_eq!(run(src).to_string(), "#present (#some (5))");
+}
+
+#[test]
+fn optional_bool_optional_field_preserves_absent_none_and_some() {
+    let src = "
+S :: type { tls? : Bool?; }
+absent :: S = {}
+none :: S = { tls = #none; }
+some :: S = { tls = #some (true); }
+{
+  a = absent.tls;
+  n = none.tls;
+  s = some.tls;
+}
+";
+    let rendered = run(src).to_string();
+    assert!(rendered.contains("a = #absent"), "{rendered}");
+    assert!(rendered.contains("n = #present (#none)"), "{rendered}");
+    assert!(
+        rendered.contains("s = #present (#some (true))"),
+        "{rendered}"
+    );
 }
 
 // ─── TaggedValue semantics ────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ impl<'hir> Lowerer<'hir> {
                 self.collect_type_vars_into(from, out);
                 self.collect_type_vars_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
                 self.collect_type_vars_into(inner, out);
             }
             TypeKind::Union(variants, _) => {
@@ -81,7 +81,7 @@ impl<'hir> Lowerer<'hir> {
                 self.collect_row_params_into(from, out);
                 self.collect_row_params_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
                 self.collect_row_params_into(inner, out);
             }
             TypeKind::Record(fields, tail) => {
@@ -179,6 +179,16 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Optional(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Maybe(inner) => {
+                let new_inner = self.instantiate_type_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Maybe(new_inner),
                     span,
                 })
             }
@@ -350,6 +360,16 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::Maybe(inner) => {
+                let ni = self.instantiate_row_params(inner, subst);
+                if ni == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Maybe(ni),
+                    span,
+                })
+            }
             TypeKind::Record(fields, tail) => {
                 let new_fields: Vec<TypeRecordField> = fields
                     .iter()
@@ -495,7 +515,7 @@ impl<'hir> Lowerer<'hir> {
                 self.free_infer_vars_into(from, out);
                 self.free_infer_vars_into(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
                 self.free_infer_vars_into(inner, out);
             }
             TypeKind::Union(variants, _) => {
@@ -620,6 +640,16 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Optional(new_inner),
+                    span,
+                })
+            }
+            TypeKind::Maybe(inner) => {
+                let new_inner = self.instantiate_infer_vars(inner, subst);
+                if new_inner == inner {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Maybe(new_inner),
                     span,
                 })
             }

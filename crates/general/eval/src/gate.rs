@@ -63,7 +63,7 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         ExpectedRecord { found } => format!("expected record, found {found}"),
         ExpectedList { found } => format!("expected list, found {found}"),
         ExpectedTuple { found } => format!("expected tuple, found {found}"),
-        ExpectedOptional { found } => format!("expected optional, found {found}"),
+        ExpectedOptionalOrMaybe { found } => format!("expected Optional or Maybe, found {found}"),
         EmptyListNeedsType => "empty list needs a type annotation".to_string(),
         TupleArityMismatch { expected, found } => {
             format!("tuple arity mismatch: expected {expected}, found {found}")

@@ -57,7 +57,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | Type-level computation, recursive types | `TyApp`+`TyLamK` normalized by NbE+fuel | kernel pass, no nodes |
 | **Unions / sums** (`type { ... }`) | **`VariantT(Row)` type** + **`Variant(label, e)` term** | **2 new nodes — the fix** |
 | **Singletons** (`#atom`, `true`, `false` as types) | **`Singleton(Lit)` type** | **1 new type node** |
-| `Optional T` | sugar for `VariantT {some: T, none: Unit}` | none (VariantT subsumes) |
+| `Optional T` / `Maybe T` | builtin wrapper type nodes `Optional(T)` / `Maybe(T)` | none |
 | Row polymorphism (open records, open unions) | `Row` kind + `RVar r` row variables | type layer only |
 | Constraint witnesses (`Eq :: <A> @A { … }`) | **dictionaries-as-records** (see §6) | **zero** |
 | Algebraic effects (`perform`/`handle`/`resume`) | effect row on `Fun` + elaborate-to-pure (§7) | **zero** |
@@ -154,7 +154,7 @@ Record-payload arms like `#circle: { radius: Float; }` elaborate to a record arm
 RExtend("circle", RecordT(RExtend("radius", Prim(Float), REmpty)), …)
 ```
 
-**`Optional T` is sugar** for `VariantT { some: T, none: Unit }`. The existing `TlcType::Optional` variant may be kept as a convenience alias during the transition but is defined in terms of `VariantT` — no independent semantics.
+**`Optional T` and `Maybe T` are distinct builtin wrapper conventions.** `Optional T` is value optionality (`#none` / `#some (T)`). `Maybe T` is record-field presence (`#absent` / `#present (T)`). TLC keeps `TlcType::Optional` and `TlcType::Maybe` as separate nodes so field presence never flattens into value optionality.
 
 **`Singleton(Lit)` supplies DC's `True`/`False` discrimination.** Dataflow Core uses `True | False` singleton types (see `dataflow-core.md` §"Type representation"). This node closes the gap. Atom literals in type position (e.g., `#dev` as a type) are also `Singleton(Atom("dev"))`.
 
@@ -284,7 +284,7 @@ The full table of THIR `TypeKind` → `TlcType` mappings, incorporating the Phas
 | `Record(fields)` | `Record(fields)` | `RecordT(RExtend(…, REmpty))` |
 | `Tuple(items)` | `Tuple(items)` | `TupleT(items)` |
 | `List(inner)` | `List(inner)` | `ListT(inner)` |
-| `Optional(inner)` | `Optional(inner)` | `VariantT { some: inner, none: Unit }` (or keep as transition alias) |
+| `Optional(inner)` / `Maybe(inner)` | `Optional(inner)` | `Optional(inner)` / `Maybe(inner)` |
 | `Union(members)` | `Record(vec![])` **BUG** | `VariantT(row_of_members)` |
 | `True` | `Prim(Bool)` **BUG** | `Singleton(Lit::Bool(true))` |
 | `False` | `Prim(Bool)` **BUG** | `Singleton(Lit::Bool(false))` |
@@ -611,9 +611,9 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Record type `{ field: T }` | `RecordT(RExtend("field", T, REmpty))` | 0 |
 | Record value `{ field = e }` | `Record([("field", e)])` | 0 |
 | Field access `x.field` | `GetField(e, "field")` | 0 |
-| Optional field `field?: T` | `RExtend("field", T, …)` with `optional=true` flag | 0 |
-| Optional value `T?` | `VariantT {some: T, none: Unit}` | 0 |
-| Optional defaulting `x ?? y` | `Builtin(Coalesce, x, y)` | 0 |
+| Optional field `field?: T` | `RExtend("field", T, …)` with `optional=true` flag; `GetField` returns `Maybe(T)` | 0 |
+| Optional value `T?` | `Optional(T)` | 0 |
+| Defaulting `x ?? y` | `Builtin(Coalesce, x, y)` unwraps one `Optional` or `Maybe` layer | 0 |
 | Union type `type { #a; #b; }` | `VariantT(RExtend("a", Singleton(Atom("a")), …))` | **0 (fixes bug)** |
 | Union arm with record payload `#c: { x: T; }` | `VariantT { c: RecordT { x: T } }` | **0 (fixes bug)** |
 | `true`/`false` as singleton type | `Singleton(Lit::Bool(true/false))` | **0 (fixes bug)** |

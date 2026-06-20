@@ -69,6 +69,10 @@ impl<'hir> Lowerer<'hir> {
                 let inner_ty = self.intern_imported_type_with_source(inner, source, span);
                 self.optional_type(inner_ty, span)
             }
+            ImportedType::Maybe(inner) => {
+                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
+                self.maybe_type(inner_ty, span)
+            }
             ImportedType::Record(fields) => {
                 let mut thir_fields = Vec::with_capacity(fields.len());
                 for field in fields {

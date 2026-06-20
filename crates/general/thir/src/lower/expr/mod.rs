@@ -13,7 +13,7 @@ use crate::ir::{
     ThirRecordField, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
 };
 
-use super::{Lowerer, RowSolution};
+use super::{Lowerer, RowSolution, WrapperKind};
 
 mod aggregate;
 mod call;

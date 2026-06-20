@@ -30,7 +30,7 @@ Shape :: type {
 
 unwrapOr :: <T> T? -> T -> T
   = #none fallback => fallback;
-  = #some { value = value; } _ => value;
+  = #some (value) _ => value;
 
 area :: Shape -> Int
   = #circle { radius = r; } => r * r;
@@ -54,7 +54,7 @@ pair :: Pair Text Int = {
 
 response :: Response Text = {
   status = 200;
-  body = #some { value = "ok"; };
+  body = #some ("ok");
 }
 
 {
@@ -62,5 +62,5 @@ response :: Response Text = {
   area = area #rect { width = 3; height = 4; };
   first = pair.first;
   status = response.status;
-  unwrapped = unwrapOr #some { value = 5; } 0;
+  unwrapped = unwrapOr #some (5) 0;
 }

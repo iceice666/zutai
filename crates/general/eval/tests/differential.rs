@@ -34,17 +34,22 @@ fn battery() -> Vec<(&'static str, &'static str)> {
             "S :: type { p? : Int; }\ns :: S = {}\ns.p ?? 8080",
         ),
         ("coalesce_explicit_none", "x :: Int? = #none\nx ?? 5"),
+        ("coalesce_explicit_some", "x :: Int? = #some (9)\nx ?? 5"),
         (
-            "coalesce_explicit_some",
-            "x :: Int? = #some { value = 9; }\nx ?? 5",
+            "maybe_field_absent_direct",
+            "S :: type { p? : Int; }\ns :: S = {}\ns.p",
         ),
         (
-            "optional_field_match_none",
-            "S :: type { p? : Int; }\ns :: S = {}\nmatch s.p { | #none => 1; | #some { value = n; } => n; }",
+            "maybe_field_present_direct",
+            "S :: type { p? : Int; }\ns :: S = { p = 7; }\ns.p",
         ),
         (
-            "optional_field_match_some",
-            "S :: type { p? : Int; }\ns :: S = { p = 7; }\nmatch s.p { | #none => 1; | #some { value = n; } => n; }",
+            "maybe_optional_field_present_none",
+            "S :: type { p? : Int?; }\ns :: S = { p = #none; }\ns.p",
+        ),
+        (
+            "maybe_optional_field_present_some",
+            "S :: type { p? : Int?; }\ns :: S = { p = #some (7); }\ns.p",
         ),
         (
             "optional_access_chain_some",
@@ -56,7 +61,7 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "optional_explicit_some_access",
-            "Inner :: type { val : Int; }\ncfg :: Inner? = #some { value = { val = 9; }; }\ncfg?.val ?? 0",
+            "Inner :: type { val : Int; }\ncfg :: Inner? = #some ({ val = 9; })\ncfg?.val ?? 0",
         ),
         (
             "match_union",
@@ -195,8 +200,10 @@ fn expected_display(label: &str) -> Option<&'static str> {
     match label {
         "lazy_record_projection" => Some("1"),
         "lazy_block_local" => Some("99"),
-        "optional_field_match_none" => Some("1"),
-        "optional_field_match_some" => Some("7"),
+        "maybe_field_absent_direct" => Some("#absent"),
+        "maybe_field_present_direct" => Some("#present (7)"),
+        "maybe_optional_field_present_none" => Some("#present (#none)"),
+        "maybe_optional_field_present_some" => Some("#present (#some (7))"),
         "optional_access_chain_some" => Some("5"),
         "optional_access_chain_none" => Some("0"),
         "optional_explicit_some_access" => Some("9"),

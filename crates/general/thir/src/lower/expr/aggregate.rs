@@ -387,7 +387,7 @@ impl<'hir> Lowerer<'hir> {
             return self.error_expr(id, span);
         };
         let ty = if record_field.optional {
-            self.optional_type(record_field.ty, record_field.span)
+            self.maybe_type(record_field.ty, record_field.span)
         } else {
             record_field.ty
         };
@@ -435,7 +435,7 @@ impl<'hir> Lowerer<'hir> {
                 continue;
             };
             let field_ty = if rf.optional {
-                self.optional_type(rf.ty, rf.span)
+                self.maybe_type(rf.ty, rf.span)
             } else {
                 rf.ty
             };
@@ -482,11 +482,12 @@ impl<'hir> Lowerer<'hir> {
         let receiver_thir = self.infer_expr(receiver);
         let receiver_ty = self.expr(receiver_thir).ty;
 
-        let Some(inner) = self.optional_inner_type(receiver_ty, span) else {
+        let Some((wrapper_kind, inner)) = self.optional_or_maybe_inner_type(receiver_ty, span)
+        else {
             let found = self.type_name(receiver_ty);
             if !matches!(self.ty(receiver_ty).kind, TypeKind::Error) {
                 self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::ExpectedOptional { found },
+                    kind: ThirDiagnosticKind::ExpectedOptionalOrMaybe { found },
                     span,
                 });
             }
@@ -512,7 +513,15 @@ impl<'hir> Lowerer<'hir> {
             return self.error_expr(id, span);
         };
 
-        let ty = self.optional_type(record_field.ty, span);
+        let field_ty = if record_field.optional {
+            self.maybe_type(record_field.ty, record_field.span)
+        } else {
+            record_field.ty
+        };
+        let ty = match wrapper_kind {
+            WrapperKind::Optional => self.optional_type(field_ty, span),
+            WrapperKind::Maybe => self.maybe_type(field_ty, span),
+        };
         self.alloc_expr(ThirExpr {
             source: id,
             ty,

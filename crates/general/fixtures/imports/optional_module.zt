@@ -1,5 +1,4 @@
 -- A .zt module whose final expression has type Int?
 -- Used to exercise ImportedType::Optional in thir/lower/import.rs
-Config :: type { port? : Int; }
-cfg :: Config = {}
-cfg.port
+x :: Int? = #none
+x

@@ -112,7 +112,7 @@ impl<'hir> Lowerer<'hir> {
         scoped_bindings: &mut Vec<BindingId>,
     ) -> ThirPatId {
         let resolved = self.resolve_alias(expected, &mut HashSet::new(), span);
-        let type_items = match self.tuple_scrutinee_items(resolved, items, span) {
+        let type_items = match self.tuple_scrutinee_items(resolved) {
             Some(type_items) => type_items,
             None => {
                 // An already-`Error` scrutinee was diagnosed upstream; stay quiet.
@@ -412,34 +412,26 @@ impl<'hir> Lowerer<'hir> {
                     }
                 }
             }
-            TypeKind::Optional(inner) => {
-                if tag == "none" {
+            TypeKind::Optional(inner) => match tag {
+                "none" => {
+                    if let Some(first) = payload.first() {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::UnexpectedRecordField {
+                                name: first.name.clone(),
+                            },
+                            span: first.span,
+                        });
+                    }
                     vec![]
-                } else if tag == "some" {
-                    // Optional #some { value = x }
-                    payload
-                        .iter()
-                        .map(|f| {
-                            let field_ty = if f.name == "value" {
-                                inner
-                            } else {
-                                self.diagnostics.push(ThirDiagnostic {
-                                    kind: ThirDiagnosticKind::UnknownField {
-                                        name: f.name.clone(),
-                                    },
-                                    span: f.span,
-                                });
-                                self.error_type
-                            };
-                            let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
-                            ThirRecordPatField {
-                                name: f.name.clone(),
-                                pattern: pat,
-                                span: f.span,
-                            }
-                        })
-                        .collect()
-                } else {
+                }
+                "some" => {
+                    let tuple_ty = self.alloc_type(Type {
+                        kind: TypeKind::Tuple(vec![TypeTupleItem::Positional(inner)]),
+                        span,
+                    });
+                    self.check_tagged_payload_fields(payload, tuple_ty, span, scoped_bindings)
+                }
+                _ => {
                     let found = self.alloc_type(Type {
                         kind: TypeKind::Atom(tag.to_string()),
                         span,
@@ -447,7 +439,35 @@ impl<'hir> Lowerer<'hir> {
                     self.type_mismatch(expected, found, span);
                     vec![]
                 }
-            }
+            },
+            TypeKind::Maybe(inner) => match tag {
+                "absent" => {
+                    if let Some(first) = payload.first() {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::UnexpectedRecordField {
+                                name: first.name.clone(),
+                            },
+                            span: first.span,
+                        });
+                    }
+                    vec![]
+                }
+                "present" => {
+                    let tuple_ty = self.alloc_type(Type {
+                        kind: TypeKind::Tuple(vec![TypeTupleItem::Positional(inner)]),
+                        span,
+                    });
+                    self.check_tagged_payload_fields(payload, tuple_ty, span, scoped_bindings)
+                }
+                _ => {
+                    let found = self.alloc_type(Type {
+                        kind: TypeKind::Atom(tag.to_string()),
+                        span,
+                    });
+                    self.type_mismatch(expected, found, span);
+                    vec![]
+                }
+            },
             TypeKind::Error => vec![],
             _ => {
                 let found = self.alloc_type(Type {
@@ -614,46 +634,12 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Resolve the tuple-shaped field types a tuple pattern is matched against,
-    /// narrowing a `Union` scrutinee by the pattern's leading `#tag` and an
-    /// `Optional` scrutinee by a leading `#some`. Returns `None` when the
-    /// scrutinee is not a tuple-compatible shape for this pattern.
-    fn tuple_scrutinee_items(
-        &mut self,
-        resolved: TypeId,
-        items: &[HirTuplePatItem],
-        span: Span,
-    ) -> Option<Vec<TypeTupleItem>> {
+    /// Resolve the tuple-shaped field types a tuple pattern is matched against.
+    /// Builtin wrappers are matched with tagged patterns (`#some (x)`,
+    /// `#present (x)`), not tuple patterns.
+    fn tuple_scrutinee_items(&mut self, resolved: TypeId) -> Option<Vec<TypeTupleItem>> {
         match self.ty(resolved).kind.clone() {
             TypeKind::Tuple(type_items) => Some(type_items),
-            TypeKind::Optional(inner) => match self.pattern_leading_atom_hir(items) {
-                Some(tag) if tag == "some" => {
-                    let some_ty = self.alloc_type(Type {
-                        kind: TypeKind::Atom("some".to_string()),
-                        span,
-                    });
-                    Some(vec![
-                        TypeTupleItem::Positional(some_ty),
-                        TypeTupleItem::Named {
-                            name: "value".to_string(),
-                            ty: inner,
-                            span,
-                        },
-                    ])
-                }
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    /// The leading positional atom name of a tuple *pattern* (its union tag).
-    fn pattern_leading_atom_hir(&self, items: &[HirTuplePatItem]) -> Option<String> {
-        let HirTuplePatItem::Positional(first) = items.first()? else {
-            return None;
-        };
-        match &self.hir_pat(*first).kind {
-            HirPatKind::Atom(name) => Some(name.clone()),
             _ => None,
         }
     }

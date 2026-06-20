@@ -560,6 +560,11 @@ impl<'m> Lowerer<'m> {
                 let dt = self.lower_type(t);
                 self.types.alloc(DfTy::Optional(dt))
             }
+
+            TlcType::Maybe(t) => {
+                let dt = self.lower_type(t);
+                self.types.alloc(DfTy::Maybe(dt))
+            }
         }
     }
 }

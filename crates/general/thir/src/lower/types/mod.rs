@@ -19,3 +19,5 @@ mod instantiate;
 mod kind;
 mod lower;
 mod match_;
+
+pub(in crate::lower) use match_::WrapperKind;

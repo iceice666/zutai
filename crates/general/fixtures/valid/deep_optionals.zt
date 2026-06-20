@@ -35,7 +35,7 @@ fullCfg :: Config = {
 }
 
 explicitNone :: Int? = #none
-explicitSome :: Int? = #some { value = 42; }
+explicitSome :: Int? = #some (42)
 
 {
   host1     = defaultHost emptyCfg;

@@ -46,6 +46,10 @@ impl<'thir> Lowerer<'thir> {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::Optional(inner_tlc))
             }
+            TypeKind::Maybe(inner) => {
+                let inner_tlc = self.lower_type(inner);
+                self.alloc_type(TlcType::Maybe(inner_tlc))
+            }
             TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
@@ -240,6 +244,10 @@ impl<'thir> Lowerer<'thir> {
                 let inner = self.lower_type_with_subst(inner, subst);
                 self.alloc_type(TlcType::Optional(inner))
             }
+            TypeKind::Maybe(inner) => {
+                let inner = self.lower_type_with_subst(inner, subst);
+                self.alloc_type(TlcType::Maybe(inner))
+            }
             TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
                     .iter()
@@ -338,7 +346,7 @@ impl<'thir> Lowerer<'thir> {
                 self.collect_sig_row_params(from, out);
                 self.collect_sig_row_params(to, out);
             }
-            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+            TypeKind::List(inner) | TypeKind::Optional(inner) | TypeKind::Maybe(inner) => {
                 self.collect_sig_row_params(inner, out);
             }
             TypeKind::Record(fields, tail) => {

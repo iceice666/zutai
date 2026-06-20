@@ -30,6 +30,8 @@ mod pat;
 mod types;
 mod unify;
 mod witnesses;
+
+use types::WrapperKind;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoweredThir {
     pub file: Option<ThirFile>,

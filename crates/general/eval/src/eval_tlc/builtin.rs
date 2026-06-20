@@ -201,21 +201,30 @@ pub(super) fn eval_builtin(op: BuiltinOp, lhs: Value, rhs: Value) -> Result<Valu
         // reaching this function; these arms are unreachable in normal execution.
         BuiltinOp::And | BuiltinOp::Or => unreachable!("And/Or are short-circuited in eval_expr"),
         BuiltinOp::Coalesce => match lhs {
-            // Absent optional (implicit Nothing or explicit `#none`) → fallback.
             Value::Nothing => Ok(rhs),
-            Value::Atom(a) if a.as_ref() == "none" => Ok(rhs),
-            Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => Ok(rhs),
-            // Explicit `#some { value = x }` → unwrap to `x` (spec desugaring).
-            Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
-                match payload.iter().find(|(n, _)| n.as_ref() == "value") {
+            Value::Atom(a) if a.as_ref() == "none" || a.as_ref() == "absent" => Ok(rhs),
+            Value::TaggedValue { tag, .. }
+                if tag.as_ref() == "none" || tag.as_ref() == "absent" =>
+            {
+                Ok(rhs)
+            }
+            Value::TaggedValue { tag, payload }
+                if tag.as_ref() == "some" || tag.as_ref() == "present" =>
+            {
+                match payload.iter().find(|(n, _)| n.as_ref() == "0") {
                     Some((_, thunk)) => thunk
                         .peek()
-                        .ok_or(EvalError::Internal("unforced #some payload in TLC")),
-                    None => Ok(Value::TaggedValue { tag, payload }),
+                        .ok_or(EvalError::Internal("unforced wrapper payload in TLC")),
+                    None => Err(EvalError::TypeMismatch {
+                        expected: "Tuple slot 0",
+                        found: "TaggedValue",
+                    }),
                 }
             }
-            // Present optional already unwrapped to a bare value → pass through.
-            other => Ok(other),
+            other => Err(EvalError::TypeMismatch {
+                expected: "Optional or Maybe",
+                found: value_type_name(&other),
+            }),
         },
     }
 }

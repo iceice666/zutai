@@ -92,7 +92,9 @@ impl Lowerer {
             constraint_method_bindings: HashMap::new(),
             handler_clause: None,
         };
-        for name in ["Type", "Text", "Bool", "Int", "Float", "List"] {
+        for name in [
+            "Type", "Text", "Bool", "Int", "Float", "List", "Optional", "Maybe",
+        ] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }
         for name in crate::ir::BUILTIN_VALUE_NAMES {

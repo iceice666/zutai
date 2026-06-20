@@ -46,6 +46,12 @@ pub(super) fn type_key_subst(
         TypeKind::Optional(inner) => {
             format!("{}?", type_key_subst(type_arena, aliases, subst, *inner, d))
         }
+        TypeKind::Maybe(inner) => {
+            format!(
+                "Maybe[{}]",
+                type_key_subst(type_arena, aliases, subst, *inner, d)
+            )
+        }
         TypeKind::Record(fields, tail) => {
             let mut parts: Vec<String> = fields
                 .iter()

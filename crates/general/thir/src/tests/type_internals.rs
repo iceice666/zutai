@@ -45,11 +45,11 @@ fn instantiate_infer_vars_text_binding() {
 }
 
 #[test]
-fn instantiate_infer_vars_optional_return() {
-    // A function with an annotated optional return type that requires field access.
-    // The Optional inner type flows through the type system when the function is called.
-    let file = completed_file("S :: type { v? : Int; }\nget :: S -> Int? = \\s. s.v\nget {}");
-    assert!(matches!(final_type_kind(&file), TypeKind::Optional(_)));
+fn instantiate_infer_vars_maybe_return() {
+    // A function with an annotated Maybe return type that requires optional field access.
+    // The Maybe inner type flows through the type system when the function is called.
+    let file = completed_file("S :: type { v? : Int; }\nget :: S -> Maybe Int = \\s. s.v\nget {}");
+    assert!(matches!(final_type_kind(&file), TypeKind::Maybe(_)));
 }
 
 // ── type_name: missing TypeKind arms ─────────────────────────────────────────
@@ -65,12 +65,12 @@ fn type_name_float_appears_in_mismatch_message() {
 }
 
 #[test]
-fn type_name_optional_appears_in_mismatch_message() {
-    // Passing an optional where an Int is needed → type_name calls Optional arm.
+fn type_name_maybe_appears_in_mismatch_message() {
+    // Passing field presence where an Int is needed → type_name calls Maybe arm.
     let lowered = lower("S :: type { v? : Int; }\ns :: S = {}\nresult :: Int = s.v\nresult");
     assert!(lowered.diagnostics.iter().any(|d| {
         matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { found, .. }
-            if found.contains('?'))
+            if found.contains("Maybe"))
     }));
 }
 
@@ -117,16 +117,13 @@ fn lower_type_unresolved_ident_arm() {
 
 // ── instantiate_infer_vars: Optional / Tuple / Union arms ────────────────────
 
-/// A second coverage path for instantiate_infer_vars Optional arm:
-/// using an annotated function so the Optional return type is stored.
-/// (The unannotated polymorphic path is unreachable with current inference.)
+/// A second coverage path for instantiate_infer_vars Maybe arm:
+/// using an annotated function so the Maybe return type is stored.
 #[test]
-fn instantiate_infer_vars_optional_arm_via_annotation() {
-    // The existing `instantiate_infer_vars_optional_return` test covers the
-    // `get :: S -> Int?` path.  This test adds a second program that also
-    // results in an Optional final type, exercising the same code path.
-    let file = completed_file("S :: type { x? : Int; }\nf :: S -> Int? = \\s. s.x\nf { x = 5; }");
-    assert!(matches!(final_type_kind(&file), TypeKind::Optional(_)));
+fn instantiate_infer_vars_maybe_arm_via_annotation() {
+    let file =
+        completed_file("S :: type { x? : Int; }\nf :: S -> Maybe Int = \\s. s.x\nf { x = 5; }");
+    assert!(matches!(final_type_kind(&file), TypeKind::Maybe(_)));
 }
 
 /// Generic alias with Tuple body applied to concrete types covers

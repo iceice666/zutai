@@ -11,7 +11,7 @@ server.port
 
 If the left side is a record and the field exists, the field value is returned.
 
-If the field is declared optional, direct field access returns an optional value:
+If the field is declared optional, direct field access returns a `Maybe` value:
 
 ```zt
 raw.port
@@ -20,16 +20,16 @@ raw.port
 If `port` is absent, this evaluates to:
 
 ```zt
-#none
+#absent
 ```
 
 If `port` is present with value `8080`, this evaluates to:
 
 ```zt
-#some { value = 8080; }
+#present (8080)
 ```
 
-If the left side is `#none`, direct field access is an error:
+If the left side is `#none` or `#absent`, direct field access is an error:
 
 ```zt
 maybeServer.port
@@ -39,28 +39,32 @@ where `maybeServer: Server?` is invalid unless `maybeServer` is known to be a `#
 
 ### Optional chaining
 
-Optional chaining uses `?.`:
+Optional chaining uses `?.` on either `Optional` or `Maybe` receivers:
 
 ```zt
 maybeServer?.port
+maybeField?.port
 ```
 
-Semantics:
-
-```zt
-x?.field
-```
-
-means:
+For an `Optional` receiver:
 
 ```zt
 match x {
-  | #none                    => #none;
-  | #some { value = value; } => optionalWrap(value.field);
+  | #none       => #none;
+  | #some (r)   => #some (r.field);
 }
 ```
 
-`optionalWrap` is a specification helper, not a user-visible function. It returns an already-optional value unchanged; otherwise it wraps the value as `#some { value = result; }`.
+For a `Maybe` receiver:
+
+```zt
+match x {
+  | #absent      => #absent;
+  | #present (r) => #present (r.field);
+}
+```
+
+The projected `r.field` uses direct field-access semantics. If `field` is optional, `r.field` is `Maybe T`, so chaining preserves nested wrappers instead of flattening them.
 
 Example:
 
@@ -71,17 +75,17 @@ raw : {
   };
 } = import "app.zti"
 
-port := raw.server?.port ?? 8080
+port := raw.server?.port ?? #absent
 ```
 
-If `raw.server` is absent, `raw.server` evaluates to `#none`, then `?.port` also evaluates to `#none`, and `?? 8080` supplies the default.
+If `raw.server` is absent, `raw.server` evaluates to `#absent`, then `?.port` also evaluates to `#absent`. If `raw.server` is present but `port` is absent, the result is `#present (#absent)`.
 
 ### Optional chaining type rule
 
 If:
 
 ```zt
-x: T?
+x: Optional T
 ```
 
 and:
@@ -93,25 +97,23 @@ T.field: U
 then:
 
 ```zt
-x?.field: U?
+x?.field: Optional U
 ```
 
-If `U` is already optional, `U?` is flattened to `U`.
-
-So:
+If:
 
 ```zt
-(Server?)?
+x: Maybe T
 ```
 
-normalizes to:
+then:
 
 ```zt
-Server?
+x?.field: Maybe U
 ```
 
-Note: `??` is always the defaulting token, so double-postfix optional must be parenthesized as `(T?)?`.
+No flattening is applied. If `U` is already `Optional V` or `Maybe V`, the nested wrapper remains.
 
-When the accessed field is declared optional (`field? : T?`), this same flattening applies to collapse the field-absence layer and the value-optional layer into a single `T?`. See [Optional fields](optional-fields.md) for the concrete absent/present semantics.
+When the accessed field is declared optional (`field? : T?`), direct projection has type `Maybe (Optional T)`, so `x?.field` has type `Optional (Maybe (Optional T))` for `Optional` receivers and `Maybe (Maybe (Optional T))` for `Maybe` receivers.
 
 ---
