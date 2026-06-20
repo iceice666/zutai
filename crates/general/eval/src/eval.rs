@@ -1013,7 +1013,7 @@ impl<'a> Evaluator<'a> {
         &self,
         op_name: &str,
         key: &str,
-        aliases: &HashMap<BindingId, TypeId>,
+        aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
         lv: &Value,
         rv: &Value,
         env: &Env,
@@ -1097,12 +1097,12 @@ impl<'a> Evaluator<'a> {
 
     /// Build a map from alias `BindingId` to its underlying `TypeId` for
     /// alias-resolved `type_key` calls.
-    fn build_alias_map(&self) -> HashMap<BindingId, TypeId> {
+    fn build_alias_map(&self) -> HashMap<BindingId, (Vec<BindingId>, TypeId)> {
         let mut m = HashMap::new();
         for &decl_id in &self.file.decls {
             let decl = self.decl(decl_id);
-            if let ThirDeclKind::TypeAlias { ty, .. } = &decl.kind {
-                m.insert(decl.binding, *ty);
+            if let ThirDeclKind::TypeAlias { params, ty } = &decl.kind {
+                m.insert(decl.binding, (params.clone(), *ty));
             }
         }
         m
@@ -1184,11 +1184,31 @@ impl<'a> Evaluator<'a> {
 
 /// Structural type key mirroring `witness_target_key` in the THIR lowerer.
 ///
-/// Resolves top-level `Alias` chains via `aliases` so that a witness target
-/// written as a named alias matches an operand whose inferred type is the
-/// equivalent structural type. `AliasApply` (parametric aliases) is not
-/// resolved and stays as `$<id>[...]` — dispatch on those is deferred.
-fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeId) -> String {
+/// Resolves named `Alias` chains and expands parametric `AliasApply` (with its
+/// type args substituted) so a witness target written as `Pair A` matches an
+/// operand whose inferred type is the equivalent structural record.
+fn type_key(
+    type_arena: &[Type],
+    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
+    ty: TypeId,
+) -> String {
+    type_key_subst(type_arena, aliases, &HashMap::new(), ty, 0)
+}
+
+fn type_key_subst(
+    type_arena: &[Type],
+    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
+    subst: &HashMap<BindingId, TypeId>,
+    ty: TypeId,
+    depth: u32,
+) -> String {
+    // A structurally-recursive parametric alias (e.g. `Rec :: <A> type [Rec A]`)
+    // would expand forever; cap the depth and fall back to an ambiguous marker so
+    // dispatch refuses rather than overflowing the stack.
+    if depth > 256 {
+        return format!("$deep{}", ty.0);
+    }
+    let d = depth + 1;
     let ty = resolve_alias_chain(type_arena, aliases, ty);
     match &type_arena[ty.0 as usize].kind {
         TypeKind::Int => "Int".into(),
@@ -1199,12 +1219,25 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
         TypeKind::True => "true".into(),
         TypeKind::False => "false".into(),
         TypeKind::Atom(a) => format!("#{a}"),
-        TypeKind::List(inner) => format!("[{}]", type_key(type_arena, aliases, *inner)),
-        TypeKind::Optional(inner) => format!("{}?", type_key(type_arena, aliases, *inner)),
+        TypeKind::List(inner) => {
+            format!(
+                "[{}]",
+                type_key_subst(type_arena, aliases, subst, *inner, d)
+            )
+        }
+        TypeKind::Optional(inner) => {
+            format!("{}?", type_key_subst(type_arena, aliases, subst, *inner, d))
+        }
         TypeKind::Record(fields, tail) => {
             let mut parts: Vec<String> = fields
                 .iter()
-                .map(|f| format!("{}:{}", f.name, type_key(type_arena, aliases, f.ty)))
+                .map(|f| {
+                    format!(
+                        "{}:{}",
+                        f.name,
+                        type_key_subst(type_arena, aliases, subst, f.ty, d)
+                    )
+                })
                 .collect();
             parts.sort();
             format!("{{{}{}}}", parts.join(","), row_tail_key(*tail))
@@ -1213,7 +1246,13 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
             let parts: Vec<String> = variants
                 .iter()
                 .map(|v| match v.payload {
-                    Some(p) => format!("{}({})", v.name, type_key(type_arena, aliases, p)),
+                    Some(p) => {
+                        format!(
+                            "{}({})",
+                            v.name,
+                            type_key_subst(type_arena, aliases, subst, p, d)
+                        )
+                    }
                     None => v.name.clone(),
                 })
                 .collect();
@@ -1224,9 +1263,15 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
                 .iter()
                 .map(|item| match item {
                     TypeTupleItem::Named { name, ty, .. } => {
-                        format!("{}:{}", name, type_key(type_arena, aliases, *ty))
+                        format!(
+                            "{}:{}",
+                            name,
+                            type_key_subst(type_arena, aliases, subst, *ty, d)
+                        )
                     }
-                    TypeTupleItem::Positional(ty) => type_key(type_arena, aliases, *ty),
+                    TypeTupleItem::Positional(ty) => {
+                        type_key_subst(type_arena, aliases, subst, *ty, d)
+                    }
                 })
                 .collect();
             format!("({})", parts.join(","))
@@ -1234,15 +1279,31 @@ fn type_key(type_arena: &[Type], aliases: &HashMap<BindingId, TypeId>, ty: TypeI
         TypeKind::Function { from, to } => {
             format!(
                 "({}->{}",
-                type_key(type_arena, aliases, *from),
-                type_key(type_arena, aliases, *to)
+                type_key_subst(type_arena, aliases, subst, *from, d),
+                type_key_subst(type_arena, aliases, subst, *to, d)
             )
         }
-        TypeKind::TypeVar(b) | TypeKind::Alias(b) => format!("@{}", b.0),
+        TypeKind::Alias(b) => format!("@{}", b.0),
+        TypeKind::TypeVar(b) => match subst.get(b) {
+            Some(&t) => type_key_subst(type_arena, aliases, subst, t, d),
+            None => format!("@{}", b.0),
+        },
         TypeKind::AliasApply { binding, args } => {
+            // Expand the parametric alias: substitute its params with the applied
+            // args and re-key the body, so `Pair Int` keys as `{fst:Int,snd:Int}`
+            // and matches a structurally-keyed witness target.
+            if let Some((params, body)) = aliases.get(binding)
+                && params.len() == args.len()
+            {
+                let mut child = subst.clone();
+                for (p, a) in params.iter().zip(args.iter()) {
+                    child.insert(*p, *a);
+                }
+                return type_key_subst(type_arena, aliases, &child, *body, d);
+            }
             let arg_parts: Vec<String> = args
                 .iter()
-                .map(|a| type_key(type_arena, aliases, *a))
+                .map(|a| type_key_subst(type_arena, aliases, subst, *a, d))
                 .collect();
             format!("${}[{}]", binding.0, arg_parts.join(","))
         }
@@ -1267,15 +1328,15 @@ fn row_tail_key(tail: RowTail) -> String {
 /// a non-alias type or an unknown alias is reached.
 fn resolve_alias_chain(
     type_arena: &[Type],
-    aliases: &HashMap<BindingId, TypeId>,
+    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
     mut ty: TypeId,
 ) -> TypeId {
     let mut fuel = 64u8;
     while fuel > 0 {
         match &type_arena[ty.0 as usize].kind {
             TypeKind::Alias(b) => match aliases.get(b) {
-                Some(&next) => {
-                    ty = next;
+                Some((_, next)) => {
+                    ty = *next;
                     fuel -= 1;
                 }
                 None => break,

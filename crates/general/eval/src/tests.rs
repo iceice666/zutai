@@ -876,6 +876,164 @@ eq ok err
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
 }
+// ─── Phase 13: conditional (parametric) witnesses ─────────────────────────────
+
+/// Direct call site: `eq` on two `List Int` resolves the conditional witness
+/// `Eq @(List A) :: <A: Eq>` by structurally matching `List A` against `List Int`
+/// and applying it to the recursively resolved `Eq @Int` component dict.
+#[test]
+fn tlc_conditional_list_witness_direct() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
+eq [1; 2;] [1; 2;]
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+/// Indirect / polymorphic call site: inside a `<A: Eq>`-bounded function, the
+/// `eq` call on `List A` resolves the conditional witness against the abstract
+/// `A`, threading the function's own component dict into the list witness. At the
+/// outer call the dict is the concrete `Eq @Int` witness.
+#[test]
+fn tlc_conditional_list_witness_indirect() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
+useEq :: <A: Eq> List A -> List A -> Bool { | xs ys => eq xs ys; }
+useEq [1;] [1;]
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+/// End-to-end component dispatch through a parametric record alias: the
+/// `Eq @(Pair A)` witness compares `fst` fields with the element `eq`. Because
+/// witness fields are checked against the (instantiated) method signature, the
+/// lambda's params are typed `Pair A`, so `p.fst : A` and the element `eq`
+/// dispatches through the witness's own component dict — proving the `Eq @Int`
+/// dict is genuinely threaded in (the result depends on it).
+#[test]
+fn tlc_conditional_record_alias_witness_uses_component() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+samePair :: <A: Eq> Pair A -> Pair A -> Bool { | p q => eq p q; }
+p1 :: Pair Int = { fst = 1; snd = 2; }
+p2 :: Pair Int = { fst = 1; snd = 9; }
+samePair p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+/// Negative direction of the component-dispatch test: differing `fst` fields make
+/// the element `eq` (and thus the derived `Pair` equality) return false.
+#[test]
+fn tlc_conditional_record_alias_witness_component_false() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+samePair :: <A: Eq> Pair A -> Pair A -> Bool { | p q => eq p q; }
+p1 :: Pair Int = { fst = 1; snd = 2; }
+p2 :: Pair Int = { fst = 7; snd = 2; }
+samePair p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
+}
+/// `type_key` expands parametric `AliasApply` targets: a concrete witness on a
+/// `Pair Int`-typed operand dispatches through the THIR interpreter (`run`)
+/// instead of being flagged ambiguous. The custom `(==)` returns false even for
+/// structurally-equal pairs, proving the witness — not structural equality — ran.
+#[test]
+fn run_operator_dispatch_on_alias_apply_operand() {
+    let src = r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair Int) :: { (==) = \a b. false; }
+p1 :: Pair Int = { fst = 1; snd = 2; }
+p2 :: Pair Int = { fst = 1; snd = 2; }
+p1 == p2
+"#;
+    assert_eq!(run(src), Value::Bool(false));
+}
+/// Nested parametric alias (`Pair (Pair Int)`): resolving `Eq @(Pair A)` binds
+/// the witness param `A` to the inner `Pair Int`. The binding must keep its
+/// `AliasApply` shape so the recursive `get_dict_expr(Eq, Pair Int)` re-resolves
+/// it through `Eq @(Pair A)` again down to `Eq @Int` — alias-expanding the bound
+/// type here would strand the inner `Int`, yielding a `Nothing` component dict
+/// and a refused evaluation. The inner `fst` fields are equal, so the result is
+/// `true` and the genuine threaded component dict ran.
+#[test]
+fn tlc_conditional_nested_alias_witness_threads_inner_component() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; }
+p2 :: Pair (Pair Int) = { fst = { fst = 1; snd = 8; }; snd = { fst = 9; snd = 4; }; }
+eq p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+/// Negative direction of the nested-alias test: the inner `fst` fields differ, so
+/// the recursively threaded element `eq` discriminates and the whole comparison
+/// is `false` — proving the inner component dict actually ran rather than a
+/// vacuous match.
+#[test]
+fn tlc_conditional_nested_alias_witness_component_false() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; }
+p2 :: Pair (Pair Int) = { fst = { fst = 7; snd = 8; }; snd = { fst = 9; snd = 4; }; }
+eq p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
+}
+
+/// Conditional witness over a parametric *union* alias (`Box A`): matching the
+/// witness target `Box A` against a concrete `Box Int` must recurse into the
+/// variant payload to bind `A` (the `Union` arm of `unify_env`). Without it the
+/// two normalized union bodies compare equal without pinning `A`, the candidate
+/// is skipped, and the witness refuses. The body threads the element `eq`; equal
+/// payloads give `true`.
+#[test]
+fn tlc_conditional_union_alias_witness_threads_component() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Box :: <A> type [ box: { value: A; }; ]
+Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
+b1 :: Box Int = #box { value = 1; }
+b2 :: Box Int = #box { value = 1; }
+eq b1 b2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+/// Negative direction of the union-alias test: differing payloads make the
+/// threaded element `eq` return `false`.
+#[test]
+fn tlc_conditional_union_alias_witness_component_false() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Box :: <A> type [ box: { value: A; }; ]
+Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
+b1 :: Box Int = #box { value = 1; }
+b2 :: Box Int = #box { value = 2; }
+eq b1 b2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
+}
 
 // Increment 5: method-name resolution — eval invariant tests
 // ---------------------------------------------------------------------------

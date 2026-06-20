@@ -70,6 +70,11 @@ pub enum ThirDeclKind {
         constraint: Option<BindingId>,
         target: TypeId,
         params: Vec<BindingId>,
+        /// Per-param constraint bounds, parallel to `params`. `param_bounds[i]` is the
+        /// list of constraint `BindingId`s required by `params[i]` (a conditional
+        /// witness predicate such as `<A: Eq>`). Empty inner vecs mean an unconstrained
+        /// witness parameter. Mirrors `Function::param_bounds`.
+        param_bounds: Vec<Vec<BindingId>>,
         fields: Vec<ThirWitnessField>,
         derive: bool,
     },

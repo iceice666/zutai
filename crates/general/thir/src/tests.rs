@@ -1939,6 +1939,51 @@ fn coherence_derive_and_explicit_same_pair_conflict() {
         lowered.diagnostics
     );
 }
+#[test]
+fn coherence_overlapping_conditional_witnesses_conflict() {
+    // Two `Eq @(List A)` conditional witnesses overlap: param-normalized keys
+    // collide and the second is reported ambiguous despite distinct param vars.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @(List A) :: <A: Eq> { eq = \\xs ys. true; }\nEq @(List A) :: <A: Eq> { eq = \\xs ys. false; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.iter().any(|d| {
+            matches!(&d.kind, ThirDiagnosticKind::ConflictingWitness { constraint, .. } if constraint == "Eq")
+        }),
+        "overlapping conditional witnesses should emit ConflictingWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn recursive_witness_target_is_own_param_rejected() {
+    // `Eq @A :: <A: Eq>` — the target is the witness's own param, so resolving it
+    // for any type needs a witness for the same type: non-terminating.
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @A :: <A: Eq> { eq = \\x y. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        lowered.diagnostics.iter().any(|d| {
+            matches!(&d.kind, ThirDiagnosticKind::RecursiveWitness { constraint } if constraint == "Eq")
+        }),
+        "self-referential conditional witness should emit RecursiveWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+#[test]
+fn witness_target_is_param_bounded_by_other_constraint_not_recursive() {
+    // `Eq @A :: <A: Ord>` — the target is the param, but the bound is a *different*
+    // constraint, so resolution consumes an `Ord` dict to produce an `Eq` dict and
+    // makes progress. It must NOT be flagged as a recursive witness.
+    let src = "Ord :: <A> @A { cmp :: A -> A -> Bool; }\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @A :: <A: Ord> { eq = \\x y. true; }\n1";
+    let lowered = lower(src);
+    assert!(
+        !lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::RecursiveWitness { .. })),
+        "witness bounded by a different constraint should not emit RecursiveWitness; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
 
 // ── Multi-param constraint diagnostic (4c) ───────────────────────────────────
 

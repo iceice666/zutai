@@ -215,6 +215,11 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         ConflictingWitness { constraint, target } => {
             format!("conflicting witnesses for constraint `{constraint}` at type `{target}`")
         }
+        RecursiveWitness { constraint } => {
+            format!(
+                "recursive witness for constraint `{constraint}`: target is one of its own type parameters"
+            )
+        }
         UnsupportedMultiParamConstraint { name } => {
             format!("multi-param constraint `{name}` is not yet supported")
         }

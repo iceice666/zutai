@@ -143,10 +143,39 @@ impl<'thir> Lowerer<'thir> {
             ThirDeclKind::Witness {
                 constraint,
                 target,
+                params,
+                param_bounds,
                 fields,
                 derive,
-                ..
             } => {
+                use crate::ir::{Kind, TlcType};
+
+                // Register a dict param for each bound on each witness param, so
+                // constraint-method calls inside the field bodies dispatch through
+                // the witness's own dictionaries (e.g. `eq` on element type `A`).
+                // `binders` records the abstraction order (outer → inner): a
+                // `TyLam` per param followed by a `Lam` per bound, matching the
+                // `TyApp`/`App` order in `resolve_conditional_witness`.
+                enum Binder {
+                    Ty(crate::ir::TlcTypeVar),
+                    Dict(BindingId, crate::ir::TlcTypeId),
+                }
+                let mut binders: Vec<Binder> = Vec::new();
+                let mut registered: Vec<(u32, u32)> = Vec::new();
+                for (param, bounds) in params.iter().zip(param_bounds.iter()) {
+                    let tyvar = self.named_tyvar(*param);
+                    binders.push(Binder::Ty(tyvar));
+                    for &cst_b in bounds.iter() {
+                        let dict_param = self.fresh_synth_binding();
+                        let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
+                        self.active_dict_params
+                            .insert((cst_b.0, param.0), dict_param);
+                        self.active_dict_types.insert(dict_param, dict_ty);
+                        registered.push((cst_b.0, param.0));
+                        binders.push(Binder::Dict(dict_param, dict_ty));
+                    }
+                }
+
                 let tlc_fields: Vec<(String, TlcExprId)> = if derive {
                     constraint
                         .map(|constraint| self.synthesize_derive_fields(constraint, target))
@@ -157,12 +186,39 @@ impl<'thir> Lowerer<'thir> {
                         .map(|f| (f.name.clone(), self.lower_expr(f.value)))
                         .collect()
                 };
+
+                for key in registered {
+                    self.active_dict_params.remove(&key);
+                }
+
                 let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
                 let span = zutai_syntax::Span::default();
-                let body = self.alloc_expr(TlcExpr::Record(tlc_fields), dict_ty, span);
+                let mut body = self.alloc_expr(TlcExpr::Record(tlc_fields), dict_ty, span);
+                let mut body_ty = dict_ty;
+                for binder in binders.into_iter().rev() {
+                    match binder {
+                        Binder::Dict(dict_param, d_ty) => {
+                            body_ty = self.alloc_type(TlcType::Fun(d_ty, body_ty, Row::REmpty));
+                            body = self.alloc_expr(
+                                TlcExpr::Lam(dict_param, d_ty, body),
+                                body_ty,
+                                span,
+                            );
+                        }
+                        Binder::Ty(tyvar) => {
+                            body_ty =
+                                self.alloc_type(TlcType::ForAll(tyvar, Kind::ground(), body_ty));
+                            body = self.alloc_expr(
+                                TlcExpr::TyLam(tyvar, Kind::ground(), body),
+                                body_ty,
+                                span,
+                            );
+                        }
+                    }
+                }
                 TlcDecl::Value {
                     binding,
-                    ty: dict_ty,
+                    ty: body_ty,
                     body,
                 }
             }

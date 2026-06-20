@@ -115,6 +115,12 @@ pub enum ThirDiagnosticKind {
         constraint: String,
         target: String,
     },
+    /// A conditional witness whose target is one of its own type parameters
+    /// (e.g. `Eq @A :: <A: Eq>`). Resolving such a witness for a type requires a
+    /// witness for the same type, so the search never terminates.
+    RecursiveWitness {
+        constraint: String,
+    },
     /// A constraint definition uses more than one type parameter.  Multi-param
     /// constraints are not yet supported; witness checking is skipped for them.
     UnsupportedMultiParamConstraint {

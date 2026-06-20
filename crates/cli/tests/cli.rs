@@ -337,6 +337,28 @@ eq p1 p2
         .success()
         .stdout(predicate::str::contains("define i64 @__entry"));
 }
+#[test]
+fn compile_conditional_witness_program_passes() {
+    // A conditional witness `Eq @(Pair A) :: <A: Eq>` resolves through the compile
+    // (TLC -> dataflow) pipeline: the parametric witness is applied to the
+    // recursively resolved `Eq @Int` component dict.
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Pair :: <A> type { fst : A; snd : A; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+p1 :: Pair Int = { fst = 1; snd = 2; }
+p2 :: Pair Int = { fst = 1; snd = 2; }
+eq p1 p2
+"#;
+    let path = write_tmp("cli_test_compile_conditional.zt", src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("define i64 @__entry"));
+}
 
 // ─── `select` projection (check / run / compile) ───────────────────────────────
 

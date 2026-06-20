@@ -82,7 +82,7 @@ The `constraint` / `witness` declarations from `docs/v1_spec/03-constraints.md` 
 **Remaining constraint/witness work** (deferred — each is its own milestone):
 
 - [x] **Dictionary-passing in TLC**: polymorphic dispatch through indirect calls. TLC elaboration threads witness dictionaries as implicit `Lam(dict, …)` parameters and injects them at call sites; constraint-method calls lower to `GetField` on the dict. Completed in TLC Phase 5; `zutai-eval` walks TLC (`eval_tlc.rs`), so `UnresolvedWitness` no longer arises for bounded indirect calls.
-- [ ] **Conditional / higher-kinded witnesses**: `Eq @(List A)` where `A: Eq`; blocked by parametric `AliasApply` targets in `type_key`.
+- [x] **Conditional / higher-kinded witnesses**: `Eq @(List A)` where `A: Eq`. Parametric witnesses lower to `TyLam … Lam(dict) … Record` in TLC, registered as `conditional_witnesses` with their `param_bounds`. Dispatch resolves them structurally: `unify_env` matches a witness target (params as holes) against the concrete operand type — substitution-aware, alias-normalizing, depth-guarded, with `List`/`Optional`/`Tuple`/`Record`/`Union`/`Function` arms — then `resolve_conditional_witness` threads the recursively-resolved component dicts via `App(TyApp(Var(witness), arg), dict)`. Hole bindings keep their `AliasApply` shape so nested parametric aliases (`Pair (Pair Int)`) re-resolve correctly. THIR records `ThirDeclKind::Witness.param_bounds`, type-checks witness fields against instantiated method sigs, flags overlapping conditional witnesses (`ConflictingWitness`) via param-normalized keys, and reports a self-referential target whose bound names the same constraint (`RecursiveWitness`). The eval `type_key` expands parametric `AliasApply` targets (depth-guarded). Resolves at direct and indirect polymorphic call sites without `UnresolvedWitness` (Phase 13).
 - [x] **Cross-module witnesses + orphan rule**: `import.rs` / `export.rs` have no constraint/witness handling.
 - [x] **`derive` synthesis**: structural witness synthesis for the equality family (`eq`/`==`, `neq`/`!=`). THIR `check_witnesses` rejects derive on non-derivable constraints, requires every structural component to have a same-constraint witness (or be a builtin leaf), and refuses non-equality required methods (`DeriveUnsupportedMethod`). TLC `lower_decl` synthesizes the dict: records fold field equality with `&&`, tuples/unions match on shape, `neq`/`!=` is the negation of structural equality, component witnesses dispatch via `GetField`. Runs on the TLC eval and compile paths (Phase 12).
 - [ ] **Method-level type params** (`<A,B>` on individual methods): dropped at THIR.
@@ -252,10 +252,10 @@ Verification gate: derived `Eq`/`Ord`-shaped witnesses behave identically to han
 
 Goal: support witnesses for parameterized types with bounds, such as `Eq @(List A) :: <A: Eq>`.
 
-- [ ] Fix parametric `AliasApply` targets in `type_key`.
-- [ ] Represent witness predicates with required type-parameter bounds.
-- [ ] Resolve witnesses recursively through type arguments.
-- [ ] Detect and report recursive or ambiguous witness search.
+- [x] Fix parametric `AliasApply` targets in `type_key`.
+- [x] Represent witness predicates with required type-parameter bounds.
+- [x] Resolve witnesses recursively through type arguments.
+- [x] Detect and report recursive or ambiguous witness search.
 
 Verification gate: bounded witnesses for list-like aliases resolve at direct and indirect polymorphic call sites without `UnresolvedWitness`.
 

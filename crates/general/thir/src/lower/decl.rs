@@ -192,20 +192,37 @@ impl<'hir> Lowerer<'hir> {
                 derive,
             } => {
                 let target = self.lower_type(*target);
+                let param_bounds: Vec<Vec<zutai_hir::BindingId>> =
+                    params.iter().map(|p| p.bounds.clone()).collect();
                 let params: Vec<_> = params.iter().map(|p| p.binding).collect();
-                let fields: Vec<ThirWitnessField> = fields
-                    .iter()
-                    .map(|f| ThirWitnessField {
+                // Check each field against its constraint method's signature
+                // (instantiated at the witness target) instead of inferring it
+                // blind. This lets a witness field reference a bounded helper whose
+                // own type param must alias the witness param — e.g.
+                // `Eq @(Pair A) :: <A: Eq> { eq = pairEq; }` — and gives inline
+                // lambda fields their parameter types so field access resolves.
+                let method_sigs = constraint
+                    .map(|c| self.witness_method_sigs(c, target))
+                    .unwrap_or_default();
+                let mut thir_fields: Vec<ThirWitnessField> = Vec::with_capacity(fields.len());
+                for f in fields {
+                    let value = match method_sigs.get(&f.name) {
+                        Some(&expected) => self.check_expr(f.value, expected),
+                        None => self.infer_expr(f.value),
+                    };
+                    thir_fields.push(ThirWitnessField {
                         name: f.name.clone(),
                         is_operator: f.is_operator,
-                        value: self.infer_expr(f.value),
+                        value,
                         span: f.span,
-                    })
-                    .collect();
+                    });
+                }
+                let fields = thir_fields;
                 ThirDeclKind::Witness {
                     constraint: *constraint,
                     target,
                     params,
+                    param_bounds,
                     fields,
                     derive: *derive,
                 }
@@ -217,6 +234,40 @@ impl<'hir> Lowerer<'hir> {
             kind,
             span: decl.span,
         })
+    }
+    /// Build the expected witness field signatures for `constraint` at `target`:
+    /// each constraint method's signature with the single constraint type param
+    /// substituted by the witness target. Requires the constraint decl to be
+    /// already lowered (constraints are lowered before witnesses). Returns an
+    /// empty map for multi-param constraints (handled elsewhere).
+    fn witness_method_sigs(
+        &mut self,
+        constraint: zutai_hir::BindingId,
+        target: TypeId,
+    ) -> std::collections::HashMap<String, TypeId> {
+        let info = self.decl_arena.iter().find_map(|(_, decl)| {
+            if decl.binding == constraint
+                && let ThirDeclKind::Constraint {
+                    params, methods, ..
+                } = &decl.kind
+            {
+                let sigs: Vec<(String, TypeId)> =
+                    methods.iter().map(|m| (m.name.clone(), m.sig)).collect();
+                return Some((params.clone(), sigs));
+            }
+            None
+        });
+        let Some((params, sigs)) = info else {
+            return std::collections::HashMap::new();
+        };
+        if params.len() != 1 {
+            return std::collections::HashMap::new();
+        }
+        let subst: std::collections::HashMap<zutai_hir::BindingId, TypeId> =
+            [(params[0], target)].into_iter().collect();
+        sigs.into_iter()
+            .map(|(name, sig)| (name, self.instantiate_type_vars(sig, &subst)))
+            .collect()
     }
 
     fn lower_function_clauses(&mut self, clauses: &[HirClause], sig: TypeId) -> Vec<ThirClause> {

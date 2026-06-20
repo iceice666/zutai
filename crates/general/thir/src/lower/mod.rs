@@ -201,7 +201,16 @@ impl<'hir> Lowerer<'hir> {
         for id in normal_ids {
             id_map.insert(id, self.lower_decl(id));
         }
-        for id in cw_ids {
+        // Constraints before witnesses: a witness checks its fields against the
+        // constraint's (instantiated) method signatures, so the constraint decl
+        // must already be in `decl_arena`.
+        let (constraint_ids, witness_ids): (Vec<_>, Vec<_>) = cw_ids
+            .into_iter()
+            .partition(|&id| matches!(self.hir_decl(id).kind, HirDeclKind::Constraint { .. }));
+        for id in constraint_ids {
+            id_map.insert(id, self.lower_decl(id));
+        }
+        for id in witness_ids {
             id_map.insert(id, self.lower_decl(id));
         }
         self.check_witnesses();
@@ -546,13 +555,12 @@ impl<'hir> Lowerer<'hir> {
                 );
             }
         }
-
         struct WitnessTask {
             span: Span,
             target: TypeId,
             constraint_param: BindingId,
             methods: Vec<(String, bool, bool, TypeId)>,
-            fields: Vec<(String, TypeId, Span)>,
+            fields: Vec<(String, ThirExprId, Span)>,
         }
         struct DeriveTask {
             span: Span,
@@ -567,10 +575,23 @@ impl<'hir> Lowerer<'hir> {
         // Multi-param constraint names and their witness spans, collected for
         // diagnostic emission after the immutable scan loop ends.
         let mut multi_param_errors: Vec<(String, Span)> = Vec::new();
+        // Conditional witnesses whose target may be self-referential; resolved and
+        // checked after the immutable scan.
+        #[allow(clippy::type_complexity)]
+        let mut recursive_candidates: Vec<(
+            String,
+            TypeId,
+            Vec<BindingId>,
+            Vec<Vec<BindingId>>,
+            BindingId,
+            Span,
+        )> = Vec::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Witness {
                 constraint,
                 target,
+                params,
+                param_bounds,
                 derive,
                 fields,
                 ..
@@ -588,6 +609,16 @@ impl<'hir> Lowerer<'hir> {
                     multi_param_errors.push((cst_info.name.clone(), decl.span));
                     continue;
                 }
+                if !params.is_empty() {
+                    recursive_candidates.push((
+                        cst_info.name.clone(),
+                        *target,
+                        params.clone(),
+                        param_bounds.clone(),
+                        *cst_binding,
+                        decl.span,
+                    ));
+                }
                 if *derive {
                     derive_tasks.push(DeriveTask {
                         span: decl.span,
@@ -599,9 +630,9 @@ impl<'hir> Lowerer<'hir> {
                     });
                     continue;
                 }
-                let fields_owned: Vec<(String, TypeId, Span)> = fields
+                let fields_owned: Vec<(String, ThirExprId, Span)> = fields
                     .iter()
-                    .map(|f| (f.name.clone(), self.expr(f.value).ty, f.span))
+                    .map(|f| (f.name.clone(), f.value, f.span))
                     .collect();
                 tasks.push(WitnessTask {
                     span: decl.span,
@@ -621,6 +652,26 @@ impl<'hir> Lowerer<'hir> {
             });
         }
 
+        // A conditional witness whose target is one of its own params loops only
+        // when that param's bound requires the *same* constraint being defined
+        // (`Eq @A :: <A: Eq>`): resolving `Eq A` then needs `Eq A` again. A bound
+        // by a *different* constraint (`Eq @A :: <A: Ord>`) makes progress —
+        // consuming an `Ord` dict to produce an `Eq` dict — and is not recursive.
+        for (name, target, params, param_bounds, cst_binding, span) in recursive_candidates {
+            let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+            if let TypeKind::TypeVar(b) = self.type_arena[resolved.0 as usize].kind
+                && let Some(idx) = params.iter().position(|p| *p == b)
+                && param_bounds
+                    .get(idx)
+                    .is_some_and(|bounds| bounds.contains(&cst_binding))
+            {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::RecursiveWitness { constraint: name },
+                    span,
+                });
+            }
+        }
+
         // Phase 2: mutable checks over owned task data.
         for task in tasks {
             let subst: HashMap<BindingId, TypeId> =
@@ -629,12 +680,12 @@ impl<'hir> Lowerer<'hir> {
             let field_names: HashSet<String> =
                 task.fields.iter().map(|(n, _, _)| n.clone()).collect();
 
-            for (fname, value_ty, fspan) in &task.fields {
+            for (fname, value_expr, fspan) in &task.fields {
                 if let Some((_, _, _, method_sig)) =
                     task.methods.iter().find(|(n, _, _, _)| n == fname)
                 {
                     let expected = self.instantiate_type_vars(*method_sig, &subst);
-                    let found = *value_ty;
+                    let found = self.expr(*value_expr).ty;
                     let expected_name = self.type_name(expected);
                     let found_name = self.type_name(found);
                     if !self.type_matches(expected, found) {
@@ -834,23 +885,28 @@ impl<'hir> Lowerer<'hir> {
     ///
     /// Must run after `check_witnesses` and before `zonk_type_arena()`.
     fn check_witness_coherence(&mut self) {
-        // Phase 1: immutable scan — collect (constraint, target, span) triples.
-        let mut triples: Vec<(BindingId, TypeId, Span)> = Vec::new();
+        // Phase 1: immutable scan — collect (constraint, target, params, span).
+        let mut entries: Vec<(BindingId, TypeId, Vec<BindingId>, Span)> = Vec::new();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Witness {
                 constraint: Some(cst),
                 target,
+                params,
                 ..
             } = &decl.kind
             {
-                triples.push((*cst, *target, decl.span));
+                entries.push((*cst, *target, params.clone(), decl.span));
             }
         }
 
-        // Phase 2: mutable — compute keys, detect duplicates.
+        // Phase 2: mutable — compute param-normalized keys, detect duplicates so
+        // two conditional witnesses that overlap (e.g. two `Eq @(List A)`) are
+        // flagged as ambiguous.
         let mut seen: HashMap<(BindingId, String), ()> = HashMap::new();
-        for (cst, target, span) in triples {
-            let target_key = self.witness_target_key(target);
+        for (cst, target, params, span) in entries {
+            let norm: HashMap<BindingId, usize> =
+                params.iter().enumerate().map(|(i, &p)| (p, i)).collect();
+            let target_key = self.witness_target_key_with(target, &norm);
             let key = (cst, target_key);
             if let std::collections::hash_map::Entry::Vacant(entry) = seen.entry(key) {
                 entry.insert(());

@@ -463,9 +463,23 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn list_item_type(&mut self, ty: TypeId, span: Span) -> Option<TypeId> {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let alias_resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve(alias_resolved);
         match self.ty(resolved).kind {
             TypeKind::List(item) => Some(item),
+            // For an unsolved InferVar, mint a fresh `List` and unify to bind it,
+            // so a list literal checked against an as-yet-unknown type (e.g. a
+            // constraint method's instantiated parameter) infers `List <item>`
+            // instead of failing with `ExpectedList`.
+            TypeKind::InferVar(_) => {
+                let item = self.fresh_infer_var(span);
+                let list = self.alloc_type(Type {
+                    kind: TypeKind::List(item),
+                    span,
+                });
+                self.unify(resolved, list, span);
+                Some(item)
+            }
             _ => None,
         }
     }
@@ -829,6 +843,18 @@ impl<'hir> Lowerer<'hir> {
     /// always produce distinct keys. This is used as the second half of
     /// the coherence-check map key `(constraint BindingId, target key)`.
     pub(super) fn witness_target_key(&mut self, ty: TypeId) -> String {
+        self.witness_target_key_with(ty, &HashMap::new())
+    }
+
+    /// Like `witness_target_key`, but each binding in `norm` (a witness's own
+    /// type params) keys to its positional `#index` instead of `@<binding>`, so
+    /// two conditional witnesses that differ only in param identity — e.g. two
+    /// `Eq @(List A)` — produce the same key and are flagged as conflicting.
+    pub(super) fn witness_target_key_with(
+        &mut self,
+        ty: TypeId,
+        norm: &std::collections::HashMap<BindingId, usize>,
+    ) -> String {
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
         match self.type_arena[ty.0 as usize].kind.clone() {
@@ -840,14 +866,16 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Atom(name) => format!("#{name}"),
             TypeKind::True => "true".to_string(),
             TypeKind::False => "false".to_string(),
-            TypeKind::List(inner) => format!("[{}]", self.witness_target_key(inner)),
-            TypeKind::Optional(inner) => format!("{}?", self.witness_target_key(inner)),
+            TypeKind::List(inner) => format!("[{}]", self.witness_target_key_with(inner, norm)),
+            TypeKind::Optional(inner) => {
+                format!("{}?", self.witness_target_key_with(inner, norm))
+            }
             TypeKind::Record(fields, tail) => {
                 // Sort by name — records are order-independent.
                 let mut parts: Vec<String> = fields
                     .iter()
                     .map(|f| {
-                        let k = self.witness_target_key(f.ty);
+                        let k = self.witness_target_key_with(f.ty, norm);
                         if f.optional {
                             format!("{}?:{}", f.name, k)
                         } else {
@@ -862,7 +890,7 @@ impl<'hir> Lowerer<'hir> {
                 let parts: Vec<String> = variants
                     .iter()
                     .map(|v| match v.payload {
-                        Some(p) => format!("{}({})", v.name, self.witness_target_key(p)),
+                        Some(p) => format!("{}({})", v.name, self.witness_target_key_with(p, norm)),
                         None => v.name.clone(),
                     })
                     .collect();
@@ -873,9 +901,9 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|item| match item {
                         TypeTupleItem::Named { name, ty, .. } => {
-                            format!("{}:{}", name, self.witness_target_key(*ty))
+                            format!("{}:{}", name, self.witness_target_key_with(*ty, norm))
                         }
-                        TypeTupleItem::Positional(ty) => self.witness_target_key(*ty),
+                        TypeTupleItem::Positional(ty) => self.witness_target_key_with(*ty, norm),
                     })
                     .collect();
                 format!("({})", parts.join(","))
@@ -883,14 +911,22 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Function { from, to } => {
                 format!(
                     "({}->{})",
-                    self.witness_target_key(from),
-                    self.witness_target_key(to)
+                    self.witness_target_key_with(from, norm),
+                    self.witness_target_key_with(to, norm)
                 )
             }
-            // Key by binding index rather than name — shadow-safe.
-            TypeKind::TypeVar(b) | TypeKind::Alias(b) => format!("@{}", b.0),
+            // Witness params normalize to positional holes; other vars/aliases
+            // key by binding index (shadow-safe).
+            TypeKind::TypeVar(b) => match norm.get(&b) {
+                Some(i) => format!("#{i}"),
+                None => format!("@{}", b.0),
+            },
+            TypeKind::Alias(b) => format!("@{}", b.0),
             TypeKind::AliasApply { binding, args } => {
-                let parts: Vec<String> = args.iter().map(|&a| self.witness_target_key(a)).collect();
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|&a| self.witness_target_key_with(a, norm))
+                    .collect();
                 format!("${}[{}]", binding.0, parts.join(","))
             }
             TypeKind::InferVar(v) => format!("?{v}"),
