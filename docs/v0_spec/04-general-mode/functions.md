@@ -122,7 +122,7 @@ id :: <A> A -> A {
 
 `A -> B -> C` means `A -> (B -> C)`.
 
-In type-context positions, `{ ... }` and `[ ... ]` are parsed as record and union type literals without repeating the `type` keyword.
+In type-context positions, `{ field : Type; }` and `{ #tag; }` are parsed as record and union type literals without repeating the `type` keyword.
 
 ### Anonymous functions
 

@@ -45,6 +45,8 @@ enum Ctor {
     /// A tagged union member: a tuple led by `#tag`, carrying the remaining
     /// fields as payload. Stored without the leading `#`.
     Tagged(String),
+    /// A tagged union member with tuple-shaped positional payload.
+    TaggedTuple(String),
     /// `#none` of an `Optional`.
     OptNone,
     /// `#some` of an `Optional`, carrying the wrapped value.
@@ -298,28 +300,29 @@ impl<'hir> Lowerer<'hir> {
     }
 
     /// Build the constructor set of a union from its variant list. Each variant
-    /// becomes a `Tagged(name)` constructor; variants with a record payload expand
+    /// becomes a tagged constructor; variants with record or tuple payloads expand
     /// to their field types as sub-columns.
     fn union_signature(&mut self, variants: &[UnionVariant], span: Span) -> Option<Vec<SigCtor>> {
         let mut ctors: Vec<SigCtor> = Vec::new();
         for variant in variants {
-            let fields = match variant.payload {
-                None => vec![],
-                Some(record_ty) => {
-                    let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
+            let (ctor, fields) = match variant.payload {
+                None => (Ctor::Tagged(variant.name.clone()), vec![]),
+                Some(payload_ty) => {
+                    let resolved = self.resolve_alias(payload_ty, &mut HashSet::new(), span);
                     match self.ty(resolved).kind.clone() {
-                        TypeKind::Record(fields, _) => fields.iter().map(|f| f.ty).collect(),
+                        TypeKind::Record(fields, _) => (
+                            Ctor::Tagged(variant.name.clone()),
+                            fields.iter().map(|f| f.ty).collect(),
+                        ),
+                        TypeKind::Tuple(items) => (
+                            Ctor::TaggedTuple(variant.name.clone()),
+                            items.iter().map(tuple_item_ty).collect(),
+                        ),
                         _ => return None,
                     }
                 }
             };
-            push_unique(
-                &mut ctors,
-                SigCtor {
-                    ctor: Ctor::Tagged(variant.name.clone()),
-                    fields,
-                },
-            );
+            push_unique(&mut ctors, SigCtor { ctor, fields });
         }
         Some(ctors)
     }
@@ -465,26 +468,61 @@ impl<'hir> Lowerer<'hir> {
                     None => DeconPat::Wild,
                     Some(v) => match v.payload {
                         None => DeconPat::nullary(Ctor::Tagged(tag)),
-                        Some(record_ty) => {
-                            let resolved = self.resolve_alias(record_ty, &mut HashSet::new(), span);
-                            let TypeKind::Record(type_fields, _) = self.ty(resolved).kind.clone()
-                            else {
-                                return DeconPat::Wild;
-                            };
-                            let by_name: HashMap<&str, ThirPatId> = payload
-                                .iter()
-                                .map(|f| (f.name.as_str(), f.pattern))
-                                .collect();
-                            let fields = type_fields
-                                .iter()
-                                .map(|tf| match by_name.get(tf.name.as_str()) {
-                                    Some(&pat) => self.decon_pattern(pat, tf.ty),
-                                    None => DeconPat::Wild,
-                                })
-                                .collect();
-                            DeconPat::Ctor {
-                                tag: Ctor::Tagged(tag),
-                                fields,
+                        Some(payload_ty) => {
+                            let resolved =
+                                self.resolve_alias(payload_ty, &mut HashSet::new(), span);
+                            match self.ty(resolved).kind.clone() {
+                                TypeKind::Record(type_fields, _) => {
+                                    let by_name: HashMap<&str, ThirPatId> = payload
+                                        .iter()
+                                        .map(|f| (f.name.as_str(), f.pattern))
+                                        .collect();
+                                    let fields = type_fields
+                                        .iter()
+                                        .map(|tf| match by_name.get(tf.name.as_str()) {
+                                            Some(&pat) => self.decon_pattern(pat, tf.ty),
+                                            None => DeconPat::Wild,
+                                        })
+                                        .collect();
+                                    DeconPat::Ctor {
+                                        tag: Ctor::Tagged(tag),
+                                        fields,
+                                    }
+                                }
+                                TypeKind::Tuple(type_items) => {
+                                    let by_name: HashMap<&str, ThirPatId> = payload
+                                        .iter()
+                                        .map(|f| (f.name.as_str(), f.pattern))
+                                        .collect();
+                                    let fields = type_items
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(index, item)| {
+                                            let (name, ty) = match item {
+                                                TypeTupleItem::Named { name, ty, .. } => {
+                                                    (name.as_str(), *ty)
+                                                }
+                                                TypeTupleItem::Positional(ty) => ("", *ty),
+                                            };
+                                            let index_name;
+                                            let key = if name.is_empty() {
+                                                index_name = index.to_string();
+                                                index_name.as_str()
+                                            } else {
+                                                name
+                                            };
+                                            match by_name.get(key) {
+                                                Some(&pat) => self.decon_pattern(pat, ty),
+                                                None => DeconPat::Wild,
+                                            }
+                                        })
+                                        .collect();
+                                    DeconPat::Ctor {
+                                        tag: Ctor::TaggedTuple(tag),
+                                        fields,
+                                    }
+                                }
+                                _ => DeconPat::Wild,
                             }
                         }
                     },
@@ -613,6 +651,7 @@ fn render_one(pat: &DeconPat) -> String {
                     format!("#{tag} {{ {} }}", render_payload(fields))
                 }
             }
+            Ctor::TaggedTuple(tag) => format!("#{tag} ({})", render_payload(fields)),
             Ctor::Struct => format!("({})", render_payload(fields)),
         },
     }

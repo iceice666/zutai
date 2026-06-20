@@ -9,10 +9,10 @@ Box :: <A> type {
   value : A;
 }
 
-Either :: <A, B> type [
-  left: { value: A; };
-  right: { value: B; };
-]
+Either :: <A, B> type {
+  #left: { value: A; };
+  #right: { value: B; };
+}
 
 fst :: <A, B> Pair A B -> A {
   | p => p.first;

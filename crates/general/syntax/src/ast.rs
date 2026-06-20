@@ -452,7 +452,7 @@ pub struct RecordPatternField {
 #[derive(Debug, PartialEq)]
 pub struct UnionVariant {
     pub name: String,
-    pub payload: Option<Vec<TypeRecordField>>,
+    pub payload: Option<Box<TypeExpr>>,
     pub span: Span,
 }
 

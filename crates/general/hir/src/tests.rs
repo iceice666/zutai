@@ -587,7 +587,7 @@ fn named_row_tail_resolves_to_type_param_as_var() {
 
 #[test]
 fn named_union_row_tail_resolves_to_type_alias_as_spread() {
-    let lowered = lower("Shape :: type [ #dev; #test; ]\nOpen :: type [ ...Shape; #prod; ]\nOpen");
+    let lowered = lower("Shape :: type { #dev; #test; }\nOpen :: type { ...Shape; #prod; }\nOpen");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
     let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {

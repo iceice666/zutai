@@ -168,7 +168,7 @@ greet "hi""#,
 fn atom_pattern_bare_union_lowers_to_atom_pat() {
     // Bare union arm `#dev` / `#prod` (no payload) → ThirPatKind::Atom → TlcPat::Atom
     let m = tlc_of(
-        r#"Profile :: type [ dev; prod; ]
+        r#"Profile :: type { #dev; #prod; }
 isProd :: Profile -> Bool {
   | #prod => true;
   | #dev => false;

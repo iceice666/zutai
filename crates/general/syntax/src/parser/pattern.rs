@@ -50,6 +50,15 @@ fn parse_pattern_atom(input: &mut &str) -> Result<Pattern> {
             span,
         });
     }
+    if input.starts_with('(') {
+        let (fields, tuple_span) = spanned(parse_tagged_tuple_pattern_payload).parse_next(input)?;
+        let span = atom_span.merge(tuple_span);
+        return Ok(Pattern::TaggedValue {
+            tag: name,
+            payload: fields,
+            span,
+        });
+    }
     Ok(Pattern::Atom {
         name,
         span: atom_span,
@@ -152,6 +161,53 @@ fn parse_tuple_pattern_item(input: &mut &str) -> Result<TuplePatternItem> {
     *input = checkpoint;
     let pat = parse_pattern(input)?;
     Ok(TuplePatternItem::Positional(pat))
+}
+
+fn parse_tagged_tuple_pattern_payload(input: &mut &str) -> Result<Vec<RecordPatternField>> {
+    '('.parse_next(input)?;
+    let _guard = enter_delimiter();
+    ws(input)?;
+
+    let mut fields = vec![];
+    let mut index = 0usize;
+    if !input.starts_with(')') {
+        loop {
+            let item = parse_tuple_pattern_item(input)?;
+            match item {
+                TuplePatternItem::Named {
+                    name,
+                    pattern,
+                    span,
+                } => fields.push(RecordPatternField {
+                    name,
+                    pattern,
+                    span,
+                }),
+                TuplePatternItem::Positional(pattern) => {
+                    let span = pattern.span();
+                    fields.push(RecordPatternField {
+                        name: index.to_string(),
+                        pattern,
+                        span,
+                    });
+                }
+            }
+            index += 1;
+            ws(input)?;
+            if input.starts_with(',') {
+                ','.parse_next(input)?;
+                ws(input)?;
+                if input.starts_with(')') {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    ws(input)?;
+    ')'.parse_next(input)?;
+    Ok(fields)
 }
 
 // ---------------------------------------------------------------------------

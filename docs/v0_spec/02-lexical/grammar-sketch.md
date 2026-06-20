@@ -147,14 +147,12 @@ TypeField
    | FieldName "?" ":" TypeExpr ";"
 
 TypeUnion
-  ::= "[" TaggedUnionItem* "]"
+  ::= "{" TaggedUnionItem* "}"
 
 TaggedUnionItem
-  ::= TagName ";"                           (* singleton tag member *)
-   | TagName ":" TypeRecord ";"            (* tag with record payload *)
+  ::= Atom ";"                              (* singleton tag member *)
+   | Atom ":" TypeExpr ";"                 (* tag with payload type *)
 
-TagName
-  ::= [A-Za-z_][A-Za-z0-9_-]*
 
 OptionalType
   ::= TypeExpr "?"
@@ -229,7 +227,7 @@ Important grammar interpretation:
 
 `TypeExpr` is a contextual grammar category used wherever the surrounding syntax expects a type: annotations, function-type operands, optional-type operands, type-record fields, and type-union items. Since `Type` values are first-class compile-time values in v0, a `TypeExpr` may include pure expressions that evaluate to `Type`.
 
-`Name :: type TypeExpr` is the canonical type-alias form. `Name :: type TypeExpr` is preferred over `Name :: TypeExpr` when the right-hand side is a `type { ... }` or `type [ ... ]` expression.
+`Name :: type TypeExpr` is the canonical type-alias form. `Name :: type TypeExpr` is preferred over `Name :: TypeExpr` when the right-hand side is a type literal.
 
 A `<` appearing immediately after `::` in a `TopDecl` begins a `TypeParamList`. The `>` closes it; what follows is the type signature or `type` keyword. `<A, B>` is a two-parameter type param list.
 
@@ -237,7 +235,7 @@ A `<` appearing immediately after `::` in a `TopDecl` begins a `TypeParamList`. 
 
 Declaration disambiguation: after `Ident "::"`, the parser looks for `type` (type alias), then a complete `TypeParamList? TypeExpr`. If that is followed by `=`, the declaration is a typed value binding; if followed by `{`, it opens a function block.
 
-The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), tagged union payload types (`circle: { radius : Float; }`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), tagged union construction (`#circle { radius = 5.0; }`), and all patterns (record `{ host = h; }`, tagged `#circle { radius = r; }`). This makes a `{ }` block unambiguous in type context versus value context.
+The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), tagged union payload types (`#circle: { radius : Float; }`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), tagged union construction (`#circle { radius = 5.0; }`), and all patterns (record `{ host = h; }`, tagged `#circle { radius = r; }`). This makes a `{ }` block unambiguous in type context versus value context.
 
 Block disambiguation: a `{` in expression position is a value record if followed by `field_name =`, and a block expression otherwise. An empty `{}` in expression position is an empty value record.
 

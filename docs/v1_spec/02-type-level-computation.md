@@ -49,7 +49,7 @@ Because types are first-class, type annotations are type expressions that evalua
 port : Int = 8080
 ```
 
-A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It is also a type context: bare `{ ... }` and `[ ... ]` are parsed as record and union type literals without a repeated `type` keyword.
+A `type_expr` may contain arbitrary pure expressions that evaluate to `Type`. It is also a type context: bare `{ field : Type; }` and `{ #tag; }` are parsed as record and union type literals without a repeated `type` keyword.
 
 Example:
 

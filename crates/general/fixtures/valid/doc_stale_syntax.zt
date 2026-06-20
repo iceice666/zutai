@@ -22,11 +22,11 @@ Response :: <Body> type {
   body : Body?;
 }
 
-Shape :: type [
-  circle: { radius: Int; };
-  square: { length: Int; };
-  rect:   { width: Int; height: Int; };
-]
+Shape :: type {
+  #circle: { radius: Int; };
+  #square: { length: Int; };
+  #rect: { width: Int; height: Int; };
+}
 
 unwrapOr :: <T> T? -> T -> T {
   | #none fallback => fallback;

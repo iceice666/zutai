@@ -274,15 +274,15 @@ eq = \a b => (eq a.host b.host) && (eq a.port b.port);
 
 where each field's `eq` is resolved from the in-scope witness for that field's type.
 
-For **union types**, derivation compares by member shape first, then compares tuple fields field by field:
+For **union types**, derivation compares by member shape first, then compares payload fields field by field:
 
-For `Status :: type [#active; (#suspended, reason : Text);]`, the derived equality shape is:
+For `Status :: type { #active; #suspended: { reason : Text; }; }`, the derived equality shape is:
 
 ```zt
 eq = \a b => match (a, b) {
-  | (#active, #active)                                      => true;
-  | ((#suspended, reason = r1), (#suspended, reason = r2)) => eq r1 r2;
-  | _                                                       => false;
+  | (#active, #active) => true;
+  | (#suspended { reason = r1; }, #suspended { reason = r2; }) => eq r1 r2;
+  | _ => false;
 };
 ```
 

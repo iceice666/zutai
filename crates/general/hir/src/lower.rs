@@ -866,17 +866,7 @@ impl Lowerer {
                     .iter()
                     .map(|v| HirUnionVariant {
                         name: v.name.clone(),
-                        payload: v.payload.as_ref().map(|fields| {
-                            fields
-                                .iter()
-                                .map(|field| HirTypeRecordField {
-                                    name: field.name.clone(),
-                                    optional: field.optional,
-                                    ty: self.lower_type(&field.ty),
-                                    span: field.span,
-                                })
-                                .collect()
-                        }),
+                        payload: v.payload.as_ref().map(|payload| self.lower_type(payload)),
                         span: v.span,
                     })
                     .collect();

@@ -147,11 +147,11 @@ Analogous to open record types, a union type may have an anonymous or named row 
 An anonymous union tail:
 
 ```zt
-type [
+type {
   #dev;
   #test;
   ...;
-]
+}
 ```
 
 means any union that includes at least `#dev` and `#test` as members.
@@ -159,17 +159,17 @@ means any union that includes at least `#dev` and `#test` as members.
 A named union tail preserves the extra members in the result type:
 
 ```zt
-type [
+type {
   #dev;
   #test;
   ...Rest;
-]
+}
 ```
 
 Example:
 
 ```zt
-handle_env :: <Rest> [ #dev; #test; ...Rest; ] -> Text -> Text {
+handle_env :: <Rest> { #dev; #test; ...Rest; } -> Text -> Text {
   | #dev msg  => "dev: ";
   | #test msg => "test: ";
   | _ msg     => msg;
@@ -179,19 +179,19 @@ handle_env :: <Rest> [ #dev; #test; ...Rest; ] -> Text -> Text {
 Union tails also work with tuple members:
 
 ```zt
-type [
-  (#circle, radius : Float);
+type {
+  #circle: { radius : Float; };
   ...Rest;
-]
+}
 ```
 
 Union extension spreads an existing union type into a new union type and then adds new members:
 
 ```zt
-Shape3D :: type [
+Shape3D :: type {
   ...Shape;
-  (#sphere, radius : Float);
-]
+  #sphere: { radius : Float; };
+}
 ```
 
 Here `...Shape;` means "include the members of the existing union type `Shape`." This is distinct from `...Rest;`, where `Rest` is a row variable introduced by a polymorphic type parameter list.

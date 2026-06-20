@@ -1,11 +1,11 @@
 -- large_program.zt: Many declarations — stress test for parser and HIR lowering.
 
-LogLevel :: type [
-  debug;
-  info;
-  warn;
-  error;
-]
+LogLevel :: type {
+  #debug;
+  #info;
+  #warn;
+  #error;
+}
 
 ServiceConfig :: type {
   host : Text;

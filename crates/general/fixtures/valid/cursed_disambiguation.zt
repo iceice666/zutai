@@ -1,19 +1,19 @@
 -- cursed_disambiguation.zt: valid but awkward syntax around type/value contexts.
 
-Tagged :: type [
-  empty;
-  single: { value: Int; };
-  recorded: { item: {
+Tagged :: type {
+  #empty;
+  #single: { value: Int; };
+  #recorded: { item: {
     plain : Text;
     optional-field? : Int?;
     hyphen-name : Bool;
   }; };
-]
+}
 
 Callbacks :: type {
   direct : Int -> Int;
   wrapped? : (Int -> Int)?;
-  choice : [left; right; other: { label: Text; };];
+  choice : {#left; #right; #other: { label: Text; };};
   nested? : {
     tag : Tagged;
     next? : Tagged?;

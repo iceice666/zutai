@@ -288,8 +288,8 @@ or pattern**. They never overlap.
 | `...`            | row tail / union spread in record or union types — v1 feature, reserved |
 | `;`              | terminator for fields, list items, local bindings, and match arms          |
 | `,`              | separator between tuple fields                                             |
-| `{` `}`          | value record, record type, or block body                                   |
-| `[` `]`          | list value or union type                                                   |
+| `{` `}`          | value record, record type, tagged union type, or block body                |
+| `[` `]`          | list value                                                                 |
 | `(` `)`          | tuple, grouping, and the empty tuple                                       |
 | `_`              | wildcard pattern                                                           |
 

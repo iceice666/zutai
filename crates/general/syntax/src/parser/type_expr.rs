@@ -123,7 +123,7 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
     Ok(node)
 }
 
-/// Atom-level type: `{`, `[`, `(`, atom, ident, true/false, or ExprEscape.
+/// Atom-level type: `{`, `(`, atom, ident, true/false, or ExprEscape.
 pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     ws(input)?;
 
@@ -135,10 +135,7 @@ pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
         return parse_type_select(input);
     }
     if input.starts_with('{') {
-        return parse_type_record(input);
-    }
-    if input.starts_with('[') {
-        return parse_type_union(input);
+        return parse_type_braced(input);
     }
     if input.starts_with('(') {
         return parse_type_tuple(input);
@@ -163,7 +160,7 @@ pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
 }
 
 fn starts_type_atom(input: &str) -> bool {
-    input.starts_with('[')
+    starts_braced_type_atom(input)
         || input.starts_with('(')
         || input.starts_with('#')
         || input
@@ -172,9 +169,32 @@ fn starts_type_atom(input: &str) -> bool {
             .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
 }
 
+fn starts_braced_type_atom(input: &str) -> bool {
+    let Some(rest) = input.strip_prefix('{') else {
+        return false;
+    };
+    // Function and method clause blocks start with `{ | ... }` after a signature.
+    // Do not let type-application parsing consume those as record/union type args.
+    !rest.trim_start().starts_with('|')
+}
+
 fn consume_inline_ws(input: &mut &str) {
     let trimmed = input.trim_start_matches([' ', '\t']);
     *input = trimmed;
+}
+
+// ---------------------------------------------------------------------------
+// Type braces: record `{ field : TypeExpr; ... }` or
+// union `{ #tag; #tag : Payload; ... }`.
+// ---------------------------------------------------------------------------
+
+fn parse_type_braced(input: &mut &str) -> Result<TypeExpr> {
+    let checkpoint = *input;
+    if let Ok(record) = parse_type_record(input) {
+        return Ok(record);
+    }
+    *input = checkpoint;
+    parse_type_union(input)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +275,7 @@ fn parse_type_record_inner(input: &mut &str) -> Result<(Vec<TypeRecordField>, Op
 }
 
 // ---------------------------------------------------------------------------
-// Type union: `[ name; ... ]` or `[ name: { field: T; }; ... ]`
+// Type union: `{ #tag; ... }` or `{ #tag : Payload; ... }`
 // ---------------------------------------------------------------------------
 
 fn parse_type_union(input: &mut &str) -> Result<TypeExpr> {
@@ -268,13 +288,13 @@ fn parse_type_union(input: &mut &str) -> Result<TypeExpr> {
 }
 
 fn parse_type_union_inner(input: &mut &str) -> Result<(Vec<UnionVariant>, Option<RowTail>)> {
-    '['.parse_next(input)?;
+    '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut variants = vec![];
     let mut tail = None;
     loop {
         ws(input)?;
-        if input.starts_with(']') {
+        if input.starts_with('}') {
             break;
         }
         if input.starts_with("...") {
@@ -286,26 +306,26 @@ fn parse_type_union_inner(input: &mut &str) -> Result<(Vec<UnionVariant>, Option
             ';'.parse_next(input)?;
             continue;
         }
-        let (name, name_span, payload) = if input.starts_with('#') {
-            let (name, name_span) = spanned(parse_atom_name).parse_next(input)?;
-            (name, name_span, None)
-        } else if input.starts_with('(') {
-            parse_type_union_tuple_variant(input)?
-        } else {
-            let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        if !input.starts_with('#') {
+            return fail.parse_next(input);
+        }
+
+        let (name, name_span) = spanned(parse_atom_name).parse_next(input)?;
+        ws(input)?;
+        let payload = if input.starts_with(':') && !input.starts_with("::") {
+            ':'.parse_next(input)?;
             ws(input)?;
-            let payload = if input.starts_with(':') && !input.starts_with("::") {
-                ':'.parse_next(input)?;
-                ws(input)?;
-                let (fields, tail) = parse_type_record_inner(input)?;
-                if tail.is_some() {
-                    return fail.parse_next(input);
-                }
-                Some(fields)
+            let payload = if input.starts_with('(') {
+                parse_type_union_positional_payload(input)?
             } else {
-                None
+                parse_type_expr(input)?
             };
-            (name, name_span, payload)
+            if matches!(&payload, TypeExpr::Record { tail: Some(_), .. }) {
+                return fail.parse_next(input);
+            }
+            Some(Box::new(payload))
+        } else {
+            None
         };
         ws(input)?;
         let (_, end_span) = spanned(|i: &mut &str| ';'.parse_next(i)).parse_next(input)?;
@@ -317,7 +337,7 @@ fn parse_type_union_inner(input: &mut &str) -> Result<(Vec<UnionVariant>, Option
         });
     }
     ws(input)?;
-    ']'.parse_next(input)?;
+    '}'.parse_next(input)?;
     Ok((variants, tail))
 }
 
@@ -401,42 +421,9 @@ fn parse_type_tuple_item(input: &mut &str) -> Result<TypeTupleItem> {
     Ok(TypeTupleItem::Positional(ty))
 }
 
-fn parse_type_union_tuple_variant(
-    input: &mut &str,
-) -> Result<(String, Span, Option<Vec<TypeRecordField>>)> {
-    '('.parse_next(input)?;
-    let _guard = enter_delimiter();
-    ws(input)?;
-    let (name, name_span) = spanned(parse_atom_name).parse_next(input)?;
-    let mut fields = vec![];
-    loop {
-        ws(input)?;
-        if input.starts_with(')') {
-            break;
-        }
-        ','.parse_next(input)?;
-        ws(input)?;
-        let field_name = parse_field_name(input)?;
-        ws(input)?;
-        ':'.parse_next(input)?;
-        ws(input)?;
-        let ty = parse_type_expr(input)?;
-        let span = ty.span();
-        fields.push(TypeRecordField {
-            name: field_name,
-            optional: false,
-            ty,
-            span,
-        });
-    }
-    ws(input)?;
-    ')'.parse_next(input)?;
-    let payload = if fields.is_empty() {
-        None
-    } else {
-        Some(fields)
-    };
-    Ok((name, name_span, payload))
+fn parse_type_union_positional_payload(input: &mut &str) -> Result<TypeExpr> {
+    let ((items, _comma_seen), span) = spanned(parse_type_tuple_inner).parse_next(input)?;
+    Ok(TypeExpr::Tuple { items, span })
 }
 
 fn parse_row_tail(input: &mut &str) -> Result<RowTail> {

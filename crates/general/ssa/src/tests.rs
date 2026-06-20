@@ -275,10 +275,10 @@ fn binary_op_produces_builtin_op() {
 #[test]
 fn variant_produces_variant_op() {
     let src = "\
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 s :: Status = #ok { code = 200; }
 s";
     let m = ssa_of(src);

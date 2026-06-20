@@ -17,7 +17,7 @@
 ### `app.zt`
 
 ```zt
-Profile :: type [dev; test; prod;]
+Profile :: type {#dev; #test; #prod;}
 
 RawServer :: type {
   host? : Text;
@@ -97,11 +97,11 @@ raw :: RawConfig = import "nested.zti"
 ### Tagged union and pattern matching example
 
 ```zt
-Shape :: type [
-  circle: { radius: Float; };
-  square: { length: Float; };
-  rect:   { width: Float; height: Float; };
-]
+Shape :: type {
+  #circle: { radius: Float; };
+  #square: { length: Float; };
+  #rect: { width: Float; height: Float; };
+}
 
 area :: Shape -> Float {
   | #circle { radius = r; }             => r * r * 3.14159;

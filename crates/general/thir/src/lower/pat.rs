@@ -480,16 +480,97 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
-    /// Check `payload` pattern fields against the record type `record_ty`.
+    /// Check tagged payload pattern fields against a record or tuple payload type.
     fn check_tagged_payload_fields(
         &mut self,
         payload: &[HirRecordPatField],
-        record_ty: TypeId,
+        payload_ty: TypeId,
         span: Span,
         scoped_bindings: &mut Vec<BindingId>,
     ) -> Vec<ThirRecordPatField> {
-        let Some(type_fields) = self.record_fields(record_ty, span) else {
-            return payload
+        let resolved = self.resolve_alias(payload_ty, &mut HashSet::new(), span);
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Record(type_fields, _) => {
+                let type_by_name: HashMap<&str, TypeId> = type_fields
+                    .iter()
+                    .map(|f| (f.name.as_str(), f.ty))
+                    .collect();
+                payload
+                    .iter()
+                    .map(|f| {
+                        let field_ty = match type_by_name.get(f.name.as_str()) {
+                            Some(&ty) => ty,
+                            None => {
+                                self.diagnostics.push(ThirDiagnostic {
+                                    kind: ThirDiagnosticKind::UnknownField {
+                                        name: f.name.clone(),
+                                    },
+                                    span: f.span,
+                                });
+                                self.error_type
+                            }
+                        };
+                        let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
+                        ThirRecordPatField {
+                            name: f.name.clone(),
+                            pattern: pat,
+                            span: f.span,
+                        }
+                    })
+                    .collect()
+            }
+            TypeKind::Tuple(type_items) => {
+                if type_items.len() != payload.len() {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::TupleArityMismatch {
+                            expected: type_items.len(),
+                            found: payload.len(),
+                        },
+                        span,
+                    });
+                }
+                payload
+                    .iter()
+                    .enumerate()
+                    .map(|(index, f)| {
+                        let field_ty = match type_items.get(index) {
+                            Some(TypeTupleItem::Positional(ty)) => {
+                                let expected_name = index.to_string();
+                                if f.name != expected_name {
+                                    self.diagnostics.push(ThirDiagnostic {
+                                        kind: ThirDiagnosticKind::TupleFieldNameMismatch {
+                                            expected: "<positional>".to_string(),
+                                            found: f.name.clone(),
+                                        },
+                                        span: f.span,
+                                    });
+                                }
+                                *ty
+                            }
+                            Some(TypeTupleItem::Named { name, ty, .. }) => {
+                                if f.name != *name {
+                                    self.diagnostics.push(ThirDiagnostic {
+                                        kind: ThirDiagnosticKind::TupleFieldNameMismatch {
+                                            expected: name.clone(),
+                                            found: f.name.clone(),
+                                        },
+                                        span: f.span,
+                                    });
+                                }
+                                *ty
+                            }
+                            None => self.error_type,
+                        };
+                        let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
+                        ThirRecordPatField {
+                            name: f.name.clone(),
+                            pattern: pat,
+                            span: f.span,
+                        }
+                    })
+                    .collect()
+            }
+            TypeKind::Error => payload
                 .iter()
                 .map(|f| {
                     let pat = self.check_pattern(f.pattern, self.error_type, scoped_bindings);
@@ -499,35 +580,26 @@ impl<'hir> Lowerer<'hir> {
                         span: f.span,
                     }
                 })
-                .collect();
-        };
-        let type_by_name: HashMap<&str, TypeId> = type_fields
-            .iter()
-            .map(|f| (f.name.as_str(), f.ty))
-            .collect();
-        payload
-            .iter()
-            .map(|f| {
-                let field_ty = match type_by_name.get(f.name.as_str()) {
-                    Some(&ty) => ty,
-                    None => {
-                        self.diagnostics.push(ThirDiagnostic {
-                            kind: ThirDiagnosticKind::UnknownField {
-                                name: f.name.clone(),
-                            },
+                .collect(),
+            _ => {
+                let found = self.type_name(payload_ty);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedRecord { found },
+                    span,
+                });
+                payload
+                    .iter()
+                    .map(|f| {
+                        let pat = self.check_pattern(f.pattern, self.error_type, scoped_bindings);
+                        ThirRecordPatField {
+                            name: f.name.clone(),
+                            pattern: pat,
                             span: f.span,
-                        });
-                        self.error_type
-                    }
-                };
-                let pat = self.check_pattern(f.pattern, field_ty, scoped_bindings);
-                ThirRecordPatField {
-                    name: f.name.clone(),
-                    pattern: pat,
-                    span: f.span,
-                }
-            })
-            .collect()
+                        }
+                    })
+                    .collect()
+            }
+        }
     }
 
     pub(super) fn clear_scoped_value_types(&mut self, scoped_bindings: &[BindingId]) {

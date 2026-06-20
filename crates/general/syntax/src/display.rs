@@ -446,19 +446,15 @@ fn write_type_expr(
         TypeExpr::Union { variants, tail, .. } => {
             writeln!(f, "{prefix}TyUnion")?;
             for v in variants {
-                if let Some(fields) = &v.payload {
-                    writeln!(f, "{indent}├─ {}:", v.name)?;
-                    for field in fields {
-                        let opt = if field.optional { "?" } else { "" };
-                        write_type_expr(
-                            f,
-                            &field.ty,
-                            &format!("{indent}│  ├─ {}{opt}: ", field.name),
-                            &format!("{indent}│  │  "),
-                        )?;
-                    }
+                if let Some(payload) = &v.payload {
+                    write_type_expr(
+                        f,
+                        payload,
+                        &format!("{indent}├─ #{}: ", v.name),
+                        &format!("{indent}│  "),
+                    )?;
                 } else {
-                    writeln!(f, "{indent}├─ {}", v.name)?;
+                    writeln!(f, "{indent}├─ #{}", v.name)?;
                 }
             }
             write_row_tail(f, tail.as_ref(), indent)

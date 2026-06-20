@@ -648,12 +648,24 @@ fn parse_type_form_record() {
 
 #[test]
 fn parse_type_form_union() {
-    let e = parse_expr_str("type [a; b; c;]");
+    let e = parse_expr_str("type {#a; #b; #c;}");
     match &e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
             TypeExpr::Union { variants, .. } => assert_eq!(variants.len(), 3),
             other => panic!("expected TyUnion, got {other:?}"),
         },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_type_form_brackets_are_not_union() {
+    let e = parse_expr_str("type [#a;]");
+    match &e {
+        Expr::TypeForm { ty, .. } => assert!(
+            !matches!(ty.as_ref(), TypeExpr::Union { .. }),
+            "bracketed type expressions must not parse as union syntax"
+        ),
         other => panic!("expected TypeForm, got {other:?}"),
     }
 }
@@ -669,14 +681,14 @@ fn parse_type_optional_postfix() {
 
 #[test]
 fn parse_type_union_in_record_field() {
-    parse_str(r#"{ type-union = type [a; b; c;]; }"#);
+    parse_str(r#"{ type-union = type {#a; #b; #c;}; }"#);
 }
 
 #[test]
 fn parse_type_union_in_file() {
     parse_str(
         r#"
-Foo :: type [a; b; c;]
+Foo :: type {#a; #b; #c;}
 Foo
 "#,
     );
@@ -687,7 +699,7 @@ fn parse_type_forms_section() {
     parse_str(
         r#"{
   type-rec       = type { host : Text; port? : Int; };
-  type-union     = type [a; b; c;];
+  type-union     = type {#a; #b; #c;};
   type-tup       = type (#circle, radius : Float);
   type-arrow     = type Int -> Int -> Int;
   type-opt       = type Int?;
@@ -1488,6 +1500,14 @@ fn display_expr_tagged_value() {
 }
 
 #[test]
+fn display_expr_tagged_tuple_payload() {
+    let s = parse_str("#pair (1, \"x\")").to_string();
+    assert!(s.contains("TaggedValue(#pair)"), "tagged value tag");
+    assert!(s.contains("Tuple"), "tagged value payload is tuple");
+    assert!(s.contains("Int(1)"), "first tuple payload element");
+}
+
+#[test]
 fn display_expr_ident() {
     let s = parse_str("x := 1\nx").to_string();
     assert!(s.contains("Ident(x)"), "identifier expression");
@@ -1672,6 +1692,14 @@ fn display_pattern_tagged_value() {
 }
 
 #[test]
+fn display_pattern_tagged_tuple_payload() {
+    let s = parse_str("match #pair (1, 2) { | #pair (x, y) => x; | _ => 0; }").to_string();
+    assert!(s.contains("TaggedPat(#pair)"), "tagged pattern tag");
+    assert!(s.contains("0="), "first positional payload slot");
+    assert!(s.contains("1="), "second positional payload slot");
+}
+
+#[test]
 fn display_pattern_tuple_positional() {
     let s = parse_str("match (1, 2) { | (a, b) => a; }").to_string();
     assert!(s.contains("TuplePat"), "positional tuple pattern");
@@ -1728,7 +1756,7 @@ fn display_type_expr_record_with_optional_field() {
 
 #[test]
 fn display_type_expr_union_with_and_without_payload() {
-    let s = parse_str("Shape :: type [circle; rect : { w : Int; h : Int; };]\n1").to_string();
+    let s = parse_str("Shape :: type {#circle; #rect: { w : Int; h : Int; };}\n1").to_string();
     assert!(s.contains("TyUnion"), "type union");
     assert!(s.contains("circle"), "bare union variant");
     assert!(s.contains("rect:"), "payload union variant");
@@ -1823,12 +1851,12 @@ fn v1_record_row_tail_must_be_last_and_unique() {
 
 #[test]
 fn v1_union_payload_row_tail_rejected() {
-    assert!(parse("T :: type [ ok: { value : Int; ...Rest; }; ]\n1").has_errors());
+    assert!(parse("T :: type { #ok: { value : Int; ...Rest; }; }\n1").has_errors());
 }
 
 #[test]
 fn v1_union_row_tails_and_spreads_parse() {
-    let e = parse_expr_str("type [ #dev; #test; ...Rest; ]");
+    let e = parse_expr_str("type { #dev; #test; ...Rest; }");
     match e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
             TypeExpr::Union { variants, tail, .. } => {
@@ -1843,16 +1871,29 @@ fn v1_union_row_tails_and_spreads_parse() {
         other => panic!("expected TypeForm, got {other:?}"),
     }
 
-    let e = parse_expr_str("type [ ...Shape; (#sphere, radius : Float); ]");
+    let e = parse_expr_str("type { ...Shape; #sphere: { radius : Float; }; }");
     match e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
             TypeExpr::Union { variants, tail, .. } => {
                 assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Shape"));
                 assert_eq!(variants[0].name, "sphere");
-                assert_eq!(
-                    variants[0].payload.as_ref().expect("payload")[0].name,
-                    "radius"
+                let payload = variants[0].payload.as_deref().expect("payload");
+                assert!(
+                    matches!(payload, TypeExpr::Record { fields, .. } if fields[0].name == "radius")
                 );
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { #point: (Int, Int); }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, .. } => {
+                assert_eq!(variants[0].name, "point");
+                let payload = variants[0].payload.as_deref().expect("payload");
+                assert!(matches!(payload, TypeExpr::Tuple { items, .. } if items.len() == 2));
             }
             other => panic!("expected TyUnion, got {other:?}"),
         },

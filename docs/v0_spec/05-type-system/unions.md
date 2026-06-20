@@ -1,18 +1,19 @@
 ## Union types
 
-Union types use `type [ ... ]`. There are two forms.
+Union types use `type { ... }`. Members are semicolon-terminated tags with
+optional payloads.
 
 ### Pure enum
 
 When all members are bare tag names with no payload:
 
 ```zt
-Profile :: type [dev; test; prod;]
+Profile :: type {#dev; #test; #prod;}
 
-Dir :: type [north; east; west; south;]
+Dir :: type {#north; #east; #west; #south;}
 ```
 
-Tag names do not carry `#` inside the definition. At use sites, values are ordinary atoms:
+Union member tags are written with `#` inside the definition. At use sites, values use the same atom spelling:
 
 ```zt
 profile :: Profile = #prod
@@ -20,23 +21,35 @@ profile :: Profile = #prod
 
 ### Tagged union
 
-When some or all members carry a record payload, use semicolon-terminated members:
+Members may carry either a record payload or a positional tuple payload.
+Record payloads use `#tag: { ... }`:
 
 ```zt
-Shape :: type [
-  circle: { radius: Float; };
-  square: { length: Float; };
-  rect:   { width: Float; height: Float; };
-]
+Shape :: type {
+  #circle: { radius: Float; };
+  #square: { length: Float; };
+  #rect: { width: Float; height: Float; };
+}
 ```
 
-Each member is either a bare singleton tag or a `name: { ... }` pair. Members may be mixed:
+Positional payload variants use `#tag: (...)`:
 
 ```zt
-Result :: type [
-  ok: { value: Int; };
-  none;
-]
+Message :: type {
+  #quit;
+  #move: (Int, Int);
+  #write: (Text);
+}
+```
+
+Members may be mixed:
+
+```zt
+Result :: type {
+  #ok: { value: Int; };
+  #err: (Text);
+  #none;
+}
 ```
 
 ### Construction
@@ -47,12 +60,19 @@ Singleton tags are bare atoms:
 d := #north
 ```
 
-Tags with payloads are an atom followed by a record:
+Record payload values are an atom followed by a record:
 
 ```zt
 c := #circle { radius = 5.0; }
 s := #square { length = 10.0; }
 r := #rect   { width = 4.0; height = 3.0; }
+```
+
+Positional payload values are an atom followed by a tuple payload:
+
+```zt
+m := #move (10, 20)
+w := #write ("hello")
 ```
 
 ### The `.tag` accessor
@@ -76,13 +96,23 @@ match profile {
 }
 ```
 
-Tags with payloads match with a record destructure:
+Record payloads match with a record destructure:
 
 ```zt
 area :: Shape -> Float {
   | #circle { radius = r; }           => r * r * 3.14159;
   | #square { length = l; }           => l * l;
   | #rect   { width = w; height = h; } => w * h;
+}
+```
+
+Positional payloads match with a tuple destructure:
+
+```zt
+describe :: Message -> Text {
+  | #quit => "quit";
+  | #move (x, y) => "move";
+  | #write (text) => text;
 }
 ```
 
@@ -94,10 +124,10 @@ For finite union types, `match` must be exhaustive over all tags. See
 Union types may be generic:
 
 ```zt
-Optional :: <T> type [
-  none;
-  some: { value: T; };
-]
+Optional :: <T> type {
+  #none;
+  #some: { value: T; };
+}
 ```
 
 `T?` is shorthand for `Optional T`. See [Optional values](optional-values.md).

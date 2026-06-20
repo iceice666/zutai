@@ -35,7 +35,7 @@ For finite union types, `match` must be exhaustive.
 Given:
 
 ```zt
-Profile :: type [dev; test; prod;]
+Profile :: type {#dev; #test; #prod;}
 ```
 
 This is exhaustive:
@@ -96,10 +96,10 @@ match shape {
 Patterns may be nested to destructure composite values:
 
 ```zt
-Response :: type [
-  ok:  { body: Shape; };
-  err: { message: Text; };
-]
+Response :: type {
+  #ok: { body: Shape; };
+  #err: { message: Text; };
+}
 
 match response {
   | #ok  { body = #circle { radius = r; }; } => r * r * 3.14159;

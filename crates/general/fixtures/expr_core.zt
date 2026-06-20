@@ -62,7 +62,7 @@
 
   -- Type forms
   type-rec       = type { host : Text; port? : Int; };
-  type-union     = type [a; b; c;];
+  type-union     = type {#a; #b; #c;};
   type-tup       = type (#circle, radius : Float);
   type-arrow     = type Int -> Int -> Int;
   type-opt       = type Int?;

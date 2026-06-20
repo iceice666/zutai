@@ -407,10 +407,10 @@ fn coalesce_explicit_some_text_unwraps() {
 #[test]
 fn atom_literal_pattern_in_clause() {
     let src = "
-Profile :: type [
-  dev;
-  prod;
-]
+Profile :: type {
+  #dev;
+  #prod;
+}
 isProd :: Profile -> Bool {
   | #prod => true;
   | #dev => false;
@@ -1002,7 +1002,7 @@ neq p1 p2
 #[test]
 fn tlc_derive_union_eq_compares_shape_and_payload() {
     let src = r#"
-Status :: type [ ok : { code : Int; }; err : { msg : Text; }; ]
+Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; }
 ok :: Status = #ok { code = 200; }
 err :: Status = #err { msg = "no"; }
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
@@ -1145,7 +1145,7 @@ fn tlc_conditional_union_alias_witness_threads_component() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Box :: <A> type [ box: { value: A; }; ]
+Box :: <A> type { #box: { value: A; }; }
 Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
 b1 :: Box Int = #box { value = 1; }
 b2 :: Box Int = #box { value = 1; }
@@ -1161,7 +1161,7 @@ fn tlc_conditional_union_alias_witness_component_false() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Box :: <A> type [ box: { value: A; }; ]
+Box :: <A> type { #box: { value: A; }; }
 Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
 b1 :: Box Int = #box { value = 1; }
 b2 :: Box Int = #box { value = 2; }
@@ -1622,10 +1622,10 @@ fn display_record_two_fields() {
 #[test]
 fn display_tagged_value_with_payload() {
     let src = "
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 s :: Status = #ok { code = 200; }
 s
 ";
@@ -1736,10 +1736,10 @@ fn text_ge() {
 #[test]
 fn tagged_value_equality_same_tag_and_payload() {
     let src = "
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 a :: Status = #ok { code = 200; }
 b :: Status = #ok { code = 200; }
 a == b
@@ -1750,10 +1750,10 @@ a == b
 #[test]
 fn tagged_value_equality_different_tag() {
     let src = "
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 a :: Status = #ok { code = 200; }
 b :: Status = #err { msg = \"nope\"; }
 a == b
@@ -1764,10 +1764,10 @@ a == b
 #[test]
 fn tagged_value_equality_different_payload() {
     let src = "
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 a :: Status = #ok { code = 200; }
 b :: Status = #ok { code = 404; }
 a == b
@@ -1782,10 +1782,10 @@ fn tagged_value_tag_field_access() {
     // must go through match + record access.  We verify the `.tag` runtime path
     // by writing a function that accepts Any and returns via match.
     let src = "
-Status :: type [
-  ok : { code : Int; };
-  err : { msg : Text; };
-]
+Status :: type {
+  #ok: { code : Int; };
+  #err: { msg : Text; };
+}
 getCode :: Status -> Int {
   | #ok { code = n; } => n;
   | #err { msg = _; } => -1;
@@ -1798,10 +1798,10 @@ getCode (#ok { code = 200; })
 #[test]
 fn tagged_value_match_by_tag() {
     let src = "
-Color :: type [
-  red : { r : Int; };
-  blue : { b : Int; };
-]
+Color :: type {
+  #red: { r : Int; };
+  #blue: { b : Int; };
+}
 c :: Color = #red { r = 255; }
 match c {
   | #red { r = n; } => n;
@@ -1814,10 +1814,10 @@ match c {
 #[test]
 fn tagged_value_match_wrong_tag_falls_through() {
     let src = "
-Color :: type [
-  red : { r : Int; };
-  blue : { b : Int; };
-]
+Color :: type {
+  #red: { r : Int; };
+  #blue: { b : Int; };
+}
 c :: Color = #blue { b = 100; }
 match c {
   | #red { r = n; } => n;
@@ -2327,11 +2327,11 @@ schema (type Box Text)
 #[test]
 fn schema_union_returns_variant_schema() {
     let value = run(r#"
-Result :: type [
-  ok: { value : Text; };
-  err: { code : Int; };
-  done;
-]
+Result :: type {
+  #ok: { value : Text; };
+  #err: { code : Int; };
+  #done;
+}
 schema Result
 "#);
 

@@ -35,7 +35,7 @@ Bool
 is the finite type:
 
 ```zt
-type [true; false;]
+type {#true; #false;}
 ```
 
 ### Text

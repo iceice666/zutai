@@ -329,7 +329,7 @@ pub enum HirTypeKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirUnionVariant {
     pub name: String,
-    pub payload: Option<Vec<HirTypeRecordField>>,
+    pub payload: Option<HirTypeId>,
     pub span: Span,
 }
 

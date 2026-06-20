@@ -158,10 +158,10 @@ server.host
 fn atom_union_alias_accepts_matching_atom() {
     let file = completed_file(
         r#"
-Profile :: type [
-  dev;
-  prod;
-]
+Profile :: type {
+  #dev;
+  #prod;
+}
 
 profile :: Profile = #prod
 profile
@@ -538,10 +538,10 @@ bad :: Int -> Int {
 fn atom_literal_pattern_accepts_union_member() {
     let file = completed_file(
         r#"
-Profile :: type [
-  dev;
-  prod;
-]
+Profile :: type {
+  #dev;
+  #prod;
+}
 
 isProd :: Profile -> Bool {
   | #prod => true;
@@ -720,7 +720,7 @@ fn lambda_without_annotation_applied_to_text_yields_text_type() {
 fn match_on_atom_union_lowers_correctly() {
     let file = completed_file(
         r#"
-Status :: type [ok; err;]
+Status :: type {#ok; #err;}
 
 describe :: Status -> Text {
   | s => match s {
@@ -789,7 +789,7 @@ fn has_unreachable(lowered: &LoweredThir) -> bool {
 fn exhaustive_atom_union_passes() {
     completed_file(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 isProd :: Profile -> Bool {
   | #dev => false;
   | #prod => true;
@@ -803,7 +803,7 @@ isProd #dev
 fn non_exhaustive_atom_union_reports_witness() {
     let lowered = lower(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 isProd :: Profile -> Bool {
   | #prod => true;
 }
@@ -818,7 +818,7 @@ isProd #prod
 fn wildcard_catch_all_is_exhaustive() {
     let lowered = lower(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 isProd :: Profile -> Bool {
   | #prod => true;
   | _ => false;
@@ -833,7 +833,7 @@ isProd #dev
 fn redundant_arm_after_catch_all_is_unreachable() {
     let lowered = lower(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 classify :: Profile -> Bool {
   | _ => false;
   | #prod => true;
@@ -901,7 +901,7 @@ f 1
 fn guarded_arm_does_not_cover() {
     let lowered = lower(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 f :: Profile -> Bool {
   | #dev => false;
   | #prod if true => true;
@@ -916,7 +916,7 @@ f #dev
 fn plain_arm_after_guarded_same_pattern_is_reachable() {
     let lowered = lower(
         r#"
-Profile :: type [dev; prod;]
+Profile :: type {#dev; #prod;}
 f :: Profile -> Bool {
   | #dev => false;
   | #prod if true => true;
@@ -960,10 +960,10 @@ pick true false
 fn tagged_tuple_union_exhaustive_passes() {
     completed_file(
         r#"
-Shape :: type [
-  circle: { radius: Int; };
-  square: { side: Int; };
-]
+Shape :: type {
+  #circle: { radius: Int; };
+  #square: { side: Int; };
+}
 area :: Shape -> Int {
   | #circle { radius = r; } => r;
   | #square { side = s; } => s;
@@ -977,10 +977,10 @@ area
 fn tagged_tuple_union_non_exhaustive_reports_witness() {
     let lowered = lower(
         r#"
-Shape :: type [
-  circle: { radius: Int; };
-  square: { side: Int; };
-]
+Shape :: type {
+  #circle: { radius: Int; };
+  #square: { side: Int; };
+}
 area :: Shape -> Int {
   | #circle { radius = r; } => r;
 }
@@ -990,6 +990,43 @@ area
     assert_eq!(
         nonexhaustive_witness(&lowered).as_deref(),
         Some("#square { ... }")
+    );
+}
+
+#[test]
+fn positional_payload_union_exhaustive_passes() {
+    completed_file(
+        r#"
+Pair :: type {
+  #pair: (Int, Int);
+  #empty;
+}
+sum :: Pair -> Int {
+  | #pair (x, y) => x + y;
+  | #empty => 0;
+}
+sum
+"#,
+    );
+}
+
+#[test]
+fn positional_payload_union_non_exhaustive_reports_tuple_witness() {
+    let lowered = lower(
+        r#"
+Pair :: type {
+  #pair: (Int, Int);
+  #empty;
+}
+sum :: Pair -> Int {
+  | #empty => 0;
+}
+sum
+"#,
+    );
+    assert_eq!(
+        nonexhaustive_witness(&lowered).as_deref(),
+        Some("#pair (...)")
     );
 }
 
@@ -1720,7 +1757,7 @@ fn witness_forward_reference_completes_thir() {
     );
 }
 
-/// A `derive` witness lowers to `ThirDeclKind::Witness { derive: true, fields: [] }`.
+/// A `derive` witness lowers to `ThirDeclKind::Witness { derive: true, fields: {} }`.
 #[test]
 fn derive_witness_lowers_with_derive_flag() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\n1";
@@ -2342,7 +2379,7 @@ fn tagged_value_pattern_unknown_union_variant_reports_type_mismatch() {
     // TypeMismatch (None branch in Union match).
     let lowered = lower(
         r#"
-Status :: type [ ok : { code : Int; }; err : { msg : Text; }; ]
+Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; }
 f :: Status -> Int {
   | #unknown { code = _; } => 1;
   | _ => 0;
@@ -2389,7 +2426,7 @@ fn union_no_payload_variant_tagged_pattern_with_fields_reports_unexpected_field(
     // UnexpectedRecordField (None-payload branch with non-empty payload pattern).
     let lowered = lower(
         r#"
-Status :: type [ ok; err; ]
+Status :: type { #ok; #err; }
 f :: Status -> Int {
   | #ok { x = _; } => 1;
   | _ => 0;
@@ -2612,7 +2649,7 @@ fn generic_alias_with_union_payload_instantiates_correctly() {
     // Exercises instantiate_type_vars for Union arm.
     let file = completed_file(
         r#"
-Result :: <A, E> type [ ok : { value : A; }; err : { error : E; }; ]
+Result :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; }
 r :: Result Int Text = #ok { value = 42; }
 r
 "#,
@@ -2722,7 +2759,7 @@ fn type_mismatch_with_union_type_covers_type_name_union() {
     // `5` has type `Int` but `Status` (a union) expected → type_name("union") called.
     let lowered = lower(
         r#"
-Status :: type [ ok; err; ]
+Status :: type { #ok; #err; }
 x :: Status = 5
 x
 "#,
@@ -2810,7 +2847,7 @@ fn witness_target_key_with_record_type() {
 #[test]
 fn witness_target_key_with_union_type() {
     let file = completed_file(
-        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @[ok; err;] :: { eq = \\a b. true; }\n1",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @{#ok; #err;} :: { eq = \\a b. true; }\n1",
     );
     let _ = file;
 }
@@ -2887,7 +2924,7 @@ fn instantiate_type_vars_tuple_body() {
 #[test]
 fn instantiate_type_vars_union_body() {
     let file = completed_file(
-        "ResultOf :: <A, E> type [ ok : { value : A; }; err : { error : E; }; ]\nr :: ResultOf Int Text = #ok { value = 42; }\nr",
+        "ResultOf :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; }\nr :: ResultOf Int Text = #ok { value = 42; }\nr",
     );
     let _ = file;
 }
@@ -2983,7 +3020,7 @@ fn export_type_tuple_named() {
 #[test]
 fn export_type_union_no_payload() {
     assert!(matches!(
-        export_final("R :: type [ ok; err; ]\nx :: R = #ok\nx"),
+        export_final("R :: type { #ok; #err; }\nx :: R = #ok\nx"),
         ImportedType::Union(_)
     ));
 }
@@ -2992,7 +3029,7 @@ fn export_type_union_no_payload() {
 fn export_type_union_with_payload() {
     // Union variant with record payload exercises the Some(ty) branch in export.
     assert!(matches!(
-        export_final("R :: type [ ok : { v : Int; }; err; ]\nx :: R = #ok { v = 42; }\nx"),
+        export_final("R :: type { #ok: { v : Int; }; #err; }\nx :: R = #ok { v = 42; }\nx"),
         ImportedType::Union(_)
     ));
 }
@@ -3045,7 +3082,7 @@ fn type_matches_union_to_union() {
     // Union-to-union: `f :: R -> R = \\x. x`.
     // type_matches is called with two Union TypeIds during function body check.
     // The result type is `R` which is Alias(R_binding).
-    let file = completed_file("R :: type [ ok; err; ]\nf :: R -> R = \\x. x\nf #ok");
+    let file = completed_file("R :: type { #ok; #err; }\nf :: R -> R = \\x. x\nf #ok");
     // The file must complete without errors — the union-to-union type check passes.
     let _ = file;
 }
@@ -3204,10 +3241,10 @@ fn instantiate_type_vars_tuple_alias_reference() {
 /// A generic union alias applied to concrete types exercises instantiate_type_vars Union arm.
 #[test]
 fn instantiate_type_vars_union_alias_applied() {
-    // ResultOf :: <A, E> type [ok : {v:A;}; err : {e:E;};]  applied to Int, Text.
+    // ResultOf :: <A, E> type {#ok: {v:A;}; #err: {e:E;};}  applied to Int, Text.
     // Exercises instantiate_type_vars Union arm when expanding the alias.
     let file =
-        completed_file("R :: <A> type [ ok : { v : A; }; fail; ]\nx :: R Int = #ok { v = 1; }\nx");
+        completed_file("R :: <A> type { #ok: { v : A; }; #fail; }\nx :: R Int = #ok { v = 1; }\nx");
     let _ = file;
 }
 
@@ -3314,7 +3351,7 @@ fn type_name_function_arm_via_mismatch() {
 #[test]
 fn type_name_union_arm_via_mismatch() {
     // `42` is Int; annotation is union C → TypeMismatch(Union, Int).
-    let lowered = lower("C :: type [ r; g; b; ]\nx :: C = 42\nx");
+    let lowered = lower("C :: type { #r; #g; #b; }\nx :: C = 42\nx");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -3423,7 +3460,7 @@ make 42
 #[test]
 fn type_matches_union_vs_union_structural() {
     // A and B have the same structure; assigning x::A to y::B triggers Union-Union match.
-    let lowered = lower("A :: type [ r; g; ]\nB :: type [ r; g; ]\nx :: A = #r\ny :: B = x\ny");
+    let lowered = lower("A :: type { #r; #g; }\nB :: type { #r; #g; }\nx :: A = #r\ny :: B = x\ny");
     // type_matches(B, A) → Union(r,g) vs Union(r,g) — structurally equal so no error
     let _ = lowered;
 }
@@ -3499,7 +3536,7 @@ fn tagged_value_infer_mode_no_expected_type() {
     // emits a synthetic Union with one variant carrying the payload type.
     let file = completed_file(
         r#"
-Result :: type [ ok : { value : Int; }; err; ]
+Result :: type { #ok: { value : Int; }; #err; }
 x :: Result = #ok { value = 42; }
 x
 "#,
@@ -3514,7 +3551,7 @@ fn tagged_value_without_annotation_infer_path() {
     // `x := #red 99` — no type annotation, THIR must infer via infer_tagged_value.
     let lowered = lower(
         r#"
-Color :: type [ red : { n : Int; }; blue; ]
+Color :: type { #red: { n : Int; }; #blue; }
 x := #red { n = 99; }
 x
 "#,
@@ -3744,12 +3781,12 @@ fn unresolved_ident_in_expr_position() {
 /// arm (not just the AliasApply arm).
 #[test]
 fn collect_type_vars_union_arm_via_generic_fn_call() {
-    // `is_ok :: <A> [ok : {v : A;}; fail;] -> Bool` — the `from` type is
+    // `is_ok :: <A> { #ok: {v : A;}; #fail; } -> Bool` — the `from` type is
     // a direct Union(TypeVar A), not an AliasApply. When calling
     // `is_ok #ok {v = 42;}`, THIR collects TypeVars from the Union arm.
     let file = completed_file(
         r#"
-is_ok :: <A> [ ok : { v : A; }; fail; ] -> Bool {
+is_ok :: <A> { #ok : { v : A; }; #fail; } -> Bool {
   | #ok { v = _; } => true;
   | #fail => false;
 }
@@ -3798,13 +3835,13 @@ get { value = 42; }
 /// the function call.
 #[test]
 fn instantiate_type_vars_union_body_with_payload_substitution() {
-    // `Result :: <A, E> type [ok : {v : A;}; err : {e : E;}; ]`
+    // `Result :: <A, E> type {#ok: {v : A;}; #err: {e : E;}; }`
     // `is_ok :: <A, E> Result A E -> Bool`
     // When expanding `Result A E` with concrete args, `instantiate_type_vars`
     // traverses the Union body, covering the Union arm.
     let file = completed_file(
         r#"
-Result :: <A, E> type [ ok : { v : A; }; err : { e : E; }; ]
+Result :: <A, E> type { #ok: { v : A; }; #err: { e : E; }; }
 is_ok :: <A, E> Result A E -> Bool {
   | #ok { v = _; } => true;
   | #err { e = _; } => false;
@@ -3881,7 +3918,7 @@ fn named_tuple_in_infer_mode_covers_named_none_arm() {
     let _ = file;
 }
 
-/// `#red {}` where `Color = [red; blue;]` (no-payload variant) in check mode
+/// `#red {}` where `Color = type { #red; #blue; }` (no-payload variant) in check mode
 /// exercises the `None` payload arm at L1191 of expr.rs — the variant is found
 /// but has no payload, so the code falls into `self.infer_expr(payload)`.
 #[test]
@@ -3890,7 +3927,7 @@ fn tagged_value_no_payload_variant_in_check_mode_covers_l1191() {
     // v.payload == None → hits L1191: `self.infer_expr(payload="{}")`.
     let lowered = lower(
         r#"
-Color :: type [red; blue;]
+Color :: type {#red; #blue;}
 x :: Color = #red {}
 x
 "#,
@@ -3899,14 +3936,14 @@ x
     let _ = lowered;
 }
 
-/// `#green {}` where `Color = [red; blue;]` — unknown variant in check mode
+/// `#green {}` where `Color = type { #red; #blue; }` — unknown variant in check mode
 /// falls through to the `None =>` arm at L1204-1206 of expr.rs, then
 /// the infer path synthesises a singleton union and emits TypeMismatch.
 #[test]
 fn tagged_value_unknown_variant_in_check_mode_falls_through() {
     let lowered = lower(
         r#"
-Color :: type [red; blue;]
+Color :: type {#red; #blue;}
 x :: Color = #green {}
 x
 "#,
@@ -3958,7 +3995,7 @@ fn free_infer_vars_union_arm_via_inferred_fn() {
     // During generalization, free_infer_vars_into traverses the Union body.
     let lowered = lower(
         r#"
-Color :: type [ red; blue; ]
+Color :: type { #red; #blue; }
 choose b = if b then #red else #blue
 choose true
 "#,
@@ -4221,7 +4258,7 @@ choose
 fn match_inference_uses_later_type_when_first_arm_is_never() {
     completed_file(
         r#"
-Status :: type [ bad; good; ]
+Status :: type { #bad; #good; }
 choose :: Status -> Text ! { fail Text } {
   | s => {
     x := match s {
@@ -4566,14 +4603,14 @@ fn type_select_unknown_field_is_rejected() {
 #[test]
 fn open_union_match_with_wildcard_is_exhaustive() {
     completed_file(
-        "classify :: [ #dev; #test; ...; ] -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n  | _ => \"o\";\n}\nclassify #dev",
+        "classify :: { #dev; #test; ...; } -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n  | _ => \"o\";\n}\nclassify #dev",
     );
 }
 
 #[test]
 fn open_union_match_without_wildcard_is_non_exhaustive() {
     let lowered = lower(
-        "classify :: [ #dev; #test; ...; ] -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n}\nclassify #dev",
+        "classify :: { #dev; #test; ...; } -> Text {\n  | #dev => \"d\";\n  | #test => \"t\";\n}\nclassify #dev",
     );
     assert!(
         lowered
@@ -4588,13 +4625,13 @@ fn union_spread_merges_members_into_new_union() {
     // `Shape3D` spreads `Shape`; `#a` only type-checks against it if the spread
     // merged `Shape`'s members.
     completed_file(
-        "Shape :: type [ #a; #b; ]\nShape3D :: type [ ...Shape; #c; ]\nx :: Shape3D = #a\nx",
+        "Shape :: type { #a; #b; }\nShape3D :: type { ...Shape; #c; }\nx :: Shape3D = #a\nx",
     );
 }
 
 #[test]
 fn union_spread_overlapping_member_is_rejected() {
-    let lowered = lower("Shape :: type [ #a; #b; ]\nBad :: type [ #a; ...Shape; ]\nBad");
+    let lowered = lower("Shape :: type { #a; #b; }\nBad :: type { #a; ...Shape; }\nBad");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind, ThirDiagnosticKind::OverlappingRowField { name } if name == "a"
     )));
@@ -4625,7 +4662,7 @@ fn named_union_tail_application_captures_extra_member() {
     // `echo` forwards a named union tail; calling it with an extra member #prod
     // must succeed and the result must include #prod (captured by Rest).
     let file = completed_file(
-        "echo :: <Rest> [ #dev; ...Rest; ] -> [ #dev; ...Rest; ] {\n  | x => x;\n}\necho #prod",
+        "echo :: <Rest> { #dev; ...Rest; } -> { #dev; ...Rest; } {\n  | x => x;\n}\necho #prod",
     );
     let TypeKind::Union(variants, tail) = final_type_kind(&file) else {
         panic!("expected union result, got {:?}", final_type_kind(&file));

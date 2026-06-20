@@ -57,7 +57,7 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "match_union",
-            "Shape :: type [ c: { r: Int; }; s: { v: Int; }; ]\nf :: Shape -> Int {\n  | #c { r = r; } => r;\n  | #s { v = v; } => v;\n}\nf (#c { r = 7; })",
+            "Shape :: type { #c: { r: Int; }; #s: { v: Int; }; }\nf :: Shape -> Int {\n  | #c { r = r; } => r;\n  | #s { v = v; } => v;\n}\nf (#c { r = 7; })",
         ),
         (
             "guard",

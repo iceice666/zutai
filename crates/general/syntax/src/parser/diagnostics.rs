@@ -423,7 +423,7 @@ impl<'a> Scanner<'a> {
             // Single `:` (e.g. `field : {`) but NOT `::` (e.g. `Eq @Int :: {` is a witness body)
             || (before.ends_with(':') && !before.ends_with("::"))
             || before.ends_with("->")
-            || before.ends_with('[')
+            || self.looks_like_type_after_params(offset)
             || self.stack.last().is_some_and(|f| f.type_context)
     }
 
@@ -521,6 +521,34 @@ impl<'a> Scanner<'a> {
         let line_start = self.src[..offset].rfind('\n').map_or(0, |idx| idx + 1);
         let before = &self.src[line_start..offset];
         before.contains("::") && before.contains('<')
+    }
+
+    fn looks_like_type_after_params(&self, offset: usize) -> bool {
+        let before = self.src[..offset].trim_end();
+        if !before.ends_with('>') {
+            return false;
+        }
+        let line_start = self.src[..offset].rfind('\n').map_or(0, |idx| idx + 1);
+        let line = &self.src[line_start..offset];
+        let Some(sig) = line.rfind("::") else {
+            return false;
+        };
+        let Some(params) = line[sig + 2..].rfind('<') else {
+            return false;
+        };
+        if sig + 2 + params >= line.len() {
+            return false;
+        }
+        let after = self.src[offset + 1..].trim_start();
+        if after.starts_with('#') || after.starts_with("...") {
+            return true;
+        }
+        let colon = after.find(':');
+        let equals = after.find('=');
+        let pipe = after.find('|');
+        colon.is_some_and(|colon| {
+            equals.is_none_or(|equals| colon < equals) && pipe.is_none_or(|pipe| colon < pipe)
+        })
     }
 
     fn in_type_position_near(&self, offset: usize) -> bool {

@@ -13,10 +13,10 @@ Bool?
 `Optional` is an ordinary generic tagged union defined in the standard library — it is not a compiler primitive. Any user could write an equivalent definition:
 
 ```zt
-Optional :: <T> type [
-  none;
-  some: { value: T; };
-]
+Optional :: <T> type {
+  #none;
+  #some: { value: T; };
+}
 ```
 
 The compiler's only special knowledge of `Optional` is the `T?` → `Optional T` desugaring. All matching, construction, and type-checking behaviour follows from it being a normal generic tagged union.

@@ -55,7 +55,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | Higher-kinded types (`F :: Type -> Type`) | Arrow kinds (`Kind -> Kind`) + `TyLamK` | type layer only |
 | Type constructors / type-level λ | `TyLamK(a:Kind, body)` as a type-level term | type layer only |
 | Type-level computation, recursive types | `TyApp`+`TyLamK` normalized by NbE+fuel | kernel pass, no nodes |
-| **Unions / sums** (`type [ ... ]`) | **`VariantT(Row)` type** + **`Variant(label, e)` term** | **2 new nodes — the fix** |
+| **Unions / sums** (`type { ... }`) | **`VariantT(Row)` type** + **`Variant(label, e)` term** | **2 new nodes — the fix** |
 | **Singletons** (`#atom`, `true`, `false` as types) | **`Singleton(Lit)` type** | **1 new type node** |
 | `Optional T` | sugar for `VariantT {some: T, none: Unit}` | none (VariantT subsumes) |
 | Row polymorphism (open records, open unions) | `Row` kind + `RVar r` row variables | type layer only |
@@ -141,7 +141,7 @@ EffRow ::= Row                          -- same Row type; entries have kind Effe
 
 ### Key notes
 
-**`VariantT` is the real sum former.** The surface `type [ #dev; #test; #prod; ]` elaborates to:
+**`VariantT` is the real sum former.** The surface `type { #dev; #test; #prod; }` elaborates to:
 ```
 VariantT(
   RExtend("dev",  Singleton(Atom("dev")),
@@ -149,7 +149,7 @@ VariantT(
   RExtend("prod", Singleton(Atom("prod")),
   REmpty))))
 ```
-Tuple-member arms like `(#circle, radius: Float)` elaborate to a record arm inside `VariantT`:
+Record-payload arms like `#circle: { radius: Float; }` elaborate to a record arm inside `VariantT`:
 ```
 RExtend("circle", RecordT(RExtend("radius", Prim(Float), REmpty)), …)
 ```
@@ -324,7 +324,7 @@ Driven by `poly_schemes: HashMap<BindingId, Vec<u32>>` from `ThirFile`.
 3. Wrap type: `ForAll(a, Type 0, ForAll(b, Type 0, T))`.
 4. Wrap body: `TyLam(a, Type 0, TyLam(b, Type 0, body))`.
 
-**At call sites** — `ThirExprKind::Apply { func, arg, instantiation: [T1, T2] }`:
+**At call sites** — `ThirExprKind::Apply { func, arg, instantiation: {#T1,: T2} }`:
 - If the callee is polymorphic: prepend `TyApp` nodes before the value-level `App`.
   - `Var(b)` → `TyApp(TyApp(Var(b), translate(T1)), translate(T2))`
 - If `instantiation` is empty: plain `Var`, no `TyApp`.
@@ -523,7 +523,7 @@ pub struct SemanticModule {
 **Unit tests in `zutai-tlc`** (`src/tests.rs`):
 - Desugaring: each THIR surface form produces the expected TLC shape.
 - Polymorphism: monomorphic identity, polymorphic identity, polymorphic pair — assert `ForAll`/`TyLam`/`TyApp` structure.
-- Sum types: `type [ #a; #b; ]` produces `VariantT`; tagged tuple `(#circle, r: Float)` produces `VariantT { circle: RecordT { … } }`.
+- Sum types: `type { #a; #b; }` produces `VariantT`; record payload `#circle: { r: Float; }` produces `VariantT { circle: RecordT { … } }`.
 - Singleton types: `True`, `False`, `#atom` in type position produce `Singleton(…)`, not `Prim(Bool)`.
 - Alias laziness: `Pair Text Int` produces `TyApp(TyVar(Pair), Text, Int)` — no `Alias` node and no eager expansion.
 - NbE (Phase 2+): `Response Text ≡ RecordT { status: Int, body: Optional Text }` by normalization; `Loop Int` exceeds fuel with a clean diagnostic.
@@ -615,8 +615,8 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Optional field `field?: T` | `RExtend("field", T, …)` with `optional=true` flag | 0 |
 | Optional value `T?` | `VariantT {some: T, none: Unit}` | 0 |
 | Optional defaulting `x ?? y` | `Builtin(Coalesce, x, y)` | 0 |
-| Union type `type [ #a; #b; ]` | `VariantT(RExtend("a", Singleton(Atom("a")), …))` | **0 (fixes bug)** |
-| Union arm with tuple `(#c, x: T)` | `VariantT { c: RecordT { x: T } }` | **0 (fixes bug)** |
+| Union type `type { #a; #b; }` | `VariantT(RExtend("a", Singleton(Atom("a")), …))` | **0 (fixes bug)** |
+| Union arm with record payload `#c: { x: T; }` | `VariantT { c: RecordT { x: T } }` | **0 (fixes bug)** |
 | `true`/`false` as singleton type | `Singleton(Lit::Bool(true/false))` | **0 (fixes bug)** |
 | `#atom` as singleton type | `Singleton(Lit::Atom("atom"))` | **0 (fixes bug)** |
 | Lists `[T]`, list literals | `ListT(T)`, `List([…])` | 0 |
@@ -641,7 +641,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 |---|---|---|
 | Open record `{ host: Text; …; }` | `RecordT(RExtend("host", Text, RVar(r)))` | 3 |
 | Named row tail `...Rest` | `RVar(Rest)` in `Row` | 3 |
-| Open union `type [ #a; …; ]` | `VariantT(RExtend("a", …, RVar(r)))` | 3 |
+| Open union `type { #a; ...Rest; }` | `VariantT(RExtend("a", …, RVar(r)))` | 3 |
 | Union extension `...Shape` | row spread, resolved at elaboration | 3 |
 | HKT param `F :: Type -> Type` | `ForAll(F, Type0 -> Type0, body)` | 1+3 |
 | Constraint `<A: Eq>` | extra dict `Lam(dict: {eq: A -> A -> Bool}, …)` | 5 |

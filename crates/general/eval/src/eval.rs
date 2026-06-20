@@ -176,6 +176,17 @@ impl<'a> Evaluator<'a> {
                 let payload_val = self.eval(*payload, env)?;
                 let fields = match payload_val {
                     Value::Record(f) => (*f).clone(),
+                    Value::Tuple(f) => f
+                        .iter()
+                        .enumerate()
+                        .map(|(index, field)| {
+                            let name = field
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| Rc::from(index.to_string()));
+                            (name, field.value.clone())
+                        })
+                        .collect(),
                     _ => vec![],
                 };
                 Ok(Value::TaggedValue {
@@ -1819,7 +1830,7 @@ fn type_key_subst(
     ty: TypeId,
     depth: u32,
 ) -> String {
-    // A structurally-recursive parametric alias (e.g. `Rec :: <A> type [Rec A]`)
+    // A structurally-recursive parametric alias (e.g. `Rec :: <A> type { #rec: A; }`)
     // would expand forever; cap the depth and fall back to an ambiguous marker so
     // dispatch refuses rather than overflowing the stack.
     if depth > 256 {

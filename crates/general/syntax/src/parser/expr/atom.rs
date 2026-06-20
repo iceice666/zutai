@@ -32,13 +32,28 @@ pub fn parse_atom_expr(input: &mut &str) -> Result<Expr> {
         }
         '#' => {
             let (name, atom_span) = spanned(parse_atom_name).parse_next(input)?;
-            // Try `#tag { ... }` tagged-value form. Save a checkpoint so that if
-            // `{ ... }` is not a valid record/block (e.g. it is a match clause
-            // block `{ | ... }`) we fall back to returning a plain atom.
+            // Try `#tag { ... }` and `#tag (...)` tagged-value forms. Save a
+            // checkpoint so that if `{ ... }` is not a valid record/block (e.g.
+            // it is a match clause block `{ | ... }`) we fall back to returning a
+            // plain atom.
             let checkpoint = *input;
             take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
             if input.starts_with('{') {
                 match parse_record_or_block(input) {
+                    Ok(payload) => {
+                        let span = atom_span.merge(payload.span());
+                        return Ok(Expr::TaggedValue {
+                            tag: name,
+                            payload: Box::new(payload),
+                            span,
+                        });
+                    }
+                    Err(_) => {
+                        *input = checkpoint;
+                    }
+                }
+            } else if input.starts_with('(') {
+                match parse_tagged_tuple_payload(input) {
                     Ok(payload) => {
                         let span = atom_span.merge(payload.span());
                         return Ok(Expr::TaggedValue {
@@ -345,6 +360,35 @@ fn parse_tuple(input: &mut &str) -> Result<Expr> {
         ws(input)?;
     }
     ws(input)?;
+    let (_, end_span) = spanned(|i: &mut &str| ')'.parse_next(i)).parse_next(input)?;
+    let span = Span::new(0, end_span.end as usize);
+    Ok(Expr::Tuple { items, span })
+}
+
+fn parse_tagged_tuple_payload(input: &mut &str) -> Result<Expr> {
+    '('.parse_next(input)?;
+    let _guard = enter_delimiter();
+    ws(input)?;
+
+    if input.starts_with(')') {
+        let (_, span) = spanned(|i: &mut &str| ')'.parse_next(i)).parse_next(input)?;
+        return Ok(Expr::Tuple {
+            items: vec![],
+            span,
+        });
+    }
+
+    let mut items = vec![parse_tuple_item(input)?];
+    ws(input)?;
+    while input.starts_with(',') {
+        ','.parse_next(input)?;
+        ws(input)?;
+        if input.starts_with(')') {
+            break;
+        }
+        items.push(parse_tuple_item(input)?);
+        ws(input)?;
+    }
     let (_, end_span) = spanned(|i: &mut &str| ')'.parse_next(i)).parse_next(input)?;
     let span = Span::new(0, end_span.end as usize);
     Ok(Expr::Tuple { items, span })

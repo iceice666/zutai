@@ -35,16 +35,7 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|v: &HirUnionVariant| UnionVariant {
                         name: v.name.clone(),
-                        payload: v.payload.as_ref().map(|fields| {
-                            let field_types: Vec<TypeRecordField> = fields
-                                .iter()
-                                .map(|f| self.lower_type_record_field(f))
-                                .collect();
-                            self.alloc_type(Type {
-                                kind: TypeKind::Record(field_types, RowTail::Closed),
-                                span: v.span,
-                            })
-                        }),
+                        payload: v.payload.map(|payload| self.lower_type(payload)),
                         span: v.span,
                     })
                     .collect();

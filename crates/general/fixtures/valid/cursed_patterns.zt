@@ -1,12 +1,12 @@
 -- cursed_patterns.zt: clause parsing, guards, nested matches, and field patterns.
 
-MaybeInt :: type [
-  none;
-  some: { value: Int; };
-]
+MaybeInt :: type {
+  #none;
+  #some: { value: Int; };
+}
 
 Packet :: type {
-  status : [ok; err; pending;];
+  status : {#ok; #err; #pending;};
   payload? : MaybeInt;
   meta : {
     retry-count : Int;
