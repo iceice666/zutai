@@ -36,6 +36,26 @@ fn battery() -> Vec<(&'static str, &'static str)> {
             "x :: Int? = #some { value = 9; }\nx ?? 5",
         ),
         (
+            "optional_field_match_none",
+            "S :: type { p? : Int; }\ns :: S = {}\nmatch s.p { | #none => 1; | #some { value = n; } => n; }",
+        ),
+        (
+            "optional_field_match_some",
+            "S :: type { p? : Int; }\ns :: S = { p = 7; }\nmatch s.p { | #none => 1; | #some { value = n; } => n; }",
+        ),
+        (
+            "optional_access_chain_some",
+            "Inner :: type { val : Int; }\nOuter :: type { inner? : Inner; }\no :: Outer = { inner = { val = 5; }; }\no.inner?.val ?? 0",
+        ),
+        (
+            "optional_access_chain_none",
+            "Inner :: type { val : Int; }\nOuter :: type { inner? : Inner; }\no :: Outer = {}\no.inner?.val ?? 0",
+        ),
+        (
+            "optional_explicit_some_access",
+            "Inner :: type { val : Int; }\ncfg :: Inner? = #some { value = { val = 9; }; }\ncfg?.val ?? 0",
+        ),
+        (
             "match_union",
             "Shape :: type [ c: { r: Int; }; s: { v: Int; }; ]\nf :: Shape -> Int {\n  | #c { r = r; } => r;\n  | #s { v = v; } => v;\n}\nf (#c { r = 7; })",
         ),
@@ -105,6 +125,11 @@ fn thir_and_tlc_walkers_agree() {
 
 fn expected_display(label: &str) -> Option<&'static str> {
     match label {
+        "optional_field_match_none" => Some("1"),
+        "optional_field_match_some" => Some("7"),
+        "optional_access_chain_some" => Some("5"),
+        "optional_access_chain_none" => Some("0"),
+        "optional_explicit_some_access" => Some("9"),
         "operator_witness_direct_eq" => Some("false"),
         "operator_witness_bounded_eq" => Some("false"),
         "operator_witness_bounded_ne_from_eq" => Some("true"),

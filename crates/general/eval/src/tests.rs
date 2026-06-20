@@ -355,7 +355,7 @@ fn gate_refuses_parse_error() {
 
 #[test]
 fn coalesce_absent_optional_field() {
-    // Optional record field `port?` is absent → evaluates to Nothing → ?? returns default.
+    // Optional record field `port?` is absent → #none → ?? returns default.
     let src = "
 RawServer :: type {
   port? : Int;
@@ -368,7 +368,7 @@ server.port ?? 8080
 
 #[test]
 fn coalesce_present_optional_field() {
-    // Optional record field is present → evaluates to the value → ?? passes it through.
+    // Optional record field is present → #some wraps the value → ?? unwraps it.
     let src = "
 RawServer :: type {
   port? : Int;
@@ -787,26 +787,116 @@ is_zero 0
 #[test]
 fn optional_access_present() {
     // `?.` chains through an optional record field that is present.
-    // outer.inner has type Optional(Inner); outer.inner?.val returns Int.
+    // outer.inner has type Optional(Inner); outer.inner?.val returns Optional(Int).
     let src = "
 Inner :: type { val : Int; }
 Outer :: type { inner? : Inner; }
 outer :: Outer = { inner = { val = 42; }; }
 outer.inner?.val
 ";
-    assert_eq!(run(src), Value::Int(42));
+    assert_eq!(run(src).to_string(), "#some { value = 42 }");
 }
 
 #[test]
 fn optional_access_absent() {
-    // When the optional record field is absent, ?.field returns Nothing.
+    // When the optional record field is absent, ?.field returns #none.
     let src = "
 Inner :: type { val : Int; }
 Outer :: type { inner? : Inner; }
 outer :: Outer = {}
 outer.inner?.val
 ";
-    assert_eq!(run(src), Value::Nothing);
+    assert_eq!(run(src), Value::Atom("none".into()));
+}
+
+#[test]
+fn match_optional_field_none() {
+    let src = "
+S :: type { p? : Int; }
+s :: S = {}
+match s.p {
+  | #none => 1;
+  | #some { value = n; } => n;
+}
+";
+    assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn match_optional_field_some() {
+    let src = "
+S :: type { p? : Int; }
+s :: S = { p = 7; }
+match s.p {
+  | #none => 1;
+  | #some { value = n; } => n;
+}
+";
+    assert_eq!(run(src), Value::Int(7));
+}
+
+#[test]
+fn match_optional_explicit_some() {
+    let src = "
+x :: Int? = #some { value = 9; }
+match x {
+  | #none => 0;
+  | #some { value = n; } => n;
+}
+";
+    assert_eq!(run(src), Value::Int(9));
+}
+
+#[test]
+fn match_optional_explicit_none() {
+    let src = "
+x :: Int? = #none
+match x {
+  | #none => 0;
+  | #some { value = n; } => n;
+}
+";
+    assert_eq!(run(src), Value::Int(0));
+}
+
+#[test]
+fn optional_access_explicit_some() {
+    let src = "
+Inner :: type { val : Int; }
+cfg :: Inner? = #some { value = { val = 42; }; }
+cfg?.val
+";
+    assert_eq!(run(src).to_string(), "#some { value = 42 }");
+}
+
+#[test]
+fn optional_access_explicit_none() {
+    let src = "
+Inner :: type { val : Int; }
+cfg :: Inner? = #none
+cfg?.val
+";
+    assert_eq!(run(src), Value::Atom("none".into()));
+}
+
+#[test]
+fn optional_double_optional_field_flattens() {
+    let src = "
+S :: type { p? : Int?; }
+s :: S = { p = #none; }
+s.p
+";
+    assert_eq!(run(src), Value::Atom("none".into()));
+}
+
+#[test]
+fn optional_double_optional_field_some_flattens() {
+    let src = "
+S :: type { p? : Int?; }
+s :: S = { p = #some { value = 5; }; }
+s.p
+";
+    assert_eq!(run(src).to_string(), "#some { value = 5 }");
 }
 
 // ─── HM let-generalization ────────────────────────────────────────────────────
@@ -1470,8 +1560,8 @@ fn display_atom_value() {
 }
 
 #[test]
-fn display_nothing_value() {
-    // Nothing comes from absent optional field access
+fn display_absent_optional_field_as_none() {
+    // Absent optional field access displays as #none.
     let src = "
 S :: type { port? : Int; }
 s :: S = {}
@@ -2360,10 +2450,10 @@ fn import_zti_empty_list_field() {
 #[test]
 fn import_zt_optional_module() {
     // optional_module.zt exports Int? — exercises ImportedType::Optional in import.rs
-    // cfg.port is absent so the result is Value::Nothing (absent optional).
+    // cfg.port is absent so the result is #none.
     assert_eq!(
         run_import("m := import \"optional_module.zt\"\nm"),
-        Value::Nothing
+        Value::Atom("none".into())
     );
 }
 

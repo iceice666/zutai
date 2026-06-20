@@ -112,6 +112,46 @@ impl<'a> Evaluator<'a> {
         &self.file.decl_arena[id]
     }
 
+    /// Returns (field_may_be_absent, field_value_ty) for `field` on the record
+    /// type `ty` (alias-resolved), or None if `ty` is not a record or the field
+    /// is not declared.
+    fn record_field_meta(&self, ty: TypeId, field: &str) -> Option<(bool, TypeId)> {
+        let aliases = self.build_alias_map();
+        let resolved = resolve_alias_chain(&self.file.type_arena, &aliases, ty);
+        match &self.file.type_arena[resolved.0 as usize].kind {
+            TypeKind::Record(fields, _) => fields
+                .iter()
+                .find(|f| f.name == field)
+                .map(|f| (f.optional, f.ty)),
+            _ => None,
+        }
+    }
+
+    fn type_is_optional(&self, ty: TypeId) -> bool {
+        let aliases = self.build_alias_map();
+        let resolved = resolve_alias_chain(&self.file.type_arena, &aliases, ty);
+        matches!(
+            self.file.type_arena[resolved.0 as usize].kind,
+            TypeKind::Optional(_)
+        )
+    }
+
+    fn project_optional_field(
+        &self,
+        fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+        field: &str,
+        value_already_optional: bool,
+    ) -> Result<Value, EvalError> {
+        match fields.iter().find(|(name, _)| name.as_ref() == field) {
+            None => Ok(Value::Atom(Rc::from("none"))),
+            Some((_, thunk)) if value_already_optional => thunk.force(self),
+            Some((_, thunk)) => Ok(Value::TaggedValue {
+                tag: Rc::from("some"),
+                payload: Rc::new(vec![(Rc::from("value"), thunk.clone())]),
+            }),
+        }
+    }
+
     // ── main entry point ─────────────────────────────────────────────────────
 
     /// Evaluate expression `id` in environment `env`, returning a `Value`.
@@ -219,6 +259,15 @@ impl<'a> Evaluator<'a> {
                 let rv = self.eval(*receiver, env)?;
                 match rv {
                     Value::Record(fields) => {
+                        if let Some((true, value_ty)) =
+                            self.record_field_meta(self.expr(*receiver).ty, field)
+                        {
+                            return self.project_optional_field(
+                                &fields,
+                                field,
+                                self.type_is_optional(value_ty),
+                            );
+                        }
                         for (name, thunk) in fields.iter() {
                             if name.as_ref() == field.as_str() {
                                 return thunk.force(self);
@@ -449,19 +498,59 @@ impl<'a> Evaluator<'a> {
                 )),
             },
             ThirExprKind::OptionalAccess { receiver, field } => {
+                let aliases = self.build_alias_map();
+                let receiver_ty =
+                    resolve_alias_chain(&self.file.type_arena, &aliases, self.expr(*receiver).ty);
+                let inner_ty = match &self.file.type_arena[receiver_ty.0 as usize].kind {
+                    TypeKind::Optional(inner) => *inner,
+                    _ => receiver_ty,
+                };
+                let project_inner_field =
+                    |fields: &Rc<Vec<(Rc<str>, Thunk)>>| -> Result<Value, EvalError> {
+                        if let Some((true, value_ty)) = self.record_field_meta(inner_ty, field) {
+                            return self.project_optional_field(
+                                fields,
+                                field,
+                                self.type_is_optional(value_ty),
+                            );
+                        }
+                        match fields.iter().find(|(name, _)| name.as_ref() == field.as_str()) {
+                            Some((_, thunk)) => Ok(Value::TaggedValue {
+                                tag: Rc::from("some"),
+                                payload: Rc::new(vec![(Rc::from("value"), thunk.clone())]),
+                            }),
+                            None => Ok(Value::Atom(Rc::from("none"))),
+                        }
+                    };
+
                 let rv = self.eval(*receiver, env)?;
                 match rv {
-                    Value::Nothing => Ok(Value::Nothing),
-                    Value::Record(fields) => {
-                        for (name, thunk) in fields.iter() {
-                            if name.as_ref() == field.as_str() {
-                                return thunk.force(self);
-                            }
-                        }
-                        Ok(Value::Nothing)
+                    Value::Atom(atom) if atom.as_ref() == "none" => Ok(Value::Atom(Rc::from("none"))),
+                    Value::TaggedValue { tag, .. } if tag.as_ref() == "none" => {
+                        Ok(Value::Atom(Rc::from("none")))
                     }
+                    Value::Nothing => Ok(Value::Atom(Rc::from("none"))),
+                    Value::TaggedValue { tag, payload } if tag.as_ref() == "some" => {
+                        let inner = match payload.iter().find(|(name, _)| name.as_ref() == "value") {
+                            Some((_, thunk)) => thunk.force(self)?,
+                            None => {
+                                return Err(EvalError::TypeMismatch {
+                                    expected: "Record",
+                                    found: "TaggedValue",
+                                });
+                            }
+                        };
+                        match inner {
+                            Value::Record(inner_fields) => project_inner_field(&inner_fields),
+                            other => Err(EvalError::TypeMismatch {
+                                expected: "Record",
+                                found: value_type_name(&other),
+                            }),
+                        }
+                    }
+                    Value::Record(fields) => project_inner_field(&fields),
                     other => Err(EvalError::TypeMismatch {
-                        expected: "Record or Nothing",
+                        expected: "Optional",
                         found: value_type_name(&other),
                     }),
                 }

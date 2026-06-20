@@ -28,7 +28,7 @@ The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflo
 
 ## Current Baseline
 
-_Last updated: after TLC/operator-witness parity._
+_Last updated: after canonical Optional runtime representation._
 
 - Immediate mode parses `.zti` data through selectable parser backends (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
@@ -44,7 +44,7 @@ _Last updated: after TLC/operator-witness parity._
 
 _Added after a v0 stress-test/validation pass: real `.zt` programs run through `run`/`compile`, plus a THIR-vs-TLC differential oracle (`crates/general/eval/tests/differential.rs`). Four bugs were fixed in that pass — chained-comparison false positive across `&&`/`||`/`??`/pipelines, `??` ignoring explicit `#none`/`#some`, deep-recursion native stack overflow (CLI now evaluates on a large-stack worker thread), and malformed `inf.0`/`NaN.0` float display. TLC/operator-witness parity was fixed afterwards: direct and bounded `==`/`!=`/`<`/`<=`/`>`/`>=` syntax now uses the same witness dictionaries as named methods on the THIR evaluator, TLC evaluator, and TLC→Dataflow path. The remaining items below are deferred work or corrections to claims elsewhere in this file._
 
-- **Explicit `Optional` values are second-class in `?.` and `match`.** The interpreter models optionals two ways: implicit (`Value::Nothing` for absent, bare value for present — from optional fields / `?.`) and explicit (`#none` / `#some { value = x }` — from literal construction). `??` now bridges both (fixed). But `?.` errors on an explicit `#some` ("expected Record or Nothing, found TaggedValue"), and `match` does not bridge them (an absent-field `Nothing` against a `#none` pattern, or a bare present value against `#some { value = p }`, fails to match). Recommend canonicalizing the runtime `Optional` representation, then making `??`/`?.`/`match` consume the single form.
+- **Canonical Optional runtime representation is fixed in the reference walkers.** Optional field access and `?.` now produce canonical `Optional` union values in both the THIR walker (`eval_file`) and TLC walker (`eval_tlc_file`): absent fields and explicit `#none` yield `#none`, present fields yield `#some { value = v }`, and `field? : T?` access flattens to the stored `T?` value. `??`, `?.`, and `match` consume that single representation. Deferred sliver: matching an absent optional field inside a record pattern still fails because the record-pattern matcher has no field name/value to hand to the subpattern when the field is absent.
 - **Spec example inconsistencies (parser follows the formal grammar; the chapter examples are stale).** `grammar-sketch.md` defines record-pattern fields as `;`-terminated (`RecordPattern ::= "{" (FieldName "=" Pattern ";")* "}"`), but `pattern-matching.md`/`complete-example.md` write `#circle { radius = r }` without the trailing `;`, which the parser rejects. Likewise several examples (`records.md`, `overview.md`, `config.md`) use single-colon typed value bindings `name : Type = value`, but the symbol table and `grammar-sketch.md` reserve `:` for type positions and require `::` (the parser raises `TopLevelSingleColon`). Either relax the parser or fix the examples.
 - **Minor:** `Int??` lexes as `Int` + `??` (defaulting), not a double optional — write `(Int?)?`. Type-mismatch diagnostics between two distinct record types render as the unhelpful "expected record, found record" (the type formatter collapses record structure).
 
@@ -346,7 +346,6 @@ Recommended initial policy:
 
 These are post-roadmap stabilization items, not unchecked roadmap milestones.
 
-- **Canonical Optional runtime representation** — unify implicit `Nothing` and explicit `#none` / `#some { value = ...; }`, then make `??`, `?.`, and `match` consume the same representation.
 - **v0 spec conformance sweep** — run examples from `docs/v0_spec/` through `run` / `check`, then either fix stale examples or deliberately relax the parser; promote surviving examples into acceptance tests.
 - **Diagnostic polish** — render structural details for record-vs-record type mismatches and row-tail errors instead of collapsing both sides to generic `record` labels.
 - **TLC-first evaluator cutover plan** — define parity gates for constraints, optionals, imports, effects, and reflection boundaries; keep the THIR evaluator as the regression oracle until the differential suite is green.
