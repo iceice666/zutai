@@ -146,13 +146,11 @@ fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
 
 /// Evaluate `contents` on a worker thread with a large stack.
 ///
-/// The interim interpreter is a tree-walker that uses native recursion, so deep
-/// (but finite) recursion — including per-element recursion over a long list —
-/// can overflow the default ~8 MiB main-thread stack and abort the process. A
-/// 256 MiB worker stack lets realistic recursion complete. The forced `Value`
-/// holds `Rc`s and is not `Send`, so it is rendered to its `Display` string
-/// inside the worker; only the `String` (or the `Send` `EvalError`) crosses the
-/// join boundary.
+/// The reference evaluator can still use deep native recursion on both the TLC
+/// path and the THIR reflection boundary. A 256 MiB worker stack lets realistic
+/// recursion complete. The forced `Value` holds `Rc`s and is not `Send`, so it is
+/// rendered to its `Display` string inside the worker; only the `String` (or the
+/// `Send` `EvalError`) crosses the join boundary.
 fn eval_to_string(contents: &str, base: Option<&Path>) -> Result<String, zutai_eval::EvalError> {
     const EVAL_STACK_SIZE: usize = 256 * 1024 * 1024;
     std::thread::scope(|scope| {
@@ -408,8 +406,8 @@ fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
 ///   declaration, parses cleanly, and passes the THIR gate.  If so, we append
 ///   the line to `decls_buf` and acknowledge.
 ///
-/// - An **expression** otherwise: we try `eval_file(decls_buf + input)` and
-///   print the result (or the diagnostic).
+/// - An **expression** otherwise: we try `eval_file(decls_buf + input)` through
+///   the default TLC-first evaluator and print the result (or the diagnostic).
 ///
 /// `BindingId`s are NOT stable across separate `analyze()` calls, so we NEVER
 /// cache thunks across turns — the env is rebuilt from scratch for each

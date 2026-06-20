@@ -1,11 +1,14 @@
-//! Golden-semantics test suite for the Zutai THIR reference interpreter.
+//! Golden-semantics test suite for the Zutai default reference evaluator.
 //!
-//! These tests double as the differential-testing oracle for future LLVM
-//! codegen: any LLVM output that disagrees with these is a codegen bug.
+//! The default path is TLC-first for executable value programs. THIR-specific
+//! behavior is asserted through explicit `eval_thir_*` oracle APIs.
 
 use std::path::Path;
 
-use crate::{EvalError, Value, eval_file, eval_tlc_file, eval_with_base, thunk, value};
+use crate::{
+    EvalError, Value, eval_file, eval_thir_file, eval_tlc_file, eval_tlc_with_base, eval_with_base,
+    thunk, value,
+};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,6 +18,10 @@ fn run(src: &str) -> Value {
 
 fn run_err(src: &str) -> EvalError {
     eval_file(src).expect_err(&format!("expected error for:\n{src}"))
+}
+
+fn run_thir_err(src: &str) -> EvalError {
+    eval_thir_file(src).expect_err(&format!("expected THIR oracle error for:\n{src}"))
 }
 
 fn list_item(value: &Value, index: usize) -> Value {
@@ -323,6 +330,23 @@ x :: Int = x
 x
 ";
     assert_eq!(run_err(src), EvalError::BlackHole);
+}
+
+#[test]
+fn strict_tlc_black_hole_detected() {
+    let src = "
+x :: Int = x
+x
+";
+    assert_eq!(eval_tlc_file(src), Err(EvalError::BlackHole));
+}
+
+#[test]
+fn tlc_lazy_record_projection_skips_unselected_black_hole() {
+    let src = "bad :: Int = bad\n{ ok = 1; bad = bad; }.ok";
+    assert_eq!(eval_file(src).unwrap(), Value::Int(1));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(1));
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Int(1));
 }
 
 // ─── gate refusal — type errors must never produce a value ────────────────────
@@ -788,6 +812,53 @@ is_zero :: Int -> Bool = \\n . match n {
 is_zero 0
 ";
     assert_eq!(run(src), Value::Bool(true));
+}
+
+// ─── positional tagged union payloads ─────────────────────────────────────────
+
+#[test]
+fn positional_union_payload_constructs_and_matches() {
+    let src = r#"
+Pair :: type {
+  #pair: (Int, Int);
+  #empty;
+}
+sum :: Pair -> Int {
+  | #pair (x, y) => x + y;
+  | #empty => 0;
+}
+sum #pair (2, 3)
+"#;
+    assert_eq!(run(src), Value::Int(5));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(5));
+}
+
+#[test]
+fn single_positional_union_payload_constructs_and_matches() {
+    let src = r#"
+Boxed :: type {
+  #boxed: (Int);
+}
+get :: Boxed -> Int {
+  | #boxed (x) => x;
+}
+get #boxed (9)
+"#;
+    assert_eq!(run(src), Value::Int(9));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(9));
+}
+
+#[test]
+fn positional_union_payload_displays_tuple_syntax() {
+    let src = r#"
+Pair :: type {
+  #pair: (Int, Int);
+}
+value :: Pair = #pair (4, 5)
+value
+"#;
+    assert_eq!(run(src).to_string(), "#pair (4, 5)");
+    assert_eq!(eval_tlc_file(src).unwrap().to_string(), "#pair (4, 5)");
 }
 
 // ─── optional access ──────────────────────────────────────────────────────────
@@ -1448,12 +1519,11 @@ eq 1 2
     assert_eq!(run(src), Value::Bool(true));
 }
 
-/// Regression: an unbounded wrapper calls a bounded function — the bounded
-/// function is called indirectly so the witness dict is not visible in the
-/// callee's captured env.  Must refuse cleanly with `UnresolvedWitness`,
-/// not return a wrong value (`Bool(true)`) or an internal error.
+/// Regression: an unbounded wrapper calls a bounded function indirectly. The
+/// TLC-first default runs it via dictionary passing; the THIR oracle still
+/// refuses with its known `UnresolvedWitness` limitation.
 #[test]
-fn dispatch_polymorphic_indirect_call_refuses_cleanly() {
+fn tlc_first_default_runs_indirect_bounded_call() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
@@ -1461,17 +1531,19 @@ same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
 wrapper :: Int -> Bool { | n => same n n; }
 wrapper 1
 "#;
-    let err = run_err(src);
+    assert_eq!(eval_file(src).unwrap(), Value::Bool(true));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+    let err = run_thir_err(src);
     assert!(
         matches!(err, EvalError::UnresolvedWitness { .. }),
-        "expected UnresolvedWitness for indirect bounded-fn call, got {err:?}"
+        "expected UnresolvedWitness for THIR indirect bounded-fn call, got {err:?}"
     );
 }
 
 /// Regression: the default-body fallback must NOT fire for ambiguous type keys
-/// even when the method has a default body.  An indirect call where the witness
-/// dict is invisible must refuse with `UnresolvedWitness`, not silently return
-/// the default value `Bool(true)`.
+/// even when the method has a default body. The TLC-first default uses the real
+/// witness and returns `false`; the THIR oracle still refuses with
+/// `UnresolvedWitness` rather than silently returning the default `Bool(true)`.
 #[test]
 fn dispatch_default_not_used_when_witness_exists_but_indirect() {
     let src = r#"
@@ -1481,7 +1553,9 @@ same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
 useit :: Int -> Bool { | _ => same 1 2; }
 useit 0
 "#;
-    let err = run_err(src);
+    assert_eq!(eval_file(src).unwrap(), Value::Bool(false));
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
+    let err = run_thir_err(src);
     assert!(
         matches!(err, EvalError::UnresolvedWitness { .. }),
         "expected UnresolvedWitness (not Bool(true) wrong answer), got {err:?}"
@@ -2238,6 +2312,32 @@ MyInt
 }
 
 #[test]
+fn strict_tlc_rejects_runtime_type_values() {
+    let src = "
+MyInt :: type Int
+MyInt
+";
+    match eval_tlc_file(src).unwrap_err() {
+        EvalError::ReflectionUnsupported(message) => {
+            assert!(message.contains("runtime Type values"));
+        }
+        other => panic!("expected ReflectionUnsupported, got {other:?}"),
+    }
+}
+
+#[test]
+fn default_eval_keeps_type_values_on_thir_boundary() {
+    let src = "
+MyInt :: type Int
+MyInt
+";
+    match eval_file(src).unwrap() {
+        Value::TypeValue(_) => {}
+        other => panic!("expected TypeValue, got {other:?}"),
+    }
+}
+
+#[test]
 fn display_type_value() {
     // Value::TypeValue displays as "<type>".
     let src = "
@@ -2497,6 +2597,17 @@ fn import_zt_type_module() {
     );
 }
 
+#[test]
+fn strict_tlc_rejects_imported_type_value() {
+    let src = "m := import \"type_module.zt\"\nm";
+    match eval_tlc_with_base(src, Some(&imports_dir())).unwrap_err() {
+        EvalError::ReflectionUnsupported(message) => {
+            assert!(message.contains("runtime Type values"));
+        }
+        other => panic!("expected ReflectionUnsupported, got {other:?}"),
+    }
+}
+
 // ─── algebraic effects ────────────────────────────────────────────────────────
 
 #[test]
@@ -2507,6 +2618,19 @@ result := handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
 result
 "#,),
         Value::Text("ok".into())
+    );
+}
+
+#[test]
+fn handled_effect_in_block_local_initializer_resumes() {
+    assert_eq!(
+        run(r#"
+compute :: Text -> Int ! { query : Text -> Int } {
+  | _ => { x := perform query "q"; x + 1 };
+}
+handle compute "go" with { query = \u. resume 41; }
+"#,),
+        Value::Int(42)
     );
 }
 

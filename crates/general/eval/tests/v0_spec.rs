@@ -63,12 +63,12 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     ),
     (
         "docs/v0_spec/04-general-mode/file-structure.md#14",
-        "<function/2>",
+        "<function/1>",
     ),
     ("docs/v0_spec/04-general-mode/file-structure.md#16", "120"),
     (
         "docs/v0_spec/04-general-mode/functions.md#14",
-        "<function/2>",
+        "<function/1>",
     ),
     ("docs/v0_spec/04-general-mode/imports.md#05", "#prod"),
     ("docs/v0_spec/04-general-mode/values.md#03", "<type>"),

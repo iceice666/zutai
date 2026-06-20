@@ -31,19 +31,28 @@ orZero :: Int? -> Int {
   | n => n ?? 0;
 }
 
+emptyCfg :: Config = {}
+
+fullCfg :: Config = {
+  server = { host = "example.com"; port = 443; };
+  retries = 5;
+  label = "prod";
+}
+
+explicitNone :: Int? = #none
+explicitSome :: Int? = #some { value = 42; }
+
 {
-  cfg = {
-    server = #none;
-    retries = #none;
-    label = #none;
-  };
-  host1     = defaultHost cfg;
-  port1     = defaultPort cfg;
-  retries1  = withRetries cfg;
-  label1    = withLabel cfg;
+  host1     = defaultHost emptyCfg;
+  port1     = defaultPort emptyCfg;
+  retries1  = withRetries emptyCfg;
+  label1    = withLabel emptyCfg;
+  host2     = defaultHost fullCfg;
+  port2     = defaultPort fullCfg;
   zero1     = orZero #none;
-  some1     = orZero (#some, value = 7);
-  coalesce1 = #none ?? (#some, value = 42);
-  chain1    = cfg.server?.host ?? "fallback";
-  chain2    = cfg.server?.port ?? 0;
+  some1     = orZero explicitSome;
+  coalesce1 = explicitNone ?? 7;
+  coalesce2 = explicitSome ?? 7;
+  chain1    = emptyCfg.server?.host ?? "fallback";
+  chain2    = fullCfg.server?.port ?? 0;
 }

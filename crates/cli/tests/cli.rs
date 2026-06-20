@@ -100,6 +100,25 @@ fn run_handled_effect_program_prints_result() {
         .stdout(predicate::str::contains("\"ok\""));
 }
 
+#[test]
+fn run_indirect_bounded_constraint_uses_tlc_default() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+same :: <A: Eq> A -> A -> Bool { | x y => eq x y; }
+wrapper :: Int -> Bool { | n => same n n; }
+wrapper 1
+
+"#;
+    let path = write_tmp("cli_test_tlc_default_indirect_constraint.zt", src);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("true"));
+}
+
 // ─── `parse` subcommand ───────────────────────────────────────────────────────
 
 #[test]

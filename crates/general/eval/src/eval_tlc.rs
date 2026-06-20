@@ -25,14 +25,14 @@ use crate::{
     EvalError,
     env::Env,
     thunk::Thunk,
-    value::{BuiltinFn, TlcClosure, TupleField, Value},
+    value::{BuiltinFn, ModuleId, TlcClosure, TupleField, Value},
 };
 
 type EvalCont<'eval> = Rc<dyn Fn(Value) -> Result<EvalControl<'eval>, EvalError> + 'eval>;
-type BindFn<'eval, 'module> = Rc<
-    dyn Fn(Value, &'eval TlcEvaluator<'module>) -> Result<EvalControl<'eval>, EvalError> + 'eval,
->;
+type BindFn<'eval, 'module> =
+    Rc<dyn Fn(Value, TlcEvaluator<'module>) -> Result<EvalControl<'eval>, EvalError> + 'eval>;
 type FinishValues<'eval> = Rc<dyn Fn(Vec<Value>) -> Value + 'eval>;
+pub type TlcModuleRegistry<'a> = Vec<&'a TlcModule>;
 
 enum EvalControl<'eval> {
     Value(Value),
@@ -43,46 +43,132 @@ enum EvalControl<'eval> {
     },
 }
 
+#[derive(Clone, Copy)]
 pub struct TlcEvaluator<'a> {
     pub module: &'a TlcModule,
+    registry: Option<&'a [&'a TlcModule]>,
+    active_module: ModuleId,
     imports: Option<&'a HashMap<ImportKey, Value>>,
+    operator_witnesses: Option<&'a HashMap<(String, String), Value>>,
+    defer_aggregates: bool,
 }
 
 impl<'a> TlcEvaluator<'a> {
     pub fn new(module: &'a TlcModule) -> Self {
         Self {
             module,
+            registry: None,
+            active_module: ModuleId(0),
             imports: None,
+            operator_witnesses: None,
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
     }
 
     pub fn new_with_imports(module: &'a TlcModule, imports: &'a HashMap<ImportKey, Value>) -> Self {
         Self {
             module,
+            registry: None,
+            active_module: ModuleId(0),
             imports: Some(imports),
+            operator_witnesses: None,
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
     }
 
+    pub fn new_in_registry(
+        registry: &'a [&'a TlcModule],
+        active_module: ModuleId,
+        imports: &'a HashMap<ImportKey, Value>,
+    ) -> Result<Self, EvalError> {
+        let module = registry
+            .get(active_module.0)
+            .copied()
+            .ok_or(EvalError::Internal("TLC module id out of registry bounds"))?;
+        Ok(Self {
+            module,
+            registry: Some(registry),
+            active_module,
+            imports: Some(imports),
+            operator_witnesses: None,
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
+        })
+    }
+
+    pub fn new_in_registry_with_operator_witnesses(
+        registry: &'a [&'a TlcModule],
+        active_module: ModuleId,
+        imports: &'a HashMap<ImportKey, Value>,
+        operator_witnesses: &'a HashMap<(String, String), Value>,
+    ) -> Result<Self, EvalError> {
+        let module = registry
+            .get(active_module.0)
+            .copied()
+            .ok_or(EvalError::Internal("TLC module id out of registry bounds"))?;
+        Ok(Self {
+            module,
+            registry: Some(registry),
+            active_module,
+            imports: Some(imports),
+            operator_witnesses: Some(operator_witnesses),
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
+        })
+    }
+
+    pub(crate) fn for_module(&self, home: ModuleId) -> Result<Self, EvalError> {
+        if home == self.active_module {
+            return Ok(Self {
+                module: self.module,
+                registry: self.registry,
+                active_module: self.active_module,
+                imports: self.imports,
+                operator_witnesses: self.operator_witnesses,
+                defer_aggregates: self.defer_aggregates,
+            });
+        }
+        let registry = self.registry.ok_or(EvalError::Internal(
+            "TLC closure escaped without module registry",
+        ))?;
+        let module = registry
+            .get(home.0)
+            .copied()
+            .ok_or(EvalError::Internal("TLC module id out of registry bounds"))?;
+        Ok(Self {
+            module,
+            registry: self.registry,
+            active_module: home,
+            imports: self.imports,
+            operator_witnesses: self.operator_witnesses,
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
+        })
+    }
+
     pub fn eval_expr(&self, id: TlcExprId, env: &Env) -> Result<Value, EvalError> {
-        let control = self.eval_control(id, env, None)?;
-        self.finish_top(control)
+        let control = (*self).eval_control(id, env, None)?;
+        (*self).finish_top(control)
     }
 
     fn eval_control<'eval>(
-        &'eval self,
+        self,
         id: TlcExprId,
         env: &Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         match self.module.expr_arena[id].clone() {
             TlcExpr::Lit(lit) => Ok(EvalControl::Value(eval_literal(&lit))),
 
             TlcExpr::Var(b) => {
                 let thunk = env.lookup(b)?;
-                thunk
-                    .peek()
-                    .map(EvalControl::Value)
-                    .ok_or(EvalError::Internal("unforced thunk in TLC evaluator"))
+                if let Some(value) = thunk.peek() {
+                    return Ok(EvalControl::Value(value));
+                }
+                if thunk.is_in_progress() {
+                    return Err(EvalError::BlackHole);
+                }
+                thunk.force_tlc(&self).map(EvalControl::Value)
             }
 
             TlcExpr::Import(source) => {
@@ -103,6 +189,7 @@ impl<'a> TlcEvaluator<'a> {
                     param,
                     body,
                     env: env.clone(),
+                    home: self.active_module,
                 }))))
             }
 
@@ -127,6 +214,15 @@ impl<'a> TlcEvaluator<'a> {
                 body,
                 ..
             } => {
+                if self.defer_aggregates {
+                    let child = env.push_frame();
+                    child.insert(
+                        binding,
+                        Thunk::tlc_deferred(value, env.clone(), self.active_module),
+                    );
+                    return self.eval_control(body, &child, resume);
+                }
+
                 let env_for_body = env.clone();
                 let resume_for_body = resume.clone();
                 let value_control = self.eval_control(value, env, resume)?;
@@ -139,13 +235,13 @@ impl<'a> TlcEvaluator<'a> {
 
             TlcExpr::Letrec { bindings, body } => {
                 let child = env.push_frame();
-                // TLC lowering does not currently generate local letrec for
-                // effectful value initializers. If that changes, this eager
-                // path must become an explicit sequencing decision rather than
-                // accidentally host-handling effects during environment setup.
+                for (binding, _, _) in &bindings {
+                    child.insert(*binding, Thunk::in_progress());
+                }
                 for (binding, _, value_id) in bindings {
                     let v = self.eval_expr(value_id, &child)?;
-                    child.insert(binding, Thunk::ready(v));
+                    let placeholder = child.lookup(binding)?;
+                    placeholder.replace_forced(v);
                 }
                 self.eval_control(body, &child, resume)
             }
@@ -181,9 +277,7 @@ impl<'a> TlcEvaluator<'a> {
                                         .iter()
                                         .find(|(name, _)| name.as_ref() == "value")
                                     {
-                                        Some((_, thunk)) => thunk.peek().ok_or(
-                                            EvalError::Internal("unforced #some payload in TLC"),
-                                        )?,
+                                        Some((_, thunk)) => thunk.force_tlc(&this)?,
                                         None => {
                                             return Err(EvalError::TypeMismatch {
                                                 expected: "Record",
@@ -209,11 +303,12 @@ impl<'a> TlcEvaluator<'a> {
                                                 .find(|(name, _)| name.as_ref() == field.as_str())
                                             {
                                                 Some((_, thunk)) => {
+                                                    let value = thunk.force_tlc(&this)?;
                                                     Ok(EvalControl::Value(Value::TaggedValue {
                                                         tag: Rc::from("some"),
                                                         payload: Rc::new(vec![(
                                                             Rc::from("value"),
-                                                            thunk.clone(),
+                                                            Thunk::ready(value),
                                                         )]),
                                                     }))
                                                 }
@@ -245,11 +340,12 @@ impl<'a> TlcEvaluator<'a> {
                                         .find(|(name, _)| name.as_ref() == field.as_str())
                                     {
                                         Some((_, thunk)) => {
+                                            let value = thunk.force_tlc(&this)?;
                                             Ok(EvalControl::Value(Value::TaggedValue {
                                                 tag: Rc::from("some"),
                                                 payload: Rc::new(vec![(
                                                     Rc::from("value"),
-                                                    thunk.clone(),
+                                                    Thunk::ready(value),
                                                 )]),
                                             }))
                                         }
@@ -281,12 +377,22 @@ impl<'a> TlcEvaluator<'a> {
                                     }
                                     for (name, thunk) in fields.iter() {
                                         if name.as_ref() == field.as_str() {
-                                            return thunk.peek().map(EvalControl::Value).ok_or(
-                                                EvalError::Internal("unforced field thunk in TLC"),
-                                            );
+                                            let value = thunk.force_tlc(&this)?;
+                                            return Ok(EvalControl::Value(value));
                                         }
                                     }
                                     Ok(EvalControl::Value(Value::Nothing))
+                                }
+                                Value::Nothing => {
+                                    if let Some(method) =
+                                        this.imported_method_by_name(field.as_str())
+                                    {
+                                        Ok(EvalControl::Value(method))
+                                    } else {
+                                        Err(EvalError::UnboundBinding(zutai_hir::BindingId(
+                                            u32::MAX,
+                                        )))
+                                    }
                                 }
                                 other => Err(EvalError::TypeMismatch {
                                     expected: "Record",
@@ -296,16 +402,26 @@ impl<'a> TlcEvaluator<'a> {
                         }
                         _ => {
                             let recv_control = self.eval_control(expr_id, env, resume)?;
-                            self.bind_control(recv_control, move |recv, _this| match recv {
+                            self.bind_control(recv_control, move |recv, this| match recv {
                                 Value::Record(fields) => {
                                     for (name, thunk) in fields.iter() {
                                         if name.as_ref() == field.as_str() {
-                                            return thunk.peek().map(EvalControl::Value).ok_or(
-                                                EvalError::Internal("unforced field thunk in TLC"),
-                                            );
+                                            let value = thunk.force_tlc(&this)?;
+                                            return Ok(EvalControl::Value(value));
                                         }
                                     }
                                     Ok(EvalControl::Value(Value::Nothing))
+                                }
+                                Value::Nothing => {
+                                    if let Some(method) =
+                                        this.imported_method_by_name(field.as_str())
+                                    {
+                                        Ok(EvalControl::Value(method))
+                                    } else {
+                                        Err(EvalError::UnboundBinding(zutai_hir::BindingId(
+                                            u32::MAX,
+                                        )))
+                                    }
                                 }
                                 other => Err(EvalError::TypeMismatch {
                                     expected: "Record",
@@ -316,16 +432,22 @@ impl<'a> TlcEvaluator<'a> {
                     },
                     None => {
                         let recv_control = self.eval_control(expr_id, env, resume)?;
-                        self.bind_control(recv_control, move |recv, _this| match recv {
+                        self.bind_control(recv_control, move |recv, this| match recv {
                             Value::Record(fields) => {
                                 for (name, thunk) in fields.iter() {
                                     if name.as_ref() == field.as_str() {
-                                        return thunk.peek().map(EvalControl::Value).ok_or(
-                                            EvalError::Internal("unforced field thunk in TLC"),
-                                        );
+                                        let value = thunk.force_tlc(&this)?;
+                                        return Ok(EvalControl::Value(value));
                                     }
                                 }
                                 Ok(EvalControl::Value(Value::Nothing))
+                            }
+                            Value::Nothing => {
+                                if let Some(method) = this.imported_method_by_name(field.as_str()) {
+                                    Ok(EvalControl::Value(method))
+                                } else {
+                                    Err(EvalError::UnboundBinding(zutai_hir::BindingId(u32::MAX)))
+                                }
                             }
                             other => Err(EvalError::TypeMismatch {
                                 expected: "Record",
@@ -341,6 +463,19 @@ impl<'a> TlcEvaluator<'a> {
                 self.bind_control(payload_control, move |payload, _this| {
                     let pairs: Rc<Vec<(Rc<str>, Thunk)>> = match payload {
                         Value::Record(fields) => fields,
+                        Value::Tuple(fields) => Rc::new(
+                            fields
+                                .iter()
+                                .enumerate()
+                                .map(|(index, field)| {
+                                    let name = field
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| Rc::from(index.to_string()));
+                                    (name, field.value.clone())
+                                })
+                                .collect(),
+                        ),
                         Value::Nothing => Rc::new(vec![]),
                         v => Rc::new(vec![(Rc::from("value"), Thunk::ready(v))]),
                     };
@@ -406,11 +541,27 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_record<'eval>(
-        &'eval self,
+        self,
         fields: Vec<(String, TlcExprId)>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        if self.defer_aggregates {
+            let pairs = fields
+                .into_iter()
+                .map(|(name, id)| {
+                    (
+                        Rc::from(name.as_str()),
+                        Thunk::tlc_deferred(id, env.clone(), self.active_module),
+                    )
+                })
+                .collect();
+            return Ok(EvalControl::Value(Value::Record(Rc::new(pairs))));
+        }
+
         let names = Rc::new(
             fields
                 .iter()
@@ -431,11 +582,31 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_tuple<'eval>(
-        &'eval self,
+        self,
         items: Vec<TlcTupleItem>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        if self.defer_aggregates {
+            let fields: Vec<TupleField> = items
+                .into_iter()
+                .map(|item| match item {
+                    TlcTupleItem::Named { name, value } => TupleField {
+                        name: Some(Rc::from(name.as_str())),
+                        value: Thunk::tlc_deferred(value, env.clone(), self.active_module),
+                    },
+                    TlcTupleItem::Positional(value) => TupleField {
+                        name: None,
+                        value: Thunk::tlc_deferred(value, env.clone(), self.active_module),
+                    },
+                })
+                .collect();
+            return Ok(EvalControl::Value(Value::Tuple(fields.into())));
+        }
+
         let mut names = Vec::with_capacity(items.len());
         let mut ids = Vec::with_capacity(items.len());
         for item in items {
@@ -466,11 +637,22 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_list<'eval>(
-        &'eval self,
+        self,
         items: Vec<TlcExprId>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        if self.defer_aggregates {
+            let elements = items
+                .into_iter()
+                .map(|id| Thunk::tlc_deferred(id, env.clone(), self.active_module))
+                .collect::<Vec<_>>();
+            return Ok(EvalControl::Value(Value::List(elements.into())));
+        }
+
         let finish: FinishValues<'eval> = Rc::new(|values| {
             Value::List(
                 values
@@ -484,14 +666,17 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_expr_values<'eval>(
-        &'eval self,
+        self,
         ids: Rc<Vec<TlcExprId>>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
         index: usize,
         acc: Vec<Value>,
         finish: FinishValues<'eval>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         let Some(&id) = ids.get(index) else {
             return Ok(EvalControl::Value(finish(acc)));
         };
@@ -511,18 +696,21 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_case<'eval>(
-        &'eval self,
+        self,
         scrutinee: Value,
         alts: Rc<Vec<TlcAlt>>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
         index: usize,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         let Some(alt) = alts.get(index).cloned() else {
             return Err(EvalError::NoMatchingClause);
         };
         let match_env = env.push_frame();
-        if !self.match_pattern(&alt.pat, &scrutinee, &match_env) {
+        if !self.match_pattern(&alt.pat, &scrutinee, &match_env)? {
             return self.eval_case(scrutinee, Rc::clone(&alts), env, resume, index + 1);
         }
         if let Some(guard_id) = alt.guard {
@@ -542,13 +730,16 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn eval_builtin_expr<'eval>(
-        &'eval self,
+        self,
         op: BuiltinOp,
         lhs_id: TlcExprId,
         rhs_id: TlcExprId,
         env: Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         if op == BuiltinOp::And || op == BuiltinOp::Or {
             let lhs_control = self.eval_control(lhs_id, &env, resume.clone())?;
             return self.bind_control(lhs_control, move |lhs, this| match (op, lhs) {
@@ -569,23 +760,126 @@ impl<'a> TlcEvaluator<'a> {
         self.bind_control(lhs_control, move |lhs, this| {
             let rhs_control = this.eval_control(rhs_id, &env, resume.clone())?;
             let lhs_saved = lhs.clone();
-            this.bind_control(rhs_control, move |rhs, _this| {
-                eval_builtin(op, lhs_saved.clone(), rhs).map(EvalControl::Value)
+            let resume_for_rhs = resume.clone();
+            this.bind_control(rhs_control, move |rhs, this| {
+                let (lhs_value, rhs_value) =
+                    if matches!(op, BuiltinOp::Eq | BuiltinOp::Ne | BuiltinOp::Coalesce) {
+                        (
+                            tlc_force_deep(lhs_saved.clone(), &this)?,
+                            tlc_force_deep(rhs, &this)?,
+                        )
+                    } else {
+                        (lhs_saved.clone(), rhs)
+                    };
+                if let Some((method, negate)) = this.imported_operator_method(op, lhs_id) {
+                    let rhs_for_method = rhs_value.clone();
+                    let resume_for_method = resume_for_rhs.clone();
+                    let first = this.apply(method, lhs_value.clone(), resume_for_method.clone())?;
+                    return this.bind_control(first, move |method_value, this| {
+                        let applied = this.apply(
+                            method_value,
+                            rhs_for_method.clone(),
+                            resume_for_method.clone(),
+                        )?;
+                        if !negate {
+                            return Ok(applied);
+                        }
+                        this.bind_control(applied, |value, _this| match value {
+                            Value::Bool(value) => Ok(EvalControl::Value(Value::Bool(!value))),
+                            other => Err(EvalError::TypeMismatch {
+                                expected: "Bool",
+                                found: value_type_name(&other),
+                            }),
+                        })
+                    });
+                }
+                eval_builtin(op, lhs_value, rhs_value).map(EvalControl::Value)
             })
         })
     }
 
+    fn imported_operator_method(&self, op: BuiltinOp, lhs_id: TlcExprId) -> Option<(Value, bool)> {
+        let witnesses = self.operator_witnesses?;
+        let target = self.tlc_expr_target_key(lhs_id)?;
+        let method = match op {
+            BuiltinOp::Eq => "==",
+            BuiltinOp::Ne => "!=",
+            BuiltinOp::Lt => "<",
+            BuiltinOp::Le => "<=",
+            BuiltinOp::Gt => ">",
+            BuiltinOp::Ge => ">=",
+            _ => return None,
+        };
+        let key = (method.to_string(), target.clone());
+        if let Some(value) = witnesses.get(&key) {
+            return Some((value.clone(), false));
+        }
+        if op == BuiltinOp::Ne {
+            let eq_key = ("==".to_string(), target);
+            return witnesses.get(&eq_key).cloned().map(|value| (value, true));
+        }
+        None
+    }
+
+    fn imported_method_by_name(&self, method: &str) -> Option<Value> {
+        let witnesses = self.operator_witnesses?;
+        let mut found = None;
+        for ((name, _target), value) in witnesses {
+            if name == method {
+                if found.is_some() {
+                    return None;
+                }
+                found = Some(value.clone());
+            }
+        }
+        found
+    }
+
+    fn tlc_expr_target_key(&self, expr_id: TlcExprId) -> Option<String> {
+        let ty_id = self
+            .module
+            .expr_types
+            .get(&expr_id)
+            .copied()
+            .map(|ty_id| self.resolve_tlc_alias_chain(ty_id))?;
+        self.tlc_type_target_key(ty_id)
+    }
+
+    fn tlc_type_target_key(&self, ty_id: TlcTypeId) -> Option<String> {
+        match &self.module.type_arena[ty_id] {
+            TlcType::Prim(prim) => match prim {
+                zutai_tlc::PrimTy::Int => Some("Int".to_string()),
+                zutai_tlc::PrimTy::Float => Some("Float".to_string()),
+                zutai_tlc::PrimTy::Bool => Some("Bool".to_string()),
+                zutai_tlc::PrimTy::Str => Some("Text".to_string()),
+                zutai_tlc::PrimTy::Atom => None,
+                zutai_tlc::PrimTy::Nothing => None,
+            },
+            TlcType::Singleton(Literal::Int(_)) => Some("Int".to_string()),
+            TlcType::Singleton(Literal::Float(_)) => Some("Float".to_string()),
+            TlcType::Singleton(Literal::Bool(_)) => Some("Bool".to_string()),
+            TlcType::Singleton(Literal::Str(_)) => Some("Text".to_string()),
+            TlcType::Singleton(Literal::Atom(atom)) => Some(format!("#{atom}")),
+            TlcType::Singleton(Literal::Nothing) => None,
+            _ => None,
+        }
+    }
+
     fn apply<'eval>(
-        &'eval self,
+        self,
         fv: Value,
         arg: Value,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         match fv {
             Value::TlcClosure(c) => {
                 let child = c.env.push_frame();
                 child.insert(c.param, Thunk::ready(arg));
-                self.eval_control(c.body, &child, resume)
+                let home_ev = self.for_module(c.home)?;
+                home_ev.eval_control(c.body, &child, resume)
             }
             Value::Builtin(BuiltinFn::Print) => match arg {
                 Value::Text(_) => Ok(EvalControl::Perform {
@@ -611,13 +905,16 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn handle_control<'eval>(
-        &'eval self,
+        self,
         control: EvalControl<'eval>,
         value_clause: Option<TlcExprId>,
         ops: Rc<Vec<TlcHandleClause>>,
         env: Env,
         outer_resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         match control {
             EvalControl::Value(value) => {
                 self.apply_value_clause(value, value_clause, env, outer_resume)
@@ -666,12 +963,15 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn apply_value_clause<'eval>(
-        &'eval self,
+        self,
         value: Value,
         value_clause: Option<TlcExprId>,
         env: Env,
         resume: Option<EvalCont<'eval>>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         let Some(value_clause) = value_clause else {
             return Ok(EvalControl::Value(value));
         };
@@ -682,18 +982,24 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     fn bind_control<'eval>(
-        &'eval self,
+        self,
         control: EvalControl<'eval>,
-        f: impl Fn(Value, &'eval TlcEvaluator<'a>) -> Result<EvalControl<'eval>, EvalError> + 'eval,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+        f: impl Fn(Value, TlcEvaluator<'a>) -> Result<EvalControl<'eval>, EvalError> + 'eval,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         self.bind_rc(control, Rc::new(f))
     }
 
     fn bind_rc<'eval>(
-        &'eval self,
+        self,
         control: EvalControl<'eval>,
         f: BindFn<'eval, 'a>,
-    ) -> Result<EvalControl<'eval>, EvalError> {
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
         match control {
             EvalControl::Value(value) => f(value, self),
             EvalControl::Perform { op, arg, cont } => {
@@ -780,17 +1086,21 @@ impl<'a> TlcEvaluator<'a> {
     ) -> Result<Value, EvalError> {
         match fields.iter().find(|(name, _)| name.as_ref() == field) {
             None => Ok(Value::Atom(Rc::from("none"))),
-            Some((_, thunk)) if value_already_optional => thunk
-                .peek()
-                .ok_or(EvalError::Internal("unforced optional field thunk in TLC")),
-            Some((_, thunk)) => Ok(Value::TaggedValue {
-                tag: Rc::from("some"),
-                payload: Rc::new(vec![(Rc::from("value"), thunk.clone())]),
-            }),
+            Some((_, thunk)) if value_already_optional => thunk.force_tlc(self),
+            Some((_, thunk)) => {
+                let value = thunk.force_tlc(self)?;
+                Ok(Value::TaggedValue {
+                    tag: Rc::from("some"),
+                    payload: Rc::new(vec![(Rc::from("value"), Thunk::ready(value))]),
+                })
+            }
         }
     }
 
-    fn finish_top<'eval>(&'eval self, control: EvalControl<'eval>) -> Result<Value, EvalError> {
+    fn finish_top<'eval>(self, control: EvalControl<'eval>) -> Result<Value, EvalError>
+    where
+        'a: 'eval,
+    {
         match control {
             EvalControl::Value(value) => Ok(value),
             EvalControl::Perform { op, arg, cont } if op == "io.print" => match arg {
@@ -810,36 +1120,33 @@ impl<'a> TlcEvaluator<'a> {
 
     /// Try to match `pat` against `val`, inserting bindings into `env`.
     /// Returns `true` on a successful match.
-    fn match_pattern(&self, pat: &TlcPat, val: &Value, env: &Env) -> bool {
+    fn match_pattern(&self, pat: &TlcPat, val: &Value, env: &Env) -> Result<bool, EvalError> {
         match pat {
-            TlcPat::Wildcard => true,
+            TlcPat::Wildcard => Ok(true),
             TlcPat::Bind(b) => {
                 env.insert(*b, Thunk::ready(val.clone()));
-                true
+                Ok(true)
             }
-            TlcPat::Lit(lit) => lit_matches(lit, val),
-            TlcPat::Atom(s) => matches!(val, Value::Atom(a) if a.as_ref() == s.as_str()),
+            TlcPat::Lit(lit) => Ok(lit_matches(lit, val)),
+            TlcPat::Atom(s) => Ok(matches!(val, Value::Atom(a) if a.as_ref() == s.as_str())),
             TlcPat::Tuple(items) => {
                 if let Value::Tuple(fields) = val {
                     if items.len() != fields.len() {
-                        return false;
+                        return Ok(false);
                     }
                     for (item, field) in items.iter().zip(fields.iter()) {
-                        let fv = match field.value.peek() {
-                            Some(v) => v,
-                            None => return false,
-                        };
+                        let fv = field.value.force_tlc(self)?;
                         let sub_pat = match item {
                             TlcPatItem::Positional(p) => p,
                             TlcPatItem::Named { pat, .. } => pat,
                         };
-                        if !self.match_pattern(sub_pat, &fv, env) {
-                            return false;
+                        if !self.match_pattern(sub_pat, &fv, env)? {
+                            return Ok(false);
                         }
                     }
-                    true
+                    Ok(true)
                 } else {
-                    false
+                    Ok(false)
                 }
             }
             TlcPat::Record(field_pats) => {
@@ -850,20 +1157,17 @@ impl<'a> TlcEvaluator<'a> {
                             .find(|(n, _)| n.as_ref() == name.as_str());
                         match found {
                             Some((_, thunk)) => {
-                                let fv = match thunk.peek() {
-                                    Some(v) => v,
-                                    None => return false,
-                                };
-                                if !self.match_pattern(sub_pat, &fv, env) {
-                                    return false;
+                                let fv = thunk.force_tlc(self)?;
+                                if !self.match_pattern(sub_pat, &fv, env)? {
+                                    return Ok(false);
                                 }
                             }
-                            None => return false,
+                            None => return Ok(false),
                         }
                     }
-                    true
+                    Ok(true)
                 } else {
-                    false
+                    Ok(false)
                 }
             }
             TlcPat::Variant(tag, inner_pat) => {
@@ -873,16 +1177,19 @@ impl<'a> TlcEvaluator<'a> {
                 } = val
                 {
                     if val_tag.as_ref() != tag.as_str() {
-                        return false;
+                        return Ok(false);
                     }
                     // Match inner pattern against a synthetic Record of the payload.
                     let payload_val = Value::Record(Rc::clone(payload));
                     self.match_pattern(inner_pat, &payload_val, env)
                 } else if let Value::Atom(a) = val {
                     // Bare atom variant — no payload; inner must be Wildcard.
-                    a.as_ref() == tag.as_str() && matches!(inner_pat.as_ref(), TlcPat::Wildcard)
+                    Ok(
+                        a.as_ref() == tag.as_str()
+                            && matches!(inner_pat.as_ref(), TlcPat::Wildcard),
+                    )
                 } else {
-                    false
+                    Ok(false)
                 }
             }
         }
@@ -898,8 +1205,10 @@ impl<'a> TlcEvaluator<'a> {
         for &decl_id in &self.module.decls {
             match &self.module.decl_arena[decl_id] {
                 TlcDecl::Value { binding, body, .. } => {
-                    let v = self.eval_expr(*body, &top)?;
-                    top.insert(*binding, Thunk::ready(v));
+                    top.insert(
+                        *binding,
+                        Thunk::tlc_deferred(*body, top.clone(), self.active_module),
+                    );
                 }
                 TlcDecl::TypeAlias { .. } => {}
             }
@@ -909,13 +1218,22 @@ impl<'a> TlcEvaluator<'a> {
 }
 
 // ── standalone helpers ─────────────────────────────────────────────────────────
+fn tlc_module_can_defer_aggregates(module: &TlcModule) -> bool {
+    !module.expr_arena.iter().any(|(_, expr)| {
+        matches!(
+            expr,
+            TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. }
+        )
+    })
+}
+
 fn value_cont<'eval>() -> EvalCont<'eval> {
     Rc::new(|value| Ok(EvalControl::Value(value)))
 }
 
 fn bool_control<'eval, 'module>(
     value: Value,
-    _ev: &'eval TlcEvaluator<'module>,
+    _ev: TlcEvaluator<'module>,
 ) -> Result<EvalControl<'eval>, EvalError> {
     match value {
         Value::Bool(value) => Ok(EvalControl::Value(Value::Bool(value))),
@@ -969,9 +1287,9 @@ fn value_type_name(v: &Value) -> &'static str {
 
 fn eval_builtin(op: BuiltinOp, lhs: Value, rhs: Value) -> Result<Value, EvalError> {
     match op {
-        BuiltinOp::Add => int_float_op(lhs, rhs, "add", |a, b| a.checked_add(b), |a, b| a + b),
-        BuiltinOp::Sub => int_float_op(lhs, rhs, "sub", |a, b| a.checked_sub(b), |a, b| a - b),
-        BuiltinOp::Mul => int_float_op(lhs, rhs, "mul", |a, b| a.checked_mul(b), |a, b| a * b),
+        BuiltinOp::Add => int_float_op(lhs, rhs, "+", |a, b| a.checked_add(b), |a, b| a + b),
+        BuiltinOp::Sub => int_float_op(lhs, rhs, "-", |a, b| a.checked_sub(b), |a, b| a - b),
+        BuiltinOp::Mul => int_float_op(lhs, rhs, "*", |a, b| a.checked_mul(b), |a, b| a * b),
         BuiltinOp::Div => {
             if matches!((&lhs, &rhs), (Value::Int(_), Value::Int(0))) {
                 return Err(EvalError::DivByZero);
@@ -1059,20 +1377,14 @@ fn int_float_op(
 }
 
 /// Recursively force all thunks in a TLC value.
-///
-/// Since the TLC evaluator wraps every value in `Thunk::ready(…)`, all thunks
-/// are already `Forced`; this function just descends into containers to ensure
-/// Display can peek at every level.
-pub fn tlc_force_deep(v: Value) -> Result<Value, EvalError> {
+pub fn tlc_force_deep(v: Value, ev: &TlcEvaluator<'_>) -> Result<Value, EvalError> {
     match v {
         Value::List(thunks) => {
             let forced: Result<Vec<_>, _> = thunks
                 .iter()
                 .map(|t| {
-                    let inner = t
-                        .peek()
-                        .ok_or(EvalError::Internal("unforced TLC list element"))?;
-                    Ok(Thunk::ready(tlc_force_deep(inner)?))
+                    let inner = t.force_tlc(ev)?;
+                    Ok(Thunk::ready(tlc_force_deep(inner, ev)?))
                 })
                 .collect();
             Ok(Value::List(forced?.into()))
@@ -1081,13 +1393,10 @@ pub fn tlc_force_deep(v: Value) -> Result<Value, EvalError> {
             let forced: Result<Vec<_>, _> = fields
                 .iter()
                 .map(|f| {
-                    let inner = f
-                        .value
-                        .peek()
-                        .ok_or(EvalError::Internal("unforced TLC tuple field"))?;
+                    let inner = f.value.force_tlc(ev)?;
                     Ok(TupleField {
                         name: f.name.clone(),
-                        value: Thunk::ready(tlc_force_deep(inner)?),
+                        value: Thunk::ready(tlc_force_deep(inner, ev)?),
                     })
                 })
                 .collect();
@@ -1097,10 +1406,8 @@ pub fn tlc_force_deep(v: Value) -> Result<Value, EvalError> {
             let forced: Result<Vec<_>, _> = fields
                 .iter()
                 .map(|(name, t)| {
-                    let inner = t
-                        .peek()
-                        .ok_or(EvalError::Internal("unforced TLC record field"))?;
-                    Ok((name.clone(), Thunk::ready(tlc_force_deep(inner)?)))
+                    let inner = t.force_tlc(ev)?;
+                    Ok((name.clone(), Thunk::ready(tlc_force_deep(inner, ev)?)))
                 })
                 .collect();
             Ok(Value::Record(Rc::new(forced?)))
@@ -1109,10 +1416,8 @@ pub fn tlc_force_deep(v: Value) -> Result<Value, EvalError> {
             let forced: Result<Vec<_>, _> = payload
                 .iter()
                 .map(|(name, t)| {
-                    let inner = t
-                        .peek()
-                        .ok_or(EvalError::Internal("unforced TLC tagged payload"))?;
-                    Ok((name.clone(), Thunk::ready(tlc_force_deep(inner)?)))
+                    let inner = t.force_tlc(ev)?;
+                    Ok((name.clone(), Thunk::ready(tlc_force_deep(inner, ev)?)))
                 })
                 .collect();
             Ok(Value::TaggedValue {

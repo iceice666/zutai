@@ -22,7 +22,7 @@ Source → HIR → THIR → TLC
 
 The production execution strategy is this AOT compile pipeline. Laziness and sharing are represented **structurally** in Dataflow Core — not via runtime thunks. No tree-walking interpreter sits on the critical path to production.
 
-**Interim reference interpreter (`zutai-eval`).** `crates/general/eval/` provides a semantics oracle that refuses to evaluate any program that is not fully type-checked. The default `run` path still uses the THIR evaluator for pure programs; `eval_tlc_file` runs the same source through TLC elaboration and the TLC eager walker for compiler-path parity checks. "Superseded" applies to the *compilation* strategy; reference interpreters remain compatible with and complementary to that strategy.
+**Interim reference interpreter (`zutai-eval`).** `crates/general/eval/` provides a semantics oracle that refuses to evaluate any program that is not fully type-checked. The default run/repl path is now TLC-first for executable value programs; THIR remains the explicit regression oracle and the runtime Type/reflection boundary. "Superseded" applies to the *compilation* strategy; reference interpreters remain compatible with and complementary to that strategy.
 
 The TLC IR design is specified in [`docs/tlc-core.md`](tlc-core.md). The Dataflow Core design is specified in [`docs/dataflow-core.md`](dataflow-core.md).
 
@@ -34,7 +34,7 @@ _Last updated: after canonical Optional runtime representation._
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and elaborates to TLC.
 - THIR is feature-complete for v0: scalar/record/tuple/list literals and patterns, optional access and defaulting, `if`, binary operators, type aliases, block locals, lambda lowering, HM-style unification, match exhaustiveness, let-generalization, predicative polymorphism with call-site `instantiation`, generic type aliases, cross-module imports, and constraints/witnesses (parsing → HIR resolution → THIR type-checking → coherence checking → named-method and operator dispatch in the interpreter).
 - The CLI exposes `parse`, `run`, and `repl` subcommands backed by the reference interpreter.
-- `crates/general/eval/` contains both the THIR oracle and the TLC eager walker. Their import-free differential battery now covers direct and bounded operator witnesses, so `eval_file`, `eval_tlc_file`, and TLC→Dataflow lowering agree for those programs.
+- `crates/general/eval/` contains both the THIR oracle and the TLC-first default evaluator. The differential battery covers constraints, optionals, `.zti` imports, `.zt` imports, imported functions, transitive imports, and imported witness dictionaries; effects are TLC/default-only; runtime Type/reflection cases are pinned to the THIR boundary.
 - `print` remains seeded in the prelude (`zutai_hir::BUILTIN_VALUE_NAMES`) as a compatibility binding, but its type is now `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it as an `io.print` effect: source handlers can intercept it, and the host `run` boundary handles residual `io.print`. `compile`/`dataflow` reject residual effect markers or non-empty function effect rows after TLC lowering.
 - `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5 plus operator-witness parity: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, dictionary-passing elaboration for named constraint methods, and witnessed comparison-operator lowering are all functional.
 - `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered.
@@ -348,4 +348,4 @@ These are post-roadmap stabilization items, not unchecked roadmap milestones.
 
 - [x] **v0 spec conformance sweep** — automated extraction now scans every `docs/v0_spec/` code fence and runs `.zt` survivors through `check`/`run` plus `.zti` survivors through the immediate parser; the stable survivor set is promoted into `crates/general/eval/tests/v0_spec.rs` acceptance coverage.
 - **Diagnostic polish** — render structural details for record-vs-record type mismatches and row-tail errors instead of collapsing both sides to generic `record` labels.
-- **TLC-first evaluator cutover plan** — define parity gates for constraints, optionals, imports, effects, and reflection boundaries; keep the THIR evaluator as the regression oracle until the differential suite is green.
+- [x] **TLC-first evaluator cutover** — default evaluation runs through TLC for executable value programs; THIR remains the explicit regression oracle and runtime Type/reflection boundary. Parity gates cover constraints, optionals, imports, effects, and reflection/type-value boundaries.

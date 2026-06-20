@@ -7,10 +7,10 @@ MaybeInt :: type {
 
 Packet :: type {
   status : {#ok; #err; #pending;};
-  payload? : MaybeInt;
+  payload : MaybeInt;
   meta : {
     retry-count : Int;
-    label? : Text;
+    label : Text?;
   };
 }
 
@@ -39,7 +39,7 @@ describe :: Packet -> Text {
   | _ => "pending";
 }
 
-sample := {
+sample :: Packet = {
   status = #err;
   payload = #some { value = -2; };
   meta = {

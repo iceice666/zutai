@@ -12,11 +12,26 @@ applyTwice :: (Int -> Int) -> Int -> Int {
   | f x => f (f x);
 }
 
-cfg := {
+unwrapOr :: Int? -> Int -> Int {
+  | n d => n ?? d;
+}
+
+Server :: type {
+  host-name : Text;
+  port : Int;
+  tls : Bool?;
+}
+
+Config :: type {
+  server : Server;
+  limits : List Int;
+}
+
+cfg :: Config = {
   server = {
     host-name = "localhost";
     port = 8080;
-    tls = #none;
+    tls = #some { value = false; };
   };
   limits = [0; -1; 2 * 3 + 4 / 2;];
 }
@@ -24,7 +39,7 @@ cfg := {
 {
   arithmetic = ((1 + 2) * (3 + 4)) / (5 - 2);
   comparison = (1 + 2 * 3 == 7) && (4 <= 4) || false;
-  coalesce = cfg.server?.tls ?? #none ?? (#some, value = false);
+  coalesce = cfg.server.tls ?? false;
   access = cfg.server.host-name;
   forward-pipeline =
     3
@@ -33,12 +48,11 @@ cfg := {
     |> applyTwice inc;
   backward-pipeline =
     applyTwice double
-    <| inc
-    <| (-1);
+    <| inc 5;
   lambda-application = (\f x. f (x + 1)) (\n. n * n) 4;
   nested-block = {
     first := inc (double 2);
-    second := (\x. x ?? 0) (#some, value = first);
-    second
+    second := unwrapOr #some { value = first; } 0;
+    first + second
   };
 }

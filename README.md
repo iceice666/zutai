@@ -68,4 +68,4 @@ Current implementation highlights:
 
 - Immediate mode has syntax and SIMD parser crates behind the `zutai-im` facade.
 - General mode parses `.zt`, lowers through HIR and THIR, elaborates to TLC, and has test-covered Dataflow Core, ANF, SSA, and LLVM IR text stages.
-- Constraints/witnesses support named methods and operator methods. Direct and bounded comparison-operator syntax (`==`, `!=`, `<`, `<=`, `>`, `>=`) now dispatches through the same witness dictionaries on the THIR evaluator, TLC evaluator, and import-free TLC→Dataflow path.
+- Constraints/witnesses support named methods and operator methods. Direct, bounded, conditional, and imported witness calls dispatch through TLC dictionary passing on the default evaluator, with the THIR evaluator retained as a regression oracle.

@@ -2,16 +2,17 @@
 //!
 //! ## Design
 //! This crate is a *semantics oracle*: it REFUSES to evaluate any program that
-//! is not fully type-checked by THIR.  The pre-flight gate (`check_runnable`)
-//! guarantees that no `ThirExprKind::Error` node is reachable before evaluation
-//! begins, so a returned `Value` is always a faithful representation of what
-//! the program's final expression evaluates to.
+//! is not fully type-checked by THIR. The pre-flight gates guarantee that no
+//! `ThirExprKind::Error` node is reachable before evaluation begins, so a
+//! returned `Value` is always a faithful representation of what the program's
+//! final expression evaluates to.
 //!
 //! ## IR-agnostic core
-//! The modules `value`, `thunk`, and `env` are independent of any specific IR.
-//! `eval` implements the THIR tree walker used by the default pure-program `run`
-//! path, and `eval_tlc` implements the TLC eager walker used for compiler-path
-//! parity checks and effect syntax.
+//! The modules `value`, `thunk`, and `env` remain independent of any specific IR.
+//! `eval_tlc` is the default evaluator for executable value programs. `eval` is
+//! the THIR regression oracle and the runtime `Type`/reflection boundary.
+//! `eval_file`/`eval_with_base`/`eval_path` are TLC-first defaults; `eval_thir_*`
+//! are explicit oracle APIs; `eval_tlc_*` are strict TLC APIs.
 //!
 //! ## Note on resource management
 //! Top-level evaluation builds a `letrec` environment where closures capture
@@ -33,7 +34,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use zutai_hir::BindingId;
-use zutai_thir::{ImportKey, ThirExprKind, ThirFile};
+use zutai_thir::{ImportKey, ThirDeclKind, ThirExprKind, ThirFile, TypeKind};
 
 pub use value::Value;
 
@@ -395,22 +396,47 @@ pub fn eval_file(source: &str) -> Result<Value, EvalError> {
 pub fn eval_path(path: &Path) -> Result<Value, EvalError> {
     let analysis = zutai_semantic::analyze_path(path)
         .map_err(|err| EvalError::NotRunnable(vec![format!("cannot read {path:?}: {err}")]))?;
-    match analysis.effectful_program() {
-        Some(_) if has_tlc_effect_syntax(&analysis) => eval_tlc_analysis(&analysis),
-        Some(_) => eval_analysis_allow_repointed_print(&analysis),
-        None => eval_analysis(&analysis),
-    }
+    eval_default_analysis(&analysis)
 }
 
 /// Evaluate a `.zt` source string, resolving `import`s relative to `base`.
 pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalError> {
     let analysis =
         zutai_semantic::analyze_with_base(source, base, zutai_semantic::AnalysisOptions::default());
-    match analysis.effectful_program() {
-        Some(_) if has_tlc_effect_syntax(&analysis) => eval_tlc_analysis(&analysis),
-        Some(_) => eval_analysis_allow_repointed_print(&analysis),
-        None => eval_analysis(&analysis),
+    eval_default_analysis(&analysis)
+}
+
+/// Evaluate a `.zt` source string with the explicit THIR regression oracle.
+pub fn eval_thir_file(source: &str) -> Result<Value, EvalError> {
+    eval_thir_with_base(source, None)
+}
+
+/// Evaluate a `.zt` file on disk with the explicit THIR regression oracle.
+pub fn eval_thir_path(path: &Path) -> Result<Value, EvalError> {
+    let analysis = zutai_semantic::analyze_path(path)
+        .map_err(|err| EvalError::NotRunnable(vec![format!("cannot read {path:?}: {err}")]))?;
+    eval_analysis(&analysis)
+}
+
+/// Evaluate a `.zt` source string with the explicit THIR regression oracle.
+pub fn eval_thir_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalError> {
+    let analysis =
+        zutai_semantic::analyze_with_base(source, base, zutai_semantic::AnalysisOptions::default());
+    eval_analysis(&analysis)
+}
+
+fn eval_default_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    if has_runtime_type_values(analysis) || analysis.reflection_builtin_program().is_some() {
+        if has_tlc_effect_syntax_recursive(analysis) {
+            return Err(EvalError::EffectfulNotExecutable(
+                "program combines runtime Type values/reflection with source effect syntax; TLC does not yet represent Type values and the THIR oracle cannot execute source effects"
+                    .to_string(),
+            ));
+        }
+        return eval_analysis_allow_repointed_print(analysis);
     }
+
+    eval_tlc_analysis(analysis)
 }
 
 /// Gate-check an analyzed module and evaluate it, recursively evaluating its
@@ -464,6 +490,23 @@ fn eval_analysis_allow_repointed_print(
     force_deep(result, &evaluator)
 }
 
+fn has_runtime_type_values(analysis: &zutai_semantic::Analysis) -> bool {
+    let root_has_type_values = analysis
+        .thir
+        .as_ref()
+        .and_then(|thir| thir.file.as_ref())
+        .is_some_and(|file| {
+            file.expr_arena
+                .iter()
+                .any(|(_, expr)| matches!(expr.kind, ThirExprKind::TypeValue(_)))
+        });
+    root_has_type_values
+        || analysis
+            .import_modules
+            .values()
+            .any(|module| has_runtime_type_values(module.as_ref()))
+}
+
 fn has_tlc_effect_syntax(analysis: &zutai_semantic::Analysis) -> bool {
     analysis
         .thir
@@ -479,6 +522,14 @@ fn has_tlc_effect_syntax(analysis: &zutai_semantic::Analysis) -> bool {
                 )
             })
         })
+}
+
+fn has_tlc_effect_syntax_recursive(analysis: &zutai_semantic::Analysis) -> bool {
+    has_tlc_effect_syntax(analysis)
+        || analysis
+            .import_modules
+            .values()
+            .any(|module| has_tlc_effect_syntax_recursive(module.as_ref()))
 }
 
 /// Recursive helper: populate `registry` and `imports` depth-first, then
@@ -565,22 +616,27 @@ fn runtime_witnesses(
 /// compiler-path parity oracle for dictionary-passing, witnessed operators, and
 /// other TLC-only elaboration behavior.
 pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
-    let analysis =
-        zutai_semantic::analyze_with_base(source, None, zutai_semantic::AnalysisOptions::default());
+    eval_tlc_with_base(source, None)
+}
+
+/// Evaluate a `.zt` file on disk with the strict TLC evaluator.
+pub fn eval_tlc_path(path: &Path) -> Result<Value, EvalError> {
+    let analysis = zutai_semantic::analyze_path(path)
+        .map_err(|err| EvalError::NotRunnable(vec![format!("cannot read {path:?}: {err}")]))?;
     eval_tlc_analysis(&analysis)
 }
 
-fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
-    let mut imports = HashMap::new();
-    populate_tlc_imports(analysis, &mut imports)?;
+/// Evaluate a `.zt` source string with the strict TLC evaluator.
+pub fn eval_tlc_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalError> {
+    let analysis =
+        zutai_semantic::analyze_with_base(source, base, zutai_semantic::AnalysisOptions::default());
+    eval_tlc_analysis(&analysis)
+}
 
-    let thir_file = check_well_typed(analysis)?;
-    let module = zutai_tlc::lower_thir(thir_file);
-    let ev = eval_tlc::TlcEvaluator::new_with_imports(&module, &imports);
-    let top = env::Env::empty();
-    // Seed prelude builtins (e.g. `print`). TLC carries no binding kinds, so we
-    // resolve the prelude binding ids from the THIR binding-name table (HIR
-    // seeds builtins first, so the lowest-id match is the prelude one).
+fn seed_tlc_prelude(thir_file: &ThirFile, top: env::Env) -> env::Env {
+    // TLC carries no binding kinds, so resolve prelude binding ids from the THIR
+    // binding-name table. HIR seeds builtins first, so the lowest-id match is
+    // the prelude one.
     for &name in zutai_hir::BUILTIN_VALUE_NAMES {
         if let Some(builtin) = value::BuiltinFn::from_name(name)
             && let Some(index) = thir_file.binding_names.iter().position(|n| n == name)
@@ -591,37 +647,139 @@ fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalE
             );
         }
     }
+    top
+}
+
+fn completed_tlc_inputs(
+    analysis: &zutai_semantic::Analysis,
+) -> Result<(&ThirFile, &zutai_tlc::TlcModule), EvalError> {
+    let thir_file = check_well_typed(analysis)?;
+    if has_runtime_type_values(analysis) {
+        return Err(EvalError::ReflectionUnsupported(
+            "runtime Type values are not represented in the TLC evaluator yet".to_string(),
+        ));
+    }
+    let module = analysis.tlc.as_ref().ok_or(EvalError::Internal(
+        "semantic analysis did not produce TLC for complete THIR",
+    ))?;
+    Ok((thir_file, module))
+}
+
+fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    let mut registry = Vec::new();
+    let mut imports = HashMap::new();
+    let mut operator_witnesses = HashMap::new();
+    let root_id = eval_tlc_analysis_into(
+        analysis,
+        &mut registry,
+        &mut imports,
+        &mut operator_witnesses,
+    )?;
+
+    let (thir_file, root_module) = completed_tlc_inputs(analysis)?;
+    let ev = eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
+        registry.as_slice(),
+        root_id,
+        &imports,
+        &operator_witnesses,
+    )?;
+    let top = seed_tlc_prelude(thir_file, env::Env::empty());
     let top = ev.build_top_env_from(top)?;
-    let final_id = module
+    let final_id = root_module
         .final_expr
         .ok_or(EvalError::Internal("TLC module has no final expression"))?;
     let result = ev.eval_expr(final_id, &top)?;
-    eval_tlc::tlc_force_deep(result)
+    eval_tlc::tlc_force_deep(result, &ev)
 }
 
-fn populate_tlc_imports(
-    analysis: &zutai_semantic::Analysis,
+fn eval_tlc_analysis_into<'a>(
+    analysis: &'a zutai_semantic::Analysis,
+    registry: &mut eval_tlc::TlcModuleRegistry<'a>,
     imports: &mut HashMap<ImportKey, Value>,
-) -> Result<(), EvalError> {
+    operator_witnesses: &mut HashMap<(String, String), Value>,
+) -> Result<ModuleId, EvalError> {
+    let (_thir_file, module) = completed_tlc_inputs(analysis)?;
+
     for (key, value) in &analysis.import_values {
         imports
             .entry(key.clone())
             .or_insert_with(|| Value::from_immediate(value));
     }
 
-    for (key, module) in &analysis.import_modules {
+    for (key, imported_analysis) in &analysis.import_modules {
         if imports.contains_key(key) {
             continue;
         }
-        let value = if module.effectful_program().is_some() {
-            eval_tlc_analysis(module)?
-        } else {
-            eval_analysis(module)?
-        };
-        imports.insert(key.clone(), value);
+        let dep_id = eval_tlc_analysis_into(
+            imported_analysis.as_ref(),
+            registry,
+            imports,
+            operator_witnesses,
+        )?;
+        let (dep_thir_file, dep_module) = completed_tlc_inputs(imported_analysis.as_ref())?;
+        let dep_ev = eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), dep_id, imports)?;
+        let dep_top = seed_tlc_prelude(dep_thir_file, env::Env::empty());
+        let dep_top = dep_ev.build_top_env_from(dep_top)?;
+        let final_id = dep_module
+            .final_expr
+            .ok_or(EvalError::Internal("TLC module has no final expression"))?;
+        let dep_result = dep_ev.eval_expr(final_id, &dep_top)?;
+        collect_tlc_operator_witnesses(dep_thir_file, &dep_ev, &dep_top, operator_witnesses)?;
+        let dep_value = eval_tlc::tlc_force_deep(dep_result, &dep_ev)?;
+        imports.insert(key.clone(), dep_value);
     }
 
+    let id = ModuleId(registry.len());
+    registry.push(module);
+    Ok(id)
+}
+
+fn collect_tlc_operator_witnesses(
+    thir_file: &ThirFile,
+    ev: &eval_tlc::TlcEvaluator<'_>,
+    top: &env::Env,
+    out: &mut HashMap<(String, String), Value>,
+) -> Result<(), EvalError> {
+    for &decl_id in &thir_file.decls {
+        let decl = &thir_file.decl_arena[decl_id];
+        let ThirDeclKind::Witness { target, fields, .. } = &decl.kind else {
+            continue;
+        };
+        let Some(target_key) = thir_runtime_target_key(thir_file, *target) else {
+            continue;
+        };
+        let dict = top.lookup(decl.binding)?.force_tlc(ev)?;
+        let Value::Record(dict_fields) = dict else {
+            return Err(EvalError::TypeMismatch {
+                expected: "Record",
+                found: "non-record witness dictionary",
+            });
+        };
+        for field in fields {
+            let Some((_, thunk)) = dict_fields
+                .iter()
+                .find(|(name, _)| name.as_ref() == field.name.as_str())
+            else {
+                continue;
+            };
+            out.insert(
+                (field.name.clone(), target_key.clone()),
+                thunk.force_tlc(ev)?,
+            );
+        }
+    }
     Ok(())
+}
+
+fn thir_runtime_target_key(thir_file: &ThirFile, target: zutai_thir::TypeId) -> Option<String> {
+    match &thir_file.type_arena[target.0 as usize].kind {
+        TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
+        TypeKind::Text => Some("Text".to_string()),
+        TypeKind::Int => Some("Int".to_string()),
+        TypeKind::Float => Some("Float".to_string()),
+        TypeKind::Atom(name) => Some(format!("#{name}")),
+        _ => None,
+    }
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.

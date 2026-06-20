@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use zutai_thir::ThirExprId;
+use zutai_tlc::TlcExprId;
 
 use crate::{
     EvalError,
@@ -37,6 +38,12 @@ pub enum ThunkState {
         /// evaluator to this module before evaluating.
         home: ModuleId,
     },
+    TlcUnforced {
+        expr: TlcExprId,
+        env: Env,
+        /// The module in whose TLC arena `expr` lives.
+        home: ModuleId,
+    },
     /// Set while the thunk is being evaluated; detected as a black-hole.
     InProgress,
     Forced(Value),
@@ -50,6 +57,20 @@ impl Thunk {
             env,
             home,
         })))
+    }
+
+    /// Create a deferred TLC thunk (not yet evaluated).
+    pub fn tlc_deferred(expr: TlcExprId, env: Env, home: ModuleId) -> Self {
+        Thunk(Rc::new(RefCell::new(ThunkState::TlcUnforced {
+            expr,
+            env,
+            home,
+        })))
+    }
+
+    /// Create an in-progress placeholder for recursive bindings.
+    pub fn in_progress() -> Self {
+        Thunk(Rc::new(RefCell::new(ThunkState::InProgress)))
     }
 
     /// Create an already-forced thunk wrapping a known value.
@@ -72,6 +93,9 @@ impl Thunk {
             if matches!(*state, ThunkState::InProgress) {
                 return Err(EvalError::BlackHole);
             }
+            if matches!(*state, ThunkState::TlcUnforced { .. }) {
+                return Err(EvalError::Internal("TLC thunk reached THIR force"));
+            }
         }
 
         // Extract the (expr, env, home) tuple and mark as in-progress.
@@ -79,6 +103,9 @@ impl Thunk {
             let mut state = self.0.borrow_mut();
             match std::mem::replace(&mut *state, ThunkState::InProgress) {
                 ThunkState::Unforced { expr, env, home } => (expr, env, home),
+                ThunkState::TlcUnforced { .. } => {
+                    return Err(EvalError::Internal("TLC thunk reached THIR force"));
+                }
                 // Raced — shouldn't happen in single-threaded eval, but handle
                 // defensively.
                 ThunkState::InProgress => return Err(EvalError::BlackHole),
@@ -92,6 +119,44 @@ impl Thunk {
         let value = ev.for_module(home).eval(expr, &env)?;
 
         // Store the result.
+        *self.0.borrow_mut() = ThunkState::Forced(value.clone());
+        Ok(value)
+    }
+
+    pub fn replace_forced(&self, value: Value) {
+        *self.0.borrow_mut() = ThunkState::Forced(value);
+    }
+
+    pub fn is_in_progress(&self) -> bool {
+        matches!(*self.0.borrow(), ThunkState::InProgress)
+    }
+
+    pub fn force_tlc(&self, ev: &crate::eval_tlc::TlcEvaluator<'_>) -> Result<Value, EvalError> {
+        {
+            let state = self.0.borrow();
+            match &*state {
+                ThunkState::Forced(v) => return Ok(v.clone()),
+                ThunkState::InProgress => return Err(EvalError::BlackHole),
+                ThunkState::Unforced { .. } => {
+                    return Err(EvalError::Internal("THIR thunk reached TLC force"));
+                }
+                ThunkState::TlcUnforced { .. } => {}
+            }
+        }
+
+        let (expr, env, home) = {
+            let mut state = self.0.borrow_mut();
+            match std::mem::replace(&mut *state, ThunkState::InProgress) {
+                ThunkState::TlcUnforced { expr, env, home } => (expr, env, home),
+                ThunkState::Unforced { .. } => {
+                    return Err(EvalError::Internal("THIR thunk reached TLC force"));
+                }
+                ThunkState::InProgress => return Err(EvalError::BlackHole),
+                ThunkState::Forced(v) => return Ok(v),
+            }
+        };
+
+        let value = ev.for_module(home)?.eval_expr(expr, &env)?;
         *self.0.borrow_mut() = ThunkState::Forced(value.clone());
         Ok(value)
     }

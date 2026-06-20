@@ -10,9 +10,9 @@ LogLevel :: type {
 ServiceConfig :: type {
   host : Text;
   port : Int;
-  tls? : Bool;
-  max-connections? : Int;
-  timeout-ms? : Int;
+  tls : Bool?;
+  max-connections : Int?;
+  timeout-ms : Int?;
 }
 
 AppConfig :: type {
@@ -20,8 +20,8 @@ AppConfig :: type {
   version : Text;
   log-level : LogLevel;
   primary-service : ServiceConfig;
-  fallback-service? : ServiceConfig;
-  debug-mode? : Bool;
+  fallback-service : ServiceConfig?;
+  debug-mode : Bool?;
 }
 
 identity :: <A> A -> A {
@@ -102,7 +102,7 @@ clamp :: Int -> Int -> Int -> Int {
     };
 }
 
-primary := {
+primary :: ServiceConfig = {
   host = "api.example.com";
   port = 443;
   tls = #none;
@@ -110,7 +110,7 @@ primary := {
   timeout-ms = #none;
 }
 
-appCfg := {
+appCfg :: AppConfig = {
   name = "my-service";
   version = "1.0.0";
   log-level = #info;

@@ -220,6 +220,39 @@ impl<'thir> Lowerer<'thir> {
                         }
                         out.push((f.name.clone(), value_expr));
                     }
+                    if let Some(c) = constraint {
+                        for method in self.default_methods_for(c) {
+                            if out.iter().any(|(name, _)| name == &method.name) {
+                                continue;
+                            }
+                            let Some(default) = method.default.as_ref() else {
+                                continue;
+                            };
+                            let mut value_expr = self.lower_function_clauses(method.sig, default);
+                            let sig_vars = self.collect_thir_type_vars(method.sig);
+                            let mparams: Vec<BindingId> = method
+                                .params
+                                .iter()
+                                .copied()
+                                .filter(|p| sig_vars.contains(p))
+                                .collect();
+                            for &mp in mparams.iter().rev() {
+                                let tyvar = self.named_tyvar(mp);
+                                let body_ty = self.expr_types[&value_expr];
+                                let forall_ty = self.alloc_type(TlcType::ForAll(
+                                    tyvar,
+                                    Kind::ground(),
+                                    body_ty,
+                                ));
+                                value_expr = self.alloc_expr(
+                                    TlcExpr::TyLam(tyvar, Kind::ground(), value_expr),
+                                    forall_ty,
+                                    span,
+                                );
+                            }
+                            out.push((method.name, value_expr));
+                        }
+                    }
                     out
                 };
 
@@ -390,6 +423,28 @@ impl<'thir> Lowerer<'thir> {
                         .iter()
                         .find(|m| m.name == name)
                         .map(|m| m.params.clone());
+                }
+                None
+            })
+            .unwrap_or_default()
+    }
+
+    fn default_methods_for(&self, constraint: BindingId) -> Vec<ThirConstraintMethod> {
+        self.thir
+            .decls
+            .iter()
+            .find_map(|&decl_id| {
+                let decl = &self.thir.decl_arena[decl_id];
+                if decl.binding == constraint
+                    && let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+                {
+                    return Some(
+                        methods
+                            .iter()
+                            .filter(|method| method.default.is_some())
+                            .cloned()
+                            .collect(),
+                    );
                 }
                 None
             })

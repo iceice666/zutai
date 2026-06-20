@@ -112,12 +112,13 @@ impl BuiltinFn {
     }
 }
 
-/// A single-parameter closure produced by the TLC eager evaluator.
+/// A single-parameter closure produced by the TLC evaluator.
 #[derive(Clone, Debug)]
 pub struct TlcClosure {
     pub param: BindingId,
     pub body: TlcExprId,
     pub env: Env,
+    pub home: ModuleId,
 }
 
 impl Value {
@@ -451,18 +452,36 @@ impl fmt::Display for Value {
             Value::TaggedValue { tag, payload } => {
                 write!(f, "#{tag}")?;
                 if !payload.is_empty() {
-                    write!(f, " {{")?;
-                    for (i, (name, t)) in payload.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ";")?;
+                    let positional = payload
+                        .iter()
+                        .enumerate()
+                        .all(|(index, (name, _))| name.parse::<usize>() == Ok(index));
+                    if positional {
+                        write!(f, " (")?;
+                        for (i, (_, t)) in payload.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            match t.peek() {
+                                Some(v) => write!(f, "{v}")?,
+                                None => write!(f, "<thunk>")?,
+                            }
                         }
-                        write!(f, " {name} = ")?;
-                        match t.peek() {
-                            Some(v) => write!(f, "{v}")?,
-                            None => write!(f, "<thunk>")?,
+                        write!(f, ")")?;
+                    } else {
+                        write!(f, " {{")?;
+                        for (i, (name, t)) in payload.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ";")?;
+                            }
+                            write!(f, " {name} = ")?;
+                            match t.peek() {
+                                Some(v) => write!(f, "{v}")?,
+                                None => write!(f, "<thunk>")?,
+                            }
                         }
+                        write!(f, " }}")?;
                     }
-                    write!(f, " }}")?;
                 }
                 Ok(())
             }

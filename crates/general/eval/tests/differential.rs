@@ -1,8 +1,11 @@
-//! Differential oracle: the THIR tree-walker (`eval_file`) and the TLC
-//! eager walker (`eval_tlc_file`) must agree on every well-typed, import-free
-//! `.zt` program. A divergence is a bug in one of the two evaluators.
+//! Differential oracle: the THIR regression oracle and the strict TLC evaluator
+//! must agree on every accepted parity `.zt` program. A divergence is a bug in
+//! one of the two evaluators.
 
-use zutai_eval::{Value, eval_file, eval_tlc_file};
+use zutai_eval::{
+    Value, eval_thir_file, eval_thir_path, eval_thir_with_base, eval_tlc_file, eval_tlc_path,
+    eval_tlc_with_base,
+};
 
 /// Programs that both evaluators must agree on, with the expected value.
 fn battery() -> Vec<(&'static str, &'static str)> {
@@ -64,6 +67,14 @@ fn battery() -> Vec<(&'static str, &'static str)> {
             "f :: Int -> Text {\n  | n if n > 0 => \"pos\";\n  | _ => \"nonpos\";\n}\nf 5",
         ),
         (
+            "lazy_record_projection",
+            "bad :: Int = bad\n{ ok = 1; bad = bad; }.ok",
+        ),
+        (
+            "lazy_block_local",
+            "{ y := 10 / 0; if 1 > 2 then y else 99 }",
+        ),
+        (
             "operator_witness_direct_eq",
             r#"Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
@@ -97,13 +108,9 @@ less 2 1"#,
 fn thir_and_tlc_walkers_agree() {
     let mut divergences = Vec::new();
     for (label, src) in battery() {
-        let thir = eval_file(src);
+        let thir = eval_thir_file(src);
         let tlc = eval_tlc_file(src);
-        let agree = match (&thir, &tlc) {
-            (Ok(a), Ok(b)) => values_match(a, b),
-            (Err(_), Err(_)) => true, // both refuse — acceptable
-            _ => false,
-        };
+        let agree = matches!((&thir, &tlc), (Ok(a), Ok(b)) if values_match(a, b));
         if !agree {
             divergences.push(format!("{label}: THIR={thir:?} TLC={tlc:?}"));
         }
@@ -123,8 +130,68 @@ fn thir_and_tlc_walkers_agree() {
     );
 }
 
+fn imports_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports")
+}
+
+#[test]
+fn thir_and_tlc_imports_agree() {
+    let base = imports_dir();
+    let cases = [
+        (
+            "zti_import",
+            "cfg := import \"config.zti\"\ncfg.port",
+            "8080",
+        ),
+        ("zt_import", "n := import \"other.zt\"\nn", "42"),
+        (
+            "imported_function",
+            "f := import \"func_module.zt\"\nf 2 3",
+            "5",
+        ),
+        (
+            "optional_import",
+            "m := import \"optional_module.zt\"\nm",
+            "#none",
+        ),
+        (
+            "imported_operator_witness",
+            "w := import \"witness_eq_int_operator.zt\"\n1 == 1",
+            "false",
+        ),
+        (
+            "imported_bounded_operator_witness",
+            "w := import \"witness_eq_int_operator_bounded.zt\"\nw",
+            "false",
+        ),
+    ];
+
+    for (label, src, expected) in cases {
+        let thir = eval_thir_with_base(src, Some(&base));
+        let tlc = eval_tlc_with_base(src, Some(&base));
+        match (&thir, &tlc) {
+            (Ok(a), Ok(b)) if values_match(a, b) && a.to_string() == expected => {}
+            _ => panic!(
+                "{label}: expected both walkers to display {expected:?}, got THIR={thir:?} TLC={tlc:?}"
+            ),
+        }
+    }
+
+    let path = base.join("chain_top.zt");
+    let thir = eval_thir_path(&path);
+    let tlc = eval_tlc_path(&path);
+    match (&thir, &tlc) {
+        (Ok(a), Ok(b)) if values_match(a, b) && a.to_string() == "8080" => {}
+        _ => panic!(
+            "chain_top.zt: expected both walkers to display \"8080\", got THIR={thir:?} TLC={tlc:?}"
+        ),
+    }
+}
+
 fn expected_display(label: &str) -> Option<&'static str> {
     match label {
+        "lazy_record_projection" => Some("1"),
+        "lazy_block_local" => Some("99"),
         "optional_field_match_none" => Some("1"),
         "optional_field_match_some" => Some("7"),
         "optional_access_chain_some" => Some("5"),
