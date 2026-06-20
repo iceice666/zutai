@@ -8,8 +8,8 @@ pub type HirPatId = Idx<HirPat>;
 pub type HirTypeId = Idx<HirTypeExpr>;
 
 /// Names of the compiler-provided value bindings seeded into every module's
-/// root scope ("the prelude"). Currently just the string-only `print`
-/// debugging builtin. Single source of truth shared by HIR seeding, THIR type
+/// root scope ("the prelude"). `print` is a compatibility binding over the
+/// `io.print` effect. Single source of truth shared by HIR seeding, THIR type
 /// assignment, and the reference interpreter.
 pub const BUILTIN_VALUE_NAMES: &[&str] = &["print"];
 

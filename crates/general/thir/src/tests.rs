@@ -4317,6 +4317,35 @@ load
 }
 
 #[test]
+fn top_level_io_print_effect_is_allowed_at_host_boundary() {
+    completed_file(r#"perform io.print "hello""#);
+}
+
+#[test]
+fn effectful_non_function_top_level_value_is_rejected() {
+    rejects_with(
+        r#"
+x :: Text ! { io.print : Text -> Text } = print "hi"
+1
+"#,
+        |kind| {
+            matches!(kind, ThirDiagnosticKind::UnsupportedFeature { feature }
+            if *feature == "effectful top-level value bindings")
+        },
+    );
+}
+
+#[test]
+fn effectful_function_value_binding_remains_inert_until_called() {
+    completed_file(
+        r#"
+f :: Text -> Text ! { io.print : Text -> Text } = \text. print text
+f
+"#,
+    );
+}
+
+#[test]
 fn perform_in_pure_function_reports_effect_not_in_row() {
     rejects_with(
         r#"

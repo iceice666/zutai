@@ -141,6 +141,30 @@ The pure core still has no ambient forms such as direct filesystem reads, enviro
 
 ## Laziness and Ordering
 
-Effectful computations are not ordinary inert data. A v1 implementation must preserve explicit ordering around `perform`, `handle`, `with`, and `resume` so effects do not run merely because a lazy value is demanded unpredictably.
+Effectful computations are not ordinary inert data. Phase 16 fixes the
+reference ordering model as an explicit sequencing boundary:
 
-Detailed forcing and sequencing rules are intentionally left as a v1 implementation design constraint. The committed surface rule is that effect execution is explicit: effects are introduced by `perform` and controlled by handlers or host entrypoints.
+- `perform op arg` first evaluates `arg`, then suspends the nearest enclosing
+  handled computation at the operation point.
+- `handle expr with clauses` evaluates `expr` under the operation clauses.
+  When `expr` completes normally, the optional `value` clause runs last; if it
+  is omitted, the produced value is returned unchanged.
+- An operation clause receives the operation payload. It may return directly as
+  the whole handler result, or call `resume value` once.
+- `resume value` first evaluates `value`, then re-enters the suspended
+  continuation with that value as the result of the original `perform`. The
+  continuation includes the handler's `value` clause, so `resume` itself has the
+  handler result type.
+- Sequence expressions evaluate left-to-right. This is the only ordering
+  guarantee introduced for the otherwise pure lazy core; pure data construction
+  remains demand-driven outside explicit effect sequencing.
+- Top-level non-function value bindings may not have an effect type. This keeps
+  module initialization from firing effects for unused values. Effectful
+  top-level functions are inert until called because evaluating the binding only
+  creates a closure.
+
+Compilation keeps Dataflow Core, ANF, SSA, and LLVM pure in this phase. TLC
+carries dedicated `perform`/`handle`/`resume`/sequence markers for the reference
+evaluator. The compile/dataflow commands reject any residual effect marker or
+non-empty function effect row after TLC lowering, so LLVM support is not claimed
+until an effect lowering exists past TLC.

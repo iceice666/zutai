@@ -453,12 +453,17 @@ impl<'a> Evaluator<'a> {
                     }),
                 }
             }
+            ThirExprKind::Sequence(items) => {
+                let mut value = Value::Nothing;
+                for &item in items {
+                    value = self.eval(item, env)?;
+                }
+                Ok(value)
+            }
             ThirExprKind::Perform { .. }
             | ThirExprKind::Handle { .. }
-            | ThirExprKind::Resume { .. }
-            | ThirExprKind::Sequence(_) => Err(EvalError::EffectfulNotExecutable(
-                "algebraic effects are type-checked but not yet executable \
-                 (effect evaluation/ordering is Phase 16)"
+            | ThirExprKind::Resume { .. } => Err(EvalError::EffectfulNotExecutable(
+                "algebraic effects execute through the TLC evaluator; the legacy THIR evaluator remains pure-only"
                     .to_string(),
             )),
             ThirExprKind::Error => Err(EvalError::Internal(

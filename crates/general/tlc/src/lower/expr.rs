@@ -3,7 +3,8 @@ use zutai_syntax::ast::BinOp;
 use zutai_thir::{ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId};
 
 use crate::ir::{
-    BuiltinOp, Literal, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcTupleItem, TlcTypeId,
+    BuiltinOp, Literal, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
+    TlcTupleItem, TlcTypeId,
 };
 
 use super::Lowerer;
@@ -215,16 +216,35 @@ impl<'thir> Lowerer<'thir> {
                 let arg_tlc = self.lower_expr(arg);
                 self.alloc_expr(TlcExpr::App(func_tlc, arg_tlc), tlc_ty, span)
             }
-            ThirExprKind::Perform { .. }
-            | ThirExprKind::Resume { .. }
-            | ThirExprKind::Handle { .. } => {
-                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
+            ThirExprKind::Perform { op, arg } => {
+                let arg = self.lower_expr(arg);
+                self.alloc_expr(TlcExpr::Perform { op, arg }, tlc_ty, span)
             }
-            ThirExprKind::Sequence(items) => match items.last().copied() {
-                Some(last) => self.lower_expr(last),
-                None => self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span),
-            },
-            ThirExprKind::Import(_) | ThirExprKind::TypeValue(_) => {
+            ThirExprKind::Resume { value } => {
+                let value = self.lower_expr(value);
+                self.alloc_expr(TlcExpr::Resume { value }, tlc_ty, span)
+            }
+            ThirExprKind::Handle { expr, value, ops } => {
+                let expr = self.lower_expr(expr);
+                let value = value.map(|value| self.lower_expr(value));
+                let ops = ops
+                    .into_iter()
+                    .map(|clause| TlcHandleClause {
+                        op: clause.op,
+                        body: self.lower_expr(clause.body),
+                    })
+                    .collect();
+                self.alloc_expr(TlcExpr::Handle { expr, value, ops }, tlc_ty, span)
+            }
+            ThirExprKind::Sequence(items) => {
+                let items = items
+                    .into_iter()
+                    .map(|item| self.lower_expr(item))
+                    .collect();
+                self.alloc_expr(TlcExpr::Sequence(items), tlc_ty, span)
+            }
+            ThirExprKind::Import(source) => self.alloc_expr(TlcExpr::Import(source), tlc_ty, span),
+            ThirExprKind::TypeValue(_) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
             }
             ThirExprKind::TaggedValue { tag, payload } => {

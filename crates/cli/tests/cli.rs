@@ -90,14 +90,14 @@ fn run_missing_file_exits_nonzero() {
 }
 
 #[test]
-fn run_effect_program_is_rejected_until_phase16() {
-    let path = write_tmp("cli_test_run_effect.zt", EFFECT_SRC);
+fn run_handled_effect_program_prints_result() {
+    let path = write_tmp("cli_test_run_effect.zt", HANDLED_EFFECT_SRC);
     cli()
         .arg("run")
         .arg(&path)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("Phase 16"));
+        .success()
+        .stdout(predicate::str::contains("\"ok\""));
 }
 
 // ─── `parse` subcommand ───────────────────────────────────────────────────────
@@ -238,6 +238,39 @@ fn run_zt_with_import_error_exits_nonzero() {
         .stderr(predicate::str::contains("import error"));
 }
 
+#[test]
+fn run_imported_value_can_flow_through_print_effect() {
+    write_tmp("cli_test_print_import.zti", "{ host = \"127.0.0.1\"; }\n");
+    let path = write_tmp(
+        "cli_test_print_import.zt",
+        "cfg := import \"./cli_test_print_import.zti\"\nprint cfg.host\n",
+    );
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("127.0.0.1"));
+}
+
+#[test]
+fn run_imported_function_can_flow_through_print_effect() {
+    write_tmp(
+        "cli_test_func_import.zt",
+        "add :: Int -> Int -> Int {\n  | a b => a + b;\n}\nadd\n",
+    );
+    let path = write_tmp(
+        "cli_test_func_print_import.zt",
+        "add := import \"./cli_test_func_import.zt\"\n{ print \"using import\"; add 2 3 }\n",
+    );
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("using import").and(predicate::str::contains("5")));
+}
+
 // ─── parse with type/semantic errors ─────────────────────────────────────────
 
 #[test]
@@ -259,6 +292,11 @@ parse :: Text -> Config ! { fail ParseError } {
   | text => perform fail text;
 }
 parse
+"#;
+
+const HANDLED_EFFECT_SRC: &str = r#"
+result := handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result
 "#;
 
 #[test]
@@ -340,14 +378,14 @@ fn compile_zt_type_error_exits_nonzero() {
 }
 
 #[test]
-fn compile_effect_program_is_rejected_until_phase16() {
+fn compile_effect_program_is_rejected_by_residual_effect_gate() {
     let path = write_tmp("cli_test_compile_effect.zt", EFFECT_SRC);
     cli()
         .arg("compile")
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("algebraic effects"));
+        .stderr(predicate::str::contains("effect"));
 }
 
 #[test]
@@ -502,17 +540,17 @@ fn dataflow_zt_parse_error_exits_nonzero() {
 }
 
 #[test]
-fn dataflow_effect_program_is_rejected_until_phase16() {
+fn dataflow_effect_program_is_rejected_by_residual_effect_gate() {
     let path = write_tmp("cli_test_dataflow_effect.zt", EFFECT_SRC);
     cli()
         .arg("dataflow")
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("algebraic effects"));
+        .stderr(predicate::str::contains("effect"));
 }
 
-// ─── prelude `print` builtin ───────────────────────────────────────────────────
+// ─── prelude `print` effect binding ───────────────────────────────────────────
 
 #[test]
 fn run_print_writes_to_stdout() {
@@ -540,15 +578,29 @@ fn run_print_list_emits_each_line() {
 }
 
 #[test]
+fn run_effect_sequence_prints_in_order() {
+    let path = write_tmp(
+        "cli_test_print_sequence.zt",
+        "{ perform io.print \"a\"; perform io.print \"b\"; 7 }\n",
+    );
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout("a\nb\n7\n");
+}
+
+#[test]
 fn compile_print_program_is_rejected() {
-    // The v0 compiled core has no ambient effects; `print` is interpreter-only.
+    // `print` is now `io.print`; the pure compile path rejects residual effects.
     let path = write_tmp("cli_test_print_compile.zt", "print \"x\"\n");
     cli()
         .arg("compile")
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("interpreter-only"));
+        .stderr(predicate::str::contains("effect"));
 }
 
 #[test]
@@ -559,5 +611,5 @@ fn dataflow_print_program_is_rejected() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("interpreter-only"));
+        .stderr(predicate::str::contains("effect"));
 }

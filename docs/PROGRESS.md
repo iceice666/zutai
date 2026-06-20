@@ -35,7 +35,7 @@ _Last updated: after SSA and LLVM IR codegen (Phase 5 complete)._
 - THIR is feature-complete for v0: scalar/record/tuple/list literals and patterns, optional access and defaulting, `if`, binary operators, type aliases, block locals, lambda lowering, HM-style unification, match exhaustiveness, let-generalization, predicative polymorphism with call-site `instantiation`, generic type aliases, cross-module imports, and constraints/witnesses (parsing → HIR resolution → THIR type-checking → coherence checking → named-method and operator dispatch in the interpreter).
 - The CLI exposes `parse`, `run`, and `repl` subcommands backed by the reference interpreter.
 - `crates/general/eval/` is a semantics oracle that refuses to evaluate any program that is not fully type-checked; it provides ground truth for compiler differential testing. Per Decision 0002 it has migrated to walk TLC (`eval_tlc.rs`); the THIR walker remains as a regression oracle.
-- A minimal string-only `print` builtin (`Text -> Text`, returns its argument) is seeded into the prelude (`zutai_hir::BUILTIN_VALUE_NAMES`) and executed by both interpreter walkers as a debugging/observability aid. It is interpreter-only: `compile`/`dataflow` reject programs that reference it because the v0 compiled core has no ambient effects (`Analysis::compiler_unsupported_builtin`).
+- `print` remains seeded in the prelude (`zutai_hir::BUILTIN_VALUE_NAMES`) as a compatibility binding, but its type is now `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it as an `io.print` effect: source handlers can intercept it, and the host `run` boundary handles residual `io.print`. `compile`/`dataflow` reject residual effect markers or non-empty function effect rows after TLC lowering.
 - `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, and dictionary-passing elaboration for constraints are all functional.
 - `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered.
 - `crates/general/ssa/` (SSA) and `crates/general/codegen/` (LLVM IR codegen) exist and are test-covered. SSA provides basic-block IR with phi nodes; codegen emits LLVM IR text using an `i64` universal value representation for v0.
@@ -53,7 +53,7 @@ _Added after a v0 stress-test/validation pass: real `.zt` programs run through `
 
 ### `print` and the effect system
 
-The string-only `print` builtin (`Text -> Text`, interpreter-only, `compile`/`dataflow` reject it) is effectively the first **effect** at "reference interpreter" support level under the Backend Support Policy — the same ahead-of-schedule pattern used for constraints/witnesses. Its proper home is the effect system (Phases 15–16): reintroduce I/O as `perform io.print` (or stdlib `print` over a `Console`/`IO` effect) with a handler and deterministic sequencing, then remove or re-point the prelude builtin. Until then it stays as a documented temporary; it does not block effect work, and the compiled pure core stays effect-free.
+The old string-only `print` builtin has been re-pointed to the effect system: `print` performs `io.print`, source handlers can intercept it, and the host `run` boundary provides the current console handler. The compiled pure core still stays effect-free until a post-TLC effect lowering exists; `compile`/`dataflow` use a residual-effect gate instead of treating `print` as an interpreter-only ambient primitive.
 
 ## Phase 1: Complete THIR (LSP Foundation) ✅
 
@@ -282,7 +282,7 @@ Goal: type-check algebraic effects while refusing execution/compilation until or
 - [x] Type-check `handle` so handled operations are removed and unhandled operations are forwarded.
 - [x] Type-check `resume` result types and enforce the v1 one-shot rule.
 - [x] Make `run`/`compile` reject effectful programs with precise unsupported-feature diagnostics until sequencing is designed.
-  - The interim string-only `print` builtin (`Text -> Text`, interpreter-only; `compile`/`dataflow` already reject it via `Analysis::compiler_unsupported_builtin`) remains unchanged in this check-only phase.
+  - Phase 16 later re-pointed `print` to `io.print`; during Phase 15 it intentionally stayed unchanged while effect typing landed first.
 
 Verification gate: `check` accepts/rejects examples from `docs/v1_spec/05-effects.md`; `run` and `compile` refuse effectful programs explicitly rather than miscompiling them.
 
@@ -290,11 +290,11 @@ Verification gate: `check` accepts/rejects examples from `docs/v1_spec/05-effect
 
 Goal: define and implement explicit ordering for effectful computations without breaking Zutai's lazy pure core.
 
-- [ ] Specify forcing and sequencing rules for `perform`, `handle`, `with`, and `resume`.
-- [ ] Decide whether effects lower through a dedicated IR marker, Dataflow Core extension, or ANF sequencing boundary.
-- [ ] Implement TLC reference evaluation for handled effects after the ordering model is written.
-- [ ] Extend compile pipeline only after interpreter behavior is deterministic and test-covered.
-- [ ] Reintroduce I/O as `perform io.print` over a `Console`/`IO` effect with a handler, then remove or re-point the interim prelude `print` builtin (`zutai_hir::BUILTIN_VALUE_NAMES`).
+- [x] Specify forcing and sequencing rules for `perform`, `handle`, `with`, and `resume`.
+- [x] Decide whether effects lower through a dedicated IR marker, Dataflow Core extension, or ANF sequencing boundary.
+- [x] Implement TLC reference evaluation for handled effects after the ordering model is written.
+- [x] Extend compile pipeline only after interpreter behavior is deterministic and test-covered.
+- [x] Reintroduce I/O as `perform io.print` over a `Console`/`IO` effect with a handler, then remove or re-point the interim prelude `print` builtin (`zutai_hir::BUILTIN_VALUE_NAMES`).
 
 Verification gate: effect examples run deterministically under the reference interpreter and have matching compiled behavior before LLVM support is claimed.
 

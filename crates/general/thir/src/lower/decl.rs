@@ -102,6 +102,14 @@ impl<'hir> Lowerer<'hir> {
                 }
                 let ty = self.lower_type(*annotation);
                 self.require_ground_type(ty, decl.span);
+                if self.is_non_function_effect_type(ty) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::UnsupportedFeature {
+                            feature: "effectful top-level value bindings",
+                        },
+                        span: decl.span,
+                    });
+                }
                 let value = self.check_expr(*value, ty);
                 self.value_types.insert(decl.binding, ty);
                 ThirDeclKind::Value { ty, value }

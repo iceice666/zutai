@@ -466,6 +466,22 @@ fn import_zti_field_access_text() {
 }
 
 #[test]
+fn import_zti_field_can_flow_through_print_effect() {
+    assert_eq!(
+        run_import("cfg := import \"config.zti\"\nprint cfg.host"),
+        Value::Text("127.0.0.1".into())
+    );
+}
+
+#[test]
+fn import_zt_function_can_run_with_repointed_print() {
+    assert_eq!(
+        run_import("add := import \"func_module.zt\"\n{ print \"using import\"; add 2 3 }"),
+        Value::Int(5)
+    );
+}
+
+#[test]
 fn import_zti_field_access_bool() {
     assert_eq!(
         run_import("cfg := import \"config.zti\"\ncfg.debug"),
@@ -2192,12 +2208,98 @@ fn import_zt_type_module() {
     );
 }
 
-// ─── prelude `print` builtin (string-only) ────────────────────────────────────
+// ─── algebraic effects ────────────────────────────────────────────────────────
+
+#[test]
+fn handled_warn_resume_runs_rest_of_computation() {
+    assert_eq!(
+        run(r#"
+result := handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result
+"#,),
+        Value::Text("ok".into())
+    );
+}
+
+#[test]
+fn handled_fail_can_return_without_resuming() {
+    assert_eq!(
+        run(r#"
+result := handle { perform fail "bad"; "unreachable" } with { fail = \e. "fallback"; }
+result
+"#,),
+        Value::Text("fallback".into())
+    );
+}
+
+#[test]
+fn top_level_io_print_is_handled_by_host_boundary() {
+    assert_eq!(
+        run(r#"perform io.print "hello""#),
+        Value::Text("hello".into())
+    );
+}
+
+#[test]
+fn source_handler_intercepts_repointed_print_builtin() {
+    assert_eq!(
+        run(r#"
+result := handle print "x" with { io.print = \text. "handled"; }
+result
+"#,),
+        Value::Text("handled".into())
+    );
+}
+
+#[test]
+fn non_tail_resume_reenters_suspended_expression() {
+    assert_eq!(
+        run(r#"
+compute :: Text -> Int ! { query : Text -> Int } {
+  | _ => (perform query "question") + 1;
+}
+result := handle compute "go" with { query = \u. resume 41; }
+result
+"#,),
+        Value::Int(42)
+    );
+}
+
+#[test]
+fn forwarded_effect_reaches_outer_handler() {
+    assert_eq!(
+        run(r#"
+result := handle (handle { perform fail "bad"; "unreachable" } with { fail = \e. { perform log e; "fallback" }; }) with { log = \msg. resume (); }
+result
+"#,),
+        Value::Text("fallback".into())
+    );
+}
+
+#[test]
+fn value_clause_runs_only_on_normal_completion() {
+    assert_eq!(
+        run(r#"
+normal := handle "ok" with { value = \v. "done"; }
+normal
+"#,),
+        Value::Text("done".into())
+    );
+    assert_eq!(
+        run(r#"
+abort := handle perform fail "bad" with { value = \v. "done"; fail = \e. "fallback"; }
+abort
+"#,),
+        Value::Text("fallback".into())
+    );
+}
+
+// ─── prelude `print` effect binding ───────────────────────────────────────────
 
 #[test]
 fn print_returns_its_argument() {
-    // `print :: Text -> Text` writes to stdout (captured by the test harness)
-    // and returns the argument unchanged so it stays inspectable.
+    // `print :: Text -> Text ! { io.print : Text -> Text }`; the host run
+    // boundary handles `io.print` and resumes with the printed text.
     assert_eq!(run(r#"print "hello""#), Value::Text("hello".into()));
 }
 

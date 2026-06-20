@@ -106,41 +106,6 @@ impl Analysis {
         })
     }
 
-    /// Returns the name of a prelude builtin that the program references and
-    /// that the compiler backend cannot lower, or `None` if there is none.
-    ///
-    /// v0's compiled pure core has no ambient effects (see
-    /// `docs/v0_spec/04-general-mode/laziness-and-purity.md`), so the
-    /// side-effecting `print` builtin is interpreter-only. `run`/`repl` accept
-    /// it; `compile`/`dataflow` must reject programs that use it rather than
-    /// silently lowering it to a dead `Error` node.
-    pub fn compiler_unsupported_builtin(&self) -> Option<&str> {
-        let hir = self.hir.as_ref()?;
-        let thir = self.thir.as_ref()?.file.as_ref()?;
-        let builtin_ids: Vec<zutai_hir::BindingId> = hir
-            .file
-            .bindings
-            .iter()
-            .enumerate()
-            .filter(|(_, b)| b.kind == zutai_hir::BindingKind::BuiltinValue)
-            .map(|(index, _)| zutai_hir::BindingId(index as u32))
-            .collect();
-        if builtin_ids.is_empty() {
-            return None;
-        }
-        for (_, expr) in thir.expr_arena.iter() {
-            if let zutai_thir::ThirExprKind::BindingRef(binding) = &expr.kind
-                && builtin_ids.contains(binding)
-            {
-                return thir
-                    .binding_names
-                    .get(binding.0 as usize)
-                    .map(String::as_str);
-            }
-        }
-        None
-    }
-
     pub fn effectful_program(&self) -> Option<&'static str> {
         let file = self.thir.as_ref()?.file.as_ref()?;
         let has_effect_expr = file.expr_arena.iter().any(|(_, expr)| {
@@ -149,19 +114,25 @@ impl Analysis {
                 zutai_thir::ThirExprKind::Perform { .. }
                     | zutai_thir::ThirExprKind::Handle { .. }
                     | zutai_thir::ThirExprKind::Resume { .. }
-                    | zutai_thir::ThirExprKind::Sequence(_)
             )
         });
-        let has_effect_type = file.type_arena.iter().any(|ty| {
-            matches!(
-                &ty.kind,
-                zutai_thir::TypeKind::Effect { row, .. } if !row.is_pure()
-            )
-        });
+        fn type_has_effect(file: &zutai_thir::ThirFile, id: zutai_thir::TypeId) -> bool {
+            match &file.type_arena[id.0 as usize].kind {
+                zutai_thir::TypeKind::Effect { row, .. } => !row.is_pure(),
+                zutai_thir::TypeKind::Function { from, to } => {
+                    type_has_effect(file, *from) || type_has_effect(file, *to)
+                }
+                _ => false,
+            }
+        }
+
+        let has_effect_type = file
+            .expr_arena
+            .iter()
+            .any(|(_, expr)| type_has_effect(file, expr.ty));
         if has_effect_expr || has_effect_type {
             Some(
-                "algebraic effects are type-checked but not yet executable \
-                 (effect evaluation/ordering is Phase 16)",
+                "algebraic effects require the TLC effect evaluator or a backend residual-effect gate",
             )
         } else {
             None

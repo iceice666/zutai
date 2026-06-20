@@ -309,22 +309,15 @@ fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Erro
         eprintln!("compile error: THIR incomplete");
         std::process::exit(1);
     }
-    if let Some(name) = analysis.compiler_unsupported_builtin() {
-        eprintln!(
-            "compile error: `{name}` is an interpreter-only builtin and cannot be compiled; \
-             the v0 compiled core has no ambient effects (use `run` instead)"
-        );
-        std::process::exit(1);
-    }
-    if let Some(reason) = analysis.effectful_program() {
-        eprintln!("compile error: {reason}");
-        std::process::exit(1);
-    }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     // TLC lowering.
     let module = zutai_tlc::lower_thir(thir);
+    if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
 
     // DC → ANF → SSA → LLVM IR pipeline.
     let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
@@ -380,20 +373,14 @@ fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         eprintln!("error: cannot lower incomplete THIR");
         std::process::exit(1);
     }
-    if let Some(name) = analysis.compiler_unsupported_builtin() {
-        eprintln!(
-            "error: `{name}` is an interpreter-only builtin and cannot be lowered to Dataflow Core"
-        );
-        std::process::exit(1);
-    }
-    if let Some(reason) = analysis.effectful_program() {
-        eprintln!("error: {reason}");
-        std::process::exit(1);
-    }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     let module = zutai_tlc::lower_thir(thir);
+    if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
+        eprintln!("error: {reason}");
+        std::process::exit(1);
+    }
     let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
     println!("{graph:#?}");
     Ok(())

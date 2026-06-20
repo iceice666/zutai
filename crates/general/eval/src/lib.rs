@@ -57,9 +57,15 @@ pub enum EvalError {
     /// A `ThirExprKind::Error` node was reachable in a nominally-complete THIR.
     #[error("internal: reachable Error node in type-checked THIR")]
     ErrorNodeReachable,
-    /// Program uses algebraic effects, which are type-checked but not yet runnable.
+    /// Program uses an effect form unsupported by the selected evaluator.
     #[error("cannot run: {0}")]
     EffectfulNotExecutable(String),
+    /// An effect operation escaped all source handlers and the host boundary.
+    #[error("runtime error: unhandled effect `{0}`")]
+    UnhandledEffect(String),
+    /// `resume` reached runtime without an operation continuation.
+    #[error("runtime error: resume outside an operation handler")]
+    ResumeOutsideHandler,
     /// Runtime black-hole: a non-productive recursive binding was forced.
     #[error("runtime error: non-productive recursive definition (black hole)")]
     BlackHole,
@@ -103,11 +109,11 @@ pub enum EvalError {
 
 // ─── pre-flight gate ──────────────────────────────────────────────────────────
 
-/// Check that `analysis` is safe to evaluate.
+/// Check that `analysis` is fully typed and has no reachable error node.
 ///
 /// Returns a reference to the completed `ThirFile` or an `EvalError`
 /// describing exactly why evaluation is blocked.
-pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, EvalError> {
+pub fn check_well_typed(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, EvalError> {
     // 1. Reject if parse or HIR diagnostics are present.
     let blocking: Vec<String> = analysis
         .blocking_diagnostics()
@@ -135,7 +141,12 @@ pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, 
         return Err(EvalError::ErrorNodeReachable);
     }
 
-    // 5. Algebraic effects type-check in Phase 15 but are not executable yet.
+    Ok(file)
+}
+
+/// Check that `analysis` is safe for the legacy THIR evaluator.
+pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, EvalError> {
+    let file = check_well_typed(analysis)?;
     if let Some(reason) = analysis.effectful_program() {
         return Err(EvalError::EffectfulNotExecutable(reason.to_string()));
     }
@@ -380,14 +391,22 @@ pub fn eval_file(source: &str) -> Result<Value, EvalError> {
 pub fn eval_path(path: &Path) -> Result<Value, EvalError> {
     let analysis = zutai_semantic::analyze_path(path)
         .map_err(|err| EvalError::NotRunnable(vec![format!("cannot read {path:?}: {err}")]))?;
-    eval_analysis(&analysis)
+    match analysis.effectful_program() {
+        Some(_) if has_tlc_effect_syntax(&analysis) => eval_tlc_analysis(&analysis),
+        Some(_) => eval_analysis_allow_repointed_print(&analysis),
+        None => eval_analysis(&analysis),
+    }
 }
 
 /// Evaluate a `.zt` source string, resolving `import`s relative to `base`.
 pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalError> {
     let analysis =
         zutai_semantic::analyze_with_base(source, base, zutai_semantic::AnalysisOptions::default());
-    eval_analysis(&analysis)
+    match analysis.effectful_program() {
+        Some(_) if has_tlc_effect_syntax(&analysis) => eval_tlc_analysis(&analysis),
+        Some(_) => eval_analysis_allow_repointed_print(&analysis),
+        None => eval_analysis(&analysis),
+    }
 }
 
 /// Gate-check an analyzed module and evaluate it, recursively evaluating its
@@ -402,7 +421,13 @@ fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError
     let mut registry: ModuleRegistry = Vec::new();
     let mut module_paths: HashMap<PathBuf, ModuleId> = HashMap::new();
     let mut imports: HashMap<ImportKey, Value> = HashMap::new();
-    eval_analysis_into(analysis, &mut registry, &mut module_paths, &mut imports)?;
+    eval_analysis_into(
+        analysis,
+        &mut registry,
+        &mut module_paths,
+        &mut imports,
+        false,
+    )?;
     let witnesses = runtime_witnesses(analysis, &module_paths);
     // The root module is the last entry in the registry.
     let root_id = ModuleId(registry.len() - 1);
@@ -413,6 +438,45 @@ fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError
     force_deep(result, &evaluator)
 }
 
+fn eval_analysis_allow_repointed_print(
+    analysis: &zutai_semantic::Analysis,
+) -> Result<Value, EvalError> {
+    let mut registry: ModuleRegistry = Vec::new();
+    let mut module_paths: HashMap<PathBuf, ModuleId> = HashMap::new();
+    let mut imports: HashMap<ImportKey, Value> = HashMap::new();
+    eval_analysis_into(
+        analysis,
+        &mut registry,
+        &mut module_paths,
+        &mut imports,
+        true,
+    )?;
+    let witnesses = runtime_witnesses(analysis, &module_paths);
+    let root_id = ModuleId(registry.len() - 1);
+    let root_file = Arc::clone(registry.last().unwrap());
+    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports, &witnesses);
+    let top = evaluator.build_top_env();
+    let result = evaluator.eval(root_file.final_expr, &top)?;
+    force_deep(result, &evaluator)
+}
+
+fn has_tlc_effect_syntax(analysis: &zutai_semantic::Analysis) -> bool {
+    analysis
+        .thir
+        .as_ref()
+        .and_then(|thir| thir.file.as_ref())
+        .is_some_and(|file| {
+            file.expr_arena.iter().any(|(_, expr)| {
+                matches!(
+                    expr.kind,
+                    ThirExprKind::Perform { .. }
+                        | ThirExprKind::Handle { .. }
+                        | ThirExprKind::Resume { .. }
+                )
+            })
+        })
+}
+
 /// Recursive helper: populate `registry` and `imports` depth-first, then
 /// register the current module and return its `ModuleId`.
 fn eval_analysis_into(
@@ -420,8 +484,18 @@ fn eval_analysis_into(
     registry: &mut ModuleRegistry,
     module_paths: &mut HashMap<PathBuf, ModuleId>,
     imports: &mut HashMap<ImportKey, Value>,
+    allow_repointed_print: bool,
 ) -> Result<ModuleId, EvalError> {
-    let file = check_runnable(analysis)?;
+    let file = if allow_repointed_print {
+        if has_tlc_effect_syntax(analysis) {
+            return Err(EvalError::EffectfulNotExecutable(
+                "source effect syntax requires the TLC effect evaluator".to_string(),
+            ));
+        }
+        check_well_typed(analysis)?
+    } else {
+        check_runnable(analysis)?
+    };
 
     // Populate `.zti` import values.
     for (key, value) in &analysis.import_values {
@@ -435,7 +509,13 @@ fn eval_analysis_into(
         if !imports.contains_key(key) {
             // Recurse: register the dependency, building its top-env stamped
             // with its own ModuleId so closures carry the correct home.
-            let dep_id = eval_analysis_into(module, registry, module_paths, imports)?;
+            let dep_id = eval_analysis_into(
+                module,
+                registry,
+                module_paths,
+                imports,
+                allow_repointed_print,
+            )?;
             // Now evaluate the dependency's final expression in its own module.
             let dep_file = Arc::clone(&registry[dep_id.0]);
             let witnesses = runtime_witnesses(module, module_paths);
@@ -483,10 +563,17 @@ fn runtime_witnesses(
 pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
     let analysis =
         zutai_semantic::analyze_with_base(source, None, zutai_semantic::AnalysisOptions::default());
-    let thir_file = check_runnable(&analysis)?;
+    eval_tlc_analysis(&analysis)
+}
+
+fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    let mut imports = HashMap::new();
+    populate_tlc_imports(analysis, &mut imports)?;
+
+    let thir_file = check_well_typed(analysis)?;
     let module = zutai_tlc::lower_thir(thir_file);
-    let ev = eval_tlc::TlcEvaluator::new(&module);
-    let top = ev.build_top_env()?;
+    let ev = eval_tlc::TlcEvaluator::new_with_imports(&module, &imports);
+    let top = env::Env::empty();
     // Seed prelude builtins (e.g. `print`). TLC carries no binding kinds, so we
     // resolve the prelude binding ids from the THIR binding-name table (HIR
     // seeds builtins first, so the lowest-id match is the prelude one).
@@ -500,11 +587,37 @@ pub fn eval_tlc_file(source: &str) -> Result<Value, EvalError> {
             );
         }
     }
+    let top = ev.build_top_env_from(top)?;
     let final_id = module
         .final_expr
         .ok_or(EvalError::Internal("TLC module has no final expression"))?;
     let result = ev.eval_expr(final_id, &top)?;
     eval_tlc::tlc_force_deep(result)
+}
+
+fn populate_tlc_imports(
+    analysis: &zutai_semantic::Analysis,
+    imports: &mut HashMap<ImportKey, Value>,
+) -> Result<(), EvalError> {
+    for (key, value) in &analysis.import_values {
+        imports
+            .entry(key.clone())
+            .or_insert_with(|| Value::from_immediate(value));
+    }
+
+    for (key, module) in &analysis.import_modules {
+        if imports.contains_key(key) {
+            continue;
+        }
+        let value = if module.effectful_program().is_some() {
+            eval_tlc_analysis(module)?
+        } else {
+            eval_analysis(module)?
+        };
+        imports.insert(key.clone(), value);
+    }
+
+    Ok(())
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.

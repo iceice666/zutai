@@ -10,7 +10,7 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
-    EffectRow, Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
+    EffectOp, EffectRow, Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
     ThirExprKind, ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField,
     TypeTupleItem, UnionVariant,
 };
@@ -236,7 +236,9 @@ impl<'hir> Lowerer<'hir> {
             .copied()
             .map(|id| id_map[&id])
             .collect();
+        let saved_effect_ambient = self.enter_host_effect_boundary(self.hir.span);
         let final_expr = self.infer_expr(self.hir.final_expr);
+        self.exit_effectful_result(saved_effect_ambient);
 
         // Zonk: replace solved InferVar slots in the type arena with their
         // concrete types so downstream consumers see fully-resolved types.
@@ -378,6 +380,34 @@ impl<'hir> Lowerer<'hir> {
 
     pub(super) fn exit_effectful_result(&mut self, saved: EffectRow) {
         self.effect_ambient = saved;
+    }
+
+    fn enter_host_effect_boundary(&mut self, span: Span) -> EffectRow {
+        let row = self.io_print_effect_row(span);
+        std::mem::replace(&mut self.effect_ambient, row)
+    }
+
+    fn io_print_effect_row(&mut self, span: Span) -> EffectRow {
+        let param = self.text_type(span);
+        let result = self.text_type(span);
+        EffectRow {
+            ops: vec![EffectOp {
+                name: "io.print".to_string(),
+                param,
+                result,
+                span,
+            }],
+            tail: RowTail::Closed,
+        }
+    }
+
+    pub(super) fn is_non_function_effect_type(&mut self, ty: TypeId) -> bool {
+        let span = self.ty(ty).span;
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        matches!(
+            &self.type_arena[resolved.0 as usize].kind,
+            TypeKind::Effect { row, .. } if !row.is_pure()
+        )
     }
 
     pub(super) fn is_never_type(&mut self, ty: TypeId) -> bool {
@@ -541,18 +571,23 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Type of a compiler-provided value binding (the prelude). `print` is the
-    /// only one in v0: a string-only `Text -> Text` debugging builtin that
-    /// returns its argument.
+    /// Type of a compiler-provided value binding (the prelude). Phase 16
+    /// re-points `print` to the `io.print` effect instead of an ambient side
+    /// effect: `print :: Text -> Text ! { io.print : Text -> Text }`.
     fn builtin_value_type(&mut self, name: &str) -> Option<TypeId> {
         let span = self.hir.span;
         match name {
             "print" => {
                 let text = self.text_type(span);
+                let row = self.io_print_effect_row(span);
+                let effect_text = self.alloc_type(Type {
+                    kind: TypeKind::Effect { base: text, row },
+                    span,
+                });
                 Some(self.alloc_type(Type {
                     kind: TypeKind::Function {
                         from: text,
-                        to: text,
+                        to: effect_text,
                     },
                     span,
                 }))

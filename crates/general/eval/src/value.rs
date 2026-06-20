@@ -59,9 +59,9 @@ pub enum Value {
     Builtin(BuiltinFn),
 }
 
-/// A compiler-provided builtin function. v0 has exactly one: the string-only
-/// `print` debugging builtin (`Text -> Text`) that writes its argument plus a
-/// newline to stdout and returns the argument unchanged.
+/// A compiler-provided builtin function. `print` is re-pointed to the
+/// `io.print` effect by the TLC evaluator; source handlers can intercept it and
+/// the host run boundary handles residual `io.print`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinFn {
     Print,

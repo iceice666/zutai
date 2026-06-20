@@ -45,9 +45,6 @@ pub enum DfLit {
 // ── Import kind ───────────────────────────────────────────────────────────────
 
 /// Import source kind for `DfNodeKind::Import` nodes.
-///
-/// Currently a stub: `TlcExpr` has no Import variant yet, so this node kind is
-/// reserved for a future TLC phase that lowers import expressions to the graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportKind {
     Zti,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 use la_arena::Arena;
-use zutai_hir::{Binding, BindingId};
+use zutai_hir::{Binding, BindingId, HirImportSource};
 use zutai_syntax::Span;
 use zutai_tlc::{
     BuiltinOp, Literal as TlcLit, PrimTy, Row, TlcAlt, TlcDecl, TlcExpr, TlcExprId, TlcModule,
@@ -11,7 +11,7 @@ use zutai_tlc::{
 
 use crate::{
     DataflowGraph, DfArm, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPattern, DfRecordField,
-    DfTupleField, DfTupleNodeItem, DfTuplePatItem, DfTy, DfTyId, DfTyVar, NodeId,
+    DfTupleField, DfTupleNodeItem, DfTuplePatItem, DfTy, DfTyId, DfTyVar, ImportKind, NodeId,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -49,6 +49,20 @@ fn lower_builtin_op(op: BuiltinOp) -> DfBuiltinOp {
         BuiltinOp::And => DfBuiltinOp::And,
         BuiltinOp::Or => DfBuiltinOp::Or,
         BuiltinOp::Coalesce => unreachable!("Coalesce handled separately"),
+    }
+}
+
+fn lower_import_source(source: &HirImportSource) -> (String, ImportKind) {
+    match source {
+        HirImportSource::String(path) => {
+            let kind = if path.ends_with(".zti") {
+                ImportKind::Zti
+            } else {
+                ImportKind::Zt
+            };
+            (path.clone(), kind)
+        }
+        HirImportSource::Path(parts) => (parts.join("."), ImportKind::Zt),
     }
 }
 
@@ -368,6 +382,20 @@ impl<'m> Lowerer<'m> {
             TlcExpr::Variant(tag, payload) => {
                 let payload_node = self.lower_expr(payload);
                 self.alloc_node(DfNodeKind::Variant(tag, payload_node), df_ty, span)
+            }
+
+            TlcExpr::Import(source) => {
+                let (path, kind) = lower_import_source(&source);
+                self.alloc_node(DfNodeKind::Import { path, kind }, df_ty, span)
+            }
+
+            TlcExpr::Sequence(items) => match items.last().copied() {
+                Some(last) => self.lower_expr(last),
+                None => self.alloc_node(DfNodeKind::Error, self.error_ty, span),
+            },
+
+            TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
+                self.alloc_node(DfNodeKind::Error, self.error_ty, span)
             }
         }
     }

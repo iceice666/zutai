@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use la_arena::{Arena, Idx};
-use zutai_hir::BindingId;
+use zutai_hir::{BindingId, HirImportSource};
 use zutai_syntax::Span;
 
 // ── Arena IDs ────────────────────────────────────────────────────────────────
@@ -222,8 +222,33 @@ pub enum TlcExpr {
     Tuple(Vec<TlcTupleItem>),
     List(Vec<TlcExprId>),
     Builtin(BuiltinOp, TlcExprId, TlcExprId),
+    Import(HirImportSource),
     /// Inject a value into a sum / union arm: `#dev` or `(#circle, …)`.
     Variant(String, TlcExprId),
+    /// Invoke an algebraic effect operation. The result is delivered by a
+    /// source handler or by the host boundary for supported host effects.
+    Perform {
+        op: String,
+        arg: TlcExprId,
+    },
+    /// Delimit effect handling for `expr`.
+    Handle {
+        expr: TlcExprId,
+        value: Option<TlcExprId>,
+        ops: Vec<TlcHandleClause>,
+    },
+    /// Resume the current one-shot operation continuation.
+    Resume {
+        value: TlcExprId,
+    },
+    /// Explicit left-to-right sequencing boundary.
+    Sequence(Vec<TlcExprId>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TlcHandleClause {
+    pub op: String,
+    pub body: TlcExprId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
