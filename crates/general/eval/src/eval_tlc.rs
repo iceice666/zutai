@@ -437,6 +437,11 @@ impl<'a> TlcEvaluator<'a> {
                     found: value_type_name(&other),
                 }),
             },
+            Value::Builtin(BuiltinFn::Fields | BuiltinFn::Schema) => {
+                Err(EvalError::EffectfulNotExecutable(
+                    "reflection builtins execute through the THIR type-value evaluator".to_string(),
+                ))
+            }
             other => Err(EvalError::TypeMismatch {
                 expected: "Function",
                 found: value_type_name(&other),

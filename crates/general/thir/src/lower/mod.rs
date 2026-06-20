@@ -571,9 +571,10 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Type of a compiler-provided value binding (the prelude). Phase 16
+    /// Type of compiler-provided value bindings (the prelude). Phase 16
     /// re-points `print` to the `io.print` effect instead of an ambient side
-    /// effect: `print :: Text -> Text ! { io.print : Text -> Text }`.
+    /// effect. Phase 17 adds `fields` / `schema` as ordinary applications over
+    /// first-class `Type` values.
     fn builtin_value_type(&mut self, name: &str) -> Option<TypeId> {
         let span = self.hir.span;
         match name {
@@ -592,8 +593,162 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 }))
             }
+            "fields" => Some(self.fields_builtin_type(span)),
+            "schema" => Some(self.schema_builtin_type(span)),
             _ => None,
         }
+    }
+
+    fn fields_builtin_type(&mut self, span: Span) -> TypeId {
+        let text = self.text_type(span);
+        let bool_ty = self.bool_type(span);
+        let field_ty = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "name".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "Type".to_string(),
+                        optional: false,
+                        ty: self.type_type,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "optional".to_string(),
+                        optional: false,
+                        ty: bool_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let result = self.alloc_type(Type {
+            kind: TypeKind::List(field_ty),
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: self.type_type,
+                to: result,
+            },
+            span,
+        })
+    }
+
+    fn schema_builtin_type(&mut self, span: Span) -> TypeId {
+        let text = self.text_type(span);
+        let bool_ty = self.bool_type(span);
+        let field_schema_ty = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "name".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "type".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "optional".to_string(),
+                        optional: false,
+                        ty: bool_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let field_list_ty = self.alloc_type(Type {
+            kind: TypeKind::List(field_schema_ty),
+            span,
+        });
+        let variant_schema_ty = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "name".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "fields".to_string(),
+                        optional: false,
+                        ty: field_list_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let variant_list_ty = self.alloc_type(Type {
+            kind: TypeKind::List(variant_schema_ty),
+            span,
+        });
+        let kind_ty = self.alloc_type(Type {
+            kind: TypeKind::Union(
+                vec![
+                    UnionVariant {
+                        name: "record".to_string(),
+                        payload: None,
+                        span,
+                    },
+                    UnionVariant {
+                        name: "union".to_string(),
+                        payload: None,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let result = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "kind".to_string(),
+                        optional: false,
+                        ty: kind_ty,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "fields".to_string(),
+                        optional: true,
+                        ty: field_list_ty,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "variants".to_string(),
+                        optional: true,
+                        ty: variant_list_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: self.type_type,
+                to: result,
+            },
+            span,
+        })
     }
 
     fn alloc_decl(&mut self, decl: ThirDecl) -> ThirDeclId {

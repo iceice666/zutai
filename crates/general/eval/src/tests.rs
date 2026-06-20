@@ -17,6 +17,27 @@ fn run_err(src: &str) -> EvalError {
     eval_file(src).expect_err(&format!("expected error for:\n{src}"))
 }
 
+fn list_item(value: &Value, index: usize) -> Value {
+    let Value::List(items) = value else {
+        panic!("expected list, got {value:?}");
+    };
+    items
+        .get(index)
+        .and_then(thunk::Thunk::peek)
+        .unwrap_or_else(|| panic!("missing forced list item {index}"))
+}
+
+fn record_field_value(value: &Value, field_name: &str) -> Value {
+    let Value::Record(fields) = value else {
+        panic!("expected record, got {value:?}");
+    };
+    fields
+        .iter()
+        .find(|(name, _)| name.as_ref() == field_name)
+        .and_then(|(_, value)| value.peek())
+        .unwrap_or_else(|| panic!("missing forced record field {field_name}"))
+}
+
 fn run_in_imports(src: &str) -> Value {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports");
     eval_with_base(src, Some(&base))
@@ -2084,6 +2105,134 @@ MyInt :: type Int
 MyInt
 ";
     assert_eq!(eval_file(src).unwrap().to_string(), "<type>");
+}
+
+#[test]
+fn fields_record_returns_field_metadata_with_type_values() {
+    let value = run(r#"
+Server :: type { host : Text; port? : Int; }
+fields Server
+"#);
+
+    let host = list_item(&value, 0);
+    assert_eq!(
+        record_field_value(&host, "name"),
+        Value::Text("host".into())
+    );
+    assert!(matches!(
+        record_field_value(&host, "Type"),
+        Value::TypeValue(_)
+    ));
+    assert_eq!(record_field_value(&host, "optional"), Value::Bool(false));
+
+    let port = list_item(&value, 1);
+    assert_eq!(
+        record_field_value(&port, "name"),
+        Value::Text("port".into())
+    );
+    assert!(matches!(
+        record_field_value(&port, "Type"),
+        Value::TypeValue(_)
+    ));
+    assert_eq!(record_field_value(&port, "optional"), Value::Bool(true));
+}
+
+#[test]
+fn schema_record_returns_serializable_shape() {
+    let value = run(r#"
+Server :: type { host : Text; port? : Int; }
+schema Server
+"#);
+
+    assert_eq!(
+        record_field_value(&value, "kind"),
+        Value::Atom("record".into())
+    );
+    let fields = record_field_value(&value, "fields");
+    let host = list_item(&fields, 0);
+    assert_eq!(
+        record_field_value(&host, "name"),
+        Value::Text("host".into())
+    );
+    assert_eq!(
+        record_field_value(&host, "type"),
+        Value::Text("Text".into())
+    );
+    assert_eq!(record_field_value(&host, "optional"), Value::Bool(false));
+
+    let port = list_item(&fields, 1);
+    assert_eq!(
+        record_field_value(&port, "name"),
+        Value::Text("port".into())
+    );
+    assert_eq!(record_field_value(&port, "type"), Value::Text("Int".into()));
+    assert_eq!(record_field_value(&port, "optional"), Value::Bool(true));
+}
+
+#[test]
+fn schema_generic_alias_substitutes_type_arguments() {
+    let value = run(r#"
+Box :: <A> type { value : A; }
+schema (type Box Text)
+"#);
+
+    let fields = record_field_value(&value, "fields");
+    let field = list_item(&fields, 0);
+    assert_eq!(
+        record_field_value(&field, "type"),
+        Value::Text("Text".into())
+    );
+}
+
+#[test]
+fn schema_union_returns_variant_schema() {
+    let value = run(r#"
+Result :: type [
+  ok: { value : Text; };
+  err: { code : Int; };
+  done;
+]
+schema Result
+"#);
+
+    assert_eq!(
+        record_field_value(&value, "kind"),
+        Value::Atom("union".into())
+    );
+    let variants = record_field_value(&value, "variants");
+    let ok = list_item(&variants, 0);
+    assert_eq!(record_field_value(&ok, "name"), Value::Text("ok".into()));
+    let ok_fields = record_field_value(&ok, "fields");
+    let ok_value = list_item(&ok_fields, 0);
+    assert_eq!(
+        record_field_value(&ok_value, "type"),
+        Value::Text("Text".into())
+    );
+
+    let done = list_item(&variants, 2);
+    assert_eq!(
+        record_field_value(&done, "name"),
+        Value::Text("done".into())
+    );
+    let done_fields = record_field_value(&done, "fields");
+    let Value::List(items) = done_fields else {
+        panic!("expected fields list, got {done_fields:?}");
+    };
+    assert!(items.is_empty());
+}
+
+#[test]
+fn reflection_rejects_open_rows() {
+    let err = run_err(
+        r#"
+OpenServer :: type { host : Text; ...; }
+schema OpenServer
+"#,
+    );
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("open record rows")),
+        "got {err:?}"
+    );
 }
 
 // ─── Bool and Float equality (values_equal arms) ─────────────────────────────

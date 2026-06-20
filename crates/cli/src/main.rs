@@ -312,6 +312,11 @@ fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Erro
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
+    if let Some(reason) = analysis.reflection_builtin_program() {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
+
     // TLC lowering.
     let module = zutai_tlc::lower_thir(thir);
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
@@ -375,6 +380,11 @@ fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+
+    if let Some(reason) = analysis.reflection_builtin_program() {
+        eprintln!("error: {reason}");
+        std::process::exit(1);
+    }
 
     let module = zutai_tlc::lower_thir(thir);
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {

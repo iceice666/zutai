@@ -11,7 +11,7 @@ pub type HirTypeId = Idx<HirTypeExpr>;
 /// root scope ("the prelude"). `print` is a compatibility binding over the
 /// `io.print` effect. Single source of truth shared by HIR seeding, THIR type
 /// assignment, and the reference interpreter.
-pub const BUILTIN_VALUE_NAMES: &[&str] = &["print"];
+pub const BUILTIN_VALUE_NAMES: &[&str] = &["print", "fields", "schema"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);

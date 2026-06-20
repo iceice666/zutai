@@ -302,11 +302,11 @@ Verification gate: effect examples run deterministically under the reference int
 
 Goal: implement compile-time reflection over normalized type values.
 
-- [ ] Add compiler-known builtins for `fields T` and `schema T` while keeping their surface syntax as ordinary application.
-- [ ] Implement record reflection first, then union reflection after row/variant representation is stable.
-- [ ] Define the exact `fields` result shape, including embedded `Type` values.
-- [ ] Define the serializable `schema` output shape.
-- [ ] Decide whether open rows are rejected initially or encoded explicitly in schema output.
+- [x] Add compiler-known builtins for `fields T` and `schema T` while keeping their surface syntax as ordinary application.
+- [x] Implement record reflection first, then union reflection after row/variant representation is stable.
+- [x] Define the exact `fields` result shape, including embedded `Type` values.
+- [x] Define the serializable `schema` output shape.
+- [x] Decide whether open rows are rejected initially or encoded explicitly in schema output.
 
 Verification gate: examples from `docs/v1_spec/04-metaprogramming.md` evaluate to deterministic compile-time values; schema output is ordinary serializable data.
 
@@ -342,5 +342,5 @@ Recommended initial policy:
 - [x] **THIR→TLC row elaboration** — Phase 10 above.
 - [x] **`select` semantics and compile support** — Phase 11 above.
 - [x] **deferred constraint/witness milestones** — `derive` synthesis, conditional witnesses, method-level type params, and higher-kinded constraints; Phases 12–14 above.
-- [ ] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
-- [ ] **reflection builtins** — `fields` / `schema`; Phase 17 above.
+- [x] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
+- [x] **reflection builtins** — `fields` / `schema`; Phase 17 above.

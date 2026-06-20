@@ -389,6 +389,20 @@ fn compile_effect_program_is_rejected_by_residual_effect_gate() {
 }
 
 #[test]
+fn compile_reflection_program_is_rejected() {
+    let path = write_tmp(
+        "cli_test_compile_reflection.zt",
+        "Server :: type { host : Text; }\nschema Server\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("reflection builtins"));
+}
+
+#[test]
 fn compile_writes_to_output_file() {
     let path = write_tmp("cli_test_compile_out.zt", "1 + 1\n");
     let out = write_tmp("cli_test_compile_out.ll", "");
@@ -548,6 +562,20 @@ fn dataflow_effect_program_is_rejected_by_residual_effect_gate() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn dataflow_reflection_program_is_rejected() {
+    let path = write_tmp(
+        "cli_test_dataflow_reflection.zt",
+        "Server :: type { host : Text; }\nfields Server\n",
+    );
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("reflection builtins"));
 }
 
 // ─── prelude `print` effect binding ───────────────────────────────────────────

@@ -138,6 +138,37 @@ impl Analysis {
             None
         }
     }
+
+    pub fn reflection_builtin_program(&self) -> Option<&'static str> {
+        if self
+            .import_modules
+            .values()
+            .any(|module| module.as_ref().reflection_builtin_program().is_some())
+        {
+            return Some(
+                "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
+            );
+        }
+        let hir = &self.hir.as_ref()?.file;
+        let file = self.thir.as_ref()?.file.as_ref()?;
+        let uses_reflection = file.expr_arena.iter().any(|(_, expr)| {
+            let zutai_thir::ThirExprKind::BindingRef(binding) = expr.kind else {
+                return false;
+            };
+            let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
+                return false;
+            };
+            hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                && (hir_binding.name == "fields" || hir_binding.name == "schema")
+        });
+        if uses_reflection {
+            Some(
+                "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
+            )
+        } else {
+            None
+        }
+    }
 }
 
 pub fn analyze(input: &str) -> Analysis {

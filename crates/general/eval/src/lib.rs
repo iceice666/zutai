@@ -60,6 +60,10 @@ pub enum EvalError {
     /// Program uses an effect form unsupported by the selected evaluator.
     #[error("cannot run: {0}")]
     EffectfulNotExecutable(String),
+    /// Runtime reflection was asked to inspect a type outside the supported,
+    /// serializable Phase 17 subset.
+    #[error("reflection unsupported: {0}")]
+    ReflectionUnsupported(String),
     /// An effect operation escaped all source handlers and the host boundary.
     #[error("runtime error: unhandled effect `{0}`")]
     UnhandledEffect(String),

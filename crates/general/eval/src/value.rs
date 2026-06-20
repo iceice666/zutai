@@ -22,6 +22,35 @@ use crate::{EvalError, env::Env};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModuleId(pub usize);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeType {
+    pub module: ModuleId,
+    pub ty: TypeId,
+    pub subst: Rc<[(BindingId, RuntimeType)]>,
+}
+
+impl RuntimeType {
+    pub fn new(module: ModuleId, ty: TypeId) -> Self {
+        Self {
+            module,
+            ty,
+            subst: Rc::from([]),
+        }
+    }
+
+    pub fn with_subst(module: ModuleId, ty: TypeId, subst: Rc<[(BindingId, RuntimeType)]>) -> Self {
+        Self { module, ty, subst }
+    }
+
+    pub fn with_ty(&self, ty: TypeId) -> Self {
+        Self {
+            module: self.module,
+            ty,
+            subst: self.subst.clone(),
+        }
+    }
+}
+
 /// A fully-evaluated or partially-applied Zutai runtime value.
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -37,7 +66,7 @@ pub enum Value {
     /// Lazy record — only PRESENT fields are stored.
     Record(Rc<Vec<(Rc<str>, crate::thunk::Thunk)>>),
     Closure(Rc<Closure>),
-    TypeValue(TypeId),
+    TypeValue(RuntimeType),
     /// A tagged union value: `#tag { field = value; ... }`.
     TaggedValue {
         tag: Rc<str>,
@@ -61,10 +90,13 @@ pub enum Value {
 
 /// A compiler-provided builtin function. `print` is re-pointed to the
 /// `io.print` effect by the TLC evaluator; source handlers can intercept it and
-/// the host run boundary handles residual `io.print`.
+/// the host run boundary handles residual `io.print`. `fields` and `schema`
+/// reflect normalized type values through the THIR evaluator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinFn {
     Print,
+    Fields,
+    Schema,
 }
 
 impl BuiltinFn {
@@ -73,6 +105,8 @@ impl BuiltinFn {
     pub fn from_name(name: &str) -> Option<BuiltinFn> {
         match name {
             "print" => Some(BuiltinFn::Print),
+            "fields" => Some(BuiltinFn::Fields),
+            "schema" => Some(BuiltinFn::Schema),
             _ => None,
         }
     }
@@ -440,6 +474,8 @@ impl fmt::Display for Value {
             Value::TypeValue(_) => write!(f, "<type>"),
             Value::WitnessDict(_) => write!(f, "<witness>"),
             Value::Builtin(BuiltinFn::Print) => write!(f, "<builtin print>"),
+            Value::Builtin(BuiltinFn::Fields) => write!(f, "<builtin fields>"),
+            Value::Builtin(BuiltinFn::Schema) => write!(f, "<builtin schema>"),
         }
     }
 }

@@ -33,25 +33,28 @@ Reflection inspects types at compile time:
 serverFields := fields Server
 ```
 
-A conceptual result:
+`fields` currently reflects closed record types. The exact result shape is a list of field
+metadata records:
 
 ```zt
 [
   {
-    name = #host;
+    name = "host";
     Type = Text;
     optional = false;
   };
 
   {
-    name = #port;
+    name = "port";
     Type = Int;
     optional = false;
   };
 ]
 ```
 
-This result may contain `Type` values, so it is useful for metaprogramming but not necessarily serializable.
+`name` is `Text`, `Type` is an embedded `Type` value, and `optional` is `Bool`.
+Because this result contains `Type` values, it is useful for metaprogramming but
+not serializable. `fields` rejects union types; use `schema` for union variants.
 
 ---
 
@@ -65,7 +68,7 @@ serverSchema := schema Server
 serverSchema
 ```
 
-That can output plain data:
+Record schema output is ordinary serializable data:
 
 ```zti
 {
@@ -85,6 +88,21 @@ That can output plain data:
   ];
 }
 ```
+
+Union schema output uses a `variants` list. Payload fields use the same field schema records;
+singleton variants have an empty `fields` list:
+
+```zti
+{
+  kind = #union;
+  variants = [
+    { name = "ok"; fields = [{ name = "value"; type = "Text"; optional = false; }]; };
+    { name = "done"; fields = []; };
+  ];
+}
+```
+
+Open record and union rows are rejected initially instead of encoded in schema output.
 
 So:
 
