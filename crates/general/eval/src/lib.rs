@@ -57,6 +57,9 @@ pub enum EvalError {
     /// A `ThirExprKind::Error` node was reachable in a nominally-complete THIR.
     #[error("internal: reachable Error node in type-checked THIR")]
     ErrorNodeReachable,
+    /// Program uses algebraic effects, which are type-checked but not yet runnable.
+    #[error("cannot run: {0}")]
+    EffectfulNotExecutable(String),
     /// Runtime black-hole: a non-productive recursive binding was forced.
     #[error("runtime error: non-productive recursive definition (black hole)")]
     BlackHole,
@@ -130,6 +133,11 @@ pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, 
     // 4. Belt-and-suspenders: walk reachable exprs for Error nodes.
     if has_reachable_error(file) {
         return Err(EvalError::ErrorNodeReachable);
+    }
+
+    // 5. Algebraic effects type-check in Phase 15 but are not executable yet.
+    if let Some(reason) = analysis.effectful_program() {
+        return Err(EvalError::EffectfulNotExecutable(reason.to_string()));
     }
 
     Ok(file)
@@ -232,6 +240,23 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         RowAnnotationRequired => {
             "row-polymorphic inference is not principal here; add a type annotation".to_string()
         }
+        EffectNotInRow { op } => {
+            format!("effect `{op}` is not declared in the current effect row")
+        }
+        MalformedEffectOp { op, reason } => format!("malformed effect operation `{op}`: {reason}"),
+        ResumeTypeMismatch { expected, found } => {
+            format!("resume type mismatch: expected {expected}, found {found}")
+        }
+        HandlerClauseArityMismatch {
+            op,
+            expected,
+            found,
+        } => {
+            format!("handler clause `{op}` expects {expected} parameter(s), found {found}")
+        }
+        MultipleResume { op } => {
+            format!("handler clause `{op}` may resume more than once on one path")
+        }
     }
 }
 
@@ -314,6 +339,18 @@ fn has_reachable_error(file: &ThirFile) -> bool {
             }
             ThirExprKind::List(items) => stack.extend(items.iter().copied()),
             ThirExprKind::TaggedValue { payload, .. } => stack.push(*payload),
+            ThirExprKind::Perform { arg, .. } => stack.push(*arg),
+            ThirExprKind::Resume { value } => stack.push(*value),
+            ThirExprKind::Handle { expr, value, ops } => {
+                stack.push(*expr);
+                if let Some(value) = value {
+                    stack.push(*value);
+                }
+                for op in ops {
+                    stack.push(op.body);
+                }
+            }
+            ThirExprKind::Sequence(items) => stack.extend(items.iter().copied()),
             // Leaves — no sub-expressions.
             ThirExprKind::True
             | ThirExprKind::False

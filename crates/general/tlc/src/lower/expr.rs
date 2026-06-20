@@ -215,6 +215,15 @@ impl<'thir> Lowerer<'thir> {
                 let arg_tlc = self.lower_expr(arg);
                 self.alloc_expr(TlcExpr::App(func_tlc, arg_tlc), tlc_ty, span)
             }
+            ThirExprKind::Perform { .. }
+            | ThirExprKind::Resume { .. }
+            | ThirExprKind::Handle { .. } => {
+                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
+            }
+            ThirExprKind::Sequence(items) => match items.last().copied() {
+                Some(last) => self.lower_expr(last),
+                None => self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span),
+            },
             ThirExprKind::Import(_) | ThirExprKind::TypeValue(_) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
             }

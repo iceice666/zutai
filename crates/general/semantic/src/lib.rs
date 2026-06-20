@@ -140,6 +140,33 @@ impl Analysis {
         }
         None
     }
+
+    pub fn effectful_program(&self) -> Option<&'static str> {
+        let file = self.thir.as_ref()?.file.as_ref()?;
+        let has_effect_expr = file.expr_arena.iter().any(|(_, expr)| {
+            matches!(
+                expr.kind,
+                zutai_thir::ThirExprKind::Perform { .. }
+                    | zutai_thir::ThirExprKind::Handle { .. }
+                    | zutai_thir::ThirExprKind::Resume { .. }
+                    | zutai_thir::ThirExprKind::Sequence(_)
+            )
+        });
+        let has_effect_type = file.type_arena.iter().any(|ty| {
+            matches!(
+                &ty.kind,
+                zutai_thir::TypeKind::Effect { row, .. } if !row.is_pure()
+            )
+        });
+        if has_effect_expr || has_effect_type {
+            Some(
+                "algebraic effects are type-checked but not yet executable \
+                 (effect evaluation/ordering is Phase 16)",
+            )
+        } else {
+            None
+        }
+    }
 }
 
 pub fn analyze(input: &str) -> Analysis {
@@ -642,6 +669,54 @@ b := import "witness_reexport_b.zt"
         assert!(
             analysis.tlc.is_none(),
             "expected no TLC module for type-error program"
+        );
+    }
+
+    #[test]
+    fn effectful_program_predicate_detects_phase15_effects() {
+        let analysis = analyze(
+            r#"
+Config :: type { value : Text; }
+ParseError :: type Text
+parse :: Text -> Config ! { fail ParseError } {
+  | text => perform fail text;
+}
+parse
+"#,
+        );
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.tlc.is_some(), "check path still builds TLC");
+        assert!(analysis.effectful_program().is_some());
+    }
+
+    #[test]
+    fn effectful_program_predicate_ignores_pure_programs() {
+        let analysis = analyze("x := 1\nx");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert_eq!(analysis.effectful_program(), None);
+    }
+
+    #[test]
+    fn tlc_function_row_keeps_parametric_effect_alias() {
+        let analysis = analyze(
+            r#"
+Config :: type { value : Text; }
+Eff :: <A> type A ! { fail Text }
+parse :: Text -> Eff Config {
+  | text => perform fail text;
+}
+parse
+"#,
+        );
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        let tlc = analysis.tlc.expect("check path should build TLC");
+        let has_fail_row = tlc.type_arena.iter().any(|(_, ty)| {
+            matches!(ty, zutai_tlc::TlcType::Fun(_, _, zutai_tlc::Row::RExtend { label, .. })
+                if label == "fail")
+        });
+        assert!(
+            has_fail_row,
+            "expected TLC function effect row to include fail"
         );
     }
 

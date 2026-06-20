@@ -275,14 +275,14 @@ Verification gate: `Functor`/`Foldable`-shaped examples from `docs/v1_spec/03-co
 
 Goal: type-check algebraic effects while refusing execution/compilation until ordering semantics are implemented.
 
-- [ ] Represent function effect rows in THIR and TLC.
-- [ ] Kind and unify effect rows.
-- [ ] Type-check `perform` against the ambient or locally handled effect row.
-- [ ] Type-check standard aliases (`fail`, `warn`, `log`, `ask`) and dotted capability operations (`fs.read`).
-- [ ] Type-check `handle` so handled operations are removed and unhandled operations are forwarded.
-- [ ] Type-check `resume` result types and enforce the v1 one-shot rule.
-- [ ] Make `run`/`compile` reject effectful programs with precise unsupported-feature diagnostics until sequencing is designed.
-  - The interim string-only `print` builtin (`Text -> Text`, interpreter-only; `compile`/`dataflow` already reject it via `Analysis::compiler_unsupported_builtin`) is the first instance of this pattern. Subsume it here: reintroduce I/O as `perform io.print` over a `Console`/`IO` effect with a handler, then remove or re-point the prelude builtin (`zutai_hir::BUILTIN_VALUE_NAMES`).
+- [x] Represent function effect rows in THIR and TLC.
+- [x] Kind and unify effect rows.
+- [x] Type-check `perform` against the ambient or locally handled effect row.
+- [x] Type-check standard aliases (`fail`, `warn`, `log`, `ask`) and dotted capability operations (`fs.read`).
+- [x] Type-check `handle` so handled operations are removed and unhandled operations are forwarded.
+- [x] Type-check `resume` result types and enforce the v1 one-shot rule.
+- [x] Make `run`/`compile` reject effectful programs with precise unsupported-feature diagnostics until sequencing is designed.
+  - The interim string-only `print` builtin (`Text -> Text`, interpreter-only; `compile`/`dataflow` already reject it via `Analysis::compiler_unsupported_builtin`) remains unchanged in this check-only phase.
 
 Verification gate: `check` accepts/rejects examples from `docs/v1_spec/05-effects.md`; `run` and `compile` refuse effectful programs explicitly rather than miscompiling them.
 
@@ -294,6 +294,7 @@ Goal: define and implement explicit ordering for effectful computations without 
 - [ ] Decide whether effects lower through a dedicated IR marker, Dataflow Core extension, or ANF sequencing boundary.
 - [ ] Implement TLC reference evaluation for handled effects after the ordering model is written.
 - [ ] Extend compile pipeline only after interpreter behavior is deterministic and test-covered.
+- [ ] Reintroduce I/O as `perform io.print` over a `Console`/`IO` effect with a handler, then remove or re-point the interim prelude `print` builtin (`zutai_hir::BUILTIN_VALUE_NAMES`).
 
 Verification gate: effect examples run deterministically under the reference interpreter and have matching compiled behavior before LLVM support is claimed.
 

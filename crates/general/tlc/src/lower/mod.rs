@@ -361,6 +361,13 @@ impl<'thir> Lowerer<'thir> {
                 self.collect_thir_type_vars_into(*from, out);
                 self.collect_thir_type_vars_into(*to, out);
             }
+            TypeKind::Effect { base, row } => {
+                self.collect_thir_type_vars_into(*base, out);
+                for op in &row.ops {
+                    self.collect_thir_type_vars_into(op.param, out);
+                    self.collect_thir_type_vars_into(op.result, out);
+                }
+            }
             TypeKind::List(e) | TypeKind::Optional(e) => self.collect_thir_type_vars_into(*e, out),
             TypeKind::Apply { func, arg } => {
                 self.collect_thir_type_vars_into(*func, out);
@@ -497,6 +504,8 @@ impl<'thir> Lowerer<'thir> {
                     .collect::<Option<_>>()?;
                 Some(format!("{}[{}]", head_key, arg_keys.join(",")))
             }
+            TypeKind::Effect { base, .. } => self.structural_witness_key(base, seen),
+            TypeKind::Never => Some("Never".to_string()),
             TypeKind::TypeVar(binding) => Some(format!("@{}", binding.0)),
             TypeKind::InferVar(v) => Some(format!("?{v}")),
             TypeKind::Type | TypeKind::Error => None,

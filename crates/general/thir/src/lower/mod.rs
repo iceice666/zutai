@@ -10,9 +10,9 @@ use zutai_syntax::Span;
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
-    Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind,
-    ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
-    UnionVariant,
+    EffectRow, Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
+    ThirExprKind, ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField,
+    TypeTupleItem, UnionVariant,
 };
 
 pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
@@ -110,6 +110,9 @@ struct Lowerer<'hir> {
     next_row_var: u32,
     /// Solutions for flexible row variables, mirroring `infer_subst` for types.
     row_subst: HashMap<u32, RowSolution>,
+    effect_ambient: EffectRow,
+    handled_stack: Vec<HashMap<String, (TypeId, TypeId)>>,
+    resume_stack: Vec<(TypeId, TypeId)>,
     /// HM let-generalization schemes: for each generalized binding, the list of
     /// `InferVar` ids quantified over. A reference instantiates these with fresh
     /// independent `InferVar`s so unifying one use site does not monomorphize others.
@@ -165,6 +168,9 @@ impl<'hir> Lowerer<'hir> {
             infer_subst: HashMap::new(),
             next_row_var: 0,
             row_subst: HashMap::new(),
+            effect_ambient: EffectRow::closed_empty(),
+            handled_stack: Vec::new(),
+            resume_stack: Vec::new(),
             poly_schemes: HashMap::new(),
             type_param_kinds: HashMap::new(),
             alias_params: HashMap::new(),
@@ -333,6 +339,70 @@ impl<'hir> Lowerer<'hir> {
             _ => Kind::Star,
         }
     }
+    pub(super) fn unit_type(&mut self, span: Span) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Tuple(Vec::new()),
+            span,
+        })
+    }
+
+    pub(super) fn never_type(&mut self, span: Span) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Never,
+            span,
+        })
+    }
+
+    pub(super) fn lookup_op(&self, name: &str) -> Option<(TypeId, TypeId)> {
+        for layer in self.handled_stack.iter().rev() {
+            if let Some(&sig) = layer.get(name) {
+                return Some(sig);
+            }
+        }
+        self.effect_ambient
+            .find(name)
+            .map(|op| (op.param, op.result))
+    }
+
+    pub(super) fn enter_effectful_result(&mut self, return_ty: TypeId) -> (TypeId, EffectRow) {
+        let saved = std::mem::replace(&mut self.effect_ambient, EffectRow::closed_empty());
+        let resolved = self.resolve_alias(return_ty, &mut HashSet::new(), self.ty(return_ty).span);
+        match self.type_arena[resolved.0 as usize].kind.clone() {
+            TypeKind::Effect { base, row } => {
+                self.effect_ambient = row;
+                (base, saved)
+            }
+            _ => (return_ty, saved),
+        }
+    }
+
+    pub(super) fn exit_effectful_result(&mut self, saved: EffectRow) {
+        self.effect_ambient = saved;
+    }
+
+    pub(super) fn is_never_type(&mut self, ty: TypeId) -> bool {
+        let span = self.ty(ty).span;
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        matches!(self.type_arena[resolved.0 as usize].kind, TypeKind::Never)
+    }
+
+    pub(super) fn discharge_row(&mut self, row: &EffectRow, span: Span) {
+        for op in &row.ops {
+            match self.lookup_op(&op.name) {
+                Some((param, result)) => {
+                    self.unify(param, op.param, span);
+                    self.unify(result, op.result, span);
+                }
+                None => self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::EffectNotInRow {
+                        op: op.name.clone(),
+                    },
+                    span,
+                }),
+            }
+        }
+    }
+
     /// Verify a type used in a value position (value annotation, function
     /// signature) is fully applied — kind `Star`. A partial application
     /// (`Pair Text`, kind `Type -> Type`) is not a value type; re-emit the
@@ -345,6 +415,13 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Function { from, to } => {
                 self.require_ground_type(from, span);
                 self.require_ground_type(to, span);
+            }
+            TypeKind::Effect { base, row } => {
+                self.require_ground_type(base, span);
+                for op in row.ops {
+                    self.require_ground_type(op.param, span);
+                    self.require_ground_type(op.result, span);
+                }
             }
             TypeKind::List(e) | TypeKind::Optional(e) => self.require_ground_type(e, span),
             TypeKind::Record(fields, _) => {
@@ -538,11 +615,6 @@ impl<'hir> Lowerer<'hir> {
         });
     }
 
-    fn unsupported_type(&mut self, feature: &'static str, span: Span) -> TypeId {
-        self.unsupported(feature, span);
-        self.error_type
-    }
-
     fn invalid_type(&mut self, reason: &'static str, span: Span) -> TypeId {
         self.diagnostics.push(ThirDiagnostic {
             kind: ThirDiagnosticKind::InvalidTypeExpression { reason },
@@ -656,8 +728,14 @@ impl<'hir> Lowerer<'hir> {
                 self.occurs(var_id, inner)
             }),
             TypeKind::Record(fields, _) => fields.iter().any(|f| self.occurs(var_id, f.ty)),
+            TypeKind::Effect { base, row } => {
+                self.occurs(var_id, base)
+                    || row
+                        .ops
+                        .iter()
+                        .any(|op| self.occurs(var_id, op.param) || self.occurs(var_id, op.result))
+            }
             TypeKind::Apply { func, arg } => self.occurs(var_id, func) || self.occurs(var_id, arg),
-            TypeKind::AliasApply { args, .. } => args.iter().any(|&a| self.occurs(var_id, a)),
             _ => false,
         }
     }
@@ -676,6 +754,7 @@ impl<'hir> Lowerer<'hir> {
 
         match (k1, k2) {
             (TypeKind::Error, _) | (_, TypeKind::Error) => {}
+            (TypeKind::Never, _) | (_, TypeKind::Never) => {}
 
             (TypeKind::InferVar(v), _) => {
                 if !self.occurs(v, t2) {
@@ -692,6 +771,11 @@ impl<'hir> Lowerer<'hir> {
             (TypeKind::Function { from: f1, to: r1 }, TypeKind::Function { from: f2, to: r2 }) => {
                 self.unify(f1, f2, span);
                 self.unify(r1, r2, span);
+            }
+
+            (TypeKind::Effect { base: b1, row: r1 }, TypeKind::Effect { base: b2, row: r2 }) => {
+                self.unify(b1, b2, span);
+                self.effect_rows_unify(&r1, &r2, span);
             }
 
             (TypeKind::List(e1), TypeKind::List(e2)) => self.unify(e1, e2, span),

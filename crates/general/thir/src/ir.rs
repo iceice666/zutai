@@ -174,6 +174,19 @@ pub enum ThirExprKind {
         scrutinee: ThirExprId,
         arms: Vec<ThirClause>,
     },
+    Perform {
+        op: String,
+        arg: ThirExprId,
+    },
+    Handle {
+        expr: ThirExprId,
+        value: Option<ThirExprId>,
+        ops: Vec<ThirHandleClause>,
+    },
+    Resume {
+        value: ThirExprId,
+    },
+    Sequence(Vec<ThirExprId>),
     Import(HirImportSource),
     TypeValue(TypeId),
     Apply {
@@ -194,6 +207,13 @@ pub enum ThirExprKind {
         lhs: ThirExprId,
         rhs: ThirExprId,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThirHandleClause {
+    pub op: String,
+    pub body: ThirExprId,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -272,6 +292,37 @@ pub struct Type {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct EffectOp {
+    pub name: String,
+    pub param: TypeId,
+    pub result: TypeId,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffectRow {
+    pub ops: Vec<EffectOp>,
+    pub tail: RowTail,
+}
+
+impl EffectRow {
+    pub fn closed_empty() -> Self {
+        Self {
+            ops: Vec::new(),
+            tail: RowTail::Closed,
+        }
+    }
+
+    pub fn is_pure(&self) -> bool {
+        self.ops.is_empty() && self.tail == RowTail::Closed
+    }
+
+    pub fn find(&self, name: &str) -> Option<&EffectOp> {
+        self.ops.iter().find(|op| op.name == name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
     Type,
     Bool,
@@ -290,6 +341,11 @@ pub enum TypeKind {
         from: TypeId,
         to: TypeId,
     },
+    Effect {
+        base: TypeId,
+        row: EffectRow,
+    },
+    Never,
     TypeVar(BindingId),
     /// Inference metavariable generated during type inference.  Solved by the
     /// unification engine and replaced (zonked) with the concrete type before

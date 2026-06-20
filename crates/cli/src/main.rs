@@ -316,6 +316,10 @@ fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Erro
         );
         std::process::exit(1);
     }
+    if let Some(reason) = analysis.effectful_program() {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
@@ -380,6 +384,10 @@ fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         eprintln!(
             "error: `{name}` is an interpreter-only builtin and cannot be lowered to Dataflow Core"
         );
+        std::process::exit(1);
+    }
+    if let Some(reason) = analysis.effectful_program() {
+        eprintln!("error: {reason}");
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();

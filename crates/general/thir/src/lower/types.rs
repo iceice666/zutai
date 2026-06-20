@@ -1,13 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_hir::{
-    BindingId, BindingKind, HirRowTail, HirRowTailKind, HirTypeId, HirTypeKind, HirTypeRecordField,
-    HirTypeTupleItem, HirUnionVariant,
+    BindingId, BindingKind, HirEffectRow, HirRowTail, HirRowTailKind, HirTypeId, HirTypeKind,
+    HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
 };
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::ir::{RowTail, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem, UnionVariant};
+use crate::ir::{
+    EffectOp, EffectRow, RowTail, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+    UnionVariant,
+};
 
 use super::{Lowerer, RowSolution};
 
@@ -83,8 +86,29 @@ impl<'hir> Lowerer<'hir> {
                 })
             }
             HirTypeKind::Apply { func, arg } => self.lower_type_apply(*func, *arg, ty.span),
-            HirTypeKind::Effect { .. } => {
-                self.unsupported_type("effect rows in function types", ty.span)
+            HirTypeKind::Effect { base, row } => {
+                let base = self.lower_type(*base);
+                let mut row = self.lower_effect_row(row);
+                let resolved_base = self.resolve(base);
+                match self.ty(resolved_base).kind.clone() {
+                    TypeKind::Effect {
+                        base: inner_base,
+                        row: inner_row,
+                    } => {
+                        row.ops.extend(inner_row.ops);
+                        self.alloc_type(Type {
+                            kind: TypeKind::Effect {
+                                base: inner_base,
+                                row,
+                            },
+                            span: ty.span,
+                        })
+                    }
+                    _ => self.alloc_type(Type {
+                        kind: TypeKind::Effect { base, row },
+                        span: ty.span,
+                    }),
+                }
             }
             HirTypeKind::Select { receiver, fields } => {
                 let receiver_ty = self.lower_type(*receiver);
@@ -183,6 +207,71 @@ impl<'hir> Lowerer<'hir> {
             HirTypeKind::ExprEscape(_) => {
                 self.invalid_type("type expression escapes are not supported yet", ty.span)
             }
+        }
+    }
+
+    fn lower_effect_row(&mut self, row: &HirEffectRow) -> EffectRow {
+        let ops = row
+            .ops
+            .iter()
+            .map(|op| {
+                let name = op.path.join(".");
+                let (param, result) = if let Some(sig) = op.signature {
+                    let sig = self.lower_type(sig);
+                    let resolved = self.resolve_alias(sig, &mut HashSet::new(), op.span);
+                    match self.ty(resolved).kind {
+                        TypeKind::Function { from, to } => (from, to),
+                        TypeKind::Error => (self.error_type, self.error_type),
+                        _ => {
+                            self.diagnostics.push(ThirDiagnostic {
+                                kind: ThirDiagnosticKind::MalformedEffectOp {
+                                    op: name.clone(),
+                                    reason: "effect operation signature must be a function type",
+                                },
+                                span: op.span,
+                            });
+                            (self.error_type, self.error_type)
+                        }
+                    }
+                } else if let Some(payload) = op.payload {
+                    let payload = self.lower_type(payload);
+                    match name.as_str() {
+                        "fail" => (payload, self.never_type(op.span)),
+                        "warn" | "log" => (payload, self.unit_type(op.span)),
+                        "ask" => (self.unit_type(op.span), payload),
+                        _ => {
+                            self.diagnostics.push(ThirDiagnostic {
+                                kind: ThirDiagnosticKind::MalformedEffectOp {
+                                    op: name.clone(),
+                                    reason:
+                                        "compact effect form is only valid for fail, warn, log, or ask",
+                                },
+                                span: op.span,
+                            });
+                            (self.error_type, self.error_type)
+                        }
+                    }
+                } else {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::MalformedEffectOp {
+                            op: name.clone(),
+                            reason: "effect operation needs a payload or an explicit signature",
+                        },
+                        span: op.span,
+                    });
+                    (self.error_type, self.error_type)
+                };
+                EffectOp {
+                    name,
+                    param,
+                    result,
+                    span: op.span,
+                }
+            })
+            .collect();
+        EffectRow {
+            ops,
+            tail: RowTail::Closed,
         }
     }
 
@@ -588,6 +677,7 @@ impl<'hir> Lowerer<'hir> {
 
         match (ek, fk) {
             (TypeKind::Error, _) | (_, TypeKind::Error) => true,
+            (_, TypeKind::Never) => true,
 
             // Solve InferVars: if either side is an unsolved InferVar, unify
             // and treat as matching (errors emitted inside unify on conflicts).
@@ -646,6 +736,13 @@ impl<'hir> Lowerer<'hir> {
                 // a function accepting an open record may stand in for one that
                 // takes a wider closed record, but never the reverse.
                 self.type_matches(ff, ef) && self.type_matches(et, ft)
+            }
+            (TypeKind::Effect { base: eb, row: er }, TypeKind::Effect { base: fb, row: fr }) => {
+                self.effect_rows_match(&er, &fr) && self.type_matches(eb, fb)
+            }
+            (_, TypeKind::Effect { base, row }) => {
+                self.discharge_row(&row, f_span);
+                self.type_matches(expected, base)
             }
             // Higher-kinded application: match head and argument structurally,
             // solving infer vars on either side (both already alias-resolved).
@@ -765,6 +862,82 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
         }
+    }
+
+    pub(super) fn effect_rows_unify(
+        &mut self,
+        expected: &EffectRow,
+        found: &EffectRow,
+        span: Span,
+    ) {
+        for op in &expected.ops {
+            match found.find(&op.name) {
+                Some(found_op) => {
+                    self.unify(op.param, found_op.param, span);
+                    self.unify(op.result, found_op.result, span);
+                }
+                None => {
+                    self.type_mismatch_effect(expected, found, span);
+                    return;
+                }
+            }
+        }
+        if found
+            .ops
+            .iter()
+            .any(|found_op| expected.find(&found_op.name).is_none())
+            || expected.tail != found.tail
+        {
+            self.type_mismatch_effect(expected, found, span);
+        }
+    }
+
+    fn effect_rows_match(&mut self, expected: &EffectRow, found: &EffectRow) -> bool {
+        if expected.tail != found.tail {
+            return false;
+        }
+        for found_op in &found.ops {
+            let Some(expected_op) = expected.find(&found_op.name) else {
+                return false;
+            };
+            if !self.type_matches(found_op.param, expected_op.param)
+                || !self.type_matches(expected_op.result, found_op.result)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn type_mismatch_effect(&mut self, expected: &EffectRow, found: &EffectRow, span: Span) {
+        let expected = self.effect_row_name(expected);
+        let found = self.effect_row_name(found);
+        self.diagnostics.push(ThirDiagnostic {
+            kind: ThirDiagnosticKind::TypeMismatch { expected, found },
+            span,
+        });
+    }
+
+    fn effect_row_name(&mut self, row: &EffectRow) -> String {
+        if row.ops.is_empty() && row.tail == RowTail::Closed {
+            return "{}".to_string();
+        }
+        let mut parts: Vec<String> = row
+            .ops
+            .iter()
+            .map(|op| {
+                format!(
+                    "{}: {} -> {}",
+                    op.name,
+                    self.type_name(op.param),
+                    self.type_name(op.result)
+                )
+            })
+            .collect();
+        if row.tail != RowTail::Closed {
+            parts.push(row_tail_key(row.tail));
+        }
+        format!("{{{}}}", parts.join(", "))
     }
 
     fn tuple_types_match(
@@ -935,6 +1108,10 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Union(_, _) => "union".to_string(),
             TypeKind::Tuple(_) => "tuple".to_string(),
             TypeKind::Function { .. } => "function".to_string(),
+            TypeKind::Effect { base, row } => {
+                format!("{}!{}", self.type_name(base), self.effect_row_name(&row))
+            }
+            TypeKind::Never => "Never".to_string(),
             TypeKind::TypeVar(binding) | TypeKind::Alias(binding) => {
                 self.hir.bindings[binding.0 as usize].name.clone()
             }
@@ -1031,6 +1208,28 @@ impl<'hir> Lowerer<'hir> {
                     self.witness_target_key_with(to, norm)
                 )
             }
+            TypeKind::Effect { base, row } => {
+                let ops = row
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        format!(
+                            "{}:{}->{}",
+                            op.name,
+                            self.witness_target_key_with(op.param, norm),
+                            self.witness_target_key_with(op.result, norm)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    "{}!{{{}{}}}",
+                    self.witness_target_key_with(base, norm),
+                    ops,
+                    row_tail_key(row.tail)
+                )
+            }
+            TypeKind::Never => "Never".to_string(),
             // Witness params normalize to positional holes; other vars/aliases
             // key by binding index (shadow-safe).
             TypeKind::TypeVar(b) => match norm.get(&b) {
@@ -1109,6 +1308,13 @@ impl<'hir> Lowerer<'hir> {
                     self.collect_type_vars_into(f.ty, out);
                 }
             }
+            TypeKind::Effect { base, row } => {
+                self.collect_type_vars_into(base, out);
+                for op in row.ops {
+                    self.collect_type_vars_into(op.param, out);
+                    self.collect_type_vars_into(op.result, out);
+                }
+            }
             TypeKind::AliasApply { args, .. } => {
                 for a in args {
                     self.collect_type_vars_into(a, out);
@@ -1158,6 +1364,16 @@ impl<'hir> Lowerer<'hir> {
                     }
                 }
                 if let RowTail::Param(b) = tail {
+                    out.push(b);
+                }
+            }
+            TypeKind::Effect { base, row } => {
+                self.collect_row_params_into(base, out);
+                for op in &row.ops {
+                    self.collect_row_params_into(op.param, out);
+                    self.collect_row_params_into(op.result, out);
+                }
+                if let RowTail::Param(b) = row.tail {
                     out.push(b);
                 }
             }
@@ -1293,6 +1509,32 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Record(new_fields, tail),
+                    span,
+                })
+            }
+            TypeKind::Effect { base, row } => {
+                let new_base = self.instantiate_type_vars(base, subst);
+                let new_ops: Vec<EffectOp> = row
+                    .ops
+                    .iter()
+                    .map(|op| EffectOp {
+                        name: op.name.clone(),
+                        param: self.instantiate_type_vars(op.param, subst),
+                        result: self.instantiate_type_vars(op.result, subst),
+                        span: op.span,
+                    })
+                    .collect();
+                if new_base == base && new_ops == row.ops {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Effect {
+                        base: new_base,
+                        row: EffectRow {
+                            ops: new_ops,
+                            tail: row.tail,
+                        },
+                    },
                     span,
                 })
             }
@@ -1463,6 +1705,36 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::Effect { base, row } => {
+                let new_base = self.instantiate_row_params(base, subst);
+                let new_ops: Vec<EffectOp> = row
+                    .ops
+                    .iter()
+                    .map(|op| EffectOp {
+                        name: op.name.clone(),
+                        param: self.instantiate_row_params(op.param, subst),
+                        result: self.instantiate_row_params(op.result, subst),
+                        span: op.span,
+                    })
+                    .collect();
+                let new_tail = match row.tail {
+                    RowTail::Param(b) => subst.get(&b).copied().unwrap_or(row.tail),
+                    _ => row.tail,
+                };
+                if new_base == base && new_ops == row.ops && new_tail == row.tail {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Effect {
+                        base: new_base,
+                        row: EffectRow {
+                            ops: new_ops,
+                            tail: new_tail,
+                        },
+                    },
+                    span,
+                })
+            }
             _ => ty,
         }
     }
@@ -1510,6 +1782,13 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Record(fields, _) => {
                 for f in fields {
                     self.free_infer_vars_into(f.ty, out);
+                }
+            }
+            TypeKind::Effect { base, row } => {
+                self.free_infer_vars_into(base, out);
+                for op in row.ops {
+                    self.free_infer_vars_into(op.param, out);
+                    self.free_infer_vars_into(op.result, out);
                 }
             }
             TypeKind::AliasApply { args, .. } => {
@@ -1671,6 +1950,32 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Record(new_fields, tail),
+                    span,
+                })
+            }
+            TypeKind::Effect { base, row } => {
+                let new_base = self.instantiate_infer_vars(base, subst);
+                let new_ops: Vec<EffectOp> = row
+                    .ops
+                    .iter()
+                    .map(|op| EffectOp {
+                        name: op.name.clone(),
+                        param: self.instantiate_infer_vars(op.param, subst),
+                        result: self.instantiate_infer_vars(op.result, subst),
+                        span: op.span,
+                    })
+                    .collect();
+                if new_base == base && new_ops == row.ops {
+                    return ty;
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::Effect {
+                        base: new_base,
+                        row: EffectRow {
+                            ops: new_ops,
+                            tail: row.tail,
+                        },
+                    },
                     span,
                 })
             }

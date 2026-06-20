@@ -4148,23 +4148,303 @@ id
     );
 }
 
-// ── Phase 8: v1 forms are rejected at the semantic entry point ───────────────
+// ── Phase 15: effect typing (check-only) ─────────────────────────────────────
 
-fn rejects_as_unsupported(src: &str) {
+fn rejects_with(src: &str, pred: impl Fn(&ThirDiagnosticKind) -> bool) {
     let lowered = lower(src);
     assert!(
-        lowered
-            .diagnostics
-            .iter()
-            .any(|d| matches!(d.kind, ThirDiagnosticKind::UnsupportedFeature { .. })),
-        "expected an unsupported-feature diagnostic for {src:?}, got {:?}",
+        lowered.diagnostics.iter().any(|d| pred(&d.kind)),
+        "expected diagnostic for {src:?}, got {:?}",
         lowered.diagnostics
     );
 }
 
 #[test]
-fn perform_is_unsupported_in_thir() {
-    rejects_as_unsupported("err := 1\nperform fail err");
+fn effectful_function_perform_fail_checks() {
+    let file = completed_file(
+        r#"
+Config :: type { value : Text; }
+ParseError :: type Text
+parse :: Text -> Config ! { fail ParseError } {
+  | text => perform fail text;
+}
+parse
+"#,
+    );
+    let TypeKind::Function { to, .. } = final_type_kind(&file) else {
+        panic!("expected parse to have function type");
+    };
+    let TypeKind::Effect { row, .. } = &file.type_arena[to.0 as usize].kind else {
+        panic!(
+            "expected effectful function result, got {:?}",
+            file.type_arena[to.0 as usize].kind
+        );
+    };
+    let fail = row.find("fail").expect("fail op in row");
+    assert!(matches!(
+        file.type_arena[fail.result.0 as usize].kind,
+        TypeKind::Never
+    ));
+}
+
+#[test]
+fn effect_alias_return_is_discharged_at_call_site() {
+    rejects_with(
+        r#"
+Config :: type { value : Text; }
+EffConfig :: type Config ! { fail Text }
+parse :: Text -> EffConfig {
+  | text => perform fail text;
+}
+parse "bad"
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fail"),
+    );
+}
+
+#[test]
+fn if_inference_uses_else_type_when_then_branch_is_never() {
+    completed_file(
+        r#"
+choose :: Bool -> Text ! { fail Text } {
+  | b => {
+    x := if b then perform fail "bad" else "ok";
+    x
+  };
+}
+choose
+"#,
+    );
+}
+
+#[test]
+fn match_inference_uses_later_type_when_first_arm_is_never() {
+    completed_file(
+        r#"
+Status :: type [ bad; good; ]
+choose :: Status -> Text ! { fail Text } {
+  | s => {
+    x := match s {
+      | #bad => perform fail "bad";
+      | #good => "ok";
+    };
+    x
+  };
+}
+choose
+"#,
+    );
+}
+
+#[test]
+fn handler_forwards_unhandled_effects_and_resumes() {
+    completed_file(
+        r#"
+Diagnostic :: type Text
+Config :: type { value : Text; }
+check :: Config -> Config ! { warn Diagnostic } {
+  | cfg => { perform warn cfg.value; cfg };
+}
+handleWarn :: Config -> Config ! { log Diagnostic } {
+  | cfg => handle check cfg with { warn = \d. { perform log d; resume (); }; };
+}
+handleWarn
+"#,
+    );
+}
+
+#[test]
+fn nested_handler_resume_does_not_count_against_outer_handler() {
+    completed_file(
+        r#"
+Diagnostic :: type Text
+Config :: type { value : Text; }
+check :: Config -> Config ! { warn Diagnostic } {
+  | cfg => { perform warn cfg.value; cfg };
+}
+nested :: Config -> Config {
+  | cfg => handle check cfg with { warn = \d. { handle check cfg with { warn = \x. resume (); }; resume (); }; };
+}
+nested
+"#,
+    );
+}
+
+#[test]
+fn explicit_standard_named_effect_signature_drives_resume_type() {
+    completed_file(
+        r#"
+f :: Text -> Int ! { fail : Text -> Int } {
+  | text => perform fail text;
+}
+handled :: Text -> Int {
+  | text => handle f text with { fail = \e. resume 1; };
+}
+handled
+"#,
+    );
+}
+
+#[test]
+fn direct_standard_warn_handler_uses_unit_resume_type() {
+    rejects_with(
+        r#"
+bad :: Text -> Text {
+  | d => handle { perform warn d; "ok" } with { warn = \x. resume 42; };
+}
+bad
+"#,
+        |kind| {
+            matches!(kind, ThirDiagnosticKind::ResumeTypeMismatch { expected, found }
+            if expected == "tuple" && found == "Int")
+        },
+    );
+}
+
+#[test]
+fn dotted_capability_effect_checks() {
+    completed_file(
+        r#"
+FsRead :: type { token : Text; }
+Path :: type Text
+IOError :: type Text
+load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError } {
+  | fs path => perform fs.read path;
+}
+load
+"#,
+    );
+}
+
+#[test]
+fn perform_in_pure_function_reports_effect_not_in_row() {
+    rejects_with(
+        r#"
+f :: Text -> Text {
+  | x => perform fail x;
+}
+f
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fail"),
+    );
+}
+
+#[test]
+fn perform_argument_mismatch_reports_type_mismatch() {
+    rejects_with(
+        r#"
+Config :: type { value : Text; }
+parse :: Text -> Config ! { fail Text } {
+  | text => perform fail 1;
+}
+parse
+"#,
+        |kind| {
+            matches!(kind, ThirDiagnosticKind::TypeMismatch { expected, found }
+            if expected == "Text" && found == "Int")
+        },
+    );
+}
+
+#[test]
+fn resume_argument_mismatch_reports_resume_type_mismatch() {
+    rejects_with(
+        r#"
+Diagnostic :: type Text
+Config :: type { value : Text; }
+check :: Config -> Config ! { warn Diagnostic } {
+  | cfg => { perform warn cfg.value; cfg };
+}
+bad :: Config -> Config {
+  | cfg => handle check cfg with { warn = \d. resume 42; };
+}
+bad
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::ResumeTypeMismatch { found, .. } if found == "Int"),
+    );
+}
+
+#[test]
+fn handler_clause_wrong_arity_reports_diagnostic() {
+    rejects_with(
+        r#"
+Diagnostic :: type Text
+Config :: type { value : Text; }
+check :: Config -> Config ! { warn Diagnostic } {
+  | cfg => { perform warn cfg.value; cfg };
+}
+bad :: Config -> Config {
+  | cfg => handle check cfg with { warn = \a b. resume (); };
+}
+bad
+"#,
+        |kind| {
+            matches!(kind, ThirDiagnosticKind::HandlerClauseArityMismatch { op, expected, found }
+            if op == "warn" && *expected == 1 && *found == 2)
+        },
+    );
+}
+
+#[test]
+fn handler_clause_multiple_resume_reports_diagnostic() {
+    rejects_with(
+        r#"
+Diagnostic :: type Text
+Config :: type { value : Text; }
+check :: Config -> Config ! { warn Diagnostic } {
+  | cfg => { perform warn cfg.value; cfg };
+}
+bad :: Config -> Config {
+  | cfg => handle check cfg with { warn = \d. { resume (); resume (); }; };
+}
+bad
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::MultipleResume { op } if op == "warn"),
+    );
+}
+
+#[test]
+fn malformed_effect_op_reports_diagnostic() {
+    rejects_with(
+        r#"
+bad :: Text -> Text ! { foo Text } {
+  | x => x;
+}
+bad
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::MalformedEffectOp { op, .. } if op == "foo"),
+    );
+}
+
+#[test]
+fn resume_outside_handler_remains_a_hir_error() {
+    let parsed = zutai_syntax::parse("resume 1");
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    assert!(
+        hir.diagnostics
+            .iter()
+            .any(|d| { matches!(d.kind, zutai_hir::HirDiagnosticKind::ResumeOutsideHandler) })
+    );
+}
+
+#[test]
+fn resume_in_nested_value_clause_remains_a_hir_error() {
+    let parsed = zutai_syntax::parse(
+        r#"
+outer :: Text -> Text ! { warn Text } {
+  | d => handle { perform warn d; "ok" } with { warn = \x. { handle "ok" with { value = \v. resume (); }; resume (); }; };
+}
+outer
+"#,
+    );
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    assert!(
+        hir.diagnostics
+            .iter()
+            .any(|d| { matches!(d.kind, zutai_hir::HirDiagnosticKind::ResumeOutsideHandler) })
+    );
 }
 
 // ── Phase 9: row-polymorphic THIR ────────────────────────────────────────────

@@ -296,6 +296,7 @@ impl<'hir> Lowerer<'hir> {
     fn lower_function_clauses(&mut self, clauses: &[HirClause], sig: TypeId) -> Vec<ThirClause> {
         let sig_span = self.ty(sig).span;
         let (param_types, return_type) = self.function_parts(sig, sig_span);
+        let (body_type, saved_effect_ambient) = self.enter_effectful_result(return_type);
         let lowered: Vec<ThirClause> = clauses
             .iter()
             .map(|clause| {
@@ -323,7 +324,7 @@ impl<'hir> Lowerer<'hir> {
                     let bool_ty = self.bool_type(clause.span);
                     self.check_expr(guard, bool_ty)
                 });
-                let body = self.check_expr(clause.body, return_type);
+                let body = self.check_expr(clause.body, body_type);
                 self.clear_scoped_value_types(&scoped_bindings);
 
                 ThirClause {
@@ -334,6 +335,8 @@ impl<'hir> Lowerer<'hir> {
                 }
             })
             .collect();
+
+        self.exit_effectful_result(saved_effect_ambient);
 
         // Only check coverage when every clause matches the function arity; a
         // clause-arity mismatch already produced a diagnostic.

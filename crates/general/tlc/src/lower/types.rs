@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_hir::BindingId;
-use zutai_thir::{RowTail, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
+use zutai_thir::{EffectRow, RowTail, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
 use crate::ir::{Kind, Literal, PrimTy, Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
@@ -26,10 +26,18 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Text => self.alloc_type(TlcType::Prim(PrimTy::Str)),
             TypeKind::Function { from, to } => {
                 let from_tlc = self.lower_type(from);
-                let to_tlc = self.lower_type(to);
-                // v0: every function is pure — effect row defaults to REmpty (spec §4 line 171).
-                self.alloc_type(TlcType::Fun(from_tlc, to_tlc, Row::REmpty))
+                match self.lower_effect_type_to_tlc(to, &HashMap::new()) {
+                    Some((base_tlc, eff_row)) => {
+                        self.alloc_type(TlcType::Fun(from_tlc, base_tlc, eff_row))
+                    }
+                    None => {
+                        let to_tlc = self.lower_type(to);
+                        self.alloc_type(TlcType::Fun(from_tlc, to_tlc, Row::REmpty))
+                    }
+                }
             }
+            TypeKind::Effect { base, .. } => self.lower_type(base),
+            TypeKind::Never => self.alloc_type(TlcType::Prim(PrimTy::Nothing)),
             TypeKind::List(inner) => {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::List(inner_tlc))
@@ -129,6 +137,175 @@ impl<'thir> Lowerer<'thir> {
         };
         self.type_cache.insert(resolved.0, tlc_ty);
         tlc_ty
+    }
+
+    fn lower_effect_type_to_tlc(
+        &mut self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> Option<(TlcTypeId, Row)> {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::TypeVar(binding) => subst
+                .get(&binding)
+                .and_then(|&replacement| self.lower_effect_type_to_tlc(replacement, subst)),
+            TypeKind::Effect { base, row } => {
+                let base = self.lower_type_with_subst(base, subst);
+                let row = self.lower_effect_row_to_tlc_with_subst(&row, subst);
+                Some((base, row))
+            }
+            TypeKind::Alias(binding) => self
+                .type_alias_body(binding)
+                .and_then(|body| self.lower_effect_type_to_tlc(body, subst)),
+            TypeKind::AliasApply { binding, args } => {
+                self.lower_effect_alias_apply_to_tlc(binding, &args, subst)
+            }
+            TypeKind::Apply { .. } => {
+                let (head, args) = self.thir_app_spine(ty);
+                match self.thir.type_arena[head.0 as usize].kind {
+                    TypeKind::Alias(binding) => {
+                        self.lower_effect_alias_apply_to_tlc(binding, &args, subst)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn lower_effect_alias_apply_to_tlc(
+        &mut self,
+        binding: BindingId,
+        args: &[TypeId],
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> Option<(TlcTypeId, Row)> {
+        let (params, body) = self.type_alias_params_body(binding)?;
+        if params.len() != args.len() {
+            return None;
+        }
+        let mut child = subst.clone();
+        for (param, &arg) in params.iter().zip(args) {
+            child.insert(*param, arg);
+        }
+        self.lower_effect_type_to_tlc(body, &child)
+    }
+
+    fn lower_effect_row_to_tlc_with_subst(
+        &mut self,
+        row: &EffectRow,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> Row {
+        let fields: Vec<_> = row
+            .ops
+            .iter()
+            .map(|op| {
+                let param = self.lower_type_with_subst(op.param, subst);
+                let result = self.lower_type_with_subst(op.result, subst);
+                let sig = self.alloc_type(TlcType::Fun(param, result, Row::REmpty));
+                (op.name.clone(), sig)
+            })
+            .collect();
+        let tail = self.thir_row_tail(row.tail);
+        Row::from_fields_with_tail(fields, tail)
+    }
+
+    fn lower_type_with_subst(
+        &mut self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+    ) -> TlcTypeId {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::TypeVar(binding) => match subst.get(&binding).copied() {
+                Some(replacement) => self.lower_type_with_subst(replacement, subst),
+                None => {
+                    let tyvar = self.named_tyvar(binding);
+                    self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
+                }
+            },
+            TypeKind::Function { from, to } => {
+                let from_tlc = self.lower_type_with_subst(from, subst);
+                match self.lower_effect_type_to_tlc(to, subst) {
+                    Some((base_tlc, row)) => self.alloc_type(TlcType::Fun(from_tlc, base_tlc, row)),
+                    None => {
+                        let to_tlc = self.lower_type_with_subst(to, subst);
+                        self.alloc_type(TlcType::Fun(from_tlc, to_tlc, Row::REmpty))
+                    }
+                }
+            }
+            TypeKind::Effect { base, .. } => self.lower_type_with_subst(base, subst),
+            TypeKind::List(inner) => {
+                let inner = self.lower_type_with_subst(inner, subst);
+                self.alloc_type(TlcType::List(inner))
+            }
+            TypeKind::Optional(inner) => {
+                let inner = self.lower_type_with_subst(inner, subst);
+                self.alloc_type(TlcType::Optional(inner))
+            }
+            TypeKind::Record(fields, tail) => {
+                let row_fields: Vec<(String, TlcTypeId, bool)> = fields
+                    .iter()
+                    .map(|field| {
+                        (
+                            field.name.clone(),
+                            self.lower_type_with_subst(field.ty, subst),
+                            field.optional,
+                        )
+                    })
+                    .collect();
+                let row_tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::Record(Row::from_record_fields_with_tail(
+                    row_fields, row_tail,
+                )))
+            }
+            TypeKind::Union(variants, tail) => {
+                let fields: Vec<(String, TlcTypeId)> = variants
+                    .iter()
+                    .map(|variant| {
+                        let ty = match variant.payload {
+                            Some(payload) => self.lower_type_with_subst(payload, subst),
+                            None => self.alloc_type(TlcType::Singleton(Literal::Atom(
+                                variant.name.clone(),
+                            ))),
+                        };
+                        (variant.name.clone(), ty)
+                    })
+                    .collect();
+                let row_tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::VariantT(Row::from_fields_with_tail(
+                    fields, row_tail,
+                )))
+            }
+            TypeKind::Tuple(items) => {
+                let items: Vec<TlcTupleField> = items
+                    .iter()
+                    .map(|item| match item {
+                        TypeTupleItem::Named { name, ty, .. } => TlcTupleField::Named {
+                            name: name.clone(),
+                            ty: self.lower_type_with_subst(*ty, subst),
+                        },
+                        TypeTupleItem::Positional(ty) => {
+                            TlcTupleField::Positional(self.lower_type_with_subst(*ty, subst))
+                        }
+                    })
+                    .collect();
+                self.alloc_type(TlcType::Tuple(items))
+            }
+            TypeKind::AliasApply { binding, args } => {
+                let tyvar = self.named_tyvar(binding);
+                let kind = self.alias_head_kind(binding);
+                let mut spine = self.alloc_type(TlcType::TyVar(tyvar, kind));
+                for arg in args {
+                    let arg_tlc = self.lower_type_with_subst(arg, subst);
+                    spine = self.alloc_type(TlcType::TyApp(spine, arg_tlc));
+                }
+                spine
+            }
+            TypeKind::Apply { func, arg } => {
+                let func = self.lower_type_with_subst(func, subst);
+                let arg = self.lower_type_with_subst(arg, subst);
+                self.alloc_type(TlcType::TyApp(func, arg))
+            }
+            _ => self.lower_type(ty),
+        }
     }
 
     fn resolve_thir(&self, ty: TypeId) -> TypeId {

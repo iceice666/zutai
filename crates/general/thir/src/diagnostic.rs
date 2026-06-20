@@ -140,4 +140,23 @@ pub enum ThirDiagnosticKind {
     /// Row-polymorphic inference is not principal here; an explicit type
     /// annotation is required.
     RowAnnotationRequired,
+    EffectNotInRow {
+        op: String,
+    },
+    MalformedEffectOp {
+        op: String,
+        reason: &'static str,
+    },
+    ResumeTypeMismatch {
+        expected: String,
+        found: String,
+    },
+    HandlerClauseArityMismatch {
+        op: String,
+        expected: usize,
+        found: usize,
+    },
+    MultipleResume {
+        op: String,
+    },
 }

@@ -453,6 +453,14 @@ impl<'a> Evaluator<'a> {
                     }),
                 }
             }
+            ThirExprKind::Perform { .. }
+            | ThirExprKind::Handle { .. }
+            | ThirExprKind::Resume { .. }
+            | ThirExprKind::Sequence(_) => Err(EvalError::EffectfulNotExecutable(
+                "algebraic effects are type-checked but not yet executable \
+                 (effect evaluation/ordering is Phase 16)"
+                    .to_string(),
+            )),
             ThirExprKind::Error => Err(EvalError::Internal(
                 "Error node reached evaluator (unreachable past gate)",
             )),
@@ -1283,6 +1291,8 @@ fn type_key_subst(
                 type_key_subst(type_arena, aliases, subst, *to, d)
             )
         }
+        TypeKind::Effect { base, .. } => type_key_subst(type_arena, aliases, subst, *base, d),
+        TypeKind::Never => "Never".into(),
         TypeKind::Alias(b) => format!("@{}", b.0),
         TypeKind::TypeVar(b) => match subst.get(b) {
             Some(&t) => type_key_subst(type_arena, aliases, subst, t, d),

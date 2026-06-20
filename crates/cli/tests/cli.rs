@@ -89,6 +89,17 @@ fn run_missing_file_exits_nonzero() {
         .failure();
 }
 
+#[test]
+fn run_effect_program_is_rejected_until_phase16() {
+    let path = write_tmp("cli_test_run_effect.zt", EFFECT_SRC);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Phase 16"));
+}
+
 // ─── `parse` subcommand ───────────────────────────────────────────────────────
 
 #[test]
@@ -241,6 +252,14 @@ fn parse_zt_with_type_error_exits_nonzero() {
 }
 
 // ─── `check` subcommand ────────────────────────────────────────────────────────
+const EFFECT_SRC: &str = r#"
+Config :: type { value : Text; }
+ParseError :: type Text
+parse :: Text -> Config ! { fail ParseError } {
+  | text => perform fail text;
+}
+parse
+"#;
 
 #[test]
 fn check_valid_zt_file_passes() {
@@ -263,6 +282,17 @@ fn check_zt_parse_error_exits_nonzero() {
 fn check_zt_type_error_exits_nonzero() {
     let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\"\nx\n");
     cli().arg("check").arg(&path).assert().failure();
+}
+
+#[test]
+fn check_effect_program_passes() {
+    let path = write_tmp("cli_test_check_effect.zt", EFFECT_SRC);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
 }
 #[test]
 fn check_higher_kinded_constraint_passes() {
@@ -307,6 +337,17 @@ fn compile_zt_parse_error_exits_nonzero() {
 fn compile_zt_type_error_exits_nonzero() {
     let path = write_tmp("cli_test_compile_type_err.zt", "x :: Int = \"bad\"\nx\n");
     cli().arg("compile").arg(&path).assert().failure();
+}
+
+#[test]
+fn compile_effect_program_is_rejected_until_phase16() {
+    let path = write_tmp("cli_test_compile_effect.zt", EFFECT_SRC);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("algebraic effects"));
 }
 
 #[test]
@@ -458,6 +499,17 @@ fn dataflow_valid_zt_file_prints_graph() {
 fn dataflow_zt_parse_error_exits_nonzero() {
     let path = write_tmp("cli_test_dataflow_parse_err.zt", "[1; 2]\n");
     cli().arg("dataflow").arg(&path).assert().failure();
+}
+
+#[test]
+fn dataflow_effect_program_is_rejected_until_phase16() {
+    let path = write_tmp("cli_test_dataflow_effect.zt", EFFECT_SRC);
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("algebraic effects"));
 }
 
 // ─── prelude `print` builtin ───────────────────────────────────────────────────

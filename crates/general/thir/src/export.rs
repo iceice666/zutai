@@ -143,6 +143,9 @@ fn export(
         // semantic crate overwrites it with the real denotation after walking
         // the final expression.
         TypeKind::Type => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
+        TypeKind::Effect { .. } | TypeKind::Never => Err(ExportUnsupported {
+            reason: "effect types cannot cross a module boundary in this phase",
+        }),
         TypeKind::Error => Err(ExportUnsupported {
             reason: "imported module has an unresolved type",
         }),
