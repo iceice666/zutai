@@ -1,0 +1,348 @@
+use super::*;
+
+// ── V1 parser frontend surface syntax ─────────────────────────────────────────
+
+#[test]
+fn v1_record_row_tails_parse() {
+    let e = parse_expr_str("type { host : Text; ...; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record { fields, tail, .. } => {
+                assert_eq!(fields[0].name, "host");
+                assert!(matches!(tail, Some(RowTail::Anonymous { .. })));
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { host : Text; ...Rest; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record { tail, .. } => {
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Rest"));
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_row_tail_overlapping_record_field_rejected() {
+    assert!(parse("T :: type { host : Text; ...host; }\n1").has_errors());
+}
+
+#[test]
+fn v1_record_row_tail_must_be_last_and_unique() {
+    assert!(parse("T :: type { ...Rest; host : Text; }\n1").has_errors());
+    assert!(parse("T :: type { ...A; ...B; }\n1").has_errors());
+}
+
+#[test]
+fn v1_union_payload_row_tail_rejected() {
+    assert!(parse("T :: type { #ok: { value : Int; ...Rest; }; }\n1").has_errors());
+}
+
+#[test]
+fn v1_union_row_tails_and_spreads_parse() {
+    let e = parse_expr_str("type { #dev; #test; ...Rest; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, tail, .. } => {
+                assert_eq!(
+                    variants.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
+                    ["dev", "test"]
+                );
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Rest"));
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { ...Shape; #sphere: { radius : Float; }; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, tail, .. } => {
+                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Shape"));
+                assert_eq!(variants[0].name, "sphere");
+                let payload = variants[0].payload.as_deref().expect("payload");
+                assert!(
+                    matches!(payload, TypeExpr::Record { fields, .. } if fields[0].name == "radius")
+                );
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { #point: (Int, Int); }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union { variants, .. } => {
+                assert_eq!(variants[0].name, "point");
+                let payload = variants[0].payload.as_deref().expect("payload");
+                assert!(matches!(payload, TypeExpr::Tuple { items, .. } if items.len() == 2));
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_value_select_preserves_field_order() {
+    let e = parse_expr_str("select server { host; port; }");
+    match e {
+        Expr::Select {
+            receiver, fields, ..
+        } => {
+            assert_eq!(as_ident(&receiver), "server");
+            assert_eq!(
+                fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                ["host", "port"]
+            );
+        }
+        other => panic!("expected Select, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_type_select_preserves_field_order() {
+    let e = parse_expr_str("type select Server { host; port; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Select {
+                receiver, fields, ..
+            } => {
+                assert!(
+                    matches!(receiver.as_ref(), TypeExpr::Ident { name, .. } if name == "Server")
+                );
+                assert_eq!(
+                    fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                    ["host", "port"]
+                );
+            }
+            other => panic!("expected TySelect, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_effect_row_syntax_parses() {
+    let f = parse_str("parse :: Text -> Config ! { fail ParseError }\n  = text => text;\nparse");
+    let (_, _, sig, _) = as_function(decl_by(&f, "parse"));
+    let TypeExpr::Arrow { to, .. } = sig else {
+        panic!("expected Arrow, got {sig:?}");
+    };
+    match to.as_ref() {
+        TypeExpr::Effect { effects, .. } => {
+            assert_eq!(effects.ops[0].path, vec!["fail"]);
+            assert!(effects.ops[0].payload.is_some());
+        }
+        other => panic!("expected TyEffect, got {other:?}"),
+    }
+
+    let f = parse_str(
+        "load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }\n  = fs path => path;\nload",
+    );
+    let (_, _, sig, _) = as_function(decl_by(&f, "load"));
+    assert!(format!("{sig:?}").contains("fs"));
+}
+
+#[test]
+fn v1_effect_row_requires_operation_separators() {
+    assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic }\n  = text => text;\nparse").has_errors());
+}
+
+#[test]
+fn v1_perform_handle_resume_parse() {
+    let e = parse_expr_str("perform fail err");
+    match e {
+        Expr::Perform { op, arg, .. } => {
+            assert_eq!(op, vec!["fail"]);
+            assert_eq!(as_ident(&arg), "err");
+        }
+        other => panic!("expected Perform, got {other:?}"),
+    }
+
+    let e = parse_expr_str(
+        "handle check cfg with { warn = \\diagnostic => { perform log diagnostic; resume (); }; }",
+    );
+    match e {
+        Expr::Handle { clauses, .. } => {
+            assert_eq!(clauses[0].op, vec!["warn"]);
+            assert!(format!("{:?}", clauses[0].body).contains("Resume"));
+        }
+        other => panic!("expected Handle, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_reflection_builtins_parse_as_application() {
+    let fields_expr = parse_expr_str("fields Server");
+    let (func, arg) = as_apply(&fields_expr);
+    assert_eq!(as_ident(func), "fields");
+    assert_eq!(as_ident(arg), "Server");
+
+    let schema_expr = parse_expr_str("schema Server");
+    let (func, arg) = as_apply(&schema_expr);
+    assert_eq!(as_ident(func), "schema");
+    assert_eq!(as_ident(arg), "Server");
+}
+
+// ── Lexer coverage: v1 keywords, @, scientific notation, unknown token ────────
+
+/// V1 future-reserved keywords produce their own SyntaxKind variants.
+/// Tokenizing them exercises `consume_word` arms 21-25 and `from_raw` arms 21-25.
+#[test]
+fn tokenize_v1_keywords() {
+    let tokens = tokenize("select perform handle with resume");
+    let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+    assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select");
+    assert!(kinds.contains(&SyntaxKind::KeywordPerform), "perform");
+    assert!(kinds.contains(&SyntaxKind::KeywordHandle), "handle");
+    assert!(kinds.contains(&SyntaxKind::KeywordWith), "with");
+    assert!(kinds.contains(&SyntaxKind::KeywordResume), "resume");
+}
+
+/// `@` tokenises as `SyntaxKind::At` — used in constraint/witness declarations.
+/// Parsing a real witness program ensures `from_raw` arm 61 is also covered.
+#[test]
+fn tokenize_at_sign() {
+    let tokens = tokenize("@");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::At);
+}
+
+/// Characters not in the lexer's known set produce `SyntaxKind::Unknown`.
+/// `$` is not a valid Zutai token — exercises the `_ =>` arm in `next_kind`
+/// and `from_raw` arm 60.
+#[test]
+fn tokenize_unknown_character() {
+    let tokens = tokenize("$");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::Unknown);
+}
+
+/// Scientific-notation integers and floats — exercises the `e`/`E` branch
+/// inside `consume_number` (lines 411-424 in syntax.rs).
+#[test]
+fn tokenize_scientific_notation() {
+    // Integer with exponent → Float
+    let tokens = tokenize("1e3");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "1e3 should be Float");
+
+    // Float with negative exponent
+    let tokens = tokenize("1.5e-2");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "1.5e-2 should be Float");
+
+    // Positive exponent sign
+    let tokens = tokenize("2e+4");
+    assert_eq!(tokens[0].kind, SyntaxKind::Float, "2e+4 should be Float");
+}
+
+// ── parse_lossless: covers SyntaxKind::from_raw and kind_from_raw ─────────────
+
+/// Calling `parse_lossless` and then iterating children with `.kind()` triggers
+/// `Language::kind_from_raw` → `SyntaxKind::from_raw` for every token in the
+/// input — the only way to cover those arms (the winnow AST path never calls them).
+#[test]
+fn parse_lossless_traversal_covers_from_raw() {
+    // Source containing every token kind the lexer can produce.
+    // Carefully ordered so operators aren't accidentally merged:
+    //   - `::` before `:=` before bare `:`
+    //   - `==` before `=>` before bare `=`
+    //   - `??` before `?.` before bare `?`
+    //   - `->` before bare `-`
+    //   - `|>` `||` before bare `|`
+    //   - `<|` `<=` before bare `<`
+    //   - `>=` before bare `>`
+    let src = concat!(
+        // Keywords (13-25)
+        "type match if then else import true false select perform handle with resume\n",
+        // Punctuation and multi-char operators
+        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > -> ?? ?. ? + - * / && != @ $\n",
+        // Comments (on their own line so the lexer doesn't swallow the operators above)
+        "--[ block comment ]--\n",
+        "--|  doc comment\n",
+        "-- line comment\n",
+        // Literals
+        "42 1.5 \"hello\" #atom ident\n",
+        // Whitespace + newlines are already implicit in the concat
+    );
+    let root = parse_lossless(src);
+    // .kind() on the root triggers from_raw(0) = SourceFile
+    let root_kind = root.kind();
+    assert_eq!(root_kind, SyntaxKind::SourceFile);
+    // Iterating children triggers from_raw for each token kind present in src
+    let kinds: Vec<_> = root.children_with_tokens().map(|e| e.kind()).collect();
+    assert!(!kinds.is_empty(), "expected tokens from parse_lossless");
+    // Spot-check a few expected kinds
+    assert!(kinds.contains(&SyntaxKind::KeywordType), "type keyword");
+    assert!(kinds.contains(&SyntaxKind::Integer), "integer literal");
+    assert!(kinds.contains(&SyntaxKind::At), "@ token");
+    assert!(kinds.contains(&SyntaxKind::ColonColon), "::");
+    assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select keyword");
+}
+
+// ── Unicode escape coverage ───────────────────────────────────────────────────
+
+/// A string with `\uXXXX` BMP escape exercises `parse_unicode_escape` and
+/// `parse_u16_hex_escape` for the basic plane (U+0000–U+D7FF, U+E000–U+FFFF).
+#[test]
+fn parse_string_bmp_unicode_escape() {
+    // A = 'A', a normal BMP codepoint (not a surrogate).
+    // This exercises parse_unicode_escape's `other =>` arm and parse_u16_hex_escape.
+    let file = parse_str("x := \"\\u0041\"\nx");
+    let _ = file;
+}
+
+/// A surrogate-pair escape (`𐀀`) decodes to U+10000, exercising the
+/// high-surrogate branch (0xD800..=0xDBFF) in `parse_unicode_escape`.
+#[test]
+fn parse_string_surrogate_pair_escape() {
+    // \uD800 is a high surrogate; \uDC00 is a low surrogate.
+    // Together they encode U+10000 via the surrogate-pair algorithm.
+    let file = parse_str("x := \"\\uD800\\uDC00\"\nx");
+    let _ = file;
+}
+
+/// A lone low surrogate (`\uDC00`) is invalid UTF-16 and causes
+/// `parse_unicode_escape` to return `fail` — exercising the `0xDC00..=0xDFFF`
+/// error arm. The surrounding string literal fails to parse.
+#[test]
+fn parse_string_lone_low_surrogate_is_parse_error() {
+    // The lexer sees `\uDC00` inside a string, calls parse_unicode_escape which
+    // hits the `0xDC00..=0xDFFF => fail` arm, causing a parse diagnostic.
+    let diags = parse_kinds(r#""\uDC00""#);
+    assert!(
+        !diags.is_empty(),
+        "expected parse error for lone low surrogate"
+    );
+}
+
+/// An integer literal too large for i64 causes `parse_number_value` to fail
+/// and backtrack (covers the `Err(_) => { *input = start; fail }` arm).
+#[test]
+fn parse_number_int_overflow_is_parse_error() {
+    // 2^63 cannot be stored in i64 → parse_number_value backtracks.
+    let diags = parse_kinds("9223372036854775808");
+    // The parser fails to parse the oversized literal — a diagnostic is emitted.
+    assert!(!diags.is_empty(), "expected parse error for i64 overflow");
+}
+
+/// An unclosed block comment reaching end-of-input triggers the
+/// `if input.is_empty() { return fail }` branch inside `skip_block_comment`.
+#[test]
+fn parse_unclosed_block_comment_is_parse_error() {
+    // After parsing `1`, the whitespace skipper tries to consume `--[…` but
+    // never finds `]--`, hits EOF, and returns `fail`.
+    let diags = parse_kinds("1 --[ this comment is never closed");
+    assert!(
+        !diags.is_empty(),
+        "expected parse error for unclosed block comment"
+    );
+}

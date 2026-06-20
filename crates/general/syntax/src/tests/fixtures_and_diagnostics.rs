@@ -1,0 +1,244 @@
+use super::*;
+
+// Fixture smoke test (M1)
+// ---------------------------------------------------------------------------
+
+const EXPR_CORE: &str = include_str!("../../../fixtures/expr_core.zt");
+const VALID_CURSED_DISAMBIGUATION: &str =
+    include_str!("../../../fixtures/valid/cursed_disambiguation.zt");
+const VALID_CURSED_OPERATORS: &str = include_str!("../../../fixtures/valid/cursed_operators.zt");
+const VALID_CURSED_PATTERNS: &str = include_str!("../../../fixtures/valid/cursed_patterns.zt");
+const VALID_HIGHER_ORDER_FUNCTIONS: &str =
+    include_str!("../../../fixtures/valid/higher_order_functions.zt");
+const VALID_DEEP_OPTIONALS: &str = include_str!("../../../fixtures/valid/deep_optionals.zt");
+const VALID_GENERIC_ALIASES: &str = include_str!("../../../fixtures/valid/generic_aliases.zt");
+const VALID_DOC_STALE_SYNTAX: &str = include_str!("../../../fixtures/valid/doc_stale_syntax.zt");
+const VALID_NESTED_MATCH: &str = include_str!("../../../fixtures/valid/nested_match.zt");
+const VALID_LARGE_PROGRAM: &str = include_str!("../../../fixtures/valid/large_program.zt");
+const INVALID_CHAINED_COMPARISON: &str =
+    include_str!("../../../fixtures/invalid/chained_comparison.zt");
+const INVALID_LAMBDA_ARROW: &str = include_str!("../../../fixtures/invalid/lambda_arrow.zt");
+const INVALID_LAMBDA_TIGHT_DOT: &str =
+    include_str!("../../../fixtures/invalid/lambda_tight_dot.zt");
+const INVALID_LIST_MISSING_SEMICOLON: &str =
+    include_str!("../../../fixtures/invalid/list_missing_semicolon.zt");
+const INVALID_LOCAL_BINDING_MISSING_RESULT: &str =
+    include_str!("../../../fixtures/invalid/local_binding_missing_result.zt");
+const INVALID_MIXED_PIPELINE: &str = include_str!("../../../fixtures/invalid/mixed_pipeline.zt");
+const INVALID_RECORD_FIELD_COLON: &str =
+    include_str!("../../../fixtures/invalid/record_field_colon.zt");
+const INVALID_RECORD_PATTERN_MISSING_SEMICOLON: &str =
+    include_str!("../../../fixtures/invalid/record_pattern_missing_semicolon.zt");
+const INVALID_TOP_LEVEL_SINGLE_COLON: &str =
+    include_str!("../../../fixtures/invalid/top_level_single_colon.zt");
+const INVALID_TYPE_FIELD_EQUALS: &str =
+    include_str!("../../../fixtures/invalid/type_field_equals.zt");
+const INVALID_UNCLOSED_RECORD: &str = include_str!("../../../fixtures/invalid/unclosed_record.zt");
+const INVALID_UNCLOSED_LIST: &str = include_str!("../../../fixtures/invalid/unclosed_list.zt");
+const INVALID_TRAILING_OPERATOR: &str =
+    include_str!("../../../fixtures/invalid/trailing_operator.zt");
+
+#[test]
+fn parse_expr_core_fixture() {
+    parse_str(EXPR_CORE);
+}
+
+#[test]
+fn parse_cursed_fixture_variants() {
+    for (name, src) in [
+        (
+            "valid/cursed_disambiguation.zt",
+            VALID_CURSED_DISAMBIGUATION,
+        ),
+        ("valid/cursed_operators.zt", VALID_CURSED_OPERATORS),
+        ("valid/cursed_patterns.zt", VALID_CURSED_PATTERNS),
+        (
+            "valid/higher_order_functions.zt",
+            VALID_HIGHER_ORDER_FUNCTIONS,
+        ),
+        ("valid/deep_optionals.zt", VALID_DEEP_OPTIONALS),
+        ("valid/generic_aliases.zt", VALID_GENERIC_ALIASES),
+        ("valid/doc_stale_syntax.zt", VALID_DOC_STALE_SYNTAX),
+        ("valid/nested_match.zt", VALID_NESTED_MATCH),
+        ("valid/large_program.zt", VALID_LARGE_PROGRAM),
+    ] {
+        let parsed = parse(src);
+        if parsed.ast().is_none() {
+            let msgs: Vec<_> = parsed
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.message.clone())
+                .collect();
+            panic!("parse({name}) failed:\n{}", msgs.join("\n"))
+        }
+    }
+}
+
+#[test]
+fn reject_invalid_fixture_variants() {
+    for (name, src) in [
+        ("invalid/chained_comparison.zt", INVALID_CHAINED_COMPARISON),
+        ("invalid/lambda_arrow.zt", INVALID_LAMBDA_ARROW),
+        ("invalid/lambda_tight_dot.zt", INVALID_LAMBDA_TIGHT_DOT),
+        (
+            "invalid/list_missing_semicolon.zt",
+            INVALID_LIST_MISSING_SEMICOLON,
+        ),
+        (
+            "invalid/local_binding_missing_result.zt",
+            INVALID_LOCAL_BINDING_MISSING_RESULT,
+        ),
+        ("invalid/mixed_pipeline.zt", INVALID_MIXED_PIPELINE),
+        ("invalid/record_field_colon.zt", INVALID_RECORD_FIELD_COLON),
+        (
+            "invalid/record_pattern_missing_semicolon.zt",
+            INVALID_RECORD_PATTERN_MISSING_SEMICOLON,
+        ),
+        (
+            "invalid/top_level_single_colon.zt",
+            INVALID_TOP_LEVEL_SINGLE_COLON,
+        ),
+        ("invalid/type_field_equals.zt", INVALID_TYPE_FIELD_EQUALS),
+        ("invalid/unclosed_record.zt", INVALID_UNCLOSED_RECORD),
+        ("invalid/unclosed_list.zt", INVALID_UNCLOSED_LIST),
+        ("invalid/trailing_operator.zt", INVALID_TRAILING_OPERATOR),
+    ] {
+        assert!(parse(src).has_errors(), "{name} parsed successfully");
+    }
+}
+
+#[test]
+fn invalid_fixtures_report_specific_error_kinds() {
+    for (name, src, kind) in [
+        (
+            "invalid/chained_comparison.zt",
+            INVALID_CHAINED_COMPARISON,
+            ParseErrorKind::ChainedComparison,
+        ),
+        (
+            "invalid/lambda_arrow.zt",
+            INVALID_LAMBDA_ARROW,
+            ParseErrorKind::LambdaArrow,
+        ),
+        (
+            "invalid/lambda_tight_dot.zt",
+            INVALID_LAMBDA_TIGHT_DOT,
+            ParseErrorKind::LambdaDotNeedsWhitespace,
+        ),
+        (
+            "invalid/list_missing_semicolon.zt",
+            INVALID_LIST_MISSING_SEMICOLON,
+            ParseErrorKind::MissingListItemSemicolon,
+        ),
+        (
+            "invalid/local_binding_missing_result.zt",
+            INVALID_LOCAL_BINDING_MISSING_RESULT,
+            ParseErrorKind::MissingBlockResult,
+        ),
+        (
+            "invalid/mixed_pipeline.zt",
+            INVALID_MIXED_PIPELINE,
+            ParseErrorKind::MixedPipeline,
+        ),
+        (
+            "invalid/record_field_colon.zt",
+            INVALID_RECORD_FIELD_COLON,
+            ParseErrorKind::ValueRecordFieldUsesColon,
+        ),
+        (
+            "invalid/top_level_single_colon.zt",
+            INVALID_TOP_LEVEL_SINGLE_COLON,
+            ParseErrorKind::TopLevelSingleColon,
+        ),
+        (
+            "invalid/type_field_equals.zt",
+            INVALID_TYPE_FIELD_EQUALS,
+            ParseErrorKind::TypeRecordFieldUsesEquals,
+        ),
+        (
+            "invalid/unclosed_record.zt",
+            INVALID_UNCLOSED_RECORD,
+            ParseErrorKind::UnclosedDelimiter('{'),
+        ),
+        (
+            "invalid/unclosed_list.zt",
+            INVALID_UNCLOSED_LIST,
+            ParseErrorKind::UnclosedDelimiter('['),
+        ),
+    ] {
+        let kinds = parse_kinds(src);
+        assert_eq!(kinds.first(), Some(&kind), "{name}: {kinds:?}");
+    }
+}
+
+#[test]
+fn ast_only_parse_matches_parse_diagnostics() {
+    assert!(parse_ast_only("x := 1\nx").ast().is_some());
+    assert_eq!(
+        parse_ast_only_kinds(INVALID_MIXED_PIPELINE),
+        parse_kinds(INVALID_MIXED_PIPELINE)
+    );
+}
+
+#[test]
+fn reports_multiple_common_diagnostics_in_source_order() {
+    let parsed = parse(
+        r#"
+{
+  a = 1 < 2 < 3;
+  b = \x => x;
+  c = [1; 2]
+}
+"#,
+    );
+    assert!(parsed.has_errors(), "source should fail");
+
+    let kinds: Vec<_> = parsed
+        .diagnostics()
+        .iter()
+        .map(|err| err.kind.clone())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ParseErrorKind::ChainedComparison,
+            ParseErrorKind::LambdaArrow,
+            ParseErrorKind::MissingListItemSemicolon,
+        ]
+    );
+    assert!(
+        parsed
+            .diagnostics()
+            .windows(2)
+            .all(|pair| pair[0].primary_span().start <= pair[1].primary_span().start)
+    );
+}
+
+#[test]
+fn lossless_cst_round_trips_source_text() {
+    let src = "--| doc\nanswer := --[ nested --[ inner ]-- ]-- 42\nanswer";
+    let parsed = parse(src);
+    assert_eq!(parsed.syntax().to_string(), src);
+}
+
+#[test]
+fn tokenizer_preserves_comments_and_keywords() {
+    let tokens = tokenize("-- hi\nif true then #ok else #no");
+    let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
+    assert!(kinds.contains(&SyntaxKind::LineComment));
+    assert!(kinds.contains(&SyntaxKind::KeywordIf));
+    assert!(kinds.contains(&SyntaxKind::KeywordTrue));
+    assert!(kinds.contains(&SyntaxKind::KeywordThen));
+    assert!(kinds.contains(&SyntaxKind::KeywordElse));
+    assert!(kinds.contains(&SyntaxKind::Atom));
+}
+
+#[test]
+fn diagnostic_exposes_structured_fix() {
+    let parsed = parse("x : Int = 5\n5");
+    let diagnostic = parsed.diagnostics().first().expect("expected diagnostic");
+    assert_eq!(diagnostic.kind, ParseErrorKind::TopLevelSingleColon);
+    assert_eq!(diagnostic.code, "zutai::parse::top_level_single_colon");
+    assert_eq!(diagnostic.fixes.len(), 1);
+    assert_eq!(diagnostic.fixes[0].edits[0].replacement, "::");
+}
