@@ -102,7 +102,7 @@ Pattern-matching multi-clause example:
 ```zt
 unwrapOr :: <T> T? -> T -> T {
   | #none              d => d;
-  | #some { value = v } _ => v;
+  | #some { value = v; } _ => v;
 }
 ```
 

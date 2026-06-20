@@ -588,6 +588,14 @@ fn zt_import_record_field() {
 }
 
 #[test]
+fn zt_importer_fixture_runs_via_eval_path() {
+    assert_eq!(
+        crate::eval_path(&imports_path("zt_importer.zt")).unwrap(),
+        Value::Int(42)
+    );
+}
+
+#[test]
 fn zt_import_whole_record() {
     match run_import("m := import \"data_module.zt\"\nm") {
         Value::Record(fields) => assert_eq!(fields.len(), 3),

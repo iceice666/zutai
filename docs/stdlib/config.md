@@ -179,7 +179,7 @@ raw :=
     |> overlay local
     |> overlay cli
 
-server : Server = normalizeServer raw
+server :: Server = normalizeServer raw
 ```
 
 This keeps defaulting, validation, and cross-field logic centralized in normalization functions.

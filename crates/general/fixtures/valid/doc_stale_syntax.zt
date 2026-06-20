@@ -1,0 +1,68 @@
+-- doc_stale_syntax.zt: canonical replacements for formerly stale docs examples.
+
+Server :: type {
+  host : Text;
+  port : Int;
+  tls : Bool;
+}
+
+RawServer :: type {
+  host? : Text;
+  port? : Int;
+  tls? : Bool;
+}
+
+Pair :: <A, B> type {
+  first : A;
+  second : B;
+}
+
+Response :: <Body> type {
+  status : Int;
+  body : Body?;
+}
+
+Shape :: type [
+  circle: { radius: Int; };
+  square: { length: Int; };
+  rect:   { width: Int; height: Int; };
+]
+
+unwrapOr :: <T> T? -> T -> T {
+  | #none fallback => fallback;
+  | #some { value = value; } _ => value;
+}
+
+area :: Shape -> Int {
+  | #circle { radius = r; } => r * r;
+  | #square { length = l; } => l * l;
+  | #rect { width = w; height = h; } => w * h;
+}
+
+raw :: RawServer = {
+  host = "localhost";
+}
+
+server :: Server = {
+  host = raw.host ?? "localhost";
+  port = raw.port ?? 8080;
+  tls = raw.tls ?? false;
+}
+
+pair :: Pair Text Int = {
+  first = "hello";
+  second = 42;
+}
+
+response :: Response Text = {
+  status = 200;
+  body = #some { value = "ok"; };
+}
+
+{
+  host = server.host;
+  area = area #rect { width = 3; height = 4; };
+  first = pair.first;
+  status = response.status;
+  unwrapped = unwrapOr #some { value = 5; } 0;
+}

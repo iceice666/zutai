@@ -21,7 +21,7 @@ Server :: type {
 Value:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
   tls = true;
@@ -81,7 +81,7 @@ Server :: type {
 This is valid:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
 }
@@ -90,7 +90,7 @@ server : Server = {
 This is invalid:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
   tls = true;

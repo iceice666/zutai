@@ -15,7 +15,7 @@ Optional matching:
 ```zt
 match raw.port {
   | #none           => 8080;
-  | #some { value } => value;
+  | #some { value = value; } => value;
 }
 ```
 
@@ -23,8 +23,8 @@ Tagged union matching uses an atom followed by a record destructure:
 
 ```zt
 match shape {
-  | #circle { radius = r }            => r * r * 3.14159;
-  | #rect   { width = w; height = h } => w * h;
+  | #circle { radius = r; }            => r * r * 3.14159;
+  | #rect   { width = w; height = h; } => w * h;
 }
 ```
 
@@ -63,7 +63,7 @@ A wildcard pattern `_` or a catch-all binding may be used:
 ```zt
 match value {
   | #none           => fallback;
-  | #some { value = x } => x;
+  | #some { value = x; } => x;
 }
 ```
 
@@ -85,9 +85,9 @@ Guards also apply to tagged union patterns:
 
 ```zt
 match shape {
-  | #circle { radius = r } if r > 0.0 => r * r * 3.14159;
-  | #circle { radius = _ }             => 0.0;
-  | #square { length = l }             => l * l;
+  | #circle { radius = r; } if r > 0.0 => r * r * 3.14159;
+  | #circle { radius = _; }             => 0.0;
+  | #square { length = l; }             => l * l;
 }
 ```
 
@@ -102,9 +102,9 @@ Response :: type [
 ]
 
 match response {
-  | #ok  { body = #circle { radius = r } } => r * r * 3.14159;
-  | #ok  { body = _ }                      => 0.0;
-  | #err { message = _ }                   => 0.0;
+  | #ok  { body = #circle { radius = r; }; } => r * r * 3.14159;
+  | #ok  { body = _; }                      => 0.0;
+  | #err { message = _; }                   => 0.0;
 }
 ```
 
@@ -123,9 +123,9 @@ Multi-clause function definitions use the same `| pat => expr;` form inside a `{
 
 ```zt
 describe_shape :: Shape -> Text {
-  | #circle { radius = _ }            => "circle";
-  | #square { length = _ }            => "square";
-  | #rect   { width = _; height = _ } => "rect";
+  | #circle { radius = _; }            => "circle";
+  | #square { length = _; }            => "square";
+  | #rect   { width = _; height = _; } => "rect";
 }
 ```
 

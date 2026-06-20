@@ -104,9 +104,9 @@ Shape :: type [
 ]
 
 area :: Shape -> Float {
-  | #circle { radius = r }             => r * r * 3.14159;
-  | #square { length = l }             => l * l;
-  | #rect   { width = w; height = h }  => w * h;
+  | #circle { radius = r; }             => r * r * 3.14159;
+  | #square { length = l; }             => l * l;
+  | #rect   { width = w; height = h; }  => w * h;
 }
 
 shapes :: List Shape = [

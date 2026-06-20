@@ -67,7 +67,7 @@ Server :: type {
 The equivalent annotated type-valued binding is valid, but less idiomatic for named types:
 
 ```zt
-Server : Type = type {
+Server :: Type = type {
   host : Text;
   port : Int;
 }
@@ -90,12 +90,12 @@ Response :: <Body> type {
 Usage:
 
 ```zt
-pair : Pair Text Int = {
+pair :: Pair Text Int = {
   first = "hello";
   second = 42;
 }
 
-response : Response Text = {
+response :: Response Text = {
   status = 200;
   body = "ok";
 }

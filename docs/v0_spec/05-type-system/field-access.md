@@ -26,7 +26,7 @@ If `port` is absent, this evaluates to:
 If `port` is present with value `8080`, this evaluates to:
 
 ```zt
-#some { value = 8080 }
+#some { value = 8080; }
 ```
 
 If the left side is `#none`, direct field access is an error:
@@ -56,11 +56,11 @@ means:
 ```zt
 match x {
   | #none                    => #none;
-  | #some { value = value } => optionalWrap(value.field);
+  | #some { value = value; } => optionalWrap(value.field);
 }
 ```
 
-`optionalWrap` is a specification helper, not a user-visible function. It returns an already-optional value unchanged; otherwise it wraps the value as `#some { value = result }`.
+`optionalWrap` is a specification helper, not a user-visible function. It returns an already-optional value unchanged; otherwise it wraps the value as `#some { value = result; }`.
 
 Example:
 

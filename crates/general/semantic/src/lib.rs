@@ -484,6 +484,18 @@ mod tests {
     }
 
     #[test]
+    fn analyze_path_resolves_relative_zt_import() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports/zt_importer.zt");
+        let analysis = analyze_path(&path).expect("read zt_importer.zt");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn import_without_base_reports_no_base_directory() {
         let analysis = analyze("cfg := import \"config.zti\"\ncfg.port");
         assert!(!analysis.is_thir_complete());

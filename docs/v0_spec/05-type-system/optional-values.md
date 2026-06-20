@@ -45,7 +45,7 @@ Server :: type {
 }
 ```
 
-The `tls` field is required, but its value must be either `#none` or `#some { value = true }`.
+The `tls` field is required, but its value must be either `#none` or `#some { value = true; }`.
 
 Valid:
 

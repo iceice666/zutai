@@ -203,7 +203,7 @@ Pattern
    | RecordPattern
 
 TaggedPattern
-  ::= Atom RecordPattern                       (* #tag { field = p } *)
+  ::= Atom RecordPattern                       (* #tag { field = p; } *)
 
 TuplePattern
   ::= "(" TuplePatternItem "," TuplePatternItem ("," TuplePatternItem)* ")"
@@ -237,7 +237,7 @@ A `<` appearing immediately after `::` in a `TopDecl` begins a `TypeParamList`. 
 
 Declaration disambiguation: after `Ident "::"`, the parser looks for `type` (type alias), then a complete `TypeParamList? TypeExpr`. If that is followed by `=`, the declaration is a typed value binding; if followed by `{`, it opens a function block.
 
-The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), tagged union payload types (`circle: { radius : Float; }`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), tagged union construction (`#circle { radius = 5.0; }`), and all patterns (record `{ host = h; }`, tagged `#circle { radius = r }`). This makes a `{ }` block unambiguous in type context versus value context.
+The two field-binding sigils are kept strictly separate. `:` is **type annotation** and appears only in type positions: type-record fields (`type { host : Text; }`), tagged union payload types (`circle: { radius : Float; }`), and optional-field markers (`host? : Text`). `=` is **value/pattern binding** and appears everywhere a field is given a value or matched: value records (`{ host = "localhost"; }`), tagged union construction (`#circle { radius = 5.0; }`), and all patterns (record `{ host = h; }`, tagged `#circle { radius = r; }`). This makes a `{ }` block unambiguous in type context versus value context.
 
 Block disambiguation: a `{` in expression position is a value record if followed by `field_name =`, and a block expression otherwise. An empty `{}` in expression position is an empty value record.
 

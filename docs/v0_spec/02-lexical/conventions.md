@@ -211,7 +211,7 @@ Server :: type {
 Runtime value bindings should be lowercase:
 
 ```zt
-server : Server = {
+server :: Server = {
   host = "localhost";
   port = 8080;
 }

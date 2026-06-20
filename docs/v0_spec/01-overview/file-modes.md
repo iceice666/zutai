@@ -51,7 +51,7 @@ A `.zt` file consists of zero or more declarations followed by one final express
 
 ```zt
 name := expr
-name : TypeExpr = expr
+name :: TypeExpr = expr
 
 final_expr
 ```

@@ -1,0 +1,11 @@
+-- Record pattern fields require semicolon terminators.
+
+Shape :: type [
+  circle: { radius: Int; };
+]
+
+area :: Shape -> Int {
+  | #circle { radius = r } => r;
+}
+
+area #circle { radius = 1; }

@@ -892,6 +892,7 @@ const VALID_HIGHER_ORDER_FUNCTIONS: &str =
     include_str!("../../fixtures/valid/higher_order_functions.zt");
 const VALID_DEEP_OPTIONALS: &str = include_str!("../../fixtures/valid/deep_optionals.zt");
 const VALID_GENERIC_ALIASES: &str = include_str!("../../fixtures/valid/generic_aliases.zt");
+const VALID_DOC_STALE_SYNTAX: &str = include_str!("../../fixtures/valid/doc_stale_syntax.zt");
 const VALID_NESTED_MATCH: &str = include_str!("../../fixtures/valid/nested_match.zt");
 const VALID_LARGE_PROGRAM: &str = include_str!("../../fixtures/valid/large_program.zt");
 const INVALID_CHAINED_COMPARISON: &str =
@@ -905,6 +906,8 @@ const INVALID_LOCAL_BINDING_MISSING_RESULT: &str =
 const INVALID_MIXED_PIPELINE: &str = include_str!("../../fixtures/invalid/mixed_pipeline.zt");
 const INVALID_RECORD_FIELD_COLON: &str =
     include_str!("../../fixtures/invalid/record_field_colon.zt");
+const INVALID_RECORD_PATTERN_MISSING_SEMICOLON: &str =
+    include_str!("../../fixtures/invalid/record_pattern_missing_semicolon.zt");
 const INVALID_TOP_LEVEL_SINGLE_COLON: &str =
     include_str!("../../fixtures/invalid/top_level_single_colon.zt");
 const INVALID_TYPE_FIELD_EQUALS: &str = include_str!("../../fixtures/invalid/type_field_equals.zt");
@@ -932,6 +935,7 @@ fn parse_cursed_fixture_variants() {
         ),
         ("valid/deep_optionals.zt", VALID_DEEP_OPTIONALS),
         ("valid/generic_aliases.zt", VALID_GENERIC_ALIASES),
+        ("valid/doc_stale_syntax.zt", VALID_DOC_STALE_SYNTAX),
         ("valid/nested_match.zt", VALID_NESTED_MATCH),
         ("valid/large_program.zt", VALID_LARGE_PROGRAM),
     ] {
@@ -963,6 +967,10 @@ fn reject_invalid_fixture_variants() {
         ),
         ("invalid/mixed_pipeline.zt", INVALID_MIXED_PIPELINE),
         ("invalid/record_field_colon.zt", INVALID_RECORD_FIELD_COLON),
+        (
+            "invalid/record_pattern_missing_semicolon.zt",
+            INVALID_RECORD_PATTERN_MISSING_SEMICOLON,
+        ),
         (
             "invalid/top_level_single_colon.zt",
             INVALID_TOP_LEVEL_SINGLE_COLON,

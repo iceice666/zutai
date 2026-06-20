@@ -15,7 +15,7 @@ Dir :: type [north; east; west; south;]
 Tag names do not carry `#` inside the definition. At use sites, values are ordinary atoms:
 
 ```zt
-profile : Profile = #prod
+profile :: Profile = #prod
 ```
 
 ### Tagged union
@@ -80,9 +80,9 @@ Tags with payloads match with a record destructure:
 
 ```zt
 area :: Shape -> Float {
-  | #circle { radius = r }           => r * r * 3.14159;
-  | #square { length = l }           => l * l;
-  | #rect   { width = w; height = h } => w * h;
+  | #circle { radius = r; }           => r * r * 3.14159;
+  | #square { length = l; }           => l * l;
+  | #rect   { width = w; height = h; } => w * h;
 }
 ```
 
