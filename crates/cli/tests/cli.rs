@@ -290,7 +290,7 @@ fn run_zt_with_import_error_exits_nonzero() {
     // Import a file that does not exist → import error.
     let path = write_tmp(
         "cli_test_import_err.zt",
-        "lib := import \"./does_not_exist.zti\"\n1\n",
+        "lib :: import \"./does_not_exist.zti\"\n1\n",
     );
     cli()
         .arg("run")
@@ -305,7 +305,7 @@ fn run_imported_value_can_flow_through_print_effect() {
     write_tmp("cli_test_print_import.zti", "{ host = \"127.0.0.1\"; }\n");
     let path = write_tmp(
         "cli_test_print_import.zt",
-        "cfg := import \"./cli_test_print_import.zti\"\nprint cfg.host\n",
+        "cfg :: import \"./cli_test_print_import.zti\"\nprint cfg.host\n",
     );
     cli()
         .arg("run")
@@ -323,7 +323,7 @@ fn run_imported_function_can_flow_through_print_effect() {
     );
     let path = write_tmp(
         "cli_test_func_print_import.zt",
-        "add := import \"./cli_test_func_import.zt\"\n{ print \"using import\"; add 2 3 }\n",
+        "add :: import \"./cli_test_func_import.zt\"\n{ print \"using import\"; add 2 3 }\n",
     );
     cli()
         .arg("run")

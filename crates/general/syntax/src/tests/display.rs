@@ -226,15 +226,17 @@ fn display_expr_match() {
 }
 
 #[test]
-fn display_expr_import_string() {
-    let s = parse_str("import \"data.zti\"").to_string();
-    assert!(s.contains("Import(\"data.zti\")"), "string import");
+fn display_decl_import_string() {
+    let s = parse_str("cfg :: import \"data.zti\"\ncfg").to_string();
+    assert!(s.contains("Import \"cfg\""), "string import decl");
+    assert!(s.contains("source: \"data.zti\""), "string import source");
 }
 
 #[test]
-fn display_expr_import_path() {
-    let s = parse_str("import foo.bar").to_string();
-    assert!(s.contains("Import(foo.bar)"), "path import");
+fn display_decl_import_path() {
+    let s = parse_str("cfg :: import foo.bar\ncfg").to_string();
+    assert!(s.contains("Import \"cfg\""), "path import decl");
+    assert!(s.contains("source: foo.bar"), "path import source");
 }
 
 #[test]

@@ -32,6 +32,31 @@ fn normalizes_no_signature_function_to_function_decl() {
 }
 
 #[test]
+fn import_decl_lowers_to_top_import_binding() {
+    let lowered = lower("lib :: import \"lib.zt\"\nlib");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let binding = find_binding_by_name(&lowered.file, "lib").expect("lib binding");
+    assert_eq!(
+        lowered.file.bindings[binding.0 as usize].kind,
+        BindingKind::TopImport
+    );
+
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    assert_eq!(decl.binding, binding);
+    match &decl.kind {
+        HirDeclKind::Value { annotation, value } => {
+            assert!(annotation.is_none());
+            assert!(matches!(
+                &lowered.file.expr_arena[*value].kind,
+                HirExprKind::Import(HirImportSource::String(source)) if source == "lib.zt"
+            ));
+        }
+        other => panic!("expected value decl, got {other:?}"),
+    }
+}
+
+#[test]
 fn desugars_forward_pipeline_to_application() {
     let lowered = lower("f x = x\n1 |> f");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
@@ -83,6 +108,24 @@ fn resolves_local_binding_only_after_its_value() {
     assert_eq!(binding_name(&lowered.file, value_ref), "x");
     assert_ne!(value_ref, local);
     assert_eq!(result_ref, local);
+}
+
+#[test]
+fn lowers_typed_local_binding_annotation() {
+    let lowered = lower("{ x : Int = 1; x }");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let block = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::Block { bindings, .. } = &block.kind else {
+        panic!("expected final block, got {:?}", block.kind);
+    };
+    let annotation = bindings[0]
+        .annotation
+        .expect("typed local should lower annotation");
+    assert!(matches!(
+        type_kind(&lowered.file, annotation),
+        HirTypeKind::BindingRef(id) if binding_name(&lowered.file, *id) == "Int"
+    ));
 }
 
 #[test]

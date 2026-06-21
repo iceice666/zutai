@@ -11,7 +11,7 @@ file ::= top_decl* expr
 Example:
 
 ```zt
-cfg := import "app.zti"
+cfg :: import "app.zti"
 name := cfg.name
 
 {
@@ -26,7 +26,7 @@ Top-level declarations are separated by line boundaries at delimiter depth zero.
 
 ### Declaration forms
 
-There are three declaration forms.
+There are five core declaration forms.
 
 **Inferred value binding** — type is inferred:
 
@@ -39,6 +39,15 @@ name := expr
 ```zt
 name :: TypeExpr = expr
 ```
+
+**Import binding** — static top-level module/data import:
+
+```zt
+name :: import "path.zti"
+```
+
+The declaration creates one prefixed binding. Imported fields are accessed through that binding, for example `name.field` or `name.Type`.
+
 
 **Function definition** — uses `::` for the signature, followed by one or more `=` clauses:
 
@@ -60,6 +69,8 @@ x := 42
 
 port :: Int = 8080
 
+cfg :: import "app.zti"
+
 add :: Int -> Int -> Int
   = a b => a + b;
 
@@ -74,7 +85,7 @@ def add ...
 class Server ...
 ```
 
-Everything is one of the three declaration forms.
+Everything is one of these declaration forms; `import` is not an expression form.
 
 ### Function definitions
 
@@ -159,13 +170,14 @@ It also allows mutually recursive top-level bindings, subject to type-checking a
 
 ### Local bindings
 
-Inside function bodies, `:=` introduces a local immutable binding:
+Inside function bodies, `name := expr;` introduces an inferred local immutable
+binding, and `name : TypeExpr = expr;` introduces a typed local immutable binding:
 
 ```zt
 normalize :: RawServer -> Server
   = raw => {
-    host := raw.host ?? "127.0.0.1";
-    port := raw.port ?? 8080;
+    host : Text = raw.host ?? "127.0.0.1";
+    port : Int = raw.port ?? 8080;
     tls  := raw.tls ?? false;
     { host = host; port = port; tls = tls; }
   };

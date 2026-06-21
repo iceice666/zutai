@@ -8,8 +8,8 @@ use crate::ast::{
 use crate::span::Span;
 
 use crate::parser::lex::{
-    enter_delimiter, kw, parse_atom_name, parse_field_name, parse_ident, parse_import_source,
-    parse_number_value, parse_string, spanned, ws,
+    enter_delimiter, kw, parse_atom_name, parse_field_name, parse_ident, parse_number_value,
+    parse_string, spanned, ws,
 };
 use crate::parser::pattern::parse_pattern;
 use crate::parser::type_expr::parse_type_expr;
@@ -112,9 +112,6 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             }
             if input.starts_with("match") && peek(kw("match")).parse_next(input).is_ok() {
                 return parse_match(input, options);
-            }
-            if input.starts_with("import") && peek(kw("import")).parse_next(input).is_ok() {
-                return parse_import(input);
             }
             if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
                 return parse_type_form(input);
@@ -259,28 +256,49 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -
             break;
         }
         let checkpoint = *input;
-        let is_binding = {
+        let binding_kind = {
             let mut tmp = *input;
             if let Ok(_name) = parse_ident(&mut tmp) {
                 while tmp.starts_with(|c: char| c.is_whitespace()) {
                     tmp = &tmp[1..];
                 }
-                tmp.starts_with(":=")
+                if tmp.starts_with(":=") {
+                    Some(false)
+                } else if tmp.starts_with(':') && !tmp.starts_with("::") {
+                    Some(true)
+                } else {
+                    None
+                }
             } else {
-                false
+                None
             }
         };
 
-        if is_binding {
+        if let Some(has_annotation) = binding_kind {
             let (name, name_span) = spanned(parse_ident).parse_next(input)?;
             ws(input)?;
-            ":=".parse_next(input)?;
+            let annotation = if has_annotation {
+                ':'.parse_next(input)?;
+                ws(input)?;
+                let ty = parse_type_expr(input)?;
+                ws(input)?;
+                '='.parse_next(input)?;
+                Some(ty)
+            } else {
+                ":=".parse_next(input)?;
+                None
+            };
             ws(input)?;
             let value = super::parse_expr_with_options(input, options)?;
             ws(input)?;
             ';'.parse_next(input)?;
             let span = name_span.merge(value.span());
-            bindings.push(LocalBinding { name, value, span });
+            bindings.push(LocalBinding {
+                name,
+                annotation,
+                value,
+                span,
+            });
         } else {
             *input = checkpoint;
             break;
@@ -559,18 +577,6 @@ fn parse_clause_block_with_options(
     ws(input)?;
     '}'.parse_next(input)?;
     Ok(clauses)
-}
-
-// ---------------------------------------------------------------------------
-// Import
-// ---------------------------------------------------------------------------
-
-fn parse_import(input: &mut &str) -> Result<Expr> {
-    let (_, start_span) = spanned(kw("import")).parse_next(input)?;
-    ws(input)?;
-    let (source, src_span) = spanned(parse_import_source).parse_next(input)?;
-    let span = start_span.merge(src_span);
-    Ok(Expr::Import { source, span })
 }
 
 // ---------------------------------------------------------------------------

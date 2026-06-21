@@ -30,12 +30,14 @@ shell "git status"
 env "HOME"
 ```
 
-External data enters through explicit imports, usually as `.zti`:
+External data enters through explicit static import declarations, usually as `.zti`:
 
 ```zt
-env  := import "env.zti"
-args := import "args.zti"
-cfg  := import "config.zti"
+env  :: import "env.zti"
+args :: import "args.zti"
+cfg  :: import "config.zti"
 ```
+
+Runtime-selected `.zti` loading is not `import`; it belongs to a later explicit effect/capability design.
 
 ---

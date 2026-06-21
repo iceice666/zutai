@@ -1,6 +1,8 @@
-use zutai_hir::{HirClause, HirDeclId, HirDeclKind, HirExprKind};
+use zutai_hir::{BindingKind, HirClause, HirDeclId, HirDeclKind, HirExprKind};
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
+use crate::import::ImportedType;
+
 use crate::ir::{
     ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirWitnessField, Type,
     TypeId, TypeKind,
@@ -9,6 +11,33 @@ use crate::ir::{
 use super::Lowerer;
 
 impl<'hir> Lowerer<'hir> {
+    pub(super) fn predeclare_import_decls(&mut self) {
+        for decl_id in &self.hir.decls {
+            let decl = self.hir_decl(*decl_id);
+            if self.hir.bindings[decl.binding.0 as usize].kind != BindingKind::TopImport {
+                continue;
+            }
+            let HirDeclKind::Value { value, .. } = &decl.kind else {
+                continue;
+            };
+            let HirExprKind::Import(source) = &self.hir_expr(*value).kind else {
+                continue;
+            };
+            let Some(desc) = self.imports.get(source).cloned() else {
+                continue;
+            };
+
+            let ty = self.intern_imported_type_with_source(&desc, Some(source), decl.span);
+            self.value_types.insert(decl.binding, ty);
+            self.binding_import_key.insert(decl.binding, source.clone());
+
+            if let ImportedType::Type(inner) = desc {
+                let denotation = self.intern_imported_type_with_source(&inner, None, decl.span);
+                self.aliases.insert(decl.binding, denotation);
+            }
+        }
+    }
+
     pub(super) fn predeclare_decl_types(&mut self) {
         for decl_id in &self.hir.decls {
             let decl = self.hir_decl(*decl_id);
@@ -122,10 +151,22 @@ impl<'hir> Lowerer<'hir> {
                 if let HirExprKind::Import(source) = &self.hir_expr(*value).kind {
                     self.binding_import_key.insert(decl.binding, source.clone());
                 }
-                let value = self.infer_expr(*value);
-                let ty = self.expr(value).ty;
+                let binding_kind = self.hir.bindings[decl.binding.0 as usize].kind;
+                let predeclared_import_ty = if binding_kind == BindingKind::TopImport {
+                    self.value_types.get(&decl.binding).copied()
+                } else {
+                    None
+                };
+                let value = if let Some(ty) = predeclared_import_ty {
+                    self.check_expr(*value, ty)
+                } else {
+                    self.infer_expr(*value)
+                };
+                let ty = predeclared_import_ty.unwrap_or_else(|| self.expr(value).ty);
                 self.value_types.insert(decl.binding, ty);
-                self.generalize_if_polymorphic(decl.binding, ty);
+                if binding_kind != BindingKind::TopImport {
+                    self.generalize_if_polymorphic(decl.binding, ty);
+                }
                 ThirDeclKind::Value { ty, value }
             }
             HirDeclKind::Function {

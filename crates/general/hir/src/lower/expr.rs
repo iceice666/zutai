@@ -1,4 +1,3 @@
-use super::types::clone_import_source;
 use super::*;
 
 impl Lowerer {
@@ -66,6 +65,7 @@ impl Lowerer {
                 let bindings = bindings
                     .iter()
                     .map(|binding| {
+                        let annotation = binding.annotation.as_ref().map(|ty| self.lower_type(ty));
                         let value = self.lower_expr(&binding.value);
                         let binding_id = self.define_current(
                             binding.name.clone(),
@@ -74,6 +74,7 @@ impl Lowerer {
                         );
                         HirLocalBinding {
                             binding: binding_id,
+                            annotation,
                             value,
                             span: binding.span,
                         }
@@ -109,7 +110,6 @@ impl Lowerer {
                 scrutinee: self.lower_expr(scrutinee),
                 arms: arms.iter().map(|arm| self.lower_clause(arm)).collect(),
             },
-            ast::Expr::Import { source, .. } => HirExprKind::Import(clone_import_source(source)),
             ast::Expr::TypeForm { ty, .. } => HirExprKind::TypeForm(self.lower_type(ty)),
             ast::Expr::Select {
                 receiver, fields, ..

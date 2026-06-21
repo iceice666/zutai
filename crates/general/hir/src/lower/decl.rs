@@ -1,3 +1,5 @@
+use super::types::clone_import_source;
+
 use super::*;
 
 impl Lowerer {
@@ -5,6 +7,9 @@ impl Lowerer {
         match decl {
             ast::Decl::Inferred { .. } | ast::Decl::Typed { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopValue, decl.span())
+            }
+            ast::Decl::Import { .. } => {
+                self.define_current(decl.name().to_string(), BindingKind::TopImport, decl.span())
             }
             ast::Decl::TypeAlias { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopType, decl.span())
@@ -90,6 +95,19 @@ impl Lowerer {
                 },
                 *span,
             ),
+            ast::Decl::Import { source, span, .. } => {
+                let value = self.alloc_expr(HirExpr {
+                    kind: HirExprKind::Import(clone_import_source(source)),
+                    span: *span,
+                });
+                (
+                    HirDeclKind::Value {
+                        annotation: None,
+                        value,
+                    },
+                    *span,
+                )
+            }
             ast::Decl::TypeAlias {
                 params, ty, span, ..
             } => {

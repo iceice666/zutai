@@ -23,7 +23,7 @@ Create `app.zti`:
 Create `app.zt` in the same directory:
 
 ```zt
-cfg := import "app.zti"
+cfg :: import "app.zti"
 cfg.server.port
 ```
 
@@ -161,12 +161,12 @@ A `.zt` file has this shape:
 top_decl* final_expr
 ```
 
-Declaration forms:
+Top-level declaration forms:
 
 | Form | Meaning |
 | --- | --- |
-| `name := expr` | Inferred value binding. |
-| `name :: TypeExpr = expr` | Typed value binding. |
+| `name := expr` | Inferred top-level value binding. |
+| `name :: TypeExpr = expr` | Typed top-level value binding. |
 | `name :: TypeSignature`<br>`= pattern => body;` | Function signature followed by one or more clauses. |
 | `Name :: type TypeExpr` | Type alias or named type expression. |
 
@@ -174,7 +174,36 @@ Top-level declarations are newline-separated at delimiter depth zero and do not 
 
 Zutai has one namespace. Types, functions, modules, and runtime values cannot reuse a name.
 
-Top-level declarations are in one recursive scope, so functions may refer to themselves and mutually recursive top-level bindings are allowed subject to type checking and evaluation limits. Local block bindings use immutable `:=`; all bindings are immutable.
+Top-level declarations are in one recursive scope, so functions may refer to themselves and mutually recursive top-level bindings are allowed subject to type checking and evaluation limits. Local block bindings use `name := expr;` for inferred immutable bindings and `name : TypeExpr = expr;` for typed immutable bindings; all bindings are immutable.
+
+Brace syntax is disambiguated by the first item after `{`:
+
+| Shape | Parses as |
+| --- | --- |
+| `{ field = value; ... }` | record value |
+| `{ name := expr; final_expr }` | block with inferred local binding |
+| `{ name : TypeExpr = expr; final_expr }` | block with typed local binding |
+| `type { field : TypeExpr; ... }` | record type |
+
+Examples:
+
+```zt
+{ x = 42; }
+```
+
+is a record with field `x`.
+
+```zt
+{ x := 42; x }
+```
+
+is a block that binds local `x` and returns `x`.
+
+```zt
+{ x : Int = 42; x }
+```
+
+is a block that binds typed local `x` and returns `x`.
 
 ## Values and expressions
 
@@ -204,7 +233,7 @@ if condition then expr else expr
 
 The condition must have type `Bool`, and both branches must type-check to a compatible type.
 
-Imports are pure, deterministic, path-relative, cached expressions. Importing `.zti` parses data into `.zt` records and lists. Importing `.zt` evaluates the imported module and returns its final expression.
+Imports are pure, deterministic, path-relative, cached top-level declarations: `cfg :: import "config.zti"` creates one prefixed binding. Importing `.zti` parses data into `.zt` records and lists. Importing `.zt` evaluates the imported module and exposes its final expression as the binding; fields are accessed as `cfg.field` or `lib.Type`.
 
 Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`.
 
@@ -212,7 +241,7 @@ Pipelines are syntax for ordinary function application. `x |> f` means `f x`, an
 
 `x.f` is field or module access only; it is not method-call syntax.
 
-General mode is pure and lazy. Unused bindings are not evaluated, and function arguments are lazy unless forced. External data enters through explicit imports, not ambient `now`, `random`, filesystem, shell, or environment primitives.
+General mode is pure and lazy. Unused bindings are not evaluated, and function arguments are lazy unless forced. External data enters through explicit static import declarations, not ambient `now`, `random`, filesystem, shell, environment primitives, or runtime `.zti` loading. Dynamic data loading belongs to a later explicit effect/capability design.
 
 ## Types
 

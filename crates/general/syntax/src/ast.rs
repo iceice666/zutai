@@ -73,6 +73,11 @@ pub enum Decl {
         value: Expr,
         span: Span,
     },
+    Import {
+        name: String,
+        source: ImportSource,
+        span: Span,
+    },
     TypeAlias {
         name: String,
         params: Vec<TypeParam>,
@@ -114,6 +119,7 @@ impl Decl {
         match self {
             Decl::Inferred { span, .. }
             | Decl::Typed { span, .. }
+            | Decl::Import { span, .. }
             | Decl::TypeAlias { span, .. }
             | Decl::Function { span, .. }
             | Decl::NoSigFn { span, .. }
@@ -126,6 +132,7 @@ impl Decl {
         match self {
             Decl::Inferred { name, .. }
             | Decl::Typed { name, .. }
+            | Decl::Import { name, .. }
             | Decl::TypeAlias { name, .. }
             | Decl::Function { name, .. }
             | Decl::NoSigFn { name, .. }
@@ -163,6 +170,7 @@ pub enum TupleItem {
 #[derive(Debug, PartialEq)]
 pub struct LocalBinding {
     pub name: String,
+    pub annotation: Option<TypeExpr>,
     pub value: Expr,
     pub span: Span,
 }
@@ -296,10 +304,6 @@ pub enum Expr {
         arms: Vec<FuncClause>,
         span: Span,
     },
-    Import {
-        source: ImportSource,
-        span: Span,
-    },
     TypeForm {
         ty: Box<TypeExpr>,
         span: Span,
@@ -375,7 +379,6 @@ impl Expr {
             | Expr::Lambda { span, .. }
             | Expr::If { span, .. }
             | Expr::Match { span, .. }
-            | Expr::Import { span, .. }
             | Expr::TypeForm { span, .. }
             | Expr::Select { span, .. }
             | Expr::Perform { span, .. }

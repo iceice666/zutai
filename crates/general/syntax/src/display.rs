@@ -43,6 +43,13 @@ fn write_decl(f: &mut fmt::Formatter<'_>, decl: &Decl, prefix: &str, indent: &st
                 &format!("{indent}   "),
             )
         }
+        Decl::Import { name, source, .. } => {
+            writeln!(f, "{prefix} Import {name:?}")?;
+            match source {
+                ImportSource::String(s) => writeln!(f, "{indent}└─ source: {s:?}"),
+                ImportSource::Path(p) => writeln!(f, "{indent}└─ source: {}", p.join(".")),
+            }
+        }
         Decl::TypeAlias {
             name, params, ty, ..
         } => {
@@ -225,12 +232,28 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
         } => {
             writeln!(f, "{prefix}Block")?;
             for b in bindings {
-                write_expr(
-                    f,
-                    &b.value,
-                    &format!("{indent}├─ {}: ", b.name),
-                    &format!("{indent}│  "),
-                )?;
+                if let Some(annotation) = &b.annotation {
+                    writeln!(f, "{indent}├─ {}:", b.name)?;
+                    write_type_expr(
+                        f,
+                        annotation,
+                        &format!("{indent}│  ├─ type: "),
+                        &format!("{indent}│  │  "),
+                    )?;
+                    write_expr(
+                        f,
+                        &b.value,
+                        &format!("{indent}│  └─ value: "),
+                        &format!("{indent}│     "),
+                    )?;
+                } else {
+                    write_expr(
+                        f,
+                        &b.value,
+                        &format!("{indent}├─ {}: ", b.name),
+                        &format!("{indent}│  "),
+                    )?;
+                }
             }
             write_expr(
                 f,
@@ -297,10 +320,6 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             }
             Ok(())
         }
-        Expr::Import { source, .. } => match source {
-            ImportSource::String(s) => writeln!(f, "{prefix}Import({s:?})"),
-            ImportSource::Path(p) => writeln!(f, "{prefix}Import({})", p.join(".")),
-        },
         Expr::TypeForm { ty, .. } => {
             writeln!(f, "{prefix}TypeForm")?;
             write_type_expr(f, ty, &format!("{indent}└─ "), &format!("{indent}   "))

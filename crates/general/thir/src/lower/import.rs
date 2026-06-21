@@ -10,13 +10,13 @@ use crate::ir::{
 use super::Lowerer;
 
 impl<'hir> Lowerer<'hir> {
-    /// Lower an `import` expression by looking up its pre-resolved type.
+    /// Lower an internal import node by looking up its pre-resolved type.
     ///
     /// Resolution (filesystem read + `.zti` parse + type derivation) happens in
-    /// the semantic layer; here we only intern the resolved descriptor.  An
-    /// import the resolver could not handle (missing file, `.zt` import, no base
-    /// directory, …) is absent from the map and becomes an `Error` node, so the
-    /// eval gate refuses to run it.
+    /// the semantic layer; here we only intern the resolved descriptor. An
+    /// import the resolver could not handle (missing file, no base directory,
+    /// unsupported path form, …) is absent from the map and becomes an `Error`
+    /// node, so the eval gate refuses to run it.
     pub(super) fn lower_import_expr(
         &mut self,
         id: HirExprId,

@@ -56,9 +56,7 @@
     | _          => #nonpos;
   };
 
-  -- Import
-  -- (Parsed but path need not resolve at parse time)
-  -- imp = import "data.zti";
+  -- Imports are top-level declarations; expression imports are rejected.
 
   -- Type forms
   type-rec       = type { host : Text; port? : Int; };

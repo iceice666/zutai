@@ -45,6 +45,7 @@ pub enum BindingKind {
     /// redefinition raises `DuplicateBinding`.
     BuiltinValue,
     TopValue,
+    TopImport,
     TopFunction,
     TopType,
     TopConstraint,
@@ -236,6 +237,7 @@ pub enum HirTupleItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirLocalBinding {
     pub binding: BindingId,
+    pub annotation: Option<HirTypeId>,
     pub value: HirExprId,
     pub span: Span,
 }

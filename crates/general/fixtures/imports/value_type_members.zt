@@ -1,0 +1,11 @@
+Server :: type {
+  host : Text;
+  port : Int;
+}
+
+defaultPort := 8080
+
+{
+  Server = Server;
+  defaultPort = defaultPort;
+}

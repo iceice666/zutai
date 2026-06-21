@@ -153,7 +153,7 @@ impl<'hir> Lowerer<'hir> {
                     }
                 };
                 // Look up the record type of the receiver (e.g. the inferred
-                // record type of `serverLib := import "server.zt"`).
+                // record type of `serverLib :: import "server.zt"`).
                 let receiver_ty = match self.value_types.get(&binding).copied() {
                     Some(t) => t,
                     None => {
@@ -531,6 +531,9 @@ impl<'hir> Lowerer<'hir> {
                     .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),
             },
             BindingKind::TopType => self.alias_type(binding, span),
+            BindingKind::TopImport if self.aliases.contains_key(&binding) => {
+                self.alias_type(binding, span)
+            }
             BindingKind::TypeParam => self.alloc_type(Type {
                 kind: TypeKind::TypeVar(binding),
                 span,

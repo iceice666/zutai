@@ -34,15 +34,15 @@ normalize :: RawServer -> Server
 Another file:
 
 ```zt
-serverLib := import "server.zt"
-raw := import "server.zti"
+serverLib :: import "server.zt"
+raw :: import "server.zti"
 
 server :: serverLib.Server = serverLib.normalize raw
 
 server
 ```
 
-This works because imported `.zt` modules can contain non-serializable values like functions and types.
+This works because imported `.zt` modules can contain non-serializable values like functions and types, and import declarations expose them through the chosen prefix.
 
 Only rendering requires serializability.
 

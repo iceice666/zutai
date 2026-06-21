@@ -126,6 +126,41 @@ fn parse_typed_decl() {
 }
 
 #[test]
+fn parse_import_decl_string() {
+    let f = parse_str("lib :: import \"lib.zt\"\nlib");
+    assert_eq!(f.decls.len(), 1);
+    match decl_by(&f, "lib") {
+        Decl::Import { name, source, .. } => {
+            assert_eq!(name, "lib");
+            assert!(matches!(source, ImportSource::String(s) if s == "lib.zt"));
+        }
+        other => panic!("expected Import, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_import_decl_path() {
+    let f = parse_str("lib :: import lib.zt\nlib");
+    assert_eq!(f.decls.len(), 1);
+    match decl_by(&f, "lib") {
+        Decl::Import { source, .. } => match source {
+            ImportSource::Path(parts) => {
+                assert_eq!(parts.len(), 2);
+                assert_eq!(parts[0], "lib");
+                assert_eq!(parts[1], "zt");
+            }
+            other => panic!("expected path import source, got {other:?}"),
+        },
+        other => panic!("expected Import, got {other:?}"),
+    }
+}
+
+#[test]
+fn expression_import_is_rejected() {
+    assert!(parse("cfg := import \"config.zti\"\ncfg").has_errors());
+}
+
+#[test]
 fn parse_typed_decl_lambda_value() {
     let src = "\ndouble :: Int -> Int = \\x. x * 2\n\ndouble 5\n";
     let parsed = parse(src);

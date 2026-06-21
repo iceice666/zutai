@@ -43,7 +43,8 @@ Config :: type {
   server  : Server;
 }
 
-raw :: RawConfig = import "app.zti"
+raw :: import "app.zti"
+rawConfig :: RawConfig = raw
 
 normalizeServer :: RawServer -> Server
   = s => {
@@ -53,9 +54,9 @@ normalizeServer :: RawServer -> Server
   };
 
 config :: Config = {
-  name    = raw.name;
-  profile = raw.profile;
-  server  = normalizeServer raw.server;
+  name    = rawConfig.name;
+  profile = rawConfig.profile;
+  server  = normalizeServer rawConfig.server;
 }
 
 config
@@ -85,11 +86,12 @@ RawConfig :: type {
   };
 }
 
-raw :: RawConfig = import "nested.zti"
+raw :: import "nested.zti"
+rawConfig :: RawConfig = raw
 
 {
-  host = raw.server?.host ?? "127.0.0.1";
-  port = raw.server?.port ?? 8080;
+  host = rawConfig.server?.host ?? "127.0.0.1";
+  port = rawConfig.server?.port ?? 8080;
 }
 ```
 

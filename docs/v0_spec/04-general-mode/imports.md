@@ -1,29 +1,33 @@
 ## Imports
 
-Imports are expressions.
+Imports are top-level declarations.
 
 Canonical form:
 
 ```zt
-cfg := import "config.zti"
-lib := import "server.zt"
+cfg :: import "config.zti"
+lib :: import "server.zt"
 ```
+
+The declaration creates one binding named by the declaration. Imports are prefixed only: imported values are used as `cfg` or `lib.field`, and imported type-valued fields are used in annotations as `lib.Type`.
 
 A shorthand unquoted import path may be accepted by implementations:
 
 ```zt
-cfg := import config.zti
+cfg :: import config.zti
 ```
 
 However, the canonical syntax is the string form.
 
+`import` is not an expression. Code such as `cfg := import "config.zti"` is rejected. Runtime-selected or dynamic `.zti` loading is not `import`; it belongs to a later explicit effect/capability design.
+
 ### Importing `.zti`
 
 ```zt
-import "file.zti"
+cfg :: import "file.zti"
 ```
 
-parses the `.zti` file and returns the corresponding `.zt` data value. Blocks become records and arrays become lists. No `.zti` expression is evaluated, because immediate mode has only values.
+parses the `.zti` file and binds the corresponding `.zt` data value to `cfg`. Blocks become records and arrays become lists. No `.zti` expression is evaluated, because immediate mode has only values.
 
 A `.zti` atom such as:
 
@@ -40,12 +44,19 @@ is represented in `.zt` with the same atom spelling:
 ### Importing `.zt`
 
 ```zt
-import "file.zt"
+lib :: import "file.zt"
 ```
 
-evaluates the imported `.zt` file and returns its final expression.
+evaluates the imported `.zt` file and binds its final expression to `lib`.
 
-The returned value may contain records, lists, functions, or types.
+The returned value may contain records, lists, functions, or types. If a returned record contains a type-valued field, consumers can use it in annotations through the import prefix:
+
+```zt
+server :: lib.Server = {
+  host = "localhost";
+  port = lib.defaultPort;
+}
+```
 
 ### Import purity
 

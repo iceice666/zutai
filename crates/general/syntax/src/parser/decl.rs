@@ -10,7 +10,7 @@ use crate::ast::{
 use crate::span::Span;
 
 use super::expr::parse_expr;
-use super::lex::{kw, parse_ident, spanned, ws};
+use super::lex::{kw, parse_ident, parse_import_source, spanned, ws};
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
 
@@ -131,6 +131,17 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
         vec![]
     };
     ws(input)?;
+
+    // Import declaration: `name :: import source`
+    if input.starts_with("import") && kw("import").parse_next(input).is_ok() {
+        if !params.is_empty() {
+            return fail.parse_next(input);
+        }
+        ws(input)?;
+        let (source, source_span) = spanned(parse_import_source).parse_next(input)?;
+        let span = name_span.merge(source_span);
+        return Ok(Decl::Import { name, source, span });
+    }
 
     // Constraint def: `Name :: [<params>] @Target { ... }`
     if input.starts_with('@') {

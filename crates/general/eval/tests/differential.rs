@@ -186,28 +186,28 @@ fn thir_and_tlc_imports_agree() {
     let cases = [
         (
             "zti_import",
-            "cfg := import \"config.zti\"\ncfg.port",
+            "cfg :: import \"config.zti\"\ncfg.port",
             "8080",
         ),
-        ("zt_import", "n := import \"other.zt\"\nn", "42"),
+        ("zt_import", "n :: import \"other.zt\"\nn", "42"),
         (
             "imported_function",
-            "f := import \"func_module.zt\"\nf 2 3",
+            "f :: import \"func_module.zt\"\nf 2 3",
             "5",
         ),
         (
             "optional_import",
-            "m := import \"optional_module.zt\"\nm",
+            "m :: import \"optional_module.zt\"\nm",
             "#none",
         ),
         (
             "imported_operator_witness",
-            "w := import \"witness_eq_int_operator.zt\"\n1 == 1",
+            "w :: import \"witness_eq_int_operator.zt\"\n1 == 1",
             "false",
         ),
         (
             "imported_bounded_operator_witness",
-            "w := import \"witness_eq_int_operator_bounded.zt\"\nw",
+            "w :: import \"witness_eq_int_operator_bounded.zt\"\nw",
             "false",
         ),
     ];

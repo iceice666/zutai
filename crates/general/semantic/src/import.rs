@@ -1,9 +1,9 @@
 //! Module loader for imports.
 //!
 //! THIR lowering is pure, so all filesystem work happens here: walk the HIR for
-//! `import` expressions, resolve each path relative to the importing file's
-//! directory, and produce both a structural type (for THIR) and the data needed
-//! by the evaluator.
+//! import declarations (represented internally as `Import` expression nodes),
+//! resolve each path relative to the importing file's directory, and produce
+//! both a structural type (for THIR) and the data needed by the evaluator.
 //!
 //! - `.zti` (immediate data): parse the file and keep the parsed value; its type
 //!   is derived structurally.
@@ -132,7 +132,7 @@ struct Resolver<'a> {
     diagnostics: Vec<ImportDiagnostic>,
 }
 
-/// Resolve every distinct `import` in `hir` relative to `base`.
+/// Resolve every distinct import declaration/internal import node in `hir` relative to `base`.
 pub(crate) fn resolve_imports(
     hir: &HirFile,
     base: Option<&Path>,
@@ -542,43 +542,52 @@ fn array_element_type(items: &[zutai_im::Value]) -> ImportedType {
     }
 }
 
-/// Enrich an `ImportedType::Record`'s type-valued fields with their concrete
-/// denotations recovered from the module's final expression.
+/// Enrich `ImportedType::Type` placeholders with their concrete denotations
+/// recovered from the module's final expression.
 ///
 /// `export_type` converts a bare `TypeKind::Type` slot (which is payload-less)
-/// to `ImportedType::Type(Unknown)`.  This function upgrades those placeholders
-/// by walking the module's final-expression AST and — for each record field
-/// whose THIR value is a `TypeValue(tid)` — calling `export_type(file, tid)`
-/// to obtain the real denotation.
+/// to `ImportedType::Type(Unknown)`. This function upgrades those placeholders
+/// by walking the module's final-expression AST. For each record field whose
+/// THIR value is a `TypeValue(tid)`, and for a direct type-valued final
+/// expression, it calls `export_type(file, tid)` to obtain the real denotation.
 ///
-/// Non-record final expressions (scalars, functions, …) are returned as-is.
+/// Non-type final expressions (scalars, functions, …) are returned as-is.
 fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedType {
-    let ImportedType::Record(mut fields) = ty else {
-        return ty;
-    };
-
-    // Inspect the final expression for TypeValue fields.
     let final_expr = &file.expr_arena[file.final_expr];
-    let ThirExprKind::Record(thir_fields) = &final_expr.kind else {
-        return ImportedType::Record(fields);
-    };
+    match ty {
+        ImportedType::Type(_) => {
+            if let ThirExprKind::TypeValue(denotation_tid) = final_expr.kind
+                && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
+            {
+                ImportedType::Type(Box::new(denotation))
+            } else {
+                ImportedType::Type(Box::new(ImportedType::Unknown))
+            }
+        }
+        ImportedType::Record(mut fields) => {
+            let ThirExprKind::Record(thir_fields) = &final_expr.kind else {
+                return ImportedType::Record(fields);
+            };
 
-    for thir_field in thir_fields {
-        // Only enrich fields that are already `Type(Unknown)` placeholders.
-        let Some(imp_field) = fields.iter_mut().find(|f| f.name == thir_field.name) else {
-            continue;
-        };
-        if !matches!(imp_field.ty, ImportedType::Type(_)) {
-            continue;
+            for thir_field in thir_fields {
+                // Only enrich fields that are already `Type(Unknown)` placeholders.
+                let Some(imp_field) = fields.iter_mut().find(|f| f.name == thir_field.name) else {
+                    continue;
+                };
+                if !matches!(imp_field.ty, ImportedType::Type(_)) {
+                    continue;
+                }
+                // The THIR field value must be a TypeValue to carry a denotation.
+                let value_expr = &file.expr_arena[thir_field.value];
+                if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind
+                    && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
+                {
+                    imp_field.ty = ImportedType::Type(Box::new(denotation));
+                }
+            }
+
+            ImportedType::Record(fields)
         }
-        // The THIR field value must be a TypeValue to carry a denotation.
-        let value_expr = &file.expr_arena[thir_field.value];
-        if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind
-            && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
-        {
-            imp_field.ty = ImportedType::Type(Box::new(denotation));
-        }
+        other => other,
     }
-
-    ImportedType::Record(fields)
 }

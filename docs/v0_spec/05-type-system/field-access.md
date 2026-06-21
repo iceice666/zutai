@@ -69,11 +69,7 @@ The projected `r.field` uses direct field-access semantics. If `field` is option
 Example:
 
 ```zt
-raw : {
-  server? : {
-    port? : Int;
-  };
-} = import "app.zti"
+raw :: import "app.zti"
 
 port := raw.server?.port ?? #absent
 ```

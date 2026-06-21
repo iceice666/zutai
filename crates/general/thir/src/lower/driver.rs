@@ -46,6 +46,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn lower_file(&mut self) -> LoweredThir {
         self.collect_type_param_kinds();
+        self.predeclare_import_decls();
         self.predeclare_decl_types();
         // D5: Two-phase lowering.  Witness field RHSs may forward-reference later
         // top-level bindings that are unannotated (not pre-declared by

@@ -5,7 +5,7 @@
 //! partial output when a later semantic phase fails or is not implemented yet.
 //!
 //! It also owns module loading: because THIR lowering is pure, the filesystem
-//! work for `import` expressions lives here (see [`import`]).  Path-relative
+//! work for import declarations lives here (see [`import`]). Path-relative
 //! imports require a base directory, so the path-aware entry points
 //! ([`analyze_path`], [`analyze_with_base`]) carry one; the string-only entry
 //! points resolve imports with no base, which surfaces a clean diagnostic.
@@ -224,7 +224,7 @@ pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
     ))
 }
 
-/// Analyze `input`, resolving `import` expressions relative to `base`.
+/// Analyze `input`, resolving import declarations relative to `base`.
 ///
 /// `base` is the directory of the importing file; `None` (string-only entry
 /// points, REPL) means imports cannot be resolved and yield a diagnostic.
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn import_with_base_completes() {
-        let analysis = analyze_in_imports("cfg := import \"config.zti\"\ncfg.port");
+        let analysis = analyze_in_imports("cfg :: import \"config.zti\"\ncfg.port");
         assert!(!analysis.has_parse_errors());
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn import_without_base_reports_no_base_directory() {
-        let analysis = analyze("cfg := import \"config.zti\"\ncfg.port");
+        let analysis = analyze("cfg :: import \"config.zti\"\ncfg.port");
         assert!(!analysis.is_thir_complete());
         assert!(has_import_diagnostic(
             &analysis,
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn import_missing_file_reports_file_not_found() {
-        let analysis = analyze_in_imports("cfg := import \"nope.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"nope.zti\"\ncfg");
         assert!(!analysis.is_thir_complete());
         assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
             &diagnostic.kind,
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn zt_import_data_module_completes() {
-        let analysis = analyze_in_imports("m := import \"data_module.zt\"\nm.doubled");
+        let analysis = analyze_in_imports("m :: import \"data_module.zt\"\nm.doubled");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
             analysis.diagnostics.is_empty(),
@@ -570,7 +570,7 @@ mod tests {
     fn zt_import_function_module_completes() {
         // func_module.zt exports a function; the import must now succeed and
         // produce a complete THIR (no UnsupportedExport diagnostic).
-        let analysis = analyze_in_imports("f := import \"func_module.zt\"\nf");
+        let analysis = analyze_in_imports("f :: import \"func_module.zt\"\nf");
         assert!(
             analysis.is_thir_complete(),
             "expected complete THIR, got diagnostics: {:?}",
@@ -582,8 +582,8 @@ mod tests {
     fn cross_module_conflicting_witnesses_report_import_error() {
         let analysis = analyze_in_imports(
             r#"
-a := import "witness_eq_int_a.zt"
-b := import "witness_eq_int_b.zt"
+a :: import "witness_eq_int_a.zt"
+b :: import "witness_eq_int_b.zt"
 (a, b)
 "#,
         );
@@ -604,7 +604,7 @@ b := import "witness_eq_int_b.zt"
     fn imported_witness_conflicts_with_local_witness() {
         let analysis = analyze_in_imports(
             r#"
-a := import "witness_eq_int_a.zt"
+a :: import "witness_eq_int_a.zt"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
 a
@@ -627,8 +627,8 @@ a
     fn cross_module_distinct_witness_targets_complete() {
         let analysis = analyze_in_imports(
             r#"
-a := import "witness_eq_int_a.zt"
-b := import "witness_eq_bool.zt"
+a :: import "witness_eq_int_a.zt"
+b :: import "witness_eq_bool.zt"
 (a, b)
 "#,
         );
@@ -645,8 +645,8 @@ b := import "witness_eq_bool.zt"
     fn cross_module_same_witness_reexport_is_deduped() {
         let analysis = analyze_in_imports(
             r#"
-a := import "witness_reexport_a.zt"
-b := import "witness_reexport_b.zt"
+a :: import "witness_reexport_a.zt"
+b :: import "witness_reexport_b.zt"
 (a, b)
 "#,
         );
@@ -673,7 +673,7 @@ b := import "witness_reexport_b.zt"
 
     #[test]
     fn bad_zti_reports_parse_error() {
-        let analysis = analyze_in_imports("cfg := import \"bad.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"bad.zti\"\ncfg");
         assert!(!analysis.is_thir_complete());
         assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
             &diagnostic.kind,
@@ -686,14 +686,14 @@ b := import "witness_reexport_b.zt"
     fn empty_imported_list_still_completes() {
         // Empty `.zti` array → `List(InferVar)`; a free inference variable is
         // allowed in completed THIR.
-        let analysis = analyze_in_imports("cfg := import \"empty_list.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"empty_list.zti\"\ncfg");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
     }
 
     #[test]
     fn mixed_imported_list_still_completes() {
         // Heterogeneous `.zti` array → `List(Union(...))`.
-        let analysis = analyze_in_imports("cfg := import \"mixed_list.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"mixed_list.zti\"\ncfg");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
     }
 

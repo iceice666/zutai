@@ -1,11 +1,11 @@
 //! Resolved-import descriptors threaded into THIR lowering.
 //!
-//! THIR lowering is pure (no filesystem).  The semantic layer resolves each
-//! `import` expression to a structural type descriptor and passes a map keyed
-//! by the import source; THIR interns each descriptor into its own type arena
-//! when it lowers the corresponding `Import` node.  Keeping the descriptor
-//! independent of THIR's private `type_arena` is what lets the resolver live
-//! outside this crate.
+//! THIR lowering is pure (no filesystem). The semantic layer resolves each
+//! import declaration/internal import node to a structural type descriptor and
+//! passes a map keyed by the import source; THIR interns each descriptor into
+//! its own type arena when it lowers the corresponding `Import` node. Keeping
+//! the descriptor independent of THIR's private `type_arena` is what lets the
+//! resolver live outside this crate.
 
 use crate::ir::FixedWidth;
 use zutai_hir::HirImportSource;

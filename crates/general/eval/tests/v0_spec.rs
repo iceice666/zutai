@@ -34,8 +34,8 @@ const EXPECTED_ZTI_PARSE: &[&str] = &[
 const EXPECTED_ZT_CHECK: &[&str] = &[
     "docs/v0_spec/02-lexical/conventions.md#16",
     "docs/v0_spec/02-lexical/conventions.md#24",
-    "docs/v0_spec/04-general-mode/file-structure.md#14",
-    "docs/v0_spec/04-general-mode/file-structure.md#16",
+    "docs/v0_spec/04-general-mode/file-structure.md#15",
+    "docs/v0_spec/04-general-mode/file-structure.md#17",
     "docs/v0_spec/04-general-mode/functions.md#14",
     "docs/v0_spec/04-general-mode/imports.md#05",
     "docs/v0_spec/04-general-mode/values.md#03",
@@ -62,10 +62,10 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
         "{ host = \"localhost\";  target-triple = \"x86_64-linux\" }",
     ),
     (
-        "docs/v0_spec/04-general-mode/file-structure.md#14",
+        "docs/v0_spec/04-general-mode/file-structure.md#15",
         "<function/1>",
     ),
-    ("docs/v0_spec/04-general-mode/file-structure.md#16", "120"),
+    ("docs/v0_spec/04-general-mode/file-structure.md#17", "120"),
     (
         "docs/v0_spec/04-general-mode/functions.md#14",
         "<function/1>",
