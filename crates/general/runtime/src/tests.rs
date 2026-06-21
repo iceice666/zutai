@@ -174,6 +174,14 @@ fn float_render_matches_display() {
 }
 
 #[test]
+fn posit_render_matches_display_suffix() {
+    let posit_d = [DESC_POSIT, 32, 3];
+    assert_eq!(render_str(0x4000_0000, &posit_d), "1p32e3");
+    let posit_default_d = [DESC_POSIT, 64, 2];
+    assert_eq!(render_str(0x4000_0000_0000_0000, &posit_default_d), "1p64");
+}
+
+#[test]
 fn text_render_escapes() {
     let text_d = [DESC_TEXT];
     let v = text("a\"b\nc");

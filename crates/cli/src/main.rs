@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 mod commands;
 mod diagnostics;
@@ -11,8 +11,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Run { path }) => commands::run_file(&path)?,
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
         Some(Commands::Check { path }) => commands::run_check(&path)?,
-        Some(Commands::Compile { path, output }) => {
-            commands::run_compile(&path, output.as_deref())?;
+        Some(Commands::Compile { path, output, emit }) => {
+            commands::run_compile(&path, output.as_deref(), emit.into())?;
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
         Some(Commands::Repl) => commands::run_repl()?,
@@ -39,6 +39,23 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CompileEmit {
+    Llvm,
+    Obj,
+    Bin,
+}
+
+impl From<CompileEmit> for commands::EmitMode {
+    fn from(value: CompileEmit) -> Self {
+        match value {
+            CompileEmit::Llvm => commands::EmitMode::Llvm,
+            CompileEmit::Obj => commands::EmitMode::Obj,
+            CompileEmit::Bin => commands::EmitMode::Bin,
+        }
+    }
+}
+
 #[derive(clap::Subcommand)]
 enum Commands {
     /// Evaluate a .zt file and print the result
@@ -56,13 +73,16 @@ enum Commands {
         /// Path to the .zt file
         path: String,
     },
-    /// Compile a .zt file to LLVM IR
+    /// Compile a .zt file
     Compile {
         /// Path to the .zt file
         path: String,
-        /// Output file path (default: stdout)
+        /// Output file path (default: stdout for LLVM, derived path for obj/bin)
         #[arg(short)]
         output: Option<String>,
+        /// Artifact to emit
+        #[arg(long, value_enum, default_value_t = CompileEmit::Llvm)]
+        emit: CompileEmit,
     },
     /// Print the Dataflow Core graph for a .zt file
     Dataflow {

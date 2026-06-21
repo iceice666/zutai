@@ -93,8 +93,8 @@ fn collect_global_refs(
             collect_global_refs(graph, *lhs, out, visited);
             collect_global_refs(graph, *rhs, out, visited);
         }
-        DfNodeKind::Variant(_, inner) => {
-            collect_global_refs(graph, *inner, out, visited);
+        DfNodeKind::Variant { value, .. } => {
+            collect_global_refs(graph, *value, out, visited);
         }
         // Leaves: Lit, Bind, Import, Error — no children to visit
         DfNodeKind::Lit(_) | DfNodeKind::Bind | DfNodeKind::Import { .. } | DfNodeKind::Error => {}
@@ -127,8 +127,8 @@ fn collect_pat_refs(
                 collect_pat_refs(graph, &sub, out, visited);
             }
         }
-        DfPattern::Variant(_, inner) => {
-            let inner = inner.as_ref().clone();
+        DfPattern::Variant { pattern, .. } => {
+            let inner = pattern.as_ref().clone();
             collect_pat_refs(graph, &inner, out, visited);
         }
         DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}

@@ -1,11 +1,19 @@
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::diagnostics::{
     ZtParseDiagnostic, extension_or_error, format_import_diagnostic, print_ast,
     print_semantic_errors, print_zt_errors,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EmitMode {
+    Llvm,
+    Obj,
+    Bin,
+}
 
 pub(crate) fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {
     match extension_or_error(path)?.as_str() {
@@ -198,8 +206,12 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Compile a `.zt` file to LLVM IR. Writes to stdout or `-o <output>`.
-pub(crate) fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), Box<dyn Error>> {
+/// Compile a `.zt` file. LLVM emits text; object/binary modes invoke the host LLVM toolchain.
+pub(crate) fn run_compile(
+    path: &str,
+    output_path: Option<&str>,
+    emit: EmitMode,
+) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
     let analysis = zutai_semantic::analyze_with_base(
@@ -263,13 +275,112 @@ pub(crate) fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), B
     let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
     let anf = zutai_anf::lower_dc(&graph);
     let ssa = zutai_ssa::lower_anf(&anf);
+    if let Some(reason) = zutai_codegen::unsupported_entry_type_reason(&ssa) {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
     let llvm_ir = zutai_codegen::emit_llvm(&ssa);
 
-    match output_path {
-        Some(out) => fs::write(out, &llvm_ir)?,
-        None => println!("{llvm_ir}"),
+    match emit {
+        EmitMode::Llvm => match output_path {
+            Some(out) => fs::write(out, &llvm_ir)?,
+            None => println!("{llvm_ir}"),
+        },
+        EmitMode::Obj => {
+            let out = output_path_for(path, output_path, EmitMode::Obj);
+            let ll = out.with_extension("ll");
+            fs::write(&ll, &llvm_ir)?;
+            assemble_object(&ll, &out)?;
+        }
+        EmitMode::Bin => {
+            let out = output_path_for(path, output_path, EmitMode::Bin);
+            let ll = out.with_extension("ll");
+            let obj = out.with_extension("o");
+            fs::write(&ll, &llvm_ir)?;
+            assemble_object(&ll, &obj)?;
+            let rt = build_runtime_archive()?;
+            link_binary(&obj, &rt, &out)?;
+        }
     }
     Ok(())
+}
+
+fn output_path_for(input: &str, output_path: Option<&str>, emit: EmitMode) -> PathBuf {
+    if let Some(out) = output_path {
+        return PathBuf::from(out);
+    }
+    let mut out = PathBuf::from(input);
+    match emit {
+        EmitMode::Llvm => out.set_extension("ll"),
+        EmitMode::Obj => out.set_extension("o"),
+        EmitMode::Bin => out.set_extension(""),
+    };
+    out
+}
+
+fn tool_name(env_name: &str, fallback_env: &str, default: &'static str) -> String {
+    std::env::var(env_name)
+        .or_else(|_| std::env::var(fallback_env))
+        .unwrap_or_else(|_| default.to_string())
+}
+
+fn run_tool(command: &mut Command, tool: &str, purpose: &str) -> Result<(), Box<dyn Error>> {
+    let status = command.status().map_err(|err| {
+        format!(
+            "compile error: required tool `{tool}` failed to start for {purpose}: {err}; install it or set ZUTAI_{}",
+            tool.to_ascii_uppercase()
+        )
+    })?;
+    if !status.success() {
+        return Err(format!("compile error: `{tool}` failed while {purpose}").into());
+    }
+    Ok(())
+}
+
+fn assemble_object(ll: &Path, out: &Path) -> Result<(), Box<dyn Error>> {
+    let llc = tool_name("ZUTAI_LLC", "LLC", "llc");
+    let mut command = Command::new(&llc);
+    command.arg("-filetype=obj").arg("-o").arg(out).arg(ll);
+    run_tool(&mut command, &llc, "assembling LLVM IR")
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("cli crate lives under crates/cli")
+        .to_path_buf()
+}
+
+fn build_runtime_archive() -> Result<PathBuf, Box<dyn Error>> {
+    let root = workspace_root();
+    let mut command = Command::new("cargo");
+    command
+        .arg("build")
+        .arg("-p")
+        .arg("zutai-rt")
+        .current_dir(&root);
+    run_tool(&mut command, "cargo", "building zutai-rt")?;
+    Ok(root.join("target").join("debug").join("libzutai_rt.a"))
+}
+
+fn runtime_link_flags() -> &'static [&'static str] {
+    match std::env::consts::OS {
+        "linux" => &["-lpthread", "-ldl", "-lm"],
+        "macos" => &[],
+        _ => &[],
+    }
+}
+
+fn link_binary(obj: &Path, runtime: &Path, out: &Path) -> Result<(), Box<dyn Error>> {
+    let clang = tool_name("ZUTAI_CLANG", "CLANG", "clang");
+    let mut command = Command::new(&clang);
+    command.arg(obj).arg(runtime);
+    for flag in runtime_link_flags() {
+        command.arg(flag);
+    }
+    command.arg("-o").arg(out);
+    run_tool(&mut command, &clang, "linking native binary")
 }
 
 /// Print the Dataflow Core graph for a `.zt` file.

@@ -35,7 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after the Phase 19 effect backend representation decision._
+_Last updated: 2026-06-21 after closing Phase 18 runtime/ABI and Phase 19
+effect AOT-boundary work._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -48,9 +49,13 @@ _Last updated: 2026-06-21 after the Phase 19 effect backend representation decis
   operator lowering, source effect markers, reflection boundaries, and the
   TLC-first evaluator input contract.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
-  Record construction, selection, update, tuple-pattern binding, and variant
-  payload binding now use the slot-indexed runtime ABI. Native binary
-  linking/execution remains [Phase 18 TBD](TBD.md#phase-18-runtime-and-abi) work.
+  Record/tuple access is slot-indexed; union construction now uses dense
+  per-union tags; codegen emits static descriptors for `zutai.show`; `@main`
+  renders through the type-directed runtime display path and rejects function /
+  `Type` results.
+- `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
+  output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, and emit
+  actionable diagnostics when the host toolchain is absent.
 - `zutai-eval` has both the THIR oracle and TLC evaluator. Differential coverage
   includes constraints, optionals, `.zti` imports, `.zt` imports, imported
   functions, transitive imports, imported witness dictionaries, record update,
@@ -61,9 +66,9 @@ _Last updated: 2026-06-21 after the Phase 19 effect backend representation decis
   handles residual `io.print`.
 - `compile` and `dataflow` deliberately reject config overlay builtins,
   reflection builtins, residual effect markers, and non-empty function effect
-  rows until each has its backend lowering. Phase 19 fixes the effect lowering
-  representation as pre-DC free-monad/CPS elaboration; implementation remains
-  open.
+  rows unless a pre-DC lowering has eliminated them. The Dataflow Core API now
+  has a fallible residual-effect gate so direct callers cannot silently erase
+  non-empty effect rows.
 
 ## Validation notes
 
@@ -77,9 +82,9 @@ _Last updated: 2026-06-21 after the Phase 19 effect backend representation decis
 - `Int??` lexes as `Int` + `??`, not a double optional. Write `(Int?)?` for a
   nested optional.
 
-## TBD
+## Open work pointer
 
-Open milestones and unresolved work live in [`TBD.md`](TBD.md). When a TBD item
+Open milestones and unresolved work live in [`TBD.md`](TBD.md). When an item
 finishes, move a short status summary into "Completed milestones, newest first"
 and keep any unresolved follow-up in `TBD.md`.
 
@@ -100,17 +105,35 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
-### Phase 19: Effect backend representation ✅
+### Phase 18: Runtime and ABI ✅
 
-- Algebraic effects will lower before Dataflow Core through a free-monad/CPS
-  encoding over existing TLC/DC constructs (`Variant`, `Record`, `Lam`, `App`,
-  `Match`, and `Letrec`), not through explicit effect nodes in DC or ANF.
-- Dataflow Core, ANF, SSA, and LLVM remain pure. Function effect rows may be
-  erased only after the elaboration eliminates residual `Perform`/`Handle`/
-  `Resume`; current compile/dataflow gates remain correct until that lowering
-  lands.
-- Host capability scope and the lowering implementation remain open Phase 19
-  work.
+- Runtime/codegen now use dense per-union variant tags in construction and type
+  descriptors, with `Optional`/`Maybe` fixed at absent/none = 0 and
+  present/some = 1.
+- Codegen emits static descriptors from `DfTy`, including field/tag name
+  strings, and `@main` calls `zutai.show` plus a trailing newline. Function and
+  `Type` entry values are rejected with precise compile diagnostics.
+- `compile --emit=llvm|obj|bin` writes LLVM text, assembles objects with `llc`,
+  and links native binaries with `clang` against `libzutai_rt`. Missing host
+  tools produce actionable diagnostics; object/binary tests skip when the
+  toolchain is absent.
+- v0 keeps the leak arena. Object headers still reserve high bits for future
+  precise/generational GC layout IDs, and runtime descriptors provide the
+  pointer-shape bridge for that later collector.
+
+### Phase 19: Effect AOT boundary ✅
+
+- Host authority beyond `io.print` is explicit capability passing only:
+  filesystem, network, environment, time, and randomness stay out of the
+  ambient prelude and must be represented by capability values plus effect rows.
+- Dataflow Core, ANF, SSA, LLVM, and the runtime ABI remain pure. The accepted
+  representation for future compiled effects is still pre-DC free-monad/CPS
+  elaboration over ordinary variants, records, lambdas, applications, matches,
+  and recursive handlers.
+- Until that elaboration exists, `compile`/`dataflow` reject residual
+  `Perform`/`Handle`/`Resume` nodes and non-empty function effect rows before
+  Dataflow Core. `try_lower_tlc` enforces the same no-erasure gate for direct
+  library callers.
 
 ### Phase 18 D-0004: Slot-indexed records ✅
 

@@ -71,7 +71,10 @@ fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId) -> bool {
                     })
             }
             (DfTy::Union(a), DfTy::Union(b)) => {
-                a.len() == b.len() && a.iter().zip(b).all(|(a, b)| go(graph, *a, *b, seen))
+                a.len() == b.len()
+                    && a.iter()
+                        .zip(b)
+                        .all(|(a, b)| a.tag == b.tag && go(graph, a.ty, b.ty, seen))
             }
             (DfTy::Tuple(a), DfTy::Tuple(b)) => {
                 a.len() == b.len()
@@ -165,7 +168,7 @@ fn collect_bind_nodes(pat: &DfPattern, out: &mut Vec<NodeId>) {
                 collect_bind_nodes(p, out);
             }
         }
-        DfPattern::Variant(_, inner) => collect_bind_nodes(inner, out),
+        DfPattern::Variant { pattern, .. } => collect_bind_nodes(pattern, out),
         DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
     }
 }
@@ -330,7 +333,7 @@ fn validate_type_refs(graph: &DataflowGraph, errors: &mut Vec<ValidationError>) 
             }
             DfTy::Union(members) => {
                 for member in members {
-                    check_type_ref(graph, ty_id, "member", *member, errors);
+                    check_type_ref(graph, ty_id, "member", member.ty, errors);
                 }
             }
             DfTy::Tuple(fields) => {
@@ -397,7 +400,7 @@ fn check_pattern_refs(
                 check_pattern_refs(graph, owner, pattern, errors);
             }
         }
-        DfPattern::Variant(_, inner) => check_pattern_refs(graph, owner, inner, errors),
+        DfPattern::Variant { pattern, .. } => check_pattern_refs(graph, owner, pattern, errors),
         DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
     }
 }
@@ -449,8 +452,8 @@ fn check_node_refs(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec<Valida
                 check_node_ref(graph, owner, "element", *item, errors);
             }
         }
-        DfNodeKind::Variant(_, payload) => {
-            check_node_ref(graph, owner, "payload", *payload, errors);
+        DfNodeKind::Variant { value, .. } => {
+            check_node_ref(graph, owner, "payload", *value, errors);
         }
         DfNodeKind::Select { base, .. } => {
             check_node_ref(graph, owner, "base", *base, errors);
@@ -785,7 +788,7 @@ fn check_node_type_compat(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec
             }
             _ => unexpected_type(owner, "type", "List", node.ty, errors),
         },
-        DfNodeKind::Variant(_, _) => {}
+        DfNodeKind::Variant { .. } => {}
         DfNodeKind::Select { base, field, .. } => check_select(graph, owner, *base, field, errors),
         DfNodeKind::Match { arms, .. } => {
             let clause_match_has_function_type = matches!(&graph.types[node.ty], DfTy::Fun(_, _));
@@ -944,10 +947,8 @@ fn walk_node(
                 walk_child(graph, id, "element", *item, scope, owners, visited, errors);
             }
         }
-        DfNodeKind::Variant(_, payload) => {
-            walk_child(
-                graph, id, "payload", *payload, scope, owners, visited, errors,
-            );
+        DfNodeKind::Variant { value, .. } => {
+            walk_child(graph, id, "payload", *value, scope, owners, visited, errors);
         }
         DfNodeKind::Select { base, .. } => {
             walk_child(graph, id, "base", *base, scope, owners, visited, errors);

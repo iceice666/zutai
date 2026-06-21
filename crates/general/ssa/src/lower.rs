@@ -136,15 +136,32 @@ fn atom_to_value(atom: &AnfAtom, globals: &HashSet<String>) -> SsaValue {
     }
 }
 
+fn materialize_value(val: SsaValue, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
+    if let SsaValue::Global(name) = val {
+        let dest = ctx.fresh.next_label("global");
+        fb.push(SsaInstr {
+            dest: dest.clone(),
+            op: SsaOp::CallGlobal { name },
+        });
+        SsaValue::Reg(dest)
+    } else {
+        val
+    }
+}
+
+fn lower_atom_value(atom: &AnfAtom, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
+    materialize_value(atom_to_value(atom, &ctx.global_closures), fb, ctx)
+}
+
 // ── Converting ANF tuple items ─────────────────────────────────────────────────
 
-fn tuple_item_to_ssa(item: &AnfTupleItem, globals: &HashSet<String>) -> SsaTupleItem {
+fn tuple_item_to_ssa(item: &AnfTupleItem, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaTupleItem {
     match item {
         AnfTupleItem::Named { name, value } => SsaTupleItem::Named {
             name: name.clone(),
-            value: atom_to_value(value, globals),
+            value: lower_atom_value(value, fb, ctx),
         },
-        AnfTupleItem::Positional(atom) => SsaTupleItem::Positional(atom_to_value(atom, globals)),
+        AnfTupleItem::Positional(atom) => SsaTupleItem::Positional(lower_atom_value(atom, fb, ctx)),
     }
 }
 
@@ -156,7 +173,7 @@ fn lower_body(body: &AnfBody, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
     for (name, expr) in &body.bindings {
         lower_expr(name, expr, fb, ctx);
     }
-    atom_to_value(&body.result, &ctx.global_closures)
+    lower_atom_value(&body.result, fb, ctx)
 }
 
 // ── Expression lowering ────────────────────────────────────────────────────────
@@ -167,7 +184,7 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
         AnfExpr::Atom(atom) => {
             // "let x = y" in ANF → in SSA, x is just an alias for y.
             // Emit a single-branch phi so dest is bound.
-            let val = atom_to_value(atom, &ctx.global_closures);
+            let val = lower_atom_value(atom, fb, ctx);
             fb.push(SsaInstr {
                 dest: dest.to_string(),
                 op: SsaOp::Phi {
@@ -178,12 +195,12 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
         }
 
         AnfExpr::Apply { func, arg } => SsaOp::ApplyClosure {
-            closure: atom_to_value(func, &ctx.global_closures),
-            arg: atom_to_value(arg, &ctx.global_closures),
+            closure: lower_atom_value(func, fb, ctx),
+            arg: lower_atom_value(arg, fb, ctx),
         },
 
         AnfExpr::TyApp { poly, ty_args } => SsaOp::TyApp {
-            poly: atom_to_value(poly, &ctx.global_closures),
+            poly: lower_atom_value(poly, fb, ctx),
             ty_args: ty_args.clone(),
         },
 
@@ -218,45 +235,43 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
         }
 
         AnfExpr::Record(fields) => {
-            let globals = &ctx.global_closures;
-            SsaOp::Record {
-                fields: fields
-                    .iter()
-                    .map(|atom| atom_to_value(atom, globals))
-                    .collect(),
+            let mut values = Vec::with_capacity(fields.len());
+            for atom in fields {
+                values.push(lower_atom_value(atom, fb, ctx));
             }
+            SsaOp::Record { fields: values }
         }
 
         AnfExpr::RecordUpdate { base, updates } => {
-            let globals = &ctx.global_closures;
+            let base = lower_atom_value(base, fb, ctx);
+            let mut lowered = Vec::with_capacity(updates.len());
+            for (slot, value) in updates {
+                lowered.push((*slot, lower_atom_value(value, fb, ctx)));
+            }
             SsaOp::RecordUpdate {
-                base: atom_to_value(base, globals),
-                updates: updates
-                    .iter()
-                    .map(|(slot, value)| (*slot, atom_to_value(value, globals)))
-                    .collect(),
+                base,
+                updates: lowered,
             }
         }
 
         AnfExpr::Tuple(items) => {
-            let globals = &ctx.global_closures;
-            SsaOp::Tuple {
-                items: items
-                    .iter()
-                    .map(|i| tuple_item_to_ssa(i, globals))
-                    .collect(),
+            let mut lowered = Vec::with_capacity(items.len());
+            for item in items {
+                lowered.push(tuple_item_to_ssa(item, fb, ctx));
             }
+            SsaOp::Tuple { items: lowered }
         }
 
         AnfExpr::List(elems) => {
-            let globals = &ctx.global_closures;
-            SsaOp::List {
-                elems: elems.iter().map(|a| atom_to_value(a, globals)).collect(),
+            let mut lowered = Vec::with_capacity(elems.len());
+            for elem in elems {
+                lowered.push(lower_atom_value(elem, fb, ctx));
             }
+            SsaOp::List { elems: lowered }
         }
 
         AnfExpr::Select { base, slot } => SsaOp::Select {
-            base: atom_to_value(base, &ctx.global_closures),
+            base: lower_atom_value(base, fb, ctx),
             slot: *slot,
         },
 
@@ -266,19 +281,24 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
         }
 
         AnfExpr::Coalesce { value, fallback } => SsaOp::Coalesce {
-            value: atom_to_value(value, &ctx.global_closures),
-            fallback: atom_to_value(fallback, &ctx.global_closures),
+            value: lower_atom_value(value, fb, ctx),
+            fallback: lower_atom_value(fallback, fb, ctx),
         },
 
         AnfExpr::Builtin { op, lhs, rhs } => SsaOp::Builtin {
             op: *op,
-            lhs: atom_to_value(lhs, &ctx.global_closures),
-            rhs: atom_to_value(rhs, &ctx.global_closures),
+            lhs: lower_atom_value(lhs, fb, ctx),
+            rhs: lower_atom_value(rhs, fb, ctx),
         },
 
-        AnfExpr::Variant { tag, value } => SsaOp::Variant {
+        AnfExpr::Variant {
+            tag,
+            tag_index,
+            value,
+        } => SsaOp::Variant {
             tag: tag.clone(),
-            value: atom_to_value(value, &ctx.global_closures),
+            tag_index: *tag_index,
+            value: lower_atom_value(value, fb, ctx),
         },
 
         AnfExpr::Error => SsaOp::Error,
@@ -330,11 +350,12 @@ fn lower_match(
     ctx: &mut Ctx,
 ) {
     // Emit a MatchDiscriminant instruction in the current block.
+    let scrutinee_value = lower_atom_value(scrutinee, fb, ctx);
     let scrut_reg = ctx.fresh.next_label("match_scrut");
     fb.push(SsaInstr {
         dest: scrut_reg.clone(),
         op: SsaOp::MatchDiscriminant {
-            scrutinee: atom_to_value(scrutinee, &ctx.global_closures),
+            scrutinee: scrutinee_value,
         },
     });
 
@@ -481,7 +502,7 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
                 bind_pattern(inner, &SsaValue::Reg(tmp), bb);
             }
         }
-        AnfPattern::Variant(tag, inner) => {
+        AnfPattern::Variant { tag, pattern, .. } => {
             let tmp = format!("__var_{tag}");
             bb.instrs.push(SsaInstr {
                 dest: tmp.clone(),
@@ -489,7 +510,7 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
                     scrutinee: scrutinee.clone(),
                 },
             });
-            bind_pattern(inner, &SsaValue::Reg(tmp), bb);
+            bind_pattern(pattern, &SsaValue::Reg(tmp), bb);
         }
     }
 }
@@ -553,7 +574,7 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             .union(&free_vars_atom(rhs))
             .cloned()
             .collect(),
-        AnfExpr::Variant { tag: _, value } => free_vars_atom(value),
+        AnfExpr::Variant { value, .. } => free_vars_atom(value),
         AnfExpr::Error => HashSet::new(),
     }
 }
@@ -585,7 +606,7 @@ fn pattern_bindings(pat: &AnfPattern) -> Vec<String> {
             .iter()
             .flat_map(|(_, p)| pattern_bindings(p))
             .collect(),
-        AnfPattern::Variant(_, inner) => pattern_bindings(inner),
+        AnfPattern::Variant { pattern, .. } => pattern_bindings(pattern),
     }
 }
 
@@ -654,6 +675,8 @@ pub fn lower_anf(module: &AnfModule) -> SsaModule {
         decls,
         entry,
         entry_ty: module.root_ty.clone(),
+        entry_ty_id: module.root_ty_id,
+        types: module.types.clone(),
         closure_exports,
     }
 }

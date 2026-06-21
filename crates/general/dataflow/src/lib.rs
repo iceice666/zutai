@@ -31,6 +31,7 @@ pub enum DfTyVar {
 
 pub type NodeId = Idx<DfNode>;
 pub type DfTyId = Idx<DfTy>;
+pub type DfTypes = Arena<DfTy>;
 
 // ── Literal ───────────────────────────────────────────────────────────────────
 
@@ -130,8 +131,11 @@ pub enum DfNodeKind {
     },
     Tuple(Vec<DfTupleNodeItem>),
     List(Vec<NodeId>),
-    Variant(String, NodeId),
-
+    Variant {
+        tag: String,
+        tag_index: usize,
+        value: NodeId,
+    },
     // ── Data elimination ──
     Select {
         base: NodeId,
@@ -175,7 +179,11 @@ pub enum DfPattern {
     Bind(NodeId),
     Tuple(Vec<DfTuplePatItem>),
     Record(Vec<(String, usize, DfPattern)>),
-    Variant(String, Box<DfPattern>),
+    Variant {
+        tag: String,
+        tag_index: usize,
+        pattern: Box<DfPattern>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -211,7 +219,7 @@ pub enum DfTy {
     Optional(DfTyId),
     Maybe(DfTyId),
     Record(Vec<DfRecordField>),
-    Union(Vec<DfTyId>),
+    Union(Vec<DfUnionVariant>),
     Tuple(Vec<DfTupleField>),
     Fun(DfTyId, DfTyId),
 
@@ -229,6 +237,12 @@ pub enum DfTy {
 pub struct DfRecordField {
     pub name: String,
     pub optional: bool,
+    pub ty: DfTyId,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DfUnionVariant {
+    pub tag: String,
     pub ty: DfTyId,
 }
 
@@ -257,16 +271,31 @@ pub struct DataflowGraph {
 
 // ── Public entry points ───────────────────────────────────────────────────────
 
-/// Lower a fully-elaborated TLC module into a Dataflow Core graph.
+/// Lower a fully-elaborated, pure TLC module into a Dataflow Core graph.
 ///
 /// `hir_bindings` is `hir_file.bindings` — the flat binding table indexed by
 /// `BindingId.0` — used to resolve `BindingId`s to their string names for
 /// `GlobalRef` nodes.
+///
+/// Panics when residual effect syntax or non-empty function effect rows would be
+/// erased. Use [`try_lower_tlc`] when the caller wants a diagnostic instead.
 pub fn lower_tlc(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],
 ) -> DataflowGraph {
-    lower::lower_tlc(module, hir_bindings)
+    try_lower_tlc(module, hir_bindings)
+        .expect("residual TLC effects must be handled before Dataflow Core")
+}
+
+/// Fallible form of [`lower_tlc`] that preserves the Phase 19 no-erasure gate.
+pub fn try_lower_tlc(
+    module: &zutai_tlc::TlcModule,
+    hir_bindings: &[zutai_hir::Binding],
+) -> Result<DataflowGraph, &'static str> {
+    if let Some(reason) = zutai_tlc::residual_effect_reason(module) {
+        return Err(reason);
+    }
+    Ok(lower::lower_tlc(module, hir_bindings))
 }
 
 /// Validation errors produced by [`validate`].

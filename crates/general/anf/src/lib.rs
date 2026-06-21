@@ -6,7 +6,9 @@
 //!
 //! See `docs/anf.md` for the design specification.
 
-pub use zutai_dataflow::{DataflowGraph, DfBuiltinOp, DfLit, DfPositOp, DfTy, DfTyId, DfTyVar};
+pub use zutai_dataflow::{
+    DataflowGraph, DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes,
+};
 
 mod lower;
 mod scc;
@@ -86,8 +88,12 @@ pub enum AnfExpr {
         lhs: AnfAtom,
         rhs: AnfAtom,
     },
-    /// Variant construction: `tag(value)`.
-    Variant { tag: String, value: AnfAtom },
+    /// Variant construction: `tag(value)` with the dense per-union tag index.
+    Variant {
+        tag: String,
+        tag_index: usize,
+        value: AnfAtom,
+    },
     /// Error sentinel — propagated from DC error nodes.
     Error,
 }
@@ -118,7 +124,11 @@ pub enum AnfPattern {
     Bind(String),
     Tuple(Vec<AnfTuplePatItem>),
     Record(Vec<(usize, AnfPattern)>),
-    Variant(String, Box<AnfPattern>),
+    Variant {
+        tag: String,
+        tag_index: usize,
+        pattern: Box<AnfPattern>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +160,8 @@ pub struct AnfModule {
     pub decls: Vec<AnfDecl>,
     pub root: AnfBody,
     pub root_ty: DfTy,
+    pub root_ty_id: DfTyId,
+    pub types: DfTypes,
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────

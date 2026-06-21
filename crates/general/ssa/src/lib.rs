@@ -5,7 +5,7 @@
 //! basic blocks with explicit terminators. Phi nodes merge values at join
 //! points (e.g. after match arms or conditional branches).
 
-pub use zutai_anf::{DfBuiltinOp, DfLit, DfPositOp, DfTy, DfTyId, DfTyVar};
+pub use zutai_anf::{DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes};
 
 mod lower;
 
@@ -51,6 +51,8 @@ pub enum SsaOp {
     },
     /// Load capture `index` from the enclosing closure (slot `2 + index`).
     LoadCapture { closure: SsaValue, index: usize },
+    /// Force a top-level non-function thunk.
+    CallGlobal { name: String },
     /// Type application (erased in v0 — just returns the polymorphic value).
     TyApp {
         poly: SsaValue,
@@ -69,8 +71,12 @@ pub enum SsaOp {
     List { elems: Vec<SsaValue> },
     /// Record field selection by canonical slot: dest = base[slot].
     Select { base: SsaValue, slot: usize },
-    /// Variant construction: dest = tag(value).
-    Variant { tag: String, value: SsaValue },
+    /// Variant construction with a dense per-union tag index.
+    Variant {
+        tag: String,
+        tag_index: usize,
+        value: SsaValue,
+    },
     /// Variant payload extraction.
     VariantValue { scrutinee: SsaValue },
     /// Binary builtin operation.
@@ -161,6 +167,8 @@ pub struct SsaModule {
     /// The module's entry-point function (evaluates the root expression).
     pub entry: SsaFunc,
     pub entry_ty: DfTy,
+    pub entry_ty_id: DfTyId,
+    pub types: DfTypes,
     /// Top-level function names that receive static empty-capture closure
     /// objects, in declaration order. Drives `@zutai.closure.<name>` emission.
     pub closure_exports: Vec<String>,

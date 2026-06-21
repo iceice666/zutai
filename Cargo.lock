@@ -1387,6 +1387,9 @@ dependencies = [
 [[package]]
 name = "zutai-rt"
 version = "0.1.0"
+dependencies = [
+ "fast-posit",
+]
 
 [[package]]
 name = "zutai-semantic"

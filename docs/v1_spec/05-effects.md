@@ -131,9 +131,16 @@ load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }
   = fs path => perform fs.read path;
 ```
 
-The effect row records what may happen. The capability argument records who authorized it. Host-provided capabilities include operations such as filesystem access, networking, environment access, clocks, and randomness.
+The effect row records what may happen. The capability argument records who
+authorized it. In the current implementation, `io.print` is the only host
+capability provided by the default `run` boundary. Filesystem access,
+networking, environment access, clocks, and randomness are reserved for explicit
+capability values; they are not ambient prelude primitives and are not
+implicitly available to compiled code.
 
-The pure core still has no ambient forms such as direct filesystem reads, environment lookup, clocks, or randomness. Those operations must be expressed as effects and authorized with capabilities.
+The pure core still has no ambient forms such as direct filesystem reads,
+environment lookup, clocks, or randomness. Those operations must be expressed as
+effects and authorized with capability values.
 
 ---
 
@@ -165,6 +172,7 @@ Compilation keeps Dataflow Core, ANF, SSA, and LLVM pure. Phase 19 fixes the
 backend representation as pre-DC free-monad/CPS elaboration: source
 `perform`/`handle`/`resume`/sequence markers become ordinary variants, records,
 lambdas, applications, matches, and recursive handler interpreters before
-TLC→DC. The current implementation has not landed that lowering, so
-`compile`/`dataflow` continue rejecting any residual effect marker or non-empty
-function effect row with precise diagnostics.
+TLC→DC. Until that lowering exists, the implemented AOT support level is
+precise rejection: `compile`/`dataflow` reject any residual effect marker or
+non-empty function effect row, and the Dataflow Core API exposes the same
+fallible gate so direct callers cannot erase effects silently.

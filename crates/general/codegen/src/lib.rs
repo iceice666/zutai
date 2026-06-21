@@ -6,6 +6,8 @@
 //! values (records, tuples, lists, closures, text) are heap-allocated
 //! with their pointer cast to `i64`.
 
+use std::collections::HashMap;
+
 use zutai_ssa::*;
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -18,6 +20,7 @@ pub fn emit_llvm(module: &SsaModule) -> String {
     emit_runtime_decls(&mut out);
     emit_posit_runtime_decls(module, &mut out);
     collect_and_emit_constants(module, &mut out);
+    let entry_desc = emit_descriptors(module, &mut out);
     emit_static_closures(&mut out, module);
 
     let all_funcs = collect_functions(module);
@@ -28,8 +31,21 @@ pub fn emit_llvm(module: &SsaModule) -> String {
         emit_func_def(&mut out, func);
     }
 
-    emit_main(&mut out, &module.entry.name, &module.entry_ty);
+    emit_main(&mut out, &module.entry.name, &entry_desc);
     out
+}
+
+/// Return why the module's entry value cannot be rendered by the native ABI.
+pub fn unsupported_entry_type_reason(module: &SsaModule) -> Option<&'static str> {
+    match &module.entry_ty {
+        DfTy::Fun(_, _) => Some(
+            "compiled entry point returns a function, which cannot be shown by the v0 runtime ABI",
+        ),
+        DfTy::Type => {
+            Some("compiled entry point returns Type, which cannot be shown by the v0 runtime ABI")
+        }
+        _ => None,
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,6 +77,24 @@ const CLOSURE_TAG: u64 = 7;
 /// Pack a closure header word: low byte = tag, next bits = capture count.
 fn closure_header(ncaps: usize) -> u64 {
     ((ncaps as u64) << 8) | CLOSURE_TAG
+}
+
+const TAG_TEXT: u64 = 6;
+const DESC_INT: i64 = 0;
+const DESC_BOOL: i64 = 1;
+const DESC_FLOAT: i64 = 2;
+const DESC_TEXT: i64 = 3;
+const DESC_ATOM: i64 = 4;
+const DESC_RECORD: i64 = 5;
+const DESC_TUPLE: i64 = 6;
+const DESC_LIST: i64 = 7;
+const DESC_OPTIONAL: i64 = 8;
+const DESC_MAYBE: i64 = 9;
+const DESC_VARIANT: i64 = 10;
+const DESC_POSIT: i64 = 11;
+
+fn object_header(tag: u64, count: usize) -> u64 {
+    ((count as u64) << 8) | tag
 }
 
 /// Global symbol name of the static closure object for a top-level function.
@@ -107,12 +141,14 @@ fn fmt_lit(lit: &DfLit, out: &mut String) {
             }
         }
         DfLit::Text(s) => {
-            out.push_str("@zutai.text.");
+            out.push_str("ptrtoint (ptr @zutai.text.");
             out.push_str(&str_hash(s));
+            out.push_str(" to i64)");
         }
         DfLit::Atom(s) => {
-            out.push_str("@zutai.atom.");
+            out.push_str("ptrtoint (ptr @zutai.atom.");
             out.push_str(&str_hash(s));
+            out.push_str(" to i64)");
         }
     }
 }
@@ -125,15 +161,6 @@ fn str_hash(s: &str) -> String {
         h = h.wrapping_mul(0x100000001b3);
     }
     format!("{:016x}", h)
-}
-
-/// Deterministic atom tag from atom name.
-fn atom_tag(s: &str) -> u64 {
-    let mut h: u64 = 0x9e3779b97f4a7c15;
-    for b in s.bytes() {
-        h = h.wrapping_mul(0x100000001b3) ^ (b as u64);
-    }
-    h
 }
 
 /// LLVM IR binary opcode name for `i64`.
@@ -179,9 +206,35 @@ fn builtin_is_cmp(op: &DfBuiltinOp) -> bool {
 
 // ── Preamble & declarations ────────────────────────────────────────────────────
 
+fn host_target_triple() -> &'static str {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
+        ("aarch64", "linux") => "aarch64-unknown-linux-gnu",
+        ("x86_64", "macos") => "x86_64-apple-darwin",
+        ("aarch64", "macos") => "aarch64-apple-darwin",
+        _ => "x86_64-unknown-linux-gnu",
+    }
+}
+
+fn host_target_datalayout() -> Option<&'static str> {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => {
+            Some("e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128")
+        }
+        _ => None,
+    }
+}
+
 fn emit_preamble(out: &mut String) {
-    out.push_str("target triple = \"x86_64-unknown-linux-gnu\"\n");
-    out.push_str("target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n\n");
+    out.push_str("target triple = \"");
+    out.push_str(host_target_triple());
+    out.push_str("\"\n");
+    if let Some(layout) = host_target_datalayout() {
+        out.push_str("target datalayout = \"");
+        out.push_str(layout);
+        out.push_str("\"\n");
+    }
+    out.push('\n');
 }
 
 fn emit_type_decls(out: &mut String) {
@@ -201,6 +254,7 @@ fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare void @zutai.print_bool(i64)\n");
     out.push_str("declare void @zutai.print_float(i64)\n");
     out.push_str("declare void @zutai.print_posit(i64, i64, i64)\n");
+    out.push_str("declare void @zutai.show(i64, i64)\n");
 
     // Record operations
     out.push_str("declare i64 @zutai.record_new(i64)\n");
@@ -227,6 +281,7 @@ fn emit_runtime_decls(out: &mut String) {
     // Text operations
     out.push_str("declare i64 @zutai.text_from_global(i64, i64)\n");
     out.push_str("declare i64 @zutai.text_concat(i64, i64)\n");
+    out.push_str("declare i64 @zutai.atom_from_global(i64, i64)\n");
 
     // C stdlib
     out.push_str("declare i64 @exit(i64)\n\n");
@@ -315,7 +370,7 @@ fn emit_static_closures(out: &mut String, module: &SsaModule) {
     if module.closure_exports.is_empty() {
         return;
     }
-    out.push_str("; ── Top-level closures (D-0003) ───────────────────────────────────\n\n");
+    out.push_str("; ── Static closures ───────────────────────────────────────────\n\n");
     for name in &module.closure_exports {
         out.push_str(&format!(
             "@{} = internal constant [2 x i64] [i64 {}, i64 ptrtoint (ptr @{} to i64)]\n",
@@ -327,11 +382,28 @@ fn emit_static_closures(out: &mut String, module: &SsaModule) {
     out.push('\n');
 }
 
-// ── Text / Atom constant emission ─────────────────────────────────────────────
-
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum Constant {
     Text(String),
     Atom(String),
+}
+
+fn emit_static_text(out: &mut String, prefix: &str, s: &str) {
+    let hash = str_hash(s);
+    let esc = llvm_string_bytes(s);
+    let data = format!("zutai.{prefix}.data.{hash}");
+    let obj = format!("zutai.{prefix}.{hash}");
+    out.push_str(&format!(
+        "@{} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
+        data, esc.len, esc.escaped
+    ));
+    out.push_str(&format!(
+        "@{} = private constant [3 x i64] [i64 {}, i64 {}, i64 ptrtoint (ptr @{} to i64)]\n",
+        obj,
+        object_header(TAG_TEXT, 0),
+        s.len(),
+        data
+    ));
 }
 
 fn collect_and_emit_constants(module: &SsaModule, out: &mut String) {
@@ -347,39 +419,163 @@ fn collect_and_emit_constants(module: &SsaModule, out: &mut String) {
             }
         }
     }
+    constants.sort();
+    constants.dedup();
     if constants.is_empty() {
         return;
     }
     out.push_str("; ── Global constants ───────────────────────────────────────────\n\n");
     for c in &constants {
         match c {
-            Constant::Text(s) => {
-                let hash = str_hash(s);
-                let esc = llvm_string_bytes(s);
-                out.push_str(&format!(
-                    "@zutai.text.data.{} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
-                    hash, esc.len, esc.escaped
-                ));
-                out.push_str(&format!(
-                    "@zutai.text.{} = global i64 ptrtoint ([{} x i8]* @zutai.text.data.{} to i64)\n",
-                    hash, esc.len, hash
-                ));
-            }
-            Constant::Atom(s) => {
-                let hash = str_hash(s);
-                let esc = llvm_string_bytes(s);
-                let tag = atom_tag(s);
-                out.push_str(&format!(
-                    "@zutai.atom.data.{} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
-                    hash, esc.len, esc.escaped
-                ));
-                // Atom: represented as i64 tag value for v0.
-                // The string data is available at @zutai.atom.data.HASH for the runtime.
-                out.push_str(&format!("@zutai.atom.{} = global i64 {}\n", hash, tag));
-            }
+            Constant::Text(s) => emit_static_text(out, "text", s),
+            Constant::Atom(s) => emit_static_text(out, "atom", s),
         }
     }
     out.push('\n');
+}
+
+// ── Type descriptors ───────────────────────────────────────────────────────────
+
+fn desc_ref(name: &str) -> String {
+    format!("ptrtoint (ptr @{name} to i64)")
+}
+
+fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
+    out.push_str("; ── Type descriptors ─────────────────────────────────────────\n\n");
+    let mut emitter = DescriptorEmitter {
+        types: &module.types,
+        out,
+        cache: HashMap::new(),
+        strings: HashMap::new(),
+        next: 0,
+    };
+    let entry = emitter.emit(module.entry_ty_id);
+    emitter.out.push('\n');
+    entry
+}
+
+struct DescriptorEmitter<'a, 'o> {
+    types: &'a DfTypes,
+    out: &'o mut String,
+    cache: HashMap<DfTyId, String>,
+    strings: HashMap<String, String>,
+    next: usize,
+}
+
+impl<'a, 'o> DescriptorEmitter<'a, 'o> {
+    fn emit(&mut self, ty_id: DfTyId) -> String {
+        if let Some(name) = self.cache.get(&ty_id) {
+            return name.clone();
+        }
+        let name = format!("zutai.desc.{}", self.next);
+        self.next += 1;
+        self.cache.insert(ty_id, name.clone());
+
+        let ty = self.types[ty_id].clone();
+        let words = self.words_for_ty(ty);
+        self.out.push_str(&format!(
+            "@{} = private constant [{} x i64] [",
+            name,
+            words.len()
+        ));
+        for (i, word) in words.iter().enumerate() {
+            if i > 0 {
+                self.out.push_str(", ");
+            }
+            self.out.push_str("i64 ");
+            self.out.push_str(word);
+        }
+        self.out.push_str("]\n");
+        name
+    }
+
+    fn words_for_ty(&mut self, ty: DfTy) -> Vec<String> {
+        match ty {
+            DfTy::Int => vec![DESC_INT.to_string()],
+            DfTy::Bool | DfTy::True | DfTy::False => vec![DESC_BOOL.to_string()],
+            DfTy::Float => vec![DESC_FLOAT.to_string()],
+            DfTy::Text => vec![DESC_TEXT.to_string()],
+            DfTy::Atom => vec![DESC_ATOM.to_string()],
+            DfTy::Posit(spec) => vec![
+                DESC_POSIT.to_string(),
+                spec.nbits.to_string(),
+                spec.es.to_string(),
+            ],
+            DfTy::List(inner) => vec![DESC_LIST.to_string(), desc_ref(&self.emit(inner))],
+            DfTy::Optional(inner) => vec![DESC_OPTIONAL.to_string(), desc_ref(&self.emit(inner))],
+            DfTy::Maybe(inner) => vec![DESC_MAYBE.to_string(), desc_ref(&self.emit(inner))],
+            DfTy::Record(fields) => {
+                let mut words = Vec::with_capacity(2 + fields.len() * 3);
+                words.push(DESC_RECORD.to_string());
+                words.push(fields.len().to_string());
+                for field in fields {
+                    let (ptr, len) = self.string_ref(&field.name);
+                    words.push(ptr);
+                    words.push(len.to_string());
+                    words.push(desc_ref(&self.emit(field.ty)));
+                }
+                words
+            }
+            DfTy::Tuple(fields) => {
+                let mut words = Vec::with_capacity(2 + fields.len() * 4);
+                words.push(DESC_TUPLE.to_string());
+                words.push(fields.len().to_string());
+                for field in fields {
+                    match field {
+                        DfTupleField::Named { name, ty } => {
+                            let (ptr, len) = self.string_ref(&name);
+                            words.push("1".to_string());
+                            words.push(ptr);
+                            words.push(len.to_string());
+                            words.push(desc_ref(&self.emit(ty)));
+                        }
+                        DfTupleField::Positional(ty) => {
+                            words.push("0".to_string());
+                            words.push("0".to_string());
+                            words.push("0".to_string());
+                            words.push(desc_ref(&self.emit(ty)));
+                        }
+                    }
+                }
+                words
+            }
+            DfTy::Union(members) => {
+                let mut words = Vec::with_capacity(2 + members.len() * 3);
+                words.push(DESC_VARIANT.to_string());
+                words.push(members.len().to_string());
+                for member in members {
+                    let (ptr, len) = self.string_ref(&member.tag);
+                    words.push(ptr);
+                    words.push(len.to_string());
+                    words.push(desc_ref(&self.emit(member.ty)));
+                }
+                words
+            }
+            DfTy::Fun(_, _)
+            | DfTy::TyVar(_)
+            | DfTy::TyFun(_, _)
+            | DfTy::TyApp(_, _)
+            | DfTy::Type
+            | DfTy::Error => {
+                vec![DESC_INT.to_string()]
+            }
+        }
+    }
+
+    fn string_ref(&mut self, s: &str) -> (String, usize) {
+        if let Some(name) = self.strings.get(s) {
+            return (format!("ptrtoint (ptr @{name} to i64)"), s.len());
+        }
+        let hash = str_hash(s);
+        let name = format!("zutai.desc.str.{hash}");
+        let esc = llvm_string_bytes(s);
+        self.out.push_str(&format!(
+            "@{} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
+            name, esc.len, esc.escaped
+        ));
+        self.strings.insert(s.to_string(), name.clone());
+        (format!("ptrtoint (ptr @{name} to i64)"), s.len())
+    }
 }
 
 fn collect_from_func(func: &SsaFunc, constants: &mut Vec<Constant>) {
@@ -403,6 +599,7 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             }
         }
         SsaOp::LoadCapture { closure, index: _ } => collect_from_value(closure, constants),
+        SsaOp::CallGlobal { .. } => {}
         SsaOp::TyApp { .. } => {}
         SsaOp::Record { fields } => {
             for v in fields {
@@ -430,7 +627,7 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             }
         }
         SsaOp::Select { base, slot: _ } => collect_from_value(base, constants),
-        SsaOp::Variant { tag: _, value } => collect_from_value(value, constants),
+        SsaOp::Variant { value, .. } => collect_from_value(value, constants),
         SsaOp::VariantValue { scrutinee } => collect_from_value(scrutinee, constants),
         SsaOp::Builtin { op: _, lhs, rhs } => {
             collect_from_value(lhs, constants);
@@ -666,6 +863,11 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             out.push_str(&format!("  %{} = load i64, ptr {}\n", dest, slot));
         }
 
+        // ── CallGlobal (force a top-level thunk) ────────────────────────────
+        SsaOp::CallGlobal { name } => {
+            out.push_str(&format!("  %{} = call i64 @{}()\n", dest, mangle(name)));
+        }
+
         // ── TyApp (erased) ─────────────────────────────────────────────────
         SsaOp::TyApp { poly, ty_args: _ } => {
             // Type application is erased at runtime; copy the value.
@@ -770,11 +972,12 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         }
 
         // ── Variant ─────────────────────────────────────────────────────────
-        SsaOp::Variant { tag, value } => {
-            let tag_val = atom_tag(tag);
+        SsaOp::Variant {
+            tag_index, value, ..
+        } => {
             out.push_str(&format!(
                 "  %{} = call i64 @zutai.variant_new(i64 {}, i64 ",
-                dest, tag_val
+                dest, tag_index
             ));
             fmt_value(value, out);
             out.push_str(")\n");
@@ -893,19 +1096,23 @@ fn alloc_tmp(tmp: &mut u64) -> String {
 
 // ── @main ─────────────────────────────────────────────────────────────────────
 
-fn emit_main(out: &mut String, entry_name: &str, entry_ty: &DfTy) {
+fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str) {
     let entry = mangle(entry_name);
+    let newline = llvm_string_bytes("\n");
+    out.push_str(&format!(
+        "@zutai.main.newline = private unnamed_addr constant [{} x i8] c\"{}\"\n\n",
+        newline.len, newline.escaped
+    ));
     out.push_str(&format!(
         "define i32 @main() {{\n  %result = call i64 @{}()\n",
         entry
     ));
-    match entry_ty {
-        DfTy::Posit(spec) => out.push_str(&format!(
-            "  call void @zutai.print_posit(i64 %result, i64 {}, i64 {})\n",
-            spec.nbits, spec.es
-        )),
-        _ => out.push_str("  call void @zutai.print_i64(i64 %result)\n"),
-    }
+    out.push_str(&format!(
+        "  call void @zutai.show(i64 %result, i64 ptrtoint (ptr @{} to i64))\n",
+        entry_desc
+    ));
+    out.push_str("  %newline = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.main.newline to i64), i64 1)\n");
+    out.push_str("  call void @zutai.print_text(i64 %newline)\n");
     out.push_str("  ret i32 0\n}\n");
 }
 
@@ -914,10 +1121,28 @@ mod tests {
     use super::*;
     use zutai_syntax::posit::{PositLiteral, PositSpec};
 
-    fn posit_module(spec: PositSpec, op: DfPositOp, entry_ty: DfTy) -> SsaModule {
+    fn test_module(
+        decls: Vec<SsaDecl>,
+        entry: SsaFunc,
+        entry_ty: DfTy,
+        closure_exports: Vec<String>,
+    ) -> SsaModule {
+        let mut types = DfTypes::new();
+        let entry_ty_id = types.alloc(entry_ty.clone());
         SsaModule {
-            decls: Vec::new(),
-            entry: SsaFunc {
+            decls,
+            entry,
+            entry_ty,
+            entry_ty_id,
+            types,
+            closure_exports,
+        }
+    }
+
+    fn posit_module(spec: PositSpec, op: DfPositOp, entry_ty: DfTy) -> SsaModule {
+        test_module(
+            Vec::new(),
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -940,15 +1165,15 @@ mod tests {
                 }],
             },
             entry_ty,
-            closure_exports: Vec::new(),
-        }
+            Vec::new(),
+        )
     }
 
     #[test]
     fn coalesce_emits_runtime_helper_call() {
-        let module = SsaModule {
-            decls: Vec::new(),
-            entry: SsaFunc {
+        let module = test_module(
+            Vec::new(),
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -963,9 +1188,9 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
                 }],
             },
-            entry_ty: DfTy::Int,
-            closure_exports: Vec::new(),
-        };
+            DfTy::Int,
+            Vec::new(),
+        );
 
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("call i64 @zutai.coalesce"));
@@ -974,9 +1199,9 @@ mod tests {
 
     #[test]
     fn record_update_emits_runtime_helper_call() {
-        let module = SsaModule {
-            decls: Vec::new(),
-            entry: SsaFunc {
+        let module = test_module(
+            Vec::new(),
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -991,9 +1216,9 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
                 }],
             },
-            entry_ty: DfTy::Int,
-            closure_exports: Vec::new(),
-        };
+            DfTy::Int,
+            Vec::new(),
+        );
 
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("declare i64 @zutai.record_update"));
@@ -1031,8 +1256,8 @@ mod tests {
 
     #[test]
     fn top_level_function_emits_static_closure() {
-        let module = SsaModule {
-            decls: vec![SsaDecl::Func(SsaFunc {
+        let module = test_module(
+            vec![SsaDecl::Func(SsaFunc {
                 name: "inc".to_string(),
                 params: vec!["__self".to_string(), "x".to_string()],
                 blocks: vec![SsaBlock {
@@ -1048,7 +1273,7 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("r".to_string())),
                 }],
             })],
-            entry: SsaFunc {
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -1057,9 +1282,9 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Lit(DfLit::Int(0))),
                 }],
             },
-            entry_ty: DfTy::Int,
-            closure_exports: vec!["inc".to_string()],
-        };
+            DfTy::Int,
+            vec!["inc".to_string()],
+        );
 
         let llvm = emit_llvm(&module);
         assert!(
@@ -1072,9 +1297,9 @@ mod tests {
 
     #[test]
     fn closure_apply_loads_code_and_passes_self() {
-        let module = SsaModule {
-            decls: Vec::new(),
-            entry: SsaFunc {
+        let module = test_module(
+            Vec::new(),
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -1089,9 +1314,9 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
                 }],
             },
-            entry_ty: DfTy::Int,
-            closure_exports: Vec::new(),
-        };
+            DfTy::Int,
+            Vec::new(),
+        );
 
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("getelementptr i64, ptr"), "{llvm}");
@@ -1108,9 +1333,9 @@ mod tests {
 
     #[test]
     fn capturing_lambda_allocates_heap_closure() {
-        let module = SsaModule {
-            decls: Vec::new(),
-            entry: SsaFunc {
+        let module = test_module(
+            Vec::new(),
+            SsaFunc {
                 name: "__entry".to_string(),
                 params: Vec::new(),
                 blocks: vec![SsaBlock {
@@ -1125,9 +1350,9 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("clos".to_string())),
                 }],
             },
-            entry_ty: DfTy::Int,
-            closure_exports: Vec::new(),
-        };
+            DfTy::Int,
+            Vec::new(),
+        );
 
         let llvm = emit_llvm(&module);
         // (2 + 1 capture) * 8 bytes = 24.

@@ -20,7 +20,7 @@ crates/
     semantic/          Facade wiring parse -> HIR -> THIR -> TLC analysis
     eval/              THIR and TLC reference evaluators
     dataflow/          TLC-to-Dataflow Core graph lowering
-    anf/ ssa/ codegen/ Downstream compile pipeline stages
+    anf/ ssa/ codegen/ Downstream LLVM/native compile pipeline stages
   immediate/
     core/              Immediate-mode facade over selectable parser backends
     syntax/            Parser and AST definitions for immediate mode (`.zti`)
@@ -29,7 +29,7 @@ crates/
 docs/
   README.md            Documentation index
   ARCHIVED.md          Archived implementation status and completed milestones
-  TBD.md               Open milestones and unresolved TBD items
+  TBD.md               Open work ledger
   v0_spec/             Zutai v0 language specification
   v1_spec/             Deferred post-v0 language design notes
   stdlib/              Standard library notes
@@ -41,7 +41,7 @@ Start with the documentation index:
 
 - [docs/README.md](docs/README.md)
 - [Archived implementation status](docs/ARCHIVED.md)
-- [TBD and open phase plan](docs/TBD.md)
+- [Open work ledger](docs/TBD.md)
 - [Zutai v0 language specification](docs/v0_spec/00-index.md)
 - [Final design statement](docs/v0_spec/01-overview/final-design-statement.md)
 
@@ -71,5 +71,5 @@ Zutai is under active design. The docs describe the intended v0 language plus se
 Current implementation highlights:
 
 - Immediate mode has syntax and SIMD parser crates behind the `zutai-im` facade.
-- General mode parses `.zt`, lowers through HIR and THIR, elaborates to TLC, and has test-covered Dataflow Core, ANF, SSA, and LLVM IR text stages.
+- General mode parses `.zt`, lowers through HIR and THIR, elaborates to TLC, and has test-covered Dataflow Core, ANF, SSA, LLVM IR, object, and native binary driver stages.
 - Constraints/witnesses support named methods and operator methods. Direct, bounded, conditional, and imported witness calls dispatch through TLC dictionary passing on the default evaluator, with the THIR evaluator retained as a regression oracle.

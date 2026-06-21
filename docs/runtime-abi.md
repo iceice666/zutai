@@ -1,17 +1,16 @@
 # Runtime and ABI
 
 This document specifies the v0 runtime library and the binary ABI of compiled
-Zutai general-mode (`.zt`) programs. It is the design contract for the missing
-final layer of the pipeline: turning the LLVM IR text that `zutai-codegen`
-emits into a program that links and runs.
+Zutai general-mode (`.zt`) programs. It is the design contract for the final
+pipeline layer: turning `zutai-codegen` LLVM IR into an object or native binary
+that links against `libzutai_rt`.
 
-> **Status: Phase 18 design accepted; runtime skeleton and closure ABI in tree.**
-> The `zutai-rt` crate defines the v0 runtime symbols and codegen now emits the
-> D-0003 uniform closure ABI (static empty-capture closures for top-level
-> functions, heap closures for capturing lambdas, and one curried application
-> shape), but the compiler still emits LLVM IR text only. Codegen does not yet
-> emit dense variant indices, static type descriptors, a type-directed `@main`,
-> or an object/binary link step.
+> **Status: Phase 18 implemented for the v0 ABI surface.** The `zutai-rt`
+> crate defines the runtime symbols; codegen emits the D-0003 uniform closure
+> ABI, dense per-union variant tags, static `DfTy` descriptors, and a
+> type-directed `@main`; `compile --emit=llvm|obj|bin` selects LLVM text,
+> object, or native binary output. Object/binary modes require `llc`/`clang` on
+> the host and report actionable diagnostics when absent.
 
 ## Pipeline position
 
@@ -23,54 +22,39 @@ Source → HIR → THIR → TLC → DC → ANF → SSA → LLVM IR  (text)
                                             native executable
 ```
 
-The runtime/ABI layer is everything below the dotted line that does not exist
-yet: the toolchain driver (`compile` invoking `clang`/`llc`), the runtime
-static library (`libzutai_rt`), and the binary contract between emitted code
-and that library.
+The runtime/ABI layer is everything below the dotted line: the toolchain driver
+(`compile` invoking `llc`/`clang`), the runtime static library
+(`libzutai_rt`), and the binary contract between emitted code and that library.
 
 ---
 
-## Initial gap (audited against the tree)
+## Initial gap (closed by Phase 18)
 
-Before Phase 18, the pipeline produced a `.ll` file and stopped. Concretely:
+Before Phase 18, the pipeline produced a `.ll` file and stopped. The closed
+gaps were:
 
-- **Runtime symbols were declared but undefined.** `emit_runtime_decls`
-  (`crates/general/codegen/src/lib.rs:154`) `declare`s ~20 `@zutai.*` symbols
-  (`zutai.alloc`, `zutai.record_new/set/get/update`, `zutai.tuple_*`,
-  `zutai.list_cons/nil`, `zutai.variant_*`, `zutai.text_*`, `zutai.coalesce`,
-  `zutai.print_*`). `crates/general/runtime/` now provides the skeleton
-  definitions; codegen still has to be changed to meet the ABI below.
-- **No driver.** `run_compile` (`crates/cli/src/commands.rs:202`) ends at
-  `fs::write(out, &llvm_ir)`. There is no `llc`/`clang`/`lld` invocation, no
-  object file, no link step, no execution.
-- **No execution tests.** CLI and codegen tests assert substrings of the IR
-  text (e.g. `predicate::str::contains("call i64 @zutai.record_get")`). The
-  reference interpreter (`zutai-eval`) is the only thing that actually runs a
-  program.
+- **Runtime symbols were declared but undefined.** `crates/general/runtime/`
+  now provides the v0 definitions for allocation, records, tuples, lists,
+  variants, text, output, and `zutai.show`.
+- **No driver.** `run_compile` now supports `--emit=llvm|obj|bin`; object and
+  binary modes invoke `llc`/`clang`, build/link `libzutai_rt`, and diagnose a
+  missing host toolchain.
+- **No execution path.** CLI coverage includes the native-driver path when the
+  host toolchain is present and keeps cheap IR-text shape checks for every
+  backend lowering invariant.
 
-Three concrete defects are already baked into codegen and can only surface once
-the output runs. The ABI design must resolve all three:
+Three concrete defects drove the ABI work and are now closed:
 
-1. **Closures are constructed but never applied.** SSA closure-converts lambdas
-   into a record `{ __fn = Global(fn), caps... }`
-   (`crates/general/ssa/src/lower.rs:181-211`); the lifted function takes
-   `captures ++ [param]` as parameters. But `AnfExpr::Apply` lowers to a
-   single-argument `SsaOp::Call` (`lower.rs:171`), and codegen turns an indirect
-   call into `inttoptr i64 <v> to i64 (i64)*` followed by `call i64 %fn(arg)`
-   (`codegen/src/lib.rs:409-418`). So at runtime it would `inttoptr` the
-   **closure-record pointer** and call it as code, passing one argument to a
-   function that expects `n+1`, and never reading `__fn` or threading captures.
-   Any capturing lambda or any partial application of a curried function is
-   miscompiled.
-2. **Record writer/reader key spaces disagree.** Construction writes fields by
-   **ordinal slot**: `record_set(rec, idx, v)` with `idx = 0,1,2,…`
-   (`codegen/src/lib.rs:436-443`). Reads key by **name hash**:
-   `Select` → `record_get(base, str_hash(field))` (`lib.rs:519-524`), and
-   `RecordUpdate` likewise (`lib.rs:456-466`). A constructed record cannot be
-   read back.
-3. **`@main` is type-blind.** It always prints the entry result with
-   `zutai.print_i64` (`codegen/src/lib.rs:636-642`), regardless of whether the
-   program returns a record, text, list, or float.
+1. **Closures are constructed and applied uniformly.** Function values are
+   closure objects `{ header, code, caps[] }`; codegen loads the code slot and
+   calls it as `i64 fn(i64 self, i64 arg)`, so top-level and capturing closures
+   share one call convention.
+2. **Record writer/reader key spaces agree.** Construction, selection, update,
+   and record/tuple pattern binding all use canonical ordinal slots rather than
+   string hashes.
+3. **`@main` is type-directed.** Codegen emits a static descriptor for the entry
+   `DfTy`, calls `zutai.show`, prints a trailing newline, and rejects function /
+   `Type` entry results instead of producing misleading output.
 
 ---
 
@@ -356,6 +340,7 @@ Entry grammar (each entry is a small static `i64`/`i8` array):
 
 ```
 desc ::= INT | BOOL | FLOAT | TEXT | ATOM
+       | POSIT   nbits es
        | RECORD   n (name_ref, desc_ref)^n      -- field names + order preserved
        | TUPLE    n (named?, name_ref, desc_ref)^n
        | LIST     desc_ref
@@ -371,20 +356,15 @@ and rendering are fixed — they are distinct `DfTy` constructors
 (`Optional(DfTyId)` / `Maybe(DfTyId)`, `dataflow/src/lib.rs:192-193`) — so
 `show` handles them without enumerating members.
 
-**Variant tag identity (decided: dense indices).** A runtime `ZtVariant` stores
-an integer tag; to render `#tag` and select the right payload descriptor, `show`
-matches that integer against the descriptor's members. Codegen currently derives
-variant tags from a **global** FNV hash (`atom_tag`, `codegen/src/lib.rs:528`)
-shared by construction and matching — correct only while no two distinct tags
-collide. **Decision:** within a union, members are assigned **dense indices
-`0..n`** (declaration order) as the runtime tag, replacing the global hash.
-Construction (`SsaOp::Variant`), `MatchDiscriminant`, and `show` all agree by
-construction, the descriptor's member list is indexed directly by the runtime
-tag (no string compare, no collisions), and `Optional`/`Maybe` get the fixed
-assignment `#none`/`#absent = 0`, `#some`/`#present = 1`. This requires threading
-the statically-known union type into `Variant` construction and
-`MatchDiscriminant` lowering so each member resolves to its index; tracked as
-Phase 18 work. The global `atom_tag` hash is retained only for free-standing
+**Variant tag identity (implemented: dense indices).** A runtime `ZtVariant`
+stores an integer tag; to render `#tag` and select the right payload descriptor,
+`show` matches that integer against the descriptor's members. Within a union,
+members are assigned dense indices `0..n` (declaration order) as the runtime
+tag. Construction (`SsaOp::Variant`), `MatchDiscriminant`, descriptors, and
+`show` all agree by construction, the descriptor's member list is indexed
+directly by the runtime tag (no string compare, no collisions), and
+`Optional`/`Maybe` get the fixed assignment `#none`/`#absent = 0`,
+`#some`/`#present = 1`. The global atom hash is retained only for free-standing
 `Atom` values, which are not union discriminants.
 
 **Role B — per-object layout for the future GC (not in v0).** A collector traces
@@ -403,16 +383,16 @@ landable later without an ABI break.
 
 ### D-0010 — Toolchain driver
 
-`compile` gains an emit selector:
+`compile` has an emit selector:
 
-- `--emit=llvm` (default; current behavior — write `.ll`),
-- `--emit=obj` (invoke `llc`/`clang -c` → object file),
+- `--emit=llvm` (default; write `.ll` text or stdout),
+- `--emit=obj` (invoke `llc -filetype=obj` → object file),
 - `--emit=bin` (assemble, then link against `libzutai_rt` → native executable).
 
-The driver discovers `clang`/`llc` from `PATH` (overridable via env), and emits
-a precise, actionable diagnostic when the toolchain is absent rather than
-failing opaquely. The Rust runtime archive is built by `cargo` and located via
-the build, not hand-pathed.
+The driver discovers `clang`/`llc` from `PATH` (overridable via
+`ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and emits a precise, actionable
+diagnostic when the toolchain is absent rather than failing opaquely. The Rust
+runtime archive is built by `cargo` and located via the workspace target tree.
 
 ---
 
@@ -443,7 +423,8 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.print_bool` | `void (i64 v)` | Print a boolean. |
 | `zutai.print_float` | `void (i64 v)` | Print a float (bitcast from `i64`). |
 | `zutai.print_text` | `void (i64 v)` | Print text; also the v0 `io.print` handler. |
-| `zutai.show` | `void (i64 value, i64 descriptor)` | Type-directed render (records/tuples/lists/variants/optionals). |
+| `zutai.print_posit` | `void (i64 value, i64 nbits, i64 es)` | Print a posit by static spec. |
+| `zutai.show` | `void (i64 value, i64 descriptor)` | Type-directed render (records/tuples/lists/variants/optionals/posits). |
 | `exit` | `i64 (i64 code)` | libc; abnormal termination. |
 
 Closure application is emitted inline (D-0003); no `zutai.apply` symbol is
@@ -459,30 +440,28 @@ keeps its signature but gains a real definition.
 
 Effect typing and the residual-effect gate already exist: `compile`/`dataflow`
 reject non-empty function effect rows after TLC lowering, and `print` lowers to
-an `io.print` effect handled at the host `run` boundary
-(`ARCHIVED.md` Phase 16). The compiled host boundary remains gated until the
-Phase 19 pre-DC free-monad/CPS lowering and host-boundary interpreter exist; no
-additional effect machinery enters the runtime ABI before then.
+an `io.print` effect handled at the host `run` boundary (`ARCHIVED.md` Phase
+16). Compiled effect support remains a pre-DC free-monad/CPS elaboration over
+ordinary pure constructs; until that pass eliminates residual effect markers,
+no effect machinery enters Dataflow Core, ANF, SSA, LLVM, or the runtime ABI.
 
 ---
 
 ## Verification gate
 
-This is the check that has been missing — IR-text assertions do not prove
-execution.
-
-- **End-to-end differential.** Compile each runnable program in the v0 fixture
-  and spec-conformance set (`crates/general/eval/tests/v0_spec.rs`,
-  `crates/general/fixtures/valid/`) to a native binary, run it, and assert its
-  stdout matches the `zutai-eval` oracle's rendering of the same program.
+- **Codegen/CLI shape tests.** IR text asserts dense variant tags, static type
+  descriptors, `zutai.show` entry rendering, closure ABI calls, slot-indexed
+  records, and residual-effect rejection.
+- **Native driver tests.** `compile --emit=obj` / `--emit=bin` tests run when
+  `llc`/`clang` are available and skip cleanly when the host lacks that
+  toolchain.
 - **ABI unit tests** in `zutai-rt`: record set/get round-trip by slot, record
   update immutability, list build/traverse, variant tag/value, coalesce on each
-  optional shape, text concat, closure capture + curried application.
-- The existing IR-text tests remain as cheap structural checks.
+  optional shape, text concat, closure capture + curried application, and
+  type-directed `show`.
 
-Gate: `cargo test --workspace` green, **plus** the differential battery green on
-a machine with `clang`/`llc` available; the differential is skipped with a clear
-notice when the toolchain is absent.
+Gate: `cargo test --workspace` plus `cargo clippy --workspace --all-targets`
+and `cargo fmt --check`; native object/binary execution is toolchain-gated.
 
 ---
 

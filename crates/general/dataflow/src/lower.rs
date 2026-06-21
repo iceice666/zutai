@@ -12,7 +12,7 @@ use zutai_tlc::{
 use crate::{
     DataflowGraph, DfArm, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPattern, DfPositOp,
     DfRecordField, DfTupleField, DfTupleNodeItem, DfTuplePatItem, DfTy, DfTyId, DfTyVar,
-    ImportKind, NodeId,
+    DfUnionVariant, ImportKind, NodeId,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,6 +150,30 @@ impl<'m> Lowerer<'m> {
         match &self.types[ty] {
             DfTy::Record(fields) => Some(record_slot(fields, field)),
             _ => None,
+        }
+    }
+
+    fn variant_tag_index_for_df_ty(&self, ty: DfTyId, tag: &str) -> usize {
+        match &self.types[ty] {
+            DfTy::Union(members) => members
+                .iter()
+                .position(|member| member.tag == tag)
+                .unwrap_or(0),
+            DfTy::Optional(_) => usize::from(tag == "some"),
+            DfTy::Maybe(_) => usize::from(tag == "present"),
+            _ => 0,
+        }
+    }
+
+    fn variant_payload_ty_for_df_ty(&self, ty: DfTyId, tag: &str) -> DfTyId {
+        match &self.types[ty] {
+            DfTy::Union(members) => members
+                .iter()
+                .find(|member| member.tag == tag)
+                .map(|member| member.ty)
+                .unwrap_or(ty),
+            DfTy::Optional(inner) | DfTy::Maybe(inner) => *inner,
+            _ => ty,
         }
     }
 
@@ -480,7 +504,16 @@ impl<'m> Lowerer<'m> {
 
             TlcExpr::Variant(tag, payload) => {
                 let payload_node = self.lower_expr(payload);
-                self.alloc_node(DfNodeKind::Variant(tag, payload_node), df_ty, span)
+                let tag_index = self.variant_tag_index_for_df_ty(df_ty, &tag);
+                self.alloc_node(
+                    DfNodeKind::Variant {
+                        tag,
+                        tag_index,
+                        value: payload_node,
+                    },
+                    df_ty,
+                    span,
+                )
             }
 
             TlcExpr::Import(source) => {
@@ -564,7 +597,13 @@ impl<'m> Lowerer<'m> {
                 DfPattern::Record(df_fields)
             }
             TlcPat::Variant(tag, inner) => {
-                DfPattern::Variant(tag.clone(), Box::new(self.lower_pat(inner, context_ty)))
+                let tag_index = self.variant_tag_index_for_df_ty(context_ty, tag);
+                let payload_ty = self.variant_payload_ty_for_df_ty(context_ty, tag);
+                DfPattern::Variant {
+                    tag: tag.clone(),
+                    tag_index,
+                    pattern: Box::new(self.lower_pat(inner, payload_ty)),
+                }
             }
         }
     }
@@ -623,6 +662,14 @@ impl<'m> Lowerer<'m> {
                 self.types.alloc(DfTy::TyFun(vec![dv], dbody))
             }
 
+            TlcType::TyVar(TlcTypeVar::Named(binding), _) => {
+                let binding = BindingId(binding);
+                if let Some(body) = self.type_aliases.get(&binding).copied() {
+                    self.lower_type(body)
+                } else {
+                    self.types.alloc(DfTy::TyVar(DfTyVar::Named(binding.0)))
+                }
+            }
             TlcType::TyVar(v, _) => self.types.alloc(DfTy::TyVar(lower_tyvar(v))),
 
             TlcType::TyApp(f, arg) => {
@@ -652,9 +699,17 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcType::VariantT(row) => {
-                let ty_ids: Vec<TlcTypeId> = row.fields().map(|(_, t)| t).collect();
-                let df_variants: Vec<DfTyId> =
-                    ty_ids.into_iter().map(|t| self.lower_type(t)).collect();
+                let variants: Vec<(String, TlcTypeId)> = row
+                    .fields()
+                    .map(|(tag, ty)| (tag.to_string(), ty))
+                    .collect();
+                let df_variants: Vec<DfUnionVariant> = variants
+                    .into_iter()
+                    .map(|(tag, ty)| DfUnionVariant {
+                        tag,
+                        ty: self.lower_type(ty),
+                    })
+                    .collect();
                 self.types.alloc(DfTy::Union(df_variants))
             }
 

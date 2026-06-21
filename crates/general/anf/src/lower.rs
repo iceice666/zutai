@@ -201,9 +201,17 @@ impl<'g> BodyLowerer<'g> {
                     rhs: r,
                 }
             }
-            DfNodeKind::Variant(tag, inner) => {
-                let v = self.lower_to_atom(inner);
-                AnfExpr::Variant { tag, value: v }
+            DfNodeKind::Variant {
+                tag,
+                tag_index,
+                value,
+            } => {
+                let v = self.lower_to_atom(value);
+                AnfExpr::Variant {
+                    tag,
+                    tag_index,
+                    value: v,
+                }
             }
             // Defensive: Import and Error never appear in well-typed v0 programs.
             DfNodeKind::Import { .. } | DfNodeKind::Error => AnfExpr::Error,
@@ -305,8 +313,8 @@ fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut HashMap<
                 collect_pat_bind_names(p, counter, out);
             }
         }
-        DfPattern::Variant(_, inner) => {
-            collect_pat_bind_names(inner, counter, out);
+        DfPattern::Variant { pattern, .. } => {
+            collect_pat_bind_names(pattern, counter, out);
         }
         DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
     }
@@ -346,9 +354,15 @@ fn lower_dc_pattern(pat: &DfPattern, pat_binds: &HashMap<NodeId, String>) -> Anf
                 .collect();
             AnfPattern::Record(anf_fields)
         }
-        DfPattern::Variant(tag, inner) => {
-            AnfPattern::Variant(tag.clone(), Box::new(lower_dc_pattern(inner, pat_binds)))
-        }
+        DfPattern::Variant {
+            tag,
+            tag_index,
+            pattern,
+        } => AnfPattern::Variant {
+            tag: tag.clone(),
+            tag_index: *tag_index,
+            pattern: Box::new(lower_dc_pattern(pattern, pat_binds)),
+        },
     }
 }
 
@@ -428,9 +442,12 @@ pub fn lower_dc(graph: &DataflowGraph) -> AnfModule {
     // Lower the module root node.
     let root = lower_body_with_binds(graph, &bind_names, &mut counter, graph.root);
 
+    let root_ty_id = graph.nodes[graph.root].ty;
     AnfModule {
         decls,
         root,
-        root_ty: graph.types[graph.nodes[graph.root].ty].clone(),
+        root_ty: graph.types[root_ty_id].clone(),
+        root_ty_id,
+        types: graph.types.clone(),
     }
 }

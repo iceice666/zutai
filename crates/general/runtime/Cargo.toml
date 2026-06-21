@@ -9,3 +9,6 @@ version.workspace = true
 # docs/runtime-abi.md, D-0001/D-0010). `rlib` lets the workspace build and
 # unit-test the crate on the host like any other library.
 crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+fast-posit = "0.2.0"

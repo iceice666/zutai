@@ -35,6 +35,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::ApplyClosure { .. } => "ApplyClosure".to_string(),
             SsaOp::MakeClosure { .. } => "MakeClosure".to_string(),
             SsaOp::LoadCapture { .. } => "LoadCapture".to_string(),
+            SsaOp::CallGlobal { .. } => "CallGlobal".to_string(),
             SsaOp::TyApp { .. } => "TyApp".to_string(),
             SsaOp::Record { .. } => "Record".to_string(),
             SsaOp::RecordUpdate { .. } => "RecordUpdate".to_string(),

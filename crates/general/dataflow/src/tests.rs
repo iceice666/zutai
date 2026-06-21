@@ -25,6 +25,27 @@ fn dc_of(src: &str) -> DataflowGraph {
     lower_tlc(&tlc, &hir.file.bindings)
 }
 
+#[test]
+fn residual_effects_do_not_enter_dataflow_core() {
+    let parsed = zutai_syntax::parse("print \"x\"");
+    assert!(!parsed.has_errors());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "HIR errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "THIR errors: {:?}",
+        thir.diagnostics
+    );
+    let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
+    let reason = try_lower_tlc(&tlc, &hir.file.bindings).expect_err("effectful TLC must be gated");
+    assert!(reason.contains("effect"), "{reason}");
+}
+
 // ── Span invariant ────────────────────────────────────────────────────────────
 
 #[test]

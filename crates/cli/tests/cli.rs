@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::process::Command as StdCommand;
 
 fn cli() -> Command {
     Command::cargo_bin("zutai-cli").unwrap()
@@ -25,6 +26,10 @@ fn compile_stdout(name: &str, content: &str) -> String {
         .stdout
         .clone();
     String::from_utf8(output).expect("compile output should be UTF-8")
+}
+
+fn tool_available(name: &str) -> bool {
+    StdCommand::new(name).arg("--version").output().is_ok()
 }
 
 fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
@@ -440,7 +445,8 @@ fn compile_valid_zt_file_emits_llvm_ir() {
         .arg(&path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("define i64 @__entry"));
+        .stdout(predicate::str::contains("define i64 @__entry"))
+        .stdout(predicate::str::contains("call void @zutai.show"));
 }
 
 #[test]
@@ -460,6 +466,18 @@ fn compile_effect_program_is_rejected_by_residual_effect_gate() {
     let path = write_tmp("cli_test_compile_effect.zt", EFFECT_SRC);
     cli()
         .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn compile_effect_bin_is_rejected_before_toolchain() {
+    let path = write_tmp("cli_test_compile_effect_bin.zt", EFFECT_SRC);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
         .arg(&path)
         .assert()
         .failure()
@@ -548,22 +566,94 @@ fn compile_capturing_lambda_uses_heap_closure() {
 }
 
 #[test]
-fn compile_posit32_emits_helper_and_print_runtime() {
+fn compile_posit32_emits_helper_and_show_runtime() {
     let path = write_tmp("cli_test_compile_posit32.zt", "1p32e3 + 2p32e3\n");
     cli().arg("compile").arg(&path).assert().success().stdout(
         predicate::str::contains("call i32 @zutai.posit32e3.add")
             .and(predicate::str::contains("trunc i64"))
-            .and(predicate::str::contains("call void @zutai.print_posit")),
+            .and(predicate::str::contains("call void @zutai.show")),
     );
 }
 
 #[test]
-fn compile_posit64_emits_helper_and_print_runtime() {
+fn compile_posit64_emits_helper_and_show_runtime() {
     let path = write_tmp("cli_test_compile_posit64.zt", "1p64e5 + 2p64e5\n");
     cli().arg("compile").arg(&path).assert().success().stdout(
         predicate::str::contains("call i64 @zutai.posit64e5.add")
-            .and(predicate::str::contains("call void @zutai.print_posit")),
+            .and(predicate::str::contains("call void @zutai.show")),
     );
+}
+
+#[test]
+fn compile_record_result_emits_type_descriptor_and_show() {
+    let llvm = compile_stdout(
+        "cli_test_compile_descriptor_record.zt",
+        "r := { host = \"localhost\"; port = 8080; }\nr\n",
+    );
+    assert!(llvm.contains("@zutai.desc."), "{llvm}");
+    assert!(llvm.contains("@zutai.desc.str."), "{llvm}");
+    assert!(llvm.contains("call void @zutai.show"), "{llvm}");
+    assert!(llvm.contains("ptrtoint (ptr @zutai.desc."), "{llvm}");
+}
+
+#[test]
+fn compile_union_construction_uses_dense_tags() {
+    let src = r#"
+Shape :: type {
+  #circle: { radius: Int; };
+  #square: { side: Int; };
+}
+c :: Shape = #circle { radius = 3; }
+s :: Shape = #square { side = 4; }
+c
+"#;
+    let llvm = compile_stdout("cli_test_compile_dense_union_tags.zt", src);
+    assert!(
+        llvm.contains("call i64 @zutai.variant_new(i64 0,"),
+        "{llvm}"
+    );
+    assert!(
+        llvm.contains("call i64 @zutai.variant_new(i64 1,"),
+        "{llvm}"
+    );
+}
+
+#[test]
+fn compile_emit_obj_writes_object_when_llc_available() {
+    if !tool_available("llc") {
+        return;
+    }
+    let path = write_tmp("cli_test_compile_emit_obj.zt", "42\n");
+    let out = write_tmp("cli_test_compile_emit_obj.o", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=obj")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    assert!(std::fs::metadata(&out).unwrap().len() > 0);
+}
+
+#[test]
+fn compile_emit_bin_runs_when_toolchain_available() {
+    if !tool_available("llc") || !tool_available("clang") {
+        return;
+    }
+    let path = write_tmp("cli_test_compile_emit_bin.zt", "42\n");
+    let out = write_tmp("cli_test_compile_emit_bin", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "42\n");
 }
 
 #[test]
