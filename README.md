@@ -28,6 +28,7 @@ crates/
     types/             Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
+  language-manual.md     User-facing language manual
   ARCHIVED.md          Archived implementation status and completed milestones
   TBD.md               Open work ledger
   v0_spec/             Zutai v0 language specification
@@ -37,8 +38,9 @@ docs/
 
 ## Documentation
 
-Start with the documentation index:
+Start with the language manual or documentation index:
 
+- [Zutai language manual](docs/language-manual.md)
 - [docs/README.md](docs/README.md)
 - [Archived implementation status](docs/ARCHIVED.md)
 - [Open work ledger](docs/TBD.md)

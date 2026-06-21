@@ -2,6 +2,7 @@
 
 ## Sections
 
+- [Zutai language manual](language-manual.md)
 - [v0 language specification](v0_spec/00-index.md)
 - [archived implementation status](ARCHIVED.md)
 - [open work ledger](TBD.md)
