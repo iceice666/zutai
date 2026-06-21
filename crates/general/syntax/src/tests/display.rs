@@ -17,7 +17,7 @@ fn display_file_starts_with_file_header() {
 
 #[test]
 fn display_decl_inferred() {
-    let s = parse_str("x := 42\nx").to_string();
+    let s = parse_str("x ::= 42\nx").to_string();
     assert!(s.contains("Inferred \"x\""), "inferred decl name");
     assert!(s.contains("Int(42)"), "inferred decl value");
 }
@@ -149,7 +149,7 @@ fn display_expr_tagged_tuple_payload() {
 
 #[test]
 fn display_expr_ident() {
-    let s = parse_str("x := 1\nx").to_string();
+    let s = parse_str("x ::= 1\nx").to_string();
     assert!(s.contains("Ident(x)"), "identifier expression");
 }
 
@@ -256,7 +256,7 @@ fn display_expr_apply() {
 
 #[test]
 fn display_expr_access() {
-    let s = parse_str("r := { a = 1; }\nr.a").to_string();
+    let s = parse_str("r ::= { a = 1; }\nr.a").to_string();
     assert!(s.contains("Access .a"), "field access");
 }
 

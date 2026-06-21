@@ -110,11 +110,16 @@ fn parse_match_with_hyphen_field() {
 
 #[test]
 fn parse_inferred_decl() {
-    let f = parse_str("x := 42\n42");
+    let f = parse_str("x ::= 42\n42");
     assert_eq!(f.decls.len(), 1);
     let (name, val) = as_inferred(decl_by(&f, "x"));
     assert_eq!(name, "x");
     assert_eq!(as_int(val), 42);
+}
+
+#[test]
+fn parse_top_level_colon_equal_rejected() {
+    assert!(parse("x := 42\nx").has_errors());
 }
 
 #[test]
@@ -157,7 +162,7 @@ fn parse_import_decl_path() {
 
 #[test]
 fn expression_import_is_rejected() {
-    assert!(parse("cfg := import \"config.zti\"\ncfg").has_errors());
+    assert!(parse("{ cfg := import \"config.zti\"; cfg }").has_errors());
 }
 
 #[test]

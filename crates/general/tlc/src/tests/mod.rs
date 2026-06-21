@@ -79,7 +79,7 @@ fn tlc_module_is_constructible() {
 
 #[test]
 fn monomorphic_int_binding_translates_type() {
-    let m = tlc_of("x := 42\nx");
+    let m = tlc_of("x ::= 42\nx");
     assert_eq!(m.decls.len(), 1);
     let decl = &m.decl_arena[m.decls[0]];
     let crate::TlcDecl::Value { ty, .. } = decl else {

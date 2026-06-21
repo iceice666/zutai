@@ -454,7 +454,7 @@ fn parse_lossless_traversal_covers_from_raw() {
 fn parse_string_bmp_unicode_escape() {
     // A = 'A', a normal BMP codepoint (not a surrogate).
     // This exercises parse_unicode_escape's `other =>` arm and parse_u16_hex_escape.
-    let file = parse_str("x := \"\\u0041\"\nx");
+    let file = parse_str("x ::= \"\\u0041\"\nx");
     let _ = file;
 }
 
@@ -464,7 +464,7 @@ fn parse_string_bmp_unicode_escape() {
 fn parse_string_surrogate_pair_escape() {
     // \uD800 is a high surrogate; \uDC00 is a low surrogate.
     // Together they encode U+10000 via the surrogate-pair algorithm.
-    let file = parse_str("x := \"\\uD800\\uDC00\"\nx");
+    let file = parse_str("x ::= \"\\uD800\\uDC00\"\nx");
     let _ = file;
 }
 

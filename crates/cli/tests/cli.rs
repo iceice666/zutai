@@ -267,7 +267,7 @@ fn repl_evaluates_posit_expression() {
 fn repl_accepts_declaration_then_expression() {
     let mut cmd = cli();
     cmd.arg("repl")
-        .write_stdin("x := 42\nx\n:quit\n")
+        .write_stdin("x ::= 42\nx\n:quit\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("42"));
@@ -277,7 +277,7 @@ fn repl_accepts_declaration_then_expression() {
 fn repl_reset_clears_bindings() {
     let mut cmd = cli();
     cmd.arg("repl")
-        .write_stdin("x := 10\n:reset\n:quit\n")
+        .write_stdin("x ::= 10\n:reset\n:quit\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("bindings cleared"));
@@ -358,7 +358,7 @@ parse
 "#;
 
 const HANDLED_EFFECT_SRC: &str = r#"
-result := handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
 result
 "#;
 
@@ -497,7 +497,7 @@ fn compile_handled_effect_record_round_trips_folded_value() {
     let path = write_tmp(
         "cli_test_compile_handled_effect_record.zt",
         r#"
-result := handle { perform warn "diag"; { a = 1; b = 2; } } with { warn = \d. resume (); }
+result ::= handle { perform warn "diag"; { a = 1; b = 2; } } with { warn = \d. resume (); }
 result
 "#,
     );
@@ -629,7 +629,7 @@ fn compile_posit64_emits_helper_and_show_runtime() {
 fn compile_record_result_emits_type_descriptor_and_show() {
     let llvm = compile_stdout(
         "cli_test_compile_descriptor_record.zt",
-        "r := { host = \"localhost\"; port = 8080; }\nr\n",
+        "r ::= { host = \"localhost\"; port = 8080; }\nr\n",
     );
     assert!(llvm.contains("@zutai.desc."), "{llvm}");
     assert!(llvm.contains("@zutai.desc.str."), "{llvm}");
@@ -798,8 +798,8 @@ eq p1 p2
 // ─── `select` projection (check / run / compile) ───────────────────────────────
 
 const SELECT_SRC: &str =
-    "s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }\n";
-const SELECT_BAD_SRC: &str = "s := { host = \"h\"; }\nselect s { missing; }\n";
+    "s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }\n";
+const SELECT_BAD_SRC: &str = "s ::= { host = \"h\"; }\nselect s { missing; }\n";
 
 #[test]
 fn check_select_passes() {
@@ -856,7 +856,7 @@ server with { port = 8080; }
 fn compile_record_access_uses_sorted_slot_zero() {
     let llvm = compile_stdout(
         "cli_test_compile_record_slot_zero.zt",
-        "r := { b = 10; a = 20; }\nr.a\n",
+        "r ::= { b = 10; a = 20; }\nr.a\n",
     );
     assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 0), "{llvm}");
     assert!(
@@ -872,7 +872,7 @@ fn compile_record_access_uses_sorted_slot_zero() {
 fn compile_record_access_uses_sorted_slot_one() {
     let llvm = compile_stdout(
         "cli_test_compile_record_slot_one.zt",
-        "r := { b = 10; a = 20; }\nr.b\n",
+        "r ::= { b = 10; a = 20; }\nr.b\n",
     );
     assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 1), "{llvm}");
     assert!(

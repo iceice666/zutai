@@ -40,7 +40,7 @@ fn instantiate_infer_vars_multi_param_function() {
 fn instantiate_infer_vars_text_binding() {
     // Polymorphic identity used twice with different types — exercises fresh InferVar
     // creation on each call site (instantiation is independent per reference).
-    let file = completed_file("id x = x\nx := id 42\ny := id \"hello\"\ny");
+    let file = completed_file("id x = x\nx ::= id 42\ny ::= id \"hello\"\ny");
     assert!(matches!(final_type_kind(&file), TypeKind::Text));
 }
 
@@ -493,7 +493,7 @@ fn tagged_value_without_annotation_infer_path() {
     let lowered = lower(
         r#"
 Color :: type { #red: { n : Int; }; #blue; }
-x := #red { n = 99; }
+x ::= #red { n = 99; }
 x
 "#,
     );
@@ -522,7 +522,7 @@ fn named_tuple_infer_mode_no_expected_type() {
     // No annotation → THIR calls infer_tuple_expr with None expected type.
     // This exercises the Named branch of infer_tuple_items.
     let file = completed_file(
-        r#"x := (a = 1, b = "hi")
+        r#"x ::= (a = 1, b = "hi")
 x"#,
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
@@ -851,7 +851,7 @@ s?.hostname
 /// exercises `(HirTupleItem::Named, None)` arm at L504-511 of expr.rs.
 #[test]
 fn named_tuple_in_infer_mode_covers_named_none_arm() {
-    let file = completed_file("t := (x = 1, y = 2)\nt");
+    let file = completed_file("t ::= (x = 1, y = 2)\nt");
     let _ = file;
 }
 

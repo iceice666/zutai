@@ -50,7 +50,7 @@ cfg :: import "app.zti"
 A `.zt` file consists of zero or more declarations followed by one final expression:
 
 ```zt
-name := expr
+name ::= expr
 name :: TypeExpr = expr
 name :: import "path.zti"
 

@@ -29,7 +29,7 @@ NamedText :: Type = WithId Text
 Reflection inspects types at compile time:
 
 ```zt
-serverFields := fields Server
+serverFields ::= fields Server
 ```
 
 `fields` currently reflects closed record types. The exact result shape is a list of field
@@ -62,7 +62,7 @@ not serializable. `fields` rejects union types; use `schema` for union variants.
 To produce serializable data, use explicit schema conversion:
 
 ```zt
-serverSchema := schema Server
+serverSchema ::= schema Server
 
 serverSchema
 ```

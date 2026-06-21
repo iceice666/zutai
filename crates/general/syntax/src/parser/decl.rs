@@ -73,8 +73,8 @@ fn is_decl_start(input: &mut &str) -> bool {
     while tmp.starts_with(|c: char| c.is_whitespace()) {
         tmp = &tmp[1..];
     }
-    // Must be followed by `::`, `:=`, `@` (witness), or a pattern-then-`=` sequence
-    tmp.starts_with("::") || tmp.starts_with(":=") || tmp.starts_with('@') || is_nosig_fn_start(tmp)
+    // Must be followed by `::`, `@` (witness), or a pattern-then-`=` sequence.
+    tmp.starts_with("::") || tmp.starts_with('@') || is_nosig_fn_start(tmp)
 }
 
 /// Peek whether the text (after an ident and ws) looks like a no-sig fn:
@@ -103,9 +103,9 @@ pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
         return parse_witness(input, name, name_span);
     }
 
-    if input.starts_with(":=") {
-        // Inferred binding
-        ":=".parse_next(input)?;
+    if input.starts_with("::=") {
+        // Inferred top-level binding
+        "::=".parse_next(input)?;
         ws(input)?;
         let value = parse_expr(input)?;
         let span = name_span.merge(value.span());

@@ -23,7 +23,7 @@ fn polymorphic_identity_runs_at_two_types() {
 
 #[test]
 fn monomorphic_value_binding_still_runs() {
-    assert_eq!(eval_file("answer := 42\nanswer").unwrap(), Value::Int(42));
+    assert_eq!(eval_file("answer ::= 42\nanswer").unwrap(), Value::Int(42));
 }
 
 // ─── generic type aliases ─────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ p :: Pair Text Int = { first = "x"; second = 1; }
 /// emit zero HIR+THIR diagnostics so they don't null out LoweredThir.file.
 #[test]
 fn t_inv_constraint_witness_does_not_break_eval() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := \\a b. true\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true\n42";
     assert_eq!(run(src), Value::Int(42));
 }
 

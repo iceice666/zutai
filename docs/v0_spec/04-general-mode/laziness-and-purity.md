@@ -5,7 +5,7 @@ General mode is pure and lazy.
 Bindings are immutable:
 
 ```zt
-expensive := computeHugeThing cfg
+expensive ::= computeHugeThing cfg
 
 {
   name = cfg.name;

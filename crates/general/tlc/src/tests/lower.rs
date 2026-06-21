@@ -452,7 +452,7 @@ fn closed_records_have_no_row_variable() {
 
 #[test]
 fn value_select_preserves_field_order_in_tlc() {
-    let m = tlc_of("s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    let m = tlc_of("s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
     let has_ordered = m.expr_arena.iter().any(|(_, e)| {
         if let TlcExpr::Record(fields) = e {
             fields.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>() == ["port", "host"]

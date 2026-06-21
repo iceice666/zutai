@@ -71,7 +71,7 @@ Example:
 ```zt
 raw :: import "app.zti"
 
-port := raw.server?.port ?? #absent
+port ::= raw.server?.port ?? #absent
 ```
 
 If `raw.server` is absent, `raw.server` evaluates to `#absent`, then `?.port` also evaluates to `#absent`. If `raw.server` is present but `port` is absent, the result is `#present (#absent)`.

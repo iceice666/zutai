@@ -3,7 +3,7 @@ use zutai_syntax::posit::PositSpec;
 
 #[test]
 fn inferred_integer_binding_completes_thir() {
-    let file = completed_file("x := 1\nx");
+    let file = completed_file("x ::= 1\nx");
 
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
@@ -330,7 +330,7 @@ fn record_update_uninferred_receiver_requires_row_annotation() {
 
 #[test]
 fn record_update_duplicate_field_is_hir_diagnostic() {
-    let parsed = zutai_syntax::parse("s := { a = 1; }\ns with { a = 2; a = 3; }");
+    let parsed = zutai_syntax::parse("s ::= { a = 1; }\ns with { a = 2; a = 3; }");
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
     let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.iter().any(|diagnostic| {
@@ -800,7 +800,7 @@ id "bad"
 
 #[test]
 fn applying_non_function_reports_expected_function() {
-    let lowered = lower("x := 1\nx 2");
+    let lowered = lower("x ::= 1\nx 2");
 
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {

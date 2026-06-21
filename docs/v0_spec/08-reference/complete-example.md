@@ -115,7 +115,7 @@ shapes :: List Shape = [
   #rect   { width = 3.0; height = 4.0; };
 ]
 
-total_area := fold (\acc s. acc + area s) 0.0 shapes
+total_area ::= fold (\acc s. acc + area s) 0.0 shapes
 ```
 
 ---

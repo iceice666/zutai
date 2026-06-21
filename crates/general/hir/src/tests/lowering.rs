@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn reports_duplicate_top_level_binding_in_one_namespace() {
-    let lowered = lower("Server :: type Text\nServer := 1\nServer");
+    let lowered = lower("Server :: type Text\nServer ::= 1\nServer");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
@@ -88,7 +88,7 @@ fn desugars_backward_pipeline_to_application() {
 
 #[test]
 fn resolves_local_binding_only_after_its_value() {
-    let lowered = lower("x := 1\n{ x := x; x }");
+    let lowered = lower("x ::= 1\n{ x := x; x }");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let block = &lowered.file.expr_arena[lowered.file.final_expr];

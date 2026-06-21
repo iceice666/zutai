@@ -57,22 +57,22 @@ Result :: type {
 Singleton tags are bare atoms:
 
 ```zt
-d := #north
+d ::= #north
 ```
 
 Record payload values are an atom followed by a record:
 
 ```zt
-c := #circle { radius = 5.0; }
-s := #square { length = 10.0; }
-r := #rect   { width = 4.0; height = 3.0; }
+c ::= #circle { radius = 5.0; }
+s ::= #square { length = 10.0; }
+r ::= #rect   { width = 4.0; height = 3.0; }
 ```
 
 Positional payload values are an atom followed by a tuple payload:
 
 ```zt
-m := #move (10, 20)
-w := #write ("hello")
+m ::= #move (10, 20)
+w ::= #write ("hello")
 ```
 
 ### The `.tag` accessor

@@ -764,9 +764,8 @@ pub(crate) fn run_repl() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Estimate the number of top-level declarations in `src` by counting
-/// top-level `::` or `:=` tokens (cheap heuristic; used only to classify
-/// REPL input).
+/// Estimate the number of top-level declarations in `src` from parsed HIR
+/// declarations (used only to classify REPL input).
 pub(crate) fn count_decls_in(src: &str) -> usize {
     let analysis = zutai_semantic::analyze(src);
     match analysis.hir.as_ref() {
@@ -786,11 +785,11 @@ mod tests {
 
     #[test]
     fn count_decls_in_returns_one_for_single_decl() {
-        assert_eq!(count_decls_in("x := 1\nx\n"), 1);
+        assert_eq!(count_decls_in("x ::= 1\nx\n"), 1);
     }
 
     #[test]
     fn count_decls_in_returns_two_for_two_decls() {
-        assert_eq!(count_decls_in("x := 1\ny := 2\nx\n"), 2);
+        assert_eq!(count_decls_in("x ::= 1\ny ::= 2\nx\n"), 2);
     }
 }

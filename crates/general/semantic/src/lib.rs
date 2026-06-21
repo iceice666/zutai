@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn valid_parse_and_hir_reaches_thir_stage() {
-        let analysis = analyze("x := 1\nx");
+        let analysis = analyze("x ::= 1\nx");
 
         assert!(!analysis.has_parse_errors());
         assert!(!analysis.has_hir_errors());
@@ -699,7 +699,7 @@ b :: import "witness_reexport_b.zt"
 
     #[test]
     fn tlc_is_some_for_complete_thir() {
-        let analysis = analyze("x := 42\nx");
+        let analysis = analyze("x ::= 42\nx");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
             analysis.tlc.is_some(),
@@ -735,7 +735,7 @@ parse
 
     #[test]
     fn effectful_program_predicate_ignores_pure_programs() {
-        let analysis = analyze("x := 1\nx");
+        let analysis = analyze("x ::= 1\nx");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert_eq!(analysis.effectful_program(), None);
     }

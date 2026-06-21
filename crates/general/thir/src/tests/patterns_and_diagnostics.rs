@@ -348,7 +348,7 @@ fn value_binding_used_as_type_reports_invalid_type_expression() {
     // (`y :: x = 5`) hits the `_` fallthrough arm → InvalidTypeExpression.
     let lowered = lower(
         r#"
-x := 5
+x ::= 5
 y :: x = 5
 y
 "#,

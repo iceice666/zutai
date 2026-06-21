@@ -73,7 +73,7 @@ fn int_literal_root_has_lit_atom() {
 
 #[test]
 fn non_recursive_global_emits_let() {
-    let m = anf_of("x := 42\nx");
+    let m = anf_of("x ::= 42\nx");
     assert_eq!(count_letrec(&m), 0, "x is not recursive → no letrec");
     assert!(count_let(&m) >= 1, "x should emit a let decl");
     let has_x = m
@@ -192,7 +192,7 @@ fn record_literal_root_has_record_binding() {
 
 #[test]
 fn record_update_root_has_record_update_binding() {
-    let m = anf_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let m = anf_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
     let has_update = m.root.bindings.iter().any(|(_, e)| {
         matches!(
             e,
@@ -233,7 +233,7 @@ fn list_literal_root_has_list_binding() {
 
 #[test]
 fn field_access_root_has_select_binding() {
-    let m = anf_of("r := { x = 1; }\nr.x");
+    let m = anf_of("r ::= { x = 1; }\nr.x");
     let has_select = m
         .root
         .bindings
@@ -319,7 +319,7 @@ fn block_local_shared_not_duplicated() {
 #[test]
 fn dependency_decl_precedes_dependent_decl() {
     // `b` depends on `a`; `a` should appear before `b` in decls.
-    let m = anf_of("a := 1\nb := a + 1\nb");
+    let m = anf_of("a ::= 1\nb ::= a + 1\nb");
     let a_pos = m
         .decls
         .iter()

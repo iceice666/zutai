@@ -47,7 +47,7 @@ fn h2_unknown_bound_produces_diagnostic() {
 #[test]
 fn h3_type_param_scoped_to_constraint() {
     let lowered = lower_no_diag(
-        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n1",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= 1\n1",
     );
     // Top-level `A` should NOT appear as a binding in the file's bindings
     let a_top = lowered
@@ -98,8 +98,9 @@ fn h5_duplicate_constraint_method() {
 /// H6: duplicate witness field produces DuplicateWitnessField diagnostic
 #[test]
 fn h6_duplicate_witness_field() {
-    let parsed =
-        zutai_syntax::parse("Eq @Int :: { eq = intEq; eq = intEq2; }\nintEq := 1\nintEq2 := 2\n1");
+    let parsed = zutai_syntax::parse(
+        "Eq @Int :: { eq = intEq; eq = intEq2; }\nintEq ::= 1\nintEq2 ::= 2\n1",
+    );
     assert!(!parsed.has_errors());
     let lowered = lower_file(parsed.ast().unwrap());
     assert!(
@@ -116,7 +117,7 @@ fn h6_duplicate_witness_field() {
 #[test]
 fn h7_witness_target_resolves() {
     let lowered = lower_no_diag(
-        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n1",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= 1\n1",
     );
     let witness_decl = lowered
         .file
@@ -157,7 +158,7 @@ fn h8_unknown_witness_constraint() {
 #[test]
 fn h9_two_witnesses_no_duplicate_binding() {
     let parsed = zutai_syntax::parse(
-        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = f; }\nEq @Int :: { eq = g; }\nf := 1\ng := 2\n1",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = f; }\nEq @Int :: { eq = g; }\nf ::= 1\ng ::= 2\n1",
     );
     assert!(!parsed.has_errors());
     let lowered = lower_file(parsed.ast().unwrap());
@@ -179,7 +180,7 @@ fn h9_two_witnesses_no_duplicate_binding() {
 #[test]
 fn h10_witness_field_rhs_resolves() {
     let lowered = lower_no_diag(
-        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nintEq := 1\nEq @Int :: { eq = intEq; }\n1",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; }\nintEq ::= 1\nEq @Int :: { eq = intEq; }\n1",
     );
     let witness_decl = lowered
         .file

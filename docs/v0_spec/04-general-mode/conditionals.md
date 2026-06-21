@@ -9,7 +9,7 @@ if condition then expr else expr
 Example:
 
 ```zt
-port :=
+port ::=
   if profile == #prod then 443 else 8080
 ```
 

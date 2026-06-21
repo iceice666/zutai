@@ -28,7 +28,7 @@ choose true
 fn free_infer_vars_record_arm_via_inferred_fn() {
     let file = completed_file(
         r#"
-make_pair := \x. { first = x; second = 0; }
+make_pair ::= \x. { first = x; second = 0; }
 make_pair 42
 "#,
     );
@@ -563,7 +563,7 @@ fn named_row_tail_application_preserves_extra_fields() {
 #[test]
 fn value_select_builds_ordered_closed_record() {
     let file = completed_file(
-        "s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }",
+        "s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }",
     );
     let TypeKind::Record(fields, tail) = final_type_kind(&file) else {
         panic!("expected record, got {:?}", final_type_kind(&file));
@@ -575,7 +575,7 @@ fn value_select_builds_ordered_closed_record() {
 
 #[test]
 fn value_select_unknown_field_is_rejected() {
-    let lowered = lower("s := { host = \"h\"; }\nselect s { missing; }");
+    let lowered = lower("s ::= { host = \"h\"; }\nselect s { missing; }");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind, ThirDiagnosticKind::UnknownField { name } if name == "missing"
     )));

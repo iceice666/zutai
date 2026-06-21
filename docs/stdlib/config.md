@@ -42,7 +42,7 @@ overlay :: [T] Patch T -> T -> T
 The patch argument comes first so the function composes naturally with pipelines:
 
 ```zt
-raw :=
+raw ::=
   defaults
     |> overlay project
     |> overlay local
@@ -76,7 +76,7 @@ overlayDeep :: [T] DeepPatch T -> T -> T
 Pipeline usage:
 
 ```zt
-raw :=
+raw ::=
   defaults
     |> overlayDeep project
     |> overlayDeep local
@@ -173,7 +173,7 @@ normalizeServer :: RawServer -> Server
                  }
                }
 
-raw :=
+raw ::=
   defaults
     |> overlay project
     |> overlay local

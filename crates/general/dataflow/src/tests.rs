@@ -137,7 +137,7 @@ fn decimal_posit_add_lowers_to_posit_builtin() {
 
 #[test]
 fn global_value_appears_in_globals_map() {
-    let g = dc_of("x := 42\nx");
+    let g = dc_of("x ::= 42\nx");
     assert!(g.globals.contains_key("x"), "expected 'x' in globals map");
 }
 
@@ -155,7 +155,7 @@ fn function_decl_appears_in_globals_map() {
 #[test]
 fn shared_binding_produces_single_node() {
     // `x` is used twice in `f`; both uses should resolve to the same NodeId.
-    let g = dc_of("x := 42\nf a = a + x\nx");
+    let g = dc_of("x ::= 42\nf a = a + x\nx");
     // Verify x is in globals exactly once.
     assert_eq!(
         g.globals.values().filter(|&&n| n == g.globals["x"]).count(),
@@ -281,7 +281,7 @@ fn record_literal_produces_record_node() {
 
 #[test]
 fn record_update_produces_record_update_node() {
-    let g = dc_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let g = dc_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
     let has_update = g.nodes.iter().any(|(_, n)| {
         matches!(
             &n.kind,
@@ -294,7 +294,7 @@ fn record_update_produces_record_update_node() {
 
 #[test]
 fn record_field_access_produces_select_node() {
-    let g = dc_of("r := { x = 1; }\nr.x");
+    let g = dc_of("r ::= { x = 1; }\nr.x");
     let has_select = g
         .nodes
         .iter()

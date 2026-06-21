@@ -6,7 +6,7 @@ use super::*;
 /// with the expected structural presence.
 #[test]
 fn constraint_and_witness_produce_thir_decls() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := \\a b. true\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true\n42";
     let file = completed_file(src);
 
     // Constraint decl is present.
@@ -78,7 +78,7 @@ fn witness_with_lambda_field_completes_thir() {
 #[test]
 fn witness_forward_reference_completes_thir() {
     // `laterFn` is defined *after* the witness — tests the two-phase ordering.
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn := \\a b. true\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn ::= \\a b. true\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_some(),
@@ -136,7 +136,7 @@ fn witness_concrete_field_type_matches_passes() {
 /// Negative: field type does not match the expected method signature.
 #[test]
 fn witness_field_type_mismatch_emits_diagnostic() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq := 1\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= 1\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_none(),

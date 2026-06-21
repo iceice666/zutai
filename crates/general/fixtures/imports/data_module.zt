@@ -1,4 +1,4 @@
-base := 21
+base ::= 21
 {
   doubled = base * 2;
   name = "service";

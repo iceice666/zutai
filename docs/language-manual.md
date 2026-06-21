@@ -165,7 +165,7 @@ Top-level declaration forms:
 
 | Form | Meaning |
 | --- | --- |
-| `name := expr` | Inferred top-level value binding. |
+| `name ::= expr` | Inferred top-level value binding. |
 | `name :: TypeExpr = expr` | Typed top-level value binding. |
 | `name :: TypeSignature`<br>`= pattern => body;` | Function signature followed by one or more clauses. |
 | `Name :: type TypeExpr` | Type alias or named type expression. |
@@ -210,7 +210,7 @@ is a block that binds typed local `x` and returns `x`.
 Core value forms include booleans, text, numbers, atoms, records, tagged union values, tuples, and lists.
 
 ```zt
-profile := #prod
+profile ::= #prod
 
 {
   ok = true;
@@ -289,7 +289,7 @@ Pattern matching uses `match`; each arm is introduced by `|` and uses `=>` for t
 ```zt
 Profile :: type {#dev; #test; #prod;}
 
-profile := #prod
+profile ::= #prod
 
 match profile {
   | #dev  => false;

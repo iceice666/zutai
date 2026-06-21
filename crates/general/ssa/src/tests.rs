@@ -238,7 +238,7 @@ fn capturing_lambda_uses_make_closure_and_load_capture() {
 
 #[test]
 fn top_level_let_produces_func_decl() {
-    let m = ssa_of("x := 42\nx");
+    let m = ssa_of("x ::= 42\nx");
     let has_x_func = m
         .decls
         .iter()
@@ -278,7 +278,7 @@ fn record_literal_produces_record_op() {
 
 #[test]
 fn record_update_produces_record_update_op() {
-    let m = ssa_of("r := { x = 1; y = 2; }\nr with { x = 3; }");
+    let m = ssa_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"RecordUpdate".to_string()),
@@ -317,7 +317,7 @@ fn list_literal_produces_list_op() {
 
 #[test]
 fn field_selection_produces_select_op() {
-    let m = ssa_of("r := { x = 1; }\nr.x");
+    let m = ssa_of("r ::= { x = 1; }\nr.x");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"Select".to_string()),

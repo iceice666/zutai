@@ -12,7 +12,7 @@ Example:
 
 ```zt
 cfg :: import "app.zti"
-name := cfg.name
+name ::= cfg.name
 
 {
   name = name;
@@ -31,7 +31,7 @@ There are five core declaration forms.
 **Inferred value binding** — type is inferred:
 
 ```zt
-name := expr
+name ::= expr
 ```
 
 **Typed value binding** — explicit type annotation:
@@ -65,7 +65,7 @@ Name :: type TypeExpr
 Examples:
 
 ```zt
-x := 42
+x ::= 42
 
 port :: Int = 8080
 
@@ -145,7 +145,7 @@ The following is invalid:
 ```zt
 Server :: type { host : Text; }
 
-Server := 123
+Server ::= 123
 ```
 
 The name `Server` is already bound.

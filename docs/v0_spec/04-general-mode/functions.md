@@ -64,10 +64,10 @@ port :: Int = 8080
 host :: Text = "localhost"
 ```
 
-For inferred constants, use `:=`:
+For inferred constants, use `::=`:
 
 ```zt
-port := 8080
+port ::= 8080
 ```
 
 ### Curried functions
@@ -82,7 +82,7 @@ add :: Int -> Int -> Int
 `add` takes one `Int` and returns a function `Int -> Int`. Partial application:
 
 ```zt
-add5 := add 5
+add5 ::= add 5
 ```
 
 ### Function application

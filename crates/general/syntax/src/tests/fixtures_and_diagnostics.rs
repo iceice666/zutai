@@ -173,7 +173,7 @@ fn invalid_fixtures_report_specific_error_kinds() {
 
 #[test]
 fn ast_only_parse_matches_parse_diagnostics() {
-    assert!(parse_ast_only("x := 1\nx").ast().is_some());
+    assert!(parse_ast_only("x ::= 1\nx").ast().is_some());
     assert_eq!(
         parse_ast_only_kinds(INVALID_MIXED_PIPELINE),
         parse_kinds(INVALID_MIXED_PIPELINE)
@@ -216,7 +216,7 @@ fn reports_multiple_common_diagnostics_in_source_order() {
 
 #[test]
 fn lossless_cst_round_trips_source_text() {
-    let src = "--| doc\nanswer := --[ nested --[ inner ]-- ]-- 42\nanswer";
+    let src = "--| doc\nanswer ::= --[ nested --[ inner ]-- ]-- 42\nanswer";
     let parsed = parse(src);
     assert_eq!(parsed.syntax().to_string(), src);
 }
@@ -245,7 +245,7 @@ fn diagnostic_exposes_structured_fix() {
 
 #[test]
 fn unclosed_paren_reports_unclosed_delimiter() {
-    let kinds = parse_kinds("x := (1 + 2\nx");
+    let kinds = parse_kinds("x ::= (1 + 2\nx");
     assert!(
         kinds.contains(&ParseErrorKind::UnclosedDelimiter('(')),
         "expected unclosed `(` diagnostic, got {kinds:?}"
@@ -256,7 +256,7 @@ fn unclosed_paren_reports_unclosed_delimiter() {
 fn mismatched_delimiter_reports_matching_delimiter() {
     // `(` is closed by `]`: the scanner pops a Paren frame against a Bracket
     // close and emits an `ExpectedToken("matching delimiter")` diagnostic.
-    let kinds = parse_kinds("x := (1 + 2]\nx");
+    let kinds = parse_kinds("x ::= (1 + 2]\nx");
     assert!(
         kinds
             .iter()

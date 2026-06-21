@@ -274,7 +274,7 @@ Config :: type {
   port : Int;
 }
 base :: Config = { host = "localhost"; port = 80; }
-applyBase := overlay base
+applyBase ::= overlay base
 patch :: Patch Config = { port = 8080; }
 (applyBase patch).port
 "#;
@@ -289,7 +289,7 @@ patch :: Patch Config = { port = 8080; }
 fn select_projects_fields_in_requested_order() {
     // `select` projects exactly the named fields, in the requested order,
     // dropping the unselected `name`.
-    let v = run("s := { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    let v = run("s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
     match v {
         Value::Record(fields) => {
             let names: Vec<&str> = fields.iter().map(|(n, _)| n.as_ref()).collect();
@@ -302,7 +302,7 @@ fn select_projects_fields_in_requested_order() {
 #[test]
 fn select_preserves_field_values() {
     assert_eq!(
-        run("s := { host = \"h\"; port = 8080; }\n(select s { port; }).port"),
+        run("s ::= { host = \"h\"; port = 8080; }\n(select s { port; }).port"),
         Value::Int(8080)
     );
 }
@@ -311,7 +311,7 @@ fn select_preserves_field_values() {
 fn select_unknown_field_is_type_check_failure() {
     // An unknown selected field is a type error, so the interpreter refuses to
     // evaluate (evaluation is gated on complete typed IR).
-    let err = run_err("s := { host = \"h\"; }\nselect s { missing; }");
+    let err = run_err("s ::= { host = \"h\"; }\nselect s { missing; }");
     let EvalError::TypeCheckFailed(msgs) = err else {
         panic!("expected TypeCheckFailed, got {err:?}");
     };
@@ -395,7 +395,7 @@ fn partial_application_returns_closure() {
     let src = "
 add :: Int -> Int -> Int
   = x y => x + y;
-add_two := add 2
+add_two ::= add 2
 add_two 3
 ";
     assert_eq!(run(src), Value::Int(5));

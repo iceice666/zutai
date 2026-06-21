@@ -14,7 +14,7 @@ Line comments begin with `--` and continue to the end of the line:
 
 ```zt
 -- this is a comment
-answer := 42
+answer ::= 42
 ```
 
 Block comments begin with `--[` and end with `]--`. Block comments may nest:
@@ -24,14 +24,14 @@ Block comments begin with `--[` and end with `]--`. Block comments may nest:
   outer comment
   --[ nested comment ]--
 ]--
-answer := 42
+answer ::= 42
 ```
 
 Doc comments begin with `--|` and continue to the end of the line:
 
 ```zt
 --| Documentation for answer.
-answer := 42
+answer ::= 42
 ```
 
 In v0, doc comments are lexically distinct from ordinary line comments, but they have no required semantic effect.
@@ -319,9 +319,10 @@ or pattern**. They never overlap.
 
 | Symbol           | Meaning                                                                    |
 | ---------------- | -------------------------------------------------------------------------- |
-| `:=`             | inferred value binding (`name := expr`)                                    |
+| `:=`             | inferred local binding (`name := expr;`)                                  |
+| `::=`            | inferred top-level value binding (`name ::= expr`)                        |
 | `:`              | type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
-| `::`             | typed binding, function signature, and type definition                     |
+| `::`             | typed binding, function signature, import declaration, and type definition |
 | `\|`             | match arm introducer inside `match` bodies                                |
 | `=`              | value/pattern field binding and top-level function clause introducer       |
 | `->`             | function type arrow                                                        |
