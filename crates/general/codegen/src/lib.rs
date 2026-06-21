@@ -1,6 +1,6 @@
 //! LLVM IR text emission from Zutai SSA modules.
 //!
-//! Produces `.ll` files targeting `x86_64-unknown-linux-gnu`.
+//! Produces `.ll` files for the host LLVM target.
 //! All Zutai values are represented as `i64` for v0 simplicity:
 //! integers are stored directly, booleans as 0/1, and compound
 //! values (records, tuples, lists, closures, text) are heap-allocated
@@ -24,9 +24,6 @@ pub fn emit_llvm(module: &SsaModule) -> String {
     emit_static_closures(&mut out, module);
 
     let all_funcs = collect_functions(module);
-    for func in &all_funcs {
-        emit_func_decl(&mut out, func);
-    }
     for func in &all_funcs {
         emit_func_def(&mut out, func);
     }
@@ -351,17 +348,6 @@ fn posit_op_is_cmp(op: DfPositOp) -> bool {
             | DfPositOp::Gt
             | DfPositOp::Ge
     )
-}
-
-fn emit_func_decl(out: &mut String, func: &SsaFunc) {
-    let name = mangle(&func.name);
-    let params = func
-        .params
-        .iter()
-        .map(|p| format!("i64 %{}", mangle(p)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    out.push_str(&format!("declare i64 @{}({})\n", name, params));
 }
 
 /// Emit the static empty-capture closure object for every top-level function so

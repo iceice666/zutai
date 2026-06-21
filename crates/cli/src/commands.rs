@@ -366,7 +366,7 @@ fn build_runtime_archive() -> Result<PathBuf, Box<dyn Error>> {
 
 fn runtime_link_flags() -> &'static [&'static str] {
     match std::env::consts::OS {
-        "linux" => &["-lpthread", "-ldl", "-lm"],
+        "linux" => &["-no-pie", "-lpthread", "-ldl", "-lm"],
         "macos" => &[],
         _ => &[],
     }

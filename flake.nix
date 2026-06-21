@@ -41,6 +41,8 @@
               pkgs.cargo-llvm-cov
               pkgs.cargo-nextest
               pkgs.rust-analyzer
+              pkgs.llvmPackages.clang
+              pkgs.llvmPackages.llvm
             ];
 
             RUST_BACKTRACE = "1";
