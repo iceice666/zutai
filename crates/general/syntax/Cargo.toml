@@ -8,4 +8,6 @@ version.workspace = true
 rowan = "0.16.1"
 winnow = "1.0.3"
 fast-posit = "0.2.0"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
 rustc-hash = "2.0.0"

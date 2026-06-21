@@ -1,4 +1,8 @@
 use fast_posit::{Posit, RoundFrom};
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
+
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PositSpec {
@@ -10,6 +14,188 @@ pub struct PositSpec {
 pub struct PositLiteral {
     pub spec: PositSpec,
     pub bits: u64,
+}
+
+const MAX_DECIMAL_SCALE: i128 = 1_000_000;
+
+struct DecimalLiteral {
+    negative: bool,
+    coefficient: BigUint,
+    decimal_exponent: i128,
+}
+
+impl DecimalLiteral {
+    fn parse(literal: &str) -> Option<Self> {
+        let bytes = literal.as_bytes();
+        let mut index = 0;
+        let negative = bytes.first() == Some(&b'-');
+        if negative {
+            index = 1;
+        }
+
+        let mut coefficient = BigUint::zero();
+        let mut digit_count = 0usize;
+        while let Some(&byte) = bytes.get(index) {
+            if !byte.is_ascii_digit() {
+                break;
+            }
+            coefficient *= 10u8;
+            coefficient += byte - b'0';
+            digit_count += 1;
+            index += 1;
+        }
+        if digit_count == 0 {
+            return None;
+        }
+
+        let mut fractional_digits = 0i128;
+        if bytes.get(index) == Some(&b'.') {
+            index += 1;
+            let fractional_start = index;
+            while let Some(&byte) = bytes.get(index) {
+                if !byte.is_ascii_digit() {
+                    break;
+                }
+                coefficient *= 10u8;
+                coefficient += byte - b'0';
+                fractional_digits = fractional_digits.checked_add(1)?;
+                index += 1;
+            }
+            if index == fractional_start {
+                return None;
+            }
+        }
+
+        let mut exponent = 0i128.checked_sub(fractional_digits)?;
+        if matches!(bytes.get(index), Some(b'e' | b'E')) {
+            index += 1;
+            let exponent_negative = match bytes.get(index) {
+                Some(b'+') => {
+                    index += 1;
+                    false
+                }
+                Some(b'-') => {
+                    index += 1;
+                    true
+                }
+                _ => false,
+            };
+
+            let exponent_start = index;
+            let mut explicit_exponent = 0i128;
+            while let Some(&byte) = bytes.get(index) {
+                if !byte.is_ascii_digit() {
+                    break;
+                }
+                explicit_exponent = explicit_exponent
+                    .saturating_mul(10)
+                    .saturating_add(i128::from(byte - b'0'));
+                index += 1;
+            }
+            if index == exponent_start {
+                return None;
+            }
+
+            let signed_exponent = if exponent_negative {
+                explicit_exponent.saturating_neg()
+            } else {
+                explicit_exponent
+            };
+            exponent = exponent.saturating_add(signed_exponent);
+        }
+
+        if index != bytes.len() {
+            return None;
+        }
+
+        Some(Self {
+            negative,
+            coefficient,
+            decimal_exponent: exponent,
+        })
+    }
+}
+
+struct FractionBits {
+    remainder: BigUint,
+    denominator: BigUint,
+}
+
+impl FractionBits {
+    fn new(numerator: &BigUint, denominator: &BigUint, binary_floor: i128) -> Self {
+        if binary_floor >= 0 {
+            let denominator = denominator << (binary_floor as usize);
+            let remainder = numerator.clone() - &denominator;
+            Self {
+                remainder,
+                denominator,
+            }
+        } else {
+            let numerator = numerator << ((-binary_floor) as usize);
+            let remainder = numerator - denominator;
+            Self {
+                remainder,
+                denominator: denominator.clone(),
+            }
+        }
+    }
+
+    fn next(&mut self) -> bool {
+        self.remainder <<= 1usize;
+        if self.remainder.cmp(&self.denominator) != Ordering::Less {
+            self.remainder -= &self.denominator;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn has_remaining(&self) -> bool {
+        !self.remainder.is_zero()
+    }
+}
+
+struct PositBitSink {
+    payload: u64,
+    seen: usize,
+    precision: usize,
+    round_bit: bool,
+    sticky: bool,
+}
+
+impl PositBitSink {
+    fn new(precision: usize) -> Self {
+        Self {
+            payload: 0,
+            seen: 0,
+            precision,
+            round_bit: false,
+            sticky: false,
+        }
+    }
+
+    fn push(&mut self, bit: bool) {
+        if self.seen < self.precision {
+            self.payload = (self.payload << 1) | u64::from(bit);
+        } else if self.seen == self.precision {
+            self.round_bit = bit;
+        } else if bit {
+            self.sticky = true;
+        }
+        self.seen += 1;
+    }
+
+    fn needs_round_bit(&self) -> bool {
+        self.seen <= self.precision
+    }
+
+    fn rounded_payload(self) -> u64 {
+        let mut payload = self.payload;
+        if self.round_bit && (self.sticky || payload & 1 != 0) {
+            payload += 1;
+        }
+        payload
+    }
 }
 
 impl PositSpec {
@@ -102,6 +288,184 @@ fn parse_decimal_u8(s: &str) -> Option<(u8, usize)> {
         len += 1;
     }
     Some((value as u8, len))
+}
+
+pub fn parse_posit_literal(spec: PositSpec, literal: &str) -> Option<PositLiteral> {
+    let decimal = DecimalLiteral::parse(literal)?;
+    let bits = if decimal.coefficient.is_zero() {
+        0
+    } else {
+        round_decimal_to_posit_bits(spec, decimal)?
+    };
+    Some(PositLiteral { spec, bits })
+}
+
+fn round_decimal_to_posit_bits(spec: PositSpec, decimal: DecimalLiteral) -> Option<u64> {
+    let max_binary_exponent = max_finite_binary_exponent(spec);
+    let max_payload = max_positive_payload(spec);
+    let negative = decimal.negative;
+
+    if decimal.decimal_exponent > MAX_DECIMAL_SCALE {
+        if decimal_positive_scale_exceeds_max(
+            &decimal.coefficient,
+            decimal.decimal_exponent,
+            max_binary_exponent,
+        ) {
+            return Some(apply_sign(spec.nbits, negative, max_payload));
+        }
+        return None;
+    }
+    if decimal.decimal_exponent < -MAX_DECIMAL_SCALE {
+        if decimal_negative_scale_below_min(
+            &decimal.coefficient,
+            decimal.decimal_exponent,
+            -max_binary_exponent,
+        ) {
+            return Some(apply_sign(spec.nbits, negative, 1));
+        }
+        return None;
+    }
+
+    let (numerator, denominator, binary_exponent) = scaled_decimal_ratio(decimal)?;
+    let ratio_binary_floor = floor_log2_ratio(&numerator, &denominator);
+    let binary_floor = ratio_binary_floor.checked_add(binary_exponent)?;
+
+    let payload = if binary_floor >= max_binary_exponent {
+        max_payload
+    } else if binary_floor < -max_binary_exponent {
+        1
+    } else {
+        let fraction = FractionBits::new(&numerator, &denominator, ratio_binary_floor);
+        round_normalized_to_payload(spec, binary_floor, fraction)
+    };
+
+    Some(apply_sign(spec.nbits, negative, payload))
+}
+
+fn scaled_decimal_ratio(decimal: DecimalLiteral) -> Option<(BigUint, BigUint, i128)> {
+    if decimal.decimal_exponent >= 0 {
+        let scale = pow5(decimal.decimal_exponent)?;
+        Some((
+            decimal.coefficient * scale,
+            BigUint::one(),
+            decimal.decimal_exponent,
+        ))
+    } else {
+        let scale = pow5(-decimal.decimal_exponent)?;
+        Some((decimal.coefficient, scale, decimal.decimal_exponent))
+    }
+}
+
+fn pow5(exponent: i128) -> Option<BigUint> {
+    if exponent == 0 {
+        return Some(BigUint::one());
+    }
+    if !(0..=MAX_DECIMAL_SCALE).contains(&exponent) {
+        return None;
+    }
+    Some(BigUint::from(5u8).pow(exponent as u32))
+}
+
+fn floor_log2_ratio(numerator: &BigUint, denominator: &BigUint) -> i128 {
+    let candidate = numerator.bits() as i128 - denominator.bits() as i128;
+    if candidate >= 0 {
+        let scaled_denominator = denominator << (candidate as usize);
+        if numerator.cmp(&scaled_denominator) == Ordering::Less {
+            candidate - 1
+        } else {
+            candidate
+        }
+    } else {
+        let scaled_numerator = numerator << ((-candidate) as usize);
+        if scaled_numerator.cmp(denominator) == Ordering::Less {
+            candidate - 1
+        } else {
+            candidate
+        }
+    }
+}
+
+fn round_normalized_to_payload(
+    spec: PositSpec,
+    binary_floor: i128,
+    mut fraction: FractionBits,
+) -> u64 {
+    let precision = usize::from(spec.nbits - 1);
+    let max_payload = max_positive_payload(spec);
+    let exponent_unit = 1i128 << spec.es;
+    let regime = binary_floor.div_euclid(exponent_unit);
+    let exponent = binary_floor.rem_euclid(exponent_unit) as u128;
+    let mut sink = PositBitSink::new(precision);
+
+    if regime >= 0 {
+        for _ in 0..=regime as usize {
+            sink.push(true);
+        }
+        sink.push(false);
+    } else {
+        for _ in 0..(-regime) as usize {
+            sink.push(false);
+        }
+        sink.push(true);
+    }
+
+    for bit in (0..usize::from(spec.es)).rev() {
+        sink.push(((exponent >> bit) & 1) != 0);
+    }
+
+    while sink.needs_round_bit() {
+        sink.push(fraction.next());
+    }
+    if fraction.has_remaining() {
+        sink.sticky = true;
+    }
+
+    let payload = sink.rounded_payload();
+    if payload == 0 {
+        1
+    } else {
+        payload.min(max_payload)
+    }
+}
+
+fn max_finite_binary_exponent(spec: PositSpec) -> i128 {
+    i128::from(spec.nbits - 2) * (1i128 << spec.es)
+}
+
+fn max_positive_payload(spec: PositSpec) -> u64 {
+    (1u64 << (spec.nbits - 1)) - 1
+}
+
+fn apply_sign(nbits: u8, negative: bool, payload: u64) -> u64 {
+    if !negative {
+        return payload;
+    }
+
+    let mask = if nbits == 64 {
+        u64::MAX
+    } else {
+        (1u64 << nbits) - 1
+    };
+    (!payload).wrapping_add(1) & mask
+}
+
+fn decimal_positive_scale_exceeds_max(
+    coefficient: &BigUint,
+    decimal_exponent: i128,
+    max_binary_exponent: i128,
+) -> bool {
+    let coefficient_floor = coefficient.bits() as i128 - 1;
+    coefficient_floor.saturating_add(decimal_exponent.saturating_mul(3)) > max_binary_exponent
+}
+
+fn decimal_negative_scale_below_min(
+    coefficient: &BigUint,
+    decimal_exponent: i128,
+    min_binary_exponent: i128,
+) -> bool {
+    let decimal_scale = decimal_exponent.saturating_neg();
+    let coefficient_ceiling = coefficient.bits() as i128;
+    coefficient_ceiling.saturating_sub(decimal_scale.saturating_mul(3)) < min_binary_exponent
 }
 
 pub fn round_f64_to_posit_literal(spec: PositSpec, value: f64) -> PositLiteral {

@@ -402,6 +402,15 @@ fn numeric_type_postfix_diagnostics() {
     }
 }
 
+#[test]
+fn posit_literal_rounds_decimal_directly() {
+    let expr = parse_expr_str("1.0000000000000001p64");
+    let Expr::Posit { literal, .. } = expr else {
+        panic!("expected posit literal");
+    };
+    assert_eq!(literal.bits, 0x4000_0000_0000_003a);
+}
+
 // ── parse_lossless: covers SyntaxKind::from_raw and kind_from_raw ─────────────
 
 /// Calling `parse_lossless` and then iterating children with `.kind()` triggers
