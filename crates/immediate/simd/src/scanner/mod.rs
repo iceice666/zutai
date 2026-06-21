@@ -1,12 +1,17 @@
 mod scalar;
 
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
 use scalar::classify_chunk_scalar as classify_chunk;
 
 #[cfg(target_arch = "aarch64")]
 mod neon;
 #[cfg(target_arch = "aarch64")]
 use neon::classify_chunk_neon as classify_chunk;
+
+#[cfg(target_arch = "x86_64")]
+mod sse2;
+#[cfg(target_arch = "x86_64")]
+use sse2::classify_chunk_sse2 as classify_chunk;
 
 use crate::error::{ParseError, ParseErrorKind, error};
 
