@@ -1328,6 +1328,7 @@ dependencies = [
  "zutai-semantic",
  "zutai-ssa",
  "zutai-syntax",
+ "zutai-thir",
  "zutai-tlc",
  "zutai-types",
 ]

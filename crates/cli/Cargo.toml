@@ -17,6 +17,7 @@ zutai-im = { path = "../immediate/core" }
 zutai-semantic = { path = "../general/semantic" }
 zutai-ssa = { path = "../general/ssa" }
 zutai-syntax = { path = "../general/syntax" }
+zutai-thir = { path = "../general/thir" }
 zutai-tlc = { path = "../general/tlc" }
 zutai-types = { path = "../immediate/types" }
 

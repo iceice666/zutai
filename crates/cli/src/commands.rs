@@ -15,6 +15,15 @@ pub(crate) enum EmitMode {
     Bin,
 }
 
+const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
+    "compiled entry point returns Type, which cannot be shown by the v0 runtime ABI";
+
+fn unsupported_thir_entry_type_reason(thir: &zutai_thir::ThirFile) -> Option<&'static str> {
+    let final_ty = thir.expr_arena[thir.final_expr].ty;
+    let kind = &thir.type_arena.get(final_ty.0 as usize)?.kind;
+    matches!(kind, zutai_thir::TypeKind::Type).then_some(UNSUPPORTED_TYPE_ENTRY_REASON)
+}
+
 pub(crate) fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {
     match extension_or_error(path)?.as_str() {
         "zt" => run_file(path),
@@ -253,6 +262,10 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
+    if let Some(reason) = unsupported_thir_entry_type_reason(thir) {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
+    }
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
     let uses_reflection = analysis.reflection_builtin_program().is_some();
 
@@ -415,8 +428,7 @@ fn fold_reflection_value_to_source(
                 .map_err(|err| err.to_string())?;
             reflection_value_to_source(&value).ok_or_else(|| {
                 if value_contains_type(&value) {
-                    "compiled entry point returns Type, which cannot be shown by the v0 runtime ABI"
-                        .to_string()
+                    UNSUPPORTED_TYPE_ENTRY_REASON.to_string()
                 } else {
                     "reflection entry did not fold to a backend value".to_string()
                 }
@@ -899,6 +911,10 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
+    if let Some(reason) = unsupported_thir_entry_type_reason(thir) {
+        eprintln!("error: {reason}");
+        std::process::exit(1);
+    }
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     let uses_reflection = analysis.reflection_builtin_program().is_some();

@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing Phase 22 reflection AOT lowering._
+_Last updated: 2026-06-21 after closing the compiler entry-type gate backlog._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -107,6 +107,9 @@ and keep any unresolved follow-up in `TBD.md`.
 These closed stabilization items stay here so old risk decisions remain visible.
 New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
+- [x] **Compiler entry-type gate cleanup** — CLI `compile` and `dataflow`
+  reject final runtime `Type` values before TLC→DC/LLVM lowering, including raw
+  `type Int` entries and alias-value entries such as `MyInt :: type Int; MyInt`.
 - [x] **v0 spec conformance sweep** — code fences from `docs/v0_spec/` are
   extracted and routed through `check`/`run` for `.zt` survivors and the immediate
   parser for `.zti` survivors; stable survivors are promoted to acceptance tests.

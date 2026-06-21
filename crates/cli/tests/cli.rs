@@ -632,6 +632,31 @@ fn compile_reflection_fields_raw_type_result_is_rejected() {
 }
 
 #[test]
+fn compile_type_entry_is_rejected_before_backend_lowering() {
+    let path = write_tmp("cli_test_compile_type_entry.zt", "type Int\n");
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
+#[test]
+fn compile_type_alias_value_entry_is_rejected_before_backend_lowering() {
+    let path = write_tmp(
+        "cli_test_compile_type_alias_entry.zt",
+        "MyInt :: type Int\nMyInt\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
+#[test]
 fn compile_writes_to_output_file() {
     let path = write_tmp("cli_test_compile_out.zt", "1 + 1\n");
     let out = write_tmp("cli_test_compile_out.ll", "");
@@ -1220,6 +1245,31 @@ fn dataflow_reflection_schema_lowers_to_graph() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Record"));
+}
+
+#[test]
+fn dataflow_type_entry_is_rejected_before_backend_lowering() {
+    let path = write_tmp("cli_test_dataflow_type_entry.zt", "type Int\n");
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
+#[test]
+fn dataflow_type_alias_value_entry_is_rejected_before_backend_lowering() {
+    let path = write_tmp(
+        "cli_test_dataflow_type_alias_entry.zt",
+        "MyInt :: type Int\nMyInt\n",
+    );
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
 }
 
 // ─── prelude `print` effect binding ───────────────────────────────────────────
