@@ -18,6 +18,19 @@ Source → HIR → THIR → TLC
 
 THIR is the error-tolerant, source-preserving typed IR used by the language server (LSP) and diagnostics tooling. It carries spans on every node, tolerates partial type information, and is produced even when type checking fails partially. TLC (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds: all inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. The Dataflow Core lowering takes TLC as its sole input. TLC is specified in [`docs/tlc-core.md`](tlc-core.md).
 
+## Effect boundary
+
+Phase 19 fixes algebraic effects as a **pre-DC free-monad/CPS elaboration**.
+Dataflow Core remains pure: it does not gain `Perform`, `Handle`, `Resume`, or
+effect-sequencing nodes. The TLC→DC input must already contain ordinary
+`Variant`, `Record`, `Lambda`, `Apply`, `Match`, and recursive handler
+interpreter structure instead of source effect markers.
+
+Function effect rows may be erased only after that elaboration proves no
+residual source marker remains. Until the lowering exists, any residual effect
+marker or non-empty function effect row at this boundary is a compile/dataflow
+error rather than silently becoming a pure DC graph.
+
 ## Why a graph?
 
 THIR is an expression tree: every sub-expression has exactly one parent. The Dataflow Core is a directed graph: a node may be referenced by any number of consumers. This changes what each step in the pipeline must do.

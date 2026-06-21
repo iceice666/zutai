@@ -33,7 +33,7 @@ See [`docs/dataflow-core.md`](dataflow-core.md) for the next stage's IR specific
 
 ## 1. Design thesis
 
-**The fixpoint claim.** No new core IR nodes are needed for any planned frontend feature. Every hard surface feature maps to existing core mechanisms (or the two genuinely-new additions — `VariantT` type former and `Variant` term injection — that are unavoidable for sum types). This is proved by §6 (constraint witnesses) and §7 (algebraic effects).
+**The fixpoint claim.** No new core IR nodes are needed for any planned frontend feature. Every hard surface feature maps to existing core mechanisms (or the two genuinely-new additions — `VariantT` type former and `Variant` term injection — that are unavoidable for sum types). This is proved by §8 (constraint witnesses) and §9 (algebraic effects).
 
 **Historical lowering failures now covered by the implementation.** Early TLC lowering lost several source distinctions: unions collapsed to empty records, `true`/`false` singleton types collapsed to `Bool`, first-class `Type`/error types collapsed to empty records, atom singleton payloads collapsed to `Atom`, and tagged-value patterns temporarily lowered to wildcards. The current lowering has dedicated `VariantT`, `Singleton(Literal)`, atom-payload, and tagged-pattern support, so downstream stages no longer depend on the THIR evaluator to preserve these cases.
 
@@ -60,7 +60,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | `Optional T` / `Maybe T` | builtin wrapper type nodes `Optional(T)` / `Maybe(T)` | none |
 | Row polymorphism (open records, open unions) | `Row` kind + `RVar r` row variables | type layer only |
 | Constraint witnesses (`Eq :: <A> @A { … }`) | **dictionaries-as-records** (see §6) | **zero** |
-| Algebraic effects (`perform`/`handle`/`resume`) | effect row on `Fun` + elaborate-to-pure (§7) | **zero** |
+| Algebraic effects (`perform`/`handle`/`resume`) | effect row on `Fun` + pre-DC free-monad/CPS elaboration (§9) | **zero** |
 | Type-level first-class `Type` values | bindings in type layer, erased before DC | type layer only |
 | Pattern matching on singletons / union arms | `Variant(label, pat)` pattern arm in `Case` | pattern arm only |
 | Record update (`with { field = v }`) | elaborates to `Record` literals (consistent with Decision 0001's stdlib-overlay stance) | none |
@@ -68,7 +68,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | Multi-clause functions | desugar to `Lam(x, Case(Var(x), alts))` | none |
 | `If`/`else`, `Block`, `Binary` | `Case`, nested `Let`, `Builtin` for primitive operators; witnessed comparisons use `GetField` + `App` | none |
 
-The two genuinely new nodes — `VariantT` (type former) and `Variant` (term injection) — are unavoidable. Everything else is elaboration. The zero-new-node claims for constraint witnesses and effects are load-bearing and proved in §6 and §7.
+The two genuinely new nodes — `VariantT` (type former) and `Variant` (term injection) — are unavoidable. Everything else is elaboration. The zero-new-node claims for constraint witnesses and effects are load-bearing and proved in §8 and §9.
 
 ---
 
@@ -215,7 +215,7 @@ In practice `Singleton` pattern matching is identical to `Lit`; the distinction 
 
 **Dictionaries are `Record` values** (see §6). No `dict`/`witness`/`method` node.
 
-**Effect operations elaborate to `Lam`/`App`/`Case`/`Record`** over a free-monad encoding (see §7). No `perform`/`handle`/`resume` node.
+**Effect operations elaborate to `Lam`/`App`/`Case`/`Variant`/`Record`** over a free-monad encoding (see §9). No `perform`/`handle`/`resume` node.
 
 **Type abstraction / application** (`TyLam`/`TyApp`) already exist; they gain only a `Kind` annotation, which is a data change, not a new variant.
 
@@ -390,29 +390,39 @@ The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Recor
 
 ---
 
-## 9. Algebraic effects — zero new nodes
+## 9. Algebraic effects — backend representation decision
 
-*(Encodings in this section are approved under Decision 0003 and carried over from the design spec. They have not been re-derived in this consolidation pass.)*
+Phase 19 fixes the backend representation for Zutai v1 algebraic effects
+(`v1_spec/05-effects.md`): source effect syntax is elaborated **before
+Dataflow Core** into the existing TLC term/type vocabulary, using a
+free-monad / CPS-style encoding. Dataflow Core, ANF, SSA, and LLVM get no
+`Perform`/`Handle`/`Resume` nodes and no ambient sequencing primitive.
 
-Zutai v1 algebraic effects (`v1_spec/05-effects.md`) elaborate to pure terms via a **free-monad encoding**. The effect row on `Fun` (§4) is the only type-level hook.
-
-**The encoding.** An effectful computation of type `A ! { op: P -> R }` is represented as a pure value of type `Free Op A` where:
+**The encoding.** An effectful computation of type
+`A ! { op: P -> R }` is represented as a pure value of type `Free Op A`
+where:
 ```
-Op     = VariantT { op: RecordT { param: P, resume: R -> Free Op A } }
+Op       = VariantT { op: RecordT { param: P, resume: R -> Free Op A } }
 Free O A = VariantT { pure: A, impure: O }
 ```
+`Op` generalizes to one union arm per operation in the closed effect row.
 Both `Free` and `Op` are `VariantT` types — no new type former.
 
-**`perform op arg`** elaborates to an injection:
+**`perform op arg`** elaborates to an `impure` injection after evaluating
+the payload expression:
 ```
 Variant("impure",
-  Record([
-    ("op_name", Variant("op",
-      Record([("param", arg), ("resume", Lam(r, Var r))])))
-  ]))
+  Variant("op",
+    Record([("param", arg),
+            ("resume", Lam(result, Variant("pure", Var result)))])))
 ```
 
-**`handle expr with { value = f, op = h }`** elaborates to a recursive interpreter:
+The concrete `resume` body is the suspended continuation captured by the
+surrounding lowering context, so the identity-shaped example above is only the
+leaf case.
+
+**`handle expr with { value = f, op = h }`** elaborates to a recursive
+interpreter over `Free Op A`:
 ```
 Letrec([
   (handleId, ...,
@@ -430,13 +440,23 @@ Letrec([
 )], body)
 ```
 
-Every node here (`Letrec`, `Lam`, `App`, `Case`, `Variant`, `Record`, `GetField`) already exists in §5.
+Every node here (`Letrec`, `Lam`, `App`, `Case`, `Variant`, `Record`,
+`GetField`) already exists in §5. One-shot `resume` remains a frontend/TLC
+typing invariant; the generated continuation is an ordinary single-use
+function value.
 
-**`resume`** is the continuation passed as a function inside the `resume` field — no new node.
+**Effect erasure boundary.** After elaboration removes all source effect
+markers, `Fun(A, B, eff)` is erased to `Fun(A, B, REmpty)` before emission to
+Dataflow Core. Erasure is not allowed to hide residual effects: if
+`Perform`/`Handle`/`Resume` markers or non-empty function effect rows reach the
+TLC→DC boundary today, `compile`/`dataflow` reject them with explicit
+diagnostics.
 
-**Effect erasure.** After elaboration, `Fun(A, B, eff)` has its effect row erased to `Fun(A, B, REmpty)` before emission to Dataflow Core. DC sees only the pure type.
-
-**Verdict.** Effects require zero new `TlcExpr` variants and zero new `TlcType` variants beyond `VariantT` (needed for sums anyway) and the effect-row slot on `Fun` (data change, not a new node kind).
+**Verdict.** Effects require zero new `TlcExpr` variants and zero new
+`TlcType` variants beyond `VariantT` (needed for sums anyway) and the effect-row
+slot on `Fun` (data change, not a new node kind). The remaining implementation
+work is the elaboration pass and host-boundary interpreter, not a new backend
+effect IR.
 
 ---
 

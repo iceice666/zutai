@@ -30,7 +30,7 @@ Current support:
 
 TBD:
 
-- [ ] Pick the backend representation: explicit effect IR in Dataflow Core,
+- [x] Pick the backend representation: explicit effect IR in Dataflow Core,
   lowering to ANF sequencing, CPS/free-monad elaboration before DC, or another
   design that preserves the lazy pure core.
 - [ ] Define host capability boundaries beyond `io.print` without adding ambient

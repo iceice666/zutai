@@ -460,9 +460,9 @@ keeps its signature but gains a real definition.
 Effect typing and the residual-effect gate already exist: `compile`/`dataflow`
 reject non-empty function effect rows after TLC lowering, and `print` lowers to
 an `io.print` effect handled at the host `run` boundary
-(`ARCHIVED.md` Phase 16). For v0 the only compiled effect is `io.print`, whose
-host handler is `zutai.print_text`. No effect machinery enters the runtime
-beyond that until a post-TLC effect lowering exists; the gate stays as-is.
+(`ARCHIVED.md` Phase 16). The compiled host boundary remains gated until the
+Phase 19 pre-DC free-monad/CPS lowering and host-boundary interpreter exist; no
+additional effect machinery enters the runtime ABI before then.
 
 ---
 

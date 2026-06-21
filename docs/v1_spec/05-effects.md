@@ -161,8 +161,10 @@ reference ordering model as an explicit sequencing boundary:
   top-level functions are inert until called because evaluating the binding only
   creates a closure.
 
-Compilation keeps Dataflow Core, ANF, SSA, and LLVM pure in this phase. TLC
-carries dedicated `perform`/`handle`/`resume`/sequence markers for the reference
-evaluator. The compile/dataflow commands reject any residual effect marker or
-non-empty function effect row after TLC lowering, so LLVM support is not claimed
-until an effect lowering exists past TLC.
+Compilation keeps Dataflow Core, ANF, SSA, and LLVM pure. Phase 19 fixes the
+backend representation as pre-DC free-monad/CPS elaboration: source
+`perform`/`handle`/`resume`/sequence markers become ordinary variants, records,
+lambdas, applications, matches, and recursive handler interpreters before
+TLC→DC. The current implementation has not landed that lowering, so
+`compile`/`dataflow` continue rejecting any residual effect marker or non-empty
+function effect row with precise diagnostics.

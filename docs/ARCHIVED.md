@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after Phase 18 D-0004 slot-indexed record cutover._
+_Last updated: 2026-06-21 after the Phase 19 effect backend representation decision._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -61,7 +61,9 @@ _Last updated: 2026-06-21 after Phase 18 D-0004 slot-indexed record cutover._
   handles residual `io.print`.
 - `compile` and `dataflow` deliberately reject config overlay builtins,
   reflection builtins, residual effect markers, and non-empty function effect
-  rows until each has a pure/backend lowering.
+  rows until each has its backend lowering. Phase 19 fixes the effect lowering
+  representation as pre-DC free-monad/CPS elaboration; implementation remains
+  open.
 
 ## Validation notes
 
@@ -97,6 +99,18 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 19: Effect backend representation ✅
+
+- Algebraic effects will lower before Dataflow Core through a free-monad/CPS
+  encoding over existing TLC/DC constructs (`Variant`, `Record`, `Lam`, `App`,
+  `Match`, and `Letrec`), not through explicit effect nodes in DC or ANF.
+- Dataflow Core, ANF, SSA, and LLVM remain pure. Function effect rows may be
+  erased only after the elaboration eliminates residual `Perform`/`Handle`/
+  `Resume`; current compile/dataflow gates remain correct until that lowering
+  lands.
+- Host capability scope and the lowering implementation remain open Phase 19
+  work.
 
 ### Phase 18 D-0004: Slot-indexed records ✅
 

@@ -20,6 +20,11 @@ Source → HIR → THIR → TLC
 
 Dataflow Core is a directed graph: a node may have multiple in-edges (multiple consumers share one node), and global back-edges (cycles) represent recursion. ANF converts the graph into a linear sequence of named bindings — every intermediate value has a unique name, function arguments are always atoms, and the dependency structure is made explicit in the binding order.
 
+Effects are not an ANF feature. Phase 19 chooses pre-DC free-monad/CPS
+elaboration, so ANF only sees the generated ordinary control/data dependencies:
+applications, matches, variant/record construction, and `letrec` handler
+interpreters. ANF must not add a second effect-sequencing convention.
+
 The ANF representation makes three things easy for downstream passes:
 - **SSA**: basic blocks, phi-nodes, and register allocation are straightforward when every sub-expression is already named.
 - **Dead-code elimination**: a binding with no uses can be dropped (the ANF form makes uses explicit).

@@ -11,9 +11,9 @@
 //!
 //! 1. **Invariant enforcement** — it asserts (by construction, not by assertion) that Dataflow
 //!    Core only ever sees pure-typed functions, regardless of any future upstream change.
-//! 2. **v1 hook** — when algebraic effects are introduced, the eraser will flush effect
-//!    information into the elaboration layer (free-monad CPS or equivalent) before discarding
-//!    it from the type annotation. The call site stays the same; only the pass body changes.
+//! 2. **v1 hook** — when algebraic effects lower past TLC, the eraser runs after
+//!    the pre-DC free-monad/CPS elaboration and discards only the now-redundant
+//!    type annotation. The call site stays the same; only the pass body changes.
 //!
 //! The pass mutates the `TlcModule` type arena in place. It must be called on every `TlcModule`
 //! before it is passed to the Dataflow Core lowering.
