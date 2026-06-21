@@ -9,7 +9,7 @@ Packet :: type {
   status : {#ok; #err; #pending;};
   payload : MaybeInt;
   meta : {
-    retry-count : Int;
+    retry_count : Int;
     label : Text?;
   };
 }
@@ -24,11 +24,11 @@ classify :: Int -> Text
   = _ => "negative";
 
 describe :: Packet -> Text
-  = { status = #ok; payload = #filled { value = n; }; meta = { retry-count = 0; label = #none; }; } =>
+  = { status = #ok; payload = #filled { value = n; }; meta = { retry_count = 0; label = #none; }; } =>
       classify n;
   = { status = #ok; payload = #empty; meta = _; } =>
       "empty-ok";
-  = { status = #err; payload = value; meta = { retry-count = retries; label = _; }; } =>
+  = { status = #err; payload = value; meta = { retry_count = retries; label = _; }; } =>
       match retries {
         | 0 => "fresh-error";
         | n if n > 3 => "stale-error";
@@ -40,7 +40,7 @@ sample :: Packet = {
   status = #err;
   payload = #filled { value = -2; };
   meta = {
-    retry-count = 2;
+    retry_count = 2;
     label = #none;
   };
 }

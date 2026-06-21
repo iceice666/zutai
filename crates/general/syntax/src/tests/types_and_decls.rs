@@ -55,7 +55,12 @@ fn parse_type_optional_postfix() {
 
 #[test]
 fn parse_type_union_in_record_field() {
-    parse_str(r#"{ type-union = type {#a; #b; #c;}; }"#);
+    parse_str(r#"{ type_union = type {#a; #b; #c;}; }"#);
+}
+
+#[test]
+fn reject_hyphenated_record_field() {
+    assert!(!parse_kinds(r#"{ bad-name = 1; }"#).is_empty());
 }
 
 #[test]
@@ -72,11 +77,11 @@ Foo
 fn parse_type_forms_section() {
     parse_str(
         r#"{
-  type-rec       = type { host : Text; port? : Int; };
-  type-union     = type {#a; #b; #c;};
-  type-tup       = type (#circle, radius : Float);
-  type-arrow     = type Int -> Int -> Int;
-  type-opt       = type Int?;
+  type_rec       = type { host : Text; port? : Int; };
+  type_union     = type {#a; #b; #c;};
+  type_tup       = type (#circle, radius : Float);
+  type_arrow     = type Int -> Int -> Int;
+  type_opt       = type Int?;
 }"#,
     );
 }
@@ -85,7 +90,7 @@ fn parse_type_forms_section() {
 fn parse_match_section() {
     parse_str(
         r#"{
-  match-expr = match #prod {
+  match_expr = match #prod {
     | #dev  => 0;
     | #prod => 1;
     | _     => -1;
@@ -100,8 +105,8 @@ fn parse_match_in_record_minimal() {
 }
 
 #[test]
-fn parse_match_with_hyphen_field() {
-    parse_str(r#"{ match-expr = match #a { | #a => 1; }; }"#);
+fn parse_match_with_underscore_field() {
+    parse_str(r#"{ match_expr = match #a { | #a => 1; }; }"#);
 }
 
 // ---------------------------------------------------------------------------

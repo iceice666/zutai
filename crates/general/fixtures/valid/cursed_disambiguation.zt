@@ -5,8 +5,8 @@ Tagged :: type {
   #single: { value: Int; };
   #recorded: { item: {
     plain : Text;
-    optional-field? : Int?;
-    hyphen-name : Bool;
+    optional_field? : Int?;
+    hyphen_name : Bool;
   }; };
 }
 
@@ -30,17 +30,17 @@ choose :: Bool -> Int -> Int -> Int
 wrap value = #single { value = value; }
 
 {
-  empty-record = {};
-  block-inside-record = {
+  empty_record = {};
+  block_inside_record = {
     local := choose true 10 20;
     wrap local
   };
-  recorded-val = #recorded { item = {
+  recorded_val = #recorded { item = {
     plain = "text";
-    optional-field = #none;
-    hyphen-name = false;
+    optional_field = #none;
+    hyphen_name = false;
   }; };
-  type-value = type {
+  type_value = type {
     field : Tagged;
     callback? : (Int -> Int)?;
   };

@@ -13,7 +13,7 @@ unwrapOr :: Int? -> Int -> Int
   = n d => n ?? d;
 
 Server :: type {
-  host-name : Text;
+  host_name : Text;
   port : Int;
   tls : Bool?;
 }
@@ -25,7 +25,7 @@ Config :: type {
 
 cfg :: Config = {
   server = {
-    host-name = "localhost";
+    host_name = "localhost";
     port = 8080;
     tls = #some (false);
   };
@@ -36,17 +36,17 @@ cfg :: Config = {
   arithmetic = ((1 + 2) * (3 + 4)) / (5 - 2);
   comparison = (1 + 2 * 3 == 7) && (4 <= 4) || false;
   coalesce = cfg.server.tls ?? false;
-  access = cfg.server.host-name;
-  forward-pipeline =
+  access = cfg.server.host_name;
+  forward_pipeline =
     3
     |> inc
     |> double
     |> applyTwice inc;
-  backward-pipeline =
+  backward_pipeline =
     applyTwice double
     <| inc 5;
-  lambda-application = (\f x. f (x + 1)) (\n. n * n) 4;
-  nested-block = {
+  lambda_application = (\f x. f (x + 1)) (\n. n * n) 4;
+  nested_block = {
     first := inc (double 2);
     second := unwrapOr #some (first) 0;
     first + second

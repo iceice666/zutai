@@ -59,7 +59,7 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     ),
     (
         "docs/v0_spec/02-lexical/conventions.md#24",
-        "{ host = \"localhost\";  target-triple = \"x86_64-linux\" }",
+        "{ host = \"localhost\";  target_triple = \"x86_64-linux\" }",
     ),
     (
         "docs/v0_spec/04-general-mode/file-structure.md#15",

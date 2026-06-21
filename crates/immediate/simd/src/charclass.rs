@@ -10,6 +10,9 @@ pub(crate) fn is_name_start(byte: u8) -> bool {
     byte.is_ascii_alphabetic() || byte == b'_'
 }
 
-pub(crate) fn is_name_continue(byte: u8) -> bool {
+pub(crate) fn is_atom_continue(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'
+}
+pub(crate) fn is_name_continue(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }

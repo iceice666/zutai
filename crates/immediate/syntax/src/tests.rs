@@ -164,7 +164,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
     assert_eq!(input, "");
     assert_eq!(parsed.len(), 4);
 
-    assert_eq!(as_string(field(&parsed, "schema-version")), "0.4");
+    assert_eq!(as_string(field(&parsed, "schema_version")), "0.4");
     assert_eq!(as_string(field(&parsed, "checksum")), "sha256:deadbeef");
     assert!(as_bool(field(&parsed, "validated")));
 
@@ -186,7 +186,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
     );
     assert!(as_bool(field(compiler, "incremental")));
     assert!(!as_bool(field(compiler, "optimize")));
-    assert_eq!(as_integer(field(compiler, "optimization-level")), 3);
+    assert_eq!(as_integer(field(compiler, "optimization_level")), 3);
 
     let features = as_array(field(compiler, "features"));
     assert_eq!(features.len(), 4);
@@ -212,7 +212,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
         as_string(field(wasm_output, "path")),
         "dist/zutai-edge.wasm"
     );
-    assert_eq!(as_integer(field(wasm_output, "size-bytes")), 81_920);
+    assert_eq!(as_integer(field(wasm_output, "size_bytes")), 81_920);
     assert!(!as_bool(field(wasm_output, "compressed")));
 
     let runtime = as_block(field(app, "runtime"));
@@ -227,7 +227,7 @@ fn test_parse_complex_fixture_matches_final_ast() {
 
     let submit_endpoint = as_block(&endpoints[1]);
     assert!(as_bool(field(submit_endpoint, "auth")));
-    let rate_limits = as_array(field(submit_endpoint, "rate-limits"));
+    let rate_limits = as_array(field(submit_endpoint, "rate_limits"));
     assert_eq!(as_integer(&rate_limits[0]), 120);
     assert_float_eq(as_float(&rate_limits[1]), 10.0);
 
@@ -299,6 +299,12 @@ fn test_parse_complex_fixture_matches_final_ast() {
 #[test]
 fn test_parse_duplicate_field_names_error() {
     let mut input = "{a = 1; a = 2;}";
+    assert!(parse(&mut input).is_err());
+}
+
+#[test]
+fn test_parse_hyphenated_field_name_error() {
+    let mut input = "{bad-name = 1;}";
     assert!(parse(&mut input).is_err());
 }
 

@@ -21,6 +21,10 @@ fn is_atom_body_continuation(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 }
 
+fn is_field_name_continuation(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 fn is_atom_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
@@ -121,7 +125,14 @@ fn parse_false(input: &mut &str) -> Result<Value> {
 }
 
 pub fn parse_field_name(input: &mut &str) -> Result<String> {
-    parse_atom_body(input)
+    let field = (
+        one_of(is_atom_start),
+        take_while(0.., is_field_name_continuation),
+    )
+        .take()
+        .parse_next(input)?;
+
+    Ok(field.to_string())
 }
 
 #[derive(Debug, Clone, Copy)]

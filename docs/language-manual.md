@@ -54,7 +54,7 @@ Strings are double-quoted and JSON-like. Immediate mode numbers use JSON-style s
 
 Atoms use `#` in both modes, for example `#prod` and `#x86_64-linux`. The reserved literals `true` and `false` are booleans, not atoms.
 
-Binding identifiers use letters, digits, and `_`, starting with a letter or `_`. Field names use the atom-body shape, allowing names such as `target-triple`; after `.`, `cfg.target-triple` is field access to `target-triple`, not subtraction.
+Binding identifiers and field names use letters, digits, and `_`, starting with a letter or `_`. Atoms also allow `-`, for example `#x86_64-linux`; fields do not, so `cfg.target-triple` is subtraction, not one field access.
 
 Type-valued bindings are uppercase, and runtime value bindings are lowercase. This is statically enforced: `Server :: type { ... }` is a type binding, while `server := ...` is a runtime value binding.
 

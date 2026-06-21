@@ -88,9 +88,9 @@ mod tests {
     #[test]
     fn cursed_basic_scalars() {
         let doc = parse_syntax(CURSED).unwrap();
-        assert_eq!(field(&doc, "none-field"), &Value::Atom("none".into()));
-        assert_eq!(field(&doc, "true-field"), &Value::True);
-        assert_eq!(field(&doc, "false-field"), &Value::False);
+        assert_eq!(field(&doc, "none_field"), &Value::Atom("none".into()));
+        assert_eq!(field(&doc, "true_field"), &Value::True);
+        assert_eq!(field(&doc, "false_field"), &Value::False);
     }
 
     #[cfg(feature = "syntax")]
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn cursed_strings_array_length() {
         let doc = parse_syntax(CURSED).unwrap();
-        let strs = as_array(field(&doc, "strings-with-escapes"));
+        let strs = as_array(field(&doc, "strings_with_escapes"));
         assert_eq!(strs.len(), 14);
         assert_eq!(strs[0], Value::String(String::new()));
         assert_eq!(strs[3], Value::String("line1\nline2".into()));
@@ -125,10 +125,10 @@ mod tests {
     #[test]
     fn cursed_empty_structures() {
         let doc = parse_syntax(CURSED).unwrap();
-        let empties = as_block(field(&doc, "empty-structures"));
-        assert_eq!(as_block(field(empties, "empty-record")).len(), 0);
-        assert_eq!(as_array(field(empties, "empty-list")).len(), 0);
-        let list_of_empty = as_array(field(empties, "list-of-empty-records"));
+        let empties = as_block(field(&doc, "empty_structures"));
+        assert_eq!(as_block(field(empties, "empty_record")).len(), 0);
+        assert_eq!(as_array(field(empties, "empty_list")).len(), 0);
+        let list_of_empty = as_array(field(empties, "list_of_empty_records"));
         assert_eq!(list_of_empty.len(), 3);
         assert_eq!(as_block(&list_of_empty[0]).len(), 0);
     }
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn cursed_all_in_one_list() {
         let doc = parse_syntax(CURSED).unwrap();
-        let mixed = as_array(field(&doc, "all-in-one-list"));
+        let mixed = as_array(field(&doc, "all_in_one_list"));
         assert_eq!(mixed.len(), 12);
         assert_eq!(mixed[0], Value::Atom("none".into()));
         assert_eq!(mixed[1], Value::True);
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn cursed_nested_same_key_depth() {
         let doc = parse_syntax(CURSED).unwrap();
-        let mut cur = as_block(field(&doc, "nested-same-key"));
+        let mut cur = as_block(field(&doc, "nested_same_key"));
         for _ in 0..7 {
             cur = as_block(field(cur, "a"));
         }

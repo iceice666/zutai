@@ -46,9 +46,9 @@ rightVal :: Either Int Text = #right { value = "ok"; }
   y           = snd strPair;
   swapped     = swap intPair;
   raw         = unbox boxedInt;
-  doubled-box = mapBox (\n. n * 2) boxedInt;
-  mixed-first = fst mixedPair;
+  doubled_box = mapBox (\n. n * 2) boxedInt;
+  mixed_first = fst mixedPair;
   wrapped     = unbox boxedText;
-  is-left     = isLeft leftVal;
-  is-right    = isLeft rightVal;
+  is_left     = isLeft leftVal;
+  is_right    = isLeft rightVal;
 }

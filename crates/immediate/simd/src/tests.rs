@@ -151,6 +151,11 @@ fn rejects_missing_field_name() {
     assert!(parse("{ = 1; }").is_err());
 }
 
+#[test]
+fn rejects_hyphenated_field_name() {
+    assert!(parse("{ bad-name = 1; }").is_err());
+}
+
 /// Bare `#` at EOF is an invalid atom — L161 of parser.rs.
 #[test]
 fn rejects_bare_hash_as_atom() {

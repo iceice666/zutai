@@ -11,17 +11,17 @@ ServiceConfig :: type {
   host : Text;
   port : Int;
   tls : Bool?;
-  max-connections : Int?;
-  timeout-ms : Int?;
+  max_connections : Int?;
+  timeout_ms : Int?;
 }
 
 AppConfig :: type {
   name : Text;
   version : Text;
-  log-level : LogLevel;
-  primary-service : ServiceConfig;
-  fallback-service : ServiceConfig?;
-  debug-mode : Bool?;
+  log_level : LogLevel;
+  primary_service : ServiceConfig;
+  fallback_service : ServiceConfig?;
+  debug_mode : Bool?;
 }
 
 identity :: <A> A -> A
@@ -50,22 +50,22 @@ isAtLeast :: LogLevel -> LogLevel -> Bool
   = target level => logLevelValue level >= logLevelValue target;
 
 shouldLog :: AppConfig -> LogLevel -> Bool
-  = cfg level => isAtLeast cfg.log-level level;
+  = cfg level => isAtLeast cfg.log_level level;
 
 defaultPort :: ServiceConfig -> Int
   = svc => svc.port;
 
 effectiveTimeout :: ServiceConfig -> Int
-  = svc => svc.timeout-ms ?? 5000;
+  = svc => svc.timeout_ms ?? 5000;
 
 maxConnections :: ServiceConfig -> Int
-  = svc => svc.max-connections ?? 100;
+  = svc => svc.max_connections ?? 100;
 
 isSecure :: ServiceConfig -> Bool
   = svc => svc.tls ?? false;
 
 debugMode :: AppConfig -> Bool
-  = cfg => cfg.debug-mode ?? false;
+  = cfg => cfg.debug_mode ?? false;
 
 inc :: Int -> Int
   = n => n + 1;
@@ -89,26 +89,26 @@ primary :: ServiceConfig = {
   host = "api.example.com";
   port = 443;
   tls = #none;
-  max-connections = #none;
-  timeout-ms = #none;
+  max_connections = #none;
+  timeout_ms = #none;
 }
 
 appCfg :: AppConfig = {
   name = "my-service";
   version = "1.0.0";
-  log-level = #info;
-  primary-service = primary;
-  fallback-service = #none;
-  debug-mode = #none;
+  log_level = #info;
+  primary_service = primary;
+  fallback_service = #none;
+  debug_mode = #none;
 }
 
 {
-  lvl-debug  = logLevelValue #debug;
-  lvl-info   = logLevelValue #info;
-  lvl-warn   = logLevelValue #warn;
-  lvl-error  = logLevelValue #error;
-  log-info   = shouldLog appCfg #info;
-  log-debug  = shouldLog appCfg #debug;
+  lvl_debug  = logLevelValue #debug;
+  lvl_info   = logLevelValue #info;
+  lvl_warn   = logLevelValue #warn;
+  lvl_error  = logLevelValue #error;
+  log_info   = shouldLog appCfg #info;
+  log_debug  = shouldLog appCfg #debug;
   port       = defaultPort primary;
   timeout    = effectiveTimeout primary;
   conns      = maxConnections primary;
@@ -121,6 +121,6 @@ appCfg :: AppConfig = {
   applied    = applyIf true double 7;
   composed   = compose double inc 4;
   flipped    = flip (\a b. a - b) 3 10;
-  const-val  = constFn "fixed" 42;
-  id-val     = identity 99;
+  const_val  = constFn "fixed" 42;
+  id_val     = identity 99;
 }

@@ -1,7 +1,7 @@
 use rustc_hash::FxHashSet;
 use zutai_types::{Block, Pair, Value};
 
-use crate::charclass::{is_name_continue, is_name_start};
+use crate::charclass::{is_atom_continue, is_name_continue, is_name_start};
 use crate::error::{ParseError, ParseErrorKind, error};
 use crate::string_scan::{StringSpecialFinder, select_string_special_finder};
 
@@ -153,6 +153,14 @@ impl<'a> Parser<'a> {
             }
             self.pos += 1;
         }
+        if self.peek_byte() == Some(b'-') {
+            return Err(error(
+                self.pos,
+                ParseErrorKind::Expected {
+                    expected: "field name without `-`",
+                },
+            ));
+        }
 
         Ok(self.input[start..self.pos].to_string())
     }
@@ -171,7 +179,7 @@ impl<'a> Parser<'a> {
         let atom_start = self.pos;
         self.pos += 1;
         while let Some(byte) = self.peek_byte() {
-            if !is_name_continue(byte) {
+            if !is_atom_continue(byte) {
                 break;
             }
             self.pos += 1;
@@ -191,7 +199,7 @@ impl<'a> Parser<'a> {
         if self
             .bytes
             .get(end)
-            .is_some_and(|byte| is_name_continue(*byte))
+            .is_some_and(|byte| is_atom_continue(*byte))
         {
             return Err(error(
                 self.pos,

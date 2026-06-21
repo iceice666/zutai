@@ -1,70 +1,83 @@
 -- expr_core.zt: M1 expression smoke fixture.
 -- Exercises every atom-level form and operator precedence layer.
 
+AtomTag :: type {#dev; #x86_64-linux;}
+Env :: type {#dev; #prod; #stage;}
+Sign :: type {#pos; #nonpos;}
+
 {
-  -- Scalars
-  bool-vals      = [true; false;];
-  numbers        = [0; 123; -10; 3.14; 1e9; -2.5e-3;];
-  atoms          = [#dev; #x86_64-linux;];
-  str-val        = "hello\nworld";
+  nested_rec := { host_name = "localhost"; port = 8080; };
+  empty_list : List Int = [];
+  atom_tags : List AtomTag = [#dev; #x86_64-linux;];
+  missing_int : Int? = #none;
+  present_int : Int? = #some (5);
+  env : Env = #prod;
+  {
+    -- Scalars
+    bool_vals      = [true; false;];
+    numbers        = [0.0; 123.0; -10.0; 3.14; 1e9; -2.5e-3;];
+    atoms          = atom_tags;
+    str_val        = "hello\nworld";
 
-  -- Record, list, tuple
-  nested-rec     = { host = "localhost"; port = 8080; };
-  empty-list     = [];
-  positional-tup = (1, 2);
-  empty-tup      = ();
-  named-tup      = (#circle, radius = 5.0);
+    -- Record, list, tuple
+    nested_rec_val = nested_rec;
+    empty_list_val = empty_list;
+    positional_tup = (1, 2);
+    empty_tup      = ();
+    named_tup      = (#circle, radius = 5.0);
 
-  -- Field access (plain and hyphenated)
-  host-val       = nested-rec.host;
-  hyphen-field   = nested-rec.host; -- field name with hyphen tested in unit tests
+    -- Field access (plain and underscore)
+    host_val       = nested_rec.host_name;
+    port_val       = nested_rec.port;
 
-  -- Optional chaining and defaulting
-  opt-val        = nested-rec?.port ?? 9090;
+    -- Optional chaining and defaulting
+    opt_val        = present_int ?? 9090;
+    none_val       = missing_int ?? 9090;
 
-  -- Arithmetic and comparison
-  arith          = 1 + 2 * 3 - 4 / 2;
-  cmp            = 1 == 1;
-  logic          = true && false || true;
+    -- Arithmetic and comparison
+    arith          = 1 + 2 * 3 - 4 / 2;
+    cmp            = 1 == 1;
+    logic          = true && false || true;
 
-  -- Coalesce right-assoc
-  coalesce       = #none ?? #none ?? #fallback;
+    -- Coalesce right-assoc
+    coalesce       = missing_int ?? (present_int ?? 0);
 
-  -- Pipeline
-  pipeline-fwd   = 5 |> (\x. x + 1);
-  pipeline-bwd   = (\x. x * 2) <| 3;
+    -- Pipeline
+    pipeline_fwd   = 5 |> (\x. x + 1);
+    pipeline_bwd   = (\x. x * 2) <| 3;
 
-  -- Lambda forms
-  lam1           = \x. x + 1;
-  lam2           = \x y. x + y;
-  lam-block      = \x. { tmp := x * 2; tmp + 1 };
+    -- Lambda forms
+    lam1           = \x. x + 1;
+    lam2           = \x y. x + y;
+    lam_block      = \x. { tmp := x * 2; tmp + 1 };
 
-  -- Block expression
-  block-expr     = { a := 10; b := 20; a + b };
+    -- Block expression
+    block_expr     = { a := 10; b := 20; a + b };
 
-  -- If / match
-  if-expr        = if true then 1 else 2;
-  match-expr     = match #prod {
-    | #dev  => 0;
-    | #prod => 1;
-    | _     => -1;
-  };
+    -- If / match
+    if_expr        = if true then 1 else 2;
+    match_expr     = match env {
+      | #dev  => 0;
+      | #prod => 1;
+      | _     => -1;
+    };
 
-  -- Match with guard
-  match-guard    = match 5 {
-    | n if n > 0 => #pos;
-    | _          => #nonpos;
-  };
+    -- Match with guard
+    match_guard    = { sign : Sign = match 5 {
+      | n if n > 0 => #pos;
+      | _          => #nonpos;
+    }; sign };
 
-  -- Imports are top-level declarations; expression imports are rejected.
+    -- Imports are top-level declarations; expression imports are rejected.
 
-  -- Type forms
-  type-rec       = type { host : Text; port? : Int; };
-  type-union     = type {#a; #b; #c;};
-  type-tup       = type (#circle, radius : Float);
-  type-arrow     = type Int -> Int -> Int;
-  type-opt       = type Int?;
+    -- Type forms
+    type_rec       = type { host : Text; port? : Int; };
+    type_union     = type {#a; #b; #c;};
+    type_tup       = type (#circle, radius : Float);
+    type_arrow     = type Int -> Int -> Int;
+    type_opt       = type Int?;
 
-  -- Function application (curried)
-  applied        = (\f. \x. f x) (\n. n + 1) 41;
+    -- Function application (curried)
+    applied        = (\f. \x. f x) (\n. n + 1) 41;
+  }
 }

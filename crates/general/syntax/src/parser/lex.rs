@@ -160,6 +160,10 @@ fn is_ident_continuation(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+fn is_field_name_continuation(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 fn is_atom_body_continuation(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 }
@@ -227,9 +231,15 @@ pub fn parse_ident(input: &mut &str) -> Result<String> {
     Ok(name.to_string())
 }
 
-/// Field name: full atom-body (allows `-`).
+/// Field name: identifier-like shape, without keyword rejection.
 pub fn parse_field_name(input: &mut &str) -> Result<String> {
-    parse_atom_body(input)
+    let name = (
+        one_of(is_atom_start),
+        take_while(0.., is_field_name_continuation),
+    )
+        .take()
+        .parse_next(input)?;
+    Ok(name.to_string())
 }
 
 /// Atom: `#` followed by atom-body.

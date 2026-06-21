@@ -272,18 +272,19 @@ This capitalization rule is enforced statically. Parsers and elaborators must er
 
 ### Field names
 
-Field names are bare labels and use the atom-body shape:
+Field names are bare labels and use the identifier-like shape:
 
 ```ebnf
-field_name ::= [A-Za-z_][A-Za-z0-9_-]*
+field_name ::= [A-Za-z_][A-Za-z0-9_]*
 ```
 
-This allows fields such as:
+Atoms may contain `-`; field names may not. Use `_` or camel case for multiword
+fields:
 
 ```zt
 {
   host = "localhost";
-  target-triple = "x86_64-linux";
+  target_triple = "x86_64-linux";
 }
 ```
 
@@ -291,22 +292,16 @@ Field access uses `.`:
 
 ```zt
 cfg.host
-cfg.target-triple
+cfg.target_triple
 ```
 
-After `.`, the parser consumes a `field_name` as a field token. Therefore:
+After `.`, the parser consumes a `field_name`. Therefore:
 
 ```zt
 cfg.target-triple
 ```
 
-means field access to `target-triple`, not subtraction.
-
-If subtraction is intended, write:
-
-```zt
-(cfg.target) - triple
-```
+means `(cfg.target) - triple`, not field access to `target-triple`.
 
 ### Symbols and operators
 

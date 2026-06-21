@@ -20,11 +20,11 @@ negate :: Bool -> Bool
   = false => true;
 
 {
-  inc-then-double = compose double inc 3;
-  twice-inc       = applyTwice inc 10;
-  twice-double    = applyTwice double 3;
-  twice-negate    = applyTwice negate true;
-  flipped-add     = flip (\a b. a + b) 10 20;
+  inc_then_double = compose double inc 3;
+  twice_inc       = applyTwice inc 10;
+  twice_double    = applyTwice double 3;
+  twice_negate    = applyTwice negate true;
+  flipped_add     = flip (\a b. a + b) 10 20;
   pipeline        = 5 |> inc |> double |> applyTwice inc;
-  lambda-compose  = compose (\n. n * n) (\n. n + 1) 4;
+  lambda_compose  = compose (\n. n * n) (\n. n + 1) 4;
 }

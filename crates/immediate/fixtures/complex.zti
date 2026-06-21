@@ -11,7 +11,7 @@
         target = "x86_64-unknown-linux-gnu";
         incremental = true;
         optimize = false;
-        optimization-level = 3;
+        optimization_level = 3;
         features = [
           #fast-path;
           #arena-alloc;
@@ -27,7 +27,7 @@
         ];
         metrics = {
           enabled = true;
-          sample-rate = 0.015;
+          sample_rate = 0.015;
           thresholds = [
             0.75;
             1.5e3;
@@ -41,13 +41,13 @@
         outputs = [
           {
             path = "dist/zutai-edge.bin";
-            size-bytes = 1048576;
+            size_bytes = 1048576;
             checksum = "sha256:3b1f4d...";
             compressed = true;
           };
           {
             path = "dist/zutai-edge.wasm";
-            size-bytes = 81920;
+            size_bytes = 81920;
             checksum = "sha256:91ab2e...";
             compressed = false;
           };
@@ -61,18 +61,18 @@
         host = "127.0.0.1";
         port = 8080;
         backlog = 1024;
-        keepalive-seconds = 75;
+        keepalive_seconds = 75;
         tls = {
           enabled = true;
-          min-version = "TLSv1.3";
+          min_version = "TLSv1.3";
           cert = "/etc/zutai/certs/server.crt";
           key = "/etc/zutai/certs/server.key";
-          cipher-suites = [
+          cipher_suites = [
             "TLS_AES_256_GCM_SHA384";
             "TLS_CHACHA20_POLY1305_SHA256";
             "TLS_AES_128_GCM_SHA256";
           ];
-          next-protocols = [
+          next_protocols = [
             #h2;
             #http1-1;
           ];
@@ -91,7 +91,7 @@
             path = "/v1/submit";
             method = #post;
             auth = true;
-            rate-limits = [
+            rate_limits = [
               120;
               10e0;
             ];
@@ -112,12 +112,12 @@
           backend = #postgres;
           host = "db.internal";
           port = 5432;
-          pool-size = 32;
-          timeout-seconds = 2.5;
+          pool_size = 32;
+          timeout_seconds = 2.5;
           credentials = {
             username = "service";
             password = "********";
-            ssl-mode = #prefer;
+            ssl_mode = #prefer;
           };
           shards = [
             {
@@ -157,8 +157,8 @@
             };
           ];
           policies = {
-            ttl-seconds = 3600;
-            max-memory-gb = 4.0;
+            ttl_seconds = 3600;
+            max_memory_gb = 4.0;
             eviction = #allkeys-lru;
             retry = [
               true;
@@ -177,12 +177,12 @@
               {
                 destination = "stdout";
                 encoder = "structured";
-                include-trace = true;
+                include_trace = true;
               };
               {
                 destination = "udp://logs.internal:5514";
                 encoder = "rfc5424";
-                include-trace = false;
+                include_trace = false;
               };
             ];
           };
@@ -198,7 +198,7 @@
         tracing = {
           enabled = true;
           exporter = #opentelemetry;
-          sampling-rate = 0.2;
+          sampling_rate = 0.2;
           spans = [
             #ingress;
             #processing;
@@ -217,7 +217,7 @@
         };
         metrics = {
           endpoint = "/metrics";
-          scrape-interval-seconds = 15;
+          scrape_interval_seconds = 15;
           collect = {
             counters = [
               #requests;
@@ -238,8 +238,8 @@
     };
     scheduler = {
       enabled = true;
-      tick-ms = 250;
-      backlog-limit = 4096;
+      tick_ms = 250;
+      backlog_limit = 4096;
       workers = [
         {
           name = #ingestion;
@@ -248,8 +248,8 @@
             {
               name = "ingest.incoming";
               partitions = 16;
-              max-attempts = 5;
-              backoff-ms = [
+              max_attempts = 5;
+              backoff_ms = [
                 100;
                 250;
                 500;
@@ -258,8 +258,8 @@
             {
               name = "ingest.dead";
               partitions = 4;
-              max-attempts = 3;
-              backoff-ms = [
+              max_attempts = 3;
+              backoff_ms = [
                 50;
                 100;
                 200;
@@ -269,9 +269,9 @@
           alerts = {
             enabled = true;
             thresholds = {
-              latency-ms = 1200.5;
-              retry-ratio = 0.02;
-              error-rate = 0.01;
+              latency_ms = 1200.5;
+              retry_ratio = 0.02;
+              error_rate = 0.01;
             };
             contacts = [
               #oncall;
@@ -286,8 +286,8 @@
             {
               name = "maint.clean";
               partitions = 1;
-              max-attempts = 1;
-              backoff-ms = [
+              max_attempts = 1;
+              backoff_ms = [
                 10;
               ];
             };
@@ -295,9 +295,9 @@
           alerts = {
             enabled = false;
             thresholds = {
-              latency-ms = 2500;
-              retry-ratio = 0.0;
-              error-rate = 0.0;
+              latency_ms = 2500;
+              retry_ratio = 0.0;
+              error_rate = 0.0;
             };
             contacts = [#ops;];
           };
@@ -326,13 +326,13 @@
                 active = false;
               };
             ];
-            token-lifetime-seconds = 3600;
+            token_lifetime_seconds = 3600;
           };
           {
             type = #api-key;
             storage = "vault";
-            header-name = "X-API-KEY";
-            rotation-days = 30;
+            header_name = "X-API-KEY";
+            rotation_days = 30;
           };
         ];
         rbac = {
@@ -341,7 +341,7 @@
             #editor;
             #viewer;
           ];
-          allow-default-deny = true;
+          allow_default_deny = true;
           bindings = [
             {
               principal = #admin;
@@ -367,12 +367,12 @@
           #allow-admin;
         ];
         policy = {
-          ip-whitelist = [
+          ip_whitelist = [
             "10.0.0.0/8";
             "192.168.1.0/24";
             "127.0.0.1/32";
           ];
-          port-whitelist = [
+          port_whitelist = [
             22;
             80;
             443;
@@ -381,7 +381,7 @@
       };
     };
     metadata = {
-      created-at = "2026-05-22T20:00:00Z";
+      created_at = "2026-05-22T20:00:00Z";
       owner = #team-runtime;
       contributors = [
         #alice;
@@ -408,7 +408,7 @@
     canary = {
       enabled = false;
       fraction = 0.05;
-      rollout-steps = [
+      rollout_steps = [
         0.1;
         0.25;
         0.5;
@@ -438,9 +438,9 @@
         name = "dev";
         endpoint = "https://dev.zutai.internal";
         replicas = 1;
-        cpu-cores = 1.5;
-        memory-gb = 1.0;
-        enabled-features = [
+        cpu_cores = 1.5;
+        memory_gb = 1.0;
+        enabled_features = [
           #debug;
           #tracing;
         ];
@@ -453,9 +453,9 @@
         name = "staging";
         endpoint = "https://staging.zutai.internal";
         replicas = 3;
-        cpu-cores = 2.0;
-        memory-gb = 3.5;
-        enabled-features = [
+        cpu_cores = 2.0;
+        memory_gb = 3.5;
+        enabled_features = [
           #performance;
           #tracing;
         ];
@@ -468,9 +468,9 @@
         name = "prod";
         endpoint = "https://api.zutai.example";
         replicas = 12;
-        cpu-cores = 4.0;
-        memory-gb = 8.0;
-        enabled-features = [
+        cpu_cores = 4.0;
+        memory_gb = 8.0;
+        enabled_features = [
           #performance;
           #hardening;
           #high-availability;
@@ -512,7 +512,7 @@
             #blocks-checked;
             #values-typed;
           ];
-          duration-ms = 12;
+          duration_ms = 12;
         };
         {
           name = "latency-smoke";
@@ -521,7 +521,7 @@
           details = [
             #p95-breach;
           ];
-          duration-ms = 153;
+          duration_ms = 153;
         };
       ];
       history = [
@@ -532,7 +532,7 @@
       ];
     };
   };
-  schema-version = "0.4";
+  schema_version = "0.4";
   checksum = "sha256:deadbeef";
   validated = true;
 }

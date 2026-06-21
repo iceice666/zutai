@@ -209,11 +209,14 @@ fn parse_field_access() {
 }
 
 #[test]
-fn parse_hyphenated_field_access() {
+fn tight_minus_after_field_access_is_subtraction() {
     let e = parse_expr_str("cfg.target-triple");
-    let (recv, field) = as_access(&e);
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Sub);
+    let (recv, field) = as_access(lhs);
     assert_eq!(as_ident(recv), "cfg");
-    assert_eq!(field, "target-triple");
+    assert_eq!(field, "target");
+    assert_eq!(as_ident(rhs), "triple");
 }
 
 #[test]

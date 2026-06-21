@@ -34,7 +34,7 @@ value    ::= "true"
 
 atom       ::= "#" atom_body
 atom_body  ::= [A-Za-z_][A-Za-z0-9_-]*
-field_name ::= [A-Za-z_][A-Za-z0-9_-]*
+field_name ::= [A-Za-z_][A-Za-z0-9_]*
 string     ::= JSON-style-string
 number     ::= JSON-style-number-without-type-postfix
 ```
