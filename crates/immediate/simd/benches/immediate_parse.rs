@@ -4,9 +4,11 @@ const COMPLEX: &str = include_str!("../../fixtures/complex.zti");
 
 fn bench_immediate_parse(c: &mut Criterion) {
     let generated = generated_document(512);
+    let string_heavy = generated_string_document(256, 256);
     let inputs = [
         ("complex_fixture", COMPLEX),
         ("generated_512_fields", generated.as_str()),
+        ("string_heavy_256x256", string_heavy.as_str()),
     ];
 
     let mut group = c.benchmark_group("immediate_parse");
@@ -82,6 +84,26 @@ fn generated_document(fields: usize) -> String {
         document.push_str("  };\n");
     }
 
+    document.push_str("}\n");
+    document
+}
+
+fn generated_string_document(fields: usize, string_len: usize) -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+
+    let mut payload = String::with_capacity(string_len);
+    for index in 0..string_len {
+        payload.push(ALPHABET[index % ALPHABET.len()] as char);
+    }
+
+    let mut document = String::from("{\n");
+    for index in 0..fields {
+        document.push_str("  string-");
+        document.push_str(&index.to_string());
+        document.push_str(" = \"");
+        document.push_str(&payload);
+        document.push_str("\";\n");
+    }
     document.push_str("}\n");
     document
 }
