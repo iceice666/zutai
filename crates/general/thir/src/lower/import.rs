@@ -53,6 +53,7 @@ impl<'hir> Lowerer<'hir> {
             ImportedType::Bool => self.bool_type(span),
             ImportedType::Int => self.int_type(span),
             ImportedType::Float => self.float_type(span),
+            ImportedType::FixedNum(fw) => self.fixed_num_type(*fw, span),
             ImportedType::Text => self.text_type(span),
             ImportedType::Atom(name) => self.alloc_type(Type {
                 kind: TypeKind::Atom(name.clone()),

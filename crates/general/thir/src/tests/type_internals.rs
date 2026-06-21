@@ -65,6 +65,15 @@ fn type_name_float_appears_in_mismatch_message() {
 }
 
 #[test]
+fn type_name_fixed_width_appears_in_mismatch_message() {
+    let lowered = lower("x :: u8 = 255\nx");
+    assert!(lowered.diagnostics.iter().any(|d| {
+        matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { expected, found }
+            if expected == "u8" && found == "Int")
+    }));
+}
+
+#[test]
 fn type_name_maybe_appears_in_mismatch_message() {
     // Passing field presence where an Int is needed → type_name calls Maybe arm.
     let lowered = lower("S :: type { v? : Int; }\ns :: S = {}\nresult :: Int = s.v\nresult");

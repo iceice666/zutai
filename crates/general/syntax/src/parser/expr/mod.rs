@@ -452,8 +452,16 @@ fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Spa
 
 pub(super) fn fix_number_span(expr: Expr, span: Span) -> Expr {
     match expr {
-        Expr::Integer { value, .. } => Expr::Integer { value, span },
-        Expr::Float { value, .. } => Expr::Float { value, span },
+        Expr::Integer { value, postfix, .. } => Expr::Integer {
+            value,
+            postfix,
+            span,
+        },
+        Expr::Float { value, postfix, .. } => Expr::Float {
+            value,
+            postfix,
+            span,
+        },
         other => other,
     }
 }

@@ -7,6 +7,7 @@ use winnow::token::{one_of, take, take_till, take_while};
 use std::cell::Cell;
 
 use crate::ast::{Expr, ImportSource};
+use crate::numlit::{NumberType, PostfixCheck, classify_postfix};
 use crate::span::Span;
 
 thread_local! {
@@ -348,23 +349,96 @@ pub fn parse_number_value(input: &mut &str) -> Result<Expr> {
         .take()
         .parse_next(input)?;
 
-    let is_float = literal.contains('.') || literal.contains('e') || literal.contains('E');
+    let has_sign = literal.starts_with('-');
+    let has_frac_or_exp = literal.contains('.') || literal.contains('e') || literal.contains('E');
     let span = Span::new(0, 0); // caller sets span via spanned()
+    let postfix_start = *input;
+    let postfix_run: &str =
+        take_while(0.., |c: char| c.is_ascii_alphanumeric() || c == '_').parse_next(input)?;
 
-    if is_float {
-        match literal.parse::<f64>() {
-            Ok(v) => Ok(Expr::Float { value: v, span }),
+    match classify_postfix(postfix_run, has_sign, has_frac_or_exp) {
+        PostfixCheck::Valid(postfix) if postfix.is_float() => match literal.parse::<f64>() {
+            Ok(value) => {
+                let value = if matches!(postfix, NumberType::F32) {
+                    value as f32 as f64
+                } else {
+                    value
+                };
+                Ok(Expr::Float {
+                    value,
+                    postfix: Some(postfix),
+                    span,
+                })
+            }
             Err(_) => {
                 *input = start;
                 fail.parse_next(input)
             }
-        }
-    } else {
-        match literal.parse::<i64>() {
-            Ok(v) => Ok(Expr::Integer { value: v, span }),
+        },
+        PostfixCheck::Valid(postfix) => match literal.parse::<i64>() {
+            Ok(value) => Ok(Expr::Integer {
+                value,
+                postfix: Some(postfix),
+                span,
+            }),
             Err(_) => {
                 *input = start;
                 fail.parse_next(input)
+            }
+        },
+        PostfixCheck::Unknown | PostfixCheck::IntOnFloatBody | PostfixCheck::UnsignedNegative => {
+            *input = postfix_start;
+            if has_frac_or_exp {
+                match literal.parse::<f64>() {
+                    Ok(value) => Ok(Expr::Float {
+                        value,
+                        postfix: None,
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
+            } else {
+                match literal.parse::<i64>() {
+                    Ok(value) => Ok(Expr::Integer {
+                        value,
+                        postfix: None,
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
+            }
+        }
+        PostfixCheck::None => {
+            if has_frac_or_exp {
+                match literal.parse::<f64>() {
+                    Ok(value) => Ok(Expr::Float {
+                        value,
+                        postfix: None,
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
+            } else {
+                match literal.parse::<i64>() {
+                    Ok(value) => Ok(Expr::Integer {
+                        value,
+                        postfix: None,
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
             }
         }
     }

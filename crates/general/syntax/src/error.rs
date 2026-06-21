@@ -11,6 +11,9 @@ pub enum ParseErrorKind {
     ValueRecordFieldUsesColon,
     TopLevelSingleColon,
     TypeRecordFieldUsesEquals,
+    UnknownNumberPostfix,
+    IntegerPostfixOnFloatLiteral,
+    UnsignedPostfixOnNegative,
     ExpectedToken(&'static str),
     ExpectedExpression,
     ExpectedPattern,
@@ -38,6 +41,13 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "value record fields use `=`, not `:`",
             ParseErrorKind::TopLevelSingleColon => "top-level typed bindings use `::`, not `:`",
             ParseErrorKind::TypeRecordFieldUsesEquals => "type record fields use `:`, not `=`",
+            ParseErrorKind::UnknownNumberPostfix => "unknown numeric type postfix",
+            ParseErrorKind::IntegerPostfixOnFloatLiteral => {
+                "integer type postfix on a non-integer literal"
+            }
+            ParseErrorKind::UnsignedPostfixOnNegative => {
+                "unsigned type postfix on a negative literal"
+            }
             ParseErrorKind::ExpectedToken(_) => "expected token",
             ParseErrorKind::ExpectedExpression => "expected expression",
             ParseErrorKind::ExpectedPattern => "expected pattern",
@@ -61,6 +71,11 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "use `=` for value fields",
             ParseErrorKind::TopLevelSingleColon => "use `::` for a typed top-level binding",
             ParseErrorKind::TypeRecordFieldUsesEquals => "use `:` for type fields",
+            ParseErrorKind::UnknownNumberPostfix => "not one of i8…f64",
+            ParseErrorKind::IntegerPostfixOnFloatLiteral => "this body has a fraction or exponent",
+            ParseErrorKind::UnsignedPostfixOnNegative => {
+                "remove the leading `-` or use a signed type"
+            }
             ParseErrorKind::ExpectedToken(token) => token,
             ParseErrorKind::ExpectedExpression => "expected an expression here",
             ParseErrorKind::ExpectedPattern => "expected a pattern here",
@@ -105,6 +120,13 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "zutai::parse::value_record_field_colon",
             ParseErrorKind::TopLevelSingleColon => "zutai::parse::top_level_single_colon",
             ParseErrorKind::TypeRecordFieldUsesEquals => "zutai::parse::type_record_field_equals",
+            ParseErrorKind::UnknownNumberPostfix => "zutai::parse::unknown_number_postfix",
+            ParseErrorKind::IntegerPostfixOnFloatLiteral => {
+                "zutai::parse::integer_postfix_on_float_literal"
+            }
+            ParseErrorKind::UnsignedPostfixOnNegative => {
+                "zutai::parse::unsigned_postfix_on_negative"
+            }
             ParseErrorKind::ExpectedToken(_) => "zutai::parse::expected_token",
             ParseErrorKind::ExpectedExpression => "zutai::parse::expected_expression",
             ParseErrorKind::ExpectedPattern => "zutai::parse::expected_pattern",

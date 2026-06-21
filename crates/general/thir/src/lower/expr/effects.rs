@@ -313,8 +313,8 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Lambda { .. }
             | HirExprKind::True
             | HirExprKind::False
-            | HirExprKind::Integer(_)
-            | HirExprKind::Float(_)
+            | HirExprKind::Integer(..)
+            | HirExprKind::Float(..)
             | HirExprKind::String(_)
             | HirExprKind::Atom(_)
             | HirExprKind::BindingRef(_)

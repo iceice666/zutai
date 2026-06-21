@@ -326,6 +326,50 @@ impl EffectRow {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedWidth {
+    I8,
+    I16,
+    I32,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+}
+
+impl FixedWidth {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::F32 => "f32",
+        }
+    }
+
+    pub fn is_float(self) -> bool {
+        matches!(self, Self::F32)
+    }
+
+    pub fn int_range(self) -> Option<(i64, i64)> {
+        match self {
+            Self::I8 => Some((i64::from(i8::MIN), i64::from(i8::MAX))),
+            Self::I16 => Some((i64::from(i16::MIN), i64::from(i16::MAX))),
+            Self::I32 => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
+            Self::U8 => Some((0, i64::from(u8::MAX))),
+            Self::U16 => Some((0, i64::from(u16::MAX))),
+            Self::U32 => Some((0, i64::from(u32::MAX))),
+            Self::U64 => Some((0, i64::MAX)),
+            Self::F32 => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
     Type,
@@ -333,6 +377,7 @@ pub enum TypeKind {
     Text,
     Int,
     Float,
+    FixedNum(FixedWidth),
     Atom(String),
     True,
     False,

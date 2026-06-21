@@ -55,6 +55,10 @@ pub enum ThirDiagnosticKind {
         lhs: String,
         rhs: String,
     },
+    NumericLiteralOutOfRange {
+        value: i64,
+        ty: String,
+    },
     MissingRecordField {
         name: String,
     },

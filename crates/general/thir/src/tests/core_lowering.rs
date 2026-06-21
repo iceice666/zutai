@@ -8,6 +8,90 @@ fn inferred_integer_binding_completes_thir() {
 }
 
 #[test]
+fn numeric_postfix_literals_have_fixed_types() {
+    let file = completed_file("255u8");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::FixedNum(FixedWidth::U8)
+    ));
+
+    let file = completed_file("-128i8");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::FixedNum(FixedWidth::I8)
+    ));
+
+    let file = completed_file("42i64");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+
+    let file = completed_file("3.14f64");
+    assert!(matches!(final_type_kind(&file), TypeKind::Float));
+
+    let file = completed_file("1f32");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::FixedNum(FixedWidth::F32)
+    ));
+}
+
+#[test]
+fn fixed_width_arithmetic_is_rejected() {
+    let lowered = lower("255u8 + 1u8");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::InvalidBinaryOperands { op, lhs, rhs }
+                if *op == "+" && lhs == "u8" && rhs == "u8"
+        )
+    }));
+}
+
+#[test]
+fn fixed_width_integer_literals_are_range_checked() {
+    let lowered = lower("256u8");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::NumericLiteralOutOfRange { value, ty }
+                if *value == 256 && ty == "u8"
+        )
+    }));
+}
+
+#[test]
+fn fixed_width_annotations_require_matching_literals() {
+    let file = completed_file("x :: u8 = 255u8\nx");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::FixedNum(FixedWidth::U8)
+    ));
+
+    let lowered = lower("x :: u8 = 255\nx");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "u8" && found == "Int"
+        )
+    }));
+}
+
+#[test]
+fn fixed_width_literal_patterns_type_check() {
+    completed_file(
+        r#"
+classify :: u8 -> Text
+  = 255u8 => "max";
+  = _ => "other";
+classify 255u8
+"#,
+    );
+}
+
+#[test]
 fn typed_integer_mismatch_reports_type_error() {
     let lowered = lower("x :: Int = \"bad\"\nx");
 

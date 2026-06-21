@@ -7,8 +7,8 @@ impl Lowerer {
         let kind = match expr {
             ast::Expr::True(_) => HirExprKind::True,
             ast::Expr::False(_) => HirExprKind::False,
-            ast::Expr::Integer { value, .. } => HirExprKind::Integer(*value),
-            ast::Expr::Float { value, .. } => HirExprKind::Float(*value),
+            ast::Expr::Integer { value, postfix, .. } => HirExprKind::Integer(*value, *postfix),
+            ast::Expr::Float { value, postfix, .. } => HirExprKind::Float(*value, *postfix),
             ast::Expr::String { value, .. } => HirExprKind::String(value.clone()),
             ast::Expr::Atom { name, .. } => HirExprKind::Atom(name.clone()),
             ast::Expr::TaggedValue { tag, payload, .. } => HirExprKind::TaggedValue {

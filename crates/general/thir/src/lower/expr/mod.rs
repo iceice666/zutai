@@ -79,8 +79,8 @@ impl<'hir> Lowerer<'hir> {
                     span: expr.span,
                 })
             }
-            HirExprKind::Integer(value) => {
-                let ty = self.int_type(expr.span);
+            HirExprKind::Integer(value, postfix) => {
+                let ty = self.integer_literal_type(*value, *postfix, expr.span);
                 self.alloc_expr(ThirExpr {
                     source: id,
                     ty,
@@ -88,8 +88,8 @@ impl<'hir> Lowerer<'hir> {
                     span: expr.span,
                 })
             }
-            HirExprKind::Float(value) => {
-                let ty = self.float_type(expr.span);
+            HirExprKind::Float(value, postfix) => {
+                let ty = self.float_literal_type(*postfix, expr.span);
                 self.alloc_expr(ThirExpr {
                     source: id,
                     ty,

@@ -43,13 +43,13 @@ impl<'hir> Lowerer<'hir> {
                 self.check_pattern_type(expected, ty, pattern.span);
                 ThirPatKind::False
             }
-            HirPatKind::Integer(value) => {
-                let ty = self.int_type(pattern.span);
+            HirPatKind::Integer(value, postfix) => {
+                let ty = self.integer_literal_type(*value, *postfix, pattern.span);
                 self.check_pattern_type(expected, ty, pattern.span);
                 ThirPatKind::Integer(*value)
             }
-            HirPatKind::Float(value) => {
-                let ty = self.float_type(pattern.span);
+            HirPatKind::Float(value, postfix) => {
+                let ty = self.float_literal_type(*postfix, pattern.span);
                 self.check_pattern_type(expected, ty, pattern.span);
                 ThirPatKind::Float(*value)
             }

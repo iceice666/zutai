@@ -344,6 +344,7 @@ impl<'thir> Lowerer<'thir> {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Int => Some("Int".to_string()),
             TypeKind::Float => Some("Float".to_string()),
+            TypeKind::FixedNum(fw) => Some(fw.name().to_string()),
             TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
             TypeKind::Text => Some("Text".to_string()),
             TypeKind::Atom(name) => Some(format!("#{name}")),

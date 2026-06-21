@@ -53,6 +53,7 @@ fn export(
         TypeKind::Bool | TypeKind::True | TypeKind::False => Ok(ImportedType::Bool),
         TypeKind::Int => Ok(ImportedType::Int),
         TypeKind::Float => Ok(ImportedType::Float),
+        TypeKind::FixedNum(fw) => Ok(ImportedType::FixedNum(fw)),
         TypeKind::Text => Ok(ImportedType::Text),
         TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
         TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export(

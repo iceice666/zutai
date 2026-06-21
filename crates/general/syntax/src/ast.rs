@@ -1,3 +1,4 @@
+use crate::numlit::NumberType;
 use crate::span::Span;
 
 #[derive(Debug, PartialEq)]
@@ -227,10 +228,12 @@ pub enum Expr {
     False(Span),
     Integer {
         value: i64,
+        postfix: Option<NumberType>,
         span: Span,
     },
     Float {
         value: f64,
+        postfix: Option<NumberType>,
         span: Span,
     },
     String {
@@ -393,10 +396,12 @@ pub enum Pattern {
     False(Span),
     Integer {
         value: i64,
+        postfix: Option<NumberType>,
         span: Span,
     },
     Float {
         value: f64,
+        postfix: Option<NumberType>,
         span: Span,
     },
     String {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::numlit::NumberType;
 
 // ---------------------------------------------------------------------------
 // Lexer / literals
@@ -19,6 +20,36 @@ fn parse_float() {
     assert!((f2 - 1e9).abs() < 1.0);
     let f3 = as_float(&parse_expr_str("-2.5e-3"));
     assert!((f3 - (-2.5e-3_f64)).abs() < 1e-10);
+}
+
+#[test]
+fn parse_numeric_type_postfixes() {
+    match parse_expr_str("255u8") {
+        Expr::Integer {
+            value,
+            postfix: Some(NumberType::U8),
+            ..
+        } => assert_eq!(value, 255),
+        other => panic!("expected u8 integer literal, got {other:?}"),
+    }
+
+    match parse_expr_str("1f32") {
+        Expr::Float {
+            value,
+            postfix: Some(NumberType::F32),
+            ..
+        } => assert_eq!(value, 1.0),
+        other => panic!("expected f32 float literal, got {other:?}"),
+    }
+
+    match parse_expr_str("42i64") {
+        Expr::Integer {
+            value,
+            postfix: Some(NumberType::I64),
+            ..
+        } => assert_eq!(value, 42),
+        other => panic!("expected i64 integer literal, got {other:?}"),
+    }
 }
 
 #[test]

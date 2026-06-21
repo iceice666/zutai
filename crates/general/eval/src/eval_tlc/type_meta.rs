@@ -16,6 +16,7 @@ impl<'a> TlcEvaluator<'a> {
             TlcType::Prim(prim) => match prim {
                 zutai_tlc::PrimTy::Int => Some("Int".to_string()),
                 zutai_tlc::PrimTy::Float => Some("Float".to_string()),
+                zutai_tlc::PrimTy::FixedNum(fw) => Some(fw.name().to_string()),
                 zutai_tlc::PrimTy::Bool => Some("Bool".to_string()),
                 zutai_tlc::PrimTy::Str => Some("Text".to_string()),
                 zutai_tlc::PrimTy::Atom => None,

@@ -7,6 +7,7 @@
 //! independent of THIR's private `type_arena` is what lets the resolver live
 //! outside this crate.
 
+use crate::ir::FixedWidth;
 use zutai_hir::HirImportSource;
 
 /// Key identifying a resolved import within a single file's analysis.
@@ -26,6 +27,7 @@ pub enum ImportedType {
     Bool,
     Int,
     Float,
+    FixedNum(FixedWidth),
     Text,
     Atom(String),
     List(Box<ImportedType>),

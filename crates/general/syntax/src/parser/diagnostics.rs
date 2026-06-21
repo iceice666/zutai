@@ -1,4 +1,5 @@
 use crate::error::{ParseError, ParseErrorKind};
+use crate::numlit::{PostfixCheck, classify_postfix};
 use crate::span::Span;
 
 const MAX_DIAGNOSTICS: usize = 50;
@@ -74,6 +75,10 @@ impl<'a> Scanner<'a> {
             }
             if self.bytes[self.pos] == b'"' {
                 self.skip_string();
+                continue;
+            }
+            if self.is_number_start() {
+                self.scan_number();
                 continue;
             }
 
@@ -258,6 +263,82 @@ impl<'a> Scanner<'a> {
             }
             None => segment.pipeline_dir = Some(dir),
             _ => {}
+        }
+    }
+
+    fn scan_number(&mut self) {
+        let start = self.pos;
+        let has_sign = self.bytes[self.pos] == b'-';
+        if has_sign {
+            self.pos += 1;
+        }
+
+        self.consume_ascii_digits();
+
+        let mut has_frac_or_exp = false;
+        if self.pos + 1 < self.bytes.len()
+            && self.bytes[self.pos] == b'.'
+            && self.bytes[self.pos + 1].is_ascii_digit()
+        {
+            has_frac_or_exp = true;
+            self.pos += 1;
+            self.consume_ascii_digits();
+        }
+
+        if self.pos < self.bytes.len() && matches!(self.bytes[self.pos], b'e' | b'E') {
+            let exp = self.pos;
+            self.pos += 1;
+            if self.pos < self.bytes.len() && matches!(self.bytes[self.pos], b'+' | b'-') {
+                self.pos += 1;
+            }
+            let digit_start = self.pos;
+            self.consume_ascii_digits();
+            if self.pos > digit_start {
+                has_frac_or_exp = true;
+            } else {
+                self.pos = exp;
+            }
+        }
+
+        let body_end = self.pos;
+        self.consume_postfix_run();
+        let run = &self.src[body_end..self.pos];
+        let kind = match classify_postfix(run, has_sign, has_frac_or_exp) {
+            PostfixCheck::Unknown => Some(ParseErrorKind::UnknownNumberPostfix),
+            PostfixCheck::IntOnFloatBody => Some(ParseErrorKind::IntegerPostfixOnFloatLiteral),
+            PostfixCheck::UnsignedNegative => Some(ParseErrorKind::UnsignedPostfixOnNegative),
+            PostfixCheck::None | PostfixCheck::Valid(_) => None,
+        };
+        if let Some(kind) = kind {
+            self.push(start, self.pos, kind);
+        }
+    }
+
+    fn is_number_start(&self) -> bool {
+        self.at_number_boundary()
+            && (self.bytes[self.pos].is_ascii_digit()
+                || (self.bytes[self.pos] == b'-'
+                    && self.pos + 1 < self.bytes.len()
+                    && self.bytes[self.pos + 1].is_ascii_digit()))
+    }
+
+    fn at_number_boundary(&self) -> bool {
+        self.pos == 0
+            || !(self.bytes[self.pos - 1].is_ascii_alphanumeric()
+                || self.bytes[self.pos - 1] == b'_')
+    }
+
+    fn consume_ascii_digits(&mut self) {
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            self.pos += 1;
+        }
+    }
+
+    fn consume_postfix_run(&mut self) {
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_alphanumeric() || self.bytes[self.pos] == b'_')
+        {
+            self.pos += 1;
         }
     }
 

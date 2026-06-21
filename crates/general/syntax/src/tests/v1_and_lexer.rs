@@ -275,6 +275,49 @@ fn tokenize_scientific_notation() {
     assert_eq!(tokens[0].kind, SyntaxKind::Float, "2e+4 should be Float");
 }
 
+#[test]
+fn tokenize_numeric_type_postfixes() {
+    let tokens = tokenize("255u8");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::Integer);
+    assert_eq!(tokens[0].text, "255u8");
+
+    let tokens = tokenize("1.5f32");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::Float);
+    assert_eq!(tokens[0].text, "1.5f32");
+
+    let tokens = tokenize("1foo");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::Error);
+}
+
+#[test]
+fn numeric_type_postfix_diagnostics() {
+    for src in ["255u8", "3.14f64", "1e9f64"] {
+        let kinds = parse_kinds(src);
+        assert!(
+            kinds.is_empty(),
+            "unexpected diagnostics for {src:?}: {kinds:?}"
+        );
+    }
+
+    for (src, expected) in [
+        ("-1u8", ParseErrorKind::UnsignedPostfixOnNegative),
+        ("1.0i64", ParseErrorKind::IntegerPostfixOnFloatLiteral),
+        ("1e3u32", ParseErrorKind::IntegerPostfixOnFloatLiteral),
+        ("1foo", ParseErrorKind::UnknownNumberPostfix),
+        ("1_u8", ParseErrorKind::UnknownNumberPostfix),
+        ("1i128", ParseErrorKind::UnknownNumberPostfix),
+    ] {
+        let kinds = parse_kinds(src);
+        assert!(
+            kinds.contains(&expected),
+            "expected {expected:?} for {src:?}, got {kinds:?}"
+        );
+    }
+}
+
 // ── parse_lossless: covers SyntaxKind::from_raw and kind_from_raw ─────────────
 
 /// Calling `parse_lossless` and then iterating children with `.kind()` triggers

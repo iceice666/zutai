@@ -8,6 +8,27 @@ fn int_add() {
 }
 
 #[test]
+fn fixed_width_int_literal_evaluates_as_int_value() {
+    let value = run("255u8");
+    assert_eq!(value, Value::Int(255));
+    assert_eq!(value.to_string(), "255");
+}
+
+#[test]
+fn fixed_width_out_of_range_is_refused() {
+    let err = run_err("256u8");
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("out of range") && message.contains("u8")),
+        "expected u8 range diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
 fn int_precedence() {
     // 1 + 2 * 3 = 7
     assert_eq!(run("1 + 2 * 3"), Value::Int(7));

@@ -184,6 +184,7 @@ pub enum TlcType {
 pub enum PrimTy {
     Int,
     Float,
+    FixedNum(zutai_thir::FixedWidth),
     Bool,
     Str,
     /// Kept for the unqualified `Atom` primitive type (not a singleton).

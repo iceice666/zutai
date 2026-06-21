@@ -43,7 +43,7 @@ fn desugars_forward_pipeline_to_application() {
     let func = &lowered.file.expr_arena[func];
     let arg = &lowered.file.expr_arena[arg];
     assert!(matches!(func.kind, HirExprKind::BindingRef(_)));
-    assert!(matches!(arg.kind, HirExprKind::Integer(1)));
+    assert!(matches!(arg.kind, HirExprKind::Integer(1, None)));
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn desugars_backward_pipeline_to_application() {
     let func = &lowered.file.expr_arena[func];
     let arg = &lowered.file.expr_arena[arg];
     assert!(matches!(func.kind, HirExprKind::BindingRef(_)));
-    assert!(matches!(arg.kind, HirExprKind::Integer(1)));
+    assert!(matches!(arg.kind, HirExprKind::Integer(1, None)));
 }
 
 #[test]

@@ -484,6 +484,14 @@ impl<'m> Lowerer<'m> {
         match ty {
             TlcType::Prim(PrimTy::Int) => self.types.alloc(DfTy::Int),
             TlcType::Prim(PrimTy::Float) => self.types.alloc(DfTy::Float),
+            TlcType::Prim(PrimTy::FixedNum(fw)) => {
+                let ty = if fw.is_float() {
+                    DfTy::Float
+                } else {
+                    DfTy::Int
+                };
+                self.types.alloc(ty)
+            }
             TlcType::Prim(PrimTy::Bool) => self.types.alloc(DfTy::Bool),
             TlcType::Prim(PrimTy::Str) => self.types.alloc(DfTy::Text),
             TlcType::Prim(PrimTy::Atom) => self.types.alloc(DfTy::Atom),

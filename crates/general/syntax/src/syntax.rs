@@ -1,3 +1,4 @@
+use crate::numlit::{PostfixCheck, classify_postfix};
 use rowan::{GreenNodeBuilder, Language};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -403,14 +404,14 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
         self.consume_while(|ch| ch.is_ascii_digit());
-        let mut is_float = false;
+        let mut has_frac_or_exp = false;
         if self.starts_with(".")
             && self.src[self.pos + 1..]
                 .chars()
                 .next()
                 .is_some_and(|ch| ch.is_ascii_digit())
         {
-            is_float = true;
+            has_frac_or_exp = true;
             self.pos += 1;
             self.consume_while(|ch| ch.is_ascii_digit());
         }
@@ -423,15 +424,26 @@ impl<'a> Lexer<'a> {
             let digit_start = self.pos;
             self.consume_while(|ch| ch.is_ascii_digit());
             if self.pos > digit_start {
-                is_float = true;
+                has_frac_or_exp = true;
             } else {
                 self.pos = exp;
             }
         }
-        if is_float {
+
+        let body_kind = if has_frac_or_exp {
             SyntaxKind::Float
         } else {
             SyntaxKind::Integer
+        };
+        let body_end = self.pos;
+        self.consume_while(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        match classify_postfix(&self.src[body_end..self.pos], has_sign, has_frac_or_exp) {
+            PostfixCheck::None => body_kind,
+            PostfixCheck::Valid(postfix) if postfix.is_float() => SyntaxKind::Float,
+            PostfixCheck::Valid(_) => SyntaxKind::Integer,
+            PostfixCheck::Unknown
+            | PostfixCheck::IntOnFloatBody
+            | PostfixCheck::UnsignedNegative => SyntaxKind::Error,
         }
     }
 }

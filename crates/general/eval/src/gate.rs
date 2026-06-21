@@ -79,6 +79,9 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         InvalidBinaryOperands { op, lhs, rhs } => {
             format!("invalid binary operands for `{op}`: {lhs} and {rhs}")
         }
+        NumericLiteralOutOfRange { value, ty } => {
+            format!("numeric literal `{value}` is out of range for `{ty}`")
+        }
         MissingRecordField { name } => format!("missing required record field `{name}`"),
         UnexpectedRecordField { name } => format!("unexpected record field `{name}`"),
         UnknownField { name } => format!("unknown field `{name}`"),

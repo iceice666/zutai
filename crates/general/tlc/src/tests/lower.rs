@@ -2,6 +2,7 @@
 
 use super::tlc_of;
 use crate::*;
+use zutai_thir::FixedWidth;
 
 #[test]
 fn float_literal_lowers_to_prim_float_type() {
@@ -18,6 +19,22 @@ fn float_literal_lowers_to_prim_float_type() {
         .iter()
         .any(|(_, e)| matches!(e, TlcExpr::Lit(Literal::Float(_))));
     assert!(has_lit, "expected Lit(Float) for float literal expression");
+}
+
+#[test]
+fn fixed_width_literal_lowers_to_prim_fixed_num_type() {
+    let m = tlc_of("255u8");
+    let has_fixed = m
+        .type_arena
+        .iter()
+        .any(|(_, ty)| matches!(ty, TlcType::Prim(PrimTy::FixedNum(FixedWidth::U8))));
+    assert!(has_fixed, "expected Prim(FixedNum(U8)) for u8 literal");
+
+    let has_lit = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::Lit(Literal::Int(255))));
+    assert!(has_lit, "expected Int literal payload for u8 literal");
 }
 
 #[test]

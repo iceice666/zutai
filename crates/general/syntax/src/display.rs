@@ -126,8 +126,20 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
     match expr {
         Expr::True(_) => writeln!(f, "{prefix}true"),
         Expr::False(_) => writeln!(f, "{prefix}false"),
-        Expr::Integer { value, .. } => writeln!(f, "{prefix}Int({value})"),
-        Expr::Float { value, .. } => writeln!(f, "{prefix}Float({value})"),
+        Expr::Integer { value, postfix, .. } => {
+            if let Some(postfix) = postfix {
+                writeln!(f, "{prefix}Int({value}{})", postfix.name())
+            } else {
+                writeln!(f, "{prefix}Int({value})")
+            }
+        }
+        Expr::Float { value, postfix, .. } => {
+            if let Some(postfix) = postfix {
+                writeln!(f, "{prefix}Float({value}{})", postfix.name())
+            } else {
+                writeln!(f, "{prefix}Float({value})")
+            }
+        }
         Expr::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Expr::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
         Expr::TaggedValue { tag, payload, .. } => {
@@ -389,8 +401,20 @@ fn write_pattern(
         Pattern::Ident { name, .. } => writeln!(f, "{prefix}Ident({name})"),
         Pattern::True(_) => writeln!(f, "{prefix}true"),
         Pattern::False(_) => writeln!(f, "{prefix}false"),
-        Pattern::Integer { value, .. } => writeln!(f, "{prefix}Int({value})"),
-        Pattern::Float { value, .. } => writeln!(f, "{prefix}Float({value})"),
+        Pattern::Integer { value, postfix, .. } => {
+            if let Some(postfix) = postfix {
+                writeln!(f, "{prefix}Int({value}{})", postfix.name())
+            } else {
+                writeln!(f, "{prefix}Int({value})")
+            }
+        }
+        Pattern::Float { value, postfix, .. } => {
+            if let Some(postfix) = postfix {
+                writeln!(f, "{prefix}Float({value}{})", postfix.name())
+            } else {
+                writeln!(f, "{prefix}Float({value})")
+            }
+        }
         Pattern::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Pattern::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
         Pattern::TaggedValue { tag, payload, .. } => {

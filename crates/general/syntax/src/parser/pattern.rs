@@ -80,8 +80,16 @@ fn parse_pattern_literal(input: &mut &str) -> Result<Pattern> {
     // number (integer or float)
     let (expr, span) = spanned(parse_number_value).parse_next(input)?;
     let pat = match expr {
-        Expr::Integer { value, .. } => Pattern::Integer { value, span },
-        Expr::Float { value, .. } => Pattern::Float { value, span },
+        Expr::Integer { value, postfix, .. } => Pattern::Integer {
+            value,
+            postfix,
+            span,
+        },
+        Expr::Float { value, postfix, .. } => Pattern::Float {
+            value,
+            postfix,
+            span,
+        },
         _ => unreachable!(),
     };
     Ok(pat)

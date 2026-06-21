@@ -390,6 +390,8 @@ impl<'hir> Lowerer<'hir> {
 
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        // Fixed-width numeric literals are type-only in v0: no arithmetic or
+        // comparison witnesses are auto-derived until fixed-width operations exist.
         matches!(
             self.type_arena[ty.0 as usize].kind,
             TypeKind::Bool

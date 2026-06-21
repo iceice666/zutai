@@ -19,6 +19,7 @@ impl<'thir> Lowerer<'thir> {
         let tlc_ty = match kind {
             TypeKind::Int => self.alloc_type(TlcType::Prim(PrimTy::Int)),
             TypeKind::Float => self.alloc_type(TlcType::Prim(PrimTy::Float)),
+            TypeKind::FixedNum(fw) => self.alloc_type(TlcType::Prim(PrimTy::FixedNum(fw))),
             TypeKind::Bool => self.alloc_type(TlcType::Prim(PrimTy::Bool)),
             // Singleton types — preserve discrimination (Phase 0 bug fix).
             TypeKind::True => self.alloc_type(TlcType::Singleton(Literal::Bool(true))),

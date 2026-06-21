@@ -26,3 +26,4 @@ pub use lower::{HirLowerOptions, LoweredHir, lower_file, lower_file_with_options
 pub use pass::{
     HirPass, HirPassReport, StructuralKeyValidationPass, run_default_passes, run_passes,
 };
+pub use zutai_syntax::numlit::NumberType;
