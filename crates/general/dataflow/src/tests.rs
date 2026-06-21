@@ -86,6 +86,32 @@ fn posit_literal_produces_posit_lit_and_type() {
     );
 }
 
+#[test]
+fn decimal_posit_add_lowers_to_posit_builtin() {
+    let g = dc_of("1.5p32e3 + 2.25p32e3");
+    let has_posit_add = g.nodes.iter().any(|(_, n)| {
+        matches!(
+            &n.kind,
+            DfNodeKind::Builtin(
+                DfBuiltinOp::Posit {
+                    op: DfPositOp::Add,
+                    spec
+                },
+                _,
+                _
+            ) if spec.nbits == 32 && spec.es == 3
+        )
+    });
+    assert!(
+        has_posit_add,
+        "expected decimal posit addition to lower to a Posit32e3 add builtin"
+    );
+    assert!(
+        matches!(g.types[g.nodes[g.root].ty], DfTy::Posit(spec) if spec.nbits == 32 && spec.es == 3),
+        "expected root type DfTy::Posit(Posit32e3)"
+    );
+}
+
 // ── Global declarations ───────────────────────────────────────────────────────
 
 #[test]

@@ -55,6 +55,7 @@ fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId) -> bool {
             | (DfTy::Atom, DfTy::Atom)
             | (DfTy::Type, DfTy::Type)
             | (DfTy::Error, DfTy::Error) => true,
+            (DfTy::Posit(a), DfTy::Posit(b)) => a == b,
             (DfTy::Bool, DfTy::True | DfTy::False) | (DfTy::True | DfTy::False, DfTy::Bool) => true,
             (DfTy::TyVar(a), DfTy::TyVar(b)) => a == b,
             (DfTy::List(a), DfTy::List(b))
@@ -282,7 +283,7 @@ fn child_ty(graph: &DataflowGraph, target: NodeId) -> Option<DfTyId> {
 }
 
 fn is_numeric_type(graph: &DataflowGraph, ty: DfTyId) -> bool {
-    type_exists(graph, ty) && matches!(graph.types[ty], DfTy::Int | DfTy::Float)
+    type_exists(graph, ty) && matches!(graph.types[ty], DfTy::Int | DfTy::Float | DfTy::Posit(_))
 }
 
 fn is_opaque_shape_type(graph: &DataflowGraph, ty: DfTyId) -> bool {
@@ -356,6 +357,7 @@ fn validate_type_refs(graph: &DataflowGraph, errors: &mut Vec<ValidationError>) 
             }
             DfTy::Int
             | DfTy::Float
+            | DfTy::Posit(_)
             | DfTy::Bool
             | DfTy::Text
             | DfTy::Atom
@@ -688,6 +690,31 @@ fn check_builtin(
                 check_same_type(graph, owner, "rhs", lhs_ty, rhs_ty, errors);
             }
             expect_bool_type(graph, owner, "type", result_ty, errors);
+        }
+        DfBuiltinOp::Posit { op, spec } => {
+            if let Some(lhs_ty) = lhs_ty
+                && !matches!(graph.types[lhs_ty], DfTy::Posit(actual) if actual == spec)
+            {
+                unexpected_type(owner, "lhs", "matching Posit", lhs_ty, errors);
+            }
+            if let Some(rhs_ty) = rhs_ty
+                && !matches!(graph.types[rhs_ty], DfTy::Posit(actual) if actual == spec)
+            {
+                unexpected_type(owner, "rhs", "matching Posit", rhs_ty, errors);
+            }
+            if matches!(
+                op,
+                crate::DfPositOp::Eq
+                    | crate::DfPositOp::Ne
+                    | crate::DfPositOp::Lt
+                    | crate::DfPositOp::Le
+                    | crate::DfPositOp::Gt
+                    | crate::DfPositOp::Ge
+            ) {
+                expect_bool_type(graph, owner, "type", result_ty, errors);
+            } else if !matches!(graph.types[result_ty], DfTy::Posit(actual) if actual == spec) {
+                unexpected_type(owner, "type", "matching Posit", result_ty, errors);
+            }
         }
         DfBuiltinOp::And | DfBuiltinOp::Or => {
             if let Some(lhs_ty) = lhs_ty {
