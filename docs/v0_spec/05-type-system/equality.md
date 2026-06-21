@@ -5,6 +5,7 @@ Structural equality is defined for first-order data values:
 * `Bool`
 * `Int`
 * `Float`
+* posit scalar types (`Posit32`, `Posit64`, `Posit32eN`, `Posit64eN`)
 * `Text`
 * `Atom`
 * lists of comparable values

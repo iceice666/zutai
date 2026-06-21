@@ -104,10 +104,10 @@ Ty  ::=
                                          -- TlcTypeVar = Named(u32) | Inferred(u32)
 
     -- Primitives --
-    Prim(P)                             -- Int | Float | Bool | Str | Atom | Nothing
+    Prim(P)                             -- Int | Float | Posit(nbits, es) | Bool | Str | Atom | Nothing
                                          -- Note: code enum uses `Str`; THIR surface says `Text`;
-                                         -- types.rs:23 bridges TypeKind::Text → PrimTy::Str
-    Singleton(Lit)                      -- #atom, true, false, integer literal, … as a type
+                                         -- types.rs bridges TypeKind::Text → PrimTy::Str
+    Singleton(Lit)                      -- #atom, true, false, integer/float/posit literal, … as a type
                                          -- NEW; fixes True/False singleton loss and Atom symbol loss
 
     -- Type-operator layer (F-ω) --
@@ -157,6 +157,8 @@ RExtend("circle", RecordT(RExtend("radius", Prim(Float), REmpty)), …)
 **`Optional T` and `Maybe T` are distinct builtin wrapper conventions.** `Optional T` is value optionality (`#none` / `#some (T)`). `Maybe T` is record-field presence (`#absent` / `#present (T)`). TLC keeps `TlcType::Optional` and `TlcType::Maybe` as separate nodes so field presence never flattens into value optionality.
 
 **`Singleton(Lit)` supplies DC's `True`/`False` discrimination.** Dataflow Core uses `True | False` singleton types (see `dataflow-core.md` §"Type representation"). This node closes the gap. Atom literals in type position (e.g., `#dev` as a type) are also `Singleton(Atom("dev"))`.
+
+**Posit primitives and literals.** Experimental posit scalar types lower to `Prim(Posit(nbits, es))`; posit literals lower to `Lit(Posit { nbits, es, bits })`. Downstream Dataflow Core carries the same `(nbits, es, bits)` metadata without depending on the `fast-posit` runtime crate.
 
 **`Fun` carries an effect row.** In v0, `eff = REmpty` (pure) always. The field costs nothing for v0 programs and gives effects a type-level hook in v1 without adding new node kinds.
 

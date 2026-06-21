@@ -53,6 +53,11 @@ impl<'hir> Lowerer<'hir> {
                 self.check_pattern_type(expected, ty, pattern.span);
                 ThirPatKind::Float(*value)
             }
+            HirPatKind::Posit(literal) => {
+                let ty = self.posit_type(literal.spec, pattern.span);
+                self.check_pattern_type(expected, ty, pattern.span);
+                ThirPatKind::Posit(*literal)
+            }
             HirPatKind::String(value) => {
                 let ty = self.text_type(pattern.span);
                 self.check_pattern_type(expected, ty, pattern.span);

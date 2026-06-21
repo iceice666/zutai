@@ -428,5 +428,9 @@ pub fn lower_dc(graph: &DataflowGraph) -> AnfModule {
     // Lower the module root node.
     let root = lower_body_with_binds(graph, &bind_names, &mut counter, graph.root);
 
-    AnfModule { decls, root }
+    AnfModule {
+        decls,
+        root,
+        root_ty: graph.types[graph.nodes[graph.root].ty].clone(),
+    }
 }

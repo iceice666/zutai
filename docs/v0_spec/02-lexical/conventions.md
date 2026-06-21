@@ -50,7 +50,7 @@ Paths, URLs, and other complex textual values should be represented as strings, 
 
 ### Numbers
 
-Immediate mode numbers use JSON-style syntax. General mode numbers use the same base syntax plus optional fixed-width type postfixes.
+Immediate mode numbers use JSON-style syntax. General mode numbers use the same base syntax plus optional numeric type postfixes.
 
 Examples:
 
@@ -63,7 +63,7 @@ Examples:
 -2.5e-3
 ```
 
-General mode also allows fixed-width type postfixes:
+General mode also allows numeric type postfixes:
 
 ```zt
 255u8
@@ -73,9 +73,13 @@ General mode also allows fixed-width type postfixes:
 1f32
 3.14f64
 1e9f64
+1p32
+1.5p32e3
+2p64
+4.0p64e5
 ```
 
-The allowed number type postfixes — the `NumberTypePostfix` production in the grammar reference — are: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`.
+The allowed number type postfixes — the `NumberTypePostfix` production in the grammar reference — are: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `p32`, `p64`, `p32eN`, and `p64eN`.
 
 Semantic rules for number type postfixes:
 
@@ -84,6 +88,7 @@ Semantic rules for number type postfixes:
 - `i8`, `i16`, `i32`, `i64` require an integer body with no fractional part and no exponent; they may use a leading `-`.
 - `u8`, `u16`, `u32`, `u64` require an integer body with no fractional part, no exponent, and no leading `-`.
 - `f32` and `f64` may use an integer-looking body, a fractional body, or an exponent body; `1f32`, `3.14f64`, and `1e9f64` are valid.
+- `p32`, `p64`, `p32eN`, and `p64eN` are experimental posit literal postfixes. They may use integer-looking, fractional, or exponent numeric bodies. `p32` and `p64` mean exponent size `e2`; explicit `eN` requires `0 <= N < 32` for `p32eN` and `0 <= N < 64` for `p64eN`.
 - A letter, digit, or `_` immediately following a numeric body is treated as a candidate postfix; if it is not exactly one of the allowed postfixes, the literal is a lexical error. This makes `1foo`, `1i128`, `1_u8`, and `1ms` invalid rather than parsing as two adjacent tokens.
 - A `.` followed by a digit remains part of the numeric body; a `.` followed by a non-digit remains field access, so `1.foo` is field access on `1`, while `1.0foo` is an invalid numeric postfix.
 
@@ -95,6 +100,7 @@ Float
 i8   i16  i32  i64
 u8   u16  u32  u64
 f32  f64
+Posit32  Posit64  Posit32eN  Posit64eN
 ```
 
 `Int` is the default signed integer type and is an alias of `i64` in v0.
@@ -107,6 +113,8 @@ f32  f64
 
 `f32` and `f64` are IEEE-754 binary32 and binary64 floating-point types.
 
+`Posit32`, `Posit64`, `Posit32eN`, and `Posit64eN` are experimental implementation-provided posit scalar types for supported exponent sizes. `Posit32` and `Posit64` are aliases for `e2`.
+
 `Number` remains an optional host/prelude convenience and is not required for the v0 core.
 
 These postfixed literals are invalid:
@@ -116,6 +124,7 @@ These postfixed literals are invalid:
 - `1e3u32` — integer and unsigned postfixes reject an exponent body.
 - `1i128` — `i128` is not in the fixed postfix set (unknown suffix).
 - `1ms` — unit suffixes are not in the fixed postfix set (unknown suffix).
+- `1p16`, `1p32e32`, `1p64e64`, `1p32e01`, and `1p32e` — invalid posit postfix candidates.
 - `1foo` — an arbitrary identifier run is not a valid postfix (unknown suffix).
 
 ### Immediate-mode atoms

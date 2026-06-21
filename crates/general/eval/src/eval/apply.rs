@@ -88,6 +88,10 @@ impl<'a> Evaluator<'a> {
                 Value::Float(v) => Ok(v == *f),
                 _ => Ok(false),
             },
+            ThirPatKind::Posit(literal) => match thunk.force(self)? {
+                Value::Posit(value) => Ok(value == *literal),
+                _ => Ok(false),
+            },
             ThirPatKind::String(s) => match thunk.force(self)? {
                 Value::Text(v) => Ok(v.as_ref() == s.as_str()),
                 _ => Ok(false),

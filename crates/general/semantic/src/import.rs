@@ -435,6 +435,7 @@ fn imported_type_key(ty: &ImportedType) -> String {
         ImportedType::Int => "Int".to_string(),
         ImportedType::Float => "Float".to_string(),
         ImportedType::FixedNum(fw) => fw.name().to_string(),
+        ImportedType::Posit(spec) => spec.type_name(),
         ImportedType::Text => "Text".to_string(),
         ImportedType::Atom(name) => format!("#{name}"),
         ImportedType::List(inner) => format!("[{}]", imported_type_key(inner)),

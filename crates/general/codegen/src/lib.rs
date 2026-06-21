@@ -16,6 +16,7 @@ pub fn emit_llvm(module: &SsaModule) -> String {
     emit_preamble(&mut out);
     emit_type_decls(&mut out);
     emit_runtime_decls(&mut out);
+    emit_posit_runtime_decls(module, &mut out);
     collect_and_emit_constants(module, &mut out);
 
     let all_funcs = collect_functions(module);
@@ -26,7 +27,7 @@ pub fn emit_llvm(module: &SsaModule) -> String {
         emit_func_def(&mut out, func);
     }
 
-    emit_main(&mut out, &module.entry.name);
+    emit_main(&mut out, &module.entry.name, &module.entry_ty);
     out
 }
 
@@ -79,6 +80,13 @@ fn fmt_lit(lit: &DfLit, out: &mut String) {
             let bits = f.to_bits();
             out.push_str(&format!("0x{:016x}", bits));
         }
+        DfLit::Posit(literal) => {
+            if literal.spec.nbits == 32 {
+                out.push_str(&format!("0x00000000{:08x}", literal.bits as u32));
+            } else {
+                out.push_str(&format!("0x{:016x}", literal.bits));
+            }
+        }
         DfLit::Text(s) => {
             out.push_str("@zutai.text.");
             out.push_str(&str_hash(s));
@@ -124,6 +132,7 @@ fn builtin_ir_op(op: &DfBuiltinOp) -> &'static str {
         DfBuiltinOp::Ge => "icmp sge",
         DfBuiltinOp::And => "and",
         DfBuiltinOp::Or => "or",
+        DfBuiltinOp::Posit { .. } => unreachable!("posit builtins lower through helper calls"),
     }
 }
 
@@ -137,6 +146,15 @@ fn builtin_is_cmp(op: &DfBuiltinOp) -> bool {
             | DfBuiltinOp::Le
             | DfBuiltinOp::Gt
             | DfBuiltinOp::Ge
+            | DfBuiltinOp::Posit {
+                op: DfPositOp::Eq
+                    | DfPositOp::Ne
+                    | DfPositOp::Lt
+                    | DfPositOp::Le
+                    | DfPositOp::Gt
+                    | DfPositOp::Ge,
+                ..
+            }
     )
 }
 
@@ -163,6 +181,7 @@ fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare void @zutai.print_text(i64)\n");
     out.push_str("declare void @zutai.print_bool(i64)\n");
     out.push_str("declare void @zutai.print_float(i64)\n");
+    out.push_str("declare void @zutai.print_posit(i64, i64, i64)\n");
 
     // Record operations
     out.push_str("declare i64 @zutai.record_new(i64)\n");
@@ -192,6 +211,72 @@ fn emit_runtime_decls(out: &mut String) {
 
     // C stdlib
     out.push_str("declare i64 @exit(i64)\n\n");
+}
+fn emit_posit_runtime_decls(module: &SsaModule, out: &mut String) {
+    let mut pairs: Vec<(u8, u8, DfPositOp)> = Vec::new();
+    for func in collect_functions(module) {
+        for block in &func.blocks {
+            for instr in &block.instructions {
+                if let SsaOp::Builtin {
+                    op: DfBuiltinOp::Posit { op, spec },
+                    ..
+                } = instr.op
+                {
+                    let pair = (spec.nbits, spec.es, op);
+                    if !pairs.contains(&pair) {
+                        pairs.push(pair);
+                    }
+                }
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return;
+    }
+
+    out.push_str("; ── Posit runtime helpers ─────────────────────────────────────────\n\n");
+    for (nbits, es, op) in pairs {
+        let ret = if posit_op_is_cmp(op) {
+            "i1"
+        } else if nbits == 32 {
+            "i32"
+        } else {
+            "i64"
+        };
+        let arg = if nbits == 32 { "i32" } else { "i64" };
+        out.push_str(&format!(
+            "declare {ret} @zutai.posit{nbits}e{es}.{}({arg}, {arg})\n",
+            posit_op_name(op)
+        ));
+    }
+    out.push('\n');
+}
+
+fn posit_op_name(op: DfPositOp) -> &'static str {
+    match op {
+        DfPositOp::Add => "add",
+        DfPositOp::Sub => "sub",
+        DfPositOp::Mul => "mul",
+        DfPositOp::Div => "div",
+        DfPositOp::Eq => "eq",
+        DfPositOp::Ne => "ne",
+        DfPositOp::Lt => "lt",
+        DfPositOp::Le => "le",
+        DfPositOp::Gt => "gt",
+        DfPositOp::Ge => "ge",
+    }
+}
+
+fn posit_op_is_cmp(op: DfPositOp) -> bool {
+    matches!(
+        op,
+        DfPositOp::Eq
+            | DfPositOp::Ne
+            | DfPositOp::Lt
+            | DfPositOp::Le
+            | DfPositOp::Gt
+            | DfPositOp::Ge
+    )
 }
 
 fn emit_func_decl(out: &mut String, func: &SsaFunc) {
@@ -394,6 +479,68 @@ fn emit_func_def(out: &mut String, func: &SsaFunc) {
     out.push_str("}\n\n");
 }
 
+fn emit_posit_instr(
+    out: &mut String,
+    dest: &str,
+    op: DfPositOp,
+    spec: (u8, u8),
+    lhs: &SsaValue,
+    rhs: &SsaValue,
+    tmp: &mut u64,
+) {
+    let (nbits, es) = spec;
+    let helper = format!("@zutai.posit{nbits}e{es}.{}", posit_op_name(op));
+    match (nbits, posit_op_is_cmp(op)) {
+        (32, false) => {
+            let lhs32 = alloc_tmp(tmp);
+            let rhs32 = alloc_tmp(tmp);
+            let call = alloc_tmp(tmp);
+            out.push_str(&format!("  {lhs32} = trunc i64 "));
+            fmt_value(lhs, out);
+            out.push_str(" to i32\n");
+            out.push_str(&format!("  {rhs32} = trunc i64 "));
+            fmt_value(rhs, out);
+            out.push_str(" to i32\n");
+            out.push_str(&format!(
+                "  {call} = call i32 {helper}(i32 {lhs32}, i32 {rhs32})\n"
+            ));
+            out.push_str(&format!("  %{dest} = zext i32 {call} to i64\n"));
+        }
+        (32, true) => {
+            let lhs32 = alloc_tmp(tmp);
+            let rhs32 = alloc_tmp(tmp);
+            let call = alloc_tmp(tmp);
+            out.push_str(&format!("  {lhs32} = trunc i64 "));
+            fmt_value(lhs, out);
+            out.push_str(" to i32\n");
+            out.push_str(&format!("  {rhs32} = trunc i64 "));
+            fmt_value(rhs, out);
+            out.push_str(" to i32\n");
+            out.push_str(&format!(
+                "  {call} = call i1 {helper}(i32 {lhs32}, i32 {rhs32})\n"
+            ));
+            out.push_str(&format!("  %{dest} = zext i1 {call} to i64\n"));
+        }
+        (64, false) => {
+            out.push_str(&format!("  %{dest} = call i64 {helper}(i64 "));
+            fmt_value(lhs, out);
+            out.push_str(", i64 ");
+            fmt_value(rhs, out);
+            out.push_str(")\n");
+        }
+        (64, true) => {
+            let call = alloc_tmp(tmp);
+            out.push_str(&format!("  {call} = call i1 {helper}(i64 "));
+            fmt_value(lhs, out);
+            out.push_str(", i64 ");
+            fmt_value(rhs, out);
+            out.push_str(")\n");
+            out.push_str(&format!("  %{dest} = zext i1 {call} to i64\n"));
+        }
+        _ => unreachable!("invalid posit width"),
+    }
+}
+
 fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
     let dest = mangle(&instr.dest);
 
@@ -535,6 +682,13 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         }
 
         // ── Builtin ─────────────────────────────────────────────────────────
+        SsaOp::Builtin {
+            op: DfBuiltinOp::Posit { op, spec },
+            lhs,
+            rhs,
+        } => {
+            emit_posit_instr(out, &dest, *op, (spec.nbits, spec.es), lhs, rhs, tmp);
+        }
         SsaOp::Builtin { op, lhs, rhs } => {
             if builtin_is_cmp(op) {
                 // Comparisons yield i1; zext to i64.
@@ -633,17 +787,55 @@ fn alloc_tmp(tmp: &mut u64) -> String {
 
 // ── @main ─────────────────────────────────────────────────────────────────────
 
-fn emit_main(out: &mut String, entry_name: &str) {
+fn emit_main(out: &mut String, entry_name: &str, entry_ty: &DfTy) {
     let entry = mangle(entry_name);
     out.push_str(&format!(
-        "define i32 @main() {{\n  %result = call i64 @{}()\n  call void @zutai.print_i64(i64 %result)\n  ret i32 0\n}}\n",
+        "define i32 @main() {{\n  %result = call i64 @{}()\n",
         entry
     ));
+    match entry_ty {
+        DfTy::Posit(spec) => out.push_str(&format!(
+            "  call void @zutai.print_posit(i64 %result, i64 {}, i64 {})\n",
+            spec.nbits, spec.es
+        )),
+        _ => out.push_str("  call void @zutai.print_i64(i64 %result)\n"),
+    }
+    out.push_str("  ret i32 0\n}\n");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zutai_syntax::posit::{PositLiteral, PositSpec};
+
+    fn posit_module(spec: PositSpec, op: DfPositOp, entry_ty: DfTy) -> SsaModule {
+        SsaModule {
+            decls: Vec::new(),
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "result".to_string(),
+                        op: SsaOp::Builtin {
+                            op: DfBuiltinOp::Posit { op, spec },
+                            lhs: SsaValue::Lit(DfLit::Posit(PositLiteral {
+                                spec,
+                                bits: 0x4000_0000,
+                            })),
+                            rhs: SsaValue::Lit(DfLit::Posit(PositLiteral {
+                                spec,
+                                bits: 0x4800_0000,
+                            })),
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+                }],
+            },
+            entry_ty,
+        }
+    }
 
     #[test]
     fn coalesce_emits_runtime_helper_call() {
@@ -664,6 +856,7 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
                 }],
             },
+            entry_ty: DfTy::Int,
         };
 
         let llvm = emit_llvm(&module);
@@ -690,10 +883,39 @@ mod tests {
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
                 }],
             },
+            entry_ty: DfTy::Int,
         };
 
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("declare i64 @zutai.record_update"));
         assert!(llvm.contains("call i64 @zutai.record_update"));
+    }
+
+    #[test]
+    fn posit32_builtin_emits_helper_call_with_truncation() {
+        let spec = PositSpec { nbits: 32, es: 3 };
+        let llvm = emit_llvm(&posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)));
+        assert!(llvm.contains("declare i32 @zutai.posit32e3.add(i32, i32)"));
+        assert!(llvm.contains("trunc i64"));
+        assert!(llvm.contains("call i32 @zutai.posit32e3.add"));
+        assert!(llvm.contains("zext i32"));
+    }
+
+    #[test]
+    fn posit64_builtin_emits_helper_call_without_truncation() {
+        let spec = PositSpec { nbits: 64, es: 5 };
+        let llvm = emit_llvm(&posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)));
+        assert!(llvm.contains("declare i64 @zutai.posit64e5.add(i64, i64)"));
+        assert!(llvm.contains("call i64 @zutai.posit64e5.add"));
+        assert!(!llvm.contains("trunc i64"), "{llvm}");
+    }
+
+    #[test]
+    fn posit32_comparison_emits_bool_helper_and_zext() {
+        let spec = PositSpec { nbits: 32, es: 3 };
+        let llvm = emit_llvm(&posit_module(spec, DfPositOp::Lt, DfTy::Bool));
+        assert!(llvm.contains("declare i1 @zutai.posit32e3.lt(i32, i32)"));
+        assert!(llvm.contains("call i1 @zutai.posit32e3.lt"));
+        assert!(llvm.contains("zext i1"));
     }
 }

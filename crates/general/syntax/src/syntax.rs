@@ -87,6 +87,7 @@ pub enum SyntaxKind {
     GtEq = 61,
     Unknown = 62,
     At = 63,
+    PostfixedNumber = 64,
 }
 
 impl SyntaxKind {
@@ -156,6 +157,7 @@ impl SyntaxKind {
             61 => Self::GtEq,
             62 => Self::Unknown,
             63 => Self::At,
+            64 => Self::PostfixedNumber,
             _ => Self::Unknown,
         }
     }
@@ -439,8 +441,7 @@ impl<'a> Lexer<'a> {
         self.consume_while(|ch| ch.is_ascii_alphanumeric() || ch == '_');
         match classify_postfix(&self.src[body_end..self.pos], has_sign, has_frac_or_exp) {
             PostfixCheck::None => body_kind,
-            PostfixCheck::Valid(postfix) if postfix.is_float() => SyntaxKind::Float,
-            PostfixCheck::Valid(_) => SyntaxKind::Integer,
+            PostfixCheck::Valid(_) => SyntaxKind::PostfixedNumber,
             PostfixCheck::Unknown
             | PostfixCheck::IntOnFloatBody
             | PostfixCheck::UnsignedNegative => SyntaxKind::Error,

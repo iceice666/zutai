@@ -47,6 +47,17 @@ fn run_valid_zt_file_prints_result() {
 }
 
 #[test]
+fn run_posit_file_prints_posit_result() {
+    let path = write_tmp("cli_test_posit_run.zt", "1p32 + 2p32\n");
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("3p32"));
+}
+
+#[test]
 fn run_deep_recursion_does_not_overflow_stack() {
     // Regression: the tree-walking interpreter runs on a large worker stack so
     // deep (but finite) recursion completes instead of aborting the process.
@@ -220,6 +231,16 @@ fn repl_evaluates_expression() {
         .assert()
         .success()
         .stdout(predicate::str::contains("2"));
+}
+
+#[test]
+fn repl_evaluates_posit_expression() {
+    let mut cmd = cli();
+    cmd.arg("repl")
+        .write_stdin("1p64 + 2p64\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("3p64"));
 }
 
 #[test]
@@ -467,6 +488,25 @@ fn compile_arithmetic_emits_add() {
         .assert()
         .success()
         .stdout(predicate::str::contains("add i64"));
+}
+
+#[test]
+fn compile_posit32_emits_helper_and_print_runtime() {
+    let path = write_tmp("cli_test_compile_posit32.zt", "1p32e3 + 2p32e3\n");
+    cli().arg("compile").arg(&path).assert().success().stdout(
+        predicate::str::contains("call i32 @zutai.posit32e3.add")
+            .and(predicate::str::contains("trunc i64"))
+            .and(predicate::str::contains("call void @zutai.print_posit")),
+    );
+}
+
+#[test]
+fn compile_posit64_emits_helper_and_print_runtime() {
+    let path = write_tmp("cli_test_compile_posit64.zt", "1p64e5 + 2p64e5\n");
+    cli().arg("compile").arg(&path).assert().success().stdout(
+        predicate::str::contains("call i64 @zutai.posit64e5.add")
+            .and(predicate::str::contains("call void @zutai.print_posit")),
+    );
 }
 
 #[test]

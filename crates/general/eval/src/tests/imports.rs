@@ -107,6 +107,19 @@ fn zt_import_scalar_value() {
 }
 
 #[test]
+fn zt_import_posit_value() {
+    let value = run_import("p := import \"posit_module.zt\"\np");
+    assert!(
+        matches!(&value, Value::Posit(_)),
+        "expected posit, got {value:?}"
+    );
+    assert!(
+        value.to_string().ends_with("p64e5"),
+        "expected p64e5 display, got {value}"
+    );
+}
+
+#[test]
 fn zt_import_record_field() {
     // data_module.zt returns a record whose `doubled` field is 21 * 2.
     assert_eq!(

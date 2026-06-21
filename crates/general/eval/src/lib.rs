@@ -30,6 +30,7 @@ mod analysis_eval;
 mod errors;
 mod force;
 mod gate;
+mod posit;
 mod tlc_entry;
 
 #[cfg(test)]

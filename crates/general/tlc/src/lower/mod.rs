@@ -248,6 +248,10 @@ impl<'thir> Lowerer<'thir> {
             "Bool" => Some(WitnessTargetKey::Bool),
             "Text" => Some(WitnessTargetKey::Str),
             "Atom" => Some(WitnessTargetKey::Atom),
+            name if name.starts_with("Posit") => {
+                let spec = zutai_syntax::posit::parse_posit_type_name(name)?;
+                Some(WitnessTargetKey::Posit(spec))
+            }
             _ => Some(WitnessTargetKey::Structural(key)),
         }
     }
@@ -345,6 +349,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Int => Some("Int".to_string()),
             TypeKind::Float => Some("Float".to_string()),
             TypeKind::FixedNum(fw) => Some(fw.name().to_string()),
+            TypeKind::Posit(spec) => Some(spec.type_name()),
             TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
             TypeKind::Text => Some("Text".to_string()),
             TypeKind::Atom(name) => Some(format!("#{name}")),

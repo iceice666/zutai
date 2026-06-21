@@ -2,6 +2,7 @@ use la_arena::{Arena, Idx};
 use zutai_hir::{BindingId, HirDeclId, HirExprId, HirImportSource, HirPatId};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
+use zutai_syntax::posit::{PositLiteral, PositSpec};
 
 pub type ThirDeclId = Idx<ThirDecl>;
 pub type ThirExprId = Idx<ThirExpr>;
@@ -147,6 +148,7 @@ pub enum ThirExprKind {
     False,
     Integer(i64),
     Float(f64),
+    Posit(PositLiteral),
     String(String),
     Atom(String),
     TaggedValue {
@@ -262,6 +264,7 @@ pub enum ThirPatKind {
     False,
     Integer(i64),
     Float(f64),
+    Posit(PositLiteral),
     String(String),
     Atom(String),
     TaggedValue {
@@ -378,6 +381,7 @@ pub enum TypeKind {
     Int,
     Float,
     FixedNum(FixedWidth),
+    Posit(PositSpec),
     Atom(String),
     True,
     False,

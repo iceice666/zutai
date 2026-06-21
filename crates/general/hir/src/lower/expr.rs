@@ -9,6 +9,7 @@ impl Lowerer {
             ast::Expr::False(_) => HirExprKind::False,
             ast::Expr::Integer { value, postfix, .. } => HirExprKind::Integer(*value, *postfix),
             ast::Expr::Float { value, postfix, .. } => HirExprKind::Float(*value, *postfix),
+            ast::Expr::Posit { literal, .. } => HirExprKind::Posit(*literal),
             ast::Expr::String { value, .. } => HirExprKind::String(value.clone()),
             ast::Expr::Atom { name, .. } => HirExprKind::Atom(name.clone()),
             ast::Expr::TaggedValue { tag, payload, .. } => HirExprKind::TaggedValue {

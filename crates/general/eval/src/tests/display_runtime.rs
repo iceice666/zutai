@@ -44,6 +44,12 @@ fn display_float_negative() {
 }
 
 #[test]
+fn display_posit_values() {
+    assert_eq!(run("2p32").to_string(), "2p32");
+    assert_eq!(run("2p64e5").to_string(), "2p64e5");
+}
+
+#[test]
 fn display_text_plain() {
     assert_eq!(run(r#""hello""#).to_string(), r#""hello""#);
 }
@@ -217,6 +223,12 @@ fn float_gt() {
 fn float_ge() {
     assert_eq!(run("1.0 >= 1.0"), Value::Bool(true));
     assert_eq!(run("0.5 >= 1.0"), Value::Bool(false));
+}
+
+#[test]
+fn posit_comparisons() {
+    assert_eq!(run("2p32 == 2p32"), Value::Bool(true));
+    assert_eq!(run("1p64e5 < 2p64e5"), Value::Bool(true));
 }
 
 #[test]

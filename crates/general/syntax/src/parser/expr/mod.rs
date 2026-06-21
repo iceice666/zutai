@@ -462,6 +462,7 @@ pub(super) fn fix_number_span(expr: Expr, span: Span) -> Expr {
             postfix,
             span,
         },
+        Expr::Posit { literal, .. } => Expr::Posit { literal, span },
         other => other,
     }
 }

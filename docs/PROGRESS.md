@@ -39,7 +39,7 @@ _Last updated: after record update plus Patch/DeepPatch and config overlay prelu
 - `print` remains seeded in the prelude (`zutai_hir::BUILTIN_VALUE_NAMES`) as a compatibility binding, but its type is now `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it as an `io.print` effect: source handlers can intercept it, and the host `run` boundary handles residual `io.print`. `compile`/`dataflow` reject residual effect markers or non-empty function effect rows after TLC lowering.
 - `crates/general/tlc/` (TLC — Type Lambda Calculus) is complete through Phase 5 plus operator-witness parity: TLC IR with kinds, rows (`RVar`), singletons, variants, NbE normalizer, effect rows + eraser, dictionary-passing elaboration for named constraint methods, and witnessed comparison-operator lowering are all functional.
 - `crates/general/dataflow/` (Dataflow Core) and `crates/general/anf/` (ANF) exist and are test-covered.
-- `crates/general/ssa/` (SSA) and `crates/general/codegen/` (LLVM IR codegen) exist and are test-covered. SSA provides basic-block IR with phi nodes; codegen emits LLVM IR text using an `i64` universal value representation for v0.
+- `crates/general/ssa/` (SSA) and `crates/general/codegen/` (LLVM IR codegen) exist and are test-covered. SSA provides basic-block IR with phi nodes; codegen emits LLVM IR text using an `i64` universal value representation for v0, including p32 posits in the low 32 bits and p64 posits in the full 64 bits through external posit helper declarations.
 
 ## V0 Validation Findings (TBD)
 

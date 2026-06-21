@@ -315,6 +315,7 @@ impl<'hir> Lowerer<'hir> {
             | HirExprKind::False
             | HirExprKind::Integer(..)
             | HirExprKind::Float(..)
+            | HirExprKind::Posit(_)
             | HirExprKind::String(_)
             | HirExprKind::Atom(_)
             | HirExprKind::BindingRef(_)

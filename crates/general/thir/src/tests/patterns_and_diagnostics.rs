@@ -20,6 +20,23 @@ classify 1.5
 }
 
 #[test]
+fn posit_pattern_in_function_clause_type_checks() {
+    let file = completed_file(
+        r#"
+classify :: Posit32e3 -> Text
+  = 0p32e3 => "zero";
+  = _ => "nonzero";
+classify 1p32e3
+"#,
+    );
+    assert!(
+        matches!(final_type_kind(&file), TypeKind::Text),
+        "expected Text; got {:?}",
+        final_type_kind(&file)
+    );
+}
+
+#[test]
 fn string_pattern_in_function_clause_type_checks() {
     let file = completed_file(
         r#"

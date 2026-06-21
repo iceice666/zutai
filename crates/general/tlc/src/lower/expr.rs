@@ -28,6 +28,9 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::Float(f) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Float(f)), tlc_ty, span)
             }
+            ThirExprKind::Posit(literal) => {
+                self.alloc_expr(TlcExpr::Lit(Literal::Posit(literal)), tlc_ty, span)
+            }
             ThirExprKind::String(s) => self.alloc_expr(TlcExpr::Lit(Literal::Str(s)), tlc_ty, span),
             ThirExprKind::Atom(s) => self.alloc_expr(TlcExpr::Lit(Literal::Atom(s)), tlc_ty, span),
             ThirExprKind::BindingRef(binding) => {
@@ -341,6 +344,7 @@ impl<'thir> Lowerer<'thir> {
             ThirPatKind::False => TlcPat::Lit(Literal::Bool(false)),
             ThirPatKind::Integer(n) => TlcPat::Lit(Literal::Int(n)),
             ThirPatKind::Float(f) => TlcPat::Lit(Literal::Float(f)),
+            ThirPatKind::Posit(literal) => TlcPat::Lit(Literal::Posit(literal)),
             ThirPatKind::String(s) => TlcPat::Lit(Literal::Str(s)),
             ThirPatKind::Atom(s) => TlcPat::Atom(s),
             ThirPatKind::Tuple(items) => {

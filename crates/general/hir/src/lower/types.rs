@@ -63,6 +63,7 @@ impl Lowerer {
             ast::Pattern::False(_) => HirPatKind::False,
             ast::Pattern::Integer { value, postfix, .. } => HirPatKind::Integer(*value, *postfix),
             ast::Pattern::Float { value, postfix, .. } => HirPatKind::Float(*value, *postfix),
+            ast::Pattern::Posit { literal, .. } => HirPatKind::Posit(*literal),
             ast::Pattern::String { value, .. } => HirPatKind::String(value.clone()),
             ast::Pattern::Atom { name, .. } => HirPatKind::Atom(name.clone()),
             ast::Pattern::TaggedValue { tag, payload, .. } => HirPatKind::TaggedValue {

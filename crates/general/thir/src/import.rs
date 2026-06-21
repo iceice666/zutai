@@ -9,6 +9,7 @@
 
 use crate::ir::FixedWidth;
 use zutai_hir::HirImportSource;
+use zutai_syntax::posit::PositSpec;
 
 /// Key identifying a resolved import within a single file's analysis.
 ///
@@ -28,6 +29,7 @@ pub enum ImportedType {
     Int,
     Float,
     FixedNum(FixedWidth),
+    Posit(PositSpec),
     Text,
     Atom(String),
     List(Box<ImportedType>),

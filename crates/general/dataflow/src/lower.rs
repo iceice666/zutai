@@ -10,8 +10,9 @@ use zutai_tlc::{
 };
 
 use crate::{
-    DataflowGraph, DfArm, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPattern, DfRecordField,
-    DfTupleField, DfTupleNodeItem, DfTuplePatItem, DfTy, DfTyId, DfTyVar, ImportKind, NodeId,
+    DataflowGraph, DfArm, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPattern, DfPositOp,
+    DfRecordField, DfTupleField, DfTupleNodeItem, DfTuplePatItem, DfTy, DfTyId, DfTyVar,
+    ImportKind, NodeId,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ fn lower_lit(lit: &TlcLit) -> Option<DfLit> {
         TlcLit::Bool(b) => Some(DfLit::Bool(*b)),
         TlcLit::Int(n) => Some(DfLit::Int(*n)),
         TlcLit::Float(f) => Some(DfLit::Float(*f)),
+        TlcLit::Posit(literal) => Some(DfLit::Posit(*literal)),
         TlcLit::Str(s) => Some(DfLit::Text(s.clone())),
         TlcLit::Atom(s) => Some(DfLit::Atom(s.clone())),
         TlcLit::Nothing => None,
@@ -49,6 +51,22 @@ fn lower_builtin_op(op: BuiltinOp) -> DfBuiltinOp {
         BuiltinOp::And => DfBuiltinOp::And,
         BuiltinOp::Or => DfBuiltinOp::Or,
         BuiltinOp::Coalesce => unreachable!("Coalesce handled separately"),
+    }
+}
+
+fn lower_posit_op(op: BuiltinOp) -> Option<DfPositOp> {
+    match op {
+        BuiltinOp::Add => Some(DfPositOp::Add),
+        BuiltinOp::Sub => Some(DfPositOp::Sub),
+        BuiltinOp::Mul => Some(DfPositOp::Mul),
+        BuiltinOp::Div => Some(DfPositOp::Div),
+        BuiltinOp::Eq => Some(DfPositOp::Eq),
+        BuiltinOp::Ne => Some(DfPositOp::Ne),
+        BuiltinOp::Lt => Some(DfPositOp::Lt),
+        BuiltinOp::Le => Some(DfPositOp::Le),
+        BuiltinOp::Gt => Some(DfPositOp::Gt),
+        BuiltinOp::Ge => Some(DfPositOp::Ge),
+        BuiltinOp::And | BuiltinOp::Or | BuiltinOp::Coalesce => None,
     }
 }
 
@@ -383,7 +401,9 @@ impl<'m> Lowerer<'m> {
                         span,
                     )
                 } else {
-                    let df_op = lower_builtin_op(op);
+                    let df_op = self
+                        .lower_posit_builtin_op(op, lhs)
+                        .unwrap_or_else(|| lower_builtin_op(op));
                     self.alloc_node(DfNodeKind::Builtin(df_op, lhs_node, rhs_node), df_ty, span)
                 }
             }
@@ -407,6 +427,15 @@ impl<'m> Lowerer<'m> {
                 self.alloc_node(DfNodeKind::Error, self.error_ty, span)
             }
         }
+    }
+
+    fn lower_posit_builtin_op(&self, op: BuiltinOp, lhs: TlcExprId) -> Option<DfBuiltinOp> {
+        let ty = self.module.expr_types.get(&lhs)?;
+        let TlcType::Prim(PrimTy::Posit(spec)) = self.module.type_arena[*ty] else {
+            return None;
+        };
+        let op = lower_posit_op(op)?;
+        Some(DfBuiltinOp::Posit { op, spec })
     }
 
     // ── Match arm lowering ────────────────────────────────────────────────────
@@ -492,6 +521,7 @@ impl<'m> Lowerer<'m> {
                 };
                 self.types.alloc(ty)
             }
+            TlcType::Prim(PrimTy::Posit(spec)) => self.types.alloc(DfTy::Posit(spec)),
             TlcType::Prim(PrimTy::Bool) => self.types.alloc(DfTy::Bool),
             TlcType::Prim(PrimTy::Str) => self.types.alloc(DfTy::Text),
             TlcType::Prim(PrimTy::Atom) => self.types.alloc(DfTy::Atom),
@@ -502,6 +532,9 @@ impl<'m> Lowerer<'m> {
             // Atom singletons (used for union-arm discrimination) lower to the generic
             // Atom primitive — DC's type system has no singleton-Atom variant.
             TlcType::Singleton(TlcLit::Atom(_)) => self.types.alloc(DfTy::Atom),
+            TlcType::Singleton(TlcLit::Posit(literal)) => {
+                self.types.alloc(DfTy::Posit(literal.spec))
+            }
             // Other singletons (Int, Float, Text, Nothing) have no DC type representation.
             TlcType::Singleton(_) => self.types.alloc(DfTy::Error),
 

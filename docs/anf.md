@@ -67,6 +67,8 @@ pat     ::= _                        -- wildcard
 
 **Key ANF invariant:** every argument to a function application, binary operation, match scrutinee, record field, tuple element, list element, and coalesce operand must be an *atom* (variable reference, literal, or global name). Complex sub-expressions are always lifted to a preceding `name = expr` binding.
 
+Posit literals/types are carried from Dataflow Core unchanged inside `DfLit`/`DfTy`. The backend still uses one `i64` slot for every SSA value: p32 posits occupy the low 32 bits, and p64 posits occupy the full 64 bits.
+
 ## DC → ANF lowering
 
 The lowering pass has three stages:
@@ -170,6 +172,7 @@ pub enum AnfDecl {
 pub struct AnfModule {
     pub decls: Vec<AnfDecl>,
     pub root: AnfBody,
+    pub root_ty: DfTy,
 }
 ```
 

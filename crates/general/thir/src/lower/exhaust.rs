@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 
 use zutai_syntax::Span;
+use zutai_syntax::posit::PositLiteral;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
@@ -39,6 +40,7 @@ enum Ctor {
     IntLit(i64),
     /// Float literal compared by bit pattern so `Ctor` can be `Eq + Hash`.
     FloatLit(u64),
+    PositLit(PositLiteral),
     StrLit(String),
     /// The single constructor of a plain tuple or record (a product type).
     Struct,
@@ -351,6 +353,7 @@ impl<'hir> Lowerer<'hir> {
             ThirPatKind::False => DeconPat::nullary(Ctor::Bool(false)),
             ThirPatKind::Integer(value) => DeconPat::nullary(Ctor::IntLit(value)),
             ThirPatKind::Float(value) => DeconPat::nullary(Ctor::FloatLit(value.to_bits())),
+            ThirPatKind::Posit(literal) => DeconPat::nullary(Ctor::PositLit(literal)),
             ThirPatKind::String(value) => DeconPat::nullary(Ctor::StrLit(value)),
             ThirPatKind::Atom(name) => {
                 if name == "none" && matches!(self.ty(col_ty).kind, TypeKind::Optional(_)) {
@@ -642,6 +645,7 @@ fn render_one(pat: &DeconPat) -> String {
             Ctor::Atom(name) => format!("#{name}"),
             Ctor::IntLit(value) => value.to_string(),
             Ctor::FloatLit(bits) => f64::from_bits(*bits).to_string(),
+            Ctor::PositLit(literal) => render_posit_literal(*literal),
             Ctor::StrLit(value) => format!("{value:?}"),
             Ctor::OptNone => "#none".to_string(),
             Ctor::OptSome => format!("#some ({})", render_payload(fields)),
@@ -657,6 +661,18 @@ fn render_one(pat: &DeconPat) -> String {
             Ctor::TaggedTuple(tag) => format!("#{tag} ({})", render_payload(fields)),
             Ctor::Struct => format!("({})", render_payload(fields)),
         },
+    }
+}
+
+fn render_posit_literal(literal: PositLiteral) -> String {
+    if literal.spec.nbits == 32 {
+        format!(
+            "0x{:08x}{}",
+            literal.bits as u32,
+            literal.spec.literal_postfix()
+        )
+    } else {
+        format!("0x{:016x}{}", literal.bits, literal.spec.literal_postfix())
     }
 }
 

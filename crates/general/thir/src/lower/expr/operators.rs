@@ -159,7 +159,10 @@ impl<'hir> Lowerer<'hir> {
 
     pub(super) fn is_numeric_scalar(&mut self, ty: TypeId) -> bool {
         let resolved = self.resolve_alias_for_expr(ty);
-        matches!(self.ty(resolved).kind, TypeKind::Int | TypeKind::Float)
+        matches!(
+            self.ty(resolved).kind,
+            TypeKind::Int | TypeKind::Float | TypeKind::Posit(_)
+        )
     }
 
     pub(super) fn is_ordered_scalar(&mut self, ty: TypeId) -> bool {

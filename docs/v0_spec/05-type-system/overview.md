@@ -20,10 +20,14 @@ u32
 u64
 f32
 f64
+Posit32
+Posit64
+Posit32eN
+Posit64eN
 List
 ```
 
-`Int` and `Float` are the default source-level numeric types. In v0, `Int` aliases `i64` and `Float` aliases `f64`; fixed-width suffixes choose the corresponding fixed-width type directly.
+`Int` and `Float` are the default source-level numeric types. In v0, `Int` aliases `i64` and `Float` aliases `f64`; fixed-width suffixes choose the corresponding fixed-width type directly. `Posit32`, `Posit64`, `Posit32eN`, and `Posit64eN` are experimental implementation-provided scalar types; `Posit32` and `Posit64` use exponent size `e2`, and explicit `eN` forms are valid for `0 <= N < 32` or `0 <= N < 64` respectively.
 
 Implementations may provide additional standard-library types such as:
 

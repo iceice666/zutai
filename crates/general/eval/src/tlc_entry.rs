@@ -169,6 +169,7 @@ fn thir_runtime_target_key(thir_file: &ThirFile, target: zutai_thir::TypeId) -> 
         TypeKind::Text => Some("Text".to_string()),
         TypeKind::Int => Some("Int".to_string()),
         TypeKind::Float => Some("Float".to_string()),
+        TypeKind::Posit(spec) => Some(spec.type_name()),
         TypeKind::Atom(name) => Some(format!("#{name}")),
         _ => None,
     }

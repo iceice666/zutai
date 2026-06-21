@@ -9,9 +9,11 @@ use std::fmt;
 use std::rc::Rc;
 
 use zutai_hir::BindingId;
+use zutai_syntax::posit::PositLiteral;
 use zutai_thir::{ThirClause, TypeId};
 use zutai_tlc::TlcExprId;
 
+use crate::posit::format_posit;
 use crate::{EvalError, env::Env, thunk::Thunk};
 
 /// Index into the module registry held by the evaluator.
@@ -57,6 +59,7 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     Float(f64),
+    Posit(PositLiteral),
     Text(Rc<str>),
     Atom(Rc<str>),
     /// Lazy list — elements are thunks evaluated on demand.
@@ -279,6 +282,7 @@ fn runtime_value_type_name(v: &Value) -> &'static str {
         Value::Bool(_) => "Bool",
         Value::Int(_) => "Int",
         Value::Float(_) => "Float",
+        Value::Posit(_) => "Posit",
         Value::Text(_) => "Text",
         Value::Atom(_) => "Atom",
         Value::List(_) => "List",
@@ -334,6 +338,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Posit(a), Value::Posit(b)) => a == b,
             (Value::Text(a), Value::Text(b)) => a == b,
             (Value::Atom(a), Value::Atom(b)) => a == b,
             (Value::Nothing, Value::Nothing) => true,
@@ -408,6 +413,7 @@ pub fn values_equal(
         (Value::Bool(x), Value::Bool(y)) => Ok(x == y),
         (Value::Int(x), Value::Int(y)) => Ok(x == y),
         (Value::Float(x), Value::Float(y)) => Ok(x == y),
+        (Value::Posit(x), Value::Posit(y)) => Ok(x == y),
         (Value::Text(x), Value::Text(y)) => Ok(x == y),
         (Value::Atom(x), Value::Atom(y)) => Ok(x == y),
         (Value::Nothing, Value::Nothing) => Ok(true),
@@ -531,6 +537,7 @@ impl fmt::Display for Value {
                     write!(f, "{s}.0")
                 }
             }
+            Value::Posit(literal) => write!(f, "{}", format_posit(*literal)),
             Value::Text(s) => {
                 write!(f, "\"")?;
                 for ch in s.chars() {

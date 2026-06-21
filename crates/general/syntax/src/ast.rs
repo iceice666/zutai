@@ -1,4 +1,5 @@
 use crate::numlit::NumberType;
+use crate::posit::PositLiteral;
 use crate::span::Span;
 
 #[derive(Debug, PartialEq)]
@@ -236,6 +237,10 @@ pub enum Expr {
         postfix: Option<NumberType>,
         span: Span,
     },
+    Posit {
+        literal: PositLiteral,
+        span: Span,
+    },
     String {
         value: String,
         span: Span,
@@ -357,6 +362,7 @@ impl Expr {
             Expr::True(s) | Expr::False(s) => *s,
             Expr::Integer { span, .. }
             | Expr::Float { span, .. }
+            | Expr::Posit { span, .. }
             | Expr::String { span, .. }
             | Expr::Atom { span, .. }
             | Expr::TaggedValue { span, .. }
@@ -404,6 +410,10 @@ pub enum Pattern {
         postfix: Option<NumberType>,
         span: Span,
     },
+    Posit {
+        literal: PositLiteral,
+        span: Span,
+    },
     String {
         value: String,
         span: Span,
@@ -434,6 +444,7 @@ impl Pattern {
             Pattern::Ident { span, .. }
             | Pattern::Integer { span, .. }
             | Pattern::Float { span, .. }
+            | Pattern::Posit { span, .. }
             | Pattern::String { span, .. }
             | Pattern::Atom { span, .. }
             | Pattern::TaggedValue { span, .. }

@@ -1,4 +1,5 @@
 use super::*;
+use zutai_syntax::posit::PositSpec;
 
 // ── export_type coverage ──────────────────────────────────────────────────────
 
@@ -17,6 +18,14 @@ fn export_type_int() {
 #[test]
 fn export_type_float() {
     assert!(matches!(export_final("1.5"), ImportedType::Float));
+}
+
+#[test]
+fn export_type_posit() {
+    assert!(matches!(
+        export_final("1p64e5"),
+        ImportedType::Posit(spec) if spec == (PositSpec { nbits: 64, es: 5 })
+    ));
 }
 
 #[test]

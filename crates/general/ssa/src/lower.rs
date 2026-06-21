@@ -610,7 +610,11 @@ pub fn lower_anf(module: &AnfModule) -> SsaModule {
         decls.push(SsaDecl::Func(lf));
     }
 
-    SsaModule { decls, entry }
+    SsaModule {
+        decls,
+        entry,
+        entry_ty: module.root_ty.clone(),
+    }
 }
 
 /// Lower a top-level `let` declaration into an SSA function.

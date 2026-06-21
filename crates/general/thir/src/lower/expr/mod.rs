@@ -97,6 +97,15 @@ impl<'hir> Lowerer<'hir> {
                     span: expr.span,
                 })
             }
+            HirExprKind::Posit(literal) => {
+                let ty = self.posit_type(literal.spec, expr.span);
+                self.alloc_expr(ThirExpr {
+                    source: id,
+                    ty,
+                    kind: ThirExprKind::Posit(*literal),
+                    span: expr.span,
+                })
+            }
             HirExprKind::String(value) => {
                 let ty = self.text_type(expr.span);
                 self.alloc_expr(ThirExpr {

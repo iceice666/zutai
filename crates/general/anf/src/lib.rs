@@ -6,7 +6,7 @@
 //!
 //! See `docs/anf.md` for the design specification.
 
-pub use zutai_dataflow::{DataflowGraph, DfBuiltinOp, DfLit, DfTyId, DfTyVar};
+pub use zutai_dataflow::{DataflowGraph, DfBuiltinOp, DfLit, DfPositOp, DfTy, DfTyId, DfTyVar};
 
 mod lower;
 mod scc;
@@ -149,6 +149,7 @@ pub enum AnfDecl {
 pub struct AnfModule {
     pub decls: Vec<AnfDecl>,
     pub root: AnfBody,
+    pub root_ty: DfTy,
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────

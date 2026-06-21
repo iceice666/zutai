@@ -8,6 +8,7 @@ use super::*;
 pub(crate) enum WitnessTargetKey {
     Int,
     Float,
+    Posit(zutai_syntax::posit::PositSpec),
     Bool,
     Str,
     Atom,
@@ -59,6 +60,7 @@ impl<'thir> Lowerer<'thir> {
         match &self.thir.type_arena[ty.0 as usize].kind {
             TypeKind::Int => Some(WitnessTargetKey::Int),
             TypeKind::Float => Some(WitnessTargetKey::Float),
+            TypeKind::Posit(spec) => Some(WitnessTargetKey::Posit(*spec)),
             TypeKind::Bool | TypeKind::True | TypeKind::False => Some(WitnessTargetKey::Bool),
             TypeKind::Text => Some(WitnessTargetKey::Str),
             TypeKind::Atom(_) => Some(WitnessTargetKey::Atom),

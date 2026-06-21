@@ -140,6 +140,23 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
                 writeln!(f, "{prefix}Float({value})")
             }
         }
+        Expr::Posit { literal, .. } => {
+            if literal.spec.nbits == 32 {
+                writeln!(
+                    f,
+                    "{prefix}Posit({}, 0x{:08x})",
+                    literal.spec.type_name(),
+                    literal.bits as u32
+                )
+            } else {
+                writeln!(
+                    f,
+                    "{prefix}Posit({}, 0x{:016x})",
+                    literal.spec.type_name(),
+                    literal.bits
+                )
+            }
+        }
         Expr::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Expr::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
         Expr::TaggedValue { tag, payload, .. } => {
@@ -413,6 +430,23 @@ fn write_pattern(
                 writeln!(f, "{prefix}Float({value}{})", postfix.name())
             } else {
                 writeln!(f, "{prefix}Float({value})")
+            }
+        }
+        Pattern::Posit { literal, .. } => {
+            if literal.spec.nbits == 32 {
+                writeln!(
+                    f,
+                    "{prefix}Posit({}, 0x{:08x})",
+                    literal.spec.type_name(),
+                    literal.bits as u32
+                )
+            } else {
+                writeln!(
+                    f,
+                    "{prefix}Posit({}, 0x{:016x})",
+                    literal.spec.type_name(),
+                    literal.bits
+                )
             }
         }
         Pattern::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),

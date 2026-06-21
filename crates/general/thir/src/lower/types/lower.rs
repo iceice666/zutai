@@ -1,6 +1,7 @@
 use super::*;
 use crate::ir::FixedWidth;
 use zutai_hir::NumberType;
+use zutai_syntax::posit::{PositSpec, parse_posit_type_name};
 
 impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn lower_type(&mut self, id: HirTypeId) -> TypeId {
@@ -552,6 +553,10 @@ impl<'hir> Lowerer<'hir> {
         name: &str,
         span: Span,
     ) -> Option<TypeId> {
+        if let Some(spec) = parse_posit_type_name(name) {
+            return Some(self.posit_type(spec, span));
+        }
+
         let kind = match name {
             "Type" => TypeKind::Type,
             "Text" => TypeKind::Text,
@@ -599,6 +604,13 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    pub(in crate::lower) fn posit_type(&mut self, spec: PositSpec, span: Span) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Posit(spec),
+            span,
+        })
+    }
+
     pub(in crate::lower) fn fixed_num_type(&mut self, fw: FixedWidth, span: Span) -> TypeId {
         self.alloc_type(Type {
             kind: TypeKind::FixedNum(fw),
@@ -633,6 +645,7 @@ impl<'hir> Lowerer<'hir> {
             }
             Some(NumberType::F32) => self.fixed_num_type(FixedWidth::F32, span),
             Some(NumberType::F64) => self.float_type(span),
+            Some(NumberType::Posit(spec)) => self.posit_type(spec, span),
         }
     }
 
@@ -652,6 +665,7 @@ impl<'hir> Lowerer<'hir> {
             Some(NumberType::U16) => self.fixed_num_type(FixedWidth::U16, span),
             Some(NumberType::U32) => self.fixed_num_type(FixedWidth::U32, span),
             Some(NumberType::U64) => self.fixed_num_type(FixedWidth::U64, span),
+            Some(NumberType::Posit(spec)) => self.posit_type(spec, span),
         }
     }
 

@@ -112,6 +112,15 @@ fn display_expr_float() {
 }
 
 #[test]
+fn display_expr_posit() {
+    let p32 = parse_str("1.5p32e3").to_string();
+    assert!(p32.contains("Posit(Posit32e3,"), "p32e3 posit literal");
+
+    let p64 = parse_str("1.5p64e5").to_string();
+    assert!(p64.contains("Posit(Posit64e5,"), "p64e5 posit literal");
+}
+
+#[test]
 fn display_expr_string() {
     let s = parse_str("\"hello\"").to_string();
     assert!(s.contains("Str(\"hello\")"), "string literal");
@@ -309,6 +318,12 @@ fn display_pattern_integer() {
 fn display_pattern_float() {
     let s = parse_str("match 1.5 { | 1.5 => true; | _ => false; }").to_string();
     assert!(s.contains("pat: Float("), "float pattern");
+}
+
+#[test]
+fn display_pattern_posit() {
+    let s = parse_str("match 1p32 { | 1p32 => true; | _ => false; }").to_string();
+    assert!(s.contains("pat: Posit("), "posit pattern");
 }
 
 #[test]

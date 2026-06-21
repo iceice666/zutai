@@ -279,17 +279,54 @@ fn tokenize_scientific_notation() {
 fn tokenize_numeric_type_postfixes() {
     let tokens = tokenize("255u8");
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, SyntaxKind::Integer);
+    assert_eq!(tokens[0].kind, SyntaxKind::PostfixedNumber);
     assert_eq!(tokens[0].text, "255u8");
 
     let tokens = tokenize("1.5f32");
     assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, SyntaxKind::Float);
+    assert_eq!(tokens[0].kind, SyntaxKind::PostfixedNumber);
     assert_eq!(tokens[0].text, "1.5f32");
 
     let tokens = tokenize("1foo");
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, SyntaxKind::Error);
+}
+
+#[test]
+fn tokenize_posit_type_postfixes() {
+    for src in ["1p32", "1p64", "1.5e-2p32e3"] {
+        let tokens = tokenize(src);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind, SyntaxKind::PostfixedNumber, "{src}");
+        assert_eq!(tokens[0].text, src);
+    }
+}
+
+#[test]
+fn posit_type_postfix_diagnostics() {
+    for src in ["1p32", "1p64", "1.5e-2p32e3", "-1p32"] {
+        let kinds = parse_kinds(src);
+        assert!(
+            kinds.is_empty(),
+            "unexpected diagnostics for {src:?}: {kinds:?}"
+        );
+    }
+
+    for src in ["1p32e32", "1p64e64", "1p32e01", "1p16"] {
+        assert!(parse(src).has_errors(), "expected parse error for {src:?}");
+    }
+}
+
+#[test]
+fn numeric_field_access_is_not_a_postfix() {
+    assert!(
+        !parse("1.foo").has_errors(),
+        "field access after an integer should parse"
+    );
+    assert!(
+        parse("1.0foo").has_errors(),
+        "float-looking unknown postfix should be rejected"
+    );
 }
 
 #[test]

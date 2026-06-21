@@ -8,6 +8,7 @@ use std::cell::Cell;
 
 use crate::ast::{Expr, ImportSource};
 use crate::numlit::{NumberType, PostfixCheck, classify_postfix};
+use crate::posit::round_f64_to_posit_literal;
 use crate::span::Span;
 
 thread_local! {
@@ -357,6 +358,16 @@ pub fn parse_number_value(input: &mut &str) -> Result<Expr> {
         take_while(0.., |c: char| c.is_ascii_alphanumeric() || c == '_').parse_next(input)?;
 
     match classify_postfix(postfix_run, has_sign, has_frac_or_exp) {
+        PostfixCheck::Valid(NumberType::Posit(spec)) => match literal.parse::<f64>() {
+            Ok(value) => Ok(Expr::Posit {
+                literal: round_f64_to_posit_literal(spec, value),
+                span,
+            }),
+            Err(_) => {
+                *input = start;
+                fail.parse_next(input)
+            }
+        },
         PostfixCheck::Valid(postfix) if postfix.is_float() => match literal.parse::<f64>() {
             Ok(value) => {
                 let value = if matches!(postfix, NumberType::F32) {

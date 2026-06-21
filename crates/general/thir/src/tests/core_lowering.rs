@@ -1,4 +1,5 @@
 use super::*;
+use zutai_syntax::posit::PositSpec;
 
 #[test]
 fn inferred_integer_binding_completes_thir() {
@@ -32,6 +33,47 @@ fn numeric_postfix_literals_have_fixed_types() {
         final_type_kind(&file),
         TypeKind::FixedNum(FixedWidth::F32)
     ));
+}
+
+#[test]
+fn posit_literals_have_posit_types() {
+    let file = completed_file("x :: Posit32 = 1.5p32\nx");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::Posit(spec) if *spec == (PositSpec { nbits: 32, es: 2 })
+    ));
+
+    let file = completed_file("x :: Posit64e5 = 1.5p64e5\nx");
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::Posit(spec) if *spec == (PositSpec { nbits: 64, es: 5 })
+    ));
+}
+
+#[test]
+fn posit_annotations_require_matching_literals() {
+    let lowered = lower("x :: Float = 1p32\nx");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Float" && found == "Posit32"
+        )
+    }));
+}
+
+#[test]
+fn posit_arithmetic_requires_matching_posit_types() {
+    let lowered = lower("1p32 + 2p32e3");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Posit32" && found == "Posit32e3"
+        )
+    }));
 }
 
 #[test]

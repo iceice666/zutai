@@ -577,6 +577,7 @@ impl<'thir> Lowerer<'thir> {
                 | TypeKind::Text
                 | TypeKind::Int
                 | TypeKind::Float
+                | TypeKind::Posit(_)
                 | TypeKind::Atom(_)
         )
     }

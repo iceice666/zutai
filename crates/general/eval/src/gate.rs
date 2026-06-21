@@ -343,6 +343,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
             | ThirExprKind::False
             | ThirExprKind::Integer(_)
             | ThirExprKind::Float(_)
+            | ThirExprKind::Posit(_)
             | ThirExprKind::String(_)
             | ThirExprKind::Atom(_)
             | ThirExprKind::BindingRef(_)

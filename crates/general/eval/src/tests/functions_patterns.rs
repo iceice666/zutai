@@ -426,6 +426,28 @@ classify 2.0
     assert_eq!(run(src), Value::Text("other".into()));
 }
 
+#[test]
+fn match_posit_pattern_in_function_clause() {
+    let src = "
+classify :: Posit32e3 -> Text
+  = 0p32e3 => \"zero\";
+  = _ => \"other\";
+classify 0p32e3
+";
+    assert_eq!(run(src), Value::Text("zero".into()));
+}
+
+#[test]
+fn match_posit_pattern_fallthrough() {
+    let src = "
+classify :: Posit32e3 -> Text
+  = 0p32e3 => \"zero\";
+  = _ => \"other\";
+classify 1p32e3
+";
+    assert_eq!(run(src), Value::Text("other".into()));
+}
+
 // ─── match_pattern: String literal patterns ───────────────────────────────────
 
 #[test]

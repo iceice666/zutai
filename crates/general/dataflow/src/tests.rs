@@ -68,6 +68,23 @@ fn string_literal_produces_text_lit_node() {
     assert!(has_lit, "expected Lit(Text(...)) node");
 }
 
+#[test]
+fn posit_literal_produces_posit_lit_and_type() {
+    let g = dc_of("1p64e5");
+    let has_lit = g.nodes.iter().any(|(_, n)| {
+        matches!(
+            &n.kind,
+            DfNodeKind::Lit(DfLit::Posit(lit))
+                if lit.spec.nbits == 64 && lit.spec.es == 5
+        )
+    });
+    assert!(has_lit, "expected Lit(Posit64e5) node");
+    assert!(
+        matches!(g.types[g.nodes[g.root].ty], DfTy::Posit(spec) if spec.nbits == 64 && spec.es == 5),
+        "expected root type DfTy::Posit(Posit64e5)"
+    );
+}
+
 // ── Global declarations ───────────────────────────────────────────────────────
 
 #[test]

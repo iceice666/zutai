@@ -34,6 +34,7 @@ pub(super) fn type_key_subst(
         TypeKind::Text => "Text".into(),
         TypeKind::Float => "Float".into(),
         TypeKind::FixedNum(fw) => fw.name().into(),
+        TypeKind::Posit(spec) => spec.type_name(),
         TypeKind::Type => "Type".into(),
         TypeKind::True => "true".into(),
         TypeKind::False => "false".into(),

@@ -5,7 +5,7 @@
 //! basic blocks with explicit terminators. Phi nodes merge values at join
 //! points (e.g. after match arms or conditional branches).
 
-pub use zutai_anf::{DfBuiltinOp, DfLit, DfTyId, DfTyVar};
+pub use zutai_anf::{DfBuiltinOp, DfLit, DfPositOp, DfTy, DfTyId, DfTyVar};
 
 mod lower;
 
@@ -148,6 +148,7 @@ pub struct SsaModule {
     pub decls: Vec<SsaDecl>,
     /// The module's entry-point function (evaluates the root expression).
     pub entry: SsaFunc,
+    pub entry_ty: DfTy,
 }
 
 // ── Public entry point ──────────────────────────────────────────────────────────

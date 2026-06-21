@@ -1,4 +1,5 @@
 use super::*;
+use crate::posit::{posit_add, posit_cmp, posit_div, posit_mul, posit_sub};
 
 impl<'a> TlcEvaluator<'a> {
     pub(super) fn eval_builtin_expr<'eval>(
@@ -143,6 +144,7 @@ pub fn eval_literal(lit: &Literal) -> Value {
     match lit {
         Literal::Int(n) => Value::Int(*n),
         Literal::Float(f) => Value::Float(*f),
+        Literal::Posit(literal) => Value::Posit(*literal),
         Literal::Bool(b) => Value::Bool(*b),
         Literal::Str(s) => Value::Text(Rc::from(s.as_str())),
         Literal::Atom(s) => Value::Atom(Rc::from(s.as_str())),
@@ -154,6 +156,7 @@ pub(super) fn lit_matches(lit: &Literal, val: &Value) -> bool {
     match (lit, val) {
         (Literal::Int(n), Value::Int(m)) => n == m,
         (Literal::Float(a), Value::Float(b)) => a == b,
+        (Literal::Posit(a), Value::Posit(b)) => a == b,
         (Literal::Bool(a), Value::Bool(b)) => a == b,
         (Literal::Str(a), Value::Text(b)) => a.as_str() == b.as_ref(),
         (Literal::Atom(a), Value::Atom(b)) => a.as_str() == b.as_ref(),
@@ -167,6 +170,7 @@ pub(super) fn value_type_name(v: &Value) -> &'static str {
         Value::Bool(_) => "Bool",
         Value::Int(_) => "Int",
         Value::Float(_) => "Float",
+        Value::Posit(_) => "Posit",
         Value::Text(_) => "Text",
         Value::Atom(_) => "Atom",
         Value::List(_) => "List",
@@ -251,6 +255,7 @@ pub(super) fn compare_op(
             // IEEE 754: NaN is unordered, so `<`/`<=`/`>`/`>=` are all false.
             None => return Ok(Value::Bool(false)),
         },
+        (Value::Posit(a), Value::Posit(b)) => posit_cmp(*a, *b)?,
         (Value::Text(a), Value::Text(b)) => a.cmp(b),
         _ => {
             return Err(EvalError::TypeMismatch {
@@ -276,9 +281,19 @@ pub(super) fn int_float_op(
             .map(Value::Int)
             .ok_or(EvalError::IntOverflow(name)),
         (Value::Float(a), Value::Float(b)) => Ok(Value::Float(float_op(a, b))),
+        (Value::Posit(a), Value::Posit(b)) => {
+            let value = match name {
+                "+" => posit_add(a, b)?,
+                "-" => posit_sub(a, b)?,
+                "*" => posit_mul(a, b)?,
+                "/" | "div" => posit_div(a, b)?,
+                _ => return Err(EvalError::Internal("unknown posit arithmetic operator")),
+            };
+            Ok(Value::Posit(value))
+        }
         (l, r) => Err(EvalError::TypeMismatch {
             expected: "numeric",
-            found: if !matches!(l, Value::Int(_) | Value::Float(_)) {
+            found: if !matches!(l, Value::Int(_) | Value::Float(_) | Value::Posit(_)) {
                 value_type_name(&l)
             } else {
                 value_type_name(&r)

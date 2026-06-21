@@ -71,6 +71,7 @@ impl<'a> Evaluator<'a> {
             ThirExprKind::False => Ok(Value::Bool(false)),
             ThirExprKind::Integer(n) => Ok(Value::Int(*n)),
             ThirExprKind::Float(f) => Ok(Value::Float(*f)),
+            ThirExprKind::Posit(literal) => Ok(Value::Posit(*literal)),
             ThirExprKind::String(s) => Ok(Value::Text(Rc::from(s.as_str()))),
             ThirExprKind::Atom(a) => Ok(Value::Atom(Rc::from(a.as_str()))),
             ThirExprKind::TypeValue(ty) => Ok(Value::TypeValue(RuntimeType::new(

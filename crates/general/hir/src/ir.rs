@@ -2,6 +2,7 @@ use la_arena::{Arena, Idx};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 use zutai_syntax::numlit::NumberType;
+use zutai_syntax::posit::PositLiteral;
 
 pub type HirDeclId = Idx<HirDecl>;
 pub type HirExprId = Idx<HirExpr>;
@@ -145,6 +146,7 @@ pub enum HirExprKind {
     False,
     Integer(i64, Option<NumberType>),
     Float(f64, Option<NumberType>),
+    Posit(PositLiteral),
     String(String),
     Atom(String),
     TaggedValue {
@@ -258,6 +260,7 @@ pub enum HirPatKind {
     False,
     Integer(i64, Option<NumberType>),
     Float(f64, Option<NumberType>),
+    Posit(PositLiteral),
     String(String),
     Atom(String),
     TaggedValue {

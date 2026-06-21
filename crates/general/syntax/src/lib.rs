@@ -9,6 +9,7 @@ pub mod error;
 pub mod line_index;
 pub mod numlit;
 pub mod parser;
+pub mod posit;
 pub mod span;
 pub mod syntax;
 

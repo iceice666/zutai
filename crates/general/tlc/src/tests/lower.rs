@@ -2,6 +2,7 @@
 
 use super::tlc_of;
 use crate::*;
+use zutai_syntax::posit::PositSpec;
 use zutai_thir::FixedWidth;
 
 #[test]
@@ -35,6 +36,28 @@ fn fixed_width_literal_lowers_to_prim_fixed_num_type() {
         .iter()
         .any(|(_, e)| matches!(e, TlcExpr::Lit(Literal::Int(255))));
     assert!(has_lit, "expected Int literal payload for u8 literal");
+}
+
+#[test]
+fn posit_literal_lowers_to_prim_posit_type() {
+    let m = tlc_of("p :: Posit32e3 = 1.5p32e3\np");
+    let has_posit_ty = m.type_arena.iter().any(|(_, ty)| {
+        matches!(
+            ty,
+            TlcType::Prim(PrimTy::Posit(spec))
+                if *spec == (PositSpec { nbits: 32, es: 3 })
+        )
+    });
+    assert!(has_posit_ty, "expected Prim(Posit32e3) for posit type");
+
+    let has_posit_lit = m.expr_arena.iter().any(|(_, e)| {
+        matches!(
+            e,
+            TlcExpr::Lit(Literal::Posit(lit))
+                if lit.spec == (PositSpec { nbits: 32, es: 3 })
+        )
+    });
+    assert!(has_posit_lit, "expected Lit(Posit32e3) for posit literal");
 }
 
 #[test]
@@ -157,6 +180,33 @@ classify 1.0"#,
         }
     });
     assert!(has_float_pat, "expected Lit(Float) pattern in Case alts");
+}
+
+#[test]
+fn posit_pattern_lowers_to_lit_posit_pat() {
+    let m = tlc_of(
+        r#"classify :: Posit32e3 -> Text
+  = 0p32e3 => "zero";
+  = _ => "other";
+classify 1p32e3"#,
+    );
+    let has_posit_pat = m.expr_arena.iter().any(|(_, e)| {
+        if let TlcExpr::Case(_, alts) = e {
+            alts.iter().any(|a| {
+                matches!(
+                    &a.pat,
+                    TlcPat::Lit(Literal::Posit(lit))
+                        if lit.spec == (PositSpec { nbits: 32, es: 3 })
+                )
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_posit_pat,
+        "expected Lit(Posit32e3) pattern in Case alts"
+    );
 }
 
 #[test]

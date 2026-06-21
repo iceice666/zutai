@@ -364,6 +364,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
 
 [[package]]
+name = "fast-posit"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb8b52171f566aca9326c7e4006d5f87a3b4f4963c27043beeb256bfcff3edd8"
+
+[[package]]
 name = "fd-lock"
 version = "4.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1311,6 +1317,7 @@ name = "zutai-codegen"
 version = "0.1.0"
 dependencies = [
  "zutai-ssa",
+ "zutai-syntax",
 ]
 
 [[package]]
@@ -1329,6 +1336,7 @@ dependencies = [
 name = "zutai-eval"
 version = "0.1.0"
 dependencies = [
+ "fast-posit",
  "thiserror",
  "zutai-hir",
  "zutai-im",
@@ -1403,6 +1411,7 @@ dependencies = [
 name = "zutai-syntax"
 version = "0.1.0"
 dependencies = [
+ "fast-posit",
  "rowan",
  "rustc-hash 2.1.2",
  "winnow",

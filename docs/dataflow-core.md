@@ -50,8 +50,8 @@ DfNodeKind:
 
   -- Leaves --
   Lit(Lit)
-    A literal constant: Bool, Int, Float, Text, or Atom.
-    Lit = Bool(bool) | Int(i64) | Float(f64) | Text(String) | Atom(Symbol)
+    A literal constant: Bool, Int, Float, Posit, Text, or Atom.
+    Lit = Bool(bool) | Int(i64) | Float(f64) | Posit { nbits: u8, es: u8, bits: u64 } | Text(String) | Atom(Symbol)
 
   Bind
     A binding site. Introduced by Lambda (parameter) and by match-arm Bind patterns.
@@ -149,8 +149,9 @@ DC types are copied from THIR's type arena and extended with type-level lambdas:
 ```
 TyKind:
   -- Primitives --
-  Bool | Int | Float | Text | Atom(Symbol)
+  Bool | Int | Float | Posit(nbits: u8, es: u8) | Text | Atom(Symbol)
   True | False          -- singleton types for union arm discrimination
+
 
   -- Composite --
   List(TyId)
@@ -170,6 +171,8 @@ TyKind:
   Type                             -- the type of type-valued expressions
   Error                            -- error sentinel
 ```
+
+Posit values use the backend's universal `i64` value representation: p32 occupies the low 32 bits, and p64 uses all 64 bits. Arithmetic and comparison operations carry `(nbits, es)` metadata so LLVM can call the matching external helper.
 
 Type variables in `TyVar` are named (carrying the `BindingId` from THIR) rather than De Bruijn indexed, to preserve readability in error messages and debug output.
 

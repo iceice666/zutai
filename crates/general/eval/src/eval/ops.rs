@@ -1,10 +1,12 @@
 use super::*;
+use crate::posit::{posit_add, posit_cmp, posit_div, posit_mul, posit_sub};
 
 pub(super) fn value_type_name(v: &Value) -> &'static str {
     match v {
         Value::Bool(_) => "Bool",
         Value::Int(_) => "Int",
         Value::Float(_) => "Float",
+        Value::Posit(_) => "Posit",
         Value::Text(_) => "Text",
         Value::Atom(_) => "Atom",
         Value::List(_) => "List",
@@ -34,9 +36,19 @@ pub(super) fn numeric_binop(
             .map(Value::Int)
             .ok_or(EvalError::IntOverflow(op_name)),
         (Value::Float(a), Value::Float(b)) => Ok(Value::Float(float_op(a, b))),
+        (Value::Posit(a), Value::Posit(b)) => {
+            let value = match op_name {
+                "+" => posit_add(a, b)?,
+                "-" => posit_sub(a, b)?,
+                "*" => posit_mul(a, b)?,
+                "/" => posit_div(a, b)?,
+                _ => return Err(EvalError::Internal("unknown posit arithmetic operator")),
+            };
+            Ok(Value::Posit(value))
+        }
         (a, b) => Err(EvalError::TypeMismatch {
-            expected: "Int or Float",
-            found: if matches!(a, Value::Int(_) | Value::Float(_)) {
+            expected: "Int, Float, or Posit",
+            found: if matches!(a, Value::Int(_) | Value::Float(_) | Value::Posit(_)) {
                 value_type_name(&b)
             } else {
                 value_type_name(&a)
@@ -59,10 +71,11 @@ pub(super) fn cmp_op(
             // IEEE 754: NaN is unordered, so `<`/`<=`/`>`/`>=` are all false.
             None => return Ok(Value::Bool(false)),
         },
+        (Value::Posit(a), Value::Posit(b)) => posit_cmp(*a, *b)?,
         (Value::Text(a), Value::Text(b)) => a.cmp(b),
         _ => {
             return Err(EvalError::TypeMismatch {
-                expected: "Int, Float, or Text",
+                expected: "Int, Float, Posit, or Text",
                 found: value_type_name(&lv),
             });
         }

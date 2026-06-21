@@ -1,3 +1,5 @@
+use crate::posit::{PositSpec, parse_posit_number_type_postfix};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NumberType {
     I8,
@@ -10,6 +12,7 @@ pub enum NumberType {
     U64,
     F32,
     F64,
+    Posit(PositSpec),
 }
 
 impl NumberType {
@@ -25,27 +28,35 @@ impl NumberType {
             "u64" => Some(Self::U64),
             "f32" => Some(Self::F32),
             "f64" => Some(Self::F64),
-            _ => None,
+            _ => {
+                let (spec, consumed) = parse_posit_number_type_postfix(run)?;
+                (consumed == run.len()).then_some(Self::Posit(spec))
+            }
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub fn name(self) -> String {
         match self {
-            Self::I8 => "i8",
-            Self::I16 => "i16",
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::U8 => "u8",
-            Self::U16 => "u16",
-            Self::U32 => "u32",
-            Self::U64 => "u64",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
+            Self::I8 => "i8".to_string(),
+            Self::I16 => "i16".to_string(),
+            Self::I32 => "i32".to_string(),
+            Self::I64 => "i64".to_string(),
+            Self::U8 => "u8".to_string(),
+            Self::U16 => "u16".to_string(),
+            Self::U32 => "u32".to_string(),
+            Self::U64 => "u64".to_string(),
+            Self::F32 => "f32".to_string(),
+            Self::F64 => "f64".to_string(),
+            Self::Posit(spec) => spec.literal_postfix(),
         }
     }
 
     pub fn is_float(self) -> bool {
         matches!(self, Self::F32 | Self::F64)
+    }
+
+    pub fn is_posit(self) -> bool {
+        matches!(self, Self::Posit(_))
     }
 
     pub fn is_unsigned(self) -> bool {
@@ -73,7 +84,7 @@ pub fn classify_postfix(run: &str, has_sign: bool, has_frac_or_exp: bool) -> Pos
 
     if postfix.is_unsigned() && has_sign {
         PostfixCheck::UnsignedNegative
-    } else if !postfix.is_float() && has_frac_or_exp {
+    } else if !postfix.is_float() && !postfix.is_posit() && has_frac_or_exp {
         PostfixCheck::IntOnFloatBody
     } else {
         PostfixCheck::Valid(postfix)

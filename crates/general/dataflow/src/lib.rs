@@ -10,6 +10,7 @@
 use indexmap::IndexMap;
 use la_arena::{Arena, Idx};
 use zutai_syntax::Span;
+use zutai_syntax::posit::{PositLiteral, PositSpec};
 
 mod lower;
 mod validate;
@@ -38,6 +39,7 @@ pub enum DfLit {
     Bool(bool),
     Int(i64),
     Float(f64),
+    Posit(PositLiteral),
     Text(String),
     Atom(String),
 }
@@ -53,6 +55,20 @@ pub enum ImportKind {
 
 // ── Builtin binary ops ────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DfPositOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DfBuiltinOp {
     Add,
@@ -67,6 +83,7 @@ pub enum DfBuiltinOp {
     Ge,
     And,
     Or,
+    Posit { op: DfPositOp, spec: PositSpec },
 }
 
 // ── Node kinds ────────────────────────────────────────────────────────────────
@@ -181,6 +198,7 @@ pub enum DfTy {
     // Primitives
     Int,
     Float,
+    Posit(PositSpec),
     Bool,
     Text,
     Atom,

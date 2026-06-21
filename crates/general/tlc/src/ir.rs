@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use la_arena::{Arena, Idx};
 use zutai_hir::{BindingId, HirImportSource};
 use zutai_syntax::Span;
+use zutai_syntax::posit::{PositLiteral, PositSpec};
 
 // ── Arena IDs ────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,7 @@ pub enum PrimTy {
     Int,
     Float,
     FixedNum(zutai_thir::FixedWidth),
+    Posit(PositSpec),
     Bool,
     Str,
     /// Kept for the unqualified `Atom` primitive type (not a singleton).
@@ -292,6 +294,7 @@ pub enum TlcTupleItem {
 pub enum Literal {
     Int(i64),
     Float(f64),
+    Posit(PositLiteral),
     Bool(bool),
     Str(String),
     Atom(String),

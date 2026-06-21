@@ -54,6 +54,14 @@ fn float_add() {
     assert_eq!(run("1.0 + 2.0"), Value::Float(3.0));
 }
 
+#[test]
+fn posit_arithmetic_preserves_posit_format() {
+    assert_eq!(run("1p32 + 2p32").to_string(), "3p32");
+    assert_eq!(run("1p64 + 2p64").to_string(), "3p64");
+    assert_eq!(run("1p32e3 + 2p32e3").to_string(), "3p32e3");
+    assert_eq!(run("4p64e5 / 2p64e5").to_string(), "2p64e5");
+}
+
 // ─── comparison ───────────────────────────────────────────────────────────────
 
 #[test]

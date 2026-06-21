@@ -315,6 +315,7 @@ NumberTypePostfix
   ::= "i8" | "i16" | "i32" | "i64"
    | "u8" | "u16" | "u32" | "u64"
    | "f32" | "f64"
+   | "p32" | "p64" | "p32e" digit+ | "p64e" digit+
 
 String
   ::= '"' string-fragment* '"'
