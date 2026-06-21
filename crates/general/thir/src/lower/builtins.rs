@@ -61,14 +61,14 @@ impl<'hir> Lowerer<'hir> {
         let patch = self.patch_type(target, deep, span);
         let tail = self.alloc_type(Type {
             kind: TypeKind::Function {
-                from: patch,
+                from: target,
                 to: target,
             },
             span,
         });
         self.alloc_type(Type {
             kind: TypeKind::Function {
-                from: target,
+                from: patch,
                 to: tail,
             },
             span,

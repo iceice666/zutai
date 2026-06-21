@@ -37,7 +37,7 @@ list verbs `map filter fold`; `id`; `print`.
 
 | Module | Contents | Status |
 | --- | --- | --- |
-| [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; eval-only intrinsic today |
+| [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; full record-literal overlays lower to AOT record updates |
 | `fn` | `const compose flip` | planned (source) |
 | `list` | `foldr foldl' length reverse append zip flatten take drop find any all sum product partition sortBy groupBy indexOf uncons head? tail?` | planned (source + spine intrinsics) |
 | `optional` | `map andThen filter withDefault isSome toList` | planned (source) |

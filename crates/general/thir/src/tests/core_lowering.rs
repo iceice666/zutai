@@ -515,10 +515,10 @@ fn overlay_accepts_inline_base_and_patch() {
     let file = completed_file(
         r#"
 overlay {
+  port = 8080;
+} {
   host = "localhost";
   port = 80;
-} {
-  port = 8080;
 }
 "#,
     );
@@ -531,9 +531,9 @@ fn overlay_rejects_unknown_patch_field() {
     let lowered = lower(
         r#"
 overlay {
-  port = 80;
-} {
   missing = 1;
+} {
+  port = 80;
 }
 "#,
     );
@@ -553,14 +553,14 @@ fn overlay_deep_accepts_nested_patch() {
         r#"
 overlayDeep {
   server = {
+    port = 8080;
+  };
+} {
+  server = {
     host = "localhost";
     port = 80;
   };
   name = "dev";
-} {
-  server = {
-    port = 8080;
-  };
 }
 "#,
     );
@@ -574,11 +574,11 @@ fn overlay_deep_checks_nested_patch_field_type() {
         r#"
 overlayDeep {
   server = {
-    port = 80;
+    port = "bad";
   };
 } {
   server = {
-    port = "bad";
+    port = 80;
   };
 }
 "#,

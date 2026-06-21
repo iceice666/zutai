@@ -177,13 +177,13 @@ impl Analysis {
             .any(|module| module.as_ref().config_overlay_builtin_program().is_some())
         {
             return Some(
-                "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet",
+                "config overlay builtins could not be lowered to pure backend IR before Dataflow Core",
             );
         }
         let hir = &self.hir.as_ref()?.file;
-        let file = self.thir.as_ref()?.file.as_ref()?;
-        let uses_overlay = file.expr_arena.iter().any(|(_, expr)| {
-            let zutai_thir::ThirExprKind::BindingRef(binding) = expr.kind else {
+        let module = self.tlc.as_ref()?;
+        let uses_overlay = module.expr_arena.iter().any(|(_, expr)| {
+            let zutai_tlc::TlcExpr::Var(binding) = expr else {
                 return false;
             };
             let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
@@ -194,7 +194,7 @@ impl Analysis {
         });
         if uses_overlay {
             Some(
-                "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet",
+                "config overlay builtins could not be lowered to pure backend IR before Dataflow Core",
             )
         } else {
             None

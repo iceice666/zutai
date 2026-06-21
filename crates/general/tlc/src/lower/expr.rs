@@ -1,6 +1,10 @@
+use std::collections::{HashMap, HashSet};
+
 use zutai_hir::BindingId;
-use zutai_syntax::ast::BinOp;
-use zutai_thir::{ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId};
+use zutai_syntax::{Span, ast::BinOp};
+use zutai_thir::{
+    ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeRecordField,
+};
 
 use crate::ir::{
     BuiltinOp, Literal, PrimTy, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
@@ -173,6 +177,10 @@ impl<'thir> Lowerer<'thir> {
                 arg,
                 instantiation,
             } => {
+                if let Some(expr) = self.lower_overlay_full_apply(func, arg, thir_ty, span) {
+                    return expr;
+                }
+
                 // Extract func binding info without holding a borrow while calling &mut self.
                 let func_binding_info = {
                     let fe = &self.thir.expr_arena[func];
@@ -299,6 +307,148 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_expr(TlcExpr::Variant(tag, payload_tlc), tlc_ty, span)
             }
         }
+    }
+
+    fn lower_overlay_full_apply(
+        &mut self,
+        func: ThirExprId,
+        base: ThirExprId,
+        target: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        let (patch, deep) = self.overlay_full_apply_parts(func)?;
+        let base = self.lower_expr(base);
+        let patch_fields = self.record_literal_fields(patch, &mut HashSet::new())?;
+        self.lower_overlay_record(base, patch_fields, target, &HashMap::new(), deep, span)
+    }
+
+    fn overlay_full_apply_parts(&self, func: ThirExprId) -> Option<(ThirExprId, bool)> {
+        let ThirExprKind::Apply {
+            func: builtin,
+            arg: patch,
+            ..
+        } = &self.thir.expr_arena[func].kind
+        else {
+            return None;
+        };
+        let ThirExprKind::BindingRef(binding) = &self.thir.expr_arena[*builtin].kind else {
+            return None;
+        };
+        match self.builtin_overlay_name(*binding)? {
+            "overlay" => Some((*patch, false)),
+            "overlayDeep" => Some((*patch, true)),
+            _ => None,
+        }
+    }
+
+    fn builtin_overlay_name(&self, binding: BindingId) -> Option<&str> {
+        let name = self.thir.binding_names.get(binding.0 as usize)?.as_str();
+        if name != "overlay" && name != "overlayDeep" {
+            return None;
+        }
+        let first = self
+            .thir
+            .binding_names
+            .iter()
+            .position(|candidate| candidate == name)?;
+        (first == binding.0 as usize).then_some(name)
+    }
+
+    fn record_literal_fields(
+        &self,
+        expr: ThirExprId,
+        seen: &mut HashSet<BindingId>,
+    ) -> Option<Vec<(String, ThirExprId)>> {
+        match &self.thir.expr_arena[expr].kind {
+            ThirExprKind::Record(fields) => Some(
+                fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field.value))
+                    .collect(),
+            ),
+            ThirExprKind::BindingRef(binding) => {
+                if !seen.insert(*binding) {
+                    return None;
+                }
+                let value = self.value_decl_expr(*binding)?;
+                let fields = self.record_literal_fields(value, seen);
+                seen.remove(binding);
+                fields
+            }
+            _ => None,
+        }
+    }
+
+    fn value_decl_expr(&self, binding: BindingId) -> Option<ThirExprId> {
+        self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding != binding {
+                return None;
+            }
+            match &decl.kind {
+                zutai_thir::ThirDeclKind::Value { value, .. } => Some(*value),
+                _ => None,
+            }
+        })
+    }
+
+    fn lower_overlay_record(
+        &mut self,
+        base: TlcExprId,
+        patch_fields: Vec<(String, ThirExprId)>,
+        target: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+        deep: bool,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        let (target_fields, _tail, env) = self.record_shape_with_subst(target, subst)?;
+        let result_ty = self.lower_type_with_subst(target, subst);
+        let mut updates = Vec::with_capacity(patch_fields.len());
+        for (name, patch_value) in patch_fields {
+            let field = target_fields.iter().find(|field| field.name == name)?;
+            let value = self.lower_overlay_field(base, patch_value, field, &env, deep, span)?;
+            updates.push((name, value));
+        }
+        if updates.is_empty() {
+            return Some(base);
+        }
+        Some(self.alloc_expr(
+            TlcExpr::RecordUpdate {
+                receiver: base,
+                fields: updates,
+            },
+            result_ty,
+            span,
+        ))
+    }
+
+    fn lower_overlay_field(
+        &mut self,
+        base: TlcExprId,
+        patch_value: ThirExprId,
+        field: &TypeRecordField,
+        subst: &HashMap<BindingId, TypeId>,
+        deep: bool,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if deep && self.record_shape_with_subst(field.ty, subst).is_some() {
+            if field.optional {
+                return None;
+            }
+            let field_ty = self.lower_type_with_subst(field.ty, subst);
+            let base_field =
+                self.alloc_expr(TlcExpr::GetField(base, field.name.clone()), field_ty, span);
+            let patch_fields = self.record_literal_fields(patch_value, &mut HashSet::new())?;
+            return self.lower_overlay_record(
+                base_field,
+                patch_fields,
+                field.ty,
+                subst,
+                true,
+                span,
+            );
+        }
+        Some(self.lower_expr(patch_value))
     }
 
     fn lower_binding_ref(

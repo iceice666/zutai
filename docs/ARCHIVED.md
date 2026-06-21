@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing Phase 20 effects AOT lowering._
+_Last updated: 2026-06-21 after closing Phase 21 config-overlay AOT lowering._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -65,11 +65,15 @@ _Last updated: 2026-06-21 after closing Phase 20 effects AOT lowering._
   handles residual `io.print`.
 - `compile` and `dataflow` now fold fully handled, closed effectful entry
   programs through the TLC semantics oracle before Dataflow Core, replaying
-  captured `io.print` output through the native runtime. Config overlay
-  builtins, reflection builtins, unfoldable residual effects, effectful function
-  entries, and non-empty function effect rows still reject before DC. The
-  Dataflow Core API keeps its fallible residual-effect gate so direct callers
-  cannot silently erase non-empty effect rows.
+  captured `io.print` output through the native runtime.
+- Supported full config-overlay calls lower before Dataflow Core: patch-first
+  `overlay`/`overlayDeep` applications with record-literal patch values become
+  ordinary record updates, and required nested records merge recursively.
+- Reflection builtins, unsupported residual overlay forms, optional nested-record
+  deep overlays, unfoldable residual effects, effectful function entries, and
+  non-empty function effect rows still reject before DC. The Dataflow Core API
+  keeps its fallible residual-effect gate so direct callers cannot silently erase
+  non-empty effect rows.
 
 ## Validation notes
 
@@ -105,6 +109,20 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 21: Config-overlay AOT lowering ✅
+
+- `overlay` and `overlayDeep` now use the spec's patch-first order, so
+  `defaults |> overlay patch` type-checks and evaluates through both reference
+  evaluators.
+- THIR→TLC lowers supported full applications with record-literal patch values to
+  ordinary `RecordUpdate` expressions before Dataflow Core. `overlayDeep`
+  recursively lowers required nested-record patches; unsupported residual overlay
+  forms and optional nested-record deep overlays remain backend-gated rather than
+  producing partial native semantics.
+- CLI tests cover `check`/`run`, LLVM/dataflow record-update lowering, native
+  shallow and deep overlay binaries, and static unknown-field/type-mismatch
+  patch diagnostics.
 
 ### Phase 20: Effects AOT lowering ✅
 

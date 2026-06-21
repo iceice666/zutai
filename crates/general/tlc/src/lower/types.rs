@@ -219,7 +219,7 @@ impl<'thir> Lowerer<'thir> {
         Row::from_fields_with_tail(fields, tail)
     }
 
-    fn lower_type_with_subst(
+    pub(super) fn lower_type_with_subst(
         &mut self,
         ty: TypeId,
         subst: &HashMap<BindingId, TypeId>,
@@ -424,7 +424,7 @@ impl<'thir> Lowerer<'thir> {
         )))
     }
 
-    fn record_shape_with_subst(
+    pub(super) fn record_shape_with_subst(
         &self,
         target: TypeId,
         subst: &HashMap<BindingId, TypeId>,

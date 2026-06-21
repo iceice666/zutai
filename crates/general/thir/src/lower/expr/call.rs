@@ -2,7 +2,7 @@ use super::*;
 
 struct OverlayApply {
     builtin: HirExprId,
-    base: HirExprId,
+    patch: HirExprId,
     deep: bool,
 }
 
@@ -122,7 +122,7 @@ impl<'hir> Lowerer<'hir> {
     fn overlay_full_apply(&self, func: HirExprId) -> Option<OverlayApply> {
         let HirExprKind::Apply {
             func: builtin,
-            arg: base,
+            arg: patch,
         } = self.hir_expr(func).kind.clone()
         else {
             return None;
@@ -137,12 +137,12 @@ impl<'hir> Lowerer<'hir> {
         match binding_info.name.as_str() {
             "overlay" => Some(OverlayApply {
                 builtin,
-                base,
+                patch,
                 deep: false,
             }),
             "overlayDeep" => Some(OverlayApply {
                 builtin,
-                base,
+                patch,
                 deep: true,
             }),
             _ => None,
@@ -153,13 +153,13 @@ impl<'hir> Lowerer<'hir> {
         &mut self,
         id: HirExprId,
         inner_source: HirExprId,
-        patch: HirExprId,
+        base: HirExprId,
         span: Span,
         overlay: OverlayApply,
     ) -> ThirExprId {
         let OverlayApply {
             builtin,
-            base,
+            patch,
             deep,
         } = overlay;
         let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
@@ -172,7 +172,7 @@ impl<'hir> Lowerer<'hir> {
         let patch_expr = self.check_expr(patch, patch_ty);
         let inner_ty = self.alloc_type(Type {
             kind: TypeKind::Function {
-                from: patch_ty,
+                from: target,
                 to: target,
             },
             span,
@@ -182,7 +182,7 @@ impl<'hir> Lowerer<'hir> {
             ty: inner_ty,
             kind: ThirExprKind::Apply {
                 func: builtin_ref,
-                arg: base_expr,
+                arg: patch_expr,
                 instantiation: Vec::new(),
             },
             span,
@@ -192,7 +192,7 @@ impl<'hir> Lowerer<'hir> {
             ty: target,
             kind: ThirExprKind::Apply {
                 func: inner,
-                arg: patch_expr,
+                arg: base_expr,
                 instantiation: Vec::new(),
             },
             span,

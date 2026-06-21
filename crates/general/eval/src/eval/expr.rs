@@ -553,8 +553,8 @@ impl<'a> Evaluator<'a> {
                 self.reflect_schema_value(arg)
             }
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => {
-                let base = args[0].force(self)?;
-                let patch = args[1].force(self)?;
+                let patch = args[0].force(self)?;
+                let base = args[1].force(self)?;
                 let mut force = |thunk: &Thunk| thunk.force(self);
                 overlay_value(base, patch, func == BuiltinFn::OverlayDeep, &mut force)
             }

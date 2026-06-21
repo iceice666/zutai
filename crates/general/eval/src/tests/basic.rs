@@ -218,7 +218,7 @@ Config :: type {
 }
 base :: Config = { host = "localhost"; port = 80; }
 patch :: Patch Config = { port = 8080; }
-(overlay base patch).port
+(overlay patch base).port
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(8080));
@@ -235,7 +235,7 @@ Config :: type {
 bad :: Int = bad
 base :: Config = { host = "localhost"; port = bad; }
 patch :: Patch Config = { host = "patched"; }
-(overlay base patch).host
+(overlay patch base).host
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Text("patched".into()));
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("patched".into()));
@@ -261,7 +261,7 @@ base :: Config = {
 patch :: DeepPatch Config = {
   server = { port = 8080; };
 }
-(overlayDeep base patch).server.host
+(overlayDeep patch base).server.host
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Text("localhost".into()));
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("localhost".into()));
@@ -279,9 +279,9 @@ Config :: type {
   port : Int;
 }
 base :: Config = { host = "localhost"; port = 80; }
-applyBase ::= overlay base
 patch :: Patch Config = { port = 8080; }
-(applyBase patch).port
+applyPatch ::= overlay patch
+(applyPatch base).port
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(8080));

@@ -913,11 +913,21 @@ area (#circle { radius = 3; })
 
 const OVERLAY_SRC: &str = r#"
 Config :: type { host : Text; port : Int; }
-base :: Config = { host = "localhost"; port = 80; }
+defaults :: Config = { host = "localhost"; port = 80; }
 patch :: Patch Config = { port = 8080; }
-(overlay base patch).port
+defaults |> overlay patch
 "#;
-const OVERLAY_BACKEND_GATE: &str = "config overlay builtins are reference-evaluator intrinsics and do not lower to pure backend IR yet";
+
+const OVERLAY_DEEP_SRC: &str = r#"
+Server :: type { host : Text; port : Int; }
+Config :: type { server : Server; name : Text; }
+defaults :: Config = {
+  server = { host = "localhost"; port = 80; };
+  name = "dev";
+}
+patch :: DeepPatch Config = { server = { port = 8080; }; }
+defaults |> overlayDeep patch
+"#;
 
 #[test]
 fn check_overlay_passes() {
@@ -938,33 +948,64 @@ fn run_overlay_merges_record() {
         .arg(&path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("8080"));
+        .stdout(predicate::str::contains("host = \"localhost\""))
+        .stdout(predicate::str::contains("port = 8080"));
 }
 
 #[test]
-fn compile_overlay_program_is_rejected() {
-    let path = write_tmp("cli_test_compile_overlay.zt", OVERLAY_SRC);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(format!(
-            "compile error: {OVERLAY_BACKEND_GATE}"
-        )));
+fn compile_overlay_program_lowers_to_record_update() {
+    let llvm = compile_stdout("cli_test_compile_overlay.zt", OVERLAY_SRC);
+    assert!(llvm.contains("call i64 @zutai.record_update"), "{llvm}");
 }
 
 #[test]
-fn dataflow_overlay_program_is_rejected() {
+fn dataflow_overlay_program_lowers_to_record_update() {
     let path = write_tmp("cli_test_dataflow_overlay.zt", OVERLAY_SRC);
     cli()
         .arg("dataflow")
         .arg(&path)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains(format!(
-            "error: {OVERLAY_BACKEND_GATE}"
-        )));
+        .success()
+        .stdout(predicate::str::contains("RecordUpdate"));
+}
+
+#[test]
+fn compile_overlay_emit_bin_runs() {
+    let path = write_tmp("cli_test_compile_overlay_bin.zt", OVERLAY_SRC);
+    let out = write_tmp("cli_test_compile_overlay_bin", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("host = \"localhost\""), "{stdout}");
+    assert!(stdout.contains("port = 8080"), "{stdout}");
+}
+
+#[test]
+fn compile_overlay_deep_emit_bin_runs() {
+    let path = write_tmp("cli_test_compile_overlay_deep_bin.zt", OVERLAY_DEEP_SRC);
+    let out = write_tmp("cli_test_compile_overlay_deep_bin", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("host = \"localhost\""), "{stdout}");
+    assert!(stdout.contains("port = 8080"), "{stdout}");
+    assert!(stdout.contains("name = \"dev\""), "{stdout}");
 }
 
 #[test]

@@ -64,8 +64,8 @@ impl<'a> TlcEvaluator<'a> {
                 "reflection builtins execute through the THIR type-value evaluator".to_string(),
             )),
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => {
-                let base = args[0].force_tlc(&self)?;
-                let patch = args[1].force_tlc(&self)?;
+                let patch = args[0].force_tlc(&self)?;
+                let base = args[1].force_tlc(&self)?;
                 let mut force = |thunk: &Thunk| thunk.force_tlc(&self);
                 Ok(EvalControl::Value(overlay_value(
                     base,

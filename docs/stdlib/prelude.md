@@ -112,9 +112,9 @@ oracle (`crates/general/eval/src/eval/top_env.rs`) and the TLC path
 (`crates/general/eval/src/tlc_entry.rs`) currently seed only `BuiltinFn`s and need the
 prelude decls threaded through.
 
-The prelude **must not** re-export the backend-gated eval-only intrinsics (`fields`,
-`schema`, `overlay`, `overlayDeep`): those do not lower to backend IR and stay behind the
-explicit `reflect`/`config` imports.
+The prelude **must not** re-export backend-gated intrinsics (`fields`, `schema`,
+or residual/partial `overlay`/`overlayDeep` forms): they stay behind explicit
+`reflect`/`config` imports until their full backend lowering is available.
 
 ## Error-handling boundary
 
