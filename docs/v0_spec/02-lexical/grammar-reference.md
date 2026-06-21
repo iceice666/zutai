@@ -150,7 +150,6 @@ List
 
 Lambda
   ::= "\\" Pattern+ "." whitespace Expr
-   | "\\" Pattern+ "=>" Expr
 
 If
   ::= "if" Expr "then" Expr "else" Expr
