@@ -1,0 +1,11 @@
+[package]
+name = "zutai-rt"
+description = "Runtime library and ABI for compiled Zutai general-mode programs."
+edition.workspace = true
+version.workspace = true
+
+[lib]
+# `staticlib` is the archive linked into compiled `.zt` programs (see
+# docs/runtime-abi.md, D-0001/D-0010). `rlib` lets the workspace build and
+# unit-test the crate on the host like any other library.
+crate-type = ["staticlib", "rlib"]

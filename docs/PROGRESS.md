@@ -343,6 +343,54 @@ Recommended initial policy:
 - [x] **effect typing and execution model** — check-only first, then interpreter/compiler support after ordering is specified; Phases 15–16 above.
 - [x] **reflection builtins** — `fields` / `schema`; Phase 17 above.
 
+## Phase 18: Runtime and ABI
+
+Goal: make the LLVM IR that `zutai-codegen` emits actually link and run. The
+pipeline is feature-complete through IR *text emission*, but every prior
+verification gate asserted IR-text shape only — no compiled program has ever
+been linked or executed, and the `@zutai.*` symbols codegen references are all
+`declare`d and undefined. The full design and decisions (D-0001…D-0010) are in
+[`docs/runtime-abi.md`](runtime-abi.md).
+
+Three latent defects in codegen must be fixed here (they are ABI decisions, not
+codegen tweaks): closures are constructed as records but never applied; records
+are written by ordinal slot yet read by name-hash; `@main` prints every result
+with `print_i64` regardless of type.
+
+- [x] **Runtime crate skeleton** — `crates/general/runtime/` (`zutai-rt`,
+  `staticlib` + `rlib`): bump arena (`LazyLock<Mutex<Arena>>`, owned chunks, no
+  leak), object headers, and the `@zutai.*` ABI — record/tuple/list/variant/text
+  constructors and accessors (ordinal slots), `coalesce`, raw `print_*`, and a
+  type-directed `show` driven by static descriptors. Unit-tested for round-trips
+  and byte-exact `Display` parity.
+- [ ] **Uniform closure ABI (D-0003)** — replace the `{ __fn, caps }` record hack
+  with a closure object `{ header, code, caps[] }` and a single curried
+  application convention; top-level functions become empty-capture closures.
+  Rework `zutai-ssa`/`zutai-codegen` accordingly. (Known-arity direct calls are a
+  v2 optimization.)
+- [ ] **Slot-indexed records (D-0004)** — `Select`/`RecordUpdate` carry the
+  resolved ordinal slot (from the base `DfTy`), not the field-name hash; drop
+  `str_hash` keying from codegen.
+- [ ] **Dense variant indices (D-0009)** — assign union members dense `0..n`
+  tags in declaration order; thread the union type into `Variant` construction
+  and `MatchDiscriminant`; `Optional`/`Maybe` fixed at `#none`/`#absent = 0`.
+- [ ] **Type descriptors + `@main` (D-0007/D-0009)** — emit static type
+  descriptors from `DfTy`; route `@main` through `zutai.show`; reject
+  function/`Type`-typed program results with a precise diagnostic.
+- [ ] **Toolchain driver (D-0010)** — `compile --emit=llvm|obj|bin`; invoke
+  `llc`/`clang`, link `libzutai_rt`; host-aware target triple (codegen currently
+  hardcodes `x86_64-unknown-linux-gnu`); actionable error when the toolchain is
+  absent.
+- [ ] **Deferred GC** — v0 ships the leak arena; the header reserves layout bits
+  so the v1 precise mark-sweep and v2 generational copying collectors land
+  without an ABI break (D-0008).
+
+Verification gate (the missing one): an end-to-end differential that compiles
+each runnable v0 fixture/spec program to a native binary, runs it, and asserts
+stdout matches the `zutai-eval` oracle; skipped with a notice when `clang`/`llc`
+is unavailable. Plus the `zutai-rt` ABI unit tests. The existing IR-text tests
+remain as cheap structural checks.
+
 ## Backlog
 
 These are post-roadmap stabilization items, not unchecked roadmap milestones.
