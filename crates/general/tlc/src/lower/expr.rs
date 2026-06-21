@@ -406,8 +406,21 @@ impl<'thir> Lowerer<'thir> {
         result_ty: TlcTypeId,
         span: zutai_syntax::Span,
     ) -> Option<TlcExprId> {
+        let guard = self.defining_op_witness.clone();
         for info in self.operator_methods.clone() {
             if info.name != op_name || !info.method_params.is_empty() {
+                continue;
+            }
+
+            // Self-recursion guard: if we are lowering the body of this very
+            // operator method and the call would dispatch back to it, use the
+            // builtin instead. This makes `(==) = \a b. a == b` mean "delegate to
+            // the primitive" rather than loop forever.
+            if let Some((guard_binding, guard_op)) = &guard
+                && guard_op == op_name
+                && self.concrete_witness_binding(info.constraint, operand_ty)
+                    == Some(*guard_binding)
+            {
                 continue;
             }
 

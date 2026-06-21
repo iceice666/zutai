@@ -640,3 +640,80 @@ Eq @(Int, Int) :: { (==) = \\a b. false; }
 ";
     assert_eq!(run(src), Value::Bool(false));
 }
+
+// ─── derive operator / default-method regressions ─────────────────────────────
+
+/// Regression (operator self-recursion): an operator witness whose body
+/// delegates to the same operator on the same primitive — `(==) = \a b. a == b`
+/// — must lower the inner `==` to the builtin, not a call back into the witness
+/// being defined. Otherwise `1 == 1` recurses until the stack overflows.
+#[test]
+fn op_dispatch_operator_witness_delegates_to_builtin() {
+    let src = r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @Int :: { (==) = \a b. a == b; }
+1 == 1
+"#;
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// Regression (derived record operator + delegating component witness): a record
+/// derives `(==)`/`(!=)`; its `Int` fields dispatch to an `Eq @Int` operator
+/// witness defined as `\a b. a == b`. The delegating body must reach the builtin
+/// so field comparison terminates. `p1 == p2` (equal fields) and `p1 != p3`
+/// (differing) are both `true`.
+#[test]
+fn op_dispatch_derived_record_operator_no_self_recursion() {
+    let src = r#"
+Eq :: <A> @A {
+  (==) :: A -> A -> Bool;
+  (!=) :: A -> A -> Bool;
+} derive
+Eq @Int :: {
+  (==) = \a b. a == b;
+  (!=) = \a b. a != b;
+}
+Point :: type { x : Int; y : Int; }
+Eq @Point :: derive
+p1 :: Point = { x = 5; y = 5; }
+p2 :: Point = { x = 5; y = 5; }
+p3 :: Point = { x = 1; y = 2; }
+(p1 == p2, p1 != p3)
+"#;
+    match run(src) {
+        Value::Tuple(fields) => {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].value.peek(), Some(Value::Bool(true)));
+            assert_eq!(fields[1].value.peek(), Some(Value::Bool(true)));
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+}
+
+/// Regression (default-method dict threading): a constraint declares a defaulted
+/// method `neq?` whose default body calls the sibling `eq`. A witness that omits
+/// `neq` gets the default, and the default's `eq` must dispatch through the
+/// witness's own dict (threaded as the constraint's self-dict) instead of a
+/// `Nothing` placeholder. `checkNeq 1 1` -> false (equal), `checkNeq 1 2` -> true.
+#[test]
+fn dispatch_default_method_body_references_sibling() {
+    let src = r#"
+MyEq :: <A> @A {
+  eq    :: A -> A -> Bool;
+  neq?  :: A -> A -> Bool
+    = a b => if eq a b then false else true;
+} derive
+MyEq @Int :: { eq = \a b. a == b; }
+checkNeq :: <A: MyEq> A -> A -> Bool
+  = a b => neq a b;
+(checkNeq 1 1, checkNeq 1 2)
+"#;
+    match run(src) {
+        Value::Tuple(fields) => {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].value.peek(), Some(Value::Bool(false)));
+            assert_eq!(fields[1].value.peek(), Some(Value::Bool(true)));
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+}

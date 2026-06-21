@@ -60,6 +60,12 @@ struct Lowerer<'thir> {
     /// concrete TypeId.0)` pairs currently being resolved. Re-entry signals a
     /// non-terminating witness search; resolution bails to avoid a stack overflow.
     resolving_dicts: HashSet<(u32, u32)>,
+    /// Operator-method witness body currently being lowered, as `(witness decl
+    /// binding, operator name)`. While set, an operator call inside the body
+    /// whose dispatch would resolve back to *this same* witness method falls back
+    /// to the builtin instead of re-dispatching — otherwise `(==) = \a b. a == b`
+    /// would call itself forever. Cleared once the body is lowered.
+    defining_op_witness: Option<(BindingId, String)>,
 }
 
 impl<'thir> Lowerer<'thir> {
@@ -85,6 +91,7 @@ impl<'thir> Lowerer<'thir> {
             next_row_var: u32::MAX,
             conditional_witnesses: Vec::new(),
             resolving_dicts: HashSet::new(),
+            defining_op_witness: None,
         }
     }
 

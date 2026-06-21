@@ -156,6 +156,25 @@ impl<'thir> Lowerer<'thir> {
                     }
                 }
 
+                // Concrete witness: expose the dict record being built to its own
+                // field/default bodies under the constraint's type param, so a
+                // sibling-method reference (e.g. a default `neq` whose body calls
+                // `eq`) dispatches through this very dict. The witness value is
+                // bound at `binding` in the top-level letrec, so `Var(binding)`
+                // resolves to the finished record by call time.
+                let self_dict: Option<(u32, u32)> = if params.is_empty() {
+                    constraint
+                        .and_then(|c| self.constraint_target_param(c).map(|p| (c, p)))
+                        .map(|(c, p)| {
+                            let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
+                            self.active_dict_params.insert((c.0, p.0), binding);
+                            self.active_dict_types.insert(binding, dict_ty);
+                            (c.0, p.0)
+                        })
+                } else {
+                    None
+                };
+
                 let tlc_fields: Vec<(String, TlcExprId)> = if derive {
                     constraint
                         .map(|constraint| self.synthesize_derive_fields(constraint, target))
@@ -164,7 +183,9 @@ impl<'thir> Lowerer<'thir> {
                     let span = zutai_syntax::Span::default();
                     let mut out: Vec<(String, TlcExprId)> = Vec::with_capacity(fields.len());
                     for f in fields {
+                        self.defining_op_witness = Some((binding, f.name.clone()));
                         let mut value_expr = self.lower_expr(f.value);
+                        self.defining_op_witness = None;
                         // A polymorphic method's body is wrapped in `TyLam` per
                         // method param (outer = first declared) so the dict field
                         // has a `ForAll` type the call site instantiates via `TyApp`.
@@ -208,7 +229,9 @@ impl<'thir> Lowerer<'thir> {
                             let Some(default) = method.default.as_ref() else {
                                 continue;
                             };
+                            self.defining_op_witness = Some((binding, method.name.clone()));
                             let mut value_expr = self.lower_function_clauses(method.sig, default);
+                            self.defining_op_witness = None;
                             let sig_vars = self.collect_thir_type_vars(method.sig);
                             let mparams: Vec<BindingId> = method
                                 .params
@@ -236,6 +259,9 @@ impl<'thir> Lowerer<'thir> {
                     out
                 };
 
+                if let Some(key) = self_dict {
+                    self.active_dict_params.remove(&key);
+                }
                 for key in registered {
                     self.active_dict_params.remove(&key);
                 }
@@ -429,5 +455,20 @@ impl<'thir> Lowerer<'thir> {
                 None
             })
             .unwrap_or_default()
+    }
+
+    /// The constraint's target type parameter (`@A`) — its first declared param.
+    /// Used to register a concrete witness's own dict under that param so default
+    /// and sibling method bodies dispatch through it.
+    fn constraint_target_param(&self, constraint: BindingId) -> Option<BindingId> {
+        self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding == constraint
+                && let ThirDeclKind::Constraint { params, .. } = &decl.kind
+            {
+                return params.first().copied();
+            }
+            None
+        })
     }
 }

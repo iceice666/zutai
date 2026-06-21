@@ -144,6 +144,20 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
             })
     }
+
+    /// The concrete witness decl binding a `(constraint, type)` dispatch resolves
+    /// to, mirroring the direct-lookup arm of `try_get_dict_expr` without
+    /// allocating an expression. Returns `None` for abstract operands (handled
+    /// via active dict params) or conditional witnesses. Used by the operator
+    /// self-recursion guard.
+    pub(crate) fn concrete_witness_binding(
+        &self,
+        cst_binding: BindingId,
+        inst_type_id: TypeId,
+    ) -> Option<BindingId> {
+        let key = self.thir_type_to_witness_key(inst_type_id)?;
+        self.witness_bindings.get(&(cst_binding.0, key)).copied()
+    }
 }
 
 pub(super) fn row_tail_key(tail: RowTail) -> String {
