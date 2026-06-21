@@ -9,6 +9,7 @@ mod charclass;
 mod error;
 mod parser;
 mod scanner;
+mod string_scan;
 
 pub use error::{ParseError, ParseErrorKind};
 pub use scanner::{ChunkScan, StructuralIndex};

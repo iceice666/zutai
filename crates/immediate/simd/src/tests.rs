@@ -243,3 +243,35 @@ fn rejects_number_with_empty_exponent() {
         ParseErrorKind::InvalidNumber
     ));
 }
+
+// ── SIMD string-scan path coverage ───────────────────────────────────────────
+
+/// Long string with no escapes — exercises the SIMD special-byte finder across
+/// multiple full lanes before reaching the closing quote.
+#[test]
+fn accepts_long_plain_string_value() {
+    let value = "abcdefghijklmnopqrstuvwxyz".repeat(8);
+    let input = format!("{{ s = \"{value}\"; }}");
+    assert_same_as_winnow(&input);
+}
+
+/// Long string with an escaped quote in the middle — exercises SIMD scanning of
+/// the literal spans both before and after the scalar escape decoder.
+#[test]
+fn accepts_long_escaped_string_value() {
+    let prefix = "a".repeat(96);
+    let suffix = "z".repeat(96);
+    let input = format!("{{ s = \"{prefix}\\\"{suffix}\"; }}");
+    assert_same_as_winnow(&input);
+}
+
+/// Raw NUL inside a string — verifies the unsigned `< 0x20` control mask pins the
+/// low end of the control range (a signed compare would only misclassify high
+/// UTF-8 bytes, so NUL specifically checks the bias trick).
+#[test]
+fn rejects_nul_control_in_string() {
+    assert!(matches!(
+        parse("{ s = \"a\0b\"; }").unwrap_err().kind,
+        ParseErrorKind::InvalidString
+    ));
+}

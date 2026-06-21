@@ -3,6 +3,7 @@ use zutai_types::{Block, Pair, Value};
 
 use crate::charclass::{is_name_continue, is_name_start};
 use crate::error::{ParseError, ParseErrorKind, error};
+use crate::string_scan::{StringSpecialFinder, select_string_special_finder};
 
 pub(crate) struct Parser<'a> {
     input: &'a str,
@@ -10,6 +11,7 @@ pub(crate) struct Parser<'a> {
     significant: &'a [usize],
     cursor: usize,
     pos: usize,
+    find_string_special: StringSpecialFinder,
 }
 
 impl<'a> Parser<'a> {
@@ -20,6 +22,7 @@ impl<'a> Parser<'a> {
             significant,
             cursor: 0,
             pos: 0,
+            find_string_special: select_string_special_finder(),
         }
     }
 
@@ -206,7 +209,12 @@ impl<'a> Parser<'a> {
         let mut output = String::new();
         let mut literal_start = self.pos;
 
-        while self.pos < self.bytes.len() {
+        let find_special = self.find_string_special;
+        loop {
+            let Some(offset) = find_special(&self.bytes[self.pos..]) else {
+                return Err(error(string_start, ParseErrorKind::UnclosedString));
+            };
+            self.pos += offset;
             match self.bytes[self.pos] {
                 b'"' => {
                     output.push_str(&self.input[literal_start..self.pos]);
@@ -220,22 +228,9 @@ impl<'a> Parser<'a> {
                     output.push(escaped);
                     literal_start = self.pos;
                 }
-                byte if byte < 0x20 => {
-                    return Err(error(self.pos, ParseErrorKind::InvalidString));
-                }
-                byte if byte.is_ascii() => {
-                    self.pos += 1;
-                }
-                _ => {
-                    let Some(ch) = self.input[self.pos..].chars().next() else {
-                        return Err(error(self.pos, ParseErrorKind::InvalidString));
-                    };
-                    self.pos += ch.len_utf8();
-                }
+                _ => return Err(error(self.pos, ParseErrorKind::InvalidString)),
             }
         }
-
-        Err(error(string_start, ParseErrorKind::UnclosedString))
     }
 
     fn parse_escape(&mut self) -> Result<char, ParseError> {
