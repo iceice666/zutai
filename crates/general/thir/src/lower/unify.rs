@@ -129,13 +129,23 @@ impl<'hir> Lowerer<'hir> {
             (TypeKind::Never, _) | (_, TypeKind::Never) => {}
 
             (TypeKind::InferVar(v), _) => {
-                if !self.occurs(v, t2) {
+                if self.occurs(v, t2) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InfiniteType,
+                        span,
+                    });
+                } else {
                     self.infer_subst.insert(v, t2);
                 }
             }
 
             (_, TypeKind::InferVar(v)) => {
-                if !self.occurs(v, t1) {
+                if self.occurs(v, t1) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InfiniteType,
+                        span,
+                    });
+                } else {
                     self.infer_subst.insert(v, t1);
                 }
             }

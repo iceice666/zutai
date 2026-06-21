@@ -5,13 +5,24 @@ use std::path::Path;
 use miette::{Diagnostic, LabeledSpan, NamedSource, SourceCode};
 use thiserror::Error;
 
-pub(crate) fn print_semantic_errors(errs: &[&zutai_semantic::SemanticDiagnostic]) {
+pub(crate) fn print_semantic_errors(
+    path: &str,
+    contents: &str,
+    errs: &[&zutai_semantic::SemanticDiagnostic],
+) {
     for err in errs {
-        match &err.kind {
-            zutai_semantic::SemanticDiagnosticKind::Import(import) => {
-                eprintln!("import error: {}", format_import_diagnostic(import));
-            }
-            _ => eprintln!("semantic error: {err:?}"),
+        if let zutai_semantic::SemanticDiagnosticKind::Import(import) = &err.kind {
+            eprintln!("import error: {}", format_import_diagnostic(import));
+            continue;
+        }
+        match zutai_eval::describe_semantic_diagnostic(err) {
+            Some((message, start, end)) => eprintln!(
+                "{:?}",
+                miette::Report::new(ZtSemanticDiagnostic::new(
+                    path, contents, message, start, end
+                ))
+            ),
+            None => eprintln!("semantic error: {err:?}"),
         }
     }
 }
@@ -113,6 +124,47 @@ impl Diagnostic for ZtParseDiagnostic {
         Some(Box::new(std::iter::once(LabeledSpan::at(
             self.span,
             self.label.clone(),
+        ))))
+    }
+}
+
+// ─── miette semantic-diagnostic renderer ─────────────────────────────────────
+
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub(crate) struct ZtSemanticDiagnostic {
+    source_code: NamedSource<String>,
+    message: String,
+    span: (usize, usize),
+}
+
+impl ZtSemanticDiagnostic {
+    pub(crate) fn new(path: &str, contents: &str, message: String, start: u32, end: u32) -> Self {
+        let start = start as usize;
+        let end = end as usize;
+        let clamped_start = start.min(contents.len());
+        let max_len = contents.len().saturating_sub(clamped_start);
+        let len = end.saturating_sub(start).max(1).min(max_len.max(1));
+        Self {
+            source_code: NamedSource::new(path, contents.to_string()),
+            message,
+            span: (clamped_start, len),
+        }
+    }
+}
+
+impl Diagnostic for ZtSemanticDiagnostic {
+    fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        Some(Box::new("zutai::check"))
+    }
+
+    fn source_code(&self) -> Option<&dyn SourceCode> {
+        Some(&self.source_code)
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
+        Some(Box::new(std::iter::once(LabeledSpan::at(
+            self.span, "here",
         ))))
     }
 }

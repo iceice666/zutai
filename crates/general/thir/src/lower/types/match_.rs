@@ -144,13 +144,23 @@ impl<'hir> Lowerer<'hir> {
             // Solve InferVars: if either side is an unsolved InferVar, unify
             // and treat as matching (errors emitted inside unify on conflicts).
             (TypeKind::InferVar(v), _) => {
-                if !self.occurs(v, found) {
+                if self.occurs(v, found) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InfiniteType,
+                        span: e_span,
+                    });
+                } else {
                     self.infer_subst.insert(v, found);
                 }
                 true
             }
             (_, TypeKind::InferVar(v)) => {
-                if !self.occurs(v, expected) {
+                if self.occurs(v, expected) {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InfiniteType,
+                        span: f_span,
+                    });
+                } else {
                     self.infer_subst.insert(v, expected);
                 }
                 true

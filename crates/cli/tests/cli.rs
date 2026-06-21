@@ -302,7 +302,9 @@ fn parse_zt_with_type_error_exits_nonzero() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("error"));
+        .stderr(predicate::str::contains(
+            "type mismatch: expected Int, found Text",
+        ));
 }
 
 // ─── `check` subcommand ────────────────────────────────────────────────────────
@@ -340,6 +342,22 @@ fn check_zt_parse_error_exits_nonzero() {
 fn check_zt_type_error_exits_nonzero() {
     let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\"\nx\n");
     cli().arg("check").arg(&path).assert().failure();
+}
+
+#[test]
+fn check_renders_human_readable_type_diagnostic() {
+    // `check` must render THIR type errors with a human message and source
+    // context (like parse errors), not dump the raw `SemanticDiagnostic { .. }`
+    // Debug form. The exact human string is absent from the old Debug output.
+    let path = write_tmp("cli_test_check_render.zt", "x :: Int = \"bad\"\nx\n");
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "type mismatch: expected Int, found Text",
+        ));
 }
 
 #[test]

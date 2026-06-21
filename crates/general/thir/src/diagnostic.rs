@@ -169,4 +169,7 @@ pub enum ThirDiagnosticKind {
     MultipleResume {
         op: String,
     },
+    /// Unifying an inference variable with a type that contains it would build an
+    /// infinite type (e.g. self-application `\x. x x`). Rejected by the occurs check.
+    InfiniteType,
 }

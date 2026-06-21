@@ -128,7 +128,7 @@ pub(crate) fn run_parse(path: &str) -> Result<(), Box<dyn Error>> {
                 })
                 .collect();
             if !semantic_errors.is_empty() {
-                print_semantic_errors(&semantic_errors);
+                print_semantic_errors(path, &contents, &semantic_errors);
                 std::process::exit(1);
             }
             if let Some(ast) = analysis.ast.as_ref() {
@@ -186,7 +186,7 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
         })
         .collect();
     if !semantic_errors.is_empty() {
-        print_semantic_errors(&semantic_errors);
+        print_semantic_errors(path, &contents, &semantic_errors);
         std::process::exit(1);
     }
     if analysis.is_thir_complete() {
@@ -233,7 +233,7 @@ pub(crate) fn run_compile(path: &str, output_path: Option<&str>) -> Result<(), B
         })
         .collect();
     if !semantic_errors.is_empty() {
-        print_semantic_errors(&semantic_errors);
+        print_semantic_errors(path, &contents, &semantic_errors);
         std::process::exit(1);
     }
     if !analysis.is_thir_complete() {
@@ -306,7 +306,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         })
         .collect();
     if !semantic_errors.is_empty() {
-        print_semantic_errors(&semantic_errors);
+        print_semantic_errors(path, &contents, &semantic_errors);
         std::process::exit(1);
     }
     if !analysis.is_thir_complete() {

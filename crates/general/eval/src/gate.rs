@@ -21,7 +21,12 @@ pub fn check_well_typed(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile
         let thir_msgs: Vec<String> = analysis
             .thir
             .as_ref()
-            .map(|lt| lt.diagnostics.iter().map(format_thir_diagnostic).collect())
+            .map(|lt| {
+                lt.diagnostics
+                    .iter()
+                    .map(describe_thir_diagnostic)
+                    .collect()
+            })
             .unwrap_or_default();
         return Err(EvalError::TypeCheckFailed(thir_msgs));
     }
@@ -47,7 +52,7 @@ pub fn check_runnable(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile, 
     Ok(file)
 }
 
-fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
+pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
     use zutai_thir::{RowOverlapItem, ThirDiagnosticKind::*};
     match &d.kind {
         TypeMismatch { expected, found } => {
@@ -180,6 +185,56 @@ fn format_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         MultipleResume { op } => {
             format!("handler clause `{op}` may resume more than once on one path")
         }
+        InfiniteType => {
+            "infinite type: a value cannot have a type that contains itself".to_string()
+        }
+    }
+}
+
+/// Human-readable description of a HIR (name-resolution) diagnostic.
+pub fn describe_hir_diagnostic(d: &zutai_hir::HirDiagnostic) -> String {
+    use zutai_hir::HirDiagnosticKind::*;
+    match &d.kind {
+        DuplicateBinding { name, .. } => format!("duplicate binding `{name}`"),
+        DuplicateRecordField { name, .. } => format!("duplicate record field `{name}`"),
+        DuplicateTypeRecordField { name, .. } => format!("duplicate record field `{name}`"),
+        DuplicateRecordPatternField { name, .. } => {
+            format!("duplicate field `{name}` in record pattern")
+        }
+        DuplicateTupleField { name, .. } => format!("duplicate named tuple field `{name}`"),
+        DuplicateTypeTupleField { name, .. } => format!("duplicate named tuple field `{name}`"),
+        DuplicateTuplePatternField { name, .. } => {
+            format!("duplicate field `{name}` in tuple pattern")
+        }
+        UnknownIdentifier { name } => format!("unknown identifier `{name}`"),
+        DuplicateConstraintMethod { name, .. } => format!("duplicate constraint method `{name}`"),
+        DuplicateWitnessField { name, .. } => format!("duplicate witness field `{name}`"),
+        UnknownConstraint { name } => format!("unknown constraint `{name}`"),
+        DuplicateSelectField { name, .. } => {
+            format!("duplicate field `{name}` in select projection")
+        }
+        InvalidRowTailTarget { name } => {
+            format!("row tail `...{name}` is neither a row variable nor a spreadable type")
+        }
+        ResumeOutsideHandler => "resume outside an operation handler clause".to_string(),
+    }
+}
+
+/// Human-readable message plus byte span `(start, end)` for a semantic
+/// diagnostic that carries a source location (THIR type errors and HIR
+/// name-resolution errors). Returns `None` for stages rendered elsewhere
+/// (parse and import diagnostics).
+pub fn describe_semantic_diagnostic(
+    d: &zutai_semantic::SemanticDiagnostic,
+) -> Option<(String, u32, u32)> {
+    match &d.kind {
+        zutai_semantic::SemanticDiagnosticKind::Thir(t) => {
+            Some((describe_thir_diagnostic(t), t.span.start, t.span.end))
+        }
+        zutai_semantic::SemanticDiagnosticKind::Hir(h) => {
+            Some((describe_hir_diagnostic(h), h.span.start, h.span.end))
+        }
+        _ => None,
     }
 }
 

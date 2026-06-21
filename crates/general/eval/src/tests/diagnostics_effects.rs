@@ -363,3 +363,15 @@ fn redefining_print_at_top_level_is_rejected() {
     let err = run_err("print := 5\nprint");
     assert!(matches!(err, EvalError::NotRunnable(_)), "got {err:?}");
 }
+
+#[test]
+fn occurs_check_rejects_infinite_self_application() {
+    // `(\x. x x) (\x. x x)` requires an infinite type. The occurs check must
+    // reject it at THIR (clean diagnostic) rather than silently accepting and
+    // overflowing the stack at runtime.
+    let msgs = type_check_messages("(\\x. x x) (\\x. x x)");
+    assert!(
+        msgs.iter().any(|m| m.contains("infinite type")),
+        "expected an infinite-type diagnostic, got: {msgs:?}"
+    );
+}
