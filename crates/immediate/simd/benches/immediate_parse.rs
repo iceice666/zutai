@@ -47,6 +47,19 @@ fn bench_immediate_parse(c: &mut Criterion) {
             }
         }
 
+        #[cfg(target_arch = "aarch64")]
+        group.bench_with_input(
+            BenchmarkId::new("neon_parse", name),
+            input,
+            |bench, input| {
+                bench.iter(|| {
+                    let parsed =
+                        zutai_im_simd::parse_neon(black_box(input)).expect("parse should succeed");
+                    black_box(parsed);
+                });
+            },
+        );
+
         group.bench_with_input(
             BenchmarkId::new("winnow_parse", name),
             input,

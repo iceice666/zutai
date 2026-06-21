@@ -121,6 +121,14 @@ impl<'a> Scanner<'a> {
         self.scan_significant_with(classify_chunk)
     }
 
+    /// Scans the merged `significant` offsets using the NEON classifier,
+    /// bypassing runtime backend selection. NEON is baseline on aarch64, so
+    /// this is always safe to call.
+    #[cfg(target_arch = "aarch64")]
+    pub(crate) fn scan_significant_neon(self) -> Result<Vec<usize>, ParseError> {
+        self.scan_significant_with(neon::classify_chunk_neon)
+    }
+
     /// Scans the merged `significant` offsets using the SSE2 classifier,
     /// bypassing runtime backend detection. SSE2 is baseline on x86_64, so
     /// this is always safe to call.
@@ -320,16 +328,11 @@ fn prefix_xor_scalar(mut x: u64) -> u64 {
 #[target_feature(enable = "aes,neon")]
 unsafe fn prefix_xor_pmull(x: u64) -> u64 {
     use std::arch::aarch64::{vgetq_lane_u64, vmull_p64, vreinterpretq_u64_p128};
-    use std::mem::transmute;
     // Carryless multiply of x by all-ones (the "carry-less shift-and-XOR"
     // polynomial) equals prefix XOR. Take only the low 64 bits of the 128-bit
     // PMULL result.
-    // SAFETY: target_feature = "aes" guarantees PMULL is available; transmute
-    // between u64 and poly64_t (same size, no invalid bit patterns).
-    unsafe {
-        let result = vmull_p64(transmute(x), transmute(!0u64));
-        vgetq_lane_u64(vreinterpretq_u64_p128(result), 0)
-    }
+    let result = vmull_p64(x, !0u64);
+    vgetq_lane_u64(vreinterpretq_u64_p128(result), 0)
 }
 
 // ---------------------------------------------------------------------------

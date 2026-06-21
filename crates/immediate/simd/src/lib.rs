@@ -25,6 +25,14 @@ pub fn parse(input: &str) -> Result<Block, ParseError> {
     parser::Parser::new(input, &significant).parse_document()
 }
 
+/// Parses using the NEON structural-scanner backend, bypassing runtime backend
+/// selection. NEON is baseline on aarch64, so this is always safe.
+#[cfg(target_arch = "aarch64")]
+pub fn parse_neon(input: &str) -> Result<Block, ParseError> {
+    let significant = scanner::Scanner::new(input).scan_significant_neon()?;
+    parser::Parser::new(input, &significant).parse_document()
+}
+
 /// Parses using the SSE2 structural-scanner backend, bypassing runtime
 /// backend detection. SSE2 is baseline on x86_64, so this is always safe.
 #[cfg(target_arch = "x86_64")]
