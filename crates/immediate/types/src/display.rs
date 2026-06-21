@@ -296,4 +296,18 @@ mod tests {
         assert!(s.contains('├'), "expected ├ connector in: {s:?}");
         assert!(s.contains('└'), "expected └ connector in: {s:?}");
     }
+
+    #[test]
+    fn display_nested_array_and_block_exact_tree() {
+        let nested = make_block([("z", Value::String("ok".to_string()))]);
+        let b = make_block([
+            ("a", Value::Array(vec![Value::True, Value::Block(nested)])),
+            ("b", Value::Block(Block(vec![]))),
+        ]);
+
+        assert_eq!(
+            b.to_string(),
+            "Block\n├─ a = Array[2]\n│   ├─ [0] = True\n│   └─ [1] = Block\n│       └─ z = String(\"ok\")\n└─ b = Block\n    (empty)\n"
+        );
+    }
 }

@@ -1,4 +1,13 @@
 use super::*;
+use zutai_types::Value;
+
+fn field<'a>(block: &'a zutai_types::Block, name: &str) -> &'a Value {
+    block
+        .iter()
+        .find(|pair| pair.field_name == name)
+        .map(|pair| &pair.value)
+        .unwrap_or_else(|| panic!("missing field {name}"))
+}
 
 fn assert_same_as_winnow(input: &str) {
     let parsed = parse(input).unwrap();
@@ -279,4 +288,39 @@ fn rejects_nul_control_in_string() {
         parse("{ s = \"a\0b\"; }").unwrap_err().kind,
         ParseErrorKind::InvalidString
     ));
+}
+
+#[test]
+fn accepts_unicode_escape_values() {
+    let doc = parse(r#"{ a = "\u0041"; smile = "\uD83D\uDE00"; }"#).unwrap();
+    assert_eq!(field(&doc, "a"), &Value::String("A".into()));
+    assert_eq!(field(&doc, "smile"), &Value::String("😀".into()));
+}
+
+#[test]
+fn rejects_lone_low_surrogate_escape() {
+    assert!(matches!(
+        parse(r#"{ s = "\uDE00"; }"#).unwrap_err().kind,
+        ParseErrorKind::InvalidEscape
+    ));
+}
+
+#[test]
+fn rejects_bad_unicode_hex_escape() {
+    assert!(matches!(
+        parse(r#"{ s = "\u12G4"; }"#).unwrap_err().kind,
+        ParseErrorKind::InvalidEscape
+    ));
+    assert!(matches!(
+        parse(r#"{ s = "\u12"; }"#).unwrap_err().kind,
+        ParseErrorKind::InvalidEscape
+    ));
+}
+
+#[test]
+fn accepts_number_edge_values() {
+    let doc = parse("{ neg_zero = -0; upper_exp = 1E+2; frac = -0.25; }").unwrap();
+    assert_eq!(field(&doc, "neg_zero"), &Value::Integer(0));
+    assert_eq!(field(&doc, "upper_exp"), &Value::Float(100.0));
+    assert_eq!(field(&doc, "frac"), &Value::Float(-0.25));
 }

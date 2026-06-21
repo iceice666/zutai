@@ -203,13 +203,157 @@ fn collect_tlc_operator_witnesses(
 }
 
 fn thir_runtime_target_key(thir_file: &ThirFile, target: zutai_thir::TypeId) -> Option<String> {
+    thir_runtime_target_key_inner(thir_file, target, &mut Vec::new())
+}
+
+fn thir_runtime_target_key_inner(
+    thir_file: &ThirFile,
+    target: zutai_thir::TypeId,
+    seen: &mut Vec<BindingId>,
+) -> Option<String> {
     match &thir_file.type_arena[target.0 as usize].kind {
         TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
         TypeKind::Text => Some("Text".to_string()),
         TypeKind::Int => Some("Int".to_string()),
         TypeKind::Float => Some("Float".to_string()),
+        TypeKind::FixedNum(fw) => Some(fw.name().to_string()),
         TypeKind::Posit(spec) => Some(spec.type_name()),
         TypeKind::Atom(name) => Some(format!("#{name}")),
+        TypeKind::List(inner) => Some(format!(
+            "[{}]",
+            thir_runtime_target_key_inner(thir_file, *inner, seen)?
+        )),
+        TypeKind::Optional(inner) => Some(format!(
+            "{}?",
+            thir_runtime_target_key_inner(thir_file, *inner, seen)?
+        )),
+        TypeKind::Maybe(inner) => Some(format!(
+            "Maybe[{}]",
+            thir_runtime_target_key_inner(thir_file, *inner, seen)?
+        )),
+        TypeKind::Patch { target, .. } => thir_patch_target_key(thir_file, *target, seen),
+        TypeKind::Record(fields, tail) => {
+            thir_record_target_key(thir_file, fields, *tail, false, seen)
+        }
+        TypeKind::Union(variants, tail) => {
+            let parts: Vec<String> = variants
+                .iter()
+                .map(|variant| match variant.payload {
+                    Some(payload) => Some(format!(
+                        "{}({})",
+                        variant.name,
+                        thir_runtime_target_key_inner(thir_file, payload, seen)?
+                    )),
+                    None => Some(variant.name.clone()),
+                })
+                .collect::<Option<_>>()?;
+            Some(format!("<{}{}>", parts.join("|"), thir_row_tail_key(*tail)))
+        }
+        TypeKind::Tuple(items) => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|item| match item {
+                    TypeTupleItem::Named { name, ty, .. } => Some(format!(
+                        "{}:{}",
+                        name,
+                        thir_runtime_target_key_inner(thir_file, *ty, seen)?
+                    )),
+                    TypeTupleItem::Positional(ty) => {
+                        thir_runtime_target_key_inner(thir_file, *ty, seen)
+                    }
+                })
+                .collect::<Option<_>>()?;
+            Some(format!("({})", parts.join(",")))
+        }
+        TypeKind::Function { from, to } => Some(format!(
+            "({}->{})",
+            thir_runtime_target_key_inner(thir_file, *from, seen)?,
+            thir_runtime_target_key_inner(thir_file, *to, seen)?
+        )),
+        TypeKind::Effect { base, .. } => thir_runtime_target_key_inner(thir_file, *base, seen),
+        TypeKind::Never => Some("Never".to_string()),
+        TypeKind::Alias(binding) => {
+            if seen.contains(binding) {
+                return None;
+            }
+            seen.push(*binding);
+            let body = thir_type_alias_body(thir_file, *binding)?;
+            let key = thir_runtime_target_key_inner(thir_file, body, seen);
+            seen.pop();
+            key
+        }
         _ => None,
+    }
+}
+
+fn thir_record_target_key(
+    thir_file: &ThirFile,
+    fields: &[zutai_thir::TypeRecordField],
+    tail: RowTail,
+    force_optional: bool,
+    seen: &mut Vec<BindingId>,
+) -> Option<String> {
+    let mut parts: Vec<String> = fields
+        .iter()
+        .map(|field| {
+            let key = thir_runtime_target_key_inner(thir_file, field.ty, seen)?;
+            let marker = if force_optional || field.optional {
+                "?:"
+            } else {
+                ":"
+            };
+            Some(format!("{}{}{}", field.name, marker, key))
+        })
+        .collect::<Option<_>>()?;
+    parts.sort();
+    Some(format!(
+        "{{{}{}}}",
+        parts.join(","),
+        thir_row_tail_key(tail)
+    ))
+}
+
+fn thir_patch_target_key(
+    thir_file: &ThirFile,
+    target: zutai_thir::TypeId,
+    seen: &mut Vec<BindingId>,
+) -> Option<String> {
+    match &thir_file.type_arena[target.0 as usize].kind {
+        TypeKind::Record(fields, tail) => {
+            thir_record_target_key(thir_file, fields, *tail, true, seen)
+        }
+        TypeKind::Alias(binding) => {
+            if seen.contains(binding) {
+                return None;
+            }
+            seen.push(*binding);
+            let body = thir_type_alias_body(thir_file, *binding)?;
+            let key = thir_patch_target_key(thir_file, body, seen);
+            seen.pop();
+            key
+        }
+        _ => None,
+    }
+}
+
+fn thir_type_alias_body(thir_file: &ThirFile, binding: BindingId) -> Option<zutai_thir::TypeId> {
+    thir_file.decls.iter().find_map(|&decl_id| {
+        let decl = &thir_file.decl_arena[decl_id];
+        match &decl.kind {
+            ThirDeclKind::TypeAlias { params, ty }
+                if decl.binding == binding && params.is_empty() =>
+            {
+                Some(*ty)
+            }
+            _ => None,
+        }
+    })
+}
+
+fn thir_row_tail_key(tail: RowTail) -> &'static str {
+    match tail {
+        RowTail::Closed => "",
+        RowTail::Open => ";...",
+        RowTail::Param(_) | RowTail::Infer(_) => ";...$",
     }
 }

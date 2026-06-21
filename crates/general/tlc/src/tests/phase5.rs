@@ -357,3 +357,87 @@ useIt :: <F: Functor, A> F A -> F A
          wrapped in exactly 1 TyLam (signature-present params), not 2 (declared)"
     );
 }
+
+fn has_witness_record_field(m: &TlcModule, field: &str) -> bool {
+    m.expr_arena
+        .iter()
+        .any(|(_, expr)| matches!(expr, TlcExpr::Record(fields) if fields.iter().any(|(name, _)| name == field)))
+}
+
+fn has_nested_eq_application(m: &TlcModule) -> bool {
+    m.expr_arena.iter().any(|(_, expr)| {
+        let TlcExpr::App(left, _) = expr else {
+            return false;
+        };
+        let TlcExpr::App(func, _) = &m.expr_arena[*left] else {
+            return false;
+        };
+        matches!(&m.expr_arena[*func], TlcExpr::GetField(_, field) if field == "eq")
+    })
+}
+
+#[test]
+fn derive_named_tuple_eq_uses_tuple_case_with_named_patterns() {
+    let m = tlc_of(
+        r#"
+Pair :: type (x : Int, y : Text)
+p1 :: Pair = (x = 1, y = "a")
+p2 :: Pair = (x = 1, y = "a")
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Pair :: derive
+eq p1 p2
+"#,
+    );
+    assert!(has_witness_record_field(&m, "eq"));
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, expr)| matches!(expr, TlcExpr::Case(_, _)))
+    );
+    assert!(m.expr_arena.iter().any(|(_, expr)| {
+        matches!(
+            expr,
+            TlcExpr::Case(_, alts)
+                if alts.iter().any(|alt| matches!(alt.pat, TlcPat::Tuple(_)))
+        )
+    }));
+}
+
+#[test]
+fn derive_record_component_uses_existing_witness_call() {
+    let m = tlc_of(
+        r#"
+Name :: type Text
+Person :: type { name : Name; age : Int; }
+p1 :: Person = { name = "a"; age = 1; }
+p2 :: Person = { name = "a"; age = 1; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Name :: { eq = \a b. a == b; }
+Eq @Person :: derive
+eq p1 p2
+"#,
+    );
+    assert!(has_get_field(&m, "eq"));
+    assert!(has_nested_eq_application(&m));
+}
+
+#[test]
+fn derive_operator_neq_synthesizes_bang_equal_field() {
+    let m = tlc_of(
+        r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 3; }
+Eq :: <A> @A { (==) :: A -> A -> Bool; (!=) :: A -> A -> Bool; } derive
+Eq @Point :: derive
+p1 != p2
+"#,
+    );
+    assert!(has_witness_record_field(&m, "=="));
+    assert!(has_witness_record_field(&m, "!="));
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, expr)| { matches!(expr, TlcExpr::Builtin(BuiltinOp::Ne, _, _)) })
+    );
+}

@@ -641,6 +641,67 @@ Eq @(Int, Int) :: { (==) = \\a b. false; }
     assert_eq!(run(src), Value::Bool(false));
 }
 
+#[test]
+fn type_key_fixed_width_witness_overrides_builtin() {
+    let src = r#"
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @u8 :: { (==) = \a b. false; }
+x :: u8 = 1u8
+y :: u8 = 1u8
+x == y
+"#;
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn type_key_optional_method_dispatch() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @(Int?) :: { eq = \a b. false; }
+x :: Int? = #some (1)
+y :: Int? = #some (1)
+eq x y
+"#;
+    assert_eq!(run(src), Value::Bool(false));
+}
+
+#[test]
+fn type_key_maybe_method_dispatch() {
+    let src = r#"
+S :: type { p? : Int; }
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @(Maybe Int) :: { eq = \a b. false; }
+a :: S = { p = 1; }
+b :: S = { p = 1; }
+eq a.p b.p
+"#;
+    assert_eq!(run(src), Value::Bool(false));
+}
+
+#[test]
+fn type_key_patch_witness_dispatches_for_patch_values() {
+    let src = r#"
+Config :: type { port : Int; host : Text; }
+Eq :: <A> @A { (==) :: A -> A -> Bool; }
+Eq @(Patch Config) :: { (==) = \a b. false; }
+p1 :: Patch Config = { port = 8080; }
+p2 :: Patch Config = { port = 8080; }
+p1 == p2
+"#;
+    assert_eq!(eval_thir_file(src).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn type_key_function_method_dispatch() {
+    let src = r#"
+Show :: <A> @A { show :: A -> Text; }
+Show @(Int -> Int) :: { show = \f. "function"; }
+inc ::= \n. n + 1
+show inc
+"#;
+    assert_eq!(run(src), Value::Text("function".into()));
+}
+
 // ─── derive operator / default-method regressions ─────────────────────────────
 
 /// Regression (operator self-recursion): an operator witness whose body
@@ -716,4 +777,27 @@ checkNeq :: <A: MyEq> A -> A -> Bool
         }
         other => panic!("expected Tuple, got {other:?}"),
     }
+}
+
+#[test]
+fn tlc_derive_nullary_union_eq_same_and_different_variants() {
+    let same = r#"
+Color :: type { #red; #blue; }
+r1 :: Color = #red
+r2 :: Color = #red
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Color :: derive
+eq r1 r2
+"#;
+    assert_eq!(eval_tlc_file(same).unwrap(), Value::Bool(true));
+
+    let different = r#"
+Color :: type { #red; #blue; }
+r1 :: Color = #red
+r2 :: Color = #blue
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Color :: derive
+eq r1 r2
+"#;
+    assert_eq!(eval_tlc_file(different).unwrap(), Value::Bool(false));
 }

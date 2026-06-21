@@ -419,6 +419,106 @@ schema Result
 }
 
 #[test]
+fn fields_rejects_union_type() {
+    let err = run_err(
+        r#"
+Result :: type { #ok: { value : Int; }; #err; }
+fields Result
+"#,
+    );
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("use `schema` for union variants")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn fields_rejects_non_record_type() {
+    let err = run_err("fields Int");
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("`fields` expects a record type")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn schema_rejects_non_record_or_union_type() {
+    let err = run_err("schema Int");
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("`schema` expects a record or union type")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn schema_rejects_union_variant_non_record_payload() {
+    let err = run_err(
+        r#"
+Boxed :: type { #boxed: Int; }
+schema Boxed
+"#,
+    );
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("union variant payload reflection expects a record payload")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn schema_type_labels_cover_wrappers_numeric_tuple_and_function() {
+    let value = run(r#"
+Shape :: type {
+  byte : u8;
+  posit : Posit32e3;
+  names : List Text;
+  opt : Int?;
+  maybe : Maybe Text;
+  pair : (x : Int, Text);
+  mapper : Int -> Text;
+}
+schema Shape
+"#);
+
+    assert_eq!(
+        record_field_value(&value, "kind"),
+        Value::Atom("record".into())
+    );
+    let fields = record_field_value(&value, "fields");
+    for (index, expected) in [
+        "u8",
+        "Posit32e3",
+        "[Text]",
+        "Int?",
+        "Maybe Text",
+        "(x: Int, Text)",
+        "Int -> Text",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let field = list_item(&fields, index);
+        assert_eq!(
+            record_field_value(&field, "type"),
+            Value::Text(expected.into())
+        );
+    }
+}
+
+#[test]
+fn schema_rejects_patch_type_reflection() {
+    let err = run_err(
+        r#"
+Config :: type { port : Int; }
+schema (type Patch Config)
+"#,
+    );
+    assert!(
+        matches!(err, EvalError::ReflectionUnsupported(ref message) if message.contains("patch types cannot be reflected in this phase")),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn reflection_rejects_open_rows() {
     let err = run_err(
         r#"

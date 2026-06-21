@@ -41,7 +41,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use zutai_hir::BindingId;
-use zutai_thir::{ImportKey, ThirDeclKind, ThirExprKind, ThirFile, TypeKind};
+use zutai_thir::{
+    ImportKey, RowTail, ThirDeclKind, ThirExprKind, ThirFile, TypeKind, TypeTupleItem,
+};
 
 use eval::{Evaluator, ModuleRegistry, RuntimeWitness};
 use value::ModuleId;

@@ -162,6 +162,16 @@ placeholder `DfTyId` in `lower_type` before recursing into members. Worth doing
 only if a reified, optimizable effect tree is wanted; CPS (Phase 23) covers v1
 effect semantics without it.
 
+## Backlog: compiler entry-type gate cleanup
+
+Current compile support rejects function-valued entry points, but runtime `Type`
+entry expressions still lower to a zero-valued descriptor path instead of
+reporting `unsupported_entry_type_reason("Type")`. Add a compile/dataflow gate
+that rejects final `Type` values before TLC→DC/LLVM lowering, then cover both
+`type Int` and alias-value forms (`MyInt :: type Int; MyInt`) with CLI
+regressions. This is orthogonal to Phase 23 effect CPS lowering, but it blocks
+claiming precise backend rejection for all non-runtime-data entry values.
+
 ## Out of scope by v1 spec
 
 Deliberately not milestones: host capabilities beyond `io.print`

@@ -921,3 +921,48 @@ fn builtin_type_in_expression_position_yields_type_value() {
     // THIR produces a TypeValue expression; no diagnostic.
     let _ = lowered;
 }
+
+#[test]
+fn instantiate_type_vars_patch_alias_body() {
+    let src = r#"
+PatchOf :: <A> type Patch { value : A; note : Text; }
+p :: PatchOf Int = { value = 1; }
+p
+"#;
+    let file = completed_file(src);
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::AliasApply { .. }
+    ));
+}
+
+#[test]
+fn maybe_rejects_optional_none_atom() {
+    let lowered = lower(
+        r#"
+x :: Maybe Int = #none
+x
+"#,
+    );
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected.contains("Maybe") && found.contains("#none")
+        )
+    }));
+}
+
+#[test]
+fn function_param_contravariance_accepts_more_general_callback() {
+    let src = r#"
+apply :: ({ host : Text; port : Int; ...; } -> Text) -> Text
+  = f => f { host = "h"; port = 8080; };
+g :: { host : Text; ...; } -> Text
+  = r => r.host;
+apply g
+"#;
+    let file = completed_file(src);
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
+}

@@ -170,4 +170,18 @@ mod tests {
     fn cursed_simd_rejects_null_byte() {
         assert!(parse_simd(CURSED).is_err());
     }
+
+    #[test]
+    fn parse_dispatch_parses_simple_block() {
+        let doc = parse("{ a = 1; ok = true; }").unwrap();
+        assert_eq!(field(&doc, "a"), &Value::Integer(1));
+        assert_eq!(field(&doc, "ok"), &Value::True);
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn parse_simd_error_is_wrapped() {
+        let err = parse_simd("{ a = 1 }").unwrap_err();
+        assert!(err.to_string().contains("simd parse error"));
+    }
 }

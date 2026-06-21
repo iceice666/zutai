@@ -465,3 +465,71 @@ fn display_type_expr_expr_escape() {
     assert!(s.contains("TyExprEscape"), "type expr escape");
     assert!(s.contains("Int(1)"), "escaped expression value");
 }
+
+#[test]
+fn display_expr_perform_path() {
+    let s = parse_str(r#"perform io.print "x""#).to_string();
+    assert!(s.contains("Perform(io.print)"));
+    assert!(s.contains(r#"Str("x")"#));
+}
+
+#[test]
+fn display_expr_handle_resume() {
+    let s = parse_str(r#"handle perform fail "bad" with { fail = \e. resume "ok"; }"#).to_string();
+    assert!(s.contains("Handle"));
+    assert!(s.contains("Perform(fail)"));
+    assert!(s.contains("fail:"));
+    assert!(s.contains("Resume"));
+}
+
+#[test]
+fn display_expr_select() {
+    let s = parse_str("select server { host; port; }").to_string();
+    assert!(s.contains("Select"));
+    assert!(s.contains("receiver: Ident(server)"));
+    assert!(s.contains("field: host"));
+    assert!(s.contains("field: port"));
+}
+
+#[test]
+fn display_type_expr_select() {
+    let s = parse_str("type select Server { host; port; }").to_string();
+    assert!(s.contains("TySelect"));
+    assert!(s.contains("TyIdent(Server)"));
+    assert!(s.contains("field: host"));
+    assert!(s.contains("field: port"));
+}
+
+#[test]
+fn display_type_expr_effect_variants() {
+    let s = parse_str("Eff :: type Unit ! { io.print : Text -> Unit, fail Error, tick }\n1")
+        .to_string();
+    assert!(s.contains("TyEffect"));
+    assert!(s.contains("effect io.print: TyArrow"));
+    assert!(s.contains("effect fail: TyIdent(Error)"));
+    assert!(s.contains("effect tick"));
+}
+
+#[test]
+fn display_type_expr_row_tails() {
+    let record = parse_str("T :: type { host : Text; ...; }\n1").to_string();
+    let union = parse_str("U :: type { #a; ...Rest; }\n1").to_string();
+    assert!(record.contains("..."));
+    assert!(union.contains("...Rest"));
+}
+
+#[test]
+fn display_numeric_postfixes_on_exprs_and_patterns() {
+    assert!(parse_str("1u8").to_string().contains("Int(1u8)"));
+    assert!(parse_str("1f32").to_string().contains("Float(1f32)"));
+    assert!(
+        parse_str("match 1u8 { | 1u8 => true; | _ => false; }")
+            .to_string()
+            .contains("pat: Int(1u8)")
+    );
+    assert!(
+        parse_str("match 1f32 { | 1f32 => true; | _ => false; }")
+            .to_string()
+            .contains("pat: Float(1f32)")
+    );
+}

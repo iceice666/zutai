@@ -50,6 +50,22 @@ fn int_div_by_zero() {
 }
 
 #[test]
+fn thir_int_arithmetic_overflow_reports_operator() {
+    assert_eq!(
+        eval_thir_file("9223372036854775807 + 1").unwrap_err(),
+        EvalError::IntOverflow("+")
+    );
+    assert_eq!(
+        eval_thir_file("3037000500 * 3037000500").unwrap_err(),
+        EvalError::IntOverflow("*")
+    );
+    assert_eq!(
+        eval_thir_file("(-9223372036854775807 - 1) / -1").unwrap_err(),
+        EvalError::IntOverflow("/")
+    );
+}
+
+#[test]
 fn float_add() {
     assert_eq!(run("1.0 + 2.0"), Value::Float(3.0));
 }

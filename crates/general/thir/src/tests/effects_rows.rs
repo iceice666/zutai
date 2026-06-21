@@ -721,3 +721,55 @@ fn function_param_is_contravariant_for_open_records() {
             .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. }))
     );
 }
+
+#[test]
+fn generic_effect_alias_substitutes_base_and_op_type() {
+    let file = completed_file(
+        r#"
+Failing :: <A> type A ! { fail A }
+f :: Text -> Failing Int
+  = _ => perform fail 1;
+f
+"#,
+    );
+    let effect = file
+        .type_arena
+        .iter()
+        .find_map(|ty| match &ty.kind {
+            TypeKind::Effect { base, row }
+                if matches!(file.type_arena[base.0 as usize].kind, TypeKind::Int) =>
+            {
+                Some(row)
+            }
+            _ => None,
+        })
+        .expect("instantiated effect type");
+    let fail = effect.find("fail").expect("fail effect op");
+    assert!(matches!(
+        file.type_arena[fail.param.0 as usize].kind,
+        TypeKind::Int
+    ));
+    assert!(matches!(
+        file.type_arena[fail.result.0 as usize].kind,
+        TypeKind::Never
+    ));
+}
+
+#[test]
+fn union_payload_type_mismatch_reports_component_type() {
+    let lowered = lower(
+        r#"
+Result :: type { #ok : { v : Int; }; ...; }
+x :: Result = #ok { v = "bad"; }
+x
+"#,
+    );
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Text"
+        )
+    }));
+}

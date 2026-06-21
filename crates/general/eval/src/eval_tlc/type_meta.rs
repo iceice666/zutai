@@ -30,7 +30,62 @@ impl<'a> TlcEvaluator<'a> {
             TlcType::Singleton(Literal::Str(_)) => Some("Text".to_string()),
             TlcType::Singleton(Literal::Atom(atom)) => Some(format!("#{atom}")),
             TlcType::Singleton(Literal::Nothing) => None,
+            TlcType::Fun(from, to, _) => Some(format!(
+                "({}->{})",
+                self.tlc_type_target_key(*from)?,
+                self.tlc_type_target_key(*to)?
+            )),
+            TlcType::Record(row) => {
+                let mut parts = self.tlc_row_target_parts(row, true)?;
+                parts.sort();
+                Some(format!("{{{}}}", parts.join(",")))
+            }
+            TlcType::VariantT(row) => Some(format!(
+                "<{}>",
+                self.tlc_row_target_parts(row, false)?.join("|")
+            )),
+            TlcType::Tuple(items) => {
+                let parts: Vec<String> = items
+                    .iter()
+                    .map(|item| match item {
+                        zutai_tlc::TlcTupleField::Named { name, ty } => {
+                            Some(format!("{}:{}", name, self.tlc_type_target_key(*ty)?))
+                        }
+                        zutai_tlc::TlcTupleField::Positional(ty) => self.tlc_type_target_key(*ty),
+                    })
+                    .collect::<Option<_>>()?;
+                Some(format!("({})", parts.join(",")))
+            }
+            TlcType::List(inner) => Some(format!("[{}]", self.tlc_type_target_key(*inner)?)),
+            TlcType::Optional(inner) => Some(format!("{}?", self.tlc_type_target_key(*inner)?)),
+            TlcType::Maybe(inner) => Some(format!("Maybe[{}]", self.tlc_type_target_key(*inner)?)),
             _ => None,
+        }
+    }
+
+    fn tlc_row_target_parts(&self, row: &Row, include_optional: bool) -> Option<Vec<String>> {
+        let mut parts = Vec::new();
+        let mut current = row;
+        loop {
+            match current {
+                Row::REmpty => return Some(parts),
+                Row::RVar(_) => return None,
+                Row::RExtend {
+                    label,
+                    ty,
+                    optional,
+                    tail,
+                } => {
+                    let key = self.tlc_type_target_key(*ty)?;
+                    if include_optional {
+                        let marker = if *optional { "?:" } else { ":" };
+                        parts.push(format!("{label}{marker}{key}"));
+                    } else {
+                        parts.push(format!("{label}({key})"));
+                    }
+                    current = tail;
+                }
+            }
         }
     }
 

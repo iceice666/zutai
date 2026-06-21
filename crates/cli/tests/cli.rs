@@ -1285,3 +1285,66 @@ fn dataflow_print_program_lowers_after_host_effect_fold() {
         .success()
         .stdout(predicate::str::contains("Text"));
 }
+
+#[test]
+fn parse_invalid_zti_exits_nonzero() {
+    let path = write_tmp("cli_test_parse_invalid.zti", "{ a = 1 }\n");
+    cli()
+        .arg("parse")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to parse .zti"));
+}
+
+#[test]
+fn bare_invalid_zti_exits_nonzero() {
+    let path = write_tmp("cli_test_bare_invalid.zti", "{ a = [1] ; }\n");
+    cli()
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to parse .zti"));
+}
+
+#[test]
+fn run_integer_overflow_exits_runtime_error() {
+    let path = write_tmp("cli_test_run_overflow.zt", "9223372036854775807 + 1\n");
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "runtime error: integer overflow in `+`",
+        ));
+}
+
+#[test]
+fn dataflow_zt_type_error_exits_nonzero() {
+    let path = write_tmp("cli_test_dataflow_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    cli()
+        .arg("dataflow")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "type mismatch: expected Int, found Text",
+        ));
+}
+
+#[test]
+fn compile_entry_function_is_rejected() {
+    let path = write_tmp(
+        "cli_test_compile_entry_function.zt",
+        "id :: Int -> Int\n  = x => x;\nid\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "compiled entry point returns a function",
+        ));
+}

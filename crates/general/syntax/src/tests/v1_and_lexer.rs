@@ -153,6 +153,29 @@ fn v1_effect_row_syntax_parses() {
 }
 
 #[test]
+fn v1_effect_row_no_payload_and_signature_shapes() {
+    let f = parse_str(
+        r#"
+Eff :: type Unit ! { tick; fs.read : Path -> Text; fail Error }
+1
+"#,
+    );
+    let Decl::TypeAlias { ty, .. } = decl_by(&f, "Eff") else {
+        panic!("expected type alias");
+    };
+    let TypeExpr::Effect { effects, .. } = ty else {
+        panic!("expected effect type");
+    };
+    assert_eq!(effects.ops[0].path, vec!["tick"]);
+    assert_eq!(effects.ops[1].path, vec!["fs", "read"]);
+    assert_eq!(effects.ops[2].path, vec!["fail"]);
+    assert!(effects.ops[0].signature.is_none());
+    assert!(effects.ops[0].payload.is_none());
+    assert!(effects.ops[1].signature.is_some());
+    assert!(effects.ops[2].payload.is_some());
+}
+
+#[test]
 fn v1_effect_row_requires_operation_separators() {
     assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic }\n  = text => text;\nparse").has_errors());
 }
@@ -409,6 +432,30 @@ fn posit_literal_rounds_decimal_directly() {
         panic!("expected posit literal");
     };
     assert_eq!(literal.bits, 0x4000_0000_0000_003a);
+}
+
+#[test]
+fn posit_literal_decimal_edge_cases() {
+    use crate::posit::{PositSpec, parse_posit_literal};
+
+    let spec = PositSpec::new(32, 2).unwrap();
+    assert_eq!(parse_posit_literal(spec, "0").unwrap().bits, 0);
+    assert_eq!(parse_posit_literal(spec, "-0").unwrap().bits, 0);
+    assert!(parse_posit_literal(spec, ".1").is_none());
+    assert!(parse_posit_literal(spec, "1.").is_none());
+    assert!(parse_posit_literal(spec, "1e").is_none());
+    assert!(parse_posit_literal(spec, "-").is_none());
+}
+
+#[test]
+fn posit_literal_extreme_scale_saturates_or_minpos() {
+    use crate::posit::{PositSpec, parse_posit_literal};
+
+    let spec = PositSpec::new(32, 2).unwrap();
+    let huge_positive = parse_posit_literal(spec, "1e1000001").unwrap();
+    let huge_negative = parse_posit_literal(spec, "1e-1000001").unwrap();
+    assert!(huge_positive.bits > huge_negative.bits);
+    assert_eq!(huge_negative.bits, 1);
 }
 
 // ── parse_lossless: covers SyntaxKind::from_raw and kind_from_raw ─────────────

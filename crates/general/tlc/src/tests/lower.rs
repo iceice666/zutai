@@ -465,3 +465,82 @@ fn value_select_preserves_field_order_in_tlc() {
         "value select must lower to a record with fields in requested order [port, host]"
     );
 }
+
+fn row_field(row: &Row, name: &str) -> Option<(bool, TlcTypeId)> {
+    match row {
+        Row::RExtend {
+            label,
+            ty,
+            optional,
+            tail,
+        } if label == name => Some((*optional, *ty)),
+        Row::RExtend { tail, .. } => row_field(tail, name),
+        Row::REmpty | Row::RVar(_) => None,
+    }
+}
+
+#[test]
+fn effect_alias_application_lowers_to_non_empty_fun_effect_row() {
+    let m = tlc_of(
+        r#"
+Failing :: <A> type A ! { fail A }
+f :: Text -> Failing Int
+  = _ => perform fail 1;
+f
+"#,
+    );
+    let f_ty = m
+        .decls
+        .iter()
+        .find_map(|&decl_id| match &m.decl_arena[decl_id] {
+            TlcDecl::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })
+        .expect("value decl");
+    let TlcType::Fun(_, _, eff) = &m.type_arena[f_ty] else {
+        panic!("expected function type");
+    };
+    let Row::RExtend { label, ty: sig, .. } = eff else {
+        panic!("expected non-empty effect row");
+    };
+    assert_eq!(label, "fail");
+    let TlcType::Fun(param, result, Row::REmpty) = &m.type_arena[*sig] else {
+        panic!("expected effect signature function");
+    };
+    assert!(matches!(m.type_arena[*param], TlcType::Prim(PrimTy::Int)));
+    assert!(matches!(
+        m.type_arena[*result],
+        TlcType::Prim(PrimTy::Nothing)
+    ));
+}
+
+#[test]
+fn deep_patch_lowers_nested_record_fields_as_optional() {
+    let m = tlc_of(
+        r#"
+Config :: type { server : { host : Text; port : Int; }; enabled : Bool; }
+patch :: DeepPatch Config = { server = { port = 8080; }; }
+patch
+"#,
+    );
+    let patch_ty = m
+        .decls
+        .iter()
+        .find_map(|&decl_id| match &m.decl_arena[decl_id] {
+            TlcDecl::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })
+        .expect("patch decl");
+    let TlcType::Record(row) = &m.type_arena[patch_ty] else {
+        panic!("expected patch record type");
+    };
+    let (server_optional, server_ty) = row_field(row, "server").expect("server field");
+    let (enabled_optional, _) = row_field(row, "enabled").expect("enabled field");
+    assert!(server_optional);
+    assert!(enabled_optional);
+    let TlcType::Record(server_row) = &m.type_arena[server_ty] else {
+        panic!("expected nested server record");
+    };
+    assert!(row_field(server_row, "host").expect("host field").0);
+    assert!(row_field(server_row, "port").expect("port field").0);
+}
