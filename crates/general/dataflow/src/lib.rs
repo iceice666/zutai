@@ -126,7 +126,7 @@ pub enum DfNodeKind {
     Record(Vec<(String, NodeId)>),
     RecordUpdate {
         base: NodeId,
-        updates: Vec<(String, NodeId)>,
+        updates: Vec<(String, usize, NodeId)>,
     },
     Tuple(Vec<DfTupleNodeItem>),
     List(Vec<NodeId>),
@@ -136,6 +136,7 @@ pub enum DfNodeKind {
     Select {
         base: NodeId,
         field: String,
+        slot: usize,
     },
     Match {
         scrutinee: NodeId,
@@ -173,7 +174,7 @@ pub enum DfPattern {
     /// `Bind(n)` — `n` must be a Bind node owned by this arm.
     Bind(NodeId),
     Tuple(Vec<DfTuplePatItem>),
-    Record(Vec<(String, DfPattern)>),
+    Record(Vec<(String, usize, DfPattern)>),
     Variant(String, Box<DfPattern>),
 }
 

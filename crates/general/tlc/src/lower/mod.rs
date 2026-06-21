@@ -29,6 +29,7 @@ struct Lowerer<'thir> {
     type_arena: Arena<TlcType>,
     expr_types: HashMap<TlcExprId, TlcTypeId>,
     spans: HashMap<TlcExprId, Span>,
+    dict_field_slots: HashMap<TlcExprId, usize>,
     type_cache: HashMap<u32, TlcTypeId>,
     infer_to_tyvar: HashMap<u32, TlcTypeVar>,
     named_to_tyvar: HashMap<u32, TlcTypeVar>,
@@ -77,6 +78,7 @@ impl<'thir> Lowerer<'thir> {
             type_arena: Arena::new(),
             expr_types: HashMap::new(),
             spans: HashMap::new(),
+            dict_field_slots: HashMap::new(),
             type_cache: HashMap::new(),
             infer_to_tyvar: HashMap::new(),
             named_to_tyvar: HashMap::new(),
@@ -120,6 +122,7 @@ impl<'thir> Lowerer<'thir> {
             expr_arena: std::mem::take(&mut self.expr_arena),
             type_arena: std::mem::take(&mut self.type_arena),
             expr_types: std::mem::take(&mut self.expr_types),
+            dict_field_slots: std::mem::take(&mut self.dict_field_slots),
             spans: std::mem::take(&mut self.spans),
         }
     }
@@ -221,6 +224,33 @@ impl<'thir> Lowerer<'thir> {
         self.expr_types.insert(id, ty);
         self.spans.insert(id, span);
         id
+    }
+
+    fn register_dict_field_slot(&mut self, expr: TlcExprId, constraint: BindingId, method: &str) {
+        let slot = self.dict_method_slot(constraint, method);
+        self.dict_field_slots.insert(expr, slot);
+    }
+
+    fn dict_method_slot(&self, constraint: BindingId, method: &str) -> usize {
+        let mut names = self.constraint_method_names(constraint);
+        names.sort_unstable();
+        names.iter().position(|&name| name == method).unwrap_or(0)
+    }
+
+    fn constraint_method_names(&self, constraint: BindingId) -> Vec<&str> {
+        self.thir
+            .decls
+            .iter()
+            .find_map(|&decl_id| {
+                let decl = &self.thir.decl_arena[decl_id];
+                if decl.binding == constraint
+                    && let ThirDeclKind::Constraint { methods, .. } = &decl.kind
+                {
+                    return Some(methods.iter().map(|method| method.name.as_str()).collect());
+                }
+                None
+            })
+            .unwrap_or_default()
     }
 
     fn alloc_type(&mut self, ty: TlcType) -> TlcTypeId {

@@ -265,7 +265,7 @@ fn record_update_produces_record_update_node() {
         matches!(
             &n.kind,
             DfNodeKind::RecordUpdate { updates, .. }
-                if updates.iter().any(|(name, _)| name == "x")
+                if updates.iter().any(|(name, slot, _)| name == "x" && *slot == 0)
         )
     });
     assert!(has_update, "expected RecordUpdate node");

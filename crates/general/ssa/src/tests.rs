@@ -42,6 +42,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::List { .. } => "List".to_string(),
             SsaOp::Select { .. } => "Select".to_string(),
             SsaOp::Variant { .. } => "Variant".to_string(),
+            SsaOp::VariantValue { .. } => "VariantValue".to_string(),
             SsaOp::Builtin { .. } => "Builtin".to_string(),
             SsaOp::Coalesce { .. } => "Coalesce".to_string(),
             SsaOp::Error => "Error".to_string(),
@@ -223,12 +224,12 @@ fn capturing_lambda_uses_make_closure_and_load_capture() {
         ops.contains(&"LoadCapture".to_string()),
         "should load the captured variable: {ops:?}"
     );
-    // The legacy `__fn` closure-record hack must be gone.
-    let has_fn_field = all_instructions(&m).iter().any(|i| match &i.op {
-        SsaOp::Record { fields } => fields.iter().any(|(name, _)| name == "__fn"),
-        _ => false,
-    });
-    assert!(!has_fn_field, "no `__fn` record field should remain");
+    // The legacy `__fn` closure-record hack must be gone; this program has no
+    // user records, so any Record op would be that removed representation.
+    let has_record = all_instructions(&m)
+        .iter()
+        .any(|i| matches!(i.op, SsaOp::Record { .. }));
+    assert!(!has_record, "no closure Record op should remain");
 }
 
 // ── Top-level let declaration ──────────────────────────────────────────────────

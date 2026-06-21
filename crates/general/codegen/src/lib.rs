@@ -405,7 +405,7 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
         SsaOp::LoadCapture { closure, index: _ } => collect_from_value(closure, constants),
         SsaOp::TyApp { .. } => {}
         SsaOp::Record { fields } => {
-            for (_, v) in fields {
+            for v in fields {
                 collect_from_value(v, constants);
             }
         }
@@ -429,8 +429,9 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
                 collect_from_value(v, constants);
             }
         }
-        SsaOp::Select { base, field: _ } => collect_from_value(base, constants),
+        SsaOp::Select { base, slot: _ } => collect_from_value(base, constants),
         SsaOp::Variant { tag: _, value } => collect_from_value(value, constants),
+        SsaOp::VariantValue { scrutinee } => collect_from_value(scrutinee, constants),
         SsaOp::Builtin { op: _, lhs, rhs } => {
             collect_from_value(lhs, constants);
             collect_from_value(rhs, constants);
@@ -680,7 +681,7 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 "  %{}.rec = call i64 @zutai.record_new(i64 {})\n",
                 dest, count
             ));
-            for (idx, (_, value)) in fields.iter().enumerate() {
+            for (idx, value) in fields.iter().enumerate() {
                 out.push_str(&format!(
                     "  call void @zutai.record_set(i64 %{}.rec, i64 {}, i64 ",
                     dest, idx
@@ -700,12 +701,11 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             } else {
                 let mut prev = String::new();
                 fmt_value(base, &mut prev);
-                for (idx, (field, value)) in updates.iter().enumerate() {
+                for (idx, (slot, value)) in updates.iter().enumerate() {
                     let tmp_name = format!("%{}.upd{}", dest, idx);
-                    let field_key = u64::from_str_radix(&str_hash(field), 16).unwrap_or(0);
                     out.push_str(&format!(
                         "  {} = call i64 @zutai.record_update(i64 {}, i64 {}, i64 ",
-                        tmp_name, prev, field_key
+                        tmp_name, prev, slot
                     ));
                     fmt_value(value, out);
                     out.push_str(")\n");
@@ -763,11 +763,10 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         }
 
         // ── Select ──────────────────────────────────────────────────────────
-        SsaOp::Select { base, field } => {
-            let field_key = u64::from_str_radix(&str_hash(field), 16).unwrap_or(0);
+        SsaOp::Select { base, slot } => {
             out.push_str(&format!("  %{} = call i64 @zutai.record_get(i64 ", dest));
             fmt_value(base, out);
-            out.push_str(&format!(", i64 {})\n", field_key));
+            out.push_str(&format!(", i64 {})\n", slot));
         }
 
         // ── Variant ─────────────────────────────────────────────────────────
@@ -778,6 +777,13 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 dest, tag_val
             ));
             fmt_value(value, out);
+            out.push_str(")\n");
+        }
+
+        // ── Variant payload ─────────────────────────────────────────────────
+        SsaOp::VariantValue { scrutinee } => {
+            out.push_str(&format!("  %{} = call i64 @zutai.variant_value(i64 ", dest));
+            fmt_value(scrutinee, out);
             out.push_str(")\n");
         }
 
@@ -979,7 +985,7 @@ mod tests {
                         dest: "result".to_string(),
                         op: SsaOp::RecordUpdate {
                             base: SsaValue::Reg("base".to_string()),
-                            updates: vec![("port".to_string(), SsaValue::Lit(DfLit::Int(8080)))],
+                            updates: vec![(1, SsaValue::Lit(DfLit::Int(8080)))],
                         },
                     }],
                     terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
@@ -992,6 +998,7 @@ mod tests {
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("declare i64 @zutai.record_update"));
         assert!(llvm.contains("call i64 @zutai.record_update"));
+        assert!(llvm.contains("call i64 @zutai.record_update(i64 %base, i64 1, i64 8080)"));
     }
 
     #[test]

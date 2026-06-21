@@ -42,6 +42,7 @@ pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
         expr_arena: la_arena::Arena::new(),
         type_arena,
         expr_types: HashMap::new(),
+        dict_field_slots: HashMap::new(),
         spans: HashMap::new(),
         final_expr: None,
     }
@@ -70,6 +71,7 @@ fn tlc_module_is_constructible() {
         expr_arena: Arena::new(),
         type_arena: Arena::new(),
         expr_types: HashMap::new(),
+        dict_field_slots: HashMap::new(),
         spans: HashMap::new(),
         final_expr: None,
     };

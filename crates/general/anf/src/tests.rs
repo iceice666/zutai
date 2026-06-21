@@ -197,7 +197,7 @@ fn record_update_root_has_record_update_binding() {
         matches!(
             e,
             AnfExpr::RecordUpdate { updates, .. }
-                if updates.iter().any(|(name, _)| name == "x")
+                if updates.iter().any(|(slot, _)| *slot == 0)
         )
     });
     assert!(has_update, "expected RecordUpdate binding in root body");

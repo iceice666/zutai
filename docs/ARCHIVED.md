@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after renaming the progress/backlog split to `ARCHIVED.md`/`TBD.md`._
+_Last updated: 2026-06-21 after Phase 18 D-0004 slot-indexed record cutover._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -48,8 +48,9 @@ _Last updated: 2026-06-21 after renaming the progress/backlog split to `ARCHIVED
   operator lowering, source effect markers, reflection boundaries, and the
   TLC-first evaluator input contract.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
-  Native binary linking/execution remains
-  [Phase 18 TBD](TBD.md#phase-18-runtime-and-abi) work.
+  Record construction, selection, update, tuple-pattern binding, and variant
+  payload binding now use the slot-indexed runtime ABI. Native binary
+  linking/execution remains [Phase 18 TBD](TBD.md#phase-18-runtime-and-abi) work.
 - `zutai-eval` has both the THIR oracle and TLC evaluator. Differential coverage
   includes constraints, optionals, `.zti` imports, `.zt` imports, imported
   functions, transitive imports, imported witness dictionaries, record update,
@@ -96,6 +97,16 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 18 D-0004: Slot-indexed records ✅
+
+- TLC→DC resolves canonical record slots by lexicographically sorted field names;
+  witnessed-method dictionary access records its slot during THIR→TLC lowering.
+- DC/ANF/SSA pass integer slots to LLVM. `Select`, `RecordUpdate`, record/tuple
+  patterns, and variant payload binding no longer use field-name hashes.
+- Runtime support uses the existing slot-keyed `zutai-rt` helpers. D-0004 is
+  verified by IR-text slot assertions plus `zutai-rt` record round-trip tests;
+  native binary parity remains Phase 18 D-0010 work.
 
 ### Phase 17: Reflection builtins (`fields` / `schema`) ✅
 

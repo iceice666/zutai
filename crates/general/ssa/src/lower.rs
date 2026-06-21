@@ -222,7 +222,7 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
             SsaOp::Record {
                 fields: fields
                     .iter()
-                    .map(|(name, atom)| (name.clone(), atom_to_value(atom, globals)))
+                    .map(|atom| atom_to_value(atom, globals))
                     .collect(),
             }
         }
@@ -233,7 +233,7 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
                 base: atom_to_value(base, globals),
                 updates: updates
                     .iter()
-                    .map(|(name, value)| (name.clone(), atom_to_value(value, globals)))
+                    .map(|(slot, value)| (*slot, atom_to_value(value, globals)))
                     .collect(),
             }
         }
@@ -255,9 +255,9 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
             }
         }
 
-        AnfExpr::Select { base, field } => SsaOp::Select {
+        AnfExpr::Select { base, slot } => SsaOp::Select {
             base: atom_to_value(base, &ctx.global_closures),
-            field: field.clone(),
+            slot: *slot,
         },
 
         AnfExpr::Match { scrutinee, arms } => {
@@ -449,7 +449,7 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
                             dest: tmp.clone(),
                             op: SsaOp::Select {
                                 base: scrutinee.clone(),
-                                field: name.clone(),
+                                slot: i,
                             },
                         });
                         bind_pattern(inner, &SsaValue::Reg(tmp), bb);
@@ -460,7 +460,7 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
                             dest: tmp.clone(),
                             op: SsaOp::Select {
                                 base: scrutinee.clone(),
-                                field: format!("{i}"),
+                                slot: i,
                             },
                         });
                         bind_pattern(inner, &SsaValue::Reg(tmp), bb);
@@ -469,13 +469,13 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
             }
         }
         AnfPattern::Record(fields) => {
-            for (field_name, inner) in fields {
-                let tmp = format!("__rec_{field_name}");
+            for (slot, inner) in fields {
+                let tmp = format!("__rec_{slot}");
                 bb.instrs.push(SsaInstr {
                     dest: tmp.clone(),
                     op: SsaOp::Select {
                         base: scrutinee.clone(),
-                        field: field_name.clone(),
+                        slot: *slot,
                     },
                 });
                 bind_pattern(inner, &SsaValue::Reg(tmp), bb);
@@ -485,9 +485,8 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
             let tmp = format!("__var_{tag}");
             bb.instrs.push(SsaInstr {
                 dest: tmp.clone(),
-                op: SsaOp::Select {
-                    base: scrutinee.clone(),
-                    field: format!("__{tag}_value"),
+                op: SsaOp::VariantValue {
+                    scrutinee: scrutinee.clone(),
                 },
             });
             bind_pattern(inner, &SsaValue::Reg(tmp), bb);
@@ -522,7 +521,7 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             fv
         }
         AnfExpr::TyLam { ty_params: _, body } => free_vars_body(body),
-        AnfExpr::Record(fields) => fields.iter().flat_map(|(_, a)| free_vars_atom(a)).collect(),
+        AnfExpr::Record(fields) => fields.iter().flat_map(free_vars_atom).collect(),
         AnfExpr::RecordUpdate { base, updates } => {
             let mut fv = free_vars_atom(base);
             for (_, value) in updates {
@@ -538,7 +537,7 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             })
             .collect(),
         AnfExpr::List(elems) => elems.iter().flat_map(free_vars_atom).collect(),
-        AnfExpr::Select { base, field: _ } => free_vars_atom(base),
+        AnfExpr::Select { base, slot: _ } => free_vars_atom(base),
         AnfExpr::Match { scrutinee, arms } => {
             let mut fv = free_vars_atom(scrutinee);
             for arm in arms {

@@ -50,10 +50,10 @@ Goal: make emitted LLVM IR link and run. The pipeline is feature-complete throug
 IR text emission, but previous backend gates asserted IR shape only. The runtime
 ABI design and decisions D-0001…D-0010 live in [`docs/runtime-abi.md`](runtime-abi.md).
 
-Known backend defects fixed by this phase, not by local codegen tweaks:
-closures are constructed as records but never applied; records are written by
-ordinal slot but read by name hash; `@main` prints every result with `print_i64`
-regardless of type.
+Remaining backend work tracked by this phase: dense union tags are still name
+hashed; `@main` still prints every non-posit result with `print_i64` regardless
+of type; and `compile` still emits LLVM text without assembling/linking a native
+binary.
 
 - [x] **Runtime crate skeleton** — `crates/general/runtime/` (`zutai-rt`,
   `staticlib` + `rlib`): bump arena, object headers, and the `@zutai.*` ABI for
@@ -62,7 +62,7 @@ regardless of type.
 - [x] **Uniform closure ABI (D-0003)** — replace the `{ __fn, caps }` record hack
   with a closure object `{ header, code, caps[] }` and a single curried
   application convention; top-level functions become empty-capture closures.
-- [ ] **Slot-indexed records (D-0004)** — carry resolved ordinal slots through
+- [x] **Slot-indexed records (D-0004)** — carry resolved ordinal slots through
   `Select`/`RecordUpdate`; remove `str_hash` keying from codegen.
 - [ ] **Dense variant indices (D-0009)** — assign union members dense tags in
   declaration order; thread union type into variant construction and matching.

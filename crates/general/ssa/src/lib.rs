@@ -56,21 +56,23 @@ pub enum SsaOp {
         poly: SsaValue,
         ty_args: Vec<DfTyId>,
     },
-    /// Record construction: dest = { field1 = v1, field2 = v2, ... }.
-    Record { fields: Vec<(String, SsaValue)> },
-    /// Record update: dest = base with { field = value; ... }.
+    /// Record construction; fields are ordered by canonical slot.
+    Record { fields: Vec<SsaValue> },
+    /// Record update by canonical slot.
     RecordUpdate {
         base: SsaValue,
-        updates: Vec<(String, SsaValue)>,
+        updates: Vec<(usize, SsaValue)>,
     },
     /// Tuple construction.
     Tuple { items: Vec<SsaTupleItem> },
     /// List construction.
     List { elems: Vec<SsaValue> },
-    /// Record field selection: dest = base.field.
-    Select { base: SsaValue, field: String },
+    /// Record field selection by canonical slot: dest = base[slot].
+    Select { base: SsaValue, slot: usize },
     /// Variant construction: dest = tag(value).
     Variant { tag: String, value: SsaValue },
+    /// Variant payload extraction.
+    VariantValue { scrutinee: SsaValue },
     /// Binary builtin operation.
     Builtin {
         op: DfBuiltinOp,

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use la_arena::Arena;
@@ -54,6 +54,13 @@ fn lower_builtin_op(op: BuiltinOp) -> DfBuiltinOp {
     }
 }
 
+/// Slot = rank of `field` among the record type's field names, sorted ascending.
+fn record_slot(fields: &[DfRecordField], field: &str) -> usize {
+    let mut names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+    names.sort_unstable();
+    names.iter().position(|&name| name == field).unwrap_or(0)
+}
+
 fn lower_posit_op(op: BuiltinOp) -> Option<DfPositOp> {
     match op {
         BuiltinOp::Add => Some(DfPositOp::Add),
@@ -102,6 +109,8 @@ struct Lowerer<'m> {
     global_names: HashMap<BindingId, String>,
     /// Global bindings: BindingId → TLC type (for GlobalRef node types).
     global_types: HashMap<BindingId, TlcTypeId>,
+    /// Type alias binding → TLC body, used only to recover record field names for slots.
+    type_aliases: HashMap<BindingId, TlcTypeId>,
     /// Pre-allocated error type ID.
     error_ty: DfTyId,
 }
@@ -121,6 +130,7 @@ impl<'m> Lowerer<'m> {
             local_env: HashMap::new(),
             global_names: HashMap::new(),
             global_types: HashMap::new(),
+            type_aliases: HashMap::new(),
             error_ty,
         }
     }
@@ -136,6 +146,45 @@ impl<'m> Lowerer<'m> {
         id
     }
 
+    fn record_slot_for_df_ty(&self, ty: DfTyId, field: &str) -> Option<usize> {
+        match &self.types[ty] {
+            DfTy::Record(fields) => Some(record_slot(fields, field)),
+            _ => None,
+        }
+    }
+
+    fn record_slot_for_tlc_type(
+        &mut self,
+        ty: TlcTypeId,
+        field: &str,
+        seen_aliases: &mut HashSet<BindingId>,
+    ) -> Option<usize> {
+        match self.module.type_arena[ty].clone() {
+            TlcType::Record(_) => {
+                let df_ty = self.lower_type(ty);
+                self.record_slot_for_df_ty(df_ty, field)
+            }
+            TlcType::TyVar(TlcTypeVar::Named(binding), _) => {
+                let binding = BindingId(binding);
+                let body = *self.type_aliases.get(&binding)?;
+                if seen_aliases.insert(binding) {
+                    self.record_slot_for_tlc_type(body, field, seen_aliases)
+                } else {
+                    None
+                }
+            }
+            TlcType::TyLamK(_, _, body) | TlcType::TyApp(body, _) => {
+                self.record_slot_for_tlc_type(body, field, seen_aliases)
+            }
+            _ => None,
+        }
+    }
+
+    fn record_slot_for_expr_type(&mut self, expr: TlcExprId, field: &str) -> Option<usize> {
+        let ty = self.module.expr_types.get(&expr).copied()?;
+        self.record_slot_for_tlc_type(ty, field, &mut HashSet::new())
+    }
+
     // ── First pass: collect global names and types ────────────────────────────
 
     fn collect_globals(&mut self) {
@@ -147,7 +196,9 @@ impl<'m> Lowerer<'m> {
                         self.global_types.insert(*binding, *ty);
                     }
                 }
-                TlcDecl::TypeAlias { .. } => {}
+                TlcDecl::TypeAlias { binding, body, .. } => {
+                    self.type_aliases.insert(*binding, *body);
+                }
             }
         }
     }
@@ -339,28 +390,47 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::Record(fields) => {
-                let df_fields: Vec<(String, NodeId)> = fields
+                let mut df_fields: Vec<(String, NodeId)> = fields
                     .iter()
                     .map(|(name, expr_id)| (name.clone(), self.lower_expr(*expr_id)))
                     .collect();
+                df_fields.sort_by(|a, b| a.0.cmp(&b.0));
                 self.alloc_node(DfNodeKind::Record(df_fields), df_ty, span)
             }
 
             TlcExpr::RecordUpdate { receiver, fields } => {
                 let base = self.lower_expr(receiver);
-                let updates: Vec<(String, NodeId)> = fields
+                let result_ty = self.module.expr_types.get(&id).copied();
+                let updates: Vec<(String, usize, NodeId)> = fields
                     .iter()
-                    .map(|(name, expr_id)| (name.clone(), self.lower_expr(*expr_id)))
+                    .map(|(name, expr_id)| {
+                        let value = self.lower_expr(*expr_id);
+                        let slot = result_ty
+                            .and_then(|ty| {
+                                self.record_slot_for_tlc_type(ty, name, &mut HashSet::new())
+                            })
+                            .or_else(|| self.record_slot_for_df_ty(df_ty, name))
+                            .unwrap_or(0);
+                        (name.clone(), slot, value)
+                    })
                     .collect();
                 self.alloc_node(DfNodeKind::RecordUpdate { base, updates }, df_ty, span)
             }
 
             TlcExpr::GetField(expr, field) => {
+                let slot = self
+                    .module
+                    .dict_field_slots
+                    .get(&id)
+                    .copied()
+                    .or_else(|| self.record_slot_for_expr_type(expr, &field))
+                    .unwrap_or(0);
                 let base_node = self.lower_expr(expr);
                 self.alloc_node(
                     DfNodeKind::Select {
                         base: base_node,
                         field,
+                        slot,
                     },
                     df_ty,
                     span,
@@ -486,7 +556,10 @@ impl<'m> Lowerer<'m> {
             TlcPat::Record(fields) => {
                 let df_fields = fields
                     .iter()
-                    .map(|(name, p)| (name.clone(), self.lower_pat(p, context_ty)))
+                    .map(|(name, p)| {
+                        let slot = self.record_slot_for_df_ty(context_ty, name).unwrap_or(0);
+                        (name.clone(), slot, self.lower_pat(p, context_ty))
+                    })
                     .collect();
                 DfPattern::Record(df_fields)
             }

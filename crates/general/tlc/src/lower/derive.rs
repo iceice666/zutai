@@ -251,6 +251,7 @@ impl<'thir> Lowerer<'thir> {
             method_ty,
             span,
         );
+        self.register_dict_field_slot(method, constraint, method_name);
         let first = self.alloc_expr(TlcExpr::App(method, lhs), after_first_ty, span);
         self.alloc_expr(TlcExpr::App(first, rhs), bool_ty, span)
     }

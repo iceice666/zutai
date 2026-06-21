@@ -137,9 +137,9 @@ impl<'g> BodyLowerer<'g> {
                 }
             }
             DfNodeKind::Record(fields) => {
-                let anf_fields: Vec<(String, AnfAtom)> = fields
+                let anf_fields: Vec<AnfAtom> = fields
                     .into_iter()
-                    .map(|(name, v)| (name, self.lower_to_atom(v)))
+                    .map(|(_, v)| self.lower_to_atom(v))
                     .collect();
                 AnfExpr::Record(anf_fields)
             }
@@ -147,7 +147,7 @@ impl<'g> BodyLowerer<'g> {
                 let base = self.lower_to_atom(base);
                 let updates = updates
                     .into_iter()
-                    .map(|(name, value)| (name, self.lower_to_atom(value)))
+                    .map(|(_, slot, value)| (slot, self.lower_to_atom(value)))
                     .collect();
                 AnfExpr::RecordUpdate { base, updates }
             }
@@ -171,9 +171,9 @@ impl<'g> BodyLowerer<'g> {
                     elems.into_iter().map(|e| self.lower_to_atom(e)).collect();
                 AnfExpr::List(anf_elems)
             }
-            DfNodeKind::Select { base, field } => {
+            DfNodeKind::Select { base, slot, .. } => {
                 let b = self.lower_to_atom(base);
-                AnfExpr::Select { base: b, field }
+                AnfExpr::Select { base: b, slot }
             }
             DfNodeKind::Match { scrutinee, arms } => {
                 let s = self.lower_to_atom(scrutinee);
@@ -301,7 +301,7 @@ fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut HashMap<
             }
         }
         DfPattern::Record(fields) => {
-            for (_, p) in fields {
+            for (_, _, p) in fields {
                 collect_pat_bind_names(p, counter, out);
             }
         }
@@ -340,9 +340,9 @@ fn lower_dc_pattern(pat: &DfPattern, pat_binds: &HashMap<NodeId, String>) -> Anf
             AnfPattern::Tuple(anf_items)
         }
         DfPattern::Record(fields) => {
-            let anf_fields: Vec<(String, AnfPattern)> = fields
+            let anf_fields: Vec<(usize, AnfPattern)> = fields
                 .iter()
-                .map(|(name, p)| (name.clone(), lower_dc_pattern(p, pat_binds)))
+                .map(|(_, slot, p)| (*slot, lower_dc_pattern(p, pat_binds)))
                 .collect();
             AnfPattern::Record(anf_fields)
         }

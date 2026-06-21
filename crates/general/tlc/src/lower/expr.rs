@@ -215,11 +215,13 @@ impl<'thir> Lowerer<'thir> {
                             .unwrap_or(instantiation[0]);
                         let dict_expr = self.get_dict_expr(info.constraint, dict_inst, func_span);
                         let method_ty = self.lower_type(func_thir_ty);
+                        let method_name = info.name.clone();
                         let mut acc = self.alloc_expr(
-                            TlcExpr::GetField(dict_expr, info.name),
+                            TlcExpr::GetField(dict_expr, method_name.clone()),
                             method_ty,
                             span,
                         );
+                        self.register_dict_field_slot(acc, info.constraint, &method_name);
                         // Each method-level type param becomes a `TyApp`, in
                         // declaration order, so the dict's `TyLam`-wrapped method is
                         // instantiated at the call site's inferred type arguments.
@@ -432,7 +434,13 @@ impl<'thir> Lowerer<'thir> {
                 continue;
             };
             let (method_ty, after_first_ty) = self.binary_method_type(operand_ty, result_ty);
-            let method = self.alloc_expr(TlcExpr::GetField(dict, info.name), method_ty, span);
+            let method_name = info.name.clone();
+            let method = self.alloc_expr(
+                TlcExpr::GetField(dict, method_name.clone()),
+                method_ty,
+                span,
+            );
+            self.register_dict_field_slot(method, info.constraint, &method_name);
             let first = self.alloc_expr(TlcExpr::App(method, lhs_tlc), after_first_ty, span);
             return Some(self.alloc_expr(TlcExpr::App(first, rhs_tlc), result_ty, span));
         }

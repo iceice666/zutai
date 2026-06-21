@@ -45,7 +45,7 @@ fn collect_global_refs(
         }
         DfNodeKind::RecordUpdate { base, updates } => {
             collect_global_refs(graph, *base, out, visited);
-            for (_, value) in updates {
+            for (_, _, value) in updates {
                 collect_global_refs(graph, *value, out, visited);
             }
         }
@@ -67,7 +67,7 @@ fn collect_global_refs(
                 collect_global_refs(graph, e, out, visited);
             }
         }
-        DfNodeKind::Select { base, field: _ } => {
+        DfNodeKind::Select { base, .. } => {
             collect_global_refs(graph, *base, out, visited);
         }
         DfNodeKind::Match { scrutinee, arms } => {
@@ -122,7 +122,7 @@ fn collect_pat_refs(
             }
         }
         DfPattern::Record(fields) => {
-            let subs: Vec<DfPattern> = fields.iter().map(|(_, p)| p.clone()).collect();
+            let subs: Vec<DfPattern> = fields.iter().map(|(_, _, p)| p.clone()).collect();
             for sub in subs {
                 collect_pat_refs(graph, &sub, out, visited);
             }

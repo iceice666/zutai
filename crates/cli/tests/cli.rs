@@ -14,6 +14,25 @@ fn write_tmp(name: &str, content: &str) -> String {
     path.to_str().unwrap().to_string()
 }
 
+fn compile_stdout(name: &str, content: &str) -> String {
+    let path = write_tmp(name, content);
+    let output = cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("compile output should be UTF-8")
+}
+
+fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
+    let suffix = format!(", i64 {slot})");
+    llvm.lines()
+        .any(|line| line.contains(callee) && line.trim_end().ends_with(&suffix))
+}
+
 // ─── No-args / bad-args ───────────────────────────────────────────────────────
 
 #[test]
@@ -619,17 +638,12 @@ fn run_select_projects_record() {
 
 #[test]
 fn compile_select_emits_record_projection() {
-    let path = write_tmp("cli_test_compile_select.zt", SELECT_SRC);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .success()
-        // Match the call sites (not the always-present runtime `declare`s): a
-        // `record_get` projection per selected field and a `record_new` to build
-        // the projected record — neither appears unless `select` actually lowered.
-        .stdout(predicate::str::contains("call i64 @zutai.record_get"))
-        .stdout(predicate::str::contains("call i64 @zutai.record_new"));
+    let llvm = compile_stdout("cli_test_compile_select.zt", SELECT_SRC);
+    assert!(llvm.contains("call i64 @zutai.record_get"), "{llvm}");
+    assert!(llvm.contains("call i64 @zutai.record_new"), "{llvm}");
+    assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 2), "{llvm}");
+    assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 0), "{llvm}");
+    assert!(!llvm.contains("10100688915994460070"), "{llvm}");
 }
 
 #[test]
@@ -639,13 +653,74 @@ Server :: type { host : Text; port : Int; }
 server :: Server = { host = "localhost"; port = 80; }
 server with { port = 8080; }
 "#;
-    let path = write_tmp("cli_test_compile_record_update.zt", src);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("call i64 @zutai.record_update"));
+    let llvm = compile_stdout("cli_test_compile_record_update.zt", src);
+    assert!(llvm.contains("call i64 @zutai.record_update"), "{llvm}");
+    assert!(
+        llvm.lines().any(|line| {
+            line.contains("call i64 @zutai.record_update") && line.contains(", i64 1, i64 8080)")
+        }),
+        "{llvm}"
+    );
+    assert!(!llvm.contains("10100688915994460070"), "{llvm}");
+}
+
+#[test]
+fn compile_record_access_uses_sorted_slot_zero() {
+    let llvm = compile_stdout(
+        "cli_test_compile_record_slot_zero.zt",
+        "r := { b = 10; a = 20; }\nr.a\n",
+    );
+    assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 0), "{llvm}");
+    assert!(
+        llvm.lines().any(|line| {
+            line.contains("call void @zutai.record_set") && line.contains(", i64 0, i64 20)")
+        }),
+        "{llvm}"
+    );
+    assert!(!llvm.contains("12638187200555641996"), "{llvm}");
+}
+
+#[test]
+fn compile_record_access_uses_sorted_slot_one() {
+    let llvm = compile_stdout(
+        "cli_test_compile_record_slot_one.zt",
+        "r := { b = 10; a = 20; }\nr.b\n",
+    );
+    assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 1), "{llvm}");
+    assert!(
+        llvm.lines().any(|line| {
+            line.contains("call void @zutai.record_set") && line.contains(", i64 1, i64 10)")
+        }),
+        "{llvm}"
+    );
+    assert!(!llvm.contains("12638190499090526629"), "{llvm}");
+}
+
+#[test]
+fn compile_tuple_pattern_uses_positional_slot() {
+    let src = r#"
+first :: (Int, Int) -> Int
+  = (x, _) => x;
+first (1, 2)
+"#;
+    let llvm = compile_stdout("cli_test_compile_tuple_pattern_slot.zt", src);
+    assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 0), "{llvm}");
+}
+
+#[test]
+fn compile_variant_pattern_uses_variant_value() {
+    let src = r#"
+Shape :: type {
+  #circle: { radius: Int; };
+  #square: { side: Int; };
+}
+area :: Shape -> Int
+  = #circle { radius = r; } => r;
+  = #square { side = s; } => s;
+area (#circle { radius = 3; })
+"#;
+    let llvm = compile_stdout("cli_test_compile_variant_pattern_value.zt", src);
+    assert!(llvm.contains("call i64 @zutai.variant_value"), "{llvm}");
 }
 
 const OVERLAY_SRC: &str = r#"

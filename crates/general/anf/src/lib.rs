@@ -60,19 +60,19 @@ pub enum AnfExpr {
         ty_params: Vec<DfTyVar>,
         body: AnfBody,
     },
-    /// Record literal; all field values are atoms.
-    Record(Vec<(String, AnfAtom)>),
+    /// Record literal; values are ordered by canonical field slot.
+    Record(Vec<AnfAtom>),
     /// Record update; base and update values are atoms.
     RecordUpdate {
         base: AnfAtom,
-        updates: Vec<(String, AnfAtom)>,
+        updates: Vec<(usize, AnfAtom)>,
     },
     /// Tuple literal.
     Tuple(Vec<AnfTupleItem>),
     /// List literal; all elements are atoms.
     List(Vec<AnfAtom>),
-    /// Record field projection.
-    Select { base: AnfAtom, field: String },
+    /// Record field projection by canonical slot.
+    Select { base: AnfAtom, slot: usize },
     /// Pattern match (scrutinee must be an atom).
     Match {
         scrutinee: AnfAtom,
@@ -117,7 +117,7 @@ pub enum AnfPattern {
     /// Bind: introduce a name for the matched value.
     Bind(String),
     Tuple(Vec<AnfTuplePatItem>),
-    Record(Vec<(String, AnfPattern)>),
+    Record(Vec<(usize, AnfPattern)>),
     Variant(String, Box<AnfPattern>),
 }
 

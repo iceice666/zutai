@@ -161,7 +161,7 @@ fn collect_bind_nodes(pat: &DfPattern, out: &mut Vec<NodeId>) {
             }
         }
         DfPattern::Record(fields) => {
-            for (_, p) in fields {
+            for (_, _, p) in fields {
                 collect_bind_nodes(p, out);
             }
         }
@@ -393,7 +393,7 @@ fn check_pattern_refs(
             }
         }
         DfPattern::Record(fields) => {
-            for (_, pattern) in fields {
+            for (_, _, pattern) in fields {
                 check_pattern_refs(graph, owner, pattern, errors);
             }
         }
@@ -431,7 +431,7 @@ fn check_node_refs(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec<Valida
         }
         DfNodeKind::RecordUpdate { base, updates } => {
             check_node_ref(graph, owner, "base", *base, errors);
-            for (_, value) in updates {
+            for (_, _, value) in updates {
                 check_node_ref(graph, owner, "update", *value, errors);
             }
         }
@@ -517,7 +517,7 @@ fn check_record_update(
     graph: &DataflowGraph,
     owner: NodeId,
     base: NodeId,
-    updates: &[(String, NodeId)],
+    updates: &[(String, usize, NodeId)],
     errors: &mut Vec<ValidationError>,
 ) {
     if let Some(base_ty) = child_ty(graph, base)
@@ -535,7 +535,7 @@ fn check_record_update(
         return;
     };
 
-    for (name, value) in updates {
+    for (name, _, value) in updates {
         if let Some(type_field) = result_fields.iter().find(|field| field.name == *name) {
             if let Some(value_ty) = child_ty(graph, *value) {
                 check_same_type(graph, owner, "update", type_field.ty, value_ty, errors);
@@ -786,7 +786,7 @@ fn check_node_type_compat(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec
             _ => unexpected_type(owner, "type", "List", node.ty, errors),
         },
         DfNodeKind::Variant(_, _) => {}
-        DfNodeKind::Select { base, field } => check_select(graph, owner, *base, field, errors),
+        DfNodeKind::Select { base, field, .. } => check_select(graph, owner, *base, field, errors),
         DfNodeKind::Match { arms, .. } => {
             let clause_match_has_function_type = matches!(&graph.types[node.ty], DfTy::Fun(_, _));
             for arm in arms {
@@ -926,7 +926,7 @@ fn walk_node(
         }
         DfNodeKind::RecordUpdate { base, updates } => {
             walk_child(graph, id, "base", *base, scope, owners, visited, errors);
-            for (_, value) in updates {
+            for (_, _, value) in updates {
                 walk_child(graph, id, "update", *value, scope, owners, visited, errors);
             }
         }
