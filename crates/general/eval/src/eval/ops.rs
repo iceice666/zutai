@@ -54,7 +54,11 @@ pub(super) fn cmp_op(
 ) -> Result<Value, EvalError> {
     let ord = match (&lv, &rv) {
         (Value::Int(a), Value::Int(b)) => a.cmp(b),
-        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less),
+        (Value::Float(a), Value::Float(b)) => match a.partial_cmp(b) {
+            Some(o) => o,
+            // IEEE 754: NaN is unordered, so `<`/`<=`/`>`/`>=` are all false.
+            None => return Ok(Value::Bool(false)),
+        },
         (Value::Text(a), Value::Text(b)) => a.cmp(b),
         _ => {
             return Err(EvalError::TypeMismatch {

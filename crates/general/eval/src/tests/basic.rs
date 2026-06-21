@@ -558,3 +558,31 @@ classify 5
 ";
     assert_eq!(run(src), Value::Int(1));
 }
+
+// ─── regression: NaN comparisons (IEEE 754 unordered) ─────────────────────────
+
+#[test]
+fn nan_ordered_comparisons_are_false() {
+    // NaN is unordered: `<`, `<=`, `>`, `>=` against NaN must all be false, in
+    // BOTH the default TLC evaluator and the THIR oracle. Regression for the
+    // `partial_cmp(..).unwrap_or(Ordering::{Less,Equal})` NaN bug that returned
+    // `true` for `NaN <= x` / `NaN >= x`.
+    for op in ["<", "<=", ">", ">="] {
+        let src = format!("0.0 / 0.0 {op} 1.0");
+        assert_eq!(run(&src), Value::Bool(false), "TLC: NaN {op} 1.0");
+        assert_eq!(
+            eval_thir_file(&src).unwrap(),
+            Value::Bool(false),
+            "THIR oracle: NaN {op} 1.0"
+        );
+    }
+}
+
+// ─── regression: unit argument against an inferred parameter type ─────────────
+
+#[test]
+fn unit_argument_against_inferred_param_type_checks() {
+    // `(\x. 5) ()` — the lambda parameter type is an unsolved infer var; passing
+    // `()` must unify it with the unit tuple, not be rejected as "expected tuple".
+    assert_eq!(run("(\\x. 5) ()"), Value::Int(5));
+}

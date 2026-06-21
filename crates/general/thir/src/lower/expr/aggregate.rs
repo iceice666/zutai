@@ -88,6 +88,15 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
         let resolved = self.resolve_alias_for_expr(expected);
+        // An unsolved expected type (e.g. an inferred lambda parameter) is not yet
+        // known to be a tuple. Infer the literal's own type and unify it, rather
+        // than rejecting a well-typed `()` / tuple argument as "expected tuple".
+        if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+            let inferred = self.infer_tuple_expr(id, items, span);
+            let inferred_ty = self.expr(inferred).ty;
+            self.unify(inferred_ty, resolved, span);
+            return inferred;
+        }
         let TypeKind::Tuple(expected_items) = self.ty(resolved).kind.clone() else {
             let found = self.type_name(expected);
             self.diagnostics.push(ThirDiagnostic {
