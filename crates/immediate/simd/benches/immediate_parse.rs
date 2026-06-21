@@ -15,28 +15,35 @@ fn bench_immediate_parse(c: &mut Criterion) {
     for (name, input) in inputs {
         group.throughput(Throughput::Bytes(input.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("simd_scan", name),
-            input,
-            |bench, input| {
-                bench.iter(|| {
-                    let index = zutai_im_simd::scan(black_box(input)).expect("scan should succeed");
-                    black_box(index);
-                });
-            },
-        );
+        #[cfg(target_arch = "x86_64")]
+        {
+            group.bench_with_input(
+                BenchmarkId::new("sse2_parse", name),
+                input,
+                |bench, input| {
+                    bench.iter(|| {
+                        let parsed = zutai_im_simd::parse_sse2(black_box(input))
+                            .expect("parse should succeed");
+                        black_box(parsed);
+                    });
+                },
+            );
 
-        group.bench_with_input(
-            BenchmarkId::new("simd_parse", name),
-            input,
-            |bench, input| {
-                bench.iter(|| {
-                    let parsed =
-                        zutai_im_simd::parse(black_box(input)).expect("parse should succeed");
-                    black_box(parsed);
-                });
-            },
-        );
+            if std::is_x86_feature_detected!("avx2") {
+                group.bench_with_input(
+                    BenchmarkId::new("avx2_parse", name),
+                    input,
+                    |bench, input| {
+                        bench.iter(|| {
+                            // SAFETY: AVX2 support confirmed by the guard above.
+                            let parsed = unsafe { zutai_im_simd::parse_avx2(black_box(input)) }
+                                .expect("parse should succeed");
+                            black_box(parsed);
+                        });
+                    },
+                );
+            }
+        }
 
         group.bench_with_input(
             BenchmarkId::new("winnow_parse", name),

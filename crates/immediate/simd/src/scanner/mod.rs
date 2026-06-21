@@ -121,6 +121,26 @@ impl<'a> Scanner<'a> {
         self.scan_significant_with(classify_chunk)
     }
 
+    /// Scans the merged `significant` offsets using the SSE2 classifier,
+    /// bypassing runtime backend detection. SSE2 is baseline on x86_64, so
+    /// this is always safe to call.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn scan_significant_sse2(self) -> Result<Vec<usize>, ParseError> {
+        self.scan_significant_with(sse2::classify_chunk_sse2)
+    }
+
+    /// Scans the merged `significant` offsets using the AVX2 classifier,
+    /// bypassing runtime backend detection.
+    ///
+    /// # Safety
+    /// The current process must support AVX2
+    /// (`std::is_x86_feature_detected!("avx2")`).
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) unsafe fn scan_significant_avx2(self) -> Result<Vec<usize>, ParseError> {
+        // SAFETY: the caller guarantees AVX2 support for this process.
+        self.scan_significant_with(|chunk| unsafe { avx2::classify_chunk_avx2(chunk) })
+    }
+
     #[inline(always)]
     fn scan_with(
         self,
