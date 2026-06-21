@@ -624,6 +624,7 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             collect_from_value(fallback, constants);
         }
         SsaOp::Error => {}
+        SsaOp::Alias { value } => collect_from_value(value, constants),
         SsaOp::Phi { branches } => {
             for (_, v) in branches {
                 collect_from_value(v, constants);
@@ -1018,6 +1019,13 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         // ── Error ───────────────────────────────────────────────────────────
         SsaOp::Error => {
             out.push_str(&format!("  %{} = add i64 0, 0\n", dest));
+        }
+
+        // ── Alias ───────────────────────────────────────────────────────────
+        SsaOp::Alias { value } => {
+            out.push_str(&format!("  %{} = add i64 ", dest));
+            fmt_value(value, out);
+            out.push_str(", 0\n");
         }
 
         // ── Phi ─────────────────────────────────────────────────────────────

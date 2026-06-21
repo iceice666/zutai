@@ -47,6 +47,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::Builtin { .. } => "Builtin".to_string(),
             SsaOp::Coalesce { .. } => "Coalesce".to_string(),
             SsaOp::Error => "Error".to_string(),
+            SsaOp::Alias { .. } => "Alias".to_string(),
             SsaOp::Phi { .. } => "Phi".to_string(),
             SsaOp::MatchDiscriminant { .. } => "MatchDiscriminant".to_string(),
         })
@@ -358,16 +359,17 @@ s";
     );
 }
 
-// ── If desugars to match (produces MatchDiscriminant and Phi) ──────────────────
+// ── If desugars to match (produces branches and Phi) ───────────────────────────
 
 #[test]
-fn if_desugars_to_match_in_ssa() {
+fn if_desugars_to_branching_match_in_ssa() {
     let m = ssa_of("f x = if x then 1 else 2\nf true");
     let all_ops = all_op_names(&m);
+    let terms = all_terminator_kinds(&m);
     assert!(
-        all_ops.contains(&"MatchDiscriminant".to_string()),
-        "if should produce MatchDiscriminant: {:?}",
-        all_ops
+        terms.contains(&"Branch".to_string()),
+        "if should produce Branch terminators: {:?}",
+        terms
     );
     assert!(
         all_ops.contains(&"Phi".to_string()),

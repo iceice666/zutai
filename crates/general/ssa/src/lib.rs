@@ -89,6 +89,10 @@ pub enum SsaOp {
     Coalesce { value: SsaValue, fallback: SsaValue },
     /// Error sentinel.
     Error,
+    /// Plain value alias. Kept as an instruction so pattern bindings and ANF
+    /// atom lets can introduce the destination register without abusing LLVM
+    /// phi nodes in blocks with no matching predecessor edge.
+    Alias { value: SsaValue },
     /// Phi node: selects a value based on which predecessor block transferred control.
     /// `branches` maps predecessor block labels to the value selected from that path.
     Phi { branches: Vec<(String, SsaValue)> },

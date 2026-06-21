@@ -28,10 +28,6 @@ fn compile_stdout(name: &str, content: &str) -> String {
     String::from_utf8(output).expect("compile output should be UTF-8")
 }
 
-fn tool_available(name: &str) -> bool {
-    StdCommand::new(name).arg("--version").output().is_ok()
-}
-
 fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
     let suffix = format!(", i64 {slot})");
     llvm.lines()
@@ -619,10 +615,7 @@ c
 }
 
 #[test]
-fn compile_emit_obj_writes_object_when_llc_available() {
-    if !tool_available("llc") {
-        return;
-    }
+fn compile_emit_obj_writes_object() {
     let path = write_tmp("cli_test_compile_emit_obj.zt", "42\n");
     let out = write_tmp("cli_test_compile_emit_obj.o", "");
     cli()
@@ -637,10 +630,7 @@ fn compile_emit_obj_writes_object_when_llc_available() {
 }
 
 #[test]
-fn compile_emit_bin_runs_when_toolchain_available() {
-    if !tool_available("llc") || !tool_available("clang") {
-        return;
-    }
+fn compile_emit_bin_runs() {
     let path = write_tmp("cli_test_compile_emit_bin.zt", "42\n");
     let out = write_tmp("cli_test_compile_emit_bin", "");
     cli()
@@ -654,6 +644,26 @@ fn compile_emit_bin_runs_when_toolchain_available() {
     let output = StdCommand::new(&out).output().unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "42\n");
+}
+
+#[test]
+fn compile_emit_bin_recursive_function_runs() {
+    let path = write_tmp(
+        "cli_test_compile_emit_bin_fib.zt",
+        "fib :: Int -> Int\n  = n => if n < 2 then n else fib (n - 1) + fib (n - 2);\n\nfib 10\n",
+    );
+    let out = write_tmp("cli_test_compile_emit_bin_fib", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "55\n");
 }
 
 #[test]

@@ -182,14 +182,13 @@ fn lower_body(body: &AnfBody, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
 fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
     let op = match expr {
         AnfExpr::Atom(atom) => {
-            // "let x = y" in ANF → in SSA, x is just an alias for y.
-            // Emit a single-branch phi so dest is bound.
+            // "let x = y" in ANF is a plain value alias. A phi node would be
+            // invalid here because the current block has not necessarily been
+            // reached through an edge named in the phi's predecessor list.
             let val = lower_atom_value(atom, fb, ctx);
             fb.push(SsaInstr {
                 dest: dest.to_string(),
-                op: SsaOp::Phi {
-                    branches: vec![(fb.active.label.clone(), val)],
-                },
+                op: SsaOp::Alias { value: val },
             });
             return;
         }
@@ -227,9 +226,7 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
             let result = lower_body(body, fb, ctx);
             fb.push(SsaInstr {
                 dest: dest.to_string(),
-                op: SsaOp::Phi {
-                    branches: vec![(fb.active.label.clone(), result)],
-                },
+                op: SsaOp::Alias { value: result },
             });
             return;
         }
@@ -341,7 +338,7 @@ fn lower_lambda_function(
 
 // ── Match lowering ─────────────────────────────────────────────────────────────
 
-/// Lower a match expression. Creates arm blocks and a join block with a phi node.
+/// Lower a match expression into explicit tests, arm blocks, and a join phi.
 fn lower_match(
     dest: &str,
     scrutinee: &AnfAtom,
@@ -349,99 +346,247 @@ fn lower_match(
     fb: &mut FuncBuilder,
     ctx: &mut Ctx,
 ) {
-    // Emit a MatchDiscriminant instruction in the current block.
     let scrutinee_value = lower_atom_value(scrutinee, fb, ctx);
-    let scrut_reg = ctx.fresh.next_label("match_scrut");
-    fb.push(SsaInstr {
-        dest: scrut_reg.clone(),
-        op: SsaOp::MatchDiscriminant {
-            scrutinee: scrutinee_value,
-        },
-    });
 
-    // Plan: current block jumps to arm0, arm0→join, arm1→join, ..., join has phi.
-    let join_label = ctx.fresh.next_label("join");
-
-    // Labels for each arm block.
-    let arm_labels: Vec<String> = (0..arms.len())
-        .map(|_| ctx.fresh.next_label("arm"))
-        .collect();
-
-    // Jump from current block to the first arm.
-    if let Some(first) = arm_labels.first() {
-        fb.finish_and_start(SsaTerminator::Jump(first.clone()), arm_labels[0].clone());
-        // We just started a new active block labeled arm_labels[0], but we'll
-        // immediately replace it. The finish_and_start pushed the pre-match block
-        // (which now has the MatchDiscriminant + Jump to first arm) and created a
-        // new active block with label = arm_labels[0].
-    } else {
-        // No arms — unreachable, return error.
-        fb.finish_and_start(
-            SsaTerminator::Return(SsaValue::Reg("__error".to_string())),
-            join_label.clone(),
-        );
+    if arms.is_empty() {
+        fb.push(SsaInstr {
+            dest: dest.to_string(),
+            op: SsaOp::Alias {
+                value: SsaValue::Lit(DfLit::Int(0)),
+            },
+        });
         return;
     }
 
-    let mut phi_branches: Vec<(String, SsaValue)> = Vec::new();
+    let join_label = ctx.fresh.next_label("join");
+    let miss_label = ctx.fresh.next_label("match_miss");
+    let arm_labels: Vec<String> = (0..arms.len())
+        .map(|_| ctx.fresh.next_label("arm"))
+        .collect();
+    let mut test_labels = Vec::with_capacity(arms.len());
+    test_labels.push(fb.active.label.clone());
+    test_labels.extend((1..arms.len()).map(|_| ctx.fresh.next_label("match_test")));
+
+    let mut phi_branches: Vec<(String, SsaValue)> = Vec::with_capacity(arms.len());
 
     for (i, arm) in arms.iter().enumerate() {
-        // Set the active block label to the correct arm label.
-        // (After the first iteration we start a fresh block for the next arm.)
         let arm_label = arm_labels[i].clone();
+        let next_label = if i + 1 < arms.len() {
+            test_labels[i + 1].clone()
+        } else {
+            miss_label.clone()
+        };
 
-        // If this is not the arm we started after the jump, start a new block.
-        // Actually, after the first arm, we need to finish the previous arm's block
-        // and start the current arm's block. But for the first arm, the active
-        // block was already created by finish_and_start above.
+        lower_match_arm_test(&scrutinee_value, arm, &arm_label, &next_label, fb, ctx);
 
-        // Rename active block to match arm label.
-        fb.active.label = arm_label;
+        if arm.guard.is_none() {
+            bind_pattern(&arm.pattern, &scrutinee_value, &mut fb.active);
+        }
+        let arm_result = lower_body(&arm.body, fb, ctx);
+        let arm_exit_label = fb.active.label.clone();
+        phi_branches.push((arm_exit_label, arm_result));
 
-        let mut arm_fb = FuncBuilder::new(fb.active.label.clone());
-        // Take the instrs/label from fb's active block.
-        arm_fb.active = std::mem::replace(&mut fb.active, BlockBuilder::new(String::new()));
-        // arm_fb.active now has the arm label and any instrs from fb.
-
-        // Bind pattern variables from the scrutinee register.
-        bind_pattern(
-            &arm.pattern,
-            &SsaValue::Reg(scrut_reg.clone()),
-            &mut arm_fb.active,
-        );
-
-        // Lower the arm body.
-        let arm_result = lower_body(&arm.body, &mut arm_fb, ctx);
-
-        // Collect arm blocks + finish arm's active block with Jump to join.
-        // But first, move any completed blocks from arm_fb into fb.
-        fb.completed.extend(arm_fb.completed);
-
-        // The arm's active block jumps to join.
-        let arm_block_label = arm_fb.active.label.clone();
-
-        // Store phi branch: from this arm's block, the result is arm_result.
-        phi_branches.push((arm_block_label.clone(), arm_result));
-
-        // Finish the arm block and start the join block.
-        // (If there are more arms, we'd need blocks for them, but in this
-        // simplified model, all arms are in sequence and all jump to join.)
-        fb.active = arm_fb.active;
-        fb.active.terminator = Some(SsaTerminator::Jump(join_label.clone()));
-        let done = std::mem::replace(&mut fb.active, BlockBuilder::new(String::new()));
-        fb.completed.push(done.finish());
+        let next_active = if i + 1 < arms.len() {
+            test_labels[i + 1].clone()
+        } else {
+            miss_label.clone()
+        };
+        fb.finish_and_start(SsaTerminator::Jump(join_label.clone()), next_active);
     }
 
-    // Start the join block.
-    fb.active = BlockBuilder::new(join_label.clone());
+    // Semantic checking is responsible for exhaustiveness. Keep the generated
+    // control-flow graph structurally complete if an earlier stage lets a
+    // non-exhaustive match through.
+    fb.finish_and_start(
+        SsaTerminator::Return(SsaValue::Lit(DfLit::Int(0))),
+        join_label,
+    );
     fb.push(SsaInstr {
         dest: dest.to_string(),
         op: SsaOp::Phi {
             branches: phi_branches,
         },
     });
-    // The join block's terminator will be set by subsequent lowering
-    // (or by the function's Return terminator at the end).
+}
+
+fn lower_match_arm_test(
+    scrutinee: &SsaValue,
+    arm: &AnfArm,
+    arm_label: &str,
+    next_label: &str,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) {
+    let guard_label = if arm.guard.is_some() {
+        ctx.fresh.next_label("guard")
+    } else {
+        arm_label.to_string()
+    };
+
+    match emit_pattern_test(&arm.pattern, scrutinee, fb, ctx) {
+        Some(cond) => fb.finish_and_start(
+            SsaTerminator::Branch {
+                cond,
+                then_label: guard_label.clone(),
+                else_label: next_label.to_string(),
+            },
+            guard_label.clone(),
+        ),
+        None => fb.finish_and_start(
+            SsaTerminator::Jump(guard_label.clone()),
+            guard_label.clone(),
+        ),
+    }
+
+    if let Some(guard) = &arm.guard {
+        bind_pattern(&arm.pattern, scrutinee, &mut fb.active);
+        let guard_cond = lower_body(guard, fb, ctx);
+        fb.finish_and_start(
+            SsaTerminator::Branch {
+                cond: guard_cond,
+                then_label: arm_label.to_string(),
+                else_label: next_label.to_string(),
+            },
+            arm_label.to_string(),
+        );
+    }
+}
+
+fn emit_pattern_test(
+    pattern: &AnfPattern,
+    scrutinee: &SsaValue,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) -> Option<SsaValue> {
+    match pattern {
+        AnfPattern::Wildcard | AnfPattern::Bind(_) => None,
+        AnfPattern::Lit(lit) => Some(emit_value_eq(
+            scrutinee.clone(),
+            SsaValue::Lit(lit.clone()),
+            fb,
+            ctx,
+        )),
+        AnfPattern::Atom(name) => Some(emit_value_eq(
+            scrutinee.clone(),
+            SsaValue::Lit(DfLit::Atom(name.clone())),
+            fb,
+            ctx,
+        )),
+        AnfPattern::Tuple(items) => {
+            let mut combined = None;
+            for (i, item) in items.iter().enumerate() {
+                let inner = match item {
+                    AnfTuplePatItem::Named { pattern, .. }
+                    | AnfTuplePatItem::Positional(pattern) => pattern,
+                };
+                let field = emit_select_for_pattern(scrutinee.clone(), i, fb, ctx);
+                combined = combine_optional_conditions(
+                    combined,
+                    emit_pattern_test(inner, &field, fb, ctx),
+                    fb,
+                    ctx,
+                );
+            }
+            combined
+        }
+        AnfPattern::Record(fields) => {
+            let mut combined = None;
+            for (slot, inner) in fields {
+                let field = emit_select_for_pattern(scrutinee.clone(), *slot, fb, ctx);
+                combined = combine_optional_conditions(
+                    combined,
+                    emit_pattern_test(inner, &field, fb, ctx),
+                    fb,
+                    ctx,
+                );
+            }
+            combined
+        }
+        AnfPattern::Variant {
+            tag_index, pattern, ..
+        } => {
+            let tag = ctx.fresh.next_label("variant_tag");
+            fb.push(SsaInstr {
+                dest: tag.clone(),
+                op: SsaOp::MatchDiscriminant {
+                    scrutinee: scrutinee.clone(),
+                },
+            });
+            let tag_matches = emit_value_eq(
+                SsaValue::Reg(tag),
+                SsaValue::Lit(DfLit::Int(*tag_index as i64)),
+                fb,
+                ctx,
+            );
+            let payload = ctx.fresh.next_label("variant_payload");
+            fb.push(SsaInstr {
+                dest: payload.clone(),
+                op: SsaOp::VariantValue {
+                    scrutinee: scrutinee.clone(),
+                },
+            });
+            combine_optional_conditions(
+                Some(tag_matches),
+                emit_pattern_test(pattern, &SsaValue::Reg(payload), fb, ctx),
+                fb,
+                ctx,
+            )
+        }
+    }
+}
+
+fn emit_select_for_pattern(
+    scrutinee: SsaValue,
+    slot: usize,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) -> SsaValue {
+    let dest = ctx.fresh.next_label("pat_field");
+    fb.push(SsaInstr {
+        dest: dest.clone(),
+        op: SsaOp::Select {
+            base: scrutinee,
+            slot,
+        },
+    });
+    SsaValue::Reg(dest)
+}
+
+fn emit_value_eq(lhs: SsaValue, rhs: SsaValue, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
+    let dest = ctx.fresh.next_label("pat_eq");
+    fb.push(SsaInstr {
+        dest: dest.clone(),
+        op: SsaOp::Builtin {
+            op: DfBuiltinOp::Eq,
+            lhs,
+            rhs,
+        },
+    });
+    SsaValue::Reg(dest)
+}
+
+fn combine_optional_conditions(
+    lhs: Option<SsaValue>,
+    rhs: Option<SsaValue>,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) -> Option<SsaValue> {
+    match (lhs, rhs) {
+        (None, None) => None,
+        (Some(cond), None) | (None, Some(cond)) => Some(cond),
+        (Some(lhs), Some(rhs)) => {
+            let dest = ctx.fresh.next_label("pat_and");
+            fb.push(SsaInstr {
+                dest: dest.clone(),
+                op: SsaOp::Builtin {
+                    op: DfBuiltinOp::And,
+                    lhs,
+                    rhs,
+                },
+            });
+            Some(SsaValue::Reg(dest))
+        }
+    }
 }
 
 // ── Pattern binding ────────────────────────────────────────────────────────────
@@ -453,8 +598,8 @@ fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilde
         AnfPattern::Bind(name) => {
             bb.instrs.push(SsaInstr {
                 dest: name.clone(),
-                op: SsaOp::Phi {
-                    branches: vec![(bb.label.clone(), scrutinee.clone())],
+                op: SsaOp::Alias {
+                    value: scrutinee.clone(),
                 },
             });
         }
