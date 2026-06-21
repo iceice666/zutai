@@ -1,6 +1,6 @@
 [package]
 name = "zutai-semantic"
-description = "Semantic analysis pipeline for Zutai general mode (.zt)."
+description = "Semantic facade, import/module analysis, and staged pipeline for Zutai general mode (.zt)."
 edition.workspace = true
 version.workspace = true
 

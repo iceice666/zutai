@@ -1,14 +1,17 @@
-//! Semantic analysis pipeline for Zutai general mode (`.zt`).
+//! Semantic analysis facade for Zutai general mode (`.zt`).
 //!
-//! This crate is the facade that wires parser AST lowering into HIR and then
-//! THIR. It deliberately keeps stage results separate so callers can inspect
-//! partial output when a later semantic phase fails or is not implemented yet.
+//! This crate wires parser output into HIR, THIR, and TLC while keeping stage
+//! results separate for callers that need partial output after a later phase
+//! fails. It is not the home for ordinary single-IR passes: syntax/name and
+//! structural validation live in `zutai-hir`, type checking and typed
+//! elaboration live in `zutai-thir`, and fully elaborated type-lambda
+//! lowering lives in `zutai-tlc`.
 //!
-//! It also owns module loading: because THIR lowering is pure, the filesystem
-//! work for import declarations lives here (see [`import`]). Path-relative
-//! imports require a base directory, so the path-aware entry points
-//! ([`analyze_path`], [`analyze_with_base`]) carry one; the string-only entry
-//! points resolve imports with no base, which surfaces a clean diagnostic.
+//! `zutai-semantic` owns analysis that needs filesystem, module-graph, or
+//! cross-stage context: path-relative `.zti`/`.zt` import loading, recursive
+//! module analysis, import caching and cycle diagnostics, imported
+//! value/module maps for the evaluator, witness export merging, and backend /
+//! evaluator gate predicates over completed staged output.
 
 use std::collections::HashMap;
 use std::path::Path;
