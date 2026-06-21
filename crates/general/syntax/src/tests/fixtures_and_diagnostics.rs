@@ -242,3 +242,61 @@ fn diagnostic_exposes_structured_fix() {
     assert_eq!(diagnostic.fixes.len(), 1);
     assert_eq!(diagnostic.fixes[0].edits[0].replacement, "::");
 }
+
+#[test]
+fn unclosed_paren_reports_unclosed_delimiter() {
+    let kinds = parse_kinds("x := (1 + 2\nx");
+    assert!(
+        kinds.contains(&ParseErrorKind::UnclosedDelimiter('(')),
+        "expected unclosed `(` diagnostic, got {kinds:?}"
+    );
+}
+
+#[test]
+fn mismatched_delimiter_reports_matching_delimiter() {
+    // `(` is closed by `]`: the scanner pops a Paren frame against a Bracket
+    // close and emits an `ExpectedToken("matching delimiter")` diagnostic.
+    let kinds = parse_kinds("x := (1 + 2]\nx");
+    assert!(
+        kinds
+            .iter()
+            .any(|k| matches!(k, ParseErrorKind::ExpectedToken(_))),
+        "expected matching-delimiter diagnostic, got {kinds:?}"
+    );
+}
+
+#[test]
+fn parse_error_display_includes_span_and_expected() {
+    use crate::error::ParseError;
+    use crate::span::Span;
+    let err = ParseError::from_kind(Span::new(3, 7), ParseErrorKind::ExpectedToken("then"))
+        .with_expected(vec!["then", "else"]);
+    let rendered = err.to_string();
+    assert!(rendered.contains("3..7"), "span range shown: {rendered}");
+    assert!(rendered.contains("then"), "message shown: {rendered}");
+    assert!(
+        rendered.contains("expected: then, else"),
+        "expected list shown: {rendered}"
+    );
+}
+
+#[test]
+fn parse_error_from_kind_derives_dynamic_message() {
+    use crate::error::ParseError;
+    use crate::span::Span;
+    let span = Span::new(0, 1);
+    // `ExpectedToken` interpolates the token name into the message.
+    let tok = ParseError::from_kind(span, ParseErrorKind::ExpectedToken("=>"));
+    assert!(
+        tok.message.contains("=>"),
+        "token name interpolated: {}",
+        tok.message
+    );
+    // `UnclosedDelimiter` interpolates the delimiter char.
+    let delim = ParseError::from_kind(span, ParseErrorKind::UnclosedDelimiter('('));
+    assert!(
+        delim.message.contains('('),
+        "delimiter interpolated: {}",
+        delim.message
+    );
+}

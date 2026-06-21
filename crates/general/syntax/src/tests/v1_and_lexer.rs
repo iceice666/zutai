@@ -318,6 +318,53 @@ fn posit_type_postfix_diagnostics() {
 }
 
 #[test]
+fn number_type_name_round_trips_through_parse() {
+    use crate::numlit::NumberType;
+    // `name()` is the inverse of `parse()` for every canonical postfix run.
+    for run in [
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "p32", "p64", "p32e3",
+        "p64e5",
+    ] {
+        let ty = NumberType::parse(run).unwrap_or_else(|| panic!("postfix {run:?} should parse"));
+        assert_eq!(ty.name(), run, "name() must round-trip {run:?}");
+    }
+    assert!(NumberType::parse("i128").is_none(), "i128 is not a postfix");
+}
+
+#[test]
+fn parse_posit_number_type_postfix_edge_cases() {
+    use crate::posit::{PositSpec, parse_posit_number_type_postfix as parse};
+    // `e` exponent overflowing u8 is rejected.
+    assert!(parse("p32e999").is_none(), "es 999 overflows u8");
+    // `e` followed by a non-digit is rejected.
+    assert!(parse("p32ex").is_none(), "es must start with a digit");
+    // A non-32/64 width has no posit spec.
+    assert!(parse("p16").is_none(), "p16 is not a supported width");
+    // Missing the `p` prefix entirely.
+    assert!(parse("q32").is_none(), "missing `p` prefix");
+    // Default es (2) when no exponent suffix; consumes the whole run.
+    assert_eq!(parse("p32"), Some((PositSpec::new(32, 2).unwrap(), 3)));
+    // Digits stop at the first non-digit: `p32e3` is consumed, `x` is left.
+    assert_eq!(parse("p32e3x"), Some((PositSpec::new(32, 3).unwrap(), 5)));
+}
+
+#[test]
+fn parse_posit_type_name_edge_cases() {
+    use crate::posit::{PositSpec, parse_posit_type_name as parse};
+    // Non-32/64 width rejected.
+    assert!(
+        parse("Posit16").is_none(),
+        "Posit16 is not a supported width"
+    );
+    // Non-`Posit` names rejected.
+    assert!(parse("Int").is_none(), "Int is not a posit type name");
+    // Trailing junk after a valid spec is rejected (must consume the whole name).
+    assert!(parse("Posit32x").is_none(), "trailing junk rejected");
+    assert_eq!(parse("Posit32"), PositSpec::new(32, 2));
+    assert_eq!(parse("Posit64e5"), PositSpec::new(64, 5));
+}
+
+#[test]
 fn numeric_field_access_is_not_a_postfix() {
     assert!(
         !parse("1.foo").has_errors(),
