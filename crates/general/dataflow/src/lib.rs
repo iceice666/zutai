@@ -272,22 +272,71 @@ pub fn lower_tlc(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
     /// `spans.len() != nodes.len()` (invariant 6).
-    SpanTableSizeMismatch { spans: usize, nodes: usize },
+    SpanTableSizeMismatch {
+        spans: usize,
+        nodes: usize,
+    },
     /// A `Bind` node is owned by 0 or >1 Lambdas/arm-patterns (invariant 2).
-    BindOwnershipViolation { count: usize },
+    BindOwnershipViolation {
+        count: usize,
+    },
     /// A `GlobalRef` names a symbol not present in `globals` (invariant 5).
-    StrayGlobalRef { name: String },
+    StrayGlobalRef {
+        name: String,
+    },
+    InvalidRootNode {
+        target: NodeId,
+    },
+    InvalidNodeRef {
+        owner: NodeId,
+        field: &'static str,
+        target: NodeId,
+    },
+    InvalidTypeRef {
+        owner: DfTyId,
+        field: &'static str,
+        target: DfTyId,
+    },
+    InvalidNodeType {
+        node: NodeId,
+        ty: DfTyId,
+    },
+    UnexpectedNodeKind {
+        owner: NodeId,
+        field: &'static str,
+        target: NodeId,
+        expected: &'static str,
+    },
+    UnexpectedTypeKind {
+        owner: NodeId,
+        field: &'static str,
+        expected: &'static str,
+        actual: DfTyId,
+    },
+    TypeMismatch {
+        owner: NodeId,
+        field: &'static str,
+        expected: DfTyId,
+        actual: DfTyId,
+    },
+    MissingRequiredField {
+        owner: NodeId,
+        field: String,
+    },
+    ArmBindScopeViolation {
+        bind: NodeId,
+        match_node: NodeId,
+        arm_index: usize,
+        use_site: NodeId,
+    },
+    LambdaCaptureViolation {
+        bind: NodeId,
+        owner_lambda: NodeId,
+        use_site: NodeId,
+    },
 }
 
-/// Check a subset of the well-formedness invariants of a [`DataflowGraph`].
-///
-/// Currently checks invariants 2, 5, and 6 from `docs/dataflow-core.md`:
-/// - Bind ownership (every Bind node owned by exactly one Lambda or arm pattern).
-/// - No stray GlobalRefs (every GlobalRef name is in `globals`).
-/// - Span table size (`spans.len() == nodes.len()`).
-///
-/// Invariants 1 (type consistency), 3 (arm-bind scope), and 4 (lambda capture)
-/// require full graph traversal and are not yet implemented.
+/// Check well-formedness invariants 1-6 of a [`DataflowGraph`].
 ///
 /// In debug builds the lowerer calls this automatically after lowering.
 pub fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {

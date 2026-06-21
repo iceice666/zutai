@@ -1,4 +1,5 @@
 use crate::*;
+use la_arena::RawIdx;
 
 /// Build a DataflowGraph from a source string. Panics on any diagnostic.
 fn dc_of(src: &str) -> DataflowGraph {
@@ -340,6 +341,124 @@ fn recursive_function_has_global_ref_back_edge() {
 }
 
 // ── GlobalRef validity ────────────────────────────────────────────────────────
+
+fn invalid_node_id(g: &DataflowGraph) -> NodeId {
+    NodeId::from_raw(RawIdx::from_u32(g.nodes.len() as u32))
+}
+
+fn invalid_ty_id(g: &DataflowGraph) -> DfTyId {
+    DfTyId::from_raw(RawIdx::from_u32(g.types.len() as u32))
+}
+
+fn first_bind(g: &DataflowGraph) -> NodeId {
+    g.nodes
+        .iter()
+        .find_map(|(id, node)| matches!(&node.kind, DfNodeKind::Bind).then_some(id))
+        .expect("expected at least one Bind node")
+}
+
+fn first_builtin(g: &DataflowGraph) -> NodeId {
+    g.nodes
+        .iter()
+        .find_map(|(id, node)| matches!(&node.kind, DfNodeKind::Builtin(..)).then_some(id))
+        .expect("expected at least one Builtin node")
+}
+
+#[test]
+fn validation_rejects_invalid_root_node_ref() {
+    let mut g = dc_of("42");
+    let target = invalid_node_id(&g);
+    g.root = target;
+
+    let errors = validate(&g).expect_err("invalid root must fail validation");
+    assert!(errors.contains(&ValidationError::InvalidRootNode { target }));
+}
+
+#[test]
+fn validation_rejects_invalid_node_type_ref() {
+    let mut g = dc_of("42");
+    let node = g.nodes.iter().next().expect("expected a node").0;
+    let ty = invalid_ty_id(&g);
+    g.nodes[node].ty = ty;
+
+    let errors = validate(&g).expect_err("invalid node type must fail validation");
+    assert!(errors.contains(&ValidationError::InvalidNodeType { node, ty }));
+}
+
+#[test]
+fn validation_rejects_invalid_nested_type_ref() {
+    let mut g = dc_of("42");
+    let owner = g.types.alloc(DfTy::Error);
+    let target = invalid_ty_id(&g);
+    g.types[owner] = DfTy::List(target);
+    g.nodes[g.root].ty = owner;
+
+    let errors = validate(&g).expect_err("invalid nested type must fail validation");
+    assert!(errors.contains(&ValidationError::InvalidTypeRef {
+        owner,
+        field: "element",
+        target,
+    }));
+}
+
+#[test]
+fn validation_rejects_builtin_result_type_mismatch() {
+    let mut g = dc_of("1 + 2");
+    let node = first_builtin(&g);
+    let ty = g.types.alloc(DfTy::Bool);
+    g.nodes[node].ty = ty;
+
+    let errors = validate(&g).expect_err("builtin result mismatch must fail validation");
+    assert!(errors.iter().any(|error| matches!(
+        error,
+        ValidationError::TypeMismatch {
+            owner,
+            field: "type",
+            actual,
+            ..
+        } if *owner == node && *actual == ty
+    )));
+}
+
+#[test]
+fn validation_rejects_lambda_bind_used_outside_owner() {
+    let mut g = dc_of("id x = x\nid 1");
+    let bind = first_bind(&g);
+    g.root = bind;
+
+    let errors = validate(&g).expect_err("lambda bind outside owner must fail validation");
+    assert!(errors.iter().any(|error| matches!(
+        error,
+        ValidationError::LambdaCaptureViolation {
+            bind: error_bind,
+            use_site,
+            ..
+        } if *error_bind == bind && *use_site == bind
+    )));
+}
+
+#[test]
+fn validation_rejects_arm_bind_used_outside_arm() {
+    let mut g = dc_of("match 1 { | x => x; }");
+    let bind = first_bind(&g);
+    g.root = bind;
+
+    let errors = validate(&g).expect_err("arm bind outside arm must fail validation");
+    assert!(errors.iter().any(|error| matches!(
+        error,
+        ValidationError::ArmBindScopeViolation {
+            bind: error_bind,
+            use_site,
+            ..
+        } if *error_bind == bind && *use_site == bind
+    )));
+}
+
+#[test]
+fn validation_allows_nested_lambda_to_capture_outer_bind() {
+    validate(&dc_of("make :: Int -> Int -> Int\n  = x y => x;\nmake 1 2"))
+        .expect("nested lambda capture must validate");
+}
 
 #[test]
 fn no_stray_global_refs() {

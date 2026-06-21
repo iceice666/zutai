@@ -299,13 +299,13 @@ The full ANF design lives in `docs/anf.md` (to be written when that phase begins
 The following invariants must hold in a well-formed DataflowGraph:
 
 1. **Type consistency.** Every NodeId referenced inside a node's `DfNodeKind` must be present in the arena and have a compatible type with the context in which it appears.
-2. **Bind ownership.** Every `Bind` node is referenced as `param` by exactly one `Lambda`, or as `Bind(n)` in exactly one `DfPattern` within one `DfArm`. A `Bind` node is never the `body` of a `Lambda` directly.
+2. **Bind ownership.** Every `Bind` node is referenced as `param` by exactly one `Lambda`, or as `Bind(n)` in exactly one `DfPattern` within one `DfArm`. A `Bind` node may be used as an expression result when it is in lexical scope; ownership is tracked separately from use.
 3. **Arm bind scope.** A `Bind` node introduced in a `DfArm`'s pattern is only referenced within that arm's `guard` or `body`.
 4. **Lambda capture.** A `Bind` node `p` owned by `Lambda L` may be referenced by any node in `L`'s body sub-graph, including nodes inside nested Lambdas (closure capture). It must not be referenced outside `L`.
 5. **No stray GlobalRef.** Every `GlobalRef(name)` must name a key present in `globals` (after the full module is lowered — cycles are fine, dangling references are not).
 6. **Span table size.** `spans.len() == nodes.len()`.
 
-The validation pass in `zutai-dataflow` checks these invariants in debug builds.
+The validation pass in `zutai-dataflow` checks all six invariants in debug builds.
 
 ## Crate location
 
