@@ -162,7 +162,7 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 - TLC evaluation supports handled effects with delimited continuations.
 - `print` was re-pointed to `io.print`; host `run` handles residual `io.print`.
 - Backend support intentionally stops at residual-effect gates. LLVM support is
-  tracked separately in [Phase 19 TBD](TBD.md#phase-19-tbd-effect-lowering-past-tlc).
+  tracked separately in [Phase 20](TBD.md#phase-20-effects-aot-lowering).
 
 ### Phase 15: Effect typing ✅
 

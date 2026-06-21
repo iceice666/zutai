@@ -1,15 +1,134 @@
 # Zutai Open Work
 
+Open work falls in two independent groups: three **v1** milestones that each
+remove an AOT-backend rejection gate (a construct that already type-checks and
+evaluates but does not yet compile natively), and a **native-codegen** hardening
+item. The v1 typing and reference-evaluation surface is otherwise complete — see
+[`ARCHIVED.md`](ARCHIVED.md) Phases 1–19. The v1 milestones are independent
+(different builtins/gates) and may be implemented in any order; they are listed in
+recommended execution order.
+
+Out of scope by v1 spec, deliberately not milestones: host capabilities beyond
+`io.print` (filesystem/network/environment/clock/randomness, reserved as
+non-ambient in `v1_spec/05-effects.md`), user-defined `derive` recipes
+(`v1_spec/03-constraints.md` marks post-v1), and universe-level enforcement
+(`v1_spec/02-type-level-computation.md` states it as a "should"; type-level
+evaluation is fuel-bounded so `Type : Type` is not a runtime-soundness risk).
+
+## Phase 20: Effects AOT lowering
+
+Goal: compile and natively run effectful programs by elaborating algebraic effects
+to ordinary pure constructs before Dataflow Core, so `perform`/`handle`/`resume`
+and sequence expressions reach no backend stage.
+
+Removes the rejection gates (for programs whose effects are fully elaborated):
+
+- `zutai_tlc::residual_effect_reason` / `zutai_dataflow::try_lower_tlc`
+  (`crates/general/dataflow/src/lib.rs`).
+- `TlcExpr::{Perform,Handle,Resume}` → `DfNodeKind::Error`
+  (`crates/general/dataflow/src/lower.rs`).
+- The `residual_effect_reason` exits in CLI `compile`/`dataflow`
+  (`crates/cli/src/commands.rs`).
+
+Fixed design (do not redesign): pre-DC free-monad/CPS elaboration per
+[`tlc-core.md` §9](tlc-core.md). An effectful computation `A ! { op: P -> R }`
+becomes `Free Op A` using only existing `VariantT`/`Record`/`Lam`/`App`/`Case`/
+`GetField`/`Letrec` nodes; `perform op arg` injects `impure` with a captured
+continuation; `handle … with …` lowers to a recursive `Letrec` interpreter;
+`Fun(A,B,eff)` is erased to `Fun(A,B,REmpty)` before DC emission. Resumptions are
+one-shot (frontend/TLC invariant); the continuation is an ordinary single-use
+function. This single milestone also includes the host-boundary interpreter so a
+compiled binary runs `io.print`.
+
+Acceptance criteria:
+
+- A new pre-DC elaboration pass turns every fully-handled effectful program into
+  pure TLC: `residual_effect_reason` returns `None`, and the DC type of a
+  previously effectful function equals its pure `Fun(A,B,REmpty)` type.
+- `handle (perform fail "x") with { value = \v => v; fail = \e => e; }` compiles via
+  `compile --emit=llvm` and, via `--emit=bin`, the binary produces the same value
+  the reference evaluator (`zutai-eval` / `run`) yields.
+- A `@main` program that performs `io.print` (e.g. `print "hello"`) compiles via
+  `--emit=bin` and the binary prints `hello` through the runtime `io.print` handler
+  (`zutai.print_text`, `runtime-abi.md`).
+- The no-erasure gate is preserved: genuinely unhandled/residual effects the pass
+  cannot eliminate are still rejected with the existing diagnostics; erasure never
+  silently drops a non-empty effect row.
+- `cargo test --workspace` and `cargo clippy --workspace --all-targets` clean;
+  existing residual-effect rejection tests updated to use a still-residual program.
+
+## Phase 21: Config-overlay AOT lowering
+
+Goal: compile `overlay`/`overlayDeep` programs by lowering them to ordinary record
+operations before Dataflow Core.
+
+Removes the gate: `analysis.config_overlay_builtin_program()` exits in CLI
+`compile`/`dataflow` (`crates/cli/src/commands.rs`).
+
+Fixed design: lower `overlay`/`overlayDeep` to ordinary `Record`/field-presence
+(`Maybe`) operations matching the reference-evaluator semantics
+(`crates/general/eval/src/value.rs` `BuiltinFn`) and the merge rules in
+[`stdlib/config.md`](stdlib/config.md) — shallow replaces present fields and keeps
+absent ones; deep recursively merges present records and replaces scalars/lists/
+union tuples; `#none` is a value, not deletion. `Patch`/`DeepPatch` stay type-level
+utilities (compiler-backed type constructors, `stdlib/config.md`).
+
+Acceptance criteria:
+
+- `defaults |> overlay patch` over two record literals compiles via
+  `compile --emit=llvm` and runs (via `--emit=bin`) to the merged record the
+  reference evaluator yields.
+- A nested-record `overlayDeep` program compiles and runs, recursively merging the
+  nested record rather than replacing it.
+- Unknown-field / type-mismatch patches remain type-check errors (no new runtime
+  failure path), per `stdlib/config.md`.
+- `cargo test --workspace` and `cargo clippy --workspace --all-targets` clean.
+
+## Phase 22: Reflection AOT lowering
+
+Goal: compile `fields`/`schema` programs by const-folding compile-time reflection
+into ordinary backend values (both builtins).
+
+Removes the gate: `analysis.reflection_builtin_program()` exits in CLI
+`compile`/`dataflow` (`crates/cli/src/commands.rs`).
+
+Fixed design: reflection is compile-time and its `Type` argument is statically
+known, so `fields T` / `schema T` const-fold to literals before Dataflow Core.
+
+- `schema T` → ordinary serializable `Record`/`List`/`Text`/`Bool` data exactly as
+  the reference evaluator produces it (`v1_spec/04-metaprogramming.md` shapes); open
+  rows rejected as today.
+- `fields T` → a `List` of `{ name: Text; Type: <type value>; optional: Bool }`
+  records. The embedded `Type` value lowers to a runtime pointer to the static type
+  descriptor codegen already emits (`ARCHIVED.md` Phase 18); a runtime `Type` value
+  *is* that descriptor pointer.
+- Preserve the Phase 18 `@main`/`zutai.show` invariant: a final rendered value
+  containing a `Type` field is rejected with the existing Type-result diagnostic
+  (a `Type` value is not renderable); programs consuming only `.name`/`.optional`
+  (`Text`/`Bool`) render normally.
+
+Acceptance criteria:
+
+- `schema Server` for a closed record and a closed union compiles via
+  `--emit=llvm`/`--emit=bin` and the binary renders the same serializable structure
+  the reference evaluator prints.
+- A program reading `(fields Server)` metadata — e.g. the first field's `.name` and
+  `.optional` — compiles and runs to the matching `Text`/`Bool` values.
+- A `@main` that would render a raw `Type` value (e.g. bare `fields Server`) is
+  rejected with the existing Type-result compile diagnostic, not a backend crash.
+- `cargo test --workspace` and `cargo clippy --workspace --all-targets` clean.
+
 ## Native codegen
 
 ### PIE-safe executable output
 
 Status: TBD
 
-Current native binary emission links Linux artifacts with `-no-pie` because the
-LLVM IR can materialize global addresses through integer constants such as
-`ptrtoint (ptr @symbol to i64)`, which produces relocations rejected by PIE
-linking.
+Current native binary emission links Linux artifacts with `-no-pie`
+(`runtime_link_flags` in `crates/cli/src/commands.rs`) because the LLVM IR can
+materialize global addresses through integer constants such as
+`ptrtoint (ptr @symbol to i64)` (`crates/general/codegen/src/lib.rs`), which
+produces relocations rejected by PIE linking.
 
 Acceptance criteria:
 
