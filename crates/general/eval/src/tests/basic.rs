@@ -144,6 +144,11 @@ fn block_single_binding() {
 }
 
 #[test]
+fn block_typed_binding() {
+    assert_eq!(run("{ a : Int = 42; a }"), Value::Int(42));
+}
+
+#[test]
 fn block_sequential_bindings() {
     assert_eq!(run("{ a := 1; b := a + 1; b }"), Value::Int(2));
 }

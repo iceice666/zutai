@@ -498,6 +498,22 @@ fn parse_block_expr() {
 }
 
 #[test]
+fn parse_block_typed_local_binding() {
+    let e = parse_expr_str("{ x : Int = 1; x }");
+    match &e {
+        Expr::Block { bindings, .. } => {
+            assert_eq!(bindings.len(), 1);
+            assert_eq!(bindings[0].name, "x");
+            assert!(matches!(
+                &bindings[0].annotation,
+                Some(TypeExpr::Ident { name, .. }) if name == "Int"
+            ));
+        }
+        other => panic!("expected Block, got {other:?}"),
+    }
+}
+
+#[test]
 fn deeply_nested_parens_parse_without_exponential_blowup() {
     // Regression: group-vs-tuple disambiguation used to try `parse_tuple`, fail,
     // backtrack, and re-parse the inner expression as a group — re-parsing it

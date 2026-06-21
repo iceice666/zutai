@@ -180,6 +180,8 @@ impl<'a> Scanner<'a> {
 
         if self.stack.is_empty() && self.looks_like_top_level_single_colon(self.pos) {
             self.push(self.pos, self.pos + 1, ParseErrorKind::TopLevelSingleColon);
+        } else if self.in_value_brace() && self.looks_like_local_typed_binding_colon(self.pos) {
+            self.mark_local_binding();
         } else if self.in_value_brace() && self.looks_like_value_record_colon(self.pos) {
             self.push(
                 self.pos,
@@ -570,6 +572,33 @@ impl<'a> Scanner<'a> {
             }
         }
         true
+    }
+
+    fn looks_like_local_typed_binding_colon(&self, offset: usize) -> bool {
+        let segment_start = self.src[..offset]
+            .rfind(['\n', ';', '{'])
+            .map_or(0, |idx| idx + 1);
+        let prefix = self.src[segment_start..offset].trim();
+        if prefix.is_empty()
+            || !prefix
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            || !prefix
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        {
+            return false;
+        }
+
+        let after = &self.src[offset + 1..];
+        let segment_end = after.find([';', '}']).unwrap_or(after.len());
+        let type_and_value_start = &after[..segment_end];
+        type_and_value_start.char_indices().any(|(idx, ch)| {
+            ch == '='
+                && !type_and_value_start[idx..].starts_with("==")
+                && !type_and_value_start[idx..].starts_with("=>")
+        })
     }
 
     fn looks_like_value_record_colon(&self, offset: usize) -> bool {

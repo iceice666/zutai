@@ -819,6 +819,43 @@ fn block_local_binding_yields_result_type() {
 }
 
 #[test]
+fn typed_block_local_binding_checks_annotation() {
+    let file = completed_file("{ x : Int = 1; x }");
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
+fn typed_block_local_binding_reports_type_error() {
+    let lowered = lower("{ x : Int = \"bad\"; x }");
+
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Text"
+        )
+    }));
+}
+
+#[test]
+fn typed_block_local_binding_allows_type_params() {
+    let file = completed_file(
+        r#"
+id :: <A> A -> A
+  = x => {
+    y : A = x;
+    y
+  };
+id 42
+"#,
+    );
+
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+}
+
+#[test]
 fn list_literal_infers_homogeneous_list_type() {
     let file = completed_file("[1; 2; 3;]");
 

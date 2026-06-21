@@ -13,8 +13,18 @@ impl<'hir> Lowerer<'hir> {
         let bindings = bindings
             .iter()
             .map(|binding| {
-                let value = self.infer_expr(binding.value);
-                let ty = self.expr(value).ty;
+                let (value, ty) = match binding.annotation {
+                    Some(annotation) => {
+                        let ty = self.lower_type(annotation);
+                        let value = self.check_expr(binding.value, ty);
+                        (value, ty)
+                    }
+                    None => {
+                        let value = self.infer_expr(binding.value);
+                        let ty = self.expr(value).ty;
+                        (value, ty)
+                    }
+                };
                 self.value_types.insert(binding.binding, ty);
                 scoped_bindings.push(binding.binding);
                 ThirLocalBinding {
