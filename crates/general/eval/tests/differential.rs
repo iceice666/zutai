@@ -112,6 +112,41 @@ less :: <A: Ord> A -> A -> Bool
   = x y => x < y;
 less 2 1"#,
         ),
+        // ── posit arithmetic (exercises THIR-oracle posit binops + NaR) ──────
+        ("posit_sub", "5p32 - 2p32"),
+        ("posit_mul", "3p32 * 2p32"),
+        ("posit_div", "6p32 / 2p32"),
+        ("posit_div_by_zero_is_nar", "1p32 / 0p32"),
+        ("posit64_div", "6p64 / 2p64"),
+        ("posit_lt", "1p32 < 2p32"),
+        ("posit_eq", "2p32 == 2p32"),
+        // ── float arithmetic + IEEE comparison edges ─────────────────────────
+        ("float_sub", "5.0 - 2.0"),
+        ("float_mul", "3.0 * 2.0"),
+        ("float_div", "6.0 / 2.0"),
+        ("float_lt", "1.0 < 2.0"),
+        ("nan_comparison_is_false", "(0.0 / 0.0) < 1.0"),
+        // ── scalar / atom equality ───────────────────────────────────────────
+        ("int_eq", "3 == 3"),
+        ("atom_eq", "#ok == #ok"),
+        // ── aggregate construction + Display ─────────────────────────────────
+        ("named_tuple", "(x = 1, y = 2)"),
+        ("record_three_fields", "{ a = 1; b = 2; c = 3; }"),
+        ("nested_list", "[[1; 2;]; [3;];]"),
+        ("string_literal", "\"hi\""),
+        // ── literal-pattern clauses (exercises THIR-oracle match_pattern) ────
+        (
+            "match_string_clause",
+            "f :: Text -> Int\n  = \"x\" => 1;\n  = _ => 0;\nf \"x\"",
+        ),
+        (
+            "match_float_clause",
+            "f :: Float -> Int\n  = 1.0 => 1;\n  = _ => 0;\nf 1.0",
+        ),
+        (
+            "match_record_clause",
+            "P :: type { a : Int; b : Int; }\nf :: P -> Int\n  = { a = a; b = b; } => a + b;\nf { a = 2; b = 3; }",
+        ),
     ]
 }
 
@@ -214,6 +249,27 @@ fn expected_display(label: &str) -> Option<&'static str> {
         "operator_witness_bounded_eq" => Some("false"),
         "operator_witness_bounded_ne_from_eq" => Some("true"),
         "operator_witness_bounded_lt" => Some("true"),
+        "posit_sub" => Some("3p32"),
+        "posit_mul" => Some("6p32"),
+        "posit_div" => Some("3p32"),
+        "posit_div_by_zero_is_nar" => Some("NaNp32"),
+        "posit64_div" => Some("3p64"),
+        "posit_lt" => Some("true"),
+        "posit_eq" => Some("true"),
+        "float_sub" => Some("3.0"),
+        "float_mul" => Some("6.0"),
+        "float_div" => Some("3.0"),
+        "float_lt" => Some("true"),
+        "nan_comparison_is_false" => Some("false"),
+        "int_eq" => Some("true"),
+        "atom_eq" => Some("true"),
+        "named_tuple" => Some("(x = 1, y = 2)"),
+        "record_three_fields" => Some("{ a = 1;  b = 2;  c = 3 }"),
+        "nested_list" => Some("[[1; 2]; [3]]"),
+        "string_literal" => Some("\"hi\""),
+        "match_string_clause" => Some("1"),
+        "match_float_clause" => Some("1"),
+        "match_record_clause" => Some("5"),
         _ => None,
     }
 }
@@ -222,4 +278,30 @@ fn expected_display(label: &str) -> Option<&'static str> {
 /// walkers `force_deep` before returning, so Display is total).
 fn values_match(a: &Value, b: &Value) -> bool {
     a.to_string() == b.to_string()
+}
+
+/// Reachable runtime errors must surface identically from both walkers. A
+/// divergence here means one evaluator accepts (or differently rejects) a
+/// program the other refuses — a semantics-oracle bug.
+#[test]
+fn thir_and_tlc_runtime_errors_agree() {
+    let cases = [
+        ("int_div_by_zero", "1 / 0"),
+        ("int_overflow_add", "9223372036854775807 + 1"),
+        ("black_hole", "x :: Int = x\nx"),
+    ];
+    let mut divergences = Vec::new();
+    for (label, src) in cases {
+        let thir = eval_thir_file(src);
+        let tlc = eval_tlc_file(src);
+        match (&thir, &tlc) {
+            (Err(a), Err(b)) if a == b => {}
+            _ => divergences.push(format!("{label}: THIR={thir:?} TLC={tlc:?}")),
+        }
+    }
+    assert!(
+        divergences.is_empty(),
+        "THIR/TLC error divergences:\n{}",
+        divergences.join("\n")
+    );
 }
