@@ -3,11 +3,13 @@
 ## Sections
 
 - [v0 language specification](v0_spec/00-index.md)
-- [implementation progress and phase plan](PROGRESS.md)
+- [archived implementation status](ARCHIVED.md)
+- [TBD and open phase plan](TBD.md)
 - [TLC IR design](tlc-core.md)
 - [Dataflow Core IR design](dataflow-core.md)
 - [v1 deferred feature specification](v1_spec/00-index.md)
 - [Standard library](stdlib/00-index.md)
+
 ## General-mode compiler layers
 
 ```text

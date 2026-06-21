@@ -29,7 +29,17 @@ Source → HIR → THIR → TLC
 
 THIR is error-tolerant and source-preserving — the foundation for LSP tooling (diagnostics, hover types, go-to-definition). TLC (Type Lambda Calculus) is the fully-elaborated IR with explicit `TyLam`/`TyApp` and no free type variables; it is the clean input for all compilation stages.
 
-See `docs/dataflow-core.md` for the Dataflow Core IR specification and `docs/PROGRESS.md` for the full phase plan.
+See `docs/dataflow-core.md` for the Dataflow Core IR specification,
+`docs/ARCHIVED.md` for implemented status, and `docs/TBD.md` for the open
+phase plan.
+
+## Updating `docs/ARCHIVED.md` and `docs/TBD.md`
+
+- Keep `docs/ARCHIVED.md` focused on current baseline, validation notes, archived decisions, and completed milestones newest-to-oldest.
+- Keep active TODOs and TBD items in `docs/TBD.md`, ordered newest/open work first.
+- When a milestone finishes, move a short summary from `docs/TBD.md` into `docs/ARCHIVED.md`'s "Completed milestones, newest first" and leave unfinished follow-up in `docs/TBD.md`.
+- State support levels precisely: check-only, reference-interpreter support, backend rejection, or full compile/runtime support.
+- Update the relevant "Last updated" note and verification gate when changing implementation status; keep old long-form details compressed unless they explain a current risk.
 
 ## Repository layout
 
@@ -53,7 +63,8 @@ crates/
 docs/
   README.md            Documentation index
   dataflow-core.md     Dataflow Core IR design specification
-  PROGRESS.md          Phase-by-phase compile pipeline plan and progress tracker
+  ARCHIVED.md          Archived implementation status and completed milestones
+  TBD.md               Open milestones and unresolved TBD items
   v0_spec/             Zutai v0 language specification (8 chapters, source of truth)
   v1_spec/             Zutai v1 deferred feature specification
   stdlib/              Standard-library notes
@@ -82,7 +93,7 @@ Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
 - Prefer small, focused changes.
 - Do not overwrite user changes you did not make.
 - Read the relevant files in `docs/v0_spec/` before implementing v0 language syntax or semantics; read `docs/v1_spec/` as design context only when working on deferred v1 features.
-- After the v1 parser frontend, treat `docs/PROGRESS.md`'s post-frontend roadmap as the implementation order: HIR lowering first, then THIR row semantics, THIR→TLC row elaboration, `select` semantics, deferred constraint/witness milestones, effects, and reflection.
+- For remaining roadmap work, treat `docs/TBD.md` as the implementation order; completed post-frontend history lives in `docs/ARCHIVED.md`.
 - For v1 features, do not extend parser syntax further until the existing surface forms have HIR/THIR/TLC semantics. Prefer check-only support with precise unsupported-feature diagnostics before claiming compiler or interpreter support.
 - Keep parser syntax in `general/syntax`, name resolution and syntax-only normalization in `general/hir`, and type-dependent checking/elaboration in `general/thir`.
 - Keep constraint solving, zonking, and TyLam/TyApp elaboration in `general/tlc`; keep graph construction and TLC→DC lowering in `general/dataflow`; keep ANF scheduling in `general/anf`; keep SSA and LLVM emission in `general/ssa` and `general/codegen` respectively.

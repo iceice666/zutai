@@ -28,6 +28,8 @@ crates/
     types/             Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
+  ARCHIVED.md          Archived implementation status and completed milestones
+  TBD.md               Open milestones and unresolved TBD items
   v0_spec/             Zutai v0 language specification
   v1_spec/             Deferred post-v0 language design notes
   stdlib/              Standard library notes
@@ -38,6 +40,8 @@ docs/
 Start with the documentation index:
 
 - [docs/README.md](docs/README.md)
+- [Archived implementation status](docs/ARCHIVED.md)
+- [TBD and open phase plan](docs/TBD.md)
 - [Zutai v0 language specification](docs/v0_spec/00-index.md)
 - [Final design statement](docs/v0_spec/01-overview/final-design-statement.md)
 

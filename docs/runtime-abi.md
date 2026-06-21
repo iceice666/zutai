@@ -206,7 +206,7 @@ ZtVariant { i64 header; i64 tag; i64 payload; } // TAG_VARIANT
   `i64 zutai.variant_value(i64 v)`.
 - **Optional/Maybe** are ordinary variants: `#none`/`#some (v)` and
   `#absent`/`#present (v)`, matching the interpreter split documented in
-  `PROGRESS.md`. `i64 zutai.coalesce(i64 v, i64 fallback)` inspects the tag and
+  `ARCHIVED.md`. `i64 zutai.coalesce(i64 v, i64 fallback)` inspects the tag and
   returns the payload for `#some`/`#present`, else `fallback` — unwrapping
   exactly one layer (parity with `eval_tlc.rs`).
 
@@ -458,7 +458,7 @@ keeps its signature but gains a real definition.
 Effect typing and the residual-effect gate already exist: `compile`/`dataflow`
 reject non-empty function effect rows after TLC lowering, and `print` lowers to
 an `io.print` effect handled at the host `run` boundary
-(`PROGRESS.md` Phase 16). For v0 the only compiled effect is `io.print`, whose
+(`ARCHIVED.md` Phase 16). For v0 the only compiled effect is `io.print`, whose
 host handler is `zutai.print_text`. No effect machinery enters the runtime
 beyond that until a post-TLC effect lowering exists; the gate stays as-is.
 

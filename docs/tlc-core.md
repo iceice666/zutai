@@ -661,6 +661,6 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 ## 17. Related documents
 
 - **`docs/dataflow-core.md`** — the next compile stage; the TLC→DC lowering pass lives in `zutai-dataflow::lower`.
-- **`docs/PROGRESS.md`** — Phase 2 is the TLC phase; this document is the canonical spec for it.
+- **`docs/ARCHIVED.md`** — Phase 2 is the TLC phase; this document is the canonical spec for it.
 - **`docs/v0_spec/`** — source of truth for v0 syntax and semantics; every v0 construct has a Phase 0 encoding in §16.
 - **`docs/v1_spec/`** — design context for v1 features; all v1 constructs in §16 are expressible as elaboration in Phases 1–5.
