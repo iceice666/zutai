@@ -325,19 +325,11 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -
 // ---------------------------------------------------------------------------
 
 fn parse_tuple_or_group(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let checkpoint = *input;
-    match parse_tuple(input, options) {
-        Ok(e) => return Ok(e),
-        Err(_) => *input = checkpoint,
-    }
-    parse_group(input)
-}
-
-fn parse_tuple(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     '('.parse_next(input)?;
     let _guard = enter_delimiter();
     ws(input)?;
 
+    // Empty tuple `()`.
     if input.starts_with(')') {
         let (_, span) = spanned(|i: &mut &str| ')'.parse_next(i)).parse_next(input)?;
         return Ok(Expr::Tuple {
@@ -346,11 +338,24 @@ fn parse_tuple(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         });
     }
 
+    // Parse the first item exactly once. A following `,` makes this a tuple; a
+    // following `)` makes it a parenthesised group. Deciding from a single
+    // lookahead token avoids re-parsing the inner expression: the previous
+    // try-tuple-then-fall-back-to-group form parsed it twice per nesting level,
+    // which is O(2^n) on inputs like `((((x))))`.
     let first = parse_tuple_item(input, options)?;
     ws(input)?;
 
     if !input.starts_with(',') {
-        return fail.parse_next(input);
+        // Group: a single parenthesised expression. A bare named item with no
+        // trailing comma (`(x = e)`) is neither a group nor a valid tuple.
+        return match first {
+            TupleItem::Positional(e) => {
+                ')'.parse_next(input)?;
+                Ok(e)
+            }
+            TupleItem::Named { .. } => fail.parse_next(input),
+        };
     }
 
     let mut items = vec![first];
@@ -413,16 +418,6 @@ fn parse_tuple_item(input: &mut &str, options: ExprOptions) -> Result<TupleItem>
     *input = checkpoint;
     let e = super::parse_expr_with_options(input, options)?;
     Ok(TupleItem::Positional(e))
-}
-
-fn parse_group(input: &mut &str) -> Result<Expr> {
-    '('.parse_next(input)?;
-    let _guard = enter_delimiter();
-    ws(input)?;
-    let e = super::parse_expr(input)?;
-    ws(input)?;
-    ')'.parse_next(input)?;
-    Ok(e)
 }
 
 // ---------------------------------------------------------------------------

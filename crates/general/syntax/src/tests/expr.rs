@@ -465,3 +465,15 @@ fn parse_block_expr() {
         other => panic!("expected Block, got {other:?}"),
     }
 }
+
+#[test]
+fn deeply_nested_parens_parse_without_exponential_blowup() {
+    // Regression: group-vs-tuple disambiguation used to try `parse_tuple`, fail,
+    // backtrack, and re-parse the inner expression as a group — re-parsing it
+    // twice per nesting level, i.e. O(2^n). 40 levels is ~2^40 re-parses under the
+    // old code (it would hang for hours) but parses instantly now. Kept modest so
+    // the O(depth) recursive-descent stack stays well within the test thread.
+    let depth = 40;
+    let src = format!("{}42{}", "(".repeat(depth), ")".repeat(depth));
+    assert_eq!(as_int(&parse_expr_str(&src)), 42);
+}
