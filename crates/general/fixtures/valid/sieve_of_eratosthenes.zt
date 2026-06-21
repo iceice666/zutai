@@ -1,0 +1,21 @@
+divides :: Int -> Int -> Bool
+  = p n => (n / p) * p == n;
+
+survivesFrom :: Int -> Int -> Bool
+  = p n =>
+      if p * p > n then true
+      else if divides p n then false
+      else survivesFrom (p + 1) n;
+
+isPrime :: Int -> Bool
+  = n => if n < 2 then false else survivesFrom 2 n;
+
+countFrom :: Int -> Int -> Int
+  = n hi =>
+      if n > hi then 0
+      else (if isPrime n then 1 else 0) + countFrom (n + 1) hi;
+
+{
+  compact_primes = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29;];
+  prime_count = countFrom 2 30;
+}

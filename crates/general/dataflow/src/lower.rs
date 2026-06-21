@@ -153,6 +153,41 @@ impl<'m> Lowerer<'m> {
         }
     }
 
+    fn record_field_ty_for_df_ty(&self, ty: DfTyId, field: &str) -> Option<DfTyId> {
+        match &self.types[ty] {
+            DfTy::Record(fields) => fields
+                .iter()
+                .find(|record_field| record_field.name == field)
+                .map(|record_field| record_field.ty),
+            _ => None,
+        }
+    }
+
+    fn tuple_field_ty_for_df_ty(
+        &self,
+        ty: DfTyId,
+        index: usize,
+        name: Option<&str>,
+    ) -> Option<DfTyId> {
+        let DfTy::Tuple(fields) = &self.types[ty] else {
+            return None;
+        };
+        if let Some(name) = name
+            && let Some(ty) = fields.iter().find_map(|field| match field {
+                DfTupleField::Named {
+                    name: field_name,
+                    ty,
+                } if field_name == name => Some(*ty),
+                _ => None,
+            })
+        {
+            return Some(ty);
+        }
+        fields.get(index).map(|field| match field {
+            DfTupleField::Named { ty, .. } | DfTupleField::Positional(ty) => *ty,
+        })
+    }
+
     fn variant_tag_index_for_df_ty(&self, ty: DfTyId, tag: &str) -> usize {
         match &self.types[ty] {
             DfTy::Union(members) => members
@@ -574,13 +609,22 @@ impl<'m> Lowerer<'m> {
             TlcPat::Tuple(items) => {
                 let df_items = items
                     .iter()
-                    .map(|item| match item {
-                        TlcPatItem::Named { name, pat } => DfTuplePatItem::Named {
-                            name: name.clone(),
-                            pattern: self.lower_pat(pat, context_ty),
-                        },
+                    .enumerate()
+                    .map(|(index, item)| match item {
+                        TlcPatItem::Named { name, pat } => {
+                            let item_ty = self
+                                .tuple_field_ty_for_df_ty(context_ty, index, Some(name))
+                                .unwrap_or(context_ty);
+                            DfTuplePatItem::Named {
+                                name: name.clone(),
+                                pattern: self.lower_pat(pat, item_ty),
+                            }
+                        }
                         TlcPatItem::Positional(p) => {
-                            DfTuplePatItem::Positional(self.lower_pat(p, context_ty))
+                            let item_ty = self
+                                .tuple_field_ty_for_df_ty(context_ty, index, None)
+                                .unwrap_or(context_ty);
+                            DfTuplePatItem::Positional(self.lower_pat(p, item_ty))
                         }
                     })
                     .collect();
@@ -591,7 +635,10 @@ impl<'m> Lowerer<'m> {
                     .iter()
                     .map(|(name, p)| {
                         let slot = self.record_slot_for_df_ty(context_ty, name).unwrap_or(0);
-                        (name.clone(), slot, self.lower_pat(p, context_ty))
+                        let field_ty = self
+                            .record_field_ty_for_df_ty(context_ty, name)
+                            .unwrap_or(context_ty);
+                        (name.clone(), slot, self.lower_pat(p, field_ty))
                     })
                     .collect();
                 DfPattern::Record(df_fields)
@@ -647,8 +694,11 @@ impl<'m> Lowerer<'m> {
             TlcType::Singleton(TlcLit::Posit(literal)) => {
                 self.types.alloc(DfTy::Posit(literal.spec))
             }
-            // Other singletons (Int, Float, Text, Nothing) have no DC type representation.
-            TlcType::Singleton(_) => self.types.alloc(DfTy::Error),
+            TlcType::Singleton(TlcLit::Int(_)) => self.types.alloc(DfTy::Int),
+            TlcType::Singleton(TlcLit::Float(_)) => self.types.alloc(DfTy::Float),
+            TlcType::Singleton(TlcLit::Str(_)) => self.types.alloc(DfTy::Text),
+            // Nothing has no DC runtime type representation.
+            TlcType::Singleton(TlcLit::Nothing) => self.types.alloc(DfTy::Error),
 
             TlcType::Fun(a, b, _eff) => {
                 let da = self.lower_type(a);
@@ -687,7 +737,7 @@ impl<'m> Lowerer<'m> {
             TlcType::Record(row) => {
                 // Collect field data (copy TlcTypeIds out) before calling lower_type.
                 let field_data: Vec<(String, bool, TlcTypeId)> = row_to_fields(&row);
-                let df_fields: Vec<DfRecordField> = field_data
+                let mut df_fields: Vec<DfRecordField> = field_data
                     .into_iter()
                     .map(|(name, optional, ty_id)| DfRecordField {
                         name,
@@ -695,6 +745,7 @@ impl<'m> Lowerer<'m> {
                         ty: self.lower_type(ty_id),
                     })
                     .collect();
+                df_fields.sort_by(|a, b| a.name.cmp(&b.name));
                 self.types.alloc(DfTy::Record(df_fields))
             }
 

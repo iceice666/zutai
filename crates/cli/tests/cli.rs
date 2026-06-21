@@ -647,6 +647,49 @@ fn compile_emit_bin_runs() {
 }
 
 #[test]
+fn compile_emit_bin_record_descriptor_matches_slots() {
+    let path = write_tmp(
+        "cli_test_compile_emit_bin_record_slots.zt",
+        "{ prime_count = 10; compact_primes = [2; 3; 5;]; }\n",
+    );
+    let out = write_tmp("cli_test_compile_emit_bin_record_slots", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "{ compact_primes = [2; 3; 5];  prime_count = 10 }\n",
+    );
+}
+
+#[test]
+fn compile_emit_bin_multi_arg_division_runs() {
+    let path = write_tmp(
+        "cli_test_compile_emit_bin_divides.zt",
+        "divides :: Int -> Int -> Bool\n  = p n => (n / p) * p == n;\n\ndivides 2 4\n",
+    );
+    let out = write_tmp("cli_test_compile_emit_bin_divides", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "true\n");
+}
+
+#[test]
 fn compile_emit_bin_recursive_function_runs() {
     let path = write_tmp(
         "cli_test_compile_emit_bin_fib.zt",
