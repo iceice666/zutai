@@ -528,7 +528,12 @@ fn run_tool(command: &mut Command, tool: &str, purpose: &str) -> Result<(), Box<
 fn assemble_object(ll: &Path, out: &Path) -> Result<(), Box<dyn Error>> {
     let llc = tool_name("ZUTAI_LLC", "LLC", "llc");
     let mut command = Command::new(&llc);
-    command.arg("-filetype=obj").arg("-o").arg(out).arg(ll);
+    command
+        .arg("-filetype=obj")
+        .arg("-relocation-model=pic")
+        .arg("-o")
+        .arg(out)
+        .arg(ll);
     run_tool(&mut command, &llc, "assembling LLVM IR")
 }
 
@@ -540,21 +545,46 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn cargo_target_dir(root: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => {
+            let path = PathBuf::from(dir);
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        }
+        None => root.join("target"),
+    }
+}
+
+fn append_rustflag(flag: &str) -> String {
+    match std::env::var("RUSTFLAGS") {
+        Ok(existing) if !existing.trim().is_empty() => format!("{existing} {flag}"),
+        _ => flag.to_string(),
+    }
+}
+
 fn build_runtime_archive() -> Result<PathBuf, Box<dyn Error>> {
     let root = workspace_root();
+    let target_dir = cargo_target_dir(&root);
     let mut command = Command::new("cargo");
     command
         .arg("build")
         .arg("-p")
         .arg("zutai-rt")
         .current_dir(&root);
+    if std::env::consts::OS == "linux" {
+        command.env("RUSTFLAGS", append_rustflag("-C relocation-model=pic"));
+    }
     run_tool(&mut command, "cargo", "building zutai-rt")?;
-    Ok(root.join("target").join("debug").join("libzutai_rt.a"))
+    Ok(target_dir.join("debug").join("libzutai_rt.a"))
 }
 
 fn runtime_link_flags() -> &'static [&'static str] {
     match std::env::consts::OS {
-        "linux" => &["-no-pie", "-lpthread", "-ldl", "-lm"],
+        "linux" => &["-pie", "-lpthread", "-ldl", "-lm"],
         "macos" => &[],
         _ => &[],
     }
@@ -791,5 +821,16 @@ mod tests {
     #[test]
     fn count_decls_in_returns_two_for_two_decls() {
         assert_eq!(count_decls_in("x ::= 1\ny ::= 2\nx\n"), 2);
+    }
+
+    #[test]
+    fn runtime_link_flags_never_request_non_pie() {
+        assert!(!runtime_link_flags().contains(&"-no-pie"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_runtime_link_flags_request_pie() {
+        assert!(runtime_link_flags().contains(&"-pie"));
     }
 }

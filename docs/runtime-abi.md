@@ -9,8 +9,9 @@ that links against `libzutai_rt`.
 > crate defines the runtime symbols; codegen emits the D-0003 uniform closure
 > ABI, dense per-union variant tags, static `DfTy` descriptors, and a
 > type-directed `@main`; `compile --emit=llvm|obj|bin` selects LLVM text,
-> object, or native binary output. Object/binary modes require `llc`/`clang` on
-> the host and report actionable diagnostics when absent.
+> object, or native binary output. Object mode uses
+> `llc -filetype=obj -relocation-model=pic`; Linux binary mode requests
+> `clang -pie` and is verified by the native binary matrix.
 
 ## Pipeline position
 
@@ -348,8 +349,14 @@ desc ::= INT | BOOL | FLOAT | TEXT | ATOM
        | MAYBE    desc_ref                       -- fixed #absent / #present rendering
        | VARIANT  n (tag_str_ref, payload_ref?)^n
 name_ref / tag_str_ref ::= (ptr, len) into the static string pool
-desc_ref               ::= index into the descriptor table
+desc_ref               ::= ptr to another descriptor entry
 ```
+
+Emitted static objects and descriptors use pointer-typed LLVM fields (`ptr @...`)
+for relocatable static references while preserving the runtime 8-byte word layout
+that `show` reads as `i64` slots. `ptrtoint (ptr @...)` constant expressions are
+forbidden in global initializers; static addresses are materialized inside
+functions with `ptrtoint ptr @... to i64` instructions.
 
 `OPTIONAL` and `MAYBE` are distinct from generic `VARIANT` because their arms
 and rendering are fixed — they are distinct `DfTy` constructors
@@ -386,13 +393,14 @@ landable later without an ABI break.
 `compile` has an emit selector:
 
 - `--emit=llvm` (default; write `.ll` text or stdout),
-- `--emit=obj` (invoke `llc -filetype=obj` → object file),
+- `--emit=obj` (invoke `llc -filetype=obj -relocation-model=pic -o <out> <ll>` → object file),
 - `--emit=bin` (assemble, then link against `libzutai_rt` → native executable).
 
 The driver discovers `clang`/`llc` from `PATH` (overridable via
 `ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and emits a precise, actionable
 diagnostic when the toolchain is absent rather than failing opaquely. The Rust
 runtime archive is built by `cargo` and located via the workspace target tree.
+On Linux the linker shape is `clang <obj> <libzutai_rt.a> -pie -lpthread -ldl -lm -o <out>`.
 
 ---
 
@@ -451,14 +459,16 @@ no effect machinery enters Dataflow Core, ANF, SSA, LLVM, or the runtime ABI.
 
 - **Codegen/CLI shape tests.** IR text asserts dense variant tags, static type
   descriptors, `zutai.show` entry rendering, closure ABI calls, slot-indexed
-  records, and residual-effect rejection.
+  records, residual-effect rejection, and PIE-safe static-address materialization
+  with no `ptrtoint (ptr @...)` constant-expression form.
 - **Native driver tests.** `compile --emit=obj` / `--emit=bin` tests run when
   `llc`/`clang` are available and skip cleanly when the host lacks that
-  toolchain.
+  toolchain. The Linux binary matrix covers primitive, record, tuple, union,
+  text, atom, and posit entry values.
 - **ABI unit tests** in `zutai-rt`: record set/get round-trip by slot, record
   update immutability, list build/traverse, variant tag/value, coalesce on each
-  optional shape, text concat, closure capture + curried application, and
-  type-directed `show`.
+  optional shape, text concat, closure capture + curried application, posit
+  rendering, and type-directed `show`.
 
 Gate: `cargo test --workspace` plus `cargo clippy --workspace --all-targets`
 and `cargo fmt --check`; native object/binary execution is toolchain-gated.

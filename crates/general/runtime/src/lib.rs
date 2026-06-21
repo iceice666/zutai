@@ -402,6 +402,25 @@ fn to_f64_p64<const ES: u32>(bits: u64) -> f64 {
     Posit::<64, ES, i128>::from_bits(bits as i64 as i128).round_into()
 }
 
+type P32<const ES: u32> = Posit<32, ES, i64>;
+
+fn p32_from_abi<const ES: u32>(bits: i32) -> P32<ES> {
+    P32::<ES>::from_bits(bits as i64)
+}
+
+fn p32_to_abi<const ES: u32>(value: P32<ES>) -> i32 {
+    value.to_bits() as i32
+}
+
+fn p32_add<const ES: u32>(lhs: i32, rhs: i32) -> i32 {
+    p32_to_abi(p32_from_abi::<ES>(lhs) + p32_from_abi::<ES>(rhs))
+}
+
+#[unsafe(export_name = "zutai.posit32e2.add")]
+pub extern "C" fn posit32e2_add(lhs: i32, rhs: i32) -> i32 {
+    p32_add::<2>(lhs, rhs)
+}
+
 fn fmt_posit(bits: i64, nbits: i64, es: i64) -> String {
     let value = match nbits {
         32 => match_p32_es!(es, to_f64_p32, bits as u64),

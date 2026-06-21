@@ -104,54 +104,130 @@ fn closure_global_name(name: &str) -> String {
     format!("zutai.closure.{}", mangle(name))
 }
 
-/// Format an SSA value as an LLVM IR operand (appends to `out`).
-fn fmt_value(val: &SsaValue, out: &mut String) {
+enum StaticWord {
+    I64(String),
+    Ptr(String),
+}
+
+fn i64_word(value: impl std::fmt::Display) -> StaticWord {
+    StaticWord::I64(value.to_string())
+}
+
+fn ptr_word(symbol: impl Into<String>) -> StaticWord {
+    StaticWord::Ptr(symbol.into())
+}
+
+fn emit_static_words(out: &mut String, name: &str, linkage: &str, words: &[StaticWord]) {
+    out.push('@');
+    out.push_str(name);
+    out.push_str(" = ");
+    out.push_str(linkage);
+    out.push_str(" constant { ");
+    for (index, word) in words.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        match word {
+            StaticWord::I64(_) => out.push_str("i64"),
+            StaticWord::Ptr(_) => out.push_str("ptr"),
+        }
+    }
+    out.push_str(" } { ");
+    for (index, word) in words.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        match word {
+            StaticWord::I64(value) => {
+                out.push_str("i64 ");
+                out.push_str(value);
+            }
+            StaticWord::Ptr(symbol) => {
+                out.push_str("ptr @");
+                out.push_str(symbol);
+            }
+        }
+    }
+    out.push_str(" }\n");
+}
+
+/// Format a non-static SSA value as an LLVM IR operand.
+fn fmt_value(val: &SsaValue) -> String {
     match val {
-        SsaValue::Reg(name) => {
-            out.push('%');
-            out.push_str(&mangle(name));
-        }
-        SsaValue::Lit(lit) => fmt_lit(lit, out),
+        SsaValue::Reg(name) => format!("%{}", mangle(name)),
+        SsaValue::Lit(lit) => fmt_lit(lit),
         SsaValue::Global(name) => {
-            out.push('@');
-            out.push_str(&mangle(name));
+            panic!("internal codegen error: global value `{name}` used without SSA materialization")
         }
-        SsaValue::GlobalClosure(name) => {
-            out.push_str("ptrtoint (ptr @");
-            out.push_str(&closure_global_name(name));
-            out.push_str(" to i64)");
+        SsaValue::GlobalClosure(_) => {
+            panic!("internal codegen error: static closure used without PIE materialization")
         }
     }
 }
 
-/// Format a literal as an LLVM IR constant (appends to `out`).
-fn fmt_lit(lit: &DfLit, out: &mut String) {
+/// Format a non-static literal as an LLVM IR constant.
+fn fmt_lit(lit: &DfLit) -> String {
     match lit {
-        DfLit::Bool(b) => out.push_str(if *b { "1" } else { "0" }),
-        DfLit::Int(n) => out.push_str(&n.to_string()),
+        DfLit::Bool(b) => {
+            if *b {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            }
+        }
+        DfLit::Int(n) => n.to_string(),
         DfLit::Float(f) => {
             // Encode float as its IEEE 754 double bit pattern in an i64.
             // This lets us store the exact float value in our uniform i64 type.
-            let bits = f.to_bits();
-            out.push_str(&format!("0x{:016x}", bits));
+            format!("0x{:016x}", f.to_bits())
         }
         DfLit::Posit(literal) => {
             if literal.spec.nbits == 32 {
-                out.push_str(&format!("0x00000000{:08x}", literal.bits as u32));
+                (literal.bits as u32).to_string()
             } else {
-                out.push_str(&format!("0x{:016x}", literal.bits));
+                (literal.bits as i64).to_string()
             }
         }
-        DfLit::Text(s) => {
-            out.push_str("ptrtoint (ptr @zutai.text.");
-            out.push_str(&str_hash(s));
-            out.push_str(" to i64)");
+        DfLit::Text(_) | DfLit::Atom(_) => {
+            panic!("internal codegen error: static literal used without PIE materialization")
         }
-        DfLit::Atom(s) => {
-            out.push_str("ptrtoint (ptr @zutai.atom.");
-            out.push_str(&str_hash(s));
-            out.push_str(" to i64)");
+    }
+}
+
+fn emit_symbol_ptr_to_i64(out: &mut String, tmp: &mut u64, symbol: &str) -> String {
+    let name = alloc_tmp(tmp);
+    out.push_str(&format!("  {name} = ptrtoint ptr @{symbol} to i64\n"));
+    name
+}
+
+fn emit_value_operand(out: &mut String, tmp: &mut u64, value: &SsaValue) -> String {
+    match value {
+        SsaValue::GlobalClosure(name) => {
+            emit_symbol_ptr_to_i64(out, tmp, &closure_global_name(name))
         }
+        SsaValue::Lit(DfLit::Text(s)) => {
+            let symbol = format!("zutai.text.{}", str_hash(s));
+            emit_symbol_ptr_to_i64(out, tmp, &symbol)
+        }
+        SsaValue::Lit(DfLit::Atom(s)) => {
+            let symbol = format!("zutai.atom.{}", str_hash(s));
+            emit_symbol_ptr_to_i64(out, tmp, &symbol)
+        }
+        _ => fmt_value(value),
+    }
+}
+
+fn fmt_phi_value(value: &SsaValue) -> String {
+    match value {
+        SsaValue::GlobalClosure(_) | SsaValue::Lit(DfLit::Text(_) | DfLit::Atom(_)) => panic!(
+            "internal codegen error: PIE static value reached phi without SSA materialization"
+        ),
+        SsaValue::Global(name) => {
+            panic!(
+                "internal codegen error: global value `{name}` reached phi without SSA materialization"
+            )
+        }
+        _ => fmt_value(value),
     }
 }
 
@@ -363,12 +439,8 @@ fn emit_static_closures(out: &mut String, module: &SsaModule) {
     }
     out.push_str("; ── Static closures ───────────────────────────────────────────\n\n");
     for name in &module.closure_exports {
-        out.push_str(&format!(
-            "@{} = internal constant [2 x i64] [i64 {}, i64 ptrtoint (ptr @{} to i64)]\n",
-            closure_global_name(name),
-            closure_header(0),
-            mangle(name)
-        ));
+        let words = [i64_word(closure_header(0)), ptr_word(mangle(name))];
+        emit_static_words(out, &closure_global_name(name), "internal", &words);
     }
     out.push('\n');
 }
@@ -388,13 +460,12 @@ fn emit_static_text(out: &mut String, prefix: &str, s: &str) {
         "@{} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
         data, esc.len, esc.escaped
     ));
-    out.push_str(&format!(
-        "@{} = private constant [3 x i64] [i64 {}, i64 {}, i64 ptrtoint (ptr @{} to i64)]\n",
-        obj,
-        object_header(TAG_TEXT, 0),
-        s.len(),
-        data
-    ));
+    let words = [
+        i64_word(object_header(TAG_TEXT, 0)),
+        i64_word(s.len()),
+        ptr_word(data),
+    ];
+    emit_static_words(out, &obj, "private", &words);
 }
 
 fn collect_and_emit_constants(module: &SsaModule, out: &mut String) {
@@ -427,8 +498,8 @@ fn collect_and_emit_constants(module: &SsaModule, out: &mut String) {
 
 // ── Type descriptors ───────────────────────────────────────────────────────────
 
-fn desc_ref(name: &str) -> String {
-    format!("ptrtoint (ptr @{name} to i64)")
+fn desc_ref(name: &str) -> StaticWord {
+    ptr_word(name)
 }
 
 fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
@@ -464,66 +535,54 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
 
         let ty = self.types[ty_id].clone();
         let words = self.words_for_ty(ty);
-        self.out.push_str(&format!(
-            "@{} = private constant [{} x i64] [",
-            name,
-            words.len()
-        ));
-        for (i, word) in words.iter().enumerate() {
-            if i > 0 {
-                self.out.push_str(", ");
-            }
-            self.out.push_str("i64 ");
-            self.out.push_str(word);
-        }
-        self.out.push_str("]\n");
+        emit_static_words(self.out, &name, "private", &words);
         name
     }
 
-    fn words_for_ty(&mut self, ty: DfTy) -> Vec<String> {
+    fn words_for_ty(&mut self, ty: DfTy) -> Vec<StaticWord> {
         match ty {
-            DfTy::Int => vec![DESC_INT.to_string()],
-            DfTy::Bool | DfTy::True | DfTy::False => vec![DESC_BOOL.to_string()],
-            DfTy::Float => vec![DESC_FLOAT.to_string()],
-            DfTy::Text => vec![DESC_TEXT.to_string()],
-            DfTy::Atom => vec![DESC_ATOM.to_string()],
+            DfTy::Int => vec![i64_word(DESC_INT)],
+            DfTy::Bool | DfTy::True | DfTy::False => vec![i64_word(DESC_BOOL)],
+            DfTy::Float => vec![i64_word(DESC_FLOAT)],
+            DfTy::Text => vec![i64_word(DESC_TEXT)],
+            DfTy::Atom => vec![i64_word(DESC_ATOM)],
             DfTy::Posit(spec) => vec![
-                DESC_POSIT.to_string(),
-                spec.nbits.to_string(),
-                spec.es.to_string(),
+                i64_word(DESC_POSIT),
+                i64_word(spec.nbits),
+                i64_word(spec.es),
             ],
-            DfTy::List(inner) => vec![DESC_LIST.to_string(), desc_ref(&self.emit(inner))],
-            DfTy::Optional(inner) => vec![DESC_OPTIONAL.to_string(), desc_ref(&self.emit(inner))],
-            DfTy::Maybe(inner) => vec![DESC_MAYBE.to_string(), desc_ref(&self.emit(inner))],
+            DfTy::List(inner) => vec![i64_word(DESC_LIST), desc_ref(&self.emit(inner))],
+            DfTy::Optional(inner) => vec![i64_word(DESC_OPTIONAL), desc_ref(&self.emit(inner))],
+            DfTy::Maybe(inner) => vec![i64_word(DESC_MAYBE), desc_ref(&self.emit(inner))],
             DfTy::Record(fields) => {
                 let mut words = Vec::with_capacity(2 + fields.len() * 3);
-                words.push(DESC_RECORD.to_string());
-                words.push(fields.len().to_string());
+                words.push(i64_word(DESC_RECORD));
+                words.push(i64_word(fields.len()));
                 for field in fields {
                     let (ptr, len) = self.string_ref(&field.name);
                     words.push(ptr);
-                    words.push(len.to_string());
+                    words.push(i64_word(len));
                     words.push(desc_ref(&self.emit(field.ty)));
                 }
                 words
             }
             DfTy::Tuple(fields) => {
                 let mut words = Vec::with_capacity(2 + fields.len() * 4);
-                words.push(DESC_TUPLE.to_string());
-                words.push(fields.len().to_string());
+                words.push(i64_word(DESC_TUPLE));
+                words.push(i64_word(fields.len()));
                 for field in fields {
                     match field {
                         DfTupleField::Named { name, ty } => {
                             let (ptr, len) = self.string_ref(&name);
-                            words.push("1".to_string());
+                            words.push(i64_word(1));
                             words.push(ptr);
-                            words.push(len.to_string());
+                            words.push(i64_word(len));
                             words.push(desc_ref(&self.emit(ty)));
                         }
                         DfTupleField::Positional(ty) => {
-                            words.push("0".to_string());
-                            words.push("0".to_string());
-                            words.push("0".to_string());
+                            words.push(i64_word(0));
+                            words.push(i64_word(0));
+                            words.push(i64_word(0));
                             words.push(desc_ref(&self.emit(ty)));
                         }
                     }
@@ -532,12 +591,12 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
             }
             DfTy::Union(members) => {
                 let mut words = Vec::with_capacity(2 + members.len() * 3);
-                words.push(DESC_VARIANT.to_string());
-                words.push(members.len().to_string());
+                words.push(i64_word(DESC_VARIANT));
+                words.push(i64_word(members.len()));
                 for member in members {
                     let (ptr, len) = self.string_ref(&member.tag);
                     words.push(ptr);
-                    words.push(len.to_string());
+                    words.push(i64_word(len));
                     words.push(desc_ref(&self.emit(member.ty)));
                 }
                 words
@@ -548,14 +607,14 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
             | DfTy::TyApp(_, _)
             | DfTy::Type
             | DfTy::Error => {
-                vec![DESC_INT.to_string()]
+                vec![i64_word(DESC_INT)]
             }
         }
     }
 
-    fn string_ref(&mut self, s: &str) -> (String, usize) {
+    fn string_ref(&mut self, s: &str) -> (StaticWord, usize) {
         if let Some(name) = self.strings.get(s) {
-            return (format!("ptrtoint (ptr @{name} to i64)"), s.len());
+            return (ptr_word(name.clone()), s.len());
         }
         let hash = str_hash(s);
         let name = format!("zutai.desc.str.{hash}");
@@ -565,7 +624,7 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
             name, esc.len, esc.escaped
         ));
         self.strings.insert(s.to_string(), name.clone());
-        (format!("ptrtoint (ptr @{name} to i64)"), s.len())
+        (ptr_word(name), s.len())
     }
 }
 
@@ -720,6 +779,8 @@ fn emit_posit_instr(
     rhs: &SsaValue,
     tmp: &mut u64,
 ) {
+    let lhs = emit_value_operand(out, tmp, lhs);
+    let rhs = emit_value_operand(out, tmp, rhs);
     let (nbits, es) = spec;
     let helper = format!("@zutai.posit{nbits}e{es}.{}", posit_op_name(op));
     match (nbits, posit_op_is_cmp(op)) {
@@ -727,12 +788,8 @@ fn emit_posit_instr(
             let lhs32 = alloc_tmp(tmp);
             let rhs32 = alloc_tmp(tmp);
             let call = alloc_tmp(tmp);
-            out.push_str(&format!("  {lhs32} = trunc i64 "));
-            fmt_value(lhs, out);
-            out.push_str(" to i32\n");
-            out.push_str(&format!("  {rhs32} = trunc i64 "));
-            fmt_value(rhs, out);
-            out.push_str(" to i32\n");
+            out.push_str(&format!("  {lhs32} = trunc i64 {lhs} to i32\n"));
+            out.push_str(&format!("  {rhs32} = trunc i64 {rhs} to i32\n"));
             out.push_str(&format!(
                 "  {call} = call i32 {helper}(i32 {lhs32}, i32 {rhs32})\n"
             ));
@@ -742,31 +799,23 @@ fn emit_posit_instr(
             let lhs32 = alloc_tmp(tmp);
             let rhs32 = alloc_tmp(tmp);
             let call = alloc_tmp(tmp);
-            out.push_str(&format!("  {lhs32} = trunc i64 "));
-            fmt_value(lhs, out);
-            out.push_str(" to i32\n");
-            out.push_str(&format!("  {rhs32} = trunc i64 "));
-            fmt_value(rhs, out);
-            out.push_str(" to i32\n");
+            out.push_str(&format!("  {lhs32} = trunc i64 {lhs} to i32\n"));
+            out.push_str(&format!("  {rhs32} = trunc i64 {rhs} to i32\n"));
             out.push_str(&format!(
                 "  {call} = call i1 {helper}(i32 {lhs32}, i32 {rhs32})\n"
             ));
             out.push_str(&format!("  %{dest} = zext i1 {call} to i64\n"));
         }
         (64, false) => {
-            out.push_str(&format!("  %{dest} = call i64 {helper}(i64 "));
-            fmt_value(lhs, out);
-            out.push_str(", i64 ");
-            fmt_value(rhs, out);
-            out.push_str(")\n");
+            out.push_str(&format!(
+                "  %{dest} = call i64 {helper}(i64 {lhs}, i64 {rhs})\n"
+            ));
         }
         (64, true) => {
             let call = alloc_tmp(tmp);
-            out.push_str(&format!("  {call} = call i1 {helper}(i64 "));
-            fmt_value(lhs, out);
-            out.push_str(", i64 ");
-            fmt_value(rhs, out);
-            out.push_str(")\n");
+            out.push_str(&format!(
+                "  {call} = call i1 {helper}(i64 {lhs}, i64 {rhs})\n"
+            ));
             out.push_str(&format!("  %{dest} = zext i1 {call} to i64\n"));
         }
         _ => unreachable!("invalid posit width"),
@@ -779,10 +828,9 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
     match &instr.op {
         // ── ApplyClosure (D-0003 uniform closure application) ───────────────
         SsaOp::ApplyClosure { closure, arg } => {
+            let closure = emit_value_operand(out, tmp, closure);
             let cptr = alloc_tmp(tmp);
-            out.push_str(&format!("  {} = inttoptr i64 ", cptr));
-            fmt_value(closure, out);
-            out.push_str(" to ptr\n");
+            out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", cptr, closure));
             let code_slot = alloc_tmp(tmp);
             out.push_str(&format!(
                 "  {} = getelementptr i64, ptr {}, i64 1\n",
@@ -792,11 +840,11 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             out.push_str(&format!("  {} = load i64, ptr {}\n", code, code_slot));
             let fnptr = alloc_tmp(tmp);
             out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", fnptr, code));
-            out.push_str(&format!("  %{} = call i64 {}(i64 ", dest, fnptr));
-            fmt_value(closure, out);
-            out.push_str(", i64 ");
-            fmt_value(arg, out);
-            out.push_str(")\n");
+            let arg = emit_value_operand(out, tmp, arg);
+            out.push_str(&format!(
+                "  %{} = call i64 {}(i64 {}, i64 {})\n",
+                dest, fnptr, closure, arg
+            ));
         }
 
         // ── MakeClosure (heap closure allocation) ───────────────────────────
@@ -819,11 +867,8 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 "  {} = getelementptr i64, ptr {}, i64 1\n",
                 code_slot, base
             ));
-            out.push_str(&format!(
-                "  store i64 ptrtoint (ptr @{} to i64), ptr {}\n",
-                mangle(code),
-                code_slot
-            ));
+            let code_ptr = emit_symbol_ptr_to_i64(out, tmp, &mangle(code));
+            out.push_str(&format!("  store i64 {}, ptr {}\n", code_ptr, code_slot));
             for (index, cap) in captures.iter().enumerate() {
                 let slot = alloc_tmp(tmp);
                 out.push_str(&format!(
@@ -832,19 +877,17 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                     base,
                     2 + index
                 ));
-                out.push_str("  store i64 ");
-                fmt_value(cap, out);
-                out.push_str(&format!(", ptr {}\n", slot));
+                let cap = emit_value_operand(out, tmp, cap);
+                out.push_str(&format!("  store i64 {}, ptr {}\n", cap, slot));
             }
             out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, raw));
         }
 
         // ── LoadCapture (read a capture from the enclosing closure) ─────────
         SsaOp::LoadCapture { closure, index } => {
+            let closure = emit_value_operand(out, tmp, closure);
             let cptr = alloc_tmp(tmp);
-            out.push_str(&format!("  {} = inttoptr i64 ", cptr));
-            fmt_value(closure, out);
-            out.push_str(" to ptr\n");
+            out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", cptr, closure));
             let slot = alloc_tmp(tmp);
             out.push_str(&format!(
                 "  {} = getelementptr i64, ptr {}, i64 {}\n",
@@ -863,9 +906,8 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         // ── TyApp (erased) ─────────────────────────────────────────────────
         SsaOp::TyApp { poly, ty_args: _ } => {
             // Type application is erased at runtime; copy the value.
-            out.push_str(&format!("  %{} = add i64 ", dest));
-            fmt_value(poly, out);
-            out.push_str(", 0\n");
+            let poly = emit_value_operand(out, tmp, poly);
+            out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, poly));
         }
 
         // ── Record ─────────────────────────────────────────────────────────
@@ -876,33 +918,29 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 dest, count
             ));
             for (idx, value) in fields.iter().enumerate() {
+                let value = emit_value_operand(out, tmp, value);
                 out.push_str(&format!(
-                    "  call void @zutai.record_set(i64 %{}.rec, i64 {}, i64 ",
-                    dest, idx
+                    "  call void @zutai.record_set(i64 %{}.rec, i64 {}, i64 {})\n",
+                    dest, idx, value
                 ));
-                fmt_value(value, out);
-                out.push_str(")\n");
             }
             out.push_str(&format!("  %{} = add i64 %{}.rec, 0\n", dest, dest));
         }
 
         // ── Record update ───────────────────────────────────────────────────
         SsaOp::RecordUpdate { base, updates } => {
+            let base = emit_value_operand(out, tmp, base);
             if updates.is_empty() {
-                out.push_str(&format!("  %{} = add i64 ", dest));
-                fmt_value(base, out);
-                out.push_str(", 0\n");
+                out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, base));
             } else {
-                let mut prev = String::new();
-                fmt_value(base, &mut prev);
+                let mut prev = base;
                 for (idx, (slot, value)) in updates.iter().enumerate() {
+                    let value = emit_value_operand(out, tmp, value);
                     let tmp_name = format!("%{}.upd{}", dest, idx);
                     out.push_str(&format!(
-                        "  {} = call i64 @zutai.record_update(i64 {}, i64 {}, i64 ",
-                        tmp_name, prev, slot
+                        "  {} = call i64 @zutai.record_update(i64 {}, i64 {}, i64 {})\n",
+                        tmp_name, prev, slot, value
                     ));
-                    fmt_value(value, out);
-                    out.push_str(")\n");
                     prev = tmp_name;
                 }
                 out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, prev));
@@ -922,12 +960,11 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                         value
                     }
                 };
+                let value = emit_value_operand(out, tmp, value);
                 out.push_str(&format!(
-                    "  call void @zutai.tuple_set(i64 %{}.tup, i64 {}, i64 ",
-                    dest, idx
+                    "  call void @zutai.tuple_set(i64 %{}.tup, i64 {}, i64 {})\n",
+                    dest, idx, value
                 ));
-                fmt_value(value, out);
-                out.push_str(")\n");
             }
             out.push_str(&format!("  %{} = add i64 %{}.tup, 0\n", dest, dest));
         }
@@ -943,14 +980,16 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
                 let mut prev = nil_tmp;
                 for (i, elem) in elems.iter().enumerate().rev() {
+                    let elem = emit_value_operand(out, tmp, elem);
                     let cons_tmp = if i == 0 {
                         format!("%{}", dest)
                     } else {
                         alloc_tmp(tmp)
                     };
-                    out.push_str(&format!("  {} = call i64 @zutai.list_cons(i64 ", cons_tmp));
-                    fmt_value(elem, out);
-                    out.push_str(&format!(", i64 {})\n", prev));
+                    out.push_str(&format!(
+                        "  {} = call i64 @zutai.list_cons(i64 {}, i64 {})\n",
+                        cons_tmp, elem, prev
+                    ));
                     prev = cons_tmp;
                 }
             }
@@ -958,28 +997,31 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
         // ── Select ──────────────────────────────────────────────────────────
         SsaOp::Select { base, slot } => {
-            out.push_str(&format!("  %{} = call i64 @zutai.record_get(i64 ", dest));
-            fmt_value(base, out);
-            out.push_str(&format!(", i64 {})\n", slot));
+            let base = emit_value_operand(out, tmp, base);
+            out.push_str(&format!(
+                "  %{} = call i64 @zutai.record_get(i64 {}, i64 {})\n",
+                dest, base, slot
+            ));
         }
 
         // ── Variant ─────────────────────────────────────────────────────────
         SsaOp::Variant {
             tag_index, value, ..
         } => {
+            let value = emit_value_operand(out, tmp, value);
             out.push_str(&format!(
-                "  %{} = call i64 @zutai.variant_new(i64 {}, i64 ",
-                dest, tag_index
+                "  %{} = call i64 @zutai.variant_new(i64 {}, i64 {})\n",
+                dest, tag_index, value
             ));
-            fmt_value(value, out);
-            out.push_str(")\n");
         }
 
         // ── Variant payload ─────────────────────────────────────────────────
         SsaOp::VariantValue { scrutinee } => {
-            out.push_str(&format!("  %{} = call i64 @zutai.variant_value(i64 ", dest));
-            fmt_value(scrutinee, out);
-            out.push_str(")\n");
+            let scrutinee = emit_value_operand(out, tmp, scrutinee);
+            out.push_str(&format!(
+                "  %{} = call i64 @zutai.variant_value(i64 {})\n",
+                dest, scrutinee
+            ));
         }
 
         // ── Builtin ─────────────────────────────────────────────────────────
@@ -991,22 +1033,28 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             emit_posit_instr(out, &dest, *op, (spec.nbits, spec.es), lhs, rhs, tmp);
         }
         SsaOp::Builtin { op, lhs, rhs } => {
+            let lhs = emit_value_operand(out, tmp, lhs);
+            let rhs = emit_value_operand(out, tmp, rhs);
             if builtin_is_cmp(op) {
                 // Comparisons yield i1; zext to i64.
                 let cmp_tmp = alloc_tmp(tmp);
-                out.push_str(&format!("  {} = {} i64 ", cmp_tmp, builtin_ir_op(op)));
-                fmt_value(lhs, out);
-                out.push_str(", ");
-                fmt_value(rhs, out);
-                out.push('\n');
+                out.push_str(&format!(
+                    "  {} = {} i64 {}, {}\n",
+                    cmp_tmp,
+                    builtin_ir_op(op),
+                    lhs,
+                    rhs
+                ));
                 out.push_str(&format!("  %{} = zext i1 {} to i64\n", dest, cmp_tmp));
             } else {
                 // Arithmetic / bitwise on i64.
-                out.push_str(&format!("  %{} = {} i64 ", dest, builtin_ir_op(op)));
-                fmt_value(lhs, out);
-                out.push_str(", ");
-                fmt_value(rhs, out);
-                out.push('\n');
+                out.push_str(&format!(
+                    "  %{} = {} i64 {}, {}\n",
+                    dest,
+                    builtin_ir_op(op),
+                    lhs,
+                    rhs
+                ));
             }
         }
 
@@ -1014,11 +1062,12 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
         SsaOp::Coalesce { value, fallback } => {
             // @zutai.coalesce unwraps one Optional or Maybe layer:
             // #none/#absent choose fallback; #some (x)/#present (x) return x.
-            out.push_str(&format!("  %{} = call i64 @zutai.coalesce(i64 ", dest));
-            fmt_value(value, out);
-            out.push_str(", i64 ");
-            fmt_value(fallback, out);
-            out.push_str(")\n");
+            let value = emit_value_operand(out, tmp, value);
+            let fallback = emit_value_operand(out, tmp, fallback);
+            out.push_str(&format!(
+                "  %{} = call i64 @zutai.coalesce(i64 {}, i64 {})\n",
+                dest, value, fallback
+            ));
         }
 
         // ── Error ───────────────────────────────────────────────────────────
@@ -1028,9 +1077,8 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
         // ── Alias ───────────────────────────────────────────────────────────
         SsaOp::Alias { value } => {
-            out.push_str(&format!("  %{} = add i64 ", dest));
-            fmt_value(value, out);
-            out.push_str(", 0\n");
+            let value = emit_value_operand(out, tmp, value);
+            out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, value));
         }
 
         // ── Phi ─────────────────────────────────────────────────────────────
@@ -1041,7 +1089,7 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                     out.push_str(", ");
                 }
                 out.push('[');
-                fmt_value(val, out);
+                out.push_str(&fmt_phi_value(val));
                 out.push_str(&format!(", %{}]", mangle(label)));
             }
             out.push('\n');
@@ -1049,9 +1097,11 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
         // ── MatchDiscriminant ───────────────────────────────────────────────
         SsaOp::MatchDiscriminant { scrutinee } => {
-            out.push_str(&format!("  %{} = call i64 @zutai.variant_tag(i64 ", dest));
-            fmt_value(scrutinee, out);
-            out.push_str(")\n");
+            let scrutinee = emit_value_operand(out, tmp, scrutinee);
+            out.push_str(&format!(
+                "  %{} = call i64 @zutai.variant_tag(i64 {})\n",
+                dest, scrutinee
+            ));
         }
     }
 }
@@ -1059,9 +1109,8 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 fn emit_terminator(out: &mut String, term: &SsaTerminator, tmp: &mut u64) {
     match term {
         SsaTerminator::Return(val) => {
-            out.push_str("  ret i64 ");
-            fmt_value(val, out);
-            out.push('\n');
+            let val = emit_value_operand(out, tmp, val);
+            out.push_str(&format!("  ret i64 {}\n", val));
         }
         SsaTerminator::Jump(label) => {
             out.push_str(&format!("  br label %{}\n", mangle(label)));
@@ -1073,10 +1122,9 @@ fn emit_terminator(out: &mut String, term: &SsaTerminator, tmp: &mut u64) {
         } => {
             // Emit: %cond_tmp = icmp ne i64 <cond>, 0
             //       br i1 %cond_tmp, label %then, label %else
+            let cond = emit_value_operand(out, tmp, cond);
             let cond_tmp = alloc_tmp(tmp);
-            out.push_str(&format!("  {} = icmp ne i64 ", cond_tmp));
-            fmt_value(cond, out);
-            out.push_str(", 0\n");
+            out.push_str(&format!("  {} = icmp ne i64 {}, 0\n", cond_tmp, cond));
             out.push_str(&format!(
                 "  br i1 {}, label %{}, label %{}\n",
                 cond_tmp,
@@ -1110,27 +1158,38 @@ fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str, host_prints: 
         newline.len, newline.escaped
     ));
     out.push_str("define i32 @main() {\n");
+    let mut tmp = 0u64;
     for (index, text) in host_prints.iter().enumerate() {
+        let print_symbol = format!("zutai.effect.print.{index}");
+        let print_ptr = emit_symbol_ptr_to_i64(out, &mut tmp, &print_symbol);
         out.push_str(&format!(
-            "  %effect_print_{index} = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.effect.print.{index} to i64), i64 {})\n",
+            "  %effect_print_{index} = call i64 @zutai.text_from_global(i64 {}, i64 {})\n",
+            print_ptr,
             text.len()
         ));
         out.push_str(&format!(
             "  call void @zutai.print_text(i64 %effect_print_{index})\n"
         ));
+        let newline_ptr = emit_symbol_ptr_to_i64(out, &mut tmp, "zutai.main.newline");
         out.push_str(&format!(
-            "  %effect_print_newline_{index} = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.main.newline to i64), i64 1)\n"
+            "  %effect_print_newline_{index} = call i64 @zutai.text_from_global(i64 {}, i64 1)\n",
+            newline_ptr
         ));
         out.push_str(&format!(
             "  call void @zutai.print_text(i64 %effect_print_newline_{index})\n"
         ));
     }
     out.push_str(&format!("  %result = call i64 @{}()\n", entry));
+    let entry_desc = emit_symbol_ptr_to_i64(out, &mut tmp, entry_desc);
     out.push_str(&format!(
-        "  call void @zutai.show(i64 %result, i64 ptrtoint (ptr @{} to i64))\n",
+        "  call void @zutai.show(i64 %result, i64 {})\n",
         entry_desc
     ));
-    out.push_str("  %newline = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.main.newline to i64), i64 1)\n");
+    let newline_ptr = emit_symbol_ptr_to_i64(out, &mut tmp, "zutai.main.newline");
+    out.push_str(&format!(
+        "  %newline = call i64 @zutai.text_from_global(i64 {}, i64 1)\n",
+        newline_ptr
+    ));
     out.push_str("  call void @zutai.print_text(i64 %newline)\n");
     out.push_str("  ret i32 0\n}\n");
 }
@@ -1308,10 +1367,11 @@ mod tests {
         let llvm = emit_llvm(&module);
         assert!(
             llvm.contains(
-                "@zutai.closure.inc = internal constant [2 x i64] [i64 7, i64 ptrtoint (ptr @inc to i64)]"
+                "@zutai.closure.inc = internal constant { i64, ptr } { i64 7, ptr @inc }"
             ),
             "{llvm}"
         );
+        assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
     }
 
     #[test]
@@ -1340,6 +1400,10 @@ mod tests {
         let llvm = emit_llvm(&module);
         assert!(llvm.contains("getelementptr i64, ptr"), "{llvm}");
         assert!(llvm.contains("load i64, ptr"), "{llvm}");
+        assert!(
+            llvm.contains(" = ptrtoint ptr @zutai.closure.inc to i64"),
+            "{llvm}"
+        );
         // Code pointer is called indirectly with (self, arg).
         assert!(
             llvm.contains("call i64 %"),
@@ -1348,6 +1412,7 @@ mod tests {
         // Legacy direct/raw call shapes are gone.
         assert!(!llvm.contains("call i64 @inc(i64 41)"), "{llvm}");
         assert!(!llvm.contains("to i64 (i64)*"), "{llvm}");
+        assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
     }
 
     #[test]
@@ -1378,11 +1443,16 @@ mod tests {
         assert!(llvm.contains("call i64 @zutai.alloc(i64 24)"), "{llvm}");
         // Header for one capture: (1 << 8) | 7 = 263.
         assert!(llvm.contains("store i64 263,"), "{llvm}");
+        assert!(
+            llvm.contains(" = ptrtoint ptr @__lambda_0 to i64"),
+            "{llvm}"
+        );
         // Capture stored at slot 2.
         assert!(llvm.contains(", i64 2\n"), "slot-2 gep expected: {llvm}");
         assert!(
             llvm.contains("store i64 10,"),
             "capture value stored: {llvm}"
         );
+        assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
     }
 }

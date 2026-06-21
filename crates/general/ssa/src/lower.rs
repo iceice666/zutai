@@ -137,15 +137,24 @@ fn atom_to_value(atom: &AnfAtom, globals: &HashSet<String>) -> SsaValue {
 }
 
 fn materialize_value(val: SsaValue, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
-    if let SsaValue::Global(name) = val {
-        let dest = ctx.fresh.next_label("global");
-        fb.push(SsaInstr {
-            dest: dest.clone(),
-            op: SsaOp::CallGlobal { name },
-        });
-        SsaValue::Reg(dest)
-    } else {
-        val
+    match val {
+        SsaValue::Global(name) => {
+            let dest = ctx.fresh.next_label("global");
+            fb.push(SsaInstr {
+                dest: dest.clone(),
+                op: SsaOp::CallGlobal { name },
+            });
+            SsaValue::Reg(dest)
+        }
+        value @ (SsaValue::GlobalClosure(_) | SsaValue::Lit(DfLit::Text(_) | DfLit::Atom(_))) => {
+            let dest = ctx.fresh.next_label("static");
+            fb.push(SsaInstr {
+                dest: dest.clone(),
+                op: SsaOp::Alias { value },
+            });
+            SsaValue::Reg(dest)
+        }
+        other => other,
     }
 }
 

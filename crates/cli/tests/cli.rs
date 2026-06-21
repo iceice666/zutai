@@ -28,6 +28,22 @@ fn compile_stdout(name: &str, content: &str) -> String {
     String::from_utf8(output).expect("compile output should be UTF-8")
 }
 
+fn compile_bin_stdout(name: &str, content: &str) -> String {
+    let path = write_tmp(&format!("{name}.zt"), content);
+    let out = write_tmp(name, "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
 fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
     let suffix = format!(", i64 {slot})");
     llvm.lines()
@@ -634,7 +650,20 @@ fn compile_record_result_emits_type_descriptor_and_show() {
     assert!(llvm.contains("@zutai.desc."), "{llvm}");
     assert!(llvm.contains("@zutai.desc.str."), "{llvm}");
     assert!(llvm.contains("call void @zutai.show"), "{llvm}");
-    assert!(llvm.contains("ptrtoint (ptr @zutai.desc."), "{llvm}");
+    assert!(llvm.contains(" = ptrtoint ptr @zutai.desc."), "{llvm}");
+    assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
+}
+
+#[test]
+fn compile_static_address_ir_uses_pie_safe_forms() {
+    let llvm = compile_stdout(
+        "cli_test_compile_static_address_pie_safe.zt",
+        "{ text = \"hi\"; atom = #prod; }\n",
+    );
+    assert!(llvm.contains(" = ptrtoint ptr @zutai.text."), "{llvm}");
+    assert!(llvm.contains(" = ptrtoint ptr @zutai.atom."), "{llvm}");
+    assert!(llvm.contains(" = ptrtoint ptr @zutai.desc."), "{llvm}");
+    assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
 }
 
 #[test]
@@ -711,6 +740,53 @@ fn compile_emit_bin_record_descriptor_matches_slots() {
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         "{ compact_primes = [2; 3; 5];  prime_count = 10 }\n",
+    );
+}
+
+#[test]
+fn compile_emit_bin_tuple_runs() {
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_emit_bin_tuple", "(1, \"two\")\n"),
+        "(1, \"two\")\n"
+    );
+}
+
+#[test]
+fn compile_emit_bin_union_runs() {
+    let src = r#"Shape :: type {
+  #circle: { radius: Int; };
+  #square: { side: Int; };
+}
+shape :: Shape = #circle { radius = 3; }
+shape
+"#;
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_emit_bin_union", src),
+        "#circle { radius = 3 }\n"
+    );
+}
+
+#[test]
+fn compile_emit_bin_text_runs() {
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_emit_bin_text", "\"hello\"\n"),
+        "\"hello\"\n"
+    );
+}
+
+#[test]
+fn compile_emit_bin_atom_runs() {
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_emit_bin_atom", "#prod\n"),
+        "#prod\n"
+    );
+}
+
+#[test]
+fn compile_emit_bin_posit_runs() {
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_emit_bin_posit", "1p32 + 2p32\n"),
+        "3p32\n"
     );
 }
 

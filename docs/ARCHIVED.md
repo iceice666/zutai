@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing Phase 21 config-overlay AOT lowering._
+_Last updated: 2026-06-21 after closing the PIE-safe native executable hardening item._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -53,8 +53,9 @@ _Last updated: 2026-06-21 after closing Phase 21 config-overlay AOT lowering._
   renders through the type-directed runtime display path and rejects function /
   `Type` results.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
-  output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, and emit
-  actionable diagnostics when the host toolchain is absent.
+  output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
+  actionable diagnostics when the host toolchain is absent, and produce
+  PIE-capable Linux binaries without `-no-pie`.
 - `zutai-eval` has both the THIR oracle and TLC evaluator. Differential coverage
   includes constraints, optionals, `.zti` imports, `.zt` imports, imported
   functions, transitive imports, imported witness dictionaries, record update,
@@ -86,6 +87,9 @@ _Last updated: 2026-06-21 after closing Phase 21 config-overlay AOT lowering._
   rejections.
 - `Int??` lexes as `Int` + `??`, not a double optional. Write `(Int?)?` for a
   nested optional.
+- CLI native binary coverage includes primitive, record, tuple, union, text,
+  atom, and posit entry values; the Linux PIE matrix is verified with
+  `llc -relocation-model=pic` and `clang -pie`.
 
 ## Open work pointer
 
@@ -109,6 +113,18 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Native codegen hardening: PIE-safe executable output ✅
+
+- Linux object emission now uses `llc -filetype=obj -relocation-model=pic`, and
+  Linux binary linking requests `clang -pie` instead of `-no-pie`.
+- Codegen no longer emits `ptrtoint (ptr @...)` constant expressions for static
+  descriptor, text, atom, closure, or `@main` addresses. Static globals use
+  pointer-typed LLVM fields, and functions materialize static addresses with
+  instruction-form `ptrtoint ptr @... to i64`.
+- CLI native binary coverage includes primitive, record, tuple, union, text,
+  atom, and posit entry values; the Linux PIE matrix passed in a Linux aarch64
+  container with `llc`/`clang`.
 
 ### Phase 21: Config-overlay AOT lowering ✅
 
