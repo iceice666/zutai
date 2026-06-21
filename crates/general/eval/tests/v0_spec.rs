@@ -22,9 +22,9 @@ struct Fence {
 
 const EXPECTED_ZTI_PARSE: &[&str] = &[
     "docs/v0_spec/01-overview/file-modes.md#01",
-    "docs/v0_spec/02-lexical/conventions.md#09",
     "docs/v0_spec/02-lexical/conventions.md#10",
-    "docs/v0_spec/02-lexical/conventions.md#14",
+    "docs/v0_spec/02-lexical/conventions.md#11",
+    "docs/v0_spec/02-lexical/conventions.md#15",
     "docs/v0_spec/03-immediate-mode/immediate-mode.md#02",
     "docs/v0_spec/03-immediate-mode/immediate-mode.md#06",
     "docs/v0_spec/07-modules/serialization-boundary.md#05",
@@ -32,8 +32,8 @@ const EXPECTED_ZTI_PARSE: &[&str] = &[
     "docs/v0_spec/08-reference/complete-example.md#03",
 ];
 const EXPECTED_ZT_CHECK: &[&str] = &[
-    "docs/v0_spec/02-lexical/conventions.md#15",
-    "docs/v0_spec/02-lexical/conventions.md#23",
+    "docs/v0_spec/02-lexical/conventions.md#16",
+    "docs/v0_spec/02-lexical/conventions.md#24",
     "docs/v0_spec/04-general-mode/file-structure.md#14",
     "docs/v0_spec/04-general-mode/file-structure.md#16",
     "docs/v0_spec/04-general-mode/functions.md#14",
@@ -54,11 +54,11 @@ const EXPECTED_ZT_CHECK: &[&str] = &[
 ];
 const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     (
-        "docs/v0_spec/02-lexical/conventions.md#15",
+        "docs/v0_spec/02-lexical/conventions.md#16",
         "{ profile = #prod }",
     ),
     (
-        "docs/v0_spec/02-lexical/conventions.md#23",
+        "docs/v0_spec/02-lexical/conventions.md#24",
         "{ host = \"localhost\";  target-triple = \"x86_64-linux\" }",
     ),
     (

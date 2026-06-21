@@ -36,8 +36,10 @@ atom       ::= "#" atom_body
 atom_body  ::= [A-Za-z_][A-Za-z0-9_-]*
 field_name ::= [A-Za-z_][A-Za-z0-9_-]*
 string     ::= JSON-style-string
-number     ::= JSON-style-number
+number     ::= JSON-style-number-without-type-postfix
 ```
+
+Numeric type postfixes such as `1u8` and `3.14f64` are general-mode syntax only; `.zti` numbers remain JSON-style so immediate-mode data stays directly serializable.
 
 ### Top-level form
 

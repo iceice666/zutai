@@ -10,8 +10,20 @@ Text
 Bool
 Int
 Float
+i8
+i16
+i32
+i64
+u8
+u16
+u32
+u64
+f32
+f64
 List
 ```
+
+`Int` and `Float` are the default source-level numeric types. In v0, `Int` aliases `i64` and `Float` aliases `f64`; fixed-width suffixes choose the corresponding fixed-width type directly.
 
 Implementations may provide additional standard-library types such as:
 

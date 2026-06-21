@@ -50,7 +50,7 @@ Paths, URLs, and other complex textual values should be represented as strings, 
 
 ### Numbers
 
-Numbers use JSON-style syntax.
+Immediate mode numbers use JSON-style syntax. General mode numbers use the same base syntax plus optional fixed-width type postfixes.
 
 Examples:
 
@@ -63,18 +63,60 @@ Examples:
 -2.5e-3
 ```
 
+General mode also allows fixed-width type postfixes:
+
+```zt
+255u8
+-128i8
+8080u16
+42i64
+1f32
+3.14f64
+1e9f64
+```
+
+The allowed number type postfixes — the `NumberTypePostfix` production in the grammar reference — are: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`.
+
+Semantic rules for number type postfixes:
+
+- A number postfix is part of the numeric literal token and must appear immediately after the numeric body with no whitespace.
+- Without a postfix, existing v0 inference is unchanged: an integer-looking body has type `Int`; a body with a `.` or an exponent has type `Float`.
+- `i8`, `i16`, `i32`, `i64` require an integer body with no fractional part and no exponent; they may use a leading `-`.
+- `u8`, `u16`, `u32`, `u64` require an integer body with no fractional part, no exponent, and no leading `-`.
+- `f32` and `f64` may use an integer-looking body, a fractional body, or an exponent body; `1f32`, `3.14f64`, and `1e9f64` are valid.
+- A letter, digit, or `_` immediately following a numeric body is treated as a candidate postfix; if it is not exactly one of the allowed postfixes, the literal is a lexical error. This makes `1foo`, `1i128`, `1_u8`, and `1ms` invalid rather than parsing as two adjacent tokens.
+- A `.` followed by a digit remains part of the numeric body; a `.` followed by a non-digit remains field access, so `1.foo` is field access on `1`, while `1.0foo` is an invalid numeric postfix.
+
 The core numeric types are:
 
 ```zt
 Int
 Float
+i8   i16  i32  i64
+u8   u16  u32  u64
+f32  f64
 ```
 
-`Int` is an integer type.
+`Int` is the default signed integer type and is an alias of `i64` in v0.
 
-`Float` is an IEEE-754 binary64 floating-point type in v0.
+`Float` is the default floating-point type and is an alias of `f64` in v0.
 
-A host implementation may expose `Number` as a convenience supertype or alias, but the v0 core distinguishes `Int` and `Float`.
+`i8`, `i16`, `i32`, `i64` are signed two's-complement integer types of exactly 8, 16, 32, and 64 bits.
+
+`u8`, `u16`, `u32`, `u64` are unsigned integer types of exactly 8, 16, 32, and 64 bits.
+
+`f32` and `f64` are IEEE-754 binary32 and binary64 floating-point types.
+
+`Number` remains an optional host/prelude convenience and is not required for the v0 core.
+
+These postfixed literals are invalid:
+
+- `-1u8` — unsigned postfixes reject a leading `-`.
+- `1.0i64` — integer postfixes reject a fractional body.
+- `1e3u32` — integer and unsigned postfixes reject an exponent body.
+- `1i128` — `i128` is not in the fixed postfix set (unknown suffix).
+- `1ms` — unit suffixes are not in the fixed postfix set (unknown suffix).
+- `1foo` — an arbitrary identifier run is not a valid postfix (unknown suffix).
 
 ### Immediate-mode atoms
 
