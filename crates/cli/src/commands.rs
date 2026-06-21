@@ -254,11 +254,8 @@ pub(crate) fn run_compile(
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+    let uses_reflection = analysis.reflection_builtin_program().is_some();
 
-    if let Some(reason) = analysis.reflection_builtin_program() {
-        eprintln!("compile error: {reason}");
-        std::process::exit(1);
-    }
     if let Some(reason) = analysis.config_overlay_builtin_program() {
         eprintln!("compile error: {reason}");
         std::process::exit(1);
@@ -269,7 +266,26 @@ pub(crate) fn run_compile(
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
     let mut host_prints = Vec::new();
-    if zutai_tlc::residual_effect_reason(&module).is_some() {
+    let has_residual_effects = zutai_tlc::residual_effect_reason(&module).is_some();
+    if uses_reflection && has_residual_effects {
+        eprintln!(
+            "compile error: reflection builtins cannot be AOT-folded with effectful code yet"
+        );
+        std::process::exit(1);
+    }
+    if uses_reflection {
+        match fold_aot_reflection(&contents, base) {
+            Ok(folded) => {
+                module = folded.module;
+                folded_bindings = Some(folded.hir_bindings);
+                host_prints = folded.host_prints;
+            }
+            Err(err) => {
+                eprintln!("compile error: {err}");
+                std::process::exit(1);
+            }
+        }
+    } else if has_residual_effects {
         match fold_aot_effects(&contents, base) {
             Ok(folded) => {
                 module = folded.module;
@@ -358,6 +374,61 @@ fn fold_aot_effects(
     })
 }
 
+fn fold_aot_reflection(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<FoldedAotEffects, Box<dyn Error>> {
+    let source = fold_reflection_value_to_source(contents, base)?;
+    let pure = zutai_semantic::analyze_with_base(
+        &source,
+        None,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    if !pure.is_thir_complete() {
+        return Err(std::io::Error::other("folded reflection value did not re-analyze").into());
+    }
+    let module = pure
+        .tlc
+        .ok_or_else(|| std::io::Error::other("folded reflection value produced no TLC"))?;
+    let hir_bindings = pure
+        .hir
+        .ok_or_else(|| std::io::Error::other("folded reflection value produced no HIR"))?
+        .file
+        .bindings;
+    Ok(FoldedAotEffects {
+        module,
+        hir_bindings,
+        host_prints: Vec::new(),
+    })
+}
+
+fn fold_reflection_value_to_source(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<String, Box<dyn Error>> {
+    let contents = contents.to_owned();
+    let base = base.map(Path::to_path_buf);
+    let handle = std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(move || -> Result<String, String> {
+            let value = zutai_eval::eval_with_base(&contents, base.as_deref())
+                .map_err(|err| err.to_string())?;
+            reflection_value_to_source(&value).ok_or_else(|| {
+                if value_contains_type(&value) {
+                    "compiled entry point returns Type, which cannot be shown by the v0 runtime ABI"
+                        .to_string()
+                } else {
+                    "reflection entry did not fold to a backend value".to_string()
+                }
+            })
+        })?;
+    match handle.join() {
+        Ok(Ok(source)) => Ok(source),
+        Ok(Err(err)) => Err(std::io::Error::other(err).into()),
+        Err(_) => Err(std::io::Error::other("reflection fold worker panicked").into()),
+    }
+}
+
 fn fold_effect_value_to_source(
     contents: &str,
     base: Option<&Path>,
@@ -384,6 +455,155 @@ fn fold_effect_value_to_source(
         Err(_) => Err(std::io::Error::other("effect fold worker panicked").into()),
     }
 }
+#[derive(Clone, Copy)]
+enum EmptyListType {
+    SchemaFields,
+    SchemaVariants,
+}
+
+struct TypedEmptyList {
+    name: String,
+    ty: &'static str,
+}
+
+fn reflection_value_to_source(value: &zutai_eval::Value) -> Option<String> {
+    let mut empty_lists = Vec::new();
+    let expr = reflection_value_to_source_in(value, None, &mut empty_lists)?;
+    if empty_lists.is_empty() {
+        return Some(expr);
+    }
+
+    let mut source = String::from("{");
+    for empty in empty_lists {
+        source.push_str(&empty.name);
+        source.push_str(" : ");
+        source.push_str(empty.ty);
+        source.push_str(" = [];\n");
+    }
+    source.push_str(&expr);
+    source.push('}');
+    Some(source)
+}
+
+fn reflection_value_to_source_in(
+    value: &zutai_eval::Value,
+    empty_list_type: Option<EmptyListType>,
+    empty_lists: &mut Vec<TypedEmptyList>,
+) -> Option<String> {
+    match value {
+        zutai_eval::Value::List(items) if items.is_empty() => match empty_list_type {
+            Some(kind) => {
+                let name = format!("__zutai_fold_empty{}", empty_lists.len());
+                let ty = match kind {
+                    EmptyListType::SchemaFields => {
+                        "List { name : Text; type : Text; optional : Bool; }"
+                    }
+                    EmptyListType::SchemaVariants => {
+                        "List { name : Text; fields : List { name : Text; type : Text; optional : Bool; }; }"
+                    }
+                };
+                empty_lists.push(TypedEmptyList {
+                    name: name.clone(),
+                    ty,
+                });
+                Some(name)
+            }
+            None => Some("[]".to_string()),
+        },
+        zutai_eval::Value::List(items) => {
+            let mut out = String::from("[");
+            for item in items.iter() {
+                out.push_str(&reflection_value_to_source_in(
+                    &item.peek()?,
+                    empty_list_type,
+                    empty_lists,
+                )?);
+                out.push_str("; ");
+            }
+            out.push(']');
+            Some(out)
+        }
+        zutai_eval::Value::Tuple(items) => {
+            let mut out = String::from("(");
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                if let Some(name) = &item.name {
+                    out.push_str(name);
+                    out.push_str(" = ");
+                }
+                out.push_str(&reflection_value_to_source_in(
+                    &item.value.peek()?,
+                    None,
+                    empty_lists,
+                )?);
+            }
+            out.push(')');
+            Some(out)
+        }
+        zutai_eval::Value::Record(fields) => {
+            let mut out = String::from("{");
+            for (name, value) in fields.iter() {
+                out.push_str(name);
+                out.push_str(" = ");
+                let list_type = match name.as_ref() {
+                    "fields" => Some(EmptyListType::SchemaFields),
+                    "variants" => Some(EmptyListType::SchemaVariants),
+                    _ => None,
+                };
+                out.push_str(&reflection_value_to_source_in(
+                    &value.peek()?,
+                    list_type,
+                    empty_lists,
+                )?);
+                out.push_str("; ");
+            }
+            out.push('}');
+            Some(out)
+        }
+        zutai_eval::Value::TaggedValue { tag, payload } => {
+            if payload.is_empty() {
+                return Some(format!("#{tag}"));
+            }
+            let positional = payload
+                .iter()
+                .enumerate()
+                .all(|(index, (name, _))| name.parse::<usize>() == Ok(index));
+            if positional {
+                let mut out = format!("#{tag} (");
+                for (index, (_, value)) in payload.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(&reflection_value_to_source_in(
+                        &value.peek()?,
+                        None,
+                        empty_lists,
+                    )?);
+                }
+                out.push(')');
+                Some(out)
+            } else {
+                let mut out = format!("#{tag} {{");
+                for (name, value) in payload.iter() {
+                    out.push_str(name);
+                    out.push_str(" = ");
+                    out.push_str(&reflection_value_to_source_in(
+                        &value.peek()?,
+                        None,
+                        empty_lists,
+                    )?);
+                    out.push_str("; ");
+                }
+                out.push('}');
+                Some(out)
+            }
+        }
+        _ => value_to_source(value),
+    }
+}
+
 fn value_to_source(value: &zutai_eval::Value) -> Option<String> {
     match value {
         zutai_eval::Value::Bool(value) => Some(value.to_string()),
@@ -464,6 +684,42 @@ fn value_to_source(value: &zutai_eval::Value) -> Option<String> {
         | zutai_eval::Value::TlcClosure(_)
         | zutai_eval::Value::Builtin(_)
         | zutai_eval::Value::BuiltinPartial { .. } => None,
+    }
+}
+
+fn value_contains_type(value: &zutai_eval::Value) -> bool {
+    match value {
+        zutai_eval::Value::TypeValue(_) => true,
+        zutai_eval::Value::List(items) => items
+            .iter()
+            .any(|item| item.peek().is_some_and(|value| value_contains_type(&value))),
+        zutai_eval::Value::Tuple(items) => items.iter().any(|item| {
+            item.value
+                .peek()
+                .is_some_and(|value| value_contains_type(&value))
+        }),
+        zutai_eval::Value::Record(fields) => fields.iter().any(|(_, value)| {
+            value
+                .peek()
+                .is_some_and(|value| value_contains_type(&value))
+        }),
+        zutai_eval::Value::TaggedValue { payload, .. } => payload.iter().any(|(_, value)| {
+            value
+                .peek()
+                .is_some_and(|value| value_contains_type(&value))
+        }),
+        zutai_eval::Value::Bool(_)
+        | zutai_eval::Value::Int(_)
+        | zutai_eval::Value::Float(_)
+        | zutai_eval::Value::Text(_)
+        | zutai_eval::Value::Atom(_)
+        | zutai_eval::Value::Nothing
+        | zutai_eval::Value::Posit(_)
+        | zutai_eval::Value::Closure(_)
+        | zutai_eval::Value::WitnessDict(_)
+        | zutai_eval::Value::TlcClosure(_)
+        | zutai_eval::Value::Builtin(_)
+        | zutai_eval::Value::BuiltinPartial { .. } => false,
     }
 }
 
@@ -645,10 +901,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
-    if let Some(reason) = analysis.reflection_builtin_program() {
-        eprintln!("error: {reason}");
-        std::process::exit(1);
-    }
+    let uses_reflection = analysis.reflection_builtin_program().is_some();
     if let Some(reason) = analysis.config_overlay_builtin_program() {
         eprintln!("error: {reason}");
         std::process::exit(1);
@@ -656,7 +909,23 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
 
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
-    if zutai_tlc::residual_effect_reason(&module).is_some() {
+    let has_residual_effects = zutai_tlc::residual_effect_reason(&module).is_some();
+    if uses_reflection && has_residual_effects {
+        eprintln!("error: reflection builtins cannot be AOT-folded with effectful code yet");
+        std::process::exit(1);
+    }
+    if uses_reflection {
+        match fold_aot_reflection(&contents, base) {
+            Ok(folded) => {
+                module = folded.module;
+                folded_bindings = Some(folded.hir_bindings);
+            }
+            Err(err) => {
+                eprintln!("error: {err}");
+                std::process::exit(1);
+            }
+        }
+    } else if has_residual_effects {
         match fold_aot_effects(&contents, base) {
             Ok(folded) => {
                 module = folded.module;

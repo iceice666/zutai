@@ -542,17 +542,93 @@ fn compile_print_list_round_trips_folded_value() {
 }
 
 #[test]
-fn compile_reflection_program_is_rejected() {
+fn compile_reflection_schema_record_lowers_to_llvm() {
+    let llvm = compile_stdout(
+        "cli_test_compile_reflection_schema_record.zt",
+        "Server :: type { host : Text; port? : Int; }\nschema Server\n",
+    );
+    assert!(llvm.contains("call void @zutai.show"), "{llvm}");
+    assert!(llvm.contains("record_new"), "{llvm}");
+    assert!(!llvm.contains("reflection builtins"), "{llvm}");
+}
+
+#[test]
+fn compile_reflection_schema_record_bin_renders_shape() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_reflection_schema_record_bin",
+        "Server :: type { host : Text; port? : Int; }\nschema Server\n",
+    );
+    assert!(out.contains("kind = #record"), "{out}");
+    assert!(out.contains("name = \"host\""), "{out}");
+    assert!(out.contains("type = \"Text\""), "{out}");
+    assert!(out.contains("optional = true"), "{out}");
+}
+
+#[test]
+fn compile_reflection_schema_union_bin_renders_shape() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_reflection_schema_union_bin",
+        r#"Result :: type {
+  #done;
+  #ok: { value : Text; };
+}
+schema Result
+"#,
+    );
+    assert!(out.contains("kind = #union"), "{out}");
+    assert!(out.contains("name = \"ok\""), "{out}");
+    assert!(out.contains("type = \"Text\""), "{out}");
+    assert!(out.contains("name = \"done\""), "{out}");
+}
+
+#[test]
+fn compile_reflection_schema_empty_record_bin_renders_empty_fields() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_reflection_schema_empty_record_bin",
+        "Empty :: type {}\nschema Empty\n",
+    );
+    assert!(out.contains("kind = #record"), "{out}");
+    assert!(out.contains("fields = []"), "{out}");
+}
+
+#[test]
+fn compile_reflection_with_effectful_code_is_rejected() {
     let path = write_tmp(
-        "cli_test_compile_reflection.zt",
-        "Server :: type { host : Text; }\nschema Server\n",
+        "cli_test_compile_reflection_with_effect.zt",
+        "Server :: type { host : Text; }\n_unused ::= schema Server\nprint \"hello\"\n",
     );
     cli()
         .arg("compile")
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("reflection builtins"));
+        .stderr(predicate::str::contains("effectful code"));
+}
+
+#[test]
+fn compile_reflection_schema_plain_enum_bin_renders_empty_variants() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_reflection_schema_plain_enum_bin",
+        "Color :: type { #red; #green; #blue; }\nschema Color\n",
+    );
+    assert!(out.contains("kind = #union"), "{out}");
+    assert!(out.contains("name = \"red\""), "{out}");
+    assert!(out.contains("fields = []"), "{out}");
+    assert!(out.contains("name = \"blue\""), "{out}");
+}
+
+#[test]
+fn compile_reflection_fields_raw_type_result_is_rejected() {
+    let path = write_tmp(
+        "cli_test_compile_reflection_fields_type.zt",
+        "Server :: type { host : Text; }\nfields Server\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
 }
 
 #[test]
@@ -1133,17 +1209,17 @@ fn dataflow_effect_program_is_rejected_by_residual_effect_gate() {
 }
 
 #[test]
-fn dataflow_reflection_program_is_rejected() {
+fn dataflow_reflection_schema_lowers_to_graph() {
     let path = write_tmp(
-        "cli_test_dataflow_reflection.zt",
-        "Server :: type { host : Text; }\nfields Server\n",
+        "cli_test_dataflow_reflection_schema.zt",
+        "Server :: type { host : Text; }\nschema Server\n",
     );
     cli()
         .arg("dataflow")
         .arg(&path)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("reflection builtins"));
+        .success()
+        .stdout(predicate::str::contains("Record"));
 }
 
 // ─── prelude `print` effect binding ───────────────────────────────────────────

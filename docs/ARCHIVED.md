@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing the PIE-safe native executable hardening item._
+_Last updated: 2026-06-21 after closing Phase 22 reflection AOT lowering._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -67,14 +67,19 @@ _Last updated: 2026-06-21 after closing the PIE-safe native executable hardening
 - `compile` and `dataflow` now fold fully handled, closed effectful entry
   programs through the TLC semantics oracle before Dataflow Core, replaying
   captured `io.print` output through the native runtime.
+- `compile` and `dataflow` now fold renderable compile-time reflection programs
+  through the THIR type-value evaluator before Dataflow Core. `schema T` lowers
+  to serializable backend data; raw `fields T` outputs that contain `Type`
+  values reject with the existing Type-result diagnostic instead of reaching
+  LLVM.
 - Supported full config-overlay calls lower before Dataflow Core: patch-first
   `overlay`/`overlayDeep` applications with record-literal patch values become
   ordinary record updates, and required nested records merge recursively.
-- Reflection builtins, unsupported residual overlay forms, optional nested-record
-  deep overlays, unfoldable residual effects, effectful function entries, and
-  non-empty function effect rows still reject before DC. The Dataflow Core API
-  keeps its fallible residual-effect gate so direct callers cannot silently erase
-  non-empty effect rows.
+- Unsupported residual overlay forms, optional nested-record deep overlays,
+  reflection combined with effectful code, unfoldable residual effects,
+  effectful function entries, and non-empty function effect rows still reject
+  before DC. The Dataflow Core API keeps its fallible residual-effect gate so
+  direct callers cannot silently erase non-empty effect rows.
 
 ## Validation notes
 
@@ -113,6 +118,19 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 22: Reflection AOT lowering ✅
+
+- CLI `compile` and `dataflow` remove the reflection-gate exit for renderable
+  reflection programs by evaluating `fields`/`schema` at compile time and
+  re-lowering the folded backend literal before Dataflow Core.
+- `schema` on closed records, payload unions, plain enums, and empty records
+  compiles to LLVM/native output and renders the serializable reflection shape.
+  Typed empty-list bindings preserve the schema shape when folded values contain
+  empty `fields` / `variants` lists.
+- Raw `fields` outputs that would render embedded `Type` values reject with the
+  existing Type-result compile diagnostic; reflection combined with effectful
+  code remains refused rather than dropping host effects.
 
 ### Native codegen hardening: PIE-safe executable output ✅
 
