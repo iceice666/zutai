@@ -9,6 +9,8 @@ mod neon;
 use neon::classify_chunk_neon as classify_chunk;
 
 #[cfg(target_arch = "x86_64")]
+mod avx2;
+#[cfg(target_arch = "x86_64")]
 mod sse2;
 #[cfg(target_arch = "x86_64")]
 use sse2::classify_chunk_sse2 as classify_chunk;
@@ -90,6 +92,40 @@ impl<'a> Scanner<'a> {
     }
 
     pub(crate) fn scan(self) -> Result<StructuralIndex, ParseError> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx2") {
+                // SAFETY: `is_x86_feature_detected!("avx2")` guarantees AVX2
+                // support for this process before any AVX2 classifier call.
+                return self.scan_with(|chunk| unsafe { avx2::classify_chunk_avx2(chunk) });
+            }
+        }
+
+        self.scan_with(classify_chunk)
+    }
+
+    /// Scans only the merged `significant` offsets the parser consumes,
+    /// skipping the separate structural/pseudo-structural vectors and the
+    /// per-chunk [`ChunkScan`] records that full [`Scanner::scan`] materializes.
+    pub(crate) fn scan_significant(self) -> Result<Vec<usize>, ParseError> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::is_x86_feature_detected!("avx2") {
+                // SAFETY: `is_x86_feature_detected!("avx2")` guarantees AVX2
+                // support for this process before any AVX2 classifier call.
+                return self
+                    .scan_significant_with(|chunk| unsafe { avx2::classify_chunk_avx2(chunk) });
+            }
+        }
+
+        self.scan_significant_with(classify_chunk)
+    }
+
+    #[inline(always)]
+    fn scan_with(
+        self,
+        classify_chunk: impl Fn(&[u8]) -> RawMasks,
+    ) -> Result<StructuralIndex, ParseError> {
         let mut structural = Vec::new();
         let mut pseudo_structural = Vec::new();
         let mut significant = Vec::new();
@@ -99,55 +135,24 @@ impl<'a> Scanner<'a> {
 
         for (chunk_index, chunk) in self.bytes.chunks(64).enumerate() {
             let base = chunk_index * 64;
-            let len = chunk.len();
-
-            // Stage 1: raw per-byte classification. Architecture-specific
-            // SIMD can accelerate this without changing later scanner stages.
-            let raw = classify_chunk(chunk);
-
-            // Stage 2a: quotes that actually toggle string state.
-            let quote_mask =
-                unescaped_quote_mask(raw.quote, raw.backslash, len, &mut state.escape_carry);
-
-            // Stage 2b: bytes occupied by string regions, including both
-            // opening and closing delimiter quotes.
-            let (string_region_mask, opening_quote_mask) =
-                compute_string_region_mask(quote_mask, len, &mut state.in_string);
-
-            let valid_mask = low_bits(len);
-            let outside_plain_mask = valid_mask & !string_region_mask;
-
-            // Stage 2c: structurals only count outside strings.
-            let structural_mask = raw.structural & outside_plain_mask;
-
-            let outside_whitespace_mask = raw.whitespace & outside_plain_mask;
-            let ordinary_token_mask = outside_plain_mask & !(raw.structural | raw.whitespace);
-            let boundary_mask = structural_mask | outside_whitespace_mask;
-
-            let pseudo_structural_mask = compute_pseudo_structural_mask(
-                ordinary_token_mask,
-                opening_quote_mask,
-                boundary_mask,
-                len,
-                &mut state.previous_was_boundary,
-            );
+            let masks = classify_masks(chunk, &classify_chunk, &mut state);
 
             // Stage 3: sparse scalar emission from masks.
-            emit_bits(structural_mask, base, &mut structural);
-            emit_bits(pseudo_structural_mask, base, &mut pseudo_structural);
+            emit_bits(masks.structural, base, &mut structural);
+            emit_bits(masks.pseudo_structural, base, &mut pseudo_structural);
             emit_bits(
-                structural_mask | pseudo_structural_mask,
+                masks.structural | masks.pseudo_structural,
                 base,
                 &mut significant,
             );
 
             chunks.push(ChunkScan {
                 base,
-                structural_mask,
-                quote_mask,
-                backslash_mask: raw.backslash,
-                whitespace_mask: raw.whitespace,
-                pseudo_structural_mask,
+                structural_mask: masks.structural,
+                quote_mask: masks.quote,
+                backslash_mask: masks.backslash,
+                whitespace_mask: masks.whitespace,
+                pseudo_structural_mask: masks.pseudo_structural,
             });
         }
 
@@ -161,6 +166,95 @@ impl<'a> Scanner<'a> {
             significant,
             chunks,
         })
+    }
+
+    #[inline(always)]
+    fn scan_significant_with(
+        self,
+        classify_chunk: impl Fn(&[u8]) -> RawMasks,
+    ) -> Result<Vec<usize>, ParseError> {
+        // Roughly one offset per token start / structural byte; reserving a
+        // fraction of the input length avoids most reallocations.
+        let mut significant = Vec::with_capacity(self.bytes.len() / 4);
+        let mut state = ScanState::default();
+
+        for (chunk_index, chunk) in self.bytes.chunks(64).enumerate() {
+            let base = chunk_index * 64;
+            let masks = classify_masks(chunk, &classify_chunk, &mut state);
+            emit_bits(
+                masks.structural | masks.pseudo_structural,
+                base,
+                &mut significant,
+            );
+        }
+
+        if state.in_string {
+            return Err(error(self.input.len(), ParseErrorKind::UnclosedString));
+        }
+
+        Ok(significant)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-chunk Stage 1+2 classification (shared by both scan drivers)
+// ---------------------------------------------------------------------------
+
+/// Masks produced for a single 64-byte chunk by [`classify_masks`].
+struct ChunkMasks {
+    structural: u64,
+    pseudo_structural: u64,
+    quote: u64,
+    backslash: u64,
+    whitespace: u64,
+}
+
+/// Runs Stage 1 (raw classification) and Stage 2 (string-region masking,
+/// pseudo-structural detection) for one chunk, threading the cross-chunk
+/// `state`. Shared verbatim by `scan_with` and `scan_significant_with`.
+#[inline(always)]
+fn classify_masks(
+    chunk: &[u8],
+    classify_chunk: &impl Fn(&[u8]) -> RawMasks,
+    state: &mut ScanState,
+) -> ChunkMasks {
+    let len = chunk.len();
+
+    // Stage 1: raw per-byte classification. Architecture-specific SIMD can
+    // accelerate this without changing later scanner stages.
+    let raw = classify_chunk(chunk);
+
+    // Stage 2a: quotes that actually toggle string state.
+    let quote_mask = unescaped_quote_mask(raw.quote, raw.backslash, len, &mut state.escape_carry);
+
+    // Stage 2b: bytes occupied by string regions, including both delimiters.
+    let (string_region_mask, opening_quote_mask) =
+        compute_string_region_mask(quote_mask, len, &mut state.in_string);
+
+    let valid_mask = low_bits(len);
+    let outside_plain_mask = valid_mask & !string_region_mask;
+
+    // Stage 2c: structurals only count outside strings.
+    let structural_mask = raw.structural & outside_plain_mask;
+
+    let outside_whitespace_mask = raw.whitespace & outside_plain_mask;
+    let ordinary_token_mask = outside_plain_mask & !(raw.structural | raw.whitespace);
+    let boundary_mask = structural_mask | outside_whitespace_mask;
+
+    let pseudo_structural_mask = compute_pseudo_structural_mask(
+        ordinary_token_mask,
+        opening_quote_mask,
+        boundary_mask,
+        len,
+        &mut state.previous_was_boundary,
+    );
+
+    ChunkMasks {
+        structural: structural_mask,
+        pseudo_structural: pseudo_structural_mask,
+        quote: quote_mask,
+        backslash: raw.backslash,
+        whitespace: raw.whitespace,
     }
 }
 

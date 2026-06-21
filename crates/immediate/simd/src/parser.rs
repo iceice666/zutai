@@ -3,21 +3,22 @@ use zutai_types::{Block, Pair, Value};
 
 use crate::charclass::{is_name_continue, is_name_start};
 use crate::error::{ParseError, ParseErrorKind, error};
-use crate::scanner::StructuralIndex;
 
 pub(crate) struct Parser<'a> {
     input: &'a str,
     bytes: &'a [u8],
-    index: &'a StructuralIndex,
+    significant: &'a [usize],
+    cursor: usize,
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(input: &'a str, index: &'a StructuralIndex) -> Self {
+    pub(crate) fn new(input: &'a str, significant: &'a [usize]) -> Self {
         Self {
             input,
             bytes: input.as_bytes(),
-            index,
+            significant,
+            cursor: 0,
             pos: 0,
         }
     }
@@ -378,18 +379,12 @@ impl<'a> Parser<'a> {
     }
 
     fn skip_to_next_significant(&mut self) {
-        if self.pos >= self.bytes.len() {
-            return;
+        let sig = self.significant;
+        let mut cursor = self.cursor;
+        while cursor < sig.len() && sig[cursor] < self.pos {
+            cursor += 1;
         }
-
-        let next_index = self
-            .index
-            .significant
-            .partition_point(|offset| *offset < self.pos);
-        if let Some(next) = self.index.significant.get(next_index) {
-            self.pos = *next;
-        } else {
-            self.pos = self.bytes.len();
-        }
+        self.cursor = cursor;
+        self.pos = sig.get(cursor).copied().unwrap_or(self.bytes.len());
     }
 }
