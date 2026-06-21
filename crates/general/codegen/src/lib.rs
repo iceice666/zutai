@@ -14,6 +14,11 @@ use zutai_ssa::*;
 
 /// Emit a complete LLVM IR `.ll` file from an SSA module.
 pub fn emit_llvm(module: &SsaModule) -> String {
+    emit_llvm_with_host_prints(module, &[])
+}
+
+/// Emit LLVM IR and replay already-elaborated host `io.print` text at `@main`.
+pub fn emit_llvm_with_host_prints(module: &SsaModule, host_prints: &[String]) -> String {
     let mut out = String::with_capacity(8192);
     emit_preamble(&mut out);
     emit_type_decls(&mut out);
@@ -28,7 +33,7 @@ pub fn emit_llvm(module: &SsaModule) -> String {
         emit_func_def(&mut out, func);
     }
 
-    emit_main(&mut out, &module.entry.name, &entry_desc);
+    emit_main(&mut out, &module.entry.name, &entry_desc, host_prints);
     out
 }
 
@@ -1090,17 +1095,37 @@ fn alloc_tmp(tmp: &mut u64) -> String {
 
 // ── @main ─────────────────────────────────────────────────────────────────────
 
-fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str) {
+fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str, host_prints: &[String]) {
     let entry = mangle(entry_name);
+    for (index, text) in host_prints.iter().enumerate() {
+        let bytes = llvm_string_bytes(text);
+        out.push_str(&format!(
+            "@zutai.effect.print.{index} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
+            bytes.len, bytes.escaped
+        ));
+    }
     let newline = llvm_string_bytes("\n");
     out.push_str(&format!(
         "@zutai.main.newline = private unnamed_addr constant [{} x i8] c\"{}\"\n\n",
         newline.len, newline.escaped
     ));
-    out.push_str(&format!(
-        "define i32 @main() {{\n  %result = call i64 @{}()\n",
-        entry
-    ));
+    out.push_str("define i32 @main() {\n");
+    for (index, text) in host_prints.iter().enumerate() {
+        out.push_str(&format!(
+            "  %effect_print_{index} = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.effect.print.{index} to i64), i64 {})\n",
+            text.len()
+        ));
+        out.push_str(&format!(
+            "  call void @zutai.print_text(i64 %effect_print_{index})\n"
+        ));
+        out.push_str(&format!(
+            "  %effect_print_newline_{index} = call i64 @zutai.text_from_global(i64 ptrtoint (ptr @zutai.main.newline to i64), i64 1)\n"
+        ));
+        out.push_str(&format!(
+            "  call void @zutai.print_text(i64 %effect_print_newline_{index})\n"
+        ));
+    }
+    out.push_str(&format!("  %result = call i64 @{}()\n", entry));
     out.push_str(&format!(
         "  call void @zutai.show(i64 %result, i64 ptrtoint (ptr @{} to i64))\n",
         entry_desc

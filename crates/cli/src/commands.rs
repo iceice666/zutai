@@ -253,7 +253,7 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
-    let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+    let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     if let Some(reason) = analysis.reflection_builtin_program() {
         eprintln!("compile error: {reason}");
@@ -264,12 +264,31 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
 
-    // TLC lowering.
-    let module = zutai_tlc::lower_thir(thir);
+    // TLC lowering. Effectful closed executables are folded through the TLC
+    // semantics oracle before DC; residual effectful functions still fail here.
+    let mut module = zutai_tlc::lower_thir(thir);
+    let mut folded_bindings = None;
+    let mut host_prints = Vec::new();
+    if zutai_tlc::residual_effect_reason(&module).is_some() {
+        match fold_aot_effects(&contents, base) {
+            Ok(folded) => {
+                module = folded.module;
+                folded_bindings = Some(folded.hir_bindings);
+                host_prints = folded.host_prints;
+            }
+            Err(err) => {
+                eprintln!("compile error: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
+    let hir_bindings = folded_bindings
+        .as_deref()
+        .unwrap_or(original_hir_bindings.as_slice());
 
     // DC → ANF → SSA → LLVM IR pipeline.
     let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
@@ -279,7 +298,7 @@ pub(crate) fn run_compile(
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
-    let llvm_ir = zutai_codegen::emit_llvm(&ssa);
+    let llvm_ir = zutai_codegen::emit_llvm_with_host_prints(&ssa, &host_prints);
 
     match emit {
         EmitMode::Llvm => match output_path {
@@ -303,6 +322,175 @@ pub(crate) fn run_compile(
         }
     }
     Ok(())
+}
+
+struct FoldedAotEffects {
+    module: zutai_tlc::TlcModule,
+    hir_bindings: Vec<zutai_hir::Binding>,
+    host_prints: Vec<String>,
+}
+
+fn fold_aot_effects(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<FoldedAotEffects, Box<dyn Error>> {
+    let (source, host_prints) = fold_effect_value_to_source(contents, base)?;
+    let pure = zutai_semantic::analyze_with_base(
+        &source,
+        None,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    if !pure.is_thir_complete() {
+        return Err(std::io::Error::other("folded effect value did not re-analyze").into());
+    }
+    let module = pure
+        .tlc
+        .ok_or_else(|| std::io::Error::other("folded effect value produced no TLC"))?;
+    let hir_bindings = pure
+        .hir
+        .ok_or_else(|| std::io::Error::other("folded effect value produced no HIR"))?
+        .file
+        .bindings;
+    Ok(FoldedAotEffects {
+        module,
+        hir_bindings,
+        host_prints,
+    })
+}
+
+fn fold_effect_value_to_source(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<(String, Vec<String>), Box<dyn Error>> {
+    let contents = contents.to_owned();
+    let base = base.map(Path::to_path_buf);
+    let handle = std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(move || -> Result<(String, Vec<String>), String> {
+            let analysis = zutai_semantic::analyze_with_base(
+                &contents,
+                base.as_deref(),
+                zutai_semantic::AnalysisOptions::default(),
+            );
+            let (value, host_prints) = zutai_eval::eval_tlc_analysis_capture_io(&analysis)
+                .map_err(|err| err.to_string())?;
+            let source = value_to_source(&value)
+                .ok_or_else(|| "effectful entry did not fold to a backend value".to_string())?;
+            Ok((source, host_prints))
+        })?;
+    match handle.join() {
+        Ok(Ok(folded)) => Ok(folded),
+        Ok(Err(err)) => Err(std::io::Error::other(err).into()),
+        Err(_) => Err(std::io::Error::other("effect fold worker panicked").into()),
+    }
+}
+fn value_to_source(value: &zutai_eval::Value) -> Option<String> {
+    match value {
+        zutai_eval::Value::Bool(value) => Some(value.to_string()),
+        zutai_eval::Value::Int(value) => Some(value.to_string()),
+        zutai_eval::Value::Float(value) => Some(float_source(*value)),
+        zutai_eval::Value::Text(value) => Some(text_source(value)),
+        zutai_eval::Value::Atom(value) => Some(format!("#{value}")),
+        zutai_eval::Value::List(items) => {
+            let mut out = String::from("[");
+            for item in items.iter() {
+                out.push_str(&value_to_source(&item.peek()?)?);
+                out.push_str("; ");
+            }
+            out.push(']');
+            Some(out)
+        }
+        zutai_eval::Value::Tuple(items) => {
+            let mut out = String::from("(");
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                if let Some(name) = &item.name {
+                    out.push_str(name);
+                    out.push_str(" = ");
+                }
+                out.push_str(&value_to_source(&item.value.peek()?)?);
+            }
+            out.push(')');
+            Some(out)
+        }
+        zutai_eval::Value::Record(fields) => {
+            let mut out = String::from("{");
+            for (name, value) in fields.iter() {
+                out.push_str(name);
+                out.push_str(" = ");
+                out.push_str(&value_to_source(&value.peek()?)?);
+                out.push_str("; ");
+            }
+            out.push('}');
+            Some(out)
+        }
+        zutai_eval::Value::TaggedValue { tag, payload } => {
+            if payload.is_empty() {
+                return Some(format!("#{tag}"));
+            }
+            let positional = payload
+                .iter()
+                .enumerate()
+                .all(|(index, (name, _))| name.parse::<usize>() == Ok(index));
+            if positional {
+                let mut out = format!("#{tag} (");
+                for (index, (_, value)) in payload.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(&value_to_source(&value.peek()?)?);
+                }
+                out.push(')');
+                Some(out)
+            } else {
+                let mut out = format!("#{tag} {{");
+                for (name, value) in payload.iter() {
+                    out.push_str(name);
+                    out.push_str(" = ");
+                    out.push_str(&value_to_source(&value.peek()?)?);
+                    out.push_str("; ");
+                }
+                out.push('}');
+                Some(out)
+            }
+        }
+        zutai_eval::Value::Nothing => Some("#absent".to_string()),
+        zutai_eval::Value::Posit(_)
+        | zutai_eval::Value::Closure(_)
+        | zutai_eval::Value::TypeValue(_)
+        | zutai_eval::Value::WitnessDict(_)
+        | zutai_eval::Value::TlcClosure(_)
+        | zutai_eval::Value::Builtin(_)
+        | zutai_eval::Value::BuiltinPartial { .. } => None,
+    }
+}
+
+fn text_source(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn float_source(value: f64) -> String {
+    let source = format!("{value:?}");
+    if !value.is_finite() || source.contains('.') || source.contains('e') || source.contains('E') {
+        source
+    } else {
+        format!("{source}.0")
+    }
 }
 
 fn output_path_for(input: &str, output_path: Option<&str>, emit: EmitMode) -> PathBuf {
@@ -425,7 +613,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
-    let hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
+    let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     if let Some(reason) = analysis.reflection_builtin_program() {
         eprintln!("error: {reason}");
@@ -436,11 +624,27 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    let module = zutai_tlc::lower_thir(thir);
+    let mut module = zutai_tlc::lower_thir(thir);
+    let mut folded_bindings = None;
+    if zutai_tlc::residual_effect_reason(&module).is_some() {
+        match fold_aot_effects(&contents, base) {
+            Ok(folded) => {
+                module = folded.module;
+                folded_bindings = Some(folded.hir_bindings);
+            }
+            Err(err) => {
+                eprintln!("error: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
         eprintln!("error: {reason}");
         std::process::exit(1);
     }
+    let hir_bindings = folded_bindings
+        .as_deref()
+        .unwrap_or(original_hir_bindings.as_slice());
     let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
     println!("{graph:#?}");
     Ok(())

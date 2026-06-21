@@ -35,8 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing Phase 18 runtime/ABI and Phase 19
-effect AOT-boundary work._
+_Last updated: 2026-06-21 after closing Phase 20 effects AOT lowering._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -64,11 +63,13 @@ effect AOT-boundary work._
   `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it
   as `io.print`; source handlers can intercept it, and the host `run` boundary
   handles residual `io.print`.
-- `compile` and `dataflow` deliberately reject config overlay builtins,
-  reflection builtins, residual effect markers, and non-empty function effect
-  rows unless a pre-DC lowering has eliminated them. The Dataflow Core API now
-  has a fallible residual-effect gate so direct callers cannot silently erase
-  non-empty effect rows.
+- `compile` and `dataflow` now fold fully handled, closed effectful entry
+  programs through the TLC semantics oracle before Dataflow Core, replaying
+  captured `io.print` output through the native runtime. Config overlay
+  builtins, reflection builtins, unfoldable residual effects, effectful function
+  entries, and non-empty function effect rows still reject before DC. The
+  Dataflow Core API keeps its fallible residual-effect gate so direct callers
+  cannot silently erase non-empty effect rows.
 
 ## Validation notes
 
@@ -104,6 +105,23 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 20: Effects AOT lowering ✅
+
+- CLI `compile`/`dataflow` attempt a pre-DC fold for closed executable programs
+  with fully handled effects by running the TLC semantics oracle on a 256 MiB
+  worker stack, serializing the forced backend value to pure source, and lowering
+  that pure TLC to Dataflow Core.
+- Captured `io.print` host output is replayed in generated `@main` through the
+  existing `zutai.text_from_global` / `zutai.print_text` runtime ABI; native
+  binaries for `print "hello"` print `hello` before rendering the final
+  `"hello"` value.
+- Residual/unfoldable effects, effectful function entries, and non-backend
+  values remain rejected before Dataflow Core. Direct
+  `zutai_dataflow::try_lower_tlc` still gates raw residual
+  `TlcExpr::{Perform,Handle,Resume}` and non-empty function rows.
+- Tests cover handled scalar, record/list fold round-trips, residual rejection,
+  and host print replay.
 
 ### Phase 18: Runtime and ABI ✅
 
@@ -161,8 +179,8 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   operation clauses, `resume`, and sequence expressions.
 - TLC evaluation supports handled effects with delimited continuations.
 - `print` was re-pointed to `io.print`; host `run` handles residual `io.print`.
-- Backend support intentionally stops at residual-effect gates. LLVM support is
-  tracked separately in [Phase 20](TBD.md#phase-20-effects-aot-lowering).
+- Backend support now includes Phase 20 closed-entry effect folding; residual
+  effectful functions and unfoldable effect values remain backend rejections.
 
 ### Phase 15: Effect typing ✅
 

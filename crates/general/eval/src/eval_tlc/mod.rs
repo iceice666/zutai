@@ -12,6 +12,7 @@
 //! `peek()` always returns `Some`; there are no deferred thunks in TLC
 //! evaluation.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -58,6 +59,7 @@ pub struct TlcEvaluator<'a> {
     active_module: ModuleId,
     imports: Option<&'a HashMap<ImportKey, Value>>,
     operator_witnesses: Option<&'a HashMap<(String, String), Value>>,
+    host_prints: Option<&'a RefCell<Vec<String>>>,
     defer_aggregates: bool,
 }
 
@@ -82,6 +84,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: ModuleId(0),
             imports: None,
             operator_witnesses: None,
+            host_prints: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
     }
@@ -94,6 +97,7 @@ impl<'a> TlcEvaluator<'a> {
             imports: Some(imports),
             operator_witnesses: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
+            host_prints: None,
         }
     }
 
@@ -112,6 +116,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module,
             imports: Some(imports),
             operator_witnesses: None,
+            host_prints: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }
@@ -133,6 +138,49 @@ impl<'a> TlcEvaluator<'a> {
             imports: Some(imports),
             operator_witnesses: Some(operator_witnesses),
             defer_aggregates: tlc_module_can_defer_aggregates(module),
+            host_prints: None,
+        })
+    }
+    pub fn new_in_registry_with_operator_witnesses_and_host_prints(
+        registry: &'a [&'a TlcModule],
+        active_module: ModuleId,
+        imports: &'a HashMap<ImportKey, Value>,
+        operator_witnesses: &'a HashMap<(String, String), Value>,
+        host_prints: &'a RefCell<Vec<String>>,
+    ) -> Result<Self, EvalError> {
+        let module = registry
+            .get(active_module.0)
+            .copied()
+            .ok_or(EvalError::Internal("TLC module id out of registry bounds"))?;
+        Ok(Self {
+            module,
+            registry: Some(registry),
+            active_module,
+            imports: Some(imports),
+            operator_witnesses: Some(operator_witnesses),
+            host_prints: Some(host_prints),
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
+        })
+    }
+
+    pub fn new_in_registry_with_host_prints(
+        registry: &'a [&'a TlcModule],
+        active_module: ModuleId,
+        imports: &'a HashMap<ImportKey, Value>,
+        host_prints: &'a RefCell<Vec<String>>,
+    ) -> Result<Self, EvalError> {
+        let module = registry
+            .get(active_module.0)
+            .copied()
+            .ok_or(EvalError::Internal("TLC module id out of registry bounds"))?;
+        Ok(Self {
+            module,
+            registry: Some(registry),
+            active_module,
+            imports: Some(imports),
+            operator_witnesses: None,
+            host_prints: Some(host_prints),
+            defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }
 
@@ -144,6 +192,7 @@ impl<'a> TlcEvaluator<'a> {
                 active_module: self.active_module,
                 imports: self.imports,
                 operator_witnesses: self.operator_witnesses,
+                host_prints: self.host_prints,
                 defer_aggregates: self.defer_aggregates,
             });
         }
@@ -160,6 +209,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: home,
             imports: self.imports,
             operator_witnesses: self.operator_witnesses,
+            host_prints: self.host_prints,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }

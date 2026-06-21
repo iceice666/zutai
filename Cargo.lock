@@ -1304,6 +1304,7 @@ dependencies = [
  "zutai-codegen",
  "zutai-dataflow",
  "zutai-eval",
+ "zutai-hir",
  "zutai-im",
  "zutai-semantic",
  "zutai-ssa",

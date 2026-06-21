@@ -12,6 +12,7 @@ zutai-anf = { path = "../general/anf" }
 zutai-codegen = { path = "../general/codegen" }
 zutai-dataflow = { path = "../general/dataflow" }
 zutai-eval = { path = "../general/eval" }
+zutai-hir = { path = "../general/hir" }
 zutai-im = { path = "../immediate/core" }
 zutai-semantic = { path = "../general/semantic" }
 zutai-ssa = { path = "../general/ssa" }

@@ -197,7 +197,11 @@ impl<'a> TlcEvaluator<'a> {
             EvalControl::Value(value) => Ok(value),
             EvalControl::Perform { op, arg, cont } if op == "io.print" => match arg {
                 Value::Text(text) => {
-                    println!("{text}");
+                    if let Some(host_prints) = self.host_prints {
+                        host_prints.borrow_mut().push(text.to_string());
+                    } else {
+                        println!("{text}");
+                    }
                     let next = cont(Value::Text(text))?;
                     self.finish_top(next)
                 }

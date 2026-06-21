@@ -481,6 +481,51 @@ fn compile_effect_bin_is_rejected_before_toolchain() {
 }
 
 #[test]
+fn compile_handled_effect_program_emits_folded_value() {
+    let path = write_tmp("cli_test_compile_handled_effect.zt", HANDLED_EFFECT_SRC);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("define i64 @__entry"))
+        .stdout(predicate::str::contains("ok"));
+}
+
+#[test]
+fn compile_handled_effect_record_round_trips_folded_value() {
+    let path = write_tmp(
+        "cli_test_compile_handled_effect_record.zt",
+        r#"
+result := handle { perform warn "diag"; { a = 1; b = 2; } } with { warn = \d. resume (); }
+result
+"#,
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("record_new"));
+}
+
+#[test]
+fn compile_print_list_round_trips_folded_value() {
+    let path = write_tmp(
+        "cli_test_compile_print_list.zt",
+        r#"[print "a"; print "b";]"#,
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("@zutai.effect.print.0"))
+        .stdout(predicate::str::contains("@zutai.effect.print.1"))
+        .stdout(predicate::str::contains("list_cons"));
+}
+
+#[test]
 fn compile_reflection_program_is_rejected() {
     let path = write_tmp(
         "cli_test_compile_reflection.zt",
@@ -1026,24 +1071,24 @@ fn run_effect_sequence_prints_in_order() {
 }
 
 #[test]
-fn compile_print_program_is_rejected() {
-    // `print` is now `io.print`; the pure compile path rejects residual effects.
+fn compile_print_program_replays_host_print() {
     let path = write_tmp("cli_test_print_compile.zt", "print \"x\"\n");
     cli()
         .arg("compile")
         .arg(&path)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("effect"));
+        .success()
+        .stdout(predicate::str::contains("@zutai.effect.print.0"))
+        .stdout(predicate::str::contains("call void @zutai.print_text"));
 }
 
 #[test]
-fn dataflow_print_program_is_rejected() {
+fn dataflow_print_program_lowers_after_host_effect_fold() {
     let path = write_tmp("cli_test_print_dataflow.zt", "print \"x\"\n");
     cli()
         .arg("dataflow")
         .arg(&path)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("effect"));
+        .success()
+        .stdout(predicate::str::contains("Text"));
 }

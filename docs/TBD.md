@@ -1,12 +1,12 @@
 # Zutai Open Work
 
-Open work falls in two independent groups: three **v1** milestones that each
-remove an AOT-backend rejection gate (a construct that already type-checks and
-evaluates but does not yet compile natively), and a **native-codegen** hardening
-item. The v1 typing and reference-evaluation surface is otherwise complete — see
-[`ARCHIVED.md`](ARCHIVED.md) Phases 1–19. The v1 milestones are independent
-(different builtins/gates) and may be implemented in any order; they are listed in
-recommended execution order.
+Open work falls in two independent groups: two **v1** milestones that each
+remove a remaining AOT-backend rejection gate (a construct that already
+type-checks and evaluates but does not yet compile natively), and a
+**native-codegen** hardening item. The v1 typing and reference-evaluation
+surface is otherwise complete — see [`ARCHIVED.md`](ARCHIVED.md) Phases 1–20.
+The remaining v1 milestones are independent (different builtins/gates) and may
+be implemented in any order; they are listed in recommended execution order.
 
 Out of scope by v1 spec, deliberately not milestones: host capabilities beyond
 `io.print` (filesystem/network/environment/clock/randomness, reserved as
@@ -14,48 +14,6 @@ non-ambient in `v1_spec/05-effects.md`), user-defined `derive` recipes
 (`v1_spec/03-constraints.md` marks post-v1), and universe-level enforcement
 (`v1_spec/02-type-level-computation.md` states it as a "should"; type-level
 evaluation is fuel-bounded so `Type : Type` is not a runtime-soundness risk).
-
-## Phase 20: Effects AOT lowering
-
-Goal: compile and natively run effectful programs by elaborating algebraic effects
-to ordinary pure constructs before Dataflow Core, so `perform`/`handle`/`resume`
-and sequence expressions reach no backend stage.
-
-Removes the rejection gates (for programs whose effects are fully elaborated):
-
-- `zutai_tlc::residual_effect_reason` / `zutai_dataflow::try_lower_tlc`
-  (`crates/general/dataflow/src/lib.rs`).
-- `TlcExpr::{Perform,Handle,Resume}` → `DfNodeKind::Error`
-  (`crates/general/dataflow/src/lower.rs`).
-- The `residual_effect_reason` exits in CLI `compile`/`dataflow`
-  (`crates/cli/src/commands.rs`).
-
-Fixed design (do not redesign): pre-DC free-monad/CPS elaboration per
-[`tlc-core.md` §9](tlc-core.md). An effectful computation `A ! { op: P -> R }`
-becomes `Free Op A` using only existing `VariantT`/`Record`/`Lam`/`App`/`Case`/
-`GetField`/`Letrec` nodes; `perform op arg` injects `impure` with a captured
-continuation; `handle … with …` lowers to a recursive `Letrec` interpreter;
-`Fun(A,B,eff)` is erased to `Fun(A,B,REmpty)` before DC emission. Resumptions are
-one-shot (frontend/TLC invariant); the continuation is an ordinary single-use
-function. This single milestone also includes the host-boundary interpreter so a
-compiled binary runs `io.print`.
-
-Acceptance criteria:
-
-- A new pre-DC elaboration pass turns every fully-handled effectful program into
-  pure TLC: `residual_effect_reason` returns `None`, and the DC type of a
-  previously effectful function equals its pure `Fun(A,B,REmpty)` type.
-- `handle (perform fail "x") with { value = \v => v; fail = \e => e; }` compiles via
-  `compile --emit=llvm` and, via `--emit=bin`, the binary produces the same value
-  the reference evaluator (`zutai-eval` / `run`) yields.
-- A `@main` program that performs `io.print` (e.g. `print "hello"`) compiles via
-  `--emit=bin` and the binary prints `hello` through the runtime `io.print` handler
-  (`zutai.print_text`, `runtime-abi.md`).
-- The no-erasure gate is preserved: genuinely unhandled/residual effects the pass
-  cannot eliminate are still rejected with the existing diagnostics; erasure never
-  silently drops a non-empty effect row.
-- `cargo test --workspace` and `cargo clippy --workspace --all-targets` clean;
-  existing residual-effect rejection tests updated to use a still-residual program.
 
 ## Phase 21: Config-overlay AOT lowering
 

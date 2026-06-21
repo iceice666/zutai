@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use super::*;
 use crate::analysis_eval::has_runtime_type_values;
 
@@ -58,6 +60,21 @@ fn completed_tlc_inputs(
 }
 
 pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    eval_tlc_analysis_inner(analysis, None)
+}
+
+pub fn eval_tlc_analysis_capture_io(
+    analysis: &zutai_semantic::Analysis,
+) -> Result<(Value, Vec<String>), EvalError> {
+    let host_prints = RefCell::new(Vec::new());
+    let value = eval_tlc_analysis_inner(analysis, Some(&host_prints))?;
+    Ok((value, host_prints.into_inner()))
+}
+
+fn eval_tlc_analysis_inner(
+    analysis: &zutai_semantic::Analysis,
+    host_prints: Option<&RefCell<Vec<String>>>,
+) -> Result<Value, EvalError> {
     let mut registry = Vec::new();
     let mut imports = HashMap::new();
     let mut operator_witnesses = HashMap::new();
@@ -66,15 +83,27 @@ pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<V
         &mut registry,
         &mut imports,
         &mut operator_witnesses,
+        host_prints,
     )?;
 
     let (thir_file, root_module) = completed_tlc_inputs(analysis)?;
-    let ev = eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
-        registry.as_slice(),
-        root_id,
-        &imports,
-        &operator_witnesses,
-    )?;
+    let ev = match host_prints {
+        Some(host_prints) => {
+            eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses_and_host_prints(
+                registry.as_slice(),
+                root_id,
+                &imports,
+                &operator_witnesses,
+                host_prints,
+            )?
+        }
+        None => eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
+            registry.as_slice(),
+            root_id,
+            &imports,
+            &operator_witnesses,
+        )?,
+    };
     let top = seed_tlc_prelude(thir_file, env::Env::empty());
     let top = ev.build_top_env_from(top)?;
     let final_id = root_module
@@ -89,6 +118,7 @@ fn eval_tlc_analysis_into<'a>(
     registry: &mut eval_tlc::TlcModuleRegistry<'a>,
     imports: &mut HashMap<ImportKey, Value>,
     operator_witnesses: &mut HashMap<(String, String), Value>,
+    host_prints: Option<&'a RefCell<Vec<String>>>,
 ) -> Result<ModuleId, EvalError> {
     let (_thir_file, module) = completed_tlc_inputs(analysis)?;
 
@@ -107,9 +137,18 @@ fn eval_tlc_analysis_into<'a>(
             registry,
             imports,
             operator_witnesses,
+            host_prints,
         )?;
         let (dep_thir_file, dep_module) = completed_tlc_inputs(imported_analysis.as_ref())?;
-        let dep_ev = eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), dep_id, imports)?;
+        let dep_ev = match host_prints {
+            Some(host_prints) => eval_tlc::TlcEvaluator::new_in_registry_with_host_prints(
+                registry.as_slice(),
+                dep_id,
+                imports,
+                host_prints,
+            )?,
+            None => eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), dep_id, imports)?,
+        };
         let dep_top = seed_tlc_prelude(dep_thir_file, env::Env::empty());
         let dep_top = dep_ev.build_top_env_from(dep_top)?;
         let final_id = dep_module
