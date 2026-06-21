@@ -18,6 +18,7 @@ pub fn emit_llvm(module: &SsaModule) -> String {
     emit_runtime_decls(&mut out);
     emit_posit_runtime_decls(module, &mut out);
     collect_and_emit_constants(module, &mut out);
+    emit_static_closures(&mut out, module);
 
     let all_funcs = collect_functions(module);
     for func in &all_funcs {
@@ -54,6 +55,19 @@ fn mangle(name: &str) -> String {
         .replace('@', "_at_")
 }
 
+/// D-0003 closure object tag (matches `TAG_CLOSURE` in `zutai-rt`).
+const CLOSURE_TAG: u64 = 7;
+
+/// Pack a closure header word: low byte = tag, next bits = capture count.
+fn closure_header(ncaps: usize) -> u64 {
+    ((ncaps as u64) << 8) | CLOSURE_TAG
+}
+
+/// Global symbol name of the static closure object for a top-level function.
+fn closure_global_name(name: &str) -> String {
+    format!("zutai.closure.{}", mangle(name))
+}
+
 /// Format an SSA value as an LLVM IR operand (appends to `out`).
 fn fmt_value(val: &SsaValue, out: &mut String) {
     match val {
@@ -65,6 +79,11 @@ fn fmt_value(val: &SsaValue, out: &mut String) {
         SsaValue::Global(name) => {
             out.push('@');
             out.push_str(&mangle(name));
+        }
+        SsaValue::GlobalClosure(name) => {
+            out.push_str("ptrtoint (ptr @");
+            out.push_str(&closure_global_name(name));
+            out.push_str(" to i64)");
         }
     }
 }
@@ -290,6 +309,24 @@ fn emit_func_decl(out: &mut String, func: &SsaFunc) {
     out.push_str(&format!("declare i64 @{}({})\n", name, params));
 }
 
+/// Emit the static empty-capture closure object for every top-level function so
+/// that `GlobalClosure(name)` resolves to `@zutai.closure.<name>` (D-0003).
+fn emit_static_closures(out: &mut String, module: &SsaModule) {
+    if module.closure_exports.is_empty() {
+        return;
+    }
+    out.push_str("; ── Top-level closures (D-0003) ───────────────────────────────────\n\n");
+    for name in &module.closure_exports {
+        out.push_str(&format!(
+            "@{} = internal constant [2 x i64] [i64 {}, i64 ptrtoint (ptr @{} to i64)]\n",
+            closure_global_name(name),
+            closure_header(0),
+            mangle(name)
+        ));
+    }
+    out.push('\n');
+}
+
 // ── Text / Atom constant emission ─────────────────────────────────────────────
 
 enum Constant {
@@ -356,7 +393,16 @@ fn collect_from_func(func: &SsaFunc, constants: &mut Vec<Constant>) {
 
 fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
     match op {
-        SsaOp::Call { func: _, arg } => collect_from_value(arg, constants),
+        SsaOp::ApplyClosure { closure, arg } => {
+            collect_from_value(closure, constants);
+            collect_from_value(arg, constants);
+        }
+        SsaOp::MakeClosure { code: _, captures } => {
+            for c in captures {
+                collect_from_value(c, constants);
+            }
+        }
+        SsaOp::LoadCapture { closure, index: _ } => collect_from_value(closure, constants),
         SsaOp::TyApp { .. } => {}
         SsaOp::Record { fields } => {
             for (_, v) in fields {
@@ -400,10 +446,6 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             }
         }
         SsaOp::MatchDiscriminant { scrutinee } => collect_from_value(scrutinee, constants),
-    }
-    // Also check the func value in Call for global refs that might contain literals.
-    if let SsaOp::Call { func, .. } = op {
-        collect_from_value(func, constants);
     }
 }
 
@@ -545,25 +587,83 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
     let dest = mangle(&instr.dest);
 
     match &instr.op {
-        // ── Call ────────────────────────────────────────────────────────────
-        SsaOp::Call { func, arg } => match func {
-            SsaValue::Global(fname) => {
-                let fname = mangle(fname);
-                out.push_str(&format!("  %{} = call i64 @{}(", dest, fname));
-                fmt_value(arg, out);
-                out.push_str(")\n");
+        // ── ApplyClosure (D-0003 uniform closure application) ───────────────
+        SsaOp::ApplyClosure { closure, arg } => {
+            let cptr = alloc_tmp(tmp);
+            out.push_str(&format!("  {} = inttoptr i64 ", cptr));
+            fmt_value(closure, out);
+            out.push_str(" to ptr\n");
+            let code_slot = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {} = getelementptr i64, ptr {}, i64 1\n",
+                code_slot, cptr
+            ));
+            let code = alloc_tmp(tmp);
+            out.push_str(&format!("  {} = load i64, ptr {}\n", code, code_slot));
+            let fnptr = alloc_tmp(tmp);
+            out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", fnptr, code));
+            out.push_str(&format!("  %{} = call i64 {}(i64 ", dest, fnptr));
+            fmt_value(closure, out);
+            out.push_str(", i64 ");
+            fmt_value(arg, out);
+            out.push_str(")\n");
+        }
+
+        // ── MakeClosure (heap closure allocation) ───────────────────────────
+        SsaOp::MakeClosure { code, captures } => {
+            let bytes = (2 + captures.len()) * 8;
+            let raw = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {} = call i64 @zutai.alloc(i64 {})\n",
+                raw, bytes
+            ));
+            let base = alloc_tmp(tmp);
+            out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", base, raw));
+            out.push_str(&format!(
+                "  store i64 {}, ptr {}\n",
+                closure_header(captures.len()),
+                base
+            ));
+            let code_slot = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {} = getelementptr i64, ptr {}, i64 1\n",
+                code_slot, base
+            ));
+            out.push_str(&format!(
+                "  store i64 ptrtoint (ptr @{} to i64), ptr {}\n",
+                mangle(code),
+                code_slot
+            ));
+            for (index, cap) in captures.iter().enumerate() {
+                let slot = alloc_tmp(tmp);
+                out.push_str(&format!(
+                    "  {} = getelementptr i64, ptr {}, i64 {}\n",
+                    slot,
+                    base,
+                    2 + index
+                ));
+                out.push_str("  store i64 ");
+                fmt_value(cap, out);
+                out.push_str(&format!(", ptr {}\n", slot));
             }
-            _ => {
-                // Indirect call: cast i64 to function pointer type.
-                let fptr = alloc_tmp(tmp);
-                out.push_str(&format!("  {} = inttoptr i64 ", fptr));
-                fmt_value(func, out);
-                out.push_str(" to i64 (i64)*\n");
-                out.push_str(&format!("  %{} = call i64 {}(", dest, fptr));
-                fmt_value(arg, out);
-                out.push_str(")\n");
-            }
-        },
+            out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, raw));
+        }
+
+        // ── LoadCapture (read a capture from the enclosing closure) ─────────
+        SsaOp::LoadCapture { closure, index } => {
+            let cptr = alloc_tmp(tmp);
+            out.push_str(&format!("  {} = inttoptr i64 ", cptr));
+            fmt_value(closure, out);
+            out.push_str(" to ptr\n");
+            let slot = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {} = getelementptr i64, ptr {}, i64 {}\n",
+                slot,
+                cptr,
+                2 + index
+            ));
+            out.push_str(&format!("  %{} = load i64, ptr {}\n", dest, slot));
+        }
 
         // ── TyApp (erased) ─────────────────────────────────────────────────
         SsaOp::TyApp { poly, ty_args: _ } => {
@@ -834,6 +934,7 @@ mod tests {
                 }],
             },
             entry_ty,
+            closure_exports: Vec::new(),
         }
     }
 
@@ -857,6 +958,7 @@ mod tests {
                 }],
             },
             entry_ty: DfTy::Int,
+            closure_exports: Vec::new(),
         };
 
         let llvm = emit_llvm(&module);
@@ -884,6 +986,7 @@ mod tests {
                 }],
             },
             entry_ty: DfTy::Int,
+            closure_exports: Vec::new(),
         };
 
         let llvm = emit_llvm(&module);
@@ -917,5 +1020,118 @@ mod tests {
         assert!(llvm.contains("declare i1 @zutai.posit32e3.lt(i32, i32)"));
         assert!(llvm.contains("call i1 @zutai.posit32e3.lt"));
         assert!(llvm.contains("zext i1"));
+    }
+
+    #[test]
+    fn top_level_function_emits_static_closure() {
+        let module = SsaModule {
+            decls: vec![SsaDecl::Func(SsaFunc {
+                name: "inc".to_string(),
+                params: vec!["__self".to_string(), "x".to_string()],
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "r".to_string(),
+                        op: SsaOp::Builtin {
+                            op: DfBuiltinOp::Add,
+                            lhs: SsaValue::Reg("x".to_string()),
+                            rhs: SsaValue::Lit(DfLit::Int(1)),
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("r".to_string())),
+                }],
+            })],
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: Vec::new(),
+                    terminator: SsaTerminator::Return(SsaValue::Lit(DfLit::Int(0))),
+                }],
+            },
+            entry_ty: DfTy::Int,
+            closure_exports: vec!["inc".to_string()],
+        };
+
+        let llvm = emit_llvm(&module);
+        assert!(
+            llvm.contains(
+                "@zutai.closure.inc = internal constant [2 x i64] [i64 7, i64 ptrtoint (ptr @inc to i64)]"
+            ),
+            "{llvm}"
+        );
+    }
+
+    #[test]
+    fn closure_apply_loads_code_and_passes_self() {
+        let module = SsaModule {
+            decls: Vec::new(),
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "result".to_string(),
+                        op: SsaOp::ApplyClosure {
+                            closure: SsaValue::GlobalClosure("inc".to_string()),
+                            arg: SsaValue::Lit(DfLit::Int(41)),
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+                }],
+            },
+            entry_ty: DfTy::Int,
+            closure_exports: Vec::new(),
+        };
+
+        let llvm = emit_llvm(&module);
+        assert!(llvm.contains("getelementptr i64, ptr"), "{llvm}");
+        assert!(llvm.contains("load i64, ptr"), "{llvm}");
+        // Code pointer is called indirectly with (self, arg).
+        assert!(
+            llvm.contains("call i64 %"),
+            "indirect call expected: {llvm}"
+        );
+        // Legacy direct/raw call shapes are gone.
+        assert!(!llvm.contains("call i64 @inc(i64 41)"), "{llvm}");
+        assert!(!llvm.contains("to i64 (i64)*"), "{llvm}");
+    }
+
+    #[test]
+    fn capturing_lambda_allocates_heap_closure() {
+        let module = SsaModule {
+            decls: Vec::new(),
+            entry: SsaFunc {
+                name: "__entry".to_string(),
+                params: Vec::new(),
+                blocks: vec![SsaBlock {
+                    label: "entry".to_string(),
+                    instructions: vec![SsaInstr {
+                        dest: "clos".to_string(),
+                        op: SsaOp::MakeClosure {
+                            code: "__lambda_0".to_string(),
+                            captures: vec![SsaValue::Lit(DfLit::Int(10))],
+                        },
+                    }],
+                    terminator: SsaTerminator::Return(SsaValue::Reg("clos".to_string())),
+                }],
+            },
+            entry_ty: DfTy::Int,
+            closure_exports: Vec::new(),
+        };
+
+        let llvm = emit_llvm(&module);
+        // (2 + 1 capture) * 8 bytes = 24.
+        assert!(llvm.contains("call i64 @zutai.alloc(i64 24)"), "{llvm}");
+        // Header for one capture: (1 << 8) | 7 = 263.
+        assert!(llvm.contains("store i64 263,"), "{llvm}");
+        // Capture stored at slot 2.
+        assert!(llvm.contains(", i64 2\n"), "slot-2 gep expected: {llvm}");
+        assert!(
+            llvm.contains("store i64 10,"),
+            "capture value stored: {llvm}"
+        );
     }
 }

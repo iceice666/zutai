@@ -32,7 +32,9 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
         .iter()
         .flat_map(|b| b.instructions.iter())
         .map(|i| match &i.op {
-            SsaOp::Call { .. } => "Call".to_string(),
+            SsaOp::ApplyClosure { .. } => "ApplyClosure".to_string(),
+            SsaOp::MakeClosure { .. } => "MakeClosure".to_string(),
+            SsaOp::LoadCapture { .. } => "LoadCapture".to_string(),
             SsaOp::TyApp { .. } => "TyApp".to_string(),
             SsaOp::Record { .. } => "Record".to_string(),
             SsaOp::RecordUpdate { .. } => "RecordUpdate".to_string(),
@@ -155,12 +157,12 @@ fn block_let_binding_produces_instructions() {
 // ── Function call ──────────────────────────────────────────────────────────────
 
 #[test]
-fn function_call_produces_call_op() {
+fn function_call_produces_apply_closure_op() {
     let m = ssa_of("id x = x\nid 42");
     let ops = all_op_names(&m);
     assert!(
-        ops.contains(&"Call".to_string()),
-        "should have a Call op: {:?}",
+        ops.contains(&"ApplyClosure".to_string()),
+        "should have an ApplyClosure op: {:?}",
         ops
     );
 }
@@ -175,6 +177,58 @@ fn lambda_creates_separate_function() {
         _ => None,
     });
     assert!(inc.is_some(), "should have an 'inc' function");
+}
+
+// ── Top-level function becomes a static closure export ─────────────────────────
+
+#[test]
+fn top_level_function_exports_closure_value() {
+    let m = ssa_of("inc :: Int -> Int\n  = x => x + 1;\ninc 41");
+    assert_eq!(
+        m.closure_exports,
+        vec!["inc".to_string()],
+        "inc should be exported as a static closure: {:?}",
+        m.closure_exports
+    );
+    let inc = m
+        .decls
+        .iter()
+        .find_map(|d| match d {
+            SsaDecl::Func(f) if f.name == "inc" => Some(f),
+            _ => None,
+        })
+        .expect("inc function decl");
+    assert_eq!(
+        inc.params.len(),
+        2,
+        "closure-code fn takes (self, arg): {:?}",
+        inc.params
+    );
+    assert_eq!(inc.params[0], "__self", "first param is the closure self");
+}
+
+// ── Capturing lambda allocates a closure and loads captures ────────────────────
+
+#[test]
+fn capturing_lambda_uses_make_closure_and_load_capture() {
+    // `adder n x = x + n` curries to `\n. \x. x + n`; the inner lambda captures
+    // the outer parameter `n` (a genuine local that survives constant folding).
+    let m = ssa_of("adder n x = x + n\nadder 10 5");
+    let ops = all_op_names(&m);
+    assert!(
+        ops.contains(&"MakeClosure".to_string()),
+        "should allocate a closure for the capturing lambda: {ops:?}"
+    );
+    assert!(
+        ops.contains(&"LoadCapture".to_string()),
+        "should load the captured variable: {ops:?}"
+    );
+    // The legacy `__fn` closure-record hack must be gone.
+    let has_fn_field = all_instructions(&m).iter().any(|i| match &i.op {
+        SsaOp::Record { fields } => fields.iter().any(|(name, _)| name == "__fn"),
+        _ => false,
+    });
+    assert!(!has_fn_field, "no `__fn` record field should remain");
 }
 
 // ── Top-level let declaration ──────────────────────────────────────────────────

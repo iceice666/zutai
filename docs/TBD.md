@@ -59,7 +59,7 @@ regardless of type.
   `staticlib` + `rlib`): bump arena, object headers, and the `@zutai.*` ABI for
   record/tuple/list/variant/text constructors and accessors, `coalesce`, raw
   `print_*`, and type-directed `show` from static descriptors.
-- [ ] **Uniform closure ABI (D-0003)** — replace the `{ __fn, caps }` record hack
+- [x] **Uniform closure ABI (D-0003)** — replace the `{ __fn, caps }` record hack
   with a closure object `{ header, code, caps[] }` and a single curried
   application convention; top-level functions become empty-capture closures.
 - [ ] **Slot-indexed records (D-0004)** — carry resolved ordinal slots through

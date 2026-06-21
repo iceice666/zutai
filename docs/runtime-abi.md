@@ -5,11 +5,13 @@ Zutai general-mode (`.zt`) programs. It is the design contract for the missing
 final layer of the pipeline: turning the LLVM IR text that `zutai-codegen`
 emits into a program that links and runs.
 
-> **Status: Phase 18 design accepted; runtime skeleton in tree.** The
-> `zutai-rt` crate now defines the v0 runtime symbols, but the compiler still
-> emits LLVM IR text only. Codegen does not yet emit closure objects, dense
-> variant indices, static type descriptors, a type-directed `@main`, or an
-> object/binary link step.
+> **Status: Phase 18 design accepted; runtime skeleton and closure ABI in tree.**
+> The `zutai-rt` crate defines the v0 runtime symbols and codegen now emits the
+> D-0003 uniform closure ABI (static empty-capture closures for top-level
+> functions, heap closures for capturing lambdas, and one curried application
+> shape), but the compiler still emits LLVM IR text only. Codegen does not yet
+> emit dense variant indices, static type descriptors, a type-directed `@main`,
+> or an object/binary link step.
 
 ## Pipeline position
 

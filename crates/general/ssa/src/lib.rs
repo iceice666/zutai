@@ -21,8 +21,10 @@ pub enum SsaValue {
     Reg(String),
     /// A literal constant.
     Lit(DfLit),
-    /// A global function name.
+    /// A top-level non-function value/thunk symbol.
     Global(String),
+    /// A top-level function value represented by a static closure object.
+    GlobalClosure(String),
 }
 
 // ── Instructions ───────────────────────────────────────────────────────────────
@@ -39,8 +41,16 @@ pub struct SsaInstr {
 /// SSA operations.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SsaOp {
-    /// Function call: dest = func(arg).
-    Call { func: SsaValue, arg: SsaValue },
+    /// Function application through a D-0003 closure object: loads the code
+    /// slot from `closure` and calls it as `i64 fn(i64 self, i64 arg)`.
+    ApplyClosure { closure: SsaValue, arg: SsaValue },
+    /// Allocate a closure object for a lambda value: `{ header, code, caps[] }`.
+    MakeClosure {
+        code: String,
+        captures: Vec<SsaValue>,
+    },
+    /// Load capture `index` from the enclosing closure (slot `2 + index`).
+    LoadCapture { closure: SsaValue, index: usize },
     /// Type application (erased in v0 — just returns the polymorphic value).
     TyApp {
         poly: SsaValue,
@@ -149,6 +159,9 @@ pub struct SsaModule {
     /// The module's entry-point function (evaluates the root expression).
     pub entry: SsaFunc,
     pub entry_ty: DfTy,
+    /// Top-level function names that receive static empty-capture closure
+    /// objects, in declaration order. Drives `@zutai.closure.<name>` emission.
+    pub closure_exports: Vec<String>,
 }
 
 // ── Public entry point ──────────────────────────────────────────────────────────

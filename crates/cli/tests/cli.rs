@@ -491,6 +491,44 @@ fn compile_arithmetic_emits_add() {
 }
 
 #[test]
+fn compile_function_uses_uniform_closure_abi() {
+    let path = write_tmp(
+        "cli_test_compile_closure_abi.zt",
+        "inc :: Int -> Int\n  = x => x + 1;\ninc 41\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        // Top-level function is a static closure object, applied through its code
+        // slot — never a direct or raw-pointer call.
+        .stdout(predicate::str::contains("@zutai.closure.inc"))
+        .stdout(predicate::str::contains("getelementptr i64"))
+        .stdout(predicate::str::contains("call i64 @inc(i64 41)").not())
+        .stdout(predicate::str::contains("to i64 (i64)*").not());
+}
+
+#[test]
+fn compile_capturing_lambda_uses_heap_closure() {
+    // `adder n x = x + n` curries to `\n. \x. x + n`; the inner lambda captures
+    // `n`, so applying `adder` allocates a one-capture heap closure.
+    let path = write_tmp(
+        "cli_test_compile_closure_capture.zt",
+        "adder n x = x + n\nadder 10 5\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .success()
+        // (2 + 1 capture) * 8 = 24 bytes; header (1 << 8) | TAG_CLOSURE = 263.
+        .stdout(predicate::str::contains("call i64 @zutai.alloc(i64 24)"))
+        .stdout(predicate::str::contains("store i64 263"))
+        .stdout(predicate::str::contains("__fn").not());
+}
+
+#[test]
 fn compile_posit32_emits_helper_and_print_runtime() {
     let path = write_tmp("cli_test_compile_posit32.zt", "1p32e3 + 2p32e3\n");
     cli().arg("compile").arg(&path).assert().success().stdout(
