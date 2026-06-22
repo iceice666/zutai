@@ -115,6 +115,11 @@ pub enum ImportDiagnosticKind {
         constraint: String,
         target: String,
     },
+    /// An import path is absolute or escapes the importing file's directory
+    /// subtree (e.g. `"/tmp/x.zti"` or `"../../../etc/foo.zti"`).
+    PathTraversal {
+        path: String,
+    },
 }
 
 enum Kind {
@@ -195,12 +200,30 @@ impl Resolver<'_> {
             return self.diag(ImportDiagnosticKind::NoBaseDirectory, span);
         };
 
+        let base_dir = if base.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            base
+        };
+        let canonical_base = match std::fs::canonicalize(base_dir) {
+            Ok(canonical_base) => canonical_base,
+            Err(_) => return self.diag(ImportDiagnosticKind::FileNotFound { path: rel }, span),
+        };
+
         // `canonicalize` requires the file to exist, which doubles as the
         // not-found check and dedupes symlinks to one resolved path.
-        let canonical = match std::fs::canonicalize(base.join(&rel)) {
+        let canonical = match std::fs::canonicalize(base_dir.join(&rel)) {
             Ok(canonical) => canonical,
             Err(_) => return self.diag(ImportDiagnosticKind::FileNotFound { path: rel }, span),
         };
+
+        // Confine the resolved path to the importing file's directory subtree.
+        // `starts_with` is component-wise, so `/proj-evil` is not a prefix of `/proj`.
+        // Symlinks are already resolved by `canonicalize` above, so symlink escapes
+        // are also rejected.
+        if !canonical.starts_with(&canonical_base) {
+            return self.diag(ImportDiagnosticKind::PathTraversal { path: rel }, span);
+        }
 
         match kind {
             Kind::Zti => self.resolve_zti(source, &canonical, &rel, span),
@@ -485,7 +508,14 @@ fn imported_type_key(ty: &ImportedType) -> String {
 /// Turn an import source into a relative path string.
 fn relative_path(source: &HirImportSource) -> Result<String, ImportDiagnosticKind> {
     match source {
-        HirImportSource::String(value) => Ok(value.clone()),
+        HirImportSource::String(value) => {
+            if Path::new(value).is_absolute() {
+                return Err(ImportDiagnosticKind::PathTraversal {
+                    path: value.clone(),
+                });
+            }
+            Ok(value.clone())
+        }
         // Bare shorthand `import config.zti` lexes to `["config", "zti"]`; only
         // the simple `stem.ext` form is resolved.  Anything else falls back to
         // the canonical quoted string form.

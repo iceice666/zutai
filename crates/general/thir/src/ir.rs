@@ -440,7 +440,7 @@ impl FixedWidth {
             Self::U8 => Some((0, i64::from(u8::MAX))),
             Self::U16 => Some((0, i64::from(u16::MAX))),
             Self::U32 => Some((0, i64::from(u32::MAX))),
-            Self::U64 => Some((0, i64::MAX)),
+            Self::U64 => None,
             Self::F32 => None,
         }
     }

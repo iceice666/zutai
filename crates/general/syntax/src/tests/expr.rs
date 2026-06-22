@@ -559,3 +559,142 @@ fn deeply_nested_parens_parse_without_exponential_blowup() {
     let src = format!("{}42{}", "(".repeat(depth), ")".repeat(depth));
     assert_eq!(as_int(&parse_expr_str(&src)), 42);
 }
+
+// ---------------------------------------------------------------------------
+// Fix #02: u64 literals above i64::MAX
+// ---------------------------------------------------------------------------
+
+/// u64::MAX (18446744073709551615) must parse successfully with postfix U64.
+/// The stored `value` is the two's-complement bit pattern, i.e. u64::MAX as i64 == -1.
+#[test]
+fn parse_u64_max_literal() {
+    match parse_expr_str("18446744073709551615u64") {
+        Expr::Integer {
+            value,
+            postfix: Some(NumberType::U64),
+            ..
+        } => assert_eq!(
+            value,
+            u64::MAX as i64,
+            "expected u64::MAX as i64 (= -1), got {value}"
+        ),
+        other => panic!("expected U64 integer literal, got {other:?}"),
+    }
+}
+
+/// 9223372036854775808u64 (i64::MIN magnitude) stores as i64::MIN bit pattern.
+#[test]
+fn parse_u64_above_i64_max() {
+    match parse_expr_str("9223372036854775808u64") {
+        Expr::Integer {
+            value,
+            postfix: Some(NumberType::U64),
+            ..
+        } => assert_eq!(
+            value,
+            i64::MIN,
+            "expected i64::MIN bit pattern, got {value}"
+        ),
+        other => panic!("expected U64 integer literal, got {other:?}"),
+    }
+}
+
+/// Bare integer overflow (no postfix) is still a parse error.
+#[test]
+fn parse_bare_i64_overflow_still_fails() {
+    assert!(
+        !parse_kinds("9223372036854775808").is_empty(),
+        "expected parse error for bare i64 overflow"
+    );
+}
+
+/// u64::MAX + 1 (= 2^64) still fails even with u64 postfix.
+#[test]
+fn parse_u64_overflow_still_fails() {
+    assert!(
+        !parse_kinds("18446744073709551616u64").is_empty(),
+        "expected parse error for u64 overflow"
+    );
+}
+
+/// Smaller unsigned widths still use signed parsing; huge overshoots remain
+/// parse errors instead of wrapping into negative THIR range diagnostics.
+#[test]
+fn parse_huge_u8_overflow_still_fails() {
+    assert!(
+        !parse_kinds("10000000000000000000u8").is_empty(),
+        "expected parse error for huge u8 overflow"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Fix #04: then/else-prefixed identifiers as application arguments
+// ---------------------------------------------------------------------------
+
+/// `f thenResult` must parse as application Apply(Ident("f"), Ident("thenResult")).
+#[test]
+fn parse_application_then_prefixed_identifier_arg() {
+    let e = parse_expr_str("f thenResult");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "f");
+    assert_eq!(as_ident(arg), "thenResult");
+}
+
+/// `f elseValue` must parse as application.
+#[test]
+fn parse_application_else_prefixed_identifier_arg() {
+    let e = parse_expr_str("f elseValue");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "f");
+    assert_eq!(as_ident(arg), "elseValue");
+}
+
+/// Identifiers sharing only the prefix of `then`/`else` must all parse as
+/// application arguments: `then_x` (underscore suffix), `thenable` (letter
+/// suffix), `elsewhere` (else + letter).
+#[test]
+fn parse_application_then_else_edge_identifiers() {
+    for (src, func_name, arg_name) in [
+        ("f then_x", "f", "then_x"),
+        ("f thenable", "f", "thenable"),
+        ("f elsewhere", "f", "elsewhere"),
+    ] {
+        let e = parse_expr_str(src);
+        let (func, arg) = as_apply(&e);
+        assert_eq!(as_ident(func), func_name, "src = {src:?}");
+        assert_eq!(as_ident(arg), arg_name, "src = {src:?}");
+    }
+}
+
+/// Real `then`/`else` keywords still stop application: `if c then x else y`
+/// parses as `Expr::If`, not as application of `if` to multiple args.
+#[test]
+fn parse_real_then_else_keywords_stop_application() {
+    let e = parse_expr_str("if true then 1 else 2");
+    assert!(
+        matches!(e, Expr::If { .. }),
+        "expected If expression, got {e:?}"
+    );
+}
+
+/// `if f x then 1 else 2` — `can_start_atom` stops application at the real
+/// `then` so the condition is `Apply(f, x)` and branches are 1 / 2.
+#[test]
+fn parse_if_application_in_cond_then_real_keywords() {
+    let e = parse_expr_str("if f x then 1 else 2");
+    match &e {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let (func, arg) = as_apply(cond);
+            assert_eq!(as_ident(func), "f");
+            assert_eq!(as_ident(arg), "x");
+            assert_eq!(as_int(then_branch), 1);
+            assert_eq!(as_int(else_branch), 2);
+        }
+        other => panic!("expected If, got {other:?}"),
+    }
+}

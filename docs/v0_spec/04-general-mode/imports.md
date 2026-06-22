@@ -69,4 +69,16 @@ Imports are:
 
 Re-importing the same resolved file path returns the same value.
 
+### Path confinement
+
+Import paths are confined to the importing file's directory subtree.
+
+* Absolute paths (e.g. `"/tmp/x.zti"`) are always rejected.
+* Relative paths are resolved against the importing file's directory and the
+  resolved canonical path must remain inside that directory.  A path such as
+  `"../../../etc/foo.zti"` that escapes the subtree is rejected with a
+  `PathTraversal` diagnostic even if the target file exists on disk.
+* Symlinks are fully resolved before the containment check, so a symlink that
+  points outside the base directory is also rejected.
+
 ---

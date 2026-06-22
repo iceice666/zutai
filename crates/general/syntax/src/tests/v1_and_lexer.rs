@@ -560,3 +560,74 @@ fn parse_unclosed_block_comment_is_parse_error() {
         "expected parse error for unclosed block comment"
     );
 }
+
+// ── Fix #01: Unicode whitespace in lookahead heuristics ───────────────────────
+
+/// U+00A0 (non-breaking space, 2 bytes) in the record-vs-block lookahead must
+/// not panic. Pre-fix the `&tmp[1..]` slice cut at byte 1 mid-character.
+#[test]
+fn parse_record_lookahead_unicode_ws_no_panic() {
+    let parsed = parse_ast_only("{ foo\u{00A0}= 1; }");
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "unexpected diagnostics: {:?}",
+        parsed.diagnostics()
+    );
+    let f = parsed.into_ast().expect("should parse without panic");
+    let fields = as_record(&f.final_expr);
+    assert_eq!(fields[0].name, "foo");
+}
+
+/// U+00A0 in the block let-binding lookahead must not panic.
+#[test]
+fn parse_block_let_lookahead_unicode_ws_no_panic() {
+    let f = parse_ast_only("{ x\u{00A0}:= 1; x }")
+        .into_ast()
+        .expect("should parse without panic");
+    assert!(
+        matches!(f.final_expr, Expr::Block { .. }),
+        "expected Block, got {:?}",
+        f.final_expr
+    );
+}
+
+/// U+00A0 after an identifier in the decl-start lookahead must not panic.
+#[test]
+fn parse_decl_lookahead_unicode_ws_no_panic() {
+    let f = parse_ast_only("foo\u{00A0}:: Int = 42\n42")
+        .into_ast()
+        .expect("should parse without panic");
+    let (name, _ty, val) = as_typed(decl_by(&f, "foo"));
+    assert_eq!(name, "foo");
+    assert_eq!(as_int(val), 42);
+}
+
+/// 2-byte (U+00A0) and 3-byte (U+2003, U+3000) Unicode whitespace — every
+/// iteration would panic pre-fix; the 3-byte cases prove the skip advances
+/// by the full char width (not a fixed 2 bytes).
+#[test]
+fn parse_unicode_ws_multi_byte_no_panic() {
+    for ws in ['\u{00A0}', '\u{2003}', '\u{3000}'] {
+        assert!(
+            parse_ast_only(&format!("{{ foo{ws}= 1; }}"))
+                .ast()
+                .is_some(),
+            "record with U+{:04X} produced no AST",
+            ws as u32
+        );
+        assert!(
+            parse_ast_only(&format!("{{ x{ws}:= 1; x }}"))
+                .ast()
+                .is_some(),
+            "block with U+{:04X} produced no AST",
+            ws as u32
+        );
+        assert!(
+            parse_ast_only(&format!("foo{ws}:: Int = 42\n42"))
+                .ast()
+                .is_some(),
+            "decl with U+{:04X} produced no AST",
+            ws as u32
+        );
+    }
+}

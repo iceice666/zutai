@@ -58,9 +58,7 @@ pub fn parse_file(input: &mut &str) -> Result<File> {
 fn is_decl_start(input: &mut &str) -> bool {
     let mut tmp = *input;
     // Skip whitespace
-    while tmp.starts_with(|c: char| c.is_whitespace()) {
-        tmp = &tmp[1..];
-    }
+    tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must start with an identifier
     if !tmp.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
         return false;
@@ -70,9 +68,7 @@ fn is_decl_start(input: &mut &str) -> bool {
         tmp = &tmp[1..];
     }
     // Skip ws
-    while tmp.starts_with(|c: char| c.is_whitespace()) {
-        tmp = &tmp[1..];
-    }
+    tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must be followed by `::`, `@` (witness), or a pattern-then-`=` sequence.
     tmp.starts_with("::") || tmp.starts_with('@') || is_nosig_fn_start(tmp)
 }

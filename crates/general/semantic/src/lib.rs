@@ -701,6 +701,65 @@ b :: import "witness_reexport_b.zt"
     }
 
     #[test]
+    fn import_absolute_path_is_rejected() {
+        // Absolute paths are rejected before any filesystem access, so no fixture
+        // file is needed; the guard fires in `relative_path`.
+        let analysis = analyze_in_imports("cfg :: import \"/etc/hosts.zti\"\ncfg");
+        assert!(
+            !analysis.is_thir_complete(),
+            "expected incomplete THIR for absolute import"
+        );
+        assert!(
+            has_import_diagnostic(
+                &analysis,
+                &ImportDiagnosticKind::PathTraversal {
+                    path: "/etc/hosts.zti".to_string()
+                }
+            ),
+            "expected PathTraversal diagnostic, got: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn import_parent_traversal_is_rejected() {
+        // `../expr_core.zt` exists one directory above imports/, but resolving it
+        // would escape the imports/ base directory and must be rejected.
+        let analysis = analyze_in_imports("cfg :: import \"../expr_core.zt\"\ncfg");
+        assert!(
+            !analysis.is_thir_complete(),
+            "expected incomplete THIR for parent-traversal import"
+        );
+        assert!(
+            has_import_diagnostic(
+                &analysis,
+                &ImportDiagnosticKind::PathTraversal {
+                    path: "../expr_core.zt".to_string()
+                }
+            ),
+            "expected PathTraversal diagnostic, got: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn import_dotdot_within_base_is_allowed() {
+        // `../imports/config.zti` canonicalizes back to the imports/ directory
+        // itself, so it stays within the base and must succeed.
+        let analysis = analyze_in_imports("cfg :: import \"../imports/config.zti\"\ncfg.port");
+        assert!(
+            analysis.is_thir_complete(),
+            "expected complete THIR for in-base dotdot import, got: {:?}",
+            analysis.diagnostics
+        );
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "expected no diagnostics, got: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn tlc_is_some_for_complete_thir() {
         let analysis = analyze("x ::= 42\nx");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);

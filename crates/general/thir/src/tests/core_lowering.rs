@@ -1244,3 +1244,67 @@ extract (#tag, 7)
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
+
+// ---------------------------------------------------------------------------
+// Fix #02: u64 literals above i64::MAX — THIR range check
+// ---------------------------------------------------------------------------
+
+/// u64::MAX (18446744073709551615u64) must lower without a NumericLiteralOutOfRange
+/// diagnostic. Pre-fix, FixedWidth::U64.int_range() returned Some((0, i64::MAX))
+/// which caused any u64 > i64::MAX to be rejected at the THIR range-check stage,
+/// nulling LoweredThir.file and blocking type-check/eval.
+#[test]
+fn u64_max_literal_lowers_without_range_error() {
+    let lowered = lower("18446744073709551615u64");
+    assert!(
+        lowered.file.is_some(),
+        "expected LoweredThir.file to be Some; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        !lowered
+            .diagnostics
+            .iter()
+            .any(|d| { matches!(&d.kind, ThirDiagnosticKind::NumericLiteralOutOfRange { .. }) }),
+        "unexpected NumericLiteralOutOfRange: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// 9223372036854775808u64 (first value above i64::MAX) also lowers cleanly.
+#[test]
+fn u64_above_i64_max_lowers_without_range_error() {
+    let lowered = lower("9223372036854775808u64");
+    assert!(
+        lowered.file.is_some(),
+        "expected LoweredThir.file to be Some; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+    assert!(
+        !lowered
+            .diagnostics
+            .iter()
+            .any(|d| { matches!(&d.kind, ThirDiagnosticKind::NumericLiteralOutOfRange { .. }) }),
+        "unexpected NumericLiteralOutOfRange: {:?}",
+        lowered.diagnostics
+    );
+}
+
+/// Regression guard: 256u8 still produces a NumericLiteralOutOfRange and a
+/// null file — the u64 fix must not disturb smaller fixed-width range checks.
+#[test]
+fn fixed_width_u8_range_check_regression() {
+    let lowered = lower("256u8");
+    assert!(lowered.file.is_none(), "expected no THIR file for 256u8");
+    assert!(
+        lowered.diagnostics.iter().any(|d| {
+            matches!(
+                &d.kind,
+                ThirDiagnosticKind::NumericLiteralOutOfRange { value, ty }
+                    if *value == 256 && ty == "u8"
+            )
+        }),
+        "expected NumericLiteralOutOfRange for 256u8, got {:?}",
+        lowered.diagnostics
+    );
+}

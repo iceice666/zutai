@@ -321,9 +321,16 @@ impl<'m> Lowerer<'m> {
             spans: std::mem::take(&mut self.spans),
         };
 
+        // Cheap structural integrity (ref bounds, type-shape compat, bind ownership,
+        // stray globals, span/root) runs in every build: a graph with dangling refs or
+        // shape mismatches would silently miscompile in ANF→SSA→codegen.
+        if let Err(errs) = crate::validate::validate_structural(&graph) {
+            panic!("internal compiler error: invalid DataflowGraph: {errs:?}");
+        }
+        // The O(node × scope) capture/scope walk (invariants 3 and 4) stays debug-only.
         #[cfg(debug_assertions)]
         if let Err(errs) = crate::validate::validate(&graph) {
-            panic!("DataflowGraph validation failed: {errs:?}");
+            panic!("internal compiler error: DataflowGraph validation failed: {errs:?}");
         }
 
         graph

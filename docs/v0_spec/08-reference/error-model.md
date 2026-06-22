@@ -13,6 +13,7 @@ Important error classes:
 * type mismatch
 * non-exhaustive match
 * invalid import path
+* import path escapes the project directory (absolute path or path traversal outside the importing file's directory subtree)
 * import cycle that cannot be resolved lazily
 * type-level evaluation limit exceeded
 * serialization boundary violation

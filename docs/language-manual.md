@@ -340,6 +340,7 @@ Implementations should report deterministic, source-located errors. User-visible
 - type mismatch
 - non-exhaustive match
 - invalid import path
+- import path escapes the project directory (absolute path or `..`-traversal outside the importing file's directory)
 - unresolvable import cycle
 - type-level evaluation limit
 - serialization boundary violation

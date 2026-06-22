@@ -363,6 +363,27 @@ fn run_imported_value_can_flow_through_print_effect() {
 }
 
 #[test]
+fn run_bare_filename_import_parent_escape_is_rejected() {
+    let root = std::env::temp_dir();
+    let dir = root.join("zutai_cli_bare_base");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(root.join("zutai_cli_bare_escape.zti"), "{ secret = 1; }\n").unwrap();
+    std::fs::write(
+        dir.join("main.zt"),
+        "cfg :: import \"../zutai_cli_bare_escape.zti\"\ncfg.secret\n",
+    )
+    .unwrap();
+
+    cli()
+        .current_dir(&dir)
+        .arg("run")
+        .arg("main.zt")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("escapes"));
+}
+
+#[test]
 fn run_imported_function_can_flow_through_print_effect() {
     write_tmp(
         "cli_test_func_import.zt",
@@ -393,6 +414,45 @@ fn parse_zt_with_type_error_exits_nonzero() {
         .stderr(predicate::str::contains(
             "type mismatch: expected Int, found Text",
         ));
+}
+
+#[test]
+fn parse_zt_with_valid_import_prints_ast() {
+    // Before fix: analyze(base=None) short-circuits every import to
+    // NoBaseDirectory and THIR emits "unsupported feature: imports".
+    // After fix: analyze_with_base resolves the import and the AST prints.
+    write_tmp(
+        "cli_test_parse_import_cfg.zti",
+        "{ host = \"127.0.0.1\"; }\n",
+    );
+    let path = write_tmp(
+        "cli_test_parse_import_cfg.zt",
+        "cfg :: import \"./cli_test_parse_import_cfg.zti\"\ncfg.host\n",
+    );
+    cli()
+        .arg("parse")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Parsed"));
+}
+
+#[test]
+fn parse_zt_with_import_error_surfaces_root_cause() {
+    // Before fix: Import diagnostic was filtered out; only the THIR cascade
+    // ("unsupported feature: imports") appeared in stderr.
+    // After fix: the FileNotFound import diagnostic is included in the filter.
+    let path = write_tmp(
+        "cli_test_parse_import_err.zt",
+        "cfg :: import \"./does_not_exist_parse.zti\"\ncfg\n",
+    );
+    cli()
+        .arg("parse")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("import error"))
+        .stderr(predicate::str::contains("file not found"));
 }
 
 // ─── `check` subcommand ────────────────────────────────────────────────────────
@@ -1722,6 +1782,27 @@ fn run_integer_overflow_exits_runtime_error() {
         .stderr(predicate::str::contains(
             "runtime error: integer overflow in `+`",
         ));
+}
+
+#[test]
+fn run_worker_panic_exits_cleanly_without_repanic() {
+    // Trigger a parser panic via a non-ASCII whitespace character in a decl
+    // position (backlog #01: byte-slice at mid-char panics in the lookahead).
+    // Before fix: .join().expect() re-panicked the main thread → exit code 101
+    // and "thread 'main' panicked" in stderr.
+    // After fix: the panic is absorbed by catch_unwind in run_isolated → clean
+    // "internal evaluator error:" line on stderr and exit code 1.
+    // Note: once backlog #01 is also fixed this input yields a clean parse error
+    // that still satisfies .code(1) and no-re-panic; the unit tests in
+    // commands/tests.rs remain the definitive guard for the conversion itself.
+    let path = write_tmp("cli_test_run_panic.zt", "foo\u{00A0}:: Int\nfoo = 42\n42\n");
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("thread 'main' panicked").not());
 }
 
 #[test]

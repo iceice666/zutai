@@ -322,10 +322,14 @@ fn can_start_atom(input: &str, had_application_ws: bool) -> bool {
     ) {
         return false;
     }
-    for kw in &["then", "else", "if ", "=>"] {
-        if s.starts_with(kw) {
+    for keyword in ["then", "else"] {
+        let mut probe = s;
+        if kw(keyword).parse_next(&mut probe).is_ok() {
             return false;
         }
+    }
+    if s.starts_with("if ") || s.starts_with("=>") {
+        return false;
     }
     true
 }

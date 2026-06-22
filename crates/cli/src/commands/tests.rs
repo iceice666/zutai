@@ -129,3 +129,50 @@ fn output_path_for_derives_default_paths() {
         PathBuf::from("custom.out")
     );
 }
+
+// ─── eval isolation unit tests ────────────────────────────────────────────────
+
+#[test]
+fn run_isolated_catches_panic() {
+    // Swap in a silent hook so the worker panic doesn't pollute test stderr.
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let outcome = run_isolated(|| panic!("kaboom"));
+    std::panic::set_hook(prev);
+    match outcome {
+        EvalOutcome::Panicked(m) => assert!(m.contains("kaboom"), "unexpected message: {m}"),
+        other => panic!("expected Panicked, got {other:?}"),
+    }
+}
+
+#[test]
+fn run_isolated_returns_ok() {
+    assert_eq!(
+        run_isolated(|| Ok("42".to_string())),
+        EvalOutcome::Ok("42".to_string())
+    );
+}
+
+#[test]
+fn run_isolated_propagates_eval_error() {
+    assert_eq!(
+        run_isolated(|| Err(zutai_eval::EvalError::DivByZero)),
+        EvalOutcome::Err(zutai_eval::EvalError::DivByZero)
+    );
+}
+
+#[test]
+fn eval_isolated_evaluates_expression() {
+    assert_eq!(
+        eval_isolated("if false then 1 else 2\n", None),
+        EvalOutcome::Ok("2".to_string())
+    );
+}
+
+#[test]
+fn eval_isolated_reports_eval_error_not_panic() {
+    assert_eq!(
+        eval_isolated("9223372036854775807 + 1\n", None),
+        EvalOutcome::Err(zutai_eval::EvalError::IntOverflow("+"))
+    );
+}

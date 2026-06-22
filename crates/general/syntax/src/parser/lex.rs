@@ -393,17 +393,33 @@ pub fn parse_number_value(input: &mut &str) -> Result<Expr> {
                 fail.parse_next(input)
             }
         },
-        PostfixCheck::Valid(postfix) => match literal.parse::<i64>() {
-            Ok(value) => Ok(Expr::Integer {
-                value,
-                postfix: Some(postfix),
-                span,
-            }),
-            Err(_) => {
-                *input = start;
-                fail.parse_next(input)
+        PostfixCheck::Valid(postfix) => {
+            if matches!(postfix, NumberType::U64) {
+                match literal.parse::<u64>() {
+                    Ok(bits) => Ok(Expr::Integer {
+                        value: bits as i64,
+                        postfix: Some(postfix),
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
+            } else {
+                match literal.parse::<i64>() {
+                    Ok(value) => Ok(Expr::Integer {
+                        value,
+                        postfix: Some(postfix),
+                        span,
+                    }),
+                    Err(_) => {
+                        *input = start;
+                        fail.parse_next(input)
+                    }
+                }
             }
-        },
+        }
         PostfixCheck::Unknown | PostfixCheck::IntOnFloatBody | PostfixCheck::UnsignedNegative => {
             *input = postfix_start;
             if has_frac_or_exp {

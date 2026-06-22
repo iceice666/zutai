@@ -40,6 +40,70 @@ pub(crate) fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {
     }
 }
 
+// ─── eval isolation ───────────────────────────────────────────────────────────
+
+/// Outcome of an isolated evaluation: successful rendered value, a structured
+/// error, or a panic absorbed from the evaluator worker.
+#[derive(Debug, PartialEq)]
+pub(crate) enum EvalOutcome {
+    Ok(String),
+    Err(zutai_eval::EvalError),
+    Panicked(String),
+}
+
+/// Extract a human-readable message from a `catch_unwind` panic payload.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "evaluator panicked (run with RUST_BACKTRACE=1 for details)".to_string()
+    }
+}
+
+/// Run `f` on a large-stack (256 MiB) worker thread with full panic isolation.
+///
+/// Returns [`EvalOutcome::Panicked`] when the worker panics instead of
+/// re-panicking the caller; the main thread is never unwound.
+pub(crate) fn run_isolated<F>(f: F) -> EvalOutcome
+where
+    F: FnOnce() -> Result<String, zutai_eval::EvalError> + Send,
+{
+    const EVAL_STACK_SIZE: usize = 256 * 1024 * 1024;
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .stack_size(EVAL_STACK_SIZE)
+            .spawn_scoped(scope, move || {
+                // Absorb panics inside the worker so the thread itself never
+                // unwinds past this closure; join() always returns Ok(_).
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+            })
+            .expect("failed to spawn evaluation thread");
+        match handle.join() {
+            Ok(catch_result) => match catch_result {
+                Ok(Ok(s)) => EvalOutcome::Ok(s),
+                Ok(Err(e)) => EvalOutcome::Err(e),
+                Err(payload) => EvalOutcome::Panicked(panic_message(&*payload)),
+            },
+            Err(payload) => EvalOutcome::Panicked(panic_message(&*payload)),
+        }
+    })
+}
+
+/// Evaluate `contents` on an isolated large-stack worker thread.
+///
+/// The forced `Value` holds `Rc`s and is not `Send`, so it is rendered to its
+/// `Display` string inside the worker; only the `String` (or the `Send`
+/// `EvalError`, or the caught panic message) crosses the join boundary.
+pub(crate) fn eval_isolated(contents: &str, base: Option<&Path>) -> EvalOutcome {
+    let contents = contents.to_owned();
+    let base = base.map(Path::to_path_buf);
+    run_isolated(move || {
+        zutai_eval::eval_with_base(&contents, base.as_deref()).map(|v| v.to_string())
+    })
+}
+
 // ─── subcommand implementations ───────────────────────────────────────────────
 
 /// Evaluate a `.zt` file and print the result.
@@ -47,9 +111,9 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     // Resolve imports relative to the file's directory.
     let base = Path::new(path).parent();
-    match eval_to_string(&contents, base) {
-        Ok(rendered) => println!("{rendered}"),
-        Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
+    match eval_isolated(&contents, base) {
+        EvalOutcome::Ok(rendered) => println!("{rendered}"),
+        EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
             // These are parse/HIR/import errors — render with miette if possible,
             // otherwise fall back to the semantic analyzer for pretty output.
             let analysis = zutai_semantic::analyze_with_base(
@@ -88,39 +152,22 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
             }
             std::process::exit(1);
         }
-        Err(zutai_eval::EvalError::TypeCheckFailed(msgs)) => {
+        EvalOutcome::Err(zutai_eval::EvalError::TypeCheckFailed(msgs)) => {
             for m in msgs {
                 eprintln!("type error: {m}");
             }
             std::process::exit(1);
         }
-        Err(e) => {
+        EvalOutcome::Err(e) => {
             eprintln!("runtime error: {e}");
+            std::process::exit(1);
+        }
+        EvalOutcome::Panicked(msg) => {
+            eprintln!("internal evaluator error: {msg}");
             std::process::exit(1);
         }
     }
     Ok(())
-}
-
-/// Evaluate `contents` on a worker thread with a large stack.
-///
-/// The reference evaluator can still use deep native recursion on both the TLC
-/// path and the THIR reflection boundary. A 256 MiB worker stack lets realistic
-/// recursion complete. The forced `Value` holds `Rc`s and is not `Send`, so it is
-/// rendered to its `Display` string inside the worker; only the `String` (or the
-/// `Send` `EvalError`) crosses the join boundary.
-fn eval_to_string(contents: &str, base: Option<&Path>) -> Result<String, zutai_eval::EvalError> {
-    const EVAL_STACK_SIZE: usize = 256 * 1024 * 1024;
-    std::thread::scope(|scope| {
-        std::thread::Builder::new()
-            .stack_size(EVAL_STACK_SIZE)
-            .spawn_scoped(scope, || {
-                zutai_eval::eval_with_base(contents, base).map(|value| value.to_string())
-            })
-            .expect("failed to spawn evaluation thread")
-            .join()
-            .expect("evaluation thread panicked")
-    })
 }
 
 /// Parse a `.zt` file and print the AST (the old default behavior).
@@ -129,7 +176,11 @@ pub(crate) fn run_parse(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     match ext.as_str() {
         "zt" => {
-            let analysis = zutai_semantic::analyze(&contents);
+            let analysis = zutai_semantic::analyze_with_base(
+                &contents,
+                Path::new(path).parent(),
+                zutai_semantic::AnalysisOptions::default(),
+            );
             let parse_errors: Vec<_> = analysis
                 .diagnostics
                 .iter()
@@ -148,7 +199,9 @@ pub(crate) fn run_parse(path: &str) -> Result<(), Box<dyn Error>> {
                 .filter(|d| {
                     matches!(
                         d.stage,
-                        zutai_semantic::SemanticStage::Hir | zutai_semantic::SemanticStage::Thir
+                        zutai_semantic::SemanticStage::Import
+                            | zutai_semantic::SemanticStage::Hir
+                            | zutai_semantic::SemanticStage::Thir
                     )
                 })
                 .collect();
@@ -521,9 +574,16 @@ pub(crate) fn run_repl() -> Result<(), Box<dyn Error>> {
 
                 // Otherwise treat as an expression to evaluate.
                 let eval_src = format!("{decls_buf}{trimmed}\n");
-                match zutai_eval::eval_file(&eval_src) {
-                    Ok(value) => println!("{value}"),
-                    Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
+                // Suppress the worker's default panic-hook line so only the
+                // clean error message reaches stderr; the hook is always
+                // restored before the next prompt so no global state leaks.
+                let prev_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(|_| {}));
+                let outcome = eval_isolated(&eval_src, None);
+                std::panic::set_hook(prev_hook);
+                match outcome {
+                    EvalOutcome::Ok(rendered) => println!("{rendered}"),
+                    EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
                         // Try pretty parse error output.
                         let analysis = zutai_semantic::analyze(&eval_src);
                         let parse_errors: Vec<_> = analysis
@@ -551,12 +611,17 @@ pub(crate) fn run_repl() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
-                    Err(zutai_eval::EvalError::TypeCheckFailed(msgs)) => {
+                    EvalOutcome::Err(zutai_eval::EvalError::TypeCheckFailed(msgs)) => {
                         for m in msgs {
                             eprintln!("type error: {m}");
                         }
                     }
-                    Err(e) => eprintln!("error: {e}"),
+                    EvalOutcome::Err(e) => eprintln!("error: {e}"),
+                    EvalOutcome::Panicked(msg) => {
+                        eprintln!(
+                            "internal evaluator error: {msg}\n(input not applied; session preserved)"
+                        );
+                    }
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,

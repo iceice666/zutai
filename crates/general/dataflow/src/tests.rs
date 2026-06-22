@@ -880,3 +880,80 @@ Eq @Int :: { eq = \a b. true; }
         "expected a Record node among globals for the witness dict"
     );
 }
+
+// ── validate_structural ───────────────────────────────────────────────────────
+
+#[test]
+fn validate_structural_rejects_invalid_root_node_ref() {
+    let mut g = dc_of("42");
+    let target = invalid_node_id(&g);
+    g.root = target;
+
+    let errors = validate_structural(&g).expect_err("invalid root must fail structural validation");
+    assert!(errors.contains(&ValidationError::InvalidRootNode { target }));
+}
+
+#[test]
+fn validate_structural_rejects_builtin_result_type_mismatch() {
+    let mut g = dc_of("1 + 2");
+    let node = first_builtin(&g);
+    let ty = g.types.alloc(DfTy::Bool);
+    g.nodes[node].ty = ty;
+
+    let errors =
+        validate_structural(&g).expect_err("type-shape mismatch must fail structural validation");
+    assert!(errors.iter().any(|error| matches!(
+        error,
+        ValidationError::TypeMismatch {
+            owner,
+            field: "type",
+            actual,
+            ..
+        } if *owner == node && *actual == ty
+    )));
+}
+
+#[test]
+fn validate_structural_rejects_invalid_nested_type_ref() {
+    let mut g = dc_of("42");
+    let owner = g.types.alloc(DfTy::Error);
+    let target = invalid_ty_id(&g);
+    g.types[owner] = DfTy::List(target);
+    g.nodes[g.root].ty = owner;
+
+    let errors = validate_structural(&g)
+        .expect_err("invalid nested type ref must fail structural validation");
+    assert!(errors.contains(&ValidationError::InvalidTypeRef {
+        owner,
+        field: "element",
+        target,
+    }));
+}
+
+#[test]
+fn validate_structural_skips_scope_walk() {
+    // A lambda-bind exposed as the root violates the capture-walk invariants (3, 4)
+    // but is structurally valid: the Bind node exists, has a valid type, etc.
+    // validate_structural must pass; validate must still fail.
+    let mut g = dc_of("id x = x\nid 1");
+    let bind = first_bind(&g);
+    g.root = bind;
+
+    // Structural subset: no violation — Bind is a valid node with a valid type.
+    validate_structural(&g).expect("structural check must pass for a bind-as-root graph");
+
+    // Full validation catches the capture violation.
+    let errors = validate(&g).expect_err("full validation must catch the scope violation");
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        ValidationError::LambdaCaptureViolation { bind: error_bind, .. }
+            if *error_bind == bind
+    )));
+}
+
+#[test]
+fn validate_structural_accepts_well_formed_graph() {
+    // A nested-capture program with a valid graph must not produce false positives.
+    validate_structural(&dc_of("make :: Int -> Int -> Int\n  = x y => x;\nmake 1 2"))
+        .expect("well-formed graph must pass structural validation");
+}

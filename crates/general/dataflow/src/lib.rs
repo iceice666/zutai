@@ -404,9 +404,24 @@ pub enum ValidationError {
     },
 }
 
+/// Check the cheap O(n) structural well-formedness invariants of a [`DataflowGraph`]:
+/// span/root validity, per-node type and reference bounds, type-shape compatibility,
+/// bind ownership, and stray `GlobalRef`s.
+///
+/// This subset runs unconditionally in every build — including release — because structural
+/// corruption (dangling refs, type-shape mismatches) would otherwise silently miscompile in
+/// ANF→SSA→codegen.
+///
+/// Scope-walk invariants (arm-bind scope and lambda capture) are checked only by the
+/// full [`validate`].
+pub fn validate_structural(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {
+    validate::validate_structural(graph)
+}
+
 /// Check well-formedness invariants 1-6 of a [`DataflowGraph`].
 ///
-/// In debug builds the lowerer calls this automatically after lowering.
+/// In debug builds the lowerer calls this automatically after lowering. In every build
+/// the lowerer calls [`validate_structural`] for the cheaper structural subset.
 pub fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {
     validate::validate(graph)
 }

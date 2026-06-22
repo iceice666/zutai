@@ -207,9 +207,7 @@ fn parse_record_or_block(input: &mut &str, options: ExprOptions) -> Result<Expr>
     let is_record = {
         let mut tmp = *input;
         if let Ok(_name) = parse_field_name(&mut tmp) {
-            while tmp.starts_with(|c: char| c.is_whitespace()) {
-                tmp = &tmp[1..];
-            }
+            tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
             tmp.starts_with('=') && !tmp.starts_with("==")
         } else {
             false
@@ -265,9 +263,7 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -
         let binding_kind = {
             let mut tmp = *input;
             if let Ok(_name) = parse_ident(&mut tmp) {
-                while tmp.starts_with(|c: char| c.is_whitespace()) {
-                    tmp = &tmp[1..];
-                }
+                tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
                 if tmp.starts_with(":=") {
                     Some(false)
                 } else if tmp.starts_with(':') && !tmp.starts_with("::") {

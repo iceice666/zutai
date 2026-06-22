@@ -329,7 +329,7 @@ The following invariants must hold in a well-formed DataflowGraph:
 5. **No stray GlobalRef.** Every `GlobalRef(name)` must name a key present in `globals` (after the full module is lowered — cycles are fine, dangling references are not).
 6. **Span table size.** `spans.len() == nodes.len()`.
 
-The validation pass in `zutai-dataflow` checks all six invariants in debug builds.
+Structural invariants (1, 2, 5, 6 plus reference/type-shape bounds) are checked in every build — including release — by `validate_structural`, which is O(n) with no scope cloning. A refused compile beats a wrong binary. The lambda-capture/arm-bind scope walk (invariants 3 and 4) is O(node × scope) and remains debug-only, run by the full `validate`.
 
 ## Crate location
 

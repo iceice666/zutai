@@ -41,6 +41,9 @@ pub(crate) fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) 
         ConflictingWitness { constraint, target } => {
             format!("conflicting imported witnesses for {constraint} {target}")
         }
+        PathTraversal { path } => {
+            format!("import path escapes the project directory: {path}")
+        }
     }
 }
 
@@ -319,6 +322,19 @@ mod tests {
         let s = format_import_diagnostic(&d);
         assert!(s.contains("conflicting imported witnesses"), "{s}");
         assert!(s.contains("Eq") && s.contains("Int"), "{s}");
+    }
+
+    #[test]
+    fn format_import_diag_path_traversal() {
+        let d = make_diag(zutai_semantic::ImportDiagnosticKind::PathTraversal {
+            path: "/etc/x.zti".to_string(),
+        });
+        let s = format_import_diagnostic(&d);
+        assert!(
+            s.contains("escapes") || s.contains("project directory"),
+            "{s}"
+        );
+        assert!(s.contains("/etc/x.zti"), "{s}");
     }
 
     // ── ZtParseDiagnostic span clamping ──────────────────────────────────────

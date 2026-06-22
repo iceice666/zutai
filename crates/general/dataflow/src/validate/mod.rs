@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod compat;
 mod refs;
@@ -25,9 +25,14 @@ struct Scope {
     arm_binds: Vec<NodeId>,
 }
 
-pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {
-    let mut errors = Vec::new();
-
+/// Run the cheap O(n) structural checks (invariants 1, 2, 5, 6 plus ref/type-shape bounds).
+///
+/// Does **not** walk the scope graph (invariants 3 and 4), which is O(node × scope).
+/// Returns `(root_valid, owners)` so the caller can continue into the scope walk.
+fn collect_structural_errors(
+    graph: &DataflowGraph,
+    errors: &mut Vec<ValidationError>,
+) -> (bool, HashMap<NodeId, BindOwner>) {
     if graph.spans.len() != graph.nodes.len() {
         errors.push(ValidationError::SpanTableSizeMismatch {
             spans: graph.spans.len(),
@@ -51,12 +56,12 @@ pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>
         }
     }
 
-    validate_type_refs(graph, &mut errors);
+    validate_type_refs(graph, errors);
 
     for (node_id, node) in graph.nodes.iter() {
-        check_node_refs(graph, node_id, &mut errors);
+        check_node_refs(graph, node_id, errors);
         if type_exists(graph, node.ty) {
-            check_node_type_compat(graph, node_id, &mut errors);
+            check_node_type_compat(graph, node_id, errors);
         }
         if let DfNodeKind::GlobalRef(name) = &node.kind
             && !graph.globals.contains_key(name.as_str())
@@ -65,7 +70,33 @@ pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>
         }
     }
 
-    let owners = collect_bind_owners(graph, &mut errors);
+    let owners = collect_bind_owners(graph, errors);
+    (root_valid, owners)
+}
+
+/// Check the cheap O(n) structural well-formedness invariants of a [`DataflowGraph`]:
+/// span/root validity, per-node type and reference bounds, type-shape compatibility,
+/// bind ownership, and stray `GlobalRef`s (invariants 1, 2, 5, 6 plus ref/type-shape bounds).
+///
+/// This is the always-on subset that runs in every build — including release — because
+/// structural corruption would otherwise silently miscompile in ANF→SSA→codegen.
+///
+/// Scope-walk invariants 3 (arm-bind scope) and 4 (lambda capture) are checked only by
+/// the full [`validate`].
+pub(crate) fn validate_structural(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {
+    let mut errors = Vec::new();
+    collect_structural_errors(graph, &mut errors);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>> {
+    let mut errors = Vec::new();
+
+    let (root_valid, owners) = collect_structural_errors(graph, &mut errors);
     let mut visited = HashSet::new();
 
     if root_valid {

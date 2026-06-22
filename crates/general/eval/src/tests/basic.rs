@@ -672,3 +672,20 @@ fn unit_argument_against_inferred_param_type_checks() {
     // `()` must unify it with the unit tuple, not be rejected as "expected tuple".
     assert_eq!(run("(\\x. 5) ()"), Value::Int(5));
 }
+
+// ─── Fix #02: u64 literals above i64::MAX ────────────────────────────────────
+
+/// u64::MAX evaluates to Value::Int(u64::MAX as i64) — the bit-faithful
+/// representation under the untagged-i64 runtime ABI (D-0002).
+/// NOTE: Value::Int renders as a signed decimal, so this prints as "-1".
+/// A future unsigned-display fix should update the expected string intentionally.
+#[test]
+fn u64_max_evaluates_as_bit_faithful_int() {
+    assert_eq!(run("18446744073709551615u64"), Value::Int(u64::MAX as i64));
+}
+
+/// 9223372036854775808u64 (first value above i64::MAX) evaluates as i64::MIN.
+#[test]
+fn u64_above_i64_max_evaluates_as_bit_faithful_int() {
+    assert_eq!(run("9223372036854775808u64"), Value::Int(i64::MIN));
+}
