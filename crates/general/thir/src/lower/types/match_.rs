@@ -285,6 +285,22 @@ impl<'hir> Lowerer<'hir> {
                 self.discharge_row(&row, f_span);
                 self.type_matches(expected, base)
             }
+            (
+                TypeKind::ForAll {
+                    params: ep,
+                    body: eb,
+                    ..
+                },
+                TypeKind::ForAll {
+                    params: fp,
+                    body: fb,
+                    ..
+                },
+            ) => self.forall_matches_type(&ep, eb, &fp, fb, f_span),
+            (TypeKind::ForAll { params, body, .. }, _) => {
+                let found_params = self.collect_type_vars(found);
+                self.forall_matches_type(&params, body, &found_params, found, f_span)
+            }
             // Higher-kinded application: match head and argument structurally,
             // solving infer vars on either side (both already alias-resolved).
             (TypeKind::Apply { func: ef, arg: ea }, TypeKind::Apply { func: ff, arg: fa }) => {
@@ -296,6 +312,29 @@ impl<'hir> Lowerer<'hir> {
             self.type_match_in_progress.remove(&key);
         }
         result
+    }
+
+    fn forall_matches_type(
+        &mut self,
+        expected_params: &[BindingId],
+        expected_body: TypeId,
+        found_params: &[BindingId],
+        found: TypeId,
+        span: Span,
+    ) -> bool {
+        if expected_params.len() != found_params.len() {
+            return false;
+        }
+        let mut subst = HashMap::with_capacity(expected_params.len());
+        for (&expected_param, &found_param) in expected_params.iter().zip(found_params.iter()) {
+            let found_param_ty = self.alloc_type(Type {
+                kind: TypeKind::TypeVar(found_param),
+                span,
+            });
+            subst.insert(expected_param, found_param_ty);
+        }
+        let expected_body = self.instantiate_type_vars(expected_body, &subst);
+        self.type_matches(expected_body, found)
     }
 
     fn alias_is_recursive(&mut self, binding: BindingId) -> bool {
@@ -363,6 +402,7 @@ impl<'hir> Lowerer<'hir> {
                 self.type_references_alias(from, target, visited)
                     || self.type_references_alias(to, target, visited)
             }
+            TypeKind::ForAll { body, .. } => self.type_references_alias(body, target, visited),
             TypeKind::Apply { func, arg } => {
                 self.type_references_alias(func, target, visited)
                     || self.type_references_alias(arg, target, visited)

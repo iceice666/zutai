@@ -568,6 +568,11 @@ pub enum TypeExpr {
     },
     True(Span),
     False(Span),
+    ForAll {
+        params: Vec<TypeParam>,
+        body: Box<TypeExpr>,
+        span: Span,
+    },
     ExprEscape(Box<Expr>),
 }
 
@@ -585,7 +590,8 @@ impl TypeExpr {
             | TypeExpr::Select { span, .. }
             | TypeExpr::Apply { span, .. }
             | TypeExpr::Access { span, .. }
-            | TypeExpr::Atom { span, .. } => *span,
+            | TypeExpr::Atom { span, .. }
+            | TypeExpr::ForAll { span, .. } => *span,
             TypeExpr::ExprEscape(e) => e.span(),
         }
     }

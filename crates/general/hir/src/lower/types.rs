@@ -186,6 +186,16 @@ impl Lowerer {
                 func: self.lower_type(func),
                 arg: self.lower_type(arg),
             },
+            ast::TypeExpr::ForAll { params, body, .. } => {
+                self.push_scope();
+                let hir_params = self.lower_type_params(params);
+                let hir_body = self.lower_type(body);
+                self.pop_scope();
+                HirTypeKind::ForAll {
+                    params: hir_params,
+                    body: hir_body,
+                }
+            }
             ast::TypeExpr::Access {
                 receiver, field, ..
             } => HirTypeKind::Access {

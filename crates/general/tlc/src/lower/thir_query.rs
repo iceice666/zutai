@@ -234,6 +234,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Never => Some("Never".to_string()),
             TypeKind::TypeVar(binding) => Some(format!("@{}", binding.0)),
             TypeKind::InferVar(v) => Some(format!("?{v}")),
+            TypeKind::ForAll { .. } => None,
             TypeKind::Type | TypeKind::Error => None,
         }
     }

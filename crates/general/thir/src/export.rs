@@ -137,6 +137,7 @@ fn export(
         TypeKind::AliasApply { .. }
         | TypeKind::Apply { .. }
         | TypeKind::Con(_)
+        | TypeKind::ForAll { .. }
         | TypeKind::Patch { .. } => Ok(ImportedType::Unknown),
         TypeKind::Function { from, to } => Ok(ImportedType::Function {
             from: Box::new(export(file, aliases, from, seen)?),

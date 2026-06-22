@@ -79,9 +79,10 @@ call.
 
 ## Support Level
 
-Higher-rank polymorphism requires surface syntax for nested quantifiers,
-bidirectional propagation of written higher-rank annotations through the type
-checker, and the existing TLC `ForAll`/`TyLam` machinery; inference stays
-predicative and rank-1. Implementation is tracked as a v2 milestone in
-[`TBD.md`](../TBD.md). Until it lands, quantifiers are accepted only at the
-outermost (rank-1) position.
+Higher-rank polymorphism has reference-interpreter support for explicitly
+annotated nested quantifiers in direct function argument positions. The parser,
+HIR, THIR, and TLC preserve `ForAll`; THIR checks written higher-rank
+annotations bidirectionally while inference remains predicative and rank-1; TLC
+elaborates applications with `TyApp` plus dictionary `App` nodes for constrained
+arguments. Impredicative instantiation, such as `List (<A> A -> A)`, remains
+unsupported and rejects with a dedicated diagnostic.

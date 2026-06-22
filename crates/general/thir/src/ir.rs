@@ -258,6 +258,9 @@ pub enum ThirExprKind {
         func: ThirExprId,
         arg: ThirExprId,
         instantiation: Vec<TypeId>,
+        /// One entry per ForAll param peeled from `func`'s type at this call site.
+        /// Each entry is the InferVar TypeId substituted for that param.
+        forall_instantiation: Vec<TypeId>,
     },
     Access {
         receiver: ThirExprId,
@@ -491,6 +494,15 @@ pub enum TypeKind {
     Apply {
         func: TypeId,
         arg: TypeId,
+    },
+    /// Higher-rank quantifier in annotation position: `(<A: Bound> A -> A)`.
+    /// `params[i]` is a rigid type-variable `BindingId`; `param_bounds[i]` is the
+    /// list of constraint `BindingId`s on that variable. Never inferred — only
+    /// lowered from an explicit `HirTypeKind::ForAll` annotation.
+    ForAll {
+        params: Vec<BindingId>,
+        param_bounds: Vec<Vec<BindingId>>,
+        body: TypeId,
     },
     /// A bare, unapplied builtin type constructor (`List`, `Optional`, `Maybe`) used as a
     /// higher-kinded witness/constraint target (`Functor @List`). Named aliases

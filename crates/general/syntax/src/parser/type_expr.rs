@@ -137,6 +137,13 @@ pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     if input.starts_with('{') {
         return parse_type_braced(input);
     }
+    if input.starts_with("(<") {
+        let checkpoint = *input;
+        if let Ok(forall) = parse_forall_type(input) {
+            return Ok(forall);
+        }
+        *input = checkpoint;
+    }
     if input.starts_with('(') {
         return parse_type_tuple(input);
     }
@@ -157,6 +164,26 @@ pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     // Fall through to ExprEscape for things like type-application (`List Int`)
     // We parse a single application-level expression and wrap it.
     super::expr::parse_application_as_type_escape(input)
+}
+
+fn parse_forall_type(input: &mut &str) -> Result<TypeExpr> {
+    let ((params, body), span) = spanned(|input: &mut &str| {
+        '('.parse_next(input)?;
+        let _guard = enter_delimiter();
+        ws(input)?;
+        let params = super::decl::parse_type_param_list(input)?;
+        ws(input)?;
+        let body = parse_type_expr(input)?;
+        ws(input)?;
+        ')'.parse_next(input)?;
+        Ok((params, body))
+    })
+    .parse_next(input)?;
+    Ok(TypeExpr::ForAll {
+        params,
+        body: Box::new(body),
+        span,
+    })
 }
 
 fn starts_type_atom(input: &str) -> bool {

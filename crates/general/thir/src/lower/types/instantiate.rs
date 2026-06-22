@@ -193,6 +193,29 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            TypeKind::ForAll {
+                params,
+                param_bounds,
+                body,
+            } => {
+                let inner_subst: HashMap<BindingId, TypeId> = subst
+                    .iter()
+                    .filter(|(binding, _)| !params.contains(binding))
+                    .map(|(&binding, &ty)| (binding, ty))
+                    .collect();
+                if inner_subst.is_empty() {
+                    return ty;
+                }
+                let new_body = self.instantiate_type_vars(body, &inner_subst);
+                self.alloc_type(Type {
+                    kind: TypeKind::ForAll {
+                        params,
+                        param_bounds,
+                        body: new_body,
+                    },
+                    span,
+                })
+            }
             _ => ty,
         }
     }
@@ -334,6 +357,29 @@ impl<'hir> Lowerer<'hir> {
                 }
                 self.alloc_type(Type {
                     kind: TypeKind::Apply { func: nf, arg: na },
+                    span,
+                })
+            }
+            TypeKind::ForAll {
+                params,
+                param_bounds,
+                body,
+            } => {
+                let inner_subst: HashMap<BindingId, RowTail> = subst
+                    .iter()
+                    .filter(|(binding, _)| !params.contains(binding))
+                    .map(|(&binding, &row)| (binding, row))
+                    .collect();
+                if inner_subst.is_empty() {
+                    return ty;
+                }
+                let new_body = self.instantiate_row_params(body, &inner_subst);
+                self.alloc_type(Type {
+                    kind: TypeKind::ForAll {
+                        params,
+                        param_bounds,
+                        body: new_body,
+                    },
                     span,
                 })
             }

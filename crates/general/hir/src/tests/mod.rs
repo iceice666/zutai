@@ -42,6 +42,9 @@ fn contains_type_binding(file: &HirFile, ty: &HirTypeExpr, binding: BindingId) -
             contains_type_binding(file, &file.type_arena[*from], binding)
                 || contains_type_binding(file, &file.type_arena[*to], binding)
         }
+        HirTypeKind::ForAll { body, .. } => {
+            contains_type_binding(file, &file.type_arena[*body], binding)
+        }
         _ => false,
     }
 }

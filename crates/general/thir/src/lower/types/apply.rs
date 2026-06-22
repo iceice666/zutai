@@ -10,13 +10,13 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
     ) -> TypeId {
         // Walk the left-nested Apply spine to collect head + all args left-to-right.
-        let mut args = vec![self.lower_type(arg)];
+        let mut args = vec![self.lower_predicative_type(arg)];
         let mut head = func;
         loop {
             let head_kind = self.hir_type(head).kind.clone();
             match head_kind {
                 HirTypeKind::Apply { func: f, arg: a } => {
-                    args.push(self.lower_type(a));
+                    args.push(self.lower_predicative_type(a));
                     head = f;
                 }
                 _ => break,

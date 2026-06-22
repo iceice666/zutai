@@ -247,6 +247,9 @@ impl<'a> Evaluator<'a> {
                 "unapplied builtin type constructor `{}` cannot be reflected",
                 binding_name_in_file(file, binding)
             ))),
+            TypeKind::ForAll { .. } => Err(EvalError::ReflectionUnsupported(
+                "higher-rank polymorphic types cannot be reflected in this phase".to_string(),
+            )),
             TypeKind::InferVar(_) | TypeKind::Error => Err(EvalError::ReflectionUnsupported(
                 "incomplete or erroneous types cannot be reflected".to_string(),
             )),

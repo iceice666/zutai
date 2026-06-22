@@ -65,6 +65,9 @@ impl<'hir> Lowerer<'hir> {
                 self.free_infer_vars_into(func, out);
                 self.free_infer_vars_into(arg, out);
             }
+            TypeKind::ForAll { body, .. } => {
+                self.free_infer_vars_into(body, out);
+            }
             _ => {}
         }
     }

@@ -207,7 +207,7 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
     fail.parse_next(input)
 }
 
-fn parse_type_param_list(input: &mut &str) -> Result<Vec<TypeParam>> {
+pub(super) fn parse_type_param_list(input: &mut &str) -> Result<Vec<TypeParam>> {
     '<'.parse_next(input)?;
     ws(input)?;
     let first = parse_type_param(input)?;

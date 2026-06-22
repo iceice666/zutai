@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 25 recursive type aliases._
+_Last updated: 2026-06-22 after closing Phase 26 higher-rank polymorphism._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -43,12 +43,12 @@ _Last updated: 2026-06-22 after closing Phase 25 recursive type aliases._
   elaborates complete programs to TLC.
 - THIR covers v0 plus implemented v1/v2-adjacent semantics: row-polymorphic
   records/unions, `select`, constraints/witnesses, `derive`, method-level type
-  params, higher-kinded constraints, algebraic-effect typing, and guarded
-  recursive type aliases.
+  params, higher-kinded constraints, algebraic-effect typing, higher-rank
+  annotation checking, predicative inference, and guarded recursive type aliases.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
-  operator lowering, source effect markers, CPS elaboration for handled effects,
-  equirecursive alias identity, and runtime `io.print` lowering through ordinary
-  TLC function values.
+  operator lowering, source effect markers, higher-rank `ForAll`/`TyLam`/`TyApp`
+  elaboration, CPS elaboration for handled effects, equirecursive alias identity,
+  and runtime `io.print` lowering through ordinary TLC function values.
 - THIR and TLC carry internal universe levels for surface `Type`. Explicit level
   syntax is still unsupported; level-polymorphic type constructors default to
   the lowest consistent universe and erase before runtime/backend lowering.
@@ -128,6 +128,21 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 26: Higher-rank polymorphism ✅
+
+- Type syntax extended with nested quantifiers in annotation positions:
+  `(<A> A -> A) -> R` and constrained `(<A: Show> A -> Text)`. Parser, HIR,
+  THIR, and TLC all carry the `ForAll` node.
+- Bidirectional checking pushes written higher-rank annotations into lambda and
+  function arguments; inference remains predicative and rank-1.
+- ForAll in structural non-argument positions (record fields, union variants,
+  list element types, tuple items) rejects with an
+  `UnsupportedFeature("impredicative type")` diagnostic.
+- TLC elaboration adds explicit `TyLam`/`TyApp` at quantification points and
+  `App` for constraint dictionaries at each higher-rank call site.
+- `applyId` and constrained `showBoth` examples type-check and run through THIR
+  and TLC.
 
 ### Phase 25: Recursive type aliases and equirecursive equality ✅
 

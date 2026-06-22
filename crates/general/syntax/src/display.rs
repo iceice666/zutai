@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::ast::{
     Decl, Expr, File, FuncClause, ImportSource, Pattern, PipelineDir, RowTail, TupleItem,
-    TuplePatternItem, TypeExpr, TypeTupleItem,
+    TuplePatternItem, TypeExpr, TypeParam, TypeTupleItem,
 };
 
 impl fmt::Display for File {
@@ -658,11 +658,42 @@ fn write_type_expr(
                 &format!("{indent}   "),
             )
         }
+        TypeExpr::ForAll { params, body, .. } => {
+            writeln!(f, "{prefix}TyForAll <{}>", format_type_params(params))?;
+            write_type_expr(
+                f,
+                body,
+                &format!("{indent}└─ body: "),
+                &format!("{indent}   "),
+            )
+        }
         TypeExpr::ExprEscape(e) => {
             writeln!(f, "{prefix}TyExprEscape")?;
             write_expr(f, e, &format!("{indent}└─ "), &format!("{indent}   "))
         }
     }
+}
+
+fn format_type_params(params: &[TypeParam]) -> String {
+    params
+        .iter()
+        .map(|param| {
+            if !param.bounds.is_empty() {
+                let bounds = param
+                    .bounds
+                    .iter()
+                    .map(|bound| bound.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" + ");
+                format!("{}: {}", param.name, bounds)
+            } else if param.kind.is_some() {
+                format!("{} :: <kind>", param.name)
+            } else {
+                param.name.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn write_row_tail(f: &mut fmt::Formatter<'_>, tail: Option<&RowTail>, indent: &str) -> fmt::Result {

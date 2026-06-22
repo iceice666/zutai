@@ -170,6 +170,14 @@ pub(super) fn type_key_subst(
                 .collect();
             format!("{}[{}]", head_key, arg_parts.join(","))
         }
+        TypeKind::ForAll { params, body, .. } => {
+            let param_parts: Vec<String> = params.iter().map(|b| format!("@{}", b.0)).collect();
+            format!(
+                "forall[{}].{}",
+                param_parts.join(","),
+                type_key_subst(type_arena, aliases, subst, *body, d)
+            )
+        }
         TypeKind::InferVar(v) => format!("?{v}"),
         TypeKind::Error => "<error>".into(),
     }

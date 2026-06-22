@@ -801,3 +801,34 @@ eq r1 r2
 "#;
     assert_eq!(eval_tlc_file(different).unwrap(), Value::Bool(false));
 }
+
+#[test]
+fn tlc_higher_rank_apply_id_runs() {
+    let src = r#"
+id :: <A> A -> A
+  = x => x;
+applyId :: (<A> A -> A) -> { i : Int; t : Text; }
+  = f => { i = f 1; t = f "x"; };
+applyId id
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        r#"{ i = 1;  t = "x" }"#
+    );
+}
+
+#[test]
+fn tlc_higher_rank_show_both_runs() {
+    let src = r#"
+Show :: <A> @A { show :: A -> Text; }
+Show @Int :: { show = \n. "int"; }
+Show @Bool :: { show = \b. "bool"; }
+showBoth :: (<A: Show> A -> Text) -> { left : Text; right : Text; } =
+  \render. { left = render 1; right = render true; }
+showBoth (\x. show x)
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        r#"{ left = "int";  right = "bool" }"#
+    );
+}

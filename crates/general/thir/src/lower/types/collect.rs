@@ -62,6 +62,10 @@ impl<'hir> Lowerer<'hir> {
                 self.collect_type_vars_into(func, out);
                 self.collect_type_vars_into(arg, out);
             }
+            TypeKind::ForAll { params, body, .. } => {
+                self.collect_type_vars_into(body, out);
+                out.retain(|binding| !params.contains(binding));
+            }
             _ => {}
         }
     }
@@ -135,6 +139,9 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Apply { func, arg } => {
                 self.collect_row_params_into(func, out);
                 self.collect_row_params_into(arg, out);
+            }
+            TypeKind::ForAll { body, .. } => {
+                self.collect_row_params_into(body, out);
             }
             _ => {}
         }

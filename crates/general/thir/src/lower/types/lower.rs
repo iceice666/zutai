@@ -21,7 +21,9 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|v: &HirUnionVariant| UnionVariant {
                         name: v.name.clone(),
-                        payload: v.payload.map(|payload| self.lower_type(payload)),
+                        payload: v
+                            .payload
+                            .map(|payload| self.lower_predicative_type(payload)),
                         span: v.span,
                     })
                     .collect();
@@ -37,11 +39,11 @@ impl<'hir> Lowerer<'hir> {
                     .map(|item| match item {
                         HirTypeTupleItem::Named { name, ty, span } => TypeTupleItem::Named {
                             name: name.clone(),
-                            ty: self.lower_type(*ty),
+                            ty: self.lower_predicative_type(*ty),
                             span: *span,
                         },
                         HirTypeTupleItem::Positional(ty) => {
-                            TypeTupleItem::Positional(self.lower_type(*ty))
+                            TypeTupleItem::Positional(self.lower_predicative_type(*ty))
                         }
                     })
                     .collect();
@@ -51,12 +53,12 @@ impl<'hir> Lowerer<'hir> {
                 })
             }
             HirTypeKind::Optional(inner) => {
-                let inner = self.lower_type(*inner);
+                let inner = self.lower_predicative_type(*inner);
                 self.optional_type(inner, ty.span)
             }
             HirTypeKind::Arrow { from, to } => {
                 let from = self.lower_type(*from);
-                let to = self.lower_type(*to);
+                let to = self.lower_predicative_type(*to);
                 self.alloc_type(Type {
                     kind: TypeKind::Function { from, to },
                     span: ty.span,
@@ -64,7 +66,7 @@ impl<'hir> Lowerer<'hir> {
             }
             HirTypeKind::Apply { func, arg } => self.lower_type_apply(*func, *arg, ty.span),
             HirTypeKind::Effect { base, row } => {
-                let base = self.lower_type(*base);
+                let base = self.lower_predicative_type(*base);
                 let mut row = self.lower_effect_row(row);
                 let resolved_base = self.resolve(base);
                 match self.ty(resolved_base).kind.clone() {
@@ -88,7 +90,7 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
             HirTypeKind::Select { receiver, fields } => {
-                let receiver_ty = self.lower_type(*receiver);
+                let receiver_ty = self.lower_predicative_type(*receiver);
                 let resolved = self.resolve_alias(receiver_ty, &mut HashSet::new(), ty.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Record(rec_fields, _) => {
@@ -133,6 +135,32 @@ impl<'hir> Lowerer<'hir> {
                     span: ty.span,
                 });
                 self.error_type
+            }
+            HirTypeKind::ForAll { params, body } => {
+                let mut binding_ids = Vec::with_capacity(params.len());
+                let mut bounds_per_param = Vec::with_capacity(params.len());
+                for p in params {
+                    self.type_param_scope.insert(p.binding);
+                    if let Some(k) = p.kind {
+                        let kind = self.hir_kind_of(k);
+                        self.type_param_kinds.insert(p.binding, kind);
+                    }
+                    let bounds: Vec<BindingId> = p.bounds.clone();
+                    binding_ids.push(p.binding);
+                    bounds_per_param.push(bounds);
+                }
+                let body_ty = self.lower_type(*body);
+                for &binding in &binding_ids {
+                    self.type_param_scope.remove(&binding);
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::ForAll {
+                        params: binding_ids,
+                        param_bounds: bounds_per_param,
+                        body: body_ty,
+                    },
+                    span: ty.span,
+                })
             }
             HirTypeKind::Access { receiver, field } => {
                 // Resolve `moduleLib.SomeType` in annotation position.
@@ -185,6 +213,25 @@ impl<'hir> Lowerer<'hir> {
                 self.invalid_type("type expression escapes are not supported yet", ty.span)
             }
         }
+    }
+
+    pub(in crate::lower) fn lower_predicative_type(&mut self, id: HirTypeId) -> TypeId {
+        let ty = self.lower_type(id);
+        let resolved = self.resolve(ty);
+        if matches!(
+            self.type_arena[resolved.0 as usize].kind,
+            TypeKind::ForAll { .. }
+        ) {
+            let span = self.type_arena[ty.0 as usize].span;
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnsupportedFeature {
+                    feature: "impredicative type: ForAll is only valid as a direct function argument annotation",
+                },
+                span,
+            });
+            return self.error_type;
+        }
+        ty
     }
 
     pub(in crate::lower) fn lower_effect_row(&mut self, row: &HirEffectRow) -> EffectRow {
@@ -259,7 +306,7 @@ impl<'hir> Lowerer<'hir> {
         TypeRecordField {
             name: field.name.clone(),
             optional: field.optional,
-            ty: self.lower_type(field.ty),
+            ty: self.lower_predicative_type(field.ty),
             span: field.span,
         }
     }

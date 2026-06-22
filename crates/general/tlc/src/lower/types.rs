@@ -129,6 +129,23 @@ impl<'thir> Lowerer<'thir> {
                 }
                 spine
             }
+            TypeKind::ForAll {
+                params,
+                param_bounds,
+                body,
+            } => {
+                let mut body_tlc = self.lower_type(body);
+                for (index, &param) in params.iter().enumerate().rev() {
+                    let tyvar = self.named_tyvar(param);
+                    let kind = self.kind_for_type_param(param);
+                    for _bound in param_bounds[index].iter().rev() {
+                        let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
+                        body_tlc = self.alloc_type(TlcType::Fun(dict_ty, body_tlc, Row::REmpty));
+                    }
+                    body_tlc = self.alloc_type(TlcType::ForAll(tyvar, kind, body_tlc));
+                }
+                return body_tlc;
+            }
             TypeKind::Con(binding) => {
                 // A bare builtin constructor (`List`, `Optional`) — kind `Type ℓ -> Type ℓ`.
                 let tyvar = self.named_tyvar(binding);
@@ -713,6 +730,9 @@ impl<'thir> Lowerer<'thir> {
                     });
                 alias_seen.remove(&binding);
                 level
+            }
+            TypeKind::ForAll { body, .. } => {
+                self.thir_universe_with_subst_seen(body, subst, alias_seen)
             }
             TypeKind::Apply { .. } | TypeKind::Con(_) | TypeKind::Error => self
                 .thir

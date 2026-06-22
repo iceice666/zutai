@@ -318,6 +318,10 @@ pub enum HirTypeKind {
         func: HirTypeId,
         arg: HirTypeId,
     },
+    ForAll {
+        params: Vec<HirTypeParam>,
+        body: HirTypeId,
+    },
     Access {
         receiver: HirTypeId,
         field: String,

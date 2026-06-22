@@ -107,6 +107,7 @@ impl<'hir> Lowerer<'hir> {
                         .iter()
                         .any(|op| self.occurs(var_id, op.param) || self.occurs(var_id, op.result))
             }
+            TypeKind::ForAll { body, .. } => self.occurs(var_id, body),
             TypeKind::Apply { func, arg } => self.occurs(var_id, func) || self.occurs(var_id, arg),
             _ => false,
         }

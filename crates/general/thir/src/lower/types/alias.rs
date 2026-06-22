@@ -146,6 +146,13 @@ impl<'hir> Lowerer<'hir> {
                 let parts: Vec<String> = args.iter().map(|&a| self.type_name(a)).collect();
                 format!("{head} {}", parts.join(" "))
             }
+            TypeKind::ForAll { params, body, .. } => {
+                let names: Vec<String> = params
+                    .iter()
+                    .map(|binding| self.hir.bindings[binding.0 as usize].name.clone())
+                    .collect();
+                format!("(<{}> {})", names.join(", "), self.type_name(body))
+            }
             TypeKind::Con(binding) => self.hir.bindings[binding.0 as usize].name.clone(),
             TypeKind::Apply { func, arg } => {
                 format!("{} {}", self.type_name(func), self.type_name(arg))
@@ -349,6 +356,17 @@ impl<'hir> Lowerer<'hir> {
                     .map(|&a| self.witness_target_key_with(a, norm))
                     .collect();
                 format!("{}[{}]", head_key, parts.join(","))
+            }
+            TypeKind::ForAll { params, body, .. } => {
+                let names: Vec<String> = params
+                    .iter()
+                    .map(|binding| format!("@{}", binding.0))
+                    .collect();
+                format!(
+                    "forall[{}].{}",
+                    names.join(","),
+                    self.witness_target_key_with(body, norm)
+                )
             }
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),

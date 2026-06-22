@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use zutai_hir::BindingId;
 use zutai_syntax::{Span, ast::BinOp};
 use zutai_thir::{
-    ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeRecordField,
+    ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeKind, TypeRecordField,
 };
 
 use crate::ir::{
@@ -12,6 +12,8 @@ use crate::ir::{
 };
 
 use super::Lowerer;
+type ForallLambdaDict = (BindingId, BindingId, TlcTypeId);
+type ForallLambdaLayer = Vec<(BindingId, Vec<ForallLambdaDict>)>;
 
 impl<'thir> Lowerer<'thir> {
     pub(super) fn lower_expr(&mut self, id: ThirExprId) -> TlcExprId {
@@ -171,11 +173,14 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 self.alloc_expr(TlcExpr::Case(scrut, alts), tlc_ty, span)
             }
-            ThirExprKind::Lambda { params, body } => self.lower_lambda(params, body, tlc_ty, span),
+            ThirExprKind::Lambda { params, body } => {
+                self.lower_lambda(params, body, tlc_ty, thir_ty, span)
+            }
             ThirExprKind::Apply {
                 func,
                 arg,
                 instantiation,
+                forall_instantiation,
             } => {
                 if let Some(expr) = self.lower_overlay_full_apply(func, arg, thir_ty, span) {
                     return expr;
@@ -279,7 +284,36 @@ impl<'thir> Lowerer<'thir> {
                     }
                 }
 
-                let func_tlc = self.lower_expr(func);
+                let mut func_tlc = self.lower_expr(func);
+                if !forall_instantiation.is_empty() {
+                    let func_thir_ty_id = self.thir.expr_arena[func].ty;
+                    if let TypeKind::ForAll {
+                        params,
+                        param_bounds,
+                        ..
+                    } = self.thir.type_arena[func_thir_ty_id.0 as usize]
+                        .kind
+                        .clone()
+                    {
+                        for (i, (&_param, &inst_ty)) in
+                            params.iter().zip(forall_instantiation.iter()).enumerate()
+                        {
+                            let ty_arg = self.lower_type(inst_ty);
+                            let cur_ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
+                            func_tlc =
+                                self.alloc_expr(TlcExpr::TyApp(func_tlc, ty_arg), cur_ty, span);
+                            for &bound in &param_bounds[i] {
+                                let dict = self.get_dict_expr(bound, inst_ty, span);
+                                let after_dict_ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
+                                func_tlc = self.alloc_expr(
+                                    TlcExpr::App(func_tlc, dict),
+                                    after_dict_ty,
+                                    span,
+                                );
+                            }
+                        }
+                    }
+                }
                 let arg_tlc = self.lower_expr(arg);
                 self.alloc_expr(TlcExpr::App(func_tlc, arg_tlc), tlc_ty, span)
             }
@@ -643,10 +677,20 @@ impl<'thir> Lowerer<'thir> {
         params: Vec<ThirPatId>,
         body: ThirExprId,
         outer_ty: TlcTypeId,
+        thir_ty: TypeId,
         span: zutai_syntax::Span,
     ) -> TlcExprId {
+        let forall_layers = self.prepare_forall_lambda_layers(thir_ty);
         let body_expr = self.lower_expr(body);
-        params.iter().rev().fold(body_expr, |inner, &pat_id| {
+        for layer in &forall_layers {
+            for &(param, ref dicts) in layer {
+                for &(bound, _, _) in dicts {
+                    self.active_dict_params.remove(&(bound.0, param.0));
+                }
+            }
+        }
+
+        let mut expr = params.iter().rev().fold(body_expr, |inner, &pat_id| {
             let pat = &self.thir.pat_arena[pat_id];
             let (param_binding, param_ty) = match pat.kind {
                 ThirPatKind::Bind(b) => (b, self.lower_type(pat.ty)),
@@ -657,7 +701,50 @@ impl<'thir> Lowerer<'thir> {
                 }
             };
             self.alloc_expr(TlcExpr::Lam(param_binding, param_ty, inner), outer_ty, span)
-        })
+        });
+
+        for layer in forall_layers.iter().rev() {
+            for &(param, ref dicts) in layer.iter().rev() {
+                for &(_, dict_param, dict_ty) in dicts.iter().rev() {
+                    expr = self.alloc_expr(TlcExpr::Lam(dict_param, dict_ty, expr), outer_ty, span);
+                }
+                let tyvar = self.named_tyvar(param);
+                let kind = self.kind_for_type_param(param);
+                expr = self.alloc_expr(TlcExpr::TyLam(tyvar, kind, expr), outer_ty, span);
+            }
+        }
+        expr
+    }
+
+    fn prepare_forall_lambda_layers(&mut self, thir_ty: TypeId) -> Vec<ForallLambdaLayer> {
+        let mut layers = Vec::new();
+        let mut current = thir_ty;
+        loop {
+            match self.thir.type_arena[current.0 as usize].kind.clone() {
+                TypeKind::ForAll {
+                    params,
+                    param_bounds,
+                    body,
+                } => {
+                    let mut layer = Vec::with_capacity(params.len());
+                    for (param, bounds) in params.into_iter().zip(param_bounds) {
+                        let mut dicts = Vec::with_capacity(bounds.len());
+                        for bound in bounds {
+                            let dict_param = self.fresh_synth_binding();
+                            let dict_ty = self.alloc_type(TlcType::Record(crate::ir::Row::REmpty));
+                            self.active_dict_params
+                                .insert((bound.0, param.0), dict_param);
+                            self.active_dict_types.insert(dict_param, dict_ty);
+                            dicts.push((bound, dict_param, dict_ty));
+                        }
+                        layer.push((param, dicts));
+                    }
+                    layers.push(layer);
+                    current = body;
+                }
+                _ => return layers,
+            }
+        }
     }
 }
 

@@ -7,6 +7,28 @@ struct OverlayApply {
 }
 
 impl<'hir> Lowerer<'hir> {
+    /// Peel one layer of ForAll quantifiers from `ty`, substituting each bound
+    /// parameter with a fresh InferVar. Returns the inner type and the fresh
+    /// infer-variable TypeIds in parameter order.
+    pub(super) fn peel_forall(&mut self, ty: TypeId, span: Span) -> (TypeId, Vec<TypeId>) {
+        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve(resolved);
+        match self.type_arena[resolved.0 as usize].kind.clone() {
+            TypeKind::ForAll { params, body, .. } => {
+                let mut subst = HashMap::new();
+                let mut infer_ids = Vec::with_capacity(params.len());
+                for param in &params {
+                    let fresh = self.fresh_infer_var(span);
+                    subst.insert(*param, fresh);
+                    infer_ids.push(fresh);
+                }
+                let instantiated = self.instantiate_type_vars(body, &subst);
+                (instantiated, infer_ids)
+            }
+            _ => (ty, Vec::new()),
+        }
+    }
+
     pub(super) fn lower_apply_expr(
         &mut self,
         id: HirExprId,
@@ -19,6 +41,7 @@ impl<'hir> Lowerer<'hir> {
         }
         let func = self.infer_expr(func);
         let func_ty = self.expr(func).ty;
+        let (func_ty, forall_instantiation) = self.peel_forall(func_ty, span);
         let Some((from, to)) = self.function_input_output(func_ty, span) else {
             let found = self.type_name(func_ty);
             if !matches!(
@@ -38,6 +61,7 @@ impl<'hir> Lowerer<'hir> {
                     func,
                     arg,
                     instantiation: Vec::new(),
+                    forall_instantiation: Vec::new(),
                 },
                 span,
             });
@@ -114,6 +138,7 @@ impl<'hir> Lowerer<'hir> {
                 func,
                 arg,
                 instantiation,
+                forall_instantiation,
             },
             span,
         })
@@ -184,6 +209,7 @@ impl<'hir> Lowerer<'hir> {
                 func: builtin_ref,
                 arg: patch_expr,
                 instantiation: Vec::new(),
+                forall_instantiation: Vec::new(),
             },
             span,
         });
@@ -194,6 +220,7 @@ impl<'hir> Lowerer<'hir> {
                 func: inner,
                 arg: base_expr,
                 instantiation: Vec::new(),
+                forall_instantiation: Vec::new(),
             },
             span,
         })
@@ -306,8 +333,8 @@ impl<'hir> Lowerer<'hir> {
         expected: TypeId,
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
-        let (param_types, return_type) = self.function_parts(expected, span);
-
+        let expected_body = self.strip_forall_expected(expected, span);
+        let (param_types, return_type) = self.function_parts(expected_body, span);
         if param_types.is_empty() {
             let found = self.type_name(expected);
             if !matches!(self.ty(expected).kind, TypeKind::Error) {
@@ -353,5 +380,16 @@ impl<'hir> Lowerer<'hir> {
             },
             span,
         })
+    }
+
+    fn strip_forall_expected(&mut self, expected: TypeId, span: Span) -> TypeId {
+        let mut current = self.resolve_alias(expected, &mut HashSet::new(), span);
+        loop {
+            let resolved = self.resolve(current);
+            match self.type_arena[resolved.0 as usize].kind.clone() {
+                TypeKind::ForAll { body, .. } => current = body,
+                _ => return current,
+            }
+        }
     }
 }

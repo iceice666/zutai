@@ -150,6 +150,7 @@ impl<'hir> Lowerer<'hir> {
                     self.require_ground_type(a, span);
                 }
             }
+            TypeKind::ForAll { body, .. } => self.require_ground_type(body, span),
             TypeKind::Apply { .. } => {
                 if self.kind_of(r, span).is_concrete_type() {
                     let (_, args) = self.app_spine(r);

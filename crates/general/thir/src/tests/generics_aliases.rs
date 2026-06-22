@@ -770,3 +770,65 @@ x
         TypeKind::AliasApply { .. }
     ));
 }
+
+#[test]
+fn higher_rank_apply_id_checks() {
+    let src = r#"
+applyId :: (<A> A -> A) -> { i : Int; t : Text; }
+  = f => { i = f 1; t = f "x"; };
+applyId
+"#;
+    let lowered = lower(src);
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn higher_rank_show_both_checks() {
+    let src = r#"
+Show :: <A> @A { show :: A -> Text; }
+Show @Int :: { show = \n. "int"; }
+Show @Bool :: { show = \b. "bool"; }
+showBoth :: (<A: Show> A -> Text) -> { left : Text; right : Text; } =
+  \render. { left = render 1; right = render true; }
+showBoth
+"#;
+    let lowered = lower(src);
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn insufficient_higher_rank_annotation_reports_type_mismatch() {
+    let lowered = lower(
+        r#"
+bad :: (Int -> Int) -> { i : Int; t : Text; }
+  = f => { i = f 1; t = f "x"; };
+bad
+"#,
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. })),
+        "conflicting monomorphic uses should produce TypeMismatch, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn impredicative_list_rejected() {
+    let lowered = lower(
+        r#"
+xs :: List (<A> A -> A) = []
+xs
+"#,
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::UnsupportedFeature { .. })),
+        "List of ForAll must reject as impredicative, got {:?}",
+        lowered.diagnostics
+    );
+}

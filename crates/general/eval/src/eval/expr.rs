@@ -237,6 +237,7 @@ impl<'a> Evaluator<'a> {
                 func,
                 arg,
                 instantiation,
+                ..
             } => {
                 // Witness-dict injection: if func is a BindingRef to a top-level
                 // function with param_bounds, inject a WitnessDict for each

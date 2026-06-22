@@ -9,21 +9,6 @@ _Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
 short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
 here._
 
-### Phase 26: Higher-rank polymorphism
-
-Source of truth: [`v2_spec/05-higher-rank-polymorphism.md`](v2_spec/05-higher-rank-polymorphism.md).
-
-- Extend type syntax/HIR/THIR to preserve nested quantifiers in annotation
-  positions such as `(<A> A -> A) -> R`, including constrained quantifiers.
-- Add bidirectional checking that pushes written higher-rank expected types into
-  lambda/function arguments. Inference remains predicative and rank-1; the
-  compiler never synthesizes an unannotated higher-rank type.
-- Elaborate nested `ForAll` positions to existing TLC `ForAll`/`TyLam`/`TyApp`
-  machinery, including dictionary passing for constrained higher-rank arguments.
-- Acceptance: the `applyId` and constrained `showBoth` examples type-check and
-  run; insufficiently annotated higher-rank uses request an annotation; attempts
-  at impredicative instantiation such as `List (<A> A -> A)` reject precisely.
-
 ### Phase 27: Host capabilities beyond ambient `io.print`
 
 Source of truth: [`v2_spec/02-host-capabilities.md`](v2_spec/02-host-capabilities.md).

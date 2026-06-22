@@ -208,6 +208,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::AliasApply { binding, args } => {
                 self.alias_apply_universe(binding, &args, span)
             }
+            TypeKind::ForAll { body, .. } => self.type_universe(body, span),
             TypeKind::Apply { .. } => self.apply_universe(ty, span),
             TypeKind::Con(_) | TypeKind::Error => UniverseLevel::Known(0),
         };
