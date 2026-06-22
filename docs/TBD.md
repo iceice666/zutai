@@ -1,183 +1,111 @@
 # Zutai Open Work
 
-Implementation order: top to bottom. Each phase is additive and independently
-testable, mirroring the archived milestone style. State support levels precisely.
+Open work is now grouped by deferral horizon. Completed milestones live in
+`docs/ARCHIVED.md`; new implementation phases should be added here when scoped.
 
-## Phase 23: Effect CPS lowering (replace the AOT effect fold)
+## Deferred to v2 (see `docs/v2_spec/`)
 
-**Goal.** Compile algebraic effects through a genuine pre-DC elaboration so
-effectful programs lower to native code whose effects fire **at runtime**, in
-program order, with real host dispatch — instead of being interpreted away at
-compile time and replayed as baked constants. Dataflow Core, ANF, SSA, and LLVM
-stay pure: the elaboration removes every `Perform`/`Handle`/`Resume`/`Sequence`
-marker before TLC→DC, so `residual_effect_reason`
-(`crates/general/tlc/src/lib.rs`) returns `None` because the nodes are genuinely
-gone, not pre-evaluated.
+_Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
+short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
+here._
 
-### Decision: CPS / handler-passing, not the free-monad data form
+### Phase 24: Universe-level foundation
 
-`docs/tlc-core.md` §9 specifies the encoding as "free-monad / CPS-style" as if
-the two were interchangeable. They are not, at the **type** level:
+Source of truth: [`v2_spec/04-universe-levels.md`](v2_spec/04-universe-levels.md).
 
-- The free-monad form needs a self-referential type
-  `Free Op A = { pure: A } | { impure: Op }` where `Op` carries
-  `resume: R -> Free Op A`. Dataflow Core has no recursive / nominal / `Mu` type
-  node: `DfTy::Union(Vec<DfUnionVariant>)` is a finite structural tree, and
-  `lower_type` (`crates/general/dataflow/src/lower.rs`) memoizes a type id only
-  *after* recursing into its members, so a self-referential `VariantT`
-  stack-overflows. `Free Op A` is structurally infinite (the perform-spine
-  length is a runtime quantity) and cannot be unrolled.
-- The CPS / handler-passing form keeps recursion in the handler interpreter
-  `letrec` + closures, which Dataflow Core already supports via `GlobalRef`
-  back-edges → SCC → `letrec` (`docs/dataflow-core.md` §"Recursion"). With a
-  fixed answer type per `handle` scope the answer type is not recursive, so CPS
-  lands with **no new DC type node**.
+- Wire internal `Type ℓ` through HIR/THIR/TLC kind lowering instead of pinning
+  every kind to `Type(0)` / `Kind::ground()`.
+- Add level metavariables, level constraints, cumulativity, level-polymorphic
+  type constructors, and lowest-consistent-level defaulting. Surface syntax still
+  exposes only `Type`; explicit level annotations remain out of scope.
+- Keep type-level fuel unchanged: fuel bounds normalization, while universe
+  levels reject universe-circular definitions statically.
+- Acceptance: existing higher-kinded constraints and v1 type-level programs stay
+  accepted; `Pair Int Type` kind-checks at a higher inferred level; ill-founded
+  definitions that require `Type ℓ : Type ℓ` produce a kind diagnostic; runtime
+  erasure and backend output for ordinary value programs are unchanged.
 
-CPS is therefore the lower-risk first cut, and it mirrors the structure of the
-reference interpreter we already trust (see "Oracle" below). The free-monad data
-form is deferred behind a DC recursive-type node (recorded at the end).
+### Phase 25: Recursive type aliases and equirecursive equality
 
-### Oracle: the elaboration is a defunctionalization, not a new design
+Source of truth: [`v2_spec/01-recursive-types.md`](v2_spec/01-recursive-types.md).
 
-`crates/general/eval/src/eval_tlc/effects.rs` is already a delimited-continuation
-CPS interpreter: `EvalControl::{Value, Perform { op, arg, cont }}`,
-`handle_control`, `bind_control` / `bind_rc`, `apply_value_clause`, `finish_top`,
-with `EvalCont = Rc<dyn Fn(Value) -> Result<EvalControl>>`. The elaboration
-reifies this exact machine as core terms. Every elaborated program MUST evaluate
-to the same value and the same ordered effect sequence as the TLC oracle; that
-oracle is the differential check for the whole phase.
+- Resolve top-level type aliases in SCC binding groups so definition order does
+  not matter for mutually recursive aliases.
+- Permit guarded self, mutual, and generic recursive aliases under records,
+  unions, tuples, lists, optionals, and function arrows; reject bare/non-productive
+  alias cycles before type-level evaluation.
+- Lower aliases by reference (`TyVar` / `TyLamK` / `TyApp`) rather than eager
+  expansion, and extend NbE/type equality with fuel-bounded equirecursive
+  unfolding.
+- Carry recursive type identity through Dataflow Core `DfTyId`s and static runtime
+  type descriptors; reflection emits finite named back-references rather than
+  infinite expanded shapes.
+- Acceptance: recursive `Tree`, mutually recursive `Expr`/`Args`, and generic
+  `Tree A` examples check, evaluate finite values, render through `run` and
+  compiled output, and compare via the built-in structural equality derivation;
+  unguarded cycles keep rejecting with a productivity diagnostic; cyclic runtime
+  values remain unsupported/non-goal.
 
-### Current support level (to be replaced)
+### Phase 26: Higher-rank polymorphism
 
-- `compile`/`dataflow` accept only **closed, fully evaluable** effectful entry
-  programs, via the AOT fold (`fold_aot_effects` → `fold_effect_value_to_source`
-  → `eval_tlc_analysis_capture_io` + `value_to_source`, on a 256 MiB worker
-  thread, `crates/cli/src/commands.rs`).
-- Effects are evaluated at **compile time**; `io.print` output is frozen and
-  replayed as `@zutai.effect.print.N` constants in `@main`
-  (`emit_llvm_with_host_prints` / `emit_main`, `crates/general/codegen/src/lib.rs`).
-- Effectful **function** values, runtime-dependent effect ordering, and any
-  capability beyond `io.print` are uncompilable: `value_to_source` returns
-  `None` for closures/builtins, so only first-order data round-trips.
-- `erase_effects` (`crates/general/tlc/src/erase.rs`) exists but is a v0 no-op
-  exercised only by `tlc` unit tests; it is **not** on any pipeline path.
+Source of truth: [`v2_spec/05-higher-rank-polymorphism.md`](v2_spec/05-higher-rank-polymorphism.md).
 
-### Target support level
+- Extend type syntax/HIR/THIR to preserve nested quantifiers in annotation
+  positions such as `(<A> A -> A) -> R`, including constrained quantifiers.
+- Add bidirectional checking that pushes written higher-rank expected types into
+  lambda/function arguments. Inference remains predicative and rank-1; the
+  compiler never synthesizes an unannotated higher-rank type.
+- Elaborate nested `ForAll` positions to existing TLC `ForAll`/`TyLam`/`TyApp`
+  machinery, including dictionary passing for constrained higher-rank arguments.
+- Acceptance: the `applyId` and constrained `showBoth` examples type-check and
+  run; insufficiently annotated higher-rank uses request an annotation; attempts
+  at impredicative instantiation such as `List (<A> A -> A)` reject precisely.
 
-- Effectful programs — including effectful function values and handlers whose
-  control flow depends on runtime data — compile through DC→ANF→SSA→LLVM with no
-  compile-time evaluation.
-- Ambient `io.print` is dispatched by a **runtime driver**, not baked.
-- `residual_effect_reason` / `try_lower_tlc` stay as the no-erasure safety net;
-  they pass naturally once the elaboration runs.
+### Phase 27: Host capabilities beyond ambient `io.print`
 
-### 23.1 — CPS effect elaboration pass (TLC→TLC)
+Source of truth: [`v2_spec/02-host-capabilities.md`](v2_spec/02-host-capabilities.md).
 
-- New module `crates/general/tlc/src/lower/effects.rs`; entry
-  `TlcModule::elaborate_effects(&mut self)`, run from the `lower_thir` pipeline
-  before `erase_effects`.
-- Selective CPS: pure subterms stay direct-style; subterms that are effectful
-  (type carries a non-`REmpty` `Fun` row, or contain
-  `Perform`/`Handle`/`Resume`/`Sequence`) are CPS-translated so the rest of the
-  computation up to the nearest enclosing `handle` becomes the reified `resume`
-  continuation, an ordinary `Lam`.
-- `perform op arg` → evaluate `arg`, then call the in-scope handler for `op`
-  with the payload and the captured `resume` (mirrors the `handle_control`
-  matched arm). `Sequence` → left-to-right monadic-bind chain (mirrors
-  `bind_rc`). `handle expr with { value; ops }` → install handlers over the CPS
-  translation of `expr`, with `value` defaulting to identity.
-- Rewrite effectful `Fun(A, B, eff)` value and annotation types to their pure
-  CPS-translated form; run `erase_effects` last to drop any residual row.
-- Output contains only `Lam`/`App`/`Case`/`Variant`/`Record`/`GetField`/`Let`/
-  `Letrec`; no effect marker node remains.
-- Test: a single-op closed `handle … with { value; op }` + `resume` program
-  elaborates to effect-free TLC and lowers through `lower_tlc` without the gate
-  firing; the differential value matches the oracle.
+- Add opaque standard capability types and declarations for `FsRead`, `FsWrite`,
+  `Env`, `Clock`, `Rng`, and explicit `IoPrint`, plus standard operations
+  `fs.read`, `fs.write`, `env.get`, `clock.now`, and `rng.next`.
+- Thread capability values as ordinary parameters while effect rows continue to
+  state which host operations may occur. Authority is advisory only;
+  unforgeable capability tokens remain beyond v2.
+- Extend the `run`/native entry boundary so the host grants requested
+  capabilities, dispatches residual granted operations, and rejects ungranted
+  residual host operations as boundary errors. Ambient `io.print` remains
+  source-compatible.
+- Preserve handler interception: source handlers can mock or discharge host
+  operations before the boundary.
+- Acceptance: capability-parameter programs type-check only when their effect
+  rows mention the performed operation; source handlers can make `fs.read` pure;
+  granted operations have `run`/compiled-output parity; ungranted filesystem,
+  environment, clock, and randomness operations reject before unsafe backend
+  erasure.
 
-### 23.2 — Forwarding, multi-op, nested handlers
+### Phase 28: Derive recipes and witness reflection
 
-- Unmatched-op re-injection: a handler removes the ops it names and forwards the
-  rest (mirror the else branch of `handle_control`).
-- Multiple operations per effect row; nested `handle` scopes; handler clauses
-  that return directly vs. `resume` exactly once (the one-shot invariant is
-  already typed in Phase 15).
-- Test: a `parseOrDefault`-style forwarding program (`v1_spec/05-effects.md`),
-  nested handlers, and a handler that returns without resuming — all differential
-  against the oracle for value and effect sequence.
+Source of truth: [`v2_spec/03-derive-recipes.md`](v2_spec/03-derive-recipes.md).
 
-### 23.3 — Runtime effect driver (ABI + codegen)
-
-- Replace constant replay with a runtime driver that dispatches residual ambient
-  operations at runtime. The compiled entry threads the CPS computation; the
-  runtime analogue of `finish_top` services `io.print` through the existing
-  `zutai.text_from_global` / `zutai.print_text` ABI
-  (`crates/general/runtime/src/lib.rs`).
-- Codegen emits the driver in `@main` instead of baked `@zutai.effect.print.N`
-  constants (`emit_main`, `crates/general/codegen/src/lib.rs`).
-- This is what lets effectful functions exist as ordinary compiled values and
-  lets effects execute at runtime in program order, rather than only closed
-  entries folded at compile time. (Function / `Type` *entry* results stay
-  rejected by `unsupported_entry_type_reason` — an orthogonal existing limit.)
-- Test: native binary for `print "hello"` prints `hello` at runtime (parity with
-  the current baked output), plus a program whose print order depends on a
-  match/branch taken at runtime.
-
-### 23.4 — Cutover: remove the AOT effect fold
-
-- Delete `fold_aot_effects`, `fold_effect_value_to_source`, the effect duty of
-  `value_to_source`, the 256 MiB effect worker, the `host_prints` parameter of
-  `emit_llvm_with_host_prints` / `emit_main`, and `host_prints` plumbing through
-  `run_compile` / `run_dataflow` (`crates/cli/src/commands.rs`,
-  `crates/general/codegen/src/lib.rs`).
-- Keep `residual_effect_reason` / `try_lower_tlc` as the safety net (defends
-  against a future upstream change emitting an effect node the pass misses).
-- Revisit the reflection+effects rejection (`commands.rs`): reflection still
-  folds AOT (Phase 22), so decide whether reflection over effectful code stays
-  rejected or runs reflection folding after effect elaboration.
-
-### 23.5 — Differential verification + docs
-
-- Differential harness in `zutai-eval` / CLI tests: every effect fixture's
-  compiled output (value render + ordered print sequence) equals the `eval_tlc`
-  oracle.
-- Docs: rewrite `docs/tlc-core.md` §9 to specify the implemented CPS form and
-  the deferred free-monad form; update `docs/dataflow-core.md` "Effect boundary",
-  `docs/runtime-abi.md` (driver loop + op dispatch), and
-  `docs/v1_spec/05-effects.md` (replace the "AOT support level is precise
-  rejection" note). Move the superseded Phase 20 effects-AOT-fold summary into
-  `docs/ARCHIVED.md` marked superseded and add the Phase 23 summary.
-
-### Verification gate
-
-`cargo fmt`, `cargo test --workspace`, and `cargo clippy --workspace
---all-targets` green throughout. Native effect binaries verified where the host
-toolchain (`llc` / `clang` / `libzutai_rt`) is present, skipped with a diagnostic
-otherwise.
-
-### Deferred to v2 (see `docs/v2_spec/`)
-
-The following post-v1 features are specified in
-[`v2_spec/`](v2_spec/00-index.md); their implementation milestones are scheduled
-after Phase 23.
-
-- **Recursive types** (`v2_spec/01-recursive-types.md`) — user-defined recursive
-  data types, lowered via a Dataflow Core recursive-type representation
-  (knot-tying a placeholder `DfTyId` in `lower_type` before recursing into
-  members, or a `Mu` / nominal type node). This also unblocks the literal
-  `docs/tlc-core.md` §9 free-monad effect encoding, which CPS (Phase 23)
-  otherwise covers without a reified, optimizable effect tree.
-- **Host capabilities** (`v2_spec/02-host-capabilities.md`) — filesystem,
-  environment, clock, and randomness as capability-gated effects; depends on the
-  Phase 23 runtime effect driver.
-- **Derive recipes** (`v2_spec/03-derive-recipes.md`) — user-defined
-  compile-time derivation with the `witness` reflection primitive; unifies the
-  type-value reflection and TLC derive-synthesis paths.
-- **Universe levels** (`v2_spec/04-universe-levels.md`) — internal
-  `Type0 : Type1` stratification with cumulativity; the TLC kind already carries
-  the level slot (`Type(level)`).
-- **Higher-rank polymorphism** (`v2_spec/05-higher-rank-polymorphism.md`) —
-  rank-N quantifiers in annotations with bidirectional checking; inference stays
-  predicative.
+- Add the compile-time `witness C @T` reflection primitive, using the same
+  coherence and resolution rules as implicit dictionary passing.
+- Store user-attached derive recipes on constraints and run each recipe once per
+  `(constraint, type)` derivation request under the type-level fuel bound.
+- Unify type-value reflection and TLC derive synthesis so recipes can consume
+  `fields`, new `variants`, and `schema` output, including open rows and
+  recursive named back-references.
+- Reify recipe results into witness dictionaries, type-check them against the
+  constraint method signatures, and report missing component witnesses,
+  fuel-exhausted recipes, or ill-typed generated witnesses at the derivation
+  request.
+- Keep the built-in structural equality derivation as the default for derive
+  constraints without an attached recipe; user recipes override only their own
+  constraint family.
+- Acceptance: `Show` and lexicographic `Ord` recipes derive witnesses for records
+  and unions; missing component witnesses produce localized compile errors;
+  recursive types derive through recursive witness bindings; generated method
+  bodies are specialized at compile time rather than interpreting reflection data
+  at runtime.
 
 ## Deferred beyond v2
 
