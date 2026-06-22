@@ -1,0 +1,205 @@
+use super::*;
+use crate::ir::FixedWidth;
+use zutai_syntax::posit::parse_posit_type_name;
+
+impl<'hir> Lowerer<'hir> {
+    pub(in crate::lower) fn lower_type_apply(
+        &mut self,
+        func: HirTypeId,
+        arg: HirTypeId,
+        span: Span,
+    ) -> TypeId {
+        // Walk the left-nested Apply spine to collect head + all args left-to-right.
+        let mut args = vec![self.lower_type(arg)];
+        let mut head = func;
+        loop {
+            let head_kind = self.hir_type(head).kind.clone();
+            match head_kind {
+                HirTypeKind::Apply { func: f, arg: a } => {
+                    args.push(self.lower_type(a));
+                    head = f;
+                }
+                _ => break,
+            }
+        }
+        args.reverse();
+
+        let HirTypeKind::BindingRef(binding) = self.hir_type(head).kind else {
+            return self.invalid_type("only named type constructors can be applied", span);
+        };
+        let name = self.hir.bindings[binding.0 as usize].name.clone();
+
+        // Built-in single-arg constructors keep existing handling and report
+        // arity precisely instead of falling through to "not parametric".
+        match name.as_str() {
+            "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => {
+                if args.len() != 1 {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                            name,
+                            expected: 1,
+                            found: args.len(),
+                        },
+                        span,
+                    });
+                    return self.error_type;
+                }
+                return match name.as_str() {
+                    "List" => self.alloc_type(Type {
+                        kind: TypeKind::List(args[0]),
+                        span,
+                    }),
+                    "Optional" => self.optional_type(args[0], span),
+                    "Maybe" => self.maybe_type(args[0], span),
+                    "Patch" => self.patch_type(args[0], false, span),
+                    "DeepPatch" => self.patch_type(args[0], true, span),
+                    _ => unreachable!(),
+                };
+            }
+            _ => {}
+        }
+
+        // Named parametric alias.
+        if let Some(params) = self.alias_params.get(&binding).cloned() {
+            if args.len() > params.len() {
+                // Over-application: more arguments than the constructor accepts.
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                        name,
+                        expected: params.len(),
+                        found: args.len(),
+                    },
+                    span,
+                });
+                return self.error_type;
+            }
+            if args.len() == params.len() {
+                // Saturated: keep the direct-write `AliasApply` representation
+                // (canonicalization-equivalent to the Apply-spine via `app_view`).
+                return self.alloc_type(Type {
+                    kind: TypeKind::AliasApply { binding, args },
+                    span,
+                });
+            }
+            // Partial application (`Result E`): curried `Apply` spine over the bare
+            // alias head. `resolve_alias` leaves it inert until saturated.
+            let head_ty = self.alias_type(binding, span);
+            return self.fold_apply(head_ty, &args, span);
+        }
+
+        // Higher-kinded type-variable application (`F A`, F a type param of kind
+        // `Type -> Type`). Curried `Apply` over the var head so it composes under
+        // substitution (`F := Result E` makes `F A` reduce to `Result E A`).
+        if matches!(
+            self.hir.bindings[binding.0 as usize].kind,
+            BindingKind::TypeParam
+        ) {
+            let head_ty = self.alloc_type(Type {
+                kind: TypeKind::TypeVar(binding),
+                span,
+            });
+            return self.fold_apply(head_ty, &args, span);
+        }
+
+        self.invalid_type("type is not a parametric constructor", span)
+    }
+
+    /// Build a curried `Apply` spine: `fold_apply(F, [A, B])` → `Apply{Apply{F,A},B}`.
+    pub(in crate::lower) fn fold_apply(
+        &mut self,
+        head: TypeId,
+        args: &[TypeId],
+        span: Span,
+    ) -> TypeId {
+        let mut spine = head;
+        for &arg in args {
+            spine = self.alloc_type(Type {
+                kind: TypeKind::Apply { func: spine, arg },
+                span,
+            });
+        }
+        spine
+    }
+
+    pub(in crate::lower) fn alias_or_builtin_type(
+        &mut self,
+        binding: BindingId,
+        span: Span,
+    ) -> TypeId {
+        // A bare reference to a parametric constructor (without application) is
+        // a zero-argument arity error. Check before the binding-kind match so
+        // both TopType and TopFunction aliases can be caught here.
+        if let Some(params) = self.alias_params.get(&binding).cloned() {
+            let name = self.hir.bindings[binding.0 as usize].name.clone();
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                    name,
+                    expected: params.len(),
+                    found: 0,
+                },
+                span,
+            });
+            return self.error_type;
+        }
+        let binding_info = &self.hir.bindings[binding.0 as usize];
+        match binding_info.kind {
+            BindingKind::BuiltinType => match binding_info.name.as_str() {
+                // Bare single-argument builtins (kind `Type -> Type`), used
+                // unapplied as higher-kinded witness/constraint targets.
+                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => self.alloc_type(Type {
+                    kind: TypeKind::Con(binding),
+                    span,
+                }),
+                name => self
+                    .builtin_type_by_name(name, span)
+                    .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),
+            },
+            BindingKind::TopType => self.alias_type(binding, span),
+            BindingKind::TopImport if self.aliases.contains_key(&binding) => {
+                self.alias_type(binding, span)
+            }
+            BindingKind::TypeParam => self.alloc_type(Type {
+                kind: TypeKind::TypeVar(binding),
+                span,
+            }),
+            BindingKind::Param | BindingKind::Local if self.type_param_scope.contains(&binding) => {
+                // A `Param` or `Local` binding that was registered in
+                // `type_param_scope` during type-level function body lowering
+                // acts as a substitutable type variable.
+                self.alloc_type(Type {
+                    kind: TypeKind::TypeVar(binding),
+                    span,
+                })
+            }
+            _ => self.invalid_type("value binding used as a type", span),
+        }
+    }
+
+    pub(in crate::lower) fn builtin_type_by_name(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> Option<TypeId> {
+        if let Some(spec) = parse_posit_type_name(name) {
+            return Some(self.posit_type(spec, span));
+        }
+
+        let kind = match name {
+            "Type" => TypeKind::Type,
+            "Text" => TypeKind::Text,
+            "Bool" => TypeKind::Bool,
+            "Int" | "i64" => TypeKind::Int,
+            "Float" | "f64" => TypeKind::Float,
+            "i8" => TypeKind::FixedNum(FixedWidth::I8),
+            "i16" => TypeKind::FixedNum(FixedWidth::I16),
+            "i32" => TypeKind::FixedNum(FixedWidth::I32),
+            "u8" => TypeKind::FixedNum(FixedWidth::U8),
+            "u16" => TypeKind::FixedNum(FixedWidth::U16),
+            "u32" => TypeKind::FixedNum(FixedWidth::U32),
+            "u64" => TypeKind::FixedNum(FixedWidth::U64),
+            "f32" => TypeKind::FixedNum(FixedWidth::F32),
+            _ => return None,
+        };
+        Some(self.alloc_type(Type { kind, span }))
+    }
+}

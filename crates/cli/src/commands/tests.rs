@@ -1,0 +1,131 @@
+use super::*;
+use std::path::PathBuf;
+use std::rc::Rc;
+use zutai_eval::thunk::Thunk;
+use zutai_eval::value::{BuiltinFn, TupleField};
+
+#[test]
+fn count_decls_in_returns_zero_for_unparseable() {
+    assert_eq!(count_decls_in(""), 0);
+}
+
+#[test]
+fn count_decls_in_returns_one_for_single_decl() {
+    assert_eq!(count_decls_in("x ::= 1\nx\n"), 1);
+}
+
+#[test]
+fn count_decls_in_returns_two_for_two_decls() {
+    assert_eq!(count_decls_in("x ::= 1\ny ::= 2\nx\n"), 2);
+}
+
+#[test]
+fn runtime_link_flags_never_request_non_pie() {
+    assert!(!runtime_link_flags().contains(&"-no-pie"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_runtime_link_flags_request_pie() {
+    assert!(runtime_link_flags().contains(&"-pie"));
+}
+
+#[test]
+fn value_to_source_covers_scalar_escapes_and_float_suffix() {
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Bool(true)),
+        Some("true".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Float(2.0)),
+        Some("2.0".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Float(f64::INFINITY)),
+        Some("inf".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Atom("prod".into())),
+        Some("#prod".to_string())
+    );
+    let text = "quote\" slash\\ line\n cr\r tab\t";
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Text(text.into())),
+        Some("\"quote\\\" slash\\\\ line\\n cr\\r tab\\t\"".to_string())
+    );
+}
+
+#[test]
+fn value_to_source_covers_tuple_tagged_absent_and_none() {
+    let one = Thunk::ready(zutai_eval::Value::Int(1));
+    let tuple = zutai_eval::Value::Tuple(Rc::from([
+        TupleField {
+            name: Some("x".into()),
+            value: one.clone(),
+        },
+        TupleField {
+            name: None,
+            value: Thunk::ready(zutai_eval::Value::Text("y".into())),
+        },
+    ]));
+    assert_eq!(value_to_source(&tuple), Some("(x = 1, \"y\")".to_string()));
+
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::TaggedValue {
+            tag: "none".into(),
+            payload: Rc::new(vec![]),
+        }),
+        Some("#none".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::TaggedValue {
+            tag: "some".into(),
+            payload: Rc::new(vec![
+                ("0".into(), Thunk::ready(zutai_eval::Value::Int(1))),
+                (
+                    "1".into(),
+                    Thunk::ready(zutai_eval::Value::Text("x".into())),
+                ),
+            ]),
+        }),
+        Some("#some (1, \"x\")".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::TaggedValue {
+            tag: "point".into(),
+            payload: Rc::new(vec![
+                ("x".into(), Thunk::ready(zutai_eval::Value::Int(1))),
+                ("y".into(), Thunk::ready(zutai_eval::Value::Int(2))),
+            ]),
+        }),
+        Some("#point {x = 1; y = 2; }".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Nothing),
+        Some("#absent".to_string())
+    );
+    assert_eq!(
+        value_to_source(&zutai_eval::Value::Builtin(BuiltinFn::Print)),
+        None
+    );
+}
+
+#[test]
+fn output_path_for_derives_default_paths() {
+    assert_eq!(
+        output_path_for("main.zt", None, EmitMode::Llvm),
+        PathBuf::from("main.ll")
+    );
+    assert_eq!(
+        output_path_for("main.zt", None, EmitMode::Obj),
+        PathBuf::from("main.o")
+    );
+    assert_eq!(
+        output_path_for("main.zt", None, EmitMode::Bin),
+        PathBuf::from("main")
+    );
+    assert_eq!(
+        output_path_for("main.zt", Some("custom.out"), EmitMode::Bin),
+        PathBuf::from("custom.out")
+    );
+}

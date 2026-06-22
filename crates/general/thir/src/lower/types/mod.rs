@@ -15,9 +15,14 @@ use crate::ir::{
 use super::{Lowerer, RowSolution};
 
 mod alias;
+mod apply;
+mod collect;
+mod constructors;
+mod generalize;
 mod instantiate;
 mod kind;
 mod lower;
 mod match_;
+mod patch;
 
 pub(in crate::lower) use match_::WrapperKind;

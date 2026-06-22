@@ -35,6 +35,7 @@ use crate::{
 };
 
 mod apply;
+mod binary;
 mod dispatch;
 mod expr;
 mod ops;
