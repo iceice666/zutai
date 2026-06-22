@@ -1,0 +1,95 @@
+-- rsa_roundtrip.zt: Toy RSA round trip over the full compiler pipeline.
+-- Exercises recursive arithmetic, Euclid coefficients, tagged unions, guarded
+-- pattern matching, records as final runtime output, and native display.
+
+Bezout :: type {
+  gcd : Int;
+  x : Int;
+  y : Int;
+}
+
+Verification :: type {
+  #ok: { plain : Int; cipher : Int; private_exponent : Int; };
+  #bad: { expected : Int; actual : Int; };
+}
+
+modulo :: Int -> Int -> Int
+  = n m => n - (n / m) * m;
+
+normalizeMod :: Int -> Int -> Int
+  = n m => {
+      r := modulo n m;
+      if r < 0 then r + m else r
+    };
+
+isEven :: Int -> Bool
+  = n => modulo n 2 == 0;
+
+squareMod :: Int -> Int -> Int
+  = n m => modulo (n * n) m;
+
+powMod :: Int -> Int -> Int -> Int
+  = base exponent modulus =>
+      if exponent == 0 then 1
+      else {
+        half := powMod base (exponent / 2) modulus;
+        squared := squareMod half modulus;
+        if isEven exponent then squared else modulo (base * squared) modulus
+      };
+
+egcd :: Int -> Int -> Bezout
+  = a b =>
+      if b == 0 then { gcd = a; x = 1; y = 0; }
+      else {
+        next := egcd b (modulo a b);
+        {
+          gcd = next.gcd;
+          x = next.y;
+          y = next.x - (a / b) * next.y;
+        }
+      };
+
+modInverse :: Int -> Int -> Int
+  = e phi => normalizeMod (egcd e phi).x phi;
+
+encrypt :: Int -> Int -> Int -> Int
+  = modulus exponent message => powMod message exponent modulus;
+
+decrypt :: Int -> Int -> Int -> Int
+  = modulus exponent cipher => powMod cipher exponent modulus;
+
+verifyRoundTrip :: Int -> Int -> Int -> Int -> Verification
+  = modulus publicExponent privateExponent message => {
+      cipher := encrypt modulus publicExponent message;
+      plain := decrypt modulus privateExponent cipher;
+      if plain == message then
+        #ok { plain = plain; cipher = cipher; private_exponent = privateExponent; }
+      else
+        #bad { expected = message; actual = plain; }
+    };
+
+verificationScore :: Verification -> Int
+  = #ok { plain = p; cipher = c; private_exponent = d; } => p + c + d;
+  = #bad { expected = e; actual = a; } => e - a;
+
+p ::= 61
+q ::= 53
+publicExponent ::= 17
+message ::= 65
+modulus ::= p * q
+phi ::= (p - 1) * (q - 1)
+privateExponent ::= modInverse publicExponent phi
+cipher ::= encrypt modulus publicExponent message
+decrypted ::= decrypt modulus privateExponent cipher
+verdict ::= verifyRoundTrip modulus publicExponent privateExponent message
+
+{
+  modulus = modulus;
+  phi = phi;
+  public_exponent = publicExponent;
+  private_exponent = privateExponent;
+  cipher = cipher;
+  decrypted = decrypted;
+  score = verificationScore verdict;
+  verdict = verdict;
+}

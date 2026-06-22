@@ -1,6 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::process::Command as StdCommand;
+use std::{path::Path, process::Command as StdCommand};
 
 fn cli() -> Command {
     Command::cargo_bin("zutai-cli").unwrap()
@@ -13,6 +13,14 @@ fn write_tmp(name: &str, content: &str) -> String {
     let path = dir.join(name);
     std::fs::write(&path, content).unwrap();
     path.to_str().unwrap().to_string()
+}
+fn general_fixture(name: &str) -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../general/fixtures/valid")
+        .join(name)
+        .to_str()
+        .expect("fixture path must be UTF-8")
+        .to_owned()
 }
 
 fn zt_string_literal(s: &str) -> String {
@@ -709,6 +717,26 @@ fn compiled_show_fixtures_match_eval_tlc_oracle() {
             "compiled output must match eval_tlc oracle for {name}"
         );
     }
+}
+#[test]
+fn rsa_fixture_runs_and_emits_llvm_pipeline() {
+    let source =
+        std::fs::read_to_string(general_fixture("rsa_roundtrip.zt")).expect("read RSA fixture");
+    let run_output = run_stdout("cli_test_rsa_oracle.zt", &source);
+    assert!(run_output.contains("modulus = 3233"), "{run_output}");
+    assert!(
+        run_output.contains("private_exponent = 2753"),
+        "{run_output}"
+    );
+    assert!(run_output.contains("cipher = 2790"), "{run_output}");
+    assert!(run_output.contains("decrypted = 65"), "{run_output}");
+    assert!(run_output.contains("score = 5608"), "{run_output}");
+    assert!(run_output.contains("verdict = #ok"), "{run_output}");
+
+    let llvm = compile_stdout("cli_test_rsa_compiled.zt", &source);
+    assert!(llvm.contains("define i64 @__entry"), "{llvm}");
+    assert!(llvm.contains("call void @zutai.show"), "{llvm}");
+    assert!(llvm.contains("define i64 @verdict()"), "{llvm}");
 }
 
 #[test]
