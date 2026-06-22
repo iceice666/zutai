@@ -327,15 +327,16 @@ pub extern "C" fn variant_value(v: i64) -> i64 {
     unsafe { word(v, 2) }
 }
 
-/// Unwrap one `Optional`/`Maybe` layer: dense tag 0 (`#none`/`#absent`) selects
-/// the fallback, otherwise return the payload.
+/// Unwrap one `Optional`/`Maybe` layer.
 #[unsafe(export_name = "zutai.coalesce")]
 pub extern "C" fn coalesce(v: i64, fallback: i64) -> i64 {
     unsafe {
-        if word(v, 1) == 0 {
-            fallback
+        // #some (x) / #present (x) are variant_new(1, <1-tuple>) — return the
+        // inner value (tuple slot 0). #none / #absent are atom text objects.
+        if header_tag(word(v, 0)) == TAG_VARIANT {
+            word(word(v, 2), 1)
         } else {
-            word(v, 2)
+            fallback
         }
     }
 }
@@ -559,21 +560,22 @@ unsafe fn render(out: &mut String, value: i64, desc: *const i64) {
                 out.push(']');
             }
             DESC_OPTIONAL => {
-                if word(value, 1) == 0 {
-                    out.push_str("#none");
-                } else {
+                // #some is variant_new(1, <1-tuple>); #none is an atom text object.
+                if header_tag(word(value, 0)) == TAG_VARIANT {
                     out.push_str("#some (");
-                    render(out, word(value, 2), *desc.add(1) as *const i64);
+                    render(out, word(word(value, 2), 1), *desc.add(1) as *const i64);
                     out.push(')');
+                } else {
+                    out.push_str("#none");
                 }
             }
             DESC_MAYBE => {
-                if word(value, 1) == 0 {
-                    out.push_str("#absent");
-                } else {
+                if header_tag(word(value, 0)) == TAG_VARIANT {
                     out.push_str("#present (");
-                    render(out, word(value, 2), *desc.add(1) as *const i64);
+                    render(out, word(word(value, 2), 1), *desc.add(1) as *const i64);
                     out.push(')');
+                } else {
+                    out.push_str("#absent");
                 }
             }
             DESC_RECORD => {
@@ -608,22 +610,29 @@ unsafe fn render(out: &mut String, value: i64, desc: *const i64) {
                 out.push(')');
             }
             DESC_VARIANT => {
-                let tag = word(value, 1) as usize;
-                let base = 2 + tag * 3;
-                out.push('#');
-                out.push_str(name_at(desc, base));
-                let payload_desc = *desc.add(base + 2);
-                if payload_desc != 0 {
-                    let pdesc = payload_desc as *const i64;
-                    let pval = word(value, 2);
-                    out.push(' ');
-                    match *pdesc {
-                        DESC_RECORD => render_variant_named(out, pval, pdesc),
-                        DESC_TUPLE => render(out, pval, pdesc),
-                        _ => {
-                            out.push('(');
-                            render(out, pval, pdesc);
-                            out.push(')');
+                if header_tag(word(value, 0)) == TAG_TEXT {
+                    // Nullary member: emitted as an atom text object, not variant_new.
+                    let s = str::from_utf8(text_parts(value)).unwrap_or("");
+                    out.push('#');
+                    out.push_str(s);
+                } else {
+                    let tag = word(value, 1) as usize;
+                    let base = 2 + tag * 3;
+                    out.push('#');
+                    out.push_str(name_at(desc, base));
+                    let payload_desc = *desc.add(base + 2);
+                    if payload_desc != 0 {
+                        let pdesc = payload_desc as *const i64;
+                        let pval = word(value, 2);
+                        out.push(' ');
+                        match *pdesc {
+                            DESC_RECORD => render_variant_named(out, pval, pdesc),
+                            DESC_TUPLE => render(out, pval, pdesc),
+                            _ => {
+                                out.push('(');
+                                render(out, pval, pdesc);
+                                out.push(')');
+                            }
                         }
                     }
                 }

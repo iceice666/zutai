@@ -464,6 +464,32 @@ apply print
     ),
 ];
 
+const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
+    (
+        "nullary_union",
+        "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; }\n#leaf\n",
+    ),
+    (
+        "enum_member",
+        "Color :: type { #red; #green; #blue; }\n#green\n",
+    ),
+    ("maybe_present", "x :: Maybe Int = #present (42)\nx\n"),
+    ("maybe_absent", "x :: Maybe Int = #absent\nx\n"),
+    ("optional_some", "x :: Int? = #some (7)\nx\n"),
+    ("optional_none", "x :: Int? = #none\nx\n"),
+    (
+        "record_optional_field",
+        "r :: { x : Int?; y : Int; } = { x = #some (42); y = 10; }\nr\n",
+    ),
+    (
+        "recursive_maybe",
+        "Nested :: type { next : Maybe Nested; val : Int; }\nmkNested :: Int -> Nested\n  = n => if n == 0 then { next = #absent; val = 0; } else { next = #present (mkNested (n - 1)); val = n; };\nmkNested 2\n",
+    ),
+    ("float_value", "x :: Float = 5.0\nx\n"),
+    ("coalesce_some", "x :: Int? = #some (7)\nx ?? 0\n"),
+    ("coalesce_none", "y :: Int? = #none\ny ?? 99\n"),
+];
+
 #[test]
 fn check_valid_zt_file_passes() {
     let path = write_tmp("cli_test_check_valid.zt", "1 + 2\n");
@@ -593,6 +619,40 @@ fn compiled_effect_fixtures_match_eval_tlc_oracle() {
             "compiled output must match eval_tlc oracle for {name}"
         );
     }
+}
+
+#[test]
+fn compiled_show_fixtures_match_eval_tlc_oracle() {
+    for (name, source) in COMPILED_SHOW_FIXTURES {
+        let run_output = run_stdout(&format!("cli_test_show_oracle_{name}.zt"), source);
+        let compiled_output = compile_bin_stdout(&format!("cli_test_show_compiled_{name}"), source);
+        assert_eq!(
+            compiled_output, run_output,
+            "compiled output must match eval_tlc oracle for {name}"
+        );
+    }
+}
+
+#[test]
+fn compile_nullary_variant_bin_renders_tag() {
+    assert_eq!(
+        compile_bin_stdout(
+            "cli_test_show_leaf",
+            "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; }\n#leaf\n",
+        ),
+        "#leaf\n"
+    );
+}
+
+#[test]
+fn compile_maybe_present_bin_renders_payload() {
+    assert_eq!(
+        compile_bin_stdout(
+            "cli_test_show_present",
+            "x :: Maybe Int = #present (42)\nx\n",
+        ),
+        "#present (42)\n"
+    );
 }
 
 #[test]

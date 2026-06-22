@@ -69,12 +69,22 @@ fn list_render() {
 fn optional_and_maybe_render() {
     let int_d = [DESC_INT];
     let opt_d = [DESC_OPTIONAL, int_d.as_ptr() as i64];
-    assert_eq!(render_str(variant_new(0, 0), &opt_d), "#none");
-    assert_eq!(render_str(variant_new(1, 7), &opt_d), "#some (7)");
+    assert_eq!(render_str(text("none"), &opt_d), "#none");
+    let some = {
+        let t = tuple_new(1);
+        tuple_set(t, 0, 7);
+        variant_new(1, t)
+    };
+    assert_eq!(render_str(some, &opt_d), "#some (7)");
 
     let maybe_d = [DESC_MAYBE, int_d.as_ptr() as i64];
-    assert_eq!(render_str(variant_new(0, 0), &maybe_d), "#absent");
-    assert_eq!(render_str(variant_new(1, 9), &maybe_d), "#present (9)");
+    assert_eq!(render_str(text("absent"), &maybe_d), "#absent");
+    let present = {
+        let t = tuple_new(1);
+        tuple_set(t, 0, 9);
+        variant_new(1, t)
+    };
+    assert_eq!(render_str(present, &maybe_d), "#present (9)");
 }
 
 #[test]
@@ -104,7 +114,7 @@ fn variant_render_all_payload_shapes() {
         3,
         tup_d.as_ptr() as i64,
     ];
-    assert_eq!(render_str(variant_new(0, 0), &union_d), "#red");
+    assert_eq!(render_str(text("red"), &union_d), "#red");
     let t = tuple_new(2);
     tuple_set(t, 0, 1);
     tuple_set(t, 1, 2);
@@ -199,8 +209,13 @@ fn atom_render() {
 
 #[test]
 fn coalesce_unwraps_one_layer() {
-    assert_eq!(coalesce(variant_new(0, 0), 99), 99);
-    assert_eq!(coalesce(variant_new(1, 7), 99), 7);
+    assert_eq!(coalesce(text("none"), 99), 99);
+    let some = {
+        let t = tuple_new(1);
+        tuple_set(t, 0, 7);
+        variant_new(1, t)
+    };
+    assert_eq!(coalesce(some, 99), 7);
 }
 
 #[test]

@@ -125,9 +125,9 @@ pub(crate) fn fmt_lit(lit: &DfLit) -> String {
         }
         DfLit::Int(n) => n.to_string(),
         DfLit::Float(f) => {
-            // Encode float as its IEEE 754 double bit pattern in an i64.
-            // This lets us store the exact float value in our uniform i64 type.
-            format!("0x{:016x}", f.to_bits())
+            // Store the IEEE-754 bit pattern as a *decimal* i64 literal. LLVM parses a
+            // 16-hex-digit `0x...` as a double constant, which is invalid in i64 position.
+            (f.to_bits() as i64).to_string()
         }
         DfLit::Posit(literal) => {
             if literal.spec.nbits == 32 {
