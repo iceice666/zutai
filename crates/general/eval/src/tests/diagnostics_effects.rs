@@ -227,6 +227,28 @@ handle compute "go" with { query = \u. resume 41; }
 }
 
 #[test]
+fn repeated_handled_effects_resume_with_distinct_handler_bindings() {
+    assert_eq!(
+        run(r#"
+result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; }
+result
+"#,),
+        Value::Int(3)
+    );
+}
+
+#[test]
+fn handled_effect_resume_value_can_reference_param_inside_tuple() {
+    assert_eq!(
+        run(r#"
+result ::= handle perform query 1 with { query = \n. resume (n, n); }
+result
+"#,)
+        .to_string(),
+        "(1, 1)"
+    );
+}
+#[test]
 fn handled_fail_can_return_without_resuming() {
     assert_eq!(
         run(r#"
@@ -348,12 +370,10 @@ fn print_lambda_param_shadows_builtin() {
 }
 
 #[test]
-fn print_unapplied_is_a_value() {
-    // Referencing `print` without applying it yields the builtin function value.
-    assert!(matches!(
-        run("print"),
-        Value::Builtin(value::BuiltinFn::Print)
-    ));
+fn print_unapplied_is_a_function_value() {
+    // Referencing `print` without applying it yields the runtime-dispatching
+    // function value used by both direct and higher-order calls.
+    assert!(matches!(run("print"), Value::TlcClosure(_)));
 }
 
 #[test]

@@ -170,11 +170,11 @@ reference ordering model as an explicit sequencing boundary:
   top-level functions are inert until called because evaluating the binding only
   creates a closure.
 
-Compilation keeps Dataflow Core, ANF, SSA, and LLVM pure. Phase 19 fixes the
-backend representation as pre-DC free-monad/CPS elaboration: source
-`perform`/`handle`/`resume`/sequence markers become ordinary variants, records,
-lambdas, applications, matches, and recursive handler interpreters before
-TLC→DC. Until that lowering exists, the implemented AOT support level is
-precise rejection: `compile`/`dataflow` reject any residual effect marker or
-non-empty function effect row, and the Dataflow Core API exposes the same
-fallible gate so direct callers cannot erase effects silently.
+Compilation keeps general source effect control out of the backend. The
+implemented v1 path uses pre-DC handler-passing CPS elaboration:
+`perform`/`handle`/`resume`/sequence markers become ordinary functions,
+applications, matches, records, variants, and recursive handler structure before
+TLC→DC. Compile/dataflow still reject residual unsupported operations, open or
+unsupported effect rows, and effectful entry shapes the runtime ABI cannot show.
+The supported ambient host exception is `io.print`: residual `io.print` lowers
+to the runtime `HostPrint`/`zutai.print_text` path and returns the printed text.

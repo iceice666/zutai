@@ -113,6 +113,12 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .map(|binding| binding.name.clone())
                 .collect(),
+            binding_kinds: self
+                .hir
+                .bindings
+                .iter()
+                .map(|binding| binding.kind)
+                .collect(),
         };
         let diagnostics = std::mem::take(&mut self.diagnostics);
 

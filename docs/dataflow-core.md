@@ -20,16 +20,21 @@ THIR is the error-tolerant, source-preserving typed IR used by the language serv
 
 ## Effect boundary
 
-Phase 19 fixes algebraic effects as a **pre-DC free-monad/CPS elaboration**.
-Dataflow Core remains pure: it does not gain `Perform`, `Handle`, `Resume`, or
-effect-sequencing nodes. The TLC→DC input must already contain ordinary
-`Variant`, `Record`, `Lambda`, `Apply`, `Match`, and recursive handler
-interpreter structure instead of source effect markers.
+General source effect control is eliminated before Dataflow Core. TLC may contain
+temporary `Perform`/`Handle`/`Resume`/`Sequence` markers, but TLC→DC accepts only
+ordinary values plus the dedicated host-boundary `HostPrint` node for residual
+ambient `io.print`.
 
-Function effect rows may be erased only after that elaboration proves no
-residual source marker remains. Until the lowering exists, any residual effect
-marker or non-empty function effect row at this boundary is a compile/dataflow
-error rather than silently becoming a pure DC graph.
+- `Perform` for unsupported operations, `Handle`, `Resume`, and effect
+  sequencing markers are compile/dataflow errors at this boundary.
+- Closed `io.print` rows may lower through `HostPrint`; unsupported or open
+  effect rows remain gated so DC callers cannot silently erase effects.
+- Handler-passing CPS elaboration represents source handlers with existing
+  `Lambda`, `Apply`, `Match`, `Record`, `Variant`, and recursion structure.
+
+`HostPrint` is deliberately narrow: it evaluates its text operand, calls the
+runtime `zutai.print_text` ABI, and returns the same text value. It is not a
+general effect system in DC.
 
 ## Why a graph?
 
@@ -93,6 +98,12 @@ DfNodeKind:
 
   Apply { func: NodeId, arg: NodeId }
     Curried function application. `f x y` = Apply(Apply(f, x), y).
+
+  -- Host boundary --
+  HostPrint { arg: NodeId }
+    Runtime `io.print` dispatch. `arg` must be `Text`; lowering evaluates it,
+    calls the runtime text-print ABI, and returns the same `Text` value. This is
+    the only ambient host operation represented in Dataflow Core.
 
   -- Type polymorphism --
   TyLam { ty_params: Vec<TyVar>, body: NodeId }

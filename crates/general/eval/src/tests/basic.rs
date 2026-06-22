@@ -436,6 +436,18 @@ fac 5
     assert_eq!(run(src), Value::Int(120));
 }
 
+// ─── algebraic effects ────────────────────────────────────────────────────────
+
+#[test]
+fn handler_clause_may_return_directly_without_resuming() {
+    let src = r#"
+result ::= handle { perform fail "bad"; "unreachable" } with {
+  fail = \e. "fallback";
+}
+result
+"#;
+    assert_eq!(run(src), Value::Text("fallback".into()));
+}
 // ─── black-hole detection ─────────────────────────────────────────────────────
 
 #[test]

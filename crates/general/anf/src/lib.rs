@@ -53,6 +53,8 @@ pub enum AnfExpr {
     Atom(AnfAtom),
     /// Curried function application. Both operands must be atoms.
     Apply { func: AnfAtom, arg: AnfAtom },
+    /// Runtime `io.print` dispatch. Prints the Text atom and returns it.
+    HostPrint { value: AnfAtom },
     /// Type application at a polymorphic call site.
     TyApp { poly: AnfAtom, ty_args: Vec<DfTyId> },
     /// Lambda abstraction. `param` is the parameter name (from a DC Bind node).

@@ -112,6 +112,11 @@ pub enum DfNodeKind {
         func: NodeId,
         arg: NodeId,
     },
+    /// Runtime host `io.print` dispatch. Evaluates `arg`, prints the resulting
+    /// Text through the runtime ABI, and returns that same Text value.
+    HostPrint {
+        arg: NodeId,
+    },
 
     // ── Type polymorphism ──
     TyLam {
@@ -153,6 +158,9 @@ pub enum DfNodeKind {
 
     // ── Primitive binary operations ──
     Builtin(DfBuiltinOp, NodeId, NodeId),
+    /// Explicit left-to-right runtime sequence. Every item is lowered in order;
+    /// the sequence result is the last item, or Error for an empty sequence.
+    Sequence(Vec<NodeId>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

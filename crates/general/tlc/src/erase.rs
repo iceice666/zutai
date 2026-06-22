@@ -11,9 +11,9 @@
 //!
 //! 1. **Invariant enforcement** — it asserts (by construction, not by assertion) that Dataflow
 //!    Core only ever sees pure-typed functions, regardless of any future upstream change.
-//! 2. **v1 hook** — when algebraic effects lower past TLC, the eraser runs after
-//!    the pre-DC free-monad/CPS elaboration and discards only the now-redundant
-//!    type annotation. The call site stays the same; only the pass body changes.
+//! 2. **v1 hook** — after handler-passing CPS elaboration removes source
+//!    effect control, the eraser discards the now-redundant type annotation.
+//!    The call site stays the same; only the pass body changes.
 //!
 //! The pass mutates the `TlcModule` type arena in place. It must be called on every `TlcModule`
 //! before it is passed to the Dataflow Core lowering.
@@ -24,9 +24,9 @@ impl TlcModule {
     /// Erase all effect rows: replace every `Fun(from, to, eff)` with
     /// `Fun(from, to, REmpty)` regardless of the current value of `eff`.
     ///
-    /// Must be called before Dataflow Core emission (see `docs/ARCHIVED.md`
-    /// §"TLC Phase 4"). In v0 this is always a structural no-op; the call is required for
-    /// forward compatibility when v1 effects are introduced.
+    /// Must be called before Dataflow Core emission. For implemented v1 effects
+    /// this runs after handler-passing CPS elaboration has either lowered
+    /// supported effects or left unsupported residuals for the safety gate.
     pub fn erase_effects(&mut self) {
         for (_, ty) in self.type_arena.iter_mut() {
             if let TlcType::Fun(_, _, eff) = ty {

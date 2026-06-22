@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing the compiler entry-type gate backlog._
+_Last updated: 2026-06-21 after closing Phase 23.4 AOT effect fold cutover._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -45,13 +45,13 @@ _Last updated: 2026-06-21 after closing the compiler entry-type gate backlog._
   records/unions, `select`, constraints/witnesses, `derive`, method-level type
   params, higher-kinded constraints, and algebraic-effect typing.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
-  operator lowering, source effect markers, reflection boundaries, and the
-  TLC-first evaluator input contract.
+  operator lowering, source effect markers, CPS elaboration for handled effects,
+  and runtime `io.print` lowering through ordinary TLC function values.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
   Record/tuple access is slot-indexed; union construction now uses dense
-  per-union tags; codegen emits static descriptors for `zutai.show`; `@main`
-  renders through the type-directed runtime display path and rejects function /
-  `Type` results.
+  per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
+  codegen emits static descriptors for `zutai.show`; `@main` renders through the
+  type-directed runtime display path and rejects function / `Type` results.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce
@@ -61,25 +61,26 @@ _Last updated: 2026-06-21 after closing the compiler entry-type gate backlog._
   functions, transitive imports, imported witness dictionaries, record update,
   config overlay, effects, and reflection/type-value boundaries.
 - `print` remains a prelude compatibility binding, but its type is now
-  `Text -> Text ! { io.print : Text -> Text }`. The TLC evaluator represents it
-  as `io.print`; source handlers can intercept it, and the host `run` boundary
-  handles residual `io.print`.
-- `compile` and `dataflow` now fold fully handled, closed effectful entry
-  programs through the TLC semantics oracle before Dataflow Core, replaying
-  captured `io.print` output through the native runtime.
-- `compile` and `dataflow` now fold renderable compile-time reflection programs
-  through the THIR type-value evaluator before Dataflow Core. `schema T` lowers
-  to serializable backend data; raw `fields T` outputs that contain `Type`
-  values reject with the existing Type-result diagnostic instead of reaching
-  LLVM.
+  `Text -> Text ! { io.print : Text -> Text }`. TLC lowers the builtin value to
+  a runtime-dispatching function; source handlers can intercept `io.print`, and
+  the host `run`, `compile`, and `dataflow` paths dispatch ambient `io.print` at
+  runtime instead of replaying compile-time captured output.
+- `compile` and `dataflow` no longer fold effectful entry programs through the
+  evaluator before Dataflow Core. Residual non-`io.print` effect markers and
+  unsupported effect rows stay gated by `residual_effect_reason` /
+  `zutai_dataflow::try_lower_tlc`; `io.print`-only function rows lower through
+  the runtime `HostPrint` path.
+- `compile` and `dataflow` still fold renderable compile-time reflection
+  programs through the THIR type-value evaluator before Dataflow Core.
+  Reflection combined with effectful code remains rejected so AOT reflection does
+  not consume host effects at compile time.
 - Supported full config-overlay calls lower before Dataflow Core: patch-first
   `overlay`/`overlayDeep` applications with record-literal patch values become
   ordinary record updates, and required nested records merge recursively.
 - Unsupported residual overlay forms, optional nested-record deep overlays,
-  reflection combined with effectful code, unfoldable residual effects,
-  effectful function entries, and non-empty function effect rows still reject
-  before DC. The Dataflow Core API keeps its fallible residual-effect gate so
-  direct callers cannot silently erase non-empty effect rows.
+  reflection combined with effectful code, non-`io.print` residual effects,
+  unsupported effect rows, function entries, and `Type` entries still reject
+  before DC.
 
 ## Validation notes
 
@@ -122,6 +123,32 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase 23: Effect CPS lowering and runtime dispatch ✅
+
+- General source effects now lower through handler-passing CPS before Dataflow
+  Core. `perform`/`handle`/`resume` and explicit sequence markers are eliminated
+  into ordinary TLC `Lam`/`App`/`Case`/`Variant`/`Record`/`GetField`/`Let`/
+  `Letrec` structure when the supported handled-effect subset is fully covered.
+- The CPS pass supports forwarding unmatched operations to enclosing handlers,
+  multiple operations per row, nested handler scopes, direct-return clauses, and
+  source handlers for `io.print`. Unsupported residual effects and open or
+  unsupported effect rows still fail at the TLC→DC safety gate.
+- Ambient `io.print` is no longer evaluated at compile time. Direct,
+  higher-order, function-valued, branch-dependent, and sequence-dependent print
+  uses lower through the runtime `HostPrint` path across Dataflow Core, ANF, SSA,
+  LLVM, and the native runtime ABI.
+- The old AOT effect fold and host-print capture plumbing were removed:
+  `fold_aot_effects`, `fold_effect_value_to_source`,
+  `eval_tlc_analysis_capture_io`, the effect duty of `value_to_source`, and
+  `emit_llvm_with_host_prints` / `host_prints` replay. Reflection over effectful
+  code remains rejected until reflection folding moves behind runtime effect
+  lowering.
+- Phase 23 closed with a CLI differential harness that compares every compiled
+  effect fixture's stdout (final value render plus ordered print sequence)
+  against the `eval_tlc` oracle. The language/runtime docs now distinguish the
+  implemented handler-passing CPS form from the deferred free-monad data encoding
+  that needs recursive or nominal Dataflow Core types.
+
 ### Phase 22: Reflection AOT lowering ✅
 
 - CLI `compile` and `dataflow` remove the reflection-gate exit for renderable
@@ -161,22 +188,24 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   shallow and deep overlay binaries, and static unknown-field/type-mismatch
   patch diagnostics.
 
-### Phase 20: Effects AOT lowering ✅
+### Phase 20: Effects AOT lowering (superseded by Phase 23) ✅
 
-- CLI `compile`/`dataflow` attempt a pre-DC fold for closed executable programs
+- This milestone was the old closed-entry bridge before Phase 23. CLI
+  `compile`/`dataflow` attempted a pre-DC fold for closed executable programs
   with fully handled effects by running the TLC semantics oracle on a 256 MiB
   worker stack, serializing the forced backend value to pure source, and lowering
   that pure TLC to Dataflow Core.
-- Captured `io.print` host output is replayed in generated `@main` through the
+- Captured `io.print` host output was replayed in generated `@main` through the
   existing `zutai.text_from_global` / `zutai.print_text` runtime ABI; native
-  binaries for `print "hello"` print `hello` before rendering the final
+  binaries for `print "hello"` printed `hello` before rendering the final
   `"hello"` value.
 - Residual/unfoldable effects, effectful function entries, and non-backend
-  values remain rejected before Dataflow Core. Direct
-  `zutai_dataflow::try_lower_tlc` still gates raw residual
+  values remained rejected before Dataflow Core. Direct
+  `zutai_dataflow::try_lower_tlc` still gated raw residual
   `TlcExpr::{Perform,Handle,Resume}` and non-empty function rows.
-- Tests cover handled scalar, record/list fold round-trips, residual rejection,
-  and host print replay.
+- Phase 23 superseded this approach: the AOT fold and host-print capture path are
+  deleted, and supported effects now compile through runtime CPS/`HostPrint`
+  lowering.
 
 ### Phase 18: Runtime and ABI ✅
 
@@ -199,13 +228,11 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 - Host authority beyond `io.print` is explicit capability passing only:
   filesystem, network, environment, time, and randomness stay out of the
   ambient prelude and must be represented by capability values plus effect rows.
-- Dataflow Core, ANF, SSA, LLVM, and the runtime ABI remain pure. The accepted
-  representation for future compiled effects is still pre-DC free-monad/CPS
-  elaboration over ordinary variants, records, lambdas, applications, matches,
-  and recursive handlers.
-- Until that elaboration exists, `compile`/`dataflow` reject residual
-  `Perform`/`Handle`/`Resume` nodes and non-empty function effect rows before
-  Dataflow Core. `try_lower_tlc` enforces the same no-erasure gate for direct
+- This boundary was later refined by Phase 23. General source effects still do
+  not enter DC as `Perform`/`Handle`/`Resume`, but ambient `io.print` now has a
+  narrow runtime `HostPrint` path across DC/ANF/SSA/LLVM. Unsupported residual
+  effects and open/unsupported effect rows still reject before Dataflow Core;
+  `try_lower_tlc` keeps the same no-silent-erasure safety role for direct
   library callers.
 
 ### Phase 18 D-0004: Slot-indexed records ✅

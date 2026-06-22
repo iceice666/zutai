@@ -206,6 +206,9 @@ fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: &mut Ctx) {
             closure: lower_atom_value(func, fb, ctx),
             arg: lower_atom_value(arg, fb, ctx),
         },
+        AnfExpr::HostPrint { value } => SsaOp::HostPrint {
+            value: lower_atom_value(value, fb, ctx),
+        },
 
         AnfExpr::TyApp { poly, ty_args } => SsaOp::TyApp {
             poly: lower_atom_value(poly, fb, ctx),
@@ -689,6 +692,7 @@ fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             .union(&free_vars_atom(arg))
             .cloned()
             .collect(),
+        AnfExpr::HostPrint { value } => free_vars_atom(value),
         AnfExpr::TyApp { poly, ty_args: _ } => free_vars_atom(poly),
         AnfExpr::Lambda { param, body } => {
             let mut fv = free_vars_body(body);

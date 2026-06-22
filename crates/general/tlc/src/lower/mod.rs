@@ -11,6 +11,7 @@ use crate::ir::{
 
 mod decl;
 mod derive;
+mod effects;
 mod expr;
 mod types;
 mod witness;
@@ -19,7 +20,12 @@ use witness::{ConditionalWitness, ConstraintMethodInfo, WitnessTargetKey, row_ta
 
 pub fn lower_thir(file: &ThirFile) -> TlcModule {
     let mut lowerer = Lowerer::new(file);
-    lowerer.lower_file()
+    let mut module = lowerer.lower_file();
+    module.elaborate_effects();
+    if crate::residual_effect_reason(&module).is_none() {
+        module.erase_effects();
+    }
+    module
 }
 
 struct Lowerer<'thir> {

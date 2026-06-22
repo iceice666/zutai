@@ -549,7 +549,7 @@ example
 }
 
 #[test]
-fn effect_alias_application_lowers_to_non_empty_fun_effect_row() {
+fn unsupported_effect_alias_application_keeps_row_for_dataflow_gate() {
     let m = tlc_of(
         r#"
 Failing :: <A> type A ! { fail A }
@@ -569,18 +569,121 @@ f
     let TlcType::Fun(_, _, eff) = &m.type_arena[f_ty] else {
         panic!("expected function type");
     };
-    let Row::RExtend { label, ty: sig, .. } = eff else {
-        panic!("expected non-empty effect row");
-    };
-    assert_eq!(label, "fail");
-    let TlcType::Fun(param, result, Row::REmpty) = &m.type_arena[*sig] else {
-        panic!("expected effect signature function");
-    };
-    assert!(matches!(m.type_arena[*param], TlcType::Prim(PrimTy::Int)));
-    assert!(matches!(
-        m.type_arena[*result],
-        TlcType::Prim(PrimTy::Nothing)
-    ));
+    assert!(
+        !matches!(eff, Row::REmpty),
+        "unsupported residual effects must keep their row until the gate rejects them"
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_some(),
+        "unhandled residual perform still gates Dataflow lowering"
+    );
+}
+
+#[test]
+fn single_op_handle_resume_elaborates_to_effect_free_tlc() {
+    let m = tlc_of(
+        r#"
+result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "handled single-op program must leave no reachable effect markers or effect rows"
+    );
+}
+
+#[test]
+fn multi_op_handle_elaborates_to_effect_free_tlc() {
+    let m = tlc_of(
+        r#"
+result ::= handle { perform warn "diag"; perform note "seen"; "ok" } with {
+  warn = \d. resume ();
+  note = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "handled multi-op program must leave no reachable effect markers or effect rows"
+    );
+}
+
+#[test]
+fn nested_handlers_forward_to_outer_scope() {
+    let m = tlc_of(
+        r#"
+result ::= handle {
+  handle { perform inner "x"; perform outer "y"; "ok" } with {
+    inner = \d. resume ();
+  }
+} with {
+  outer = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "nested handlers must forward unmatched operations to the enclosing handler"
+    );
+}
+
+#[test]
+fn deeply_nested_handlers_keep_all_enclosing_scopes() {
+    let m = tlc_of(
+        r#"
+result ::= handle {
+  handle {
+    handle { perform outer "y"; "ok" } with {}
+  } with {}
+} with {
+  outer = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "deeply nested handlers must retain all enclosing forwarding scopes"
+    );
+}
+
+#[test]
+fn handler_clause_may_return_without_resume() {
+    let m = tlc_of(
+        r#"
+result ::= handle { perform fail "bad"; "unreachable" } with {
+  fail = \e. "fallback";
+}
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "handler clauses that return directly must erase the handled operation"
+    );
+}
+
+#[test]
+fn handler_clause_perform_forwards_to_outer_scope() {
+    let m = tlc_of(
+        r#"
+result ::= handle {
+  handle { perform fail "bad"; "unreachable" } with {
+    fail = \e. { perform log e; "fallback" };
+  }
+} with {
+  log = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_none(),
+        "handler-clause performs must be forwarded to the enclosing handler"
+    );
 }
 
 #[test]

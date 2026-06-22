@@ -416,6 +416,9 @@ fn check_node_refs(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec<Valida
             check_node_ref(graph, owner, "func", *func, errors);
             check_node_ref(graph, owner, "arg", *arg, errors);
         }
+        DfNodeKind::HostPrint { arg } => {
+            check_node_ref(graph, owner, "arg", *arg, errors);
+        }
         DfNodeKind::TyLam { body, .. } => {
             check_node_ref(graph, owner, "body", *body, errors);
         }
@@ -475,6 +478,11 @@ fn check_node_refs(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec<Valida
         DfNodeKind::Builtin(_, lhs, rhs) => {
             check_node_ref(graph, owner, "lhs", *lhs, errors);
             check_node_ref(graph, owner, "rhs", *rhs, errors);
+        }
+        DfNodeKind::Sequence(items) => {
+            for item in items {
+                check_node_ref(graph, owner, "item", *item, errors);
+            }
         }
         DfNodeKind::Lit(_)
         | DfNodeKind::Bind
@@ -821,7 +829,20 @@ fn check_node_type_compat(graph: &DataflowGraph, owner: NodeId, errors: &mut Vec
                 }
             }
         }
+        DfNodeKind::HostPrint { arg } => {
+            if let Some(arg_ty) = child_ty(graph, *arg) {
+                match &graph.types[arg_ty] {
+                    DfTy::Text => check_same_type(graph, owner, "type", arg_ty, node.ty, errors),
+                    _ => unexpected_type(owner, "arg", "Text", arg_ty, errors),
+                }
+            }
+        }
         DfNodeKind::Builtin(op, lhs, rhs) => check_builtin(graph, owner, *op, *lhs, *rhs, errors),
+        DfNodeKind::Sequence(items) => {
+            if let Some(last) = items.last().and_then(|item| child_ty(graph, *item)) {
+                check_same_type(graph, owner, "last", last, node.ty, errors);
+            }
+        }
         DfNodeKind::GlobalRef(name) => {
             if let Some(&target) = graph.globals.get(name.as_str())
                 && check_node_ref(graph, owner, "global", target, errors)
@@ -987,6 +1008,14 @@ fn walk_node(
         DfNodeKind::Builtin(_, lhs, rhs) => {
             walk_child(graph, id, "lhs", *lhs, scope, owners, visited, errors);
             walk_child(graph, id, "rhs", *rhs, scope, owners, visited, errors);
+        }
+        DfNodeKind::HostPrint { arg } => {
+            walk_child(graph, id, "arg", *arg, scope, owners, visited, errors);
+        }
+        DfNodeKind::Sequence(items) => {
+            for item in items {
+                walk_child(graph, id, "item", *item, scope, owners, visited, errors);
+            }
         }
         DfNodeKind::Lit(_)
         | DfNodeKind::Bind

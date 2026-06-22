@@ -446,12 +446,23 @@ keeps its signature but gains a real definition.
 
 ## Effects
 
-Effect typing and the residual-effect gate already exist: `compile`/`dataflow`
-reject non-empty function effect rows after TLC lowering, and `print` lowers to
-an `io.print` effect handled at the host `run` boundary (`ARCHIVED.md` Phase
-16). Compiled effect support remains a pre-DC free-monad/CPS elaboration over
-ordinary pure constructs; until that pass eliminates residual effect markers,
-no effect machinery enters Dataflow Core, ANF, SSA, LLVM, or the runtime ABI.
+`io.print` is the only ambient host operation in the current runtime ABI.
+Source handlers are elaborated before Dataflow Core; any residual unsupported
+operation remains a compile/dataflow error. Residual ambient `io.print` lowers
+to `HostPrint` through DC → ANF → SSA and emits:
+
+```llvm
+call void @zutai.print_text(i64 %text)
+```
+
+using the text value's runtime pointer. `HostPrint` returns the same `Text`
+value, so direct `print "x"`, higher-order `apply print`, and explicit
+`perform io.print "x"` keep the reference evaluator contract: streamed raw text
+appears before the final `zutai.show` rendering in `@main`.
+
+There is no generic runtime effect dispatcher yet. Filesystem/network/clock/etc.
+capabilities remain out of the ambient ABI and must stay rejected unless a
+future explicit capability lowering adds them.
 
 ---
 

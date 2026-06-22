@@ -274,13 +274,14 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
 
-    // TLC lowering. Effectful closed executables are folded through the TLC
-    // semantics oracle before DC; residual effectful functions still fail here.
+    // TLC lowering. Effectful programs enter DC only when TLC lowering has
+    // eliminated effect markers or mapped ambient `io.print` to the runtime
+    // HostPrint path.
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
-    let mut host_prints = Vec::new();
-    let has_residual_effects = zutai_tlc::residual_effect_reason(&module).is_some();
-    if uses_reflection && has_residual_effects {
+    let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
+    let residual_effect_reason = zutai_tlc::residual_effect_reason(&module);
+    if uses_reflection && (has_host_io_print || residual_effect_reason.is_some()) {
         eprintln!(
             "compile error: reflection builtins cannot be AOT-folded with effectful code yet"
         );
@@ -291,25 +292,15 @@ pub(crate) fn run_compile(
             Ok(folded) => {
                 module = folded.module;
                 folded_bindings = Some(folded.hir_bindings);
-                host_prints = folded.host_prints;
             }
             Err(err) => {
                 eprintln!("compile error: {err}");
                 std::process::exit(1);
             }
         }
-    } else if has_residual_effects {
-        match fold_aot_effects(&contents, base) {
-            Ok(folded) => {
-                module = folded.module;
-                folded_bindings = Some(folded.hir_bindings);
-                host_prints = folded.host_prints;
-            }
-            Err(err) => {
-                eprintln!("compile error: {err}");
-                std::process::exit(1);
-            }
-        }
+    } else if let Some(reason) = residual_effect_reason {
+        eprintln!("compile error: {reason}");
+        std::process::exit(1);
     }
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
         eprintln!("compile error: {reason}");
@@ -327,7 +318,7 @@ pub(crate) fn run_compile(
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
-    let llvm_ir = zutai_codegen::emit_llvm_with_host_prints(&ssa, &host_prints);
+    let llvm_ir = zutai_codegen::emit_llvm(&ssa);
 
     match emit {
         EmitMode::Llvm => match output_path {
@@ -353,44 +344,15 @@ pub(crate) fn run_compile(
     Ok(())
 }
 
-struct FoldedAotEffects {
+struct FoldedAotReflection {
     module: zutai_tlc::TlcModule,
     hir_bindings: Vec<zutai_hir::Binding>,
-    host_prints: Vec<String>,
-}
-
-fn fold_aot_effects(
-    contents: &str,
-    base: Option<&Path>,
-) -> Result<FoldedAotEffects, Box<dyn Error>> {
-    let (source, host_prints) = fold_effect_value_to_source(contents, base)?;
-    let pure = zutai_semantic::analyze_with_base(
-        &source,
-        None,
-        zutai_semantic::AnalysisOptions::default(),
-    );
-    if !pure.is_thir_complete() {
-        return Err(std::io::Error::other("folded effect value did not re-analyze").into());
-    }
-    let module = pure
-        .tlc
-        .ok_or_else(|| std::io::Error::other("folded effect value produced no TLC"))?;
-    let hir_bindings = pure
-        .hir
-        .ok_or_else(|| std::io::Error::other("folded effect value produced no HIR"))?
-        .file
-        .bindings;
-    Ok(FoldedAotEffects {
-        module,
-        hir_bindings,
-        host_prints,
-    })
 }
 
 fn fold_aot_reflection(
     contents: &str,
     base: Option<&Path>,
-) -> Result<FoldedAotEffects, Box<dyn Error>> {
+) -> Result<FoldedAotReflection, Box<dyn Error>> {
     let source = fold_reflection_value_to_source(contents, base)?;
     let pure = zutai_semantic::analyze_with_base(
         &source,
@@ -408,10 +370,9 @@ fn fold_aot_reflection(
         .ok_or_else(|| std::io::Error::other("folded reflection value produced no HIR"))?
         .file
         .bindings;
-    Ok(FoldedAotEffects {
+    Ok(FoldedAotReflection {
         module,
         hir_bindings,
-        host_prints: Vec::new(),
     })
 }
 
@@ -441,32 +402,6 @@ fn fold_reflection_value_to_source(
     }
 }
 
-fn fold_effect_value_to_source(
-    contents: &str,
-    base: Option<&Path>,
-) -> Result<(String, Vec<String>), Box<dyn Error>> {
-    let contents = contents.to_owned();
-    let base = base.map(Path::to_path_buf);
-    let handle = std::thread::Builder::new()
-        .stack_size(256 * 1024 * 1024)
-        .spawn(move || -> Result<(String, Vec<String>), String> {
-            let analysis = zutai_semantic::analyze_with_base(
-                &contents,
-                base.as_deref(),
-                zutai_semantic::AnalysisOptions::default(),
-            );
-            let (value, host_prints) = zutai_eval::eval_tlc_analysis_capture_io(&analysis)
-                .map_err(|err| err.to_string())?;
-            let source = value_to_source(&value)
-                .ok_or_else(|| "effectful entry did not fold to a backend value".to_string())?;
-            Ok((source, host_prints))
-        })?;
-    match handle.join() {
-        Ok(Ok(folded)) => Ok(folded),
-        Ok(Err(err)) => Err(std::io::Error::other(err).into()),
-        Err(_) => Err(std::io::Error::other("effect fold worker panicked").into()),
-    }
-}
 #[derive(Clone, Copy)]
 enum EmptyListType {
     SchemaFields,
@@ -925,8 +860,9 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
 
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
-    let has_residual_effects = zutai_tlc::residual_effect_reason(&module).is_some();
-    if uses_reflection && has_residual_effects {
+    let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
+    let residual_effect_reason = zutai_tlc::residual_effect_reason(&module);
+    if uses_reflection && (has_host_io_print || residual_effect_reason.is_some()) {
         eprintln!("error: reflection builtins cannot be AOT-folded with effectful code yet");
         std::process::exit(1);
     }
@@ -941,17 +877,9 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
                 std::process::exit(1);
             }
         }
-    } else if has_residual_effects {
-        match fold_aot_effects(&contents, base) {
-            Ok(folded) => {
-                module = folded.module;
-                folded_bindings = Some(folded.hir_bindings);
-            }
-            Err(err) => {
-                eprintln!("error: {err}");
-                std::process::exit(1);
-            }
-        }
+    } else if let Some(reason) = residual_effect_reason {
+        eprintln!("error: {reason}");
+        std::process::exit(1);
     }
     if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
         eprintln!("error: {reason}");

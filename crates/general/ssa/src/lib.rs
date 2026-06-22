@@ -44,6 +44,8 @@ pub enum SsaOp {
     /// Function application through a D-0003 closure object: loads the code
     /// slot from `closure` and calls it as `i64 fn(i64 self, i64 arg)`.
     ApplyClosure { closure: SsaValue, arg: SsaValue },
+    /// Runtime host `io.print`: print Text, append newline, return the same Text.
+    HostPrint { value: SsaValue },
     /// Allocate a closure object for a lambda value: `{ header, code, caps[] }`.
     MakeClosure {
         code: String,

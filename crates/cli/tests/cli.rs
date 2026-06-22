@@ -44,6 +44,19 @@ fn compile_bin_stdout(name: &str, content: &str) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
+fn run_stdout(name: &str, content: &str) -> String {
+    let path = write_tmp(name, content);
+    let output = cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("run output should be UTF-8")
+}
+
 fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
     let suffix = format!(", i64 {slot})");
     llvm.lines()
@@ -378,6 +391,79 @@ result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
 result
 "#;
 
+const COMPILED_EFFECT_FIXTURES: &[(&str, &str)] = &[
+    ("handled_warn_resume", HANDLED_EFFECT_SRC),
+    (
+        "handler_direct_return",
+        r#"
+result ::= handle { perform fail "bad"; "unreachable" } with { fail = \e. "fallback"; }
+result
+"#,
+    ),
+    (
+        "forwarded_handler",
+        r#"
+result ::= handle {
+  handle { perform fail "bad"; "unreachable" } with {
+    fail = \e. { perform log e; "fallback" };
+  }
+} with {
+  log = \d. resume ();
+}
+result
+"#,
+    ),
+    (
+        "multi_op_nested_handlers",
+        r#"
+result ::= handle {
+  handle { perform inner "x"; perform outer "y"; perform note "z"; "ok" } with {
+    inner = \d. resume ();
+    note = \d. resume ();
+  }
+} with {
+  outer = \d. resume ();
+}
+result
+"#,
+    ),
+    (
+        "source_handler_intercepts_print",
+        r#"
+result ::= handle print "x" with { io.print = \text. "handled"; }
+result
+"#,
+    ),
+    ("ambient_print", "print \"hello\"\n"),
+    (
+        "print_sequence",
+        r#"{ perform io.print "a"; perform io.print "b"; 7 }
+"#,
+    ),
+    (
+        "branch_print",
+        r#"if 1 < 2 then print "then" else print "else"
+"#,
+    ),
+    ("print_list", r#"[print "a"; print "b";]"#),
+    (
+        "print_function",
+        r#"
+printer :: Text -> Text ! { io.print : Text -> Text }
+  = t => print t;
+printer "fn"
+"#,
+    ),
+    (
+        "higher_order_print",
+        r#"
+apply :: (Text -> Text ! { io.print : Text -> Text }) -> Text ! { io.print : Text -> Text }
+  = f => f "ho";
+apply print
+"#,
+    ),
+];
+
 #[test]
 fn check_valid_zt_file_passes() {
     let path = write_tmp("cli_test_check_valid.zt", "1 + 2\n");
@@ -497,7 +583,20 @@ fn compile_effect_bin_is_rejected_before_toolchain() {
 }
 
 #[test]
-fn compile_handled_effect_program_emits_folded_value() {
+fn compiled_effect_fixtures_match_eval_tlc_oracle() {
+    for (name, source) in COMPILED_EFFECT_FIXTURES {
+        let run_output = run_stdout(&format!("cli_test_effect_oracle_{name}.zt"), source);
+        let compiled_output =
+            compile_bin_stdout(&format!("cli_test_effect_compiled_{name}"), source);
+        assert_eq!(
+            compiled_output, run_output,
+            "compiled output must match eval_tlc oracle for {name}"
+        );
+    }
+}
+
+#[test]
+fn compile_handled_effect_program_uses_runtime_pipeline() {
     let path = write_tmp("cli_test_compile_handled_effect.zt", HANDLED_EFFECT_SRC);
     cli()
         .arg("compile")
@@ -509,7 +608,7 @@ fn compile_handled_effect_program_emits_folded_value() {
 }
 
 #[test]
-fn compile_handled_effect_record_round_trips_folded_value() {
+fn compile_handled_effect_record_round_trips_runtime_pipeline() {
     let path = write_tmp(
         "cli_test_compile_handled_effect_record.zt",
         r#"
@@ -526,19 +625,52 @@ result
 }
 
 #[test]
-fn compile_print_list_round_trips_folded_value() {
-    let path = write_tmp(
+fn compile_multi_op_and_nested_handlers_emit_runtime_value() {
+    let llvm = compile_stdout(
+        "cli_test_compile_nested_handlers.zt",
+        r#"
+result ::= handle {
+  handle { perform inner "x"; perform outer "y"; perform note "z"; "ok" } with {
+    inner = \d. resume ();
+    note = \d. resume ();
+  }
+} with {
+  outer = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(llvm.contains("ok"), "{llvm}");
+}
+
+#[test]
+fn compile_handler_clause_forwarding_emits_direct_return() {
+    let llvm = compile_stdout(
+        "cli_test_compile_handler_forwarding.zt",
+        r#"
+result ::= handle {
+  handle { perform fail "bad"; "unreachable" } with {
+    fail = \e. { perform log e; "fallback" };
+  }
+} with {
+  log = \d. resume ();
+}
+result
+"#,
+    );
+    assert!(llvm.contains("fallback"), "{llvm}");
+}
+
+#[test]
+fn compile_print_list_uses_runtime_print_dispatch() {
+    let llvm = compile_stdout(
         "cli_test_compile_print_list.zt",
         r#"[print "a"; print "b";]"#,
     );
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("@zutai.effect.print.0"))
-        .stdout(predicate::str::contains("@zutai.effect.print.1"))
-        .stdout(predicate::str::contains("list_cons"));
+    assert!(!llvm.contains("@zutai.aot.print"), "{llvm}");
+    assert!(!llvm.contains("@zutai.effect.print"), "{llvm}");
+    assert!(llvm.contains("call void @zutai.print_text"), "{llvm}");
+    assert!(llvm.contains("list_cons"), "{llvm}");
 }
 
 #[test]
@@ -1314,26 +1446,74 @@ fn run_effect_sequence_prints_in_order() {
 }
 
 #[test]
-fn compile_print_program_replays_host_print() {
-    let path = write_tmp("cli_test_print_compile.zt", "print \"x\"\n");
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("@zutai.effect.print.0"))
-        .stdout(predicate::str::contains("call void @zutai.print_text"));
+fn compile_print_program_uses_runtime_print_dispatch() {
+    let llvm = compile_stdout("cli_test_print_compile.zt", "print \"x\"\n");
+    assert!(!llvm.contains("@zutai.aot.print"), "{llvm}");
+    assert!(llvm.contains("call void @zutai.print_text"), "{llvm}");
+    assert!(llvm.contains("define i64 @__entry"), "{llvm}");
 }
 
 #[test]
-fn dataflow_print_program_lowers_after_host_effect_fold() {
+fn compile_print_program_prints_at_runtime() {
+    let out = compile_bin_stdout("cli_test_print_runtime", "print \"hello\"\n");
+    assert_eq!(out, "hello\n\"hello\"\n");
+}
+
+#[test]
+fn compile_print_branch_prints_taken_branch_at_runtime() {
+    let out = compile_bin_stdout(
+        "cli_test_print_branch_runtime",
+        r#"if 1 < 2 then print "then" else print "else"
+"#,
+    );
+    assert_eq!(out, "then\n\"then\"\n");
+}
+
+#[test]
+fn compile_print_function_prints_at_runtime() {
+    let out = compile_bin_stdout(
+        "cli_test_print_function_runtime",
+        r#"
+printer :: Text -> Text ! { io.print : Text -> Text }
+  = t => print t;
+printer "fn"
+"#,
+    );
+    assert_eq!(out, "fn\n\"fn\"\n");
+}
+
+#[test]
+fn compile_higher_order_print_prints_at_runtime() {
+    let out = compile_bin_stdout(
+        "cli_test_higher_order_print_runtime",
+        r#"
+apply :: (Text -> Text ! { io.print : Text -> Text }) -> Text ! { io.print : Text -> Text }
+  = f => f "ho";
+apply print
+"#,
+    );
+    assert_eq!(out, "ho\n\"ho\"\n");
+}
+
+#[test]
+fn compile_local_print_binding_does_not_dispatch_host_effect() {
+    let out = compile_bin_stdout(
+        "cli_test_local_print_binding",
+        r#"(\print. print "x") (\t. "local")
+"#,
+    );
+    assert_eq!(out, "\"local\"\n");
+}
+
+#[test]
+fn dataflow_print_program_lowers_with_runtime_host_print() {
     let path = write_tmp("cli_test_print_dataflow.zt", "print \"x\"\n");
     cli()
         .arg("dataflow")
         .arg(&path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Text"));
+        .stdout(predicate::str::contains("HostPrint"));
 }
 
 #[test]

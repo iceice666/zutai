@@ -556,10 +556,22 @@ impl<'m> Lowerer<'m> {
                 self.alloc_node(DfNodeKind::Import { path, kind }, df_ty, span)
             }
 
-            TlcExpr::Sequence(items) => match items.last().copied() {
-                Some(last) => self.lower_expr(last),
-                None => self.alloc_node(DfNodeKind::Error, self.error_ty, span),
-            },
+            TlcExpr::Sequence(items) => {
+                let nodes = items
+                    .into_iter()
+                    .map(|item| self.lower_expr(item))
+                    .collect::<Vec<_>>();
+                if nodes.is_empty() {
+                    self.alloc_node(DfNodeKind::Error, self.error_ty, span)
+                } else {
+                    self.alloc_node(DfNodeKind::Sequence(nodes), df_ty, span)
+                }
+            }
+
+            TlcExpr::Perform { op, arg } if op == "io.print" => {
+                let arg = self.lower_expr(arg);
+                self.alloc_node(DfNodeKind::HostPrint { arg }, df_ty, span)
+            }
 
             TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
                 self.alloc_node(DfNodeKind::Error, self.error_ty, span)

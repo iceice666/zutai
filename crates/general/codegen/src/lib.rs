@@ -14,11 +14,6 @@ use zutai_ssa::*;
 
 /// Emit a complete LLVM IR `.ll` file from an SSA module.
 pub fn emit_llvm(module: &SsaModule) -> String {
-    emit_llvm_with_host_prints(module, &[])
-}
-
-/// Emit LLVM IR and replay already-elaborated host `io.print` text at `@main`.
-pub fn emit_llvm_with_host_prints(module: &SsaModule, host_prints: &[String]) -> String {
     let mut out = String::with_capacity(8192);
     emit_preamble(&mut out);
     emit_type_decls(&mut out);
@@ -33,7 +28,7 @@ pub fn emit_llvm_with_host_prints(module: &SsaModule, host_prints: &[String]) ->
         emit_func_def(&mut out, func);
     }
 
-    emit_main(&mut out, &module.entry.name, &entry_desc, host_prints);
+    emit_main(&mut out, &module.entry.name, &entry_desc);
     out
 }
 
@@ -643,6 +638,7 @@ fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             collect_from_value(closure, constants);
             collect_from_value(arg, constants);
         }
+        SsaOp::HostPrint { value } => collect_from_value(value, constants),
         SsaOp::MakeClosure { code: _, captures } => {
             for c in captures {
                 collect_from_value(c, constants);
@@ -845,6 +841,20 @@ fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 "  %{} = call i64 {}(i64 {}, i64 {})\n",
                 dest, fnptr, closure, arg
             ));
+        }
+
+        // ── HostPrint (runtime io.print driver) ─────────────────────────────
+        SsaOp::HostPrint { value } => {
+            let value = emit_value_operand(out, tmp, value);
+            out.push_str(&format!("  call void @zutai.print_text(i64 {})\n", value));
+            let newline_ptr = emit_symbol_ptr_to_i64(out, tmp, "zutai.main.newline");
+            let newline = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {newline} = call i64 @zutai.text_from_global(i64 {}, i64 1)\n",
+                newline_ptr
+            ));
+            out.push_str(&format!("  call void @zutai.print_text(i64 {newline})\n"));
+            out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, value));
         }
 
         // ── MakeClosure (heap closure allocation) ───────────────────────────
@@ -1143,15 +1153,8 @@ fn alloc_tmp(tmp: &mut u64) -> String {
 
 // ── @main ─────────────────────────────────────────────────────────────────────
 
-fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str, host_prints: &[String]) {
+fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str) {
     let entry = mangle(entry_name);
-    for (index, text) in host_prints.iter().enumerate() {
-        let bytes = llvm_string_bytes(text);
-        out.push_str(&format!(
-            "@zutai.effect.print.{index} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
-            bytes.len, bytes.escaped
-        ));
-    }
     let newline = llvm_string_bytes("\n");
     out.push_str(&format!(
         "@zutai.main.newline = private unnamed_addr constant [{} x i8] c\"{}\"\n\n",
@@ -1159,26 +1162,6 @@ fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str, host_prints: 
     ));
     out.push_str("define i32 @main() {\n");
     let mut tmp = 0u64;
-    for (index, text) in host_prints.iter().enumerate() {
-        let print_symbol = format!("zutai.effect.print.{index}");
-        let print_ptr = emit_symbol_ptr_to_i64(out, &mut tmp, &print_symbol);
-        out.push_str(&format!(
-            "  %effect_print_{index} = call i64 @zutai.text_from_global(i64 {}, i64 {})\n",
-            print_ptr,
-            text.len()
-        ));
-        out.push_str(&format!(
-            "  call void @zutai.print_text(i64 %effect_print_{index})\n"
-        ));
-        let newline_ptr = emit_symbol_ptr_to_i64(out, &mut tmp, "zutai.main.newline");
-        out.push_str(&format!(
-            "  %effect_print_newline_{index} = call i64 @zutai.text_from_global(i64 {}, i64 1)\n",
-            newline_ptr
-        ));
-        out.push_str(&format!(
-            "  call void @zutai.print_text(i64 %effect_print_newline_{index})\n"
-        ));
-    }
     out.push_str(&format!("  %result = call i64 @{}()\n", entry));
     let entry_desc = emit_symbol_ptr_to_i64(out, &mut tmp, entry_desc);
     out.push_str(&format!(

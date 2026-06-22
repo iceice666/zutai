@@ -58,7 +58,5 @@ pub use gate::{
     check_runnable, check_well_typed, describe_hir_diagnostic, describe_semantic_diagnostic,
     describe_thir_diagnostic,
 };
-pub use tlc_entry::{
-    eval_tlc_analysis_capture_io, eval_tlc_file, eval_tlc_path, eval_tlc_with_base,
-};
+pub use tlc_entry::{eval_tlc_file, eval_tlc_path, eval_tlc_with_base};
 pub use value::Value;

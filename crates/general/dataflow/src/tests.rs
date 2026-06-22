@@ -26,8 +26,14 @@ fn dc_of(src: &str) -> DataflowGraph {
 }
 
 #[test]
-fn residual_effects_do_not_enter_dataflow_core() {
-    let parsed = zutai_syntax::parse("print \"x\"");
+fn residual_non_host_effects_do_not_enter_dataflow_core() {
+    let parsed = zutai_syntax::parse(
+        r#"
+parse :: Text -> Text ! { fail Text }
+  = text => perform fail text;
+parse
+"#,
+    );
     assert!(!parsed.has_errors());
     let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
     assert!(
@@ -42,8 +48,78 @@ fn residual_effects_do_not_enter_dataflow_core() {
         thir.diagnostics
     );
     let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
-    let reason = try_lower_tlc(&tlc, &hir.file.bindings).expect_err("effectful TLC must be gated");
+    let reason = try_lower_tlc(&tlc, &hir.file.bindings).expect_err("unhandled TLC must be gated");
     assert!(reason.contains("effect"), "{reason}");
+}
+
+#[test]
+fn ambient_io_print_lowers_to_runtime_host_print() {
+    let g = dc_of(r#"print "x""#);
+    assert!(
+        g.nodes
+            .iter()
+            .any(|(_, node)| matches!(node.kind, DfNodeKind::HostPrint { .. })),
+        "ambient io.print should lower to a runtime HostPrint node: {g:#?}"
+    );
+}
+
+#[test]
+fn handled_single_op_effect_lowers_to_dataflow_core() {
+    let parsed = zutai_syntax::parse(
+        r#"
+result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result
+"#,
+    );
+    assert!(!parsed.has_errors());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "HIR errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "THIR errors: {:?}",
+        thir.diagnostics
+    );
+    let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
+    try_lower_tlc(&tlc, &hir.file.bindings).expect("handled effect must lower through Dataflow");
+}
+
+#[test]
+fn repeated_handled_performs_do_not_emit_error_nodes() {
+    let graph = dc_of(
+        r#"
+result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; }
+result
+"#,
+    );
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .all(|(_, node)| !matches!(node.kind, DfNodeKind::Error)),
+        "fresh handler instantiations must not lower captured params to Error nodes"
+    );
+}
+
+#[test]
+fn handler_param_inside_tuple_does_not_emit_error_nodes() {
+    let graph = dc_of(
+        r#"
+result ::= handle perform query 1 with { query = \n. resume (n, n); }
+result
+"#,
+    );
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .all(|(_, node)| !matches!(node.kind, DfNodeKind::Error)),
+        "handler alpha-renaming must update parameter refs inside aggregate nodes"
+    );
 }
 
 // ── Span invariant ────────────────────────────────────────────────────────────

@@ -32,6 +32,9 @@ fn collect_global_refs(
             collect_global_refs(graph, *func, out, visited);
             collect_global_refs(graph, *arg, out, visited);
         }
+        DfNodeKind::HostPrint { arg } => {
+            collect_global_refs(graph, *arg, out, visited);
+        }
         DfNodeKind::TyLam { ty_params: _, body } => {
             collect_global_refs(graph, *body, out, visited);
         }
@@ -92,6 +95,11 @@ fn collect_global_refs(
         DfNodeKind::Builtin(_, lhs, rhs) => {
             collect_global_refs(graph, *lhs, out, visited);
             collect_global_refs(graph, *rhs, out, visited);
+        }
+        DfNodeKind::Sequence(items) => {
+            for item in items {
+                collect_global_refs(graph, *item, out, visited);
+            }
         }
         DfNodeKind::Variant { value, .. } => {
             collect_global_refs(graph, *value, out, visited);

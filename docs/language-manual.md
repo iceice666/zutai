@@ -322,9 +322,9 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 | [Selective projection](v1_spec/01-row-polymorphism.md#selective-projection) | `select value { field; }` and `select TypeValue { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
 | [Constraints/witnesses/derive](v1_spec/03-constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; do not claim full native-backend parity |
 | [Reflection](v1_spec/04-metaprogramming.md) | `fields T` and `schema T` | THIR/type-value evaluator support; compile/dataflow reject reflection builtins until lowered to ordinary backend values |
-| [Algebraic effects](v1_spec/05-effects.md) | `! { ... }`, `perform`, `handle`, `with`, and `resume` | TLC run supports handled effects and host run handles residual io.print; compile/dataflow reject residual effect markers and non-empty function effect rows |
+| [Algebraic effects](v1_spec/05-effects.md) | `! { ... }`, `perform`, `handle`, `with`, and `resume` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
 | [Record update](v0_spec/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
-| [`print`](v1_spec/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and the host run boundary handles residual io.print |
+| [`print`](v1_spec/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 
 ## Errors and diagnostics
 

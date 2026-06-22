@@ -60,7 +60,7 @@ Every hard frontend feature maps to existing (or the two genuinely-new) core mec
 | `Optional T` / `Maybe T` | builtin wrapper type nodes `Optional(T)` / `Maybe(T)` | none |
 | Row polymorphism (open records, open unions) | `Row` kind + `RVar r` row variables | type layer only |
 | Constraint witnesses (`Eq :: <A> @A { … }`) | **dictionaries-as-records** (see §6) | **zero** |
-| Algebraic effects (`perform`/`handle`/`resume`) | effect row on `Fun` + pre-DC free-monad/CPS elaboration (§9) | **zero** |
+| Algebraic effects (`perform`/`handle`/`resume`) | effect row on `Fun` + pre-DC handler-passing CPS elaboration (§9) + host `io.print` dispatch | **zero TLC nodes** |
 | Type-level first-class `Type` values | bindings in type layer, erased before DC | type layer only |
 | Pattern matching on singletons / union arms | `Variant(label, pat)` pattern arm in `Case` | pattern arm only |
 | Record update (`with { field = v }`) | elaborates to `Record` literals (consistent with Decision 0001's stdlib-overlay stance) | none |
@@ -215,7 +215,7 @@ In practice `Singleton` pattern matching is identical to `Lit`; the distinction 
 
 **Dictionaries are `Record` values** (see §6). No `dict`/`witness`/`method` node.
 
-**Effect operations elaborate to `Lam`/`App`/`Case`/`Variant`/`Record`** over a free-monad encoding (see §9). No `perform`/`handle`/`resume` node.
+**Effect operations elaborate to `Lam`/`App`/`Let`/`Case`/`Variant`/`Record`** via handler-passing CPS (see §9). No `perform`/`handle`/`resume` core node survives.
 
 **Type abstraction / application** (`TyLam`/`TyApp`) already exist; they gain only a `Kind` annotation, which is a data change, not a new variant.
 
@@ -390,73 +390,65 @@ The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Recor
 
 ---
 
-## 9. Algebraic effects — backend representation decision
+## 9. Algebraic effects — implemented CPS boundary
 
-Phase 19 fixes the backend representation for Zutai v1 algebraic effects
-(`v1_spec/05-effects.md`): source effect syntax is elaborated **before
-Dataflow Core** into the existing TLC term/type vocabulary, using a
-free-monad / CPS-style encoding. Dataflow Core, ANF, SSA, and LLVM get no
-`Perform`/`Handle`/`Resume` nodes and no ambient sequencing primitive.
+Zutai v1 source effects (`v1_spec/05-effects.md`) are eliminated before the
+general backend sees source control markers. TLC may contain temporary
+`Perform`/`Handle`/`Resume`/`Sequence` nodes after THIR lowering, but
+`TlcModule::elaborate_effects` rewrites the supported handled subset into the
+existing TLC term vocabulary before Dataflow Core. DC, ANF, SSA, and LLVM do not
+need general `perform` or `handle` IR.
 
-**The encoding.** An effectful computation of type
-`A ! { op: P -> R }` is represented as a pure value of type `Free Op A`
-where:
-```
-Op       = VariantT { op: RecordT { param: P, resume: R -> Free Op A } }
-Free O A = VariantT { pure: A, impure: O }
-```
-`Op` generalizes to one union arm per operation in the closed effect row.
-Both `Free` and `Op` are `VariantT` types — no new type former.
+**Implemented representation: handler-passing CPS.** An effectful subterm is
+translated by threading an explicit continuation and the currently installed
+handler clauses through ordinary functions:
 
-**`perform op arg`** elaborates to an `impure` injection after evaluating
-the payload expression:
-```
-Variant("impure",
-  Variant("op",
-    Record([("param", arg),
-            ("resume", Lam(result, Variant("pure", Var result)))])))
-```
+```text
+perform op arg
+  => evaluate arg
+  => call nearest handler for op with (arg, resume)
 
-The concrete `resume` body is the suspended continuation captured by the
-surrounding lowering context, so the identity-shaped example above is only the
-leaf case.
+resume value
+  => evaluate value
+  => call the captured continuation with value
 
-**`handle expr with { value = f, op = h }`** elaborates to a recursive
-interpreter over `Free Op A`:
-```
-Letrec([
-  (handleId, ...,
-    Lam(computation, ...
-      Case(computation, [
-        Alt(Variant("pure", Bind x), App(Var f, Var x)),
-        Alt(Variant("impure", Bind cmd),
-          Case(Var cmd, [
-            Alt(Variant("op", Bind req),
-              App(App(Var h, GetField(Var req, "param")),
-                  Lam(result, App(Var handleId,
-                    App(GetField(Var req, "resume"), Var result)))))
-          ]))
-      ])))
-)], body)
+handle expr with { value = v; op = h; ... }
+  => run expr under an extended handler environment
+  => normal completion calls v
+  => handled op calls h with an explicit resume lambda
 ```
 
-Every node here (`Letrec`, `Lam`, `App`, `Case`, `Variant`, `Record`,
-`GetField`) already exists in §5. One-shot `resume` remains a frontend/TLC
-typing invariant; the generated continuation is an ordinary single-use
-function value.
+The generated `resume` lambda is just `Lam`; the suspended continuation is built
+from nested `Lam`/`App`/`Let`/`Case`/`Record`/`Variant`/`GetField` terms.
+Unmatched operations are re-injected into the enclosing handler scope, mirroring
+the reference evaluator's `handle_control` forwarding branch. `Sequence`
+becomes a left-to-right chain of ordinary lets. Pure subterms stay direct-style,
+so the elaboration does not allocate continuation structure when the type and
+syntax prove no control effect can fire.
 
-**Effect erasure boundary.** After elaboration removes all source effect
-markers, `Fun(A, B, eff)` is erased to `Fun(A, B, REmpty)` before emission to
-Dataflow Core. Erasure is not allowed to hide residual effects: if
-`Perform`/`Handle`/`Resume` markers or non-empty function effect rows reach the
-TLC→DC boundary today, `compile`/`dataflow` reject them with explicit
-diagnostics.
+**Host `io.print`.** The prelude `print` binding lowers to the `io.print`
+operation. Source handlers can intercept it like any other operation. Residual
+ambient `io.print` that reaches the host boundary is not baked by compile-time
+evaluation; TLC→DC maps it to the dedicated runtime `HostPrint` path, which
+prints the text and returns the same text value. Higher-order uses of `print`
+lower to an ordinary one-argument lambda whose body performs `io.print`, so
+`apply print` and direct `print "x"` share the same runtime semantics.
 
-**Verdict.** Effects require zero new `TlcExpr` variants and zero new
-`TlcType` variants beyond `VariantT` (needed for sums anyway) and the effect-row
-slot on `Fun` (data change, not a new node kind). The remaining implementation
-work is the elaboration pass and host-boundary interpreter, not a new backend
-effect IR.
+**Effect boundary.** Elaboration must remove all general source effect markers
+before TLC→DC. The residual gate still rejects unsupported operations, residual
+`Handle`/`Resume`/`Sequence`, open/unsupported effect rows, and entry shapes the
+runtime ABI cannot render. The supported host exception is a closed row
+containing only `io.print`; Dataflow lowers that to `HostPrint` and erases the
+row from the function type. Erasure is therefore a proof obligation, not a way
+to hide unimplemented effects.
+
+**Deferred free-monad form.** A reified free-monad data encoding remains a v2+
+option, not the implemented v1 backend path. The literal type
+`Free Op A = { pure: A } | { impure: Op }` with `resume: R -> Free Op A`
+requires recursive/nominal Dataflow Core types (`Mu` or equivalent knot-tying)
+to represent an unbounded runtime perform spine. Current DC types are finite
+structural trees, so the handler-passing CPS form is the implemented zero-new-TLC
+node representation.
 
 ---
 
@@ -502,7 +494,7 @@ The following are explicitly out of scope for TLC-the-core and must not be added
 - **Dependent types at runtime.** Types may not depend on runtime values (Decision 0002). Types are erased before Dataflow Core. "Unified universe core" means types-as-terms in the *type layer*; it does not mean runtime type dispatch.
 - **Coercion/cast nodes (`Coerce(e, T, U)`).** Equality is normalization. No coercions until GADTs arrive.
 - **Impredicative / higher-rank polymorphism beyond F-ω.** `ForAll` is predicative. `TyLam` at the term level handles rank-2 naturally via dictionaries.
-- **`perform`/`handle`/`resume` as core nodes.** Effects elaborate to free-monad/CPS (§9).
+- **`perform`/`handle`/`resume` as core nodes.** Effects elaborate to handler-passing CPS (§9); the deferred free-monad data form needs recursive DC types.
 - **Record-update node.** Overlay stays stdlib (consistent with Decision 0001).
 - **Thunk/strictness annotations.** Laziness is represented structurally in Dataflow Core (reachability), not in TLC.
 - **`Type` or `Error` surviving to TLC as runtime expressions.** First-class `Type`-valued bindings live in the type layer and are erased. `TypeKind::Error` means type-checking failed — TLC is never produced when `is_thir_complete()` is false.
@@ -591,10 +583,13 @@ Each phase is additive and independently testable. No phase breaks anything done
 
 **Phase 4 — Effect row on `Fun`**
 - Change `TlcType::Fun(TlcTypeId, TlcTypeId)` to `Fun(TlcTypeId, TlcTypeId, EffRow)`.
-- Default `eff = REmpty` for all v0 lowerings (no behavioral change).
-- Implement free-monad elaboration for `perform`/`handle`/`resume` in the lowering pass.
-- Erase effect rows before emitting DC types.
-- Test: effectful programs elaborate to pure TLC; DC type of effectful function = pure function type.
+- Default `eff = REmpty` for v0 pure lowerings (no behavioral change).
+- Implement handler-passing CPS elaboration for `perform`/`handle`/`resume` in
+  the lowering pass.
+- Erase supported effect rows before emitting DC types; residual unsupported
+  rows stay gated.
+- Test: effectful programs elaborate through TLC; supported `io.print` values
+  lower to runtime host dispatch.
 
 **Phase 5 — Constraint witnesses / dictionaries**
 - Implement dictionary-passing elaboration: constraint definition → `Record` type; witness → `Record` value; `<A: C>` → extra `Lam(dict, …)` parameter.
@@ -617,7 +612,7 @@ The following invariants hold for every valid `TlcModule`:
 7. Polymorphic bindings in `poly_schemes` have `TyLam`-wrapped bodies and `ForAll`-prefixed types.
 8. Every polymorphic call site has one `TyApp` per quantified type variable.
 9. No `TlcType` node with kind `Type ℓ` for `ℓ ≥ 1` is reified as a runtime expression (phase line).
-10. After Phase 4: every `Fun` type in `expr_types` has `eff = REmpty` (effect rows erased before DC).
+10. After effect elaboration: residual unsupported effect rows are rejected; supported `io.print` rows lower through the runtime host boundary.
 
 ---
 
@@ -672,7 +667,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Type equality by normalization | NbE kernel | 2 |
 | Universe levels `Type 0 : Type 1` | `Kind::Type(ℓ)` | 1 |
 | Type-level `select` | elaboration → `RecordT` projection | 3 |
-| `perform`/`handle`/`resume` | free-monad elaboration (§9) | 4 |
+| `perform`/`handle`/`resume` | handler-passing CPS elaboration (§9) | 4 |
 | Effect row `! { fail ParseError }` | `Fun(…, RExtend("fail", ParseError, REmpty))` | 4 |
 | Effectful function type `A -> B ! ε` | `Fun(A, B, eff_row)` | 4 |
 

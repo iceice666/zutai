@@ -36,6 +36,7 @@ pub struct ThirFile {
     /// for TLC so higher-kinded quantifiers/vars get the right kind.
     pub type_param_kinds: std::collections::HashMap<zutai_hir::BindingId, Kind>,
     pub binding_names: Vec<String>,
+    pub binding_kinds: Vec<zutai_hir::BindingKind>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

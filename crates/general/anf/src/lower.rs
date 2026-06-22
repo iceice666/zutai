@@ -110,6 +110,10 @@ impl<'g> BodyLowerer<'g> {
                 let a = self.lower_to_atom(arg);
                 AnfExpr::Apply { func: f, arg: a }
             }
+            DfNodeKind::HostPrint { arg } => {
+                let value = self.lower_to_atom(arg);
+                AnfExpr::HostPrint { value }
+            }
             DfNodeKind::TyApp { poly, ty_args } => {
                 let p = self.lower_to_atom(poly);
                 AnfExpr::TyApp { poly: p, ty_args }
@@ -212,6 +216,17 @@ impl<'g> BodyLowerer<'g> {
                     tag_index,
                     value: v,
                 }
+            }
+            DfNodeKind::Sequence(items) => {
+                let mut iter = items.into_iter();
+                let Some(first) = iter.next() else {
+                    return AnfExpr::Error;
+                };
+                let mut result = self.lower_to_atom(first);
+                for item in iter {
+                    result = self.lower_to_atom(item);
+                }
+                AnfExpr::Atom(result)
             }
             // Defensive: Import and Error never appear in well-typed v0 programs.
             DfNodeKind::Import { .. } | DfNodeKind::Error => AnfExpr::Error,

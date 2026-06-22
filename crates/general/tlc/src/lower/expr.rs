@@ -192,6 +192,18 @@ impl<'thir> Lowerer<'thir> {
                 };
 
                 if let Some((binding, func_thir_ty, func_span)) = func_binding_info {
+                    if self.is_builtin_print_binding(binding) {
+                        let arg_tlc = self.lower_expr(arg);
+                        return self.alloc_expr(
+                            TlcExpr::Perform {
+                                op: "io.print".to_string(),
+                                arg: arg_tlc,
+                            },
+                            tlc_ty,
+                            span,
+                        );
+                    }
+
                     // Constraint method call: dispatch via GetField on the active dict param.
                     if let Some(info) = self.constraint_methods.get(&binding).cloned()
                         && !instantiation.is_empty()
@@ -458,6 +470,22 @@ impl<'thir> Lowerer<'thir> {
         ref_thir_ty: TypeId,
         span: zutai_syntax::Span,
     ) -> TlcExprId {
+        if self.is_builtin_print_binding(binding)
+            && let TlcType::Fun(arg_ty, result_ty, _) = self.type_arena[tlc_ty].clone()
+        {
+            let arg_binding = self.fresh_synth_binding();
+            let arg_var = self.alloc_expr(TlcExpr::Var(arg_binding), arg_ty, span);
+            let perform = self.alloc_expr(
+                TlcExpr::Perform {
+                    op: "io.print".to_string(),
+                    arg: arg_var,
+                },
+                result_ty,
+                span,
+            );
+            return self.alloc_expr(TlcExpr::Lam(arg_binding, arg_ty, perform), tlc_ty, span);
+        }
+
         let var_expr = self.alloc_expr(TlcExpr::Var(binding), tlc_ty, span);
         let scheme = self.thir.poly_schemes.get(&binding).cloned();
         let Some(vars) = scheme else {
@@ -475,6 +503,18 @@ impl<'thir> Lowerer<'thir> {
             .fold(var_expr, |expr, (_, ty_arg)| {
                 self.alloc_expr(TlcExpr::TyApp(expr, ty_arg), tlc_ty, span)
             })
+    }
+
+    fn is_builtin_print_binding(&self, binding: BindingId) -> bool {
+        self.thir
+            .binding_names
+            .get(binding.0 as usize)
+            .is_some_and(|name| name == "print")
+            && self
+                .thir
+                .binding_kinds
+                .get(binding.0 as usize)
+                .is_some_and(|kind| *kind == zutai_hir::BindingKind::BuiltinValue)
     }
 
     fn lower_clause_as_alt(&mut self, clause: &ThirClause) -> TlcAlt {
