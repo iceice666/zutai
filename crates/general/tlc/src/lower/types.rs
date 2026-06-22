@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use zutai_hir::BindingId;
 use zutai_thir::{
-    EffectRow, RowTail, ThirDeclKind, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
+    EffectRow, Kind as ThirKind, RowTail, ThirDeclKind, TypeId, TypeKind, TypeRecordField,
+    TypeTupleItem, UniverseLevel,
 };
 
 use crate::ir::{Kind, Literal, PrimTy, Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
@@ -105,11 +106,13 @@ impl<'thir> Lowerer<'thir> {
             }
             TypeKind::TypeVar(binding) => {
                 let tyvar = self.named_tyvar(binding);
-                self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
+                let kind = self.kind_for_type_param(binding);
+                self.alloc_type(TlcType::TyVar(tyvar, kind))
             }
             TypeKind::InferVar(v) => {
                 let tyvar = self.inferred_tyvar(v);
-                self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
+                let kind = self.kind_for_infer_var(v);
+                self.alloc_type(TlcType::TyVar(tyvar, kind))
             }
             TypeKind::Alias(binding) => {
                 let tyvar = self.named_tyvar(binding);
@@ -118,7 +121,7 @@ impl<'thir> Lowerer<'thir> {
             }
             TypeKind::AliasApply { binding, args } => {
                 let tyvar = self.named_tyvar(binding);
-                let kind = self.alias_head_kind(binding);
+                let kind = self.alias_head_kind_for_args(binding, &args);
                 let mut spine = self.alloc_type(TlcType::TyVar(tyvar, kind));
                 for &arg in &args {
                     let arg_tlc = self.lower_type(arg);
@@ -127,9 +130,15 @@ impl<'thir> Lowerer<'thir> {
                 spine
             }
             TypeKind::Con(binding) => {
-                // A bare builtin constructor (`List`, `Optional`) — kind `Type -> Type`.
+                // A bare builtin constructor (`List`, `Optional`) — kind `Type ℓ -> Type ℓ`.
                 let tyvar = self.named_tyvar(binding);
-                let kind = Kind::Arrow(Box::new(Kind::ground()), Box::new(Kind::ground()));
+                let level = self
+                    .thir
+                    .type_universes
+                    .get(resolved.0 as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let kind = Kind::Arrow(Box::new(Kind::Type(level)), Box::new(Kind::Type(level)));
                 self.alloc_type(TlcType::TyVar(tyvar, kind))
             }
             TypeKind::Apply { func, arg } => {
@@ -229,7 +238,8 @@ impl<'thir> Lowerer<'thir> {
                 Some(replacement) => self.lower_type_with_subst(replacement, subst),
                 None => {
                     let tyvar = self.named_tyvar(binding);
-                    self.alloc_type(TlcType::TyVar(tyvar, Kind::ground()))
+                    let kind = self.kind_for_type_param(binding);
+                    self.alloc_type(TlcType::TyVar(tyvar, kind))
                 }
             },
             TypeKind::Function { from, to } => {
@@ -309,7 +319,7 @@ impl<'thir> Lowerer<'thir> {
             }
             TypeKind::AliasApply { binding, args } => {
                 let tyvar = self.named_tyvar(binding);
-                let kind = self.alias_head_kind(binding);
+                let kind = self.alias_head_kind_for_args(binding, &args);
                 let mut spine = self.alloc_type(TlcType::TyVar(tyvar, kind));
                 for arg in args {
                     let arg_tlc = self.lower_type_with_subst(arg, subst);
@@ -458,27 +468,197 @@ impl<'thir> Lowerer<'thir> {
         None
     }
 
-    /// Returns the kind for an alias head: `Type(0)` for a 0-ary alias;
-    /// `Arrow(Type(0), … Arrow(Type(0), Type(0)))` for an n-ary one.
-    /// Phase 2 first constructs `Kind::Arrow` — the dormant Phase-1 variant goes live here.
+    fn lower_thir_kind(&self, kind: &ThirKind) -> Kind {
+        match kind {
+            ThirKind::Type(UniverseLevel::Known(n)) => Kind::Type(*n),
+            ThirKind::Type(other) => {
+                panic!("unsolved THIR universe level reached TLC lowering: {other:?}")
+            }
+            ThirKind::Row(inner) => Kind::Row(Box::new(self.lower_thir_kind(inner))),
+            ThirKind::Arrow(from, to) => Kind::Arrow(
+                Box::new(self.lower_thir_kind(from)),
+                Box::new(self.lower_thir_kind(to)),
+            ),
+        }
+    }
+
+    pub(super) fn kind_for_type_param(&self, binding: BindingId) -> Kind {
+        self.thir
+            .type_param_kinds
+            .get(&binding)
+            .map(|kind| self.lower_thir_kind(kind))
+            .unwrap_or_else(Kind::ground)
+    }
+
+    pub(super) fn kind_for_infer_var(&self, _infer: u32) -> Kind {
+        Kind::ground()
+    }
+
+    fn kind_for_type_id(&self, ty: TypeId) -> Kind {
+        Kind::Type(
+            self.thir
+                .type_universes
+                .get(ty.0 as usize)
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
     fn alias_head_kind(&self, binding: BindingId) -> Kind {
-        let arity = self
-            .thir
-            .decls
-            .iter()
-            .find_map(|&d| {
-                let decl = &self.thir.decl_arena[d];
-                if decl.binding == binding
-                    && let ThirDeclKind::TypeAlias { ref params, .. } = decl.kind
-                {
-                    return Some(params.len());
-                }
-                None
+        let Some((params, ty)) = self.thir.decls.iter().find_map(|&d| {
+            let decl = &self.thir.decl_arena[d];
+            if decl.binding == binding
+                && let ThirDeclKind::TypeAlias { ref params, ty } = decl.kind
+            {
+                return Some((params.clone(), ty));
+            }
+            None
+        }) else {
+            return Kind::ground();
+        };
+        params
+            .into_iter()
+            .rev()
+            .fold(self.kind_for_type_id(ty), |acc, param| {
+                Kind::Arrow(Box::new(self.kind_for_type_param(param)), Box::new(acc))
             })
-            .unwrap_or(0);
-        (0..arity).fold(Kind::ground(), |acc, _| {
-            Kind::Arrow(Box::new(Kind::ground()), Box::new(acc))
+    }
+
+    fn alias_head_kind_for_args(&mut self, binding: BindingId, args: &[TypeId]) -> Kind {
+        let Some((params, ty)) = self.thir.decls.iter().find_map(|&d| {
+            let decl = &self.thir.decl_arena[d];
+            if decl.binding == binding
+                && let ThirDeclKind::TypeAlias { ref params, ty } = decl.kind
+            {
+                return Some((params.clone(), ty));
+            }
+            None
+        }) else {
+            return Kind::ground();
+        };
+        let result = if params.len() == args.len() {
+            let subst: HashMap<BindingId, TypeId> =
+                params.iter().copied().zip(args.iter().copied()).collect();
+            Kind::Type(self.thir_universe_with_subst(ty, &subst))
+        } else {
+            self.kind_for_type_id(ty)
+        };
+        params.into_iter().rev().fold(result, |acc, param| {
+            Kind::Arrow(Box::new(self.kind_for_type_param(param)), Box::new(acc))
         })
+    }
+
+    fn thir_universe_with_subst(&self, ty: TypeId, subst: &HashMap<BindingId, TypeId>) -> u32 {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Type => 1,
+            TypeKind::Bool
+            | TypeKind::Text
+            | TypeKind::Int
+            | TypeKind::Float
+            | TypeKind::FixedNum(_)
+            | TypeKind::Posit(_)
+            | TypeKind::Atom(_)
+            | TypeKind::True
+            | TypeKind::False
+            | TypeKind::Never => 0,
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => self.thir_universe_with_subst(inner, subst),
+            TypeKind::Record(fields, _) => fields
+                .into_iter()
+                .map(|field| self.thir_universe_with_subst(field.ty, subst))
+                .max()
+                .unwrap_or(0),
+            TypeKind::Union(variants, _) => variants
+                .into_iter()
+                .filter_map(|variant| variant.payload)
+                .map(|payload| self.thir_universe_with_subst(payload, subst))
+                .max()
+                .unwrap_or(0),
+            TypeKind::Tuple(items) => items
+                .into_iter()
+                .map(|item| match item {
+                    TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => {
+                        self.thir_universe_with_subst(ty, subst)
+                    }
+                })
+                .max()
+                .unwrap_or(0),
+            TypeKind::Function { from, to } => self
+                .thir_universe_with_subst(from, subst)
+                .max(self.thir_universe_with_subst(to, subst)),
+            TypeKind::Effect { base, row } => {
+                row.ops
+                    .into_iter()
+                    .fold(self.thir_universe_with_subst(base, subst), |acc, op| {
+                        acc.max(self.thir_universe_with_subst(op.param, subst))
+                            .max(self.thir_universe_with_subst(op.result, subst))
+                    })
+            }
+            TypeKind::TypeVar(binding) => subst
+                .get(&binding)
+                .copied()
+                .map(|ty| self.thir_universe_with_subst(ty, subst))
+                .unwrap_or_else(|| match self.thir.type_param_kinds.get(&binding) {
+                    Some(ThirKind::Type(UniverseLevel::Known(level))) => *level,
+                    _ => 0,
+                }),
+            TypeKind::InferVar(_) => self
+                .thir
+                .type_universes
+                .get(ty.0 as usize)
+                .copied()
+                .unwrap_or(0),
+            TypeKind::Alias(binding) => self
+                .thir
+                .decls
+                .iter()
+                .find_map(|&decl_id| {
+                    let decl = &self.thir.decl_arena[decl_id];
+                    if decl.binding == binding
+                        && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
+                        && params.is_empty()
+                    {
+                        Some(*ty)
+                    } else {
+                        None
+                    }
+                })
+                .map(|body| self.thir_universe_with_subst(body, subst))
+                .unwrap_or(0),
+            TypeKind::AliasApply { binding, args } => {
+                let Some((params, body)) = self.thir.decls.iter().find_map(|&decl_id| {
+                    let decl = &self.thir.decl_arena[decl_id];
+                    if decl.binding == binding
+                        && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
+                    {
+                        Some((params.clone(), *ty))
+                    } else {
+                        None
+                    }
+                }) else {
+                    return 0;
+                };
+                if params.len() != args.len() {
+                    return self
+                        .thir
+                        .type_universes
+                        .get(ty.0 as usize)
+                        .copied()
+                        .unwrap_or(0);
+                }
+                let mut nested = subst.clone();
+                nested.extend(params.into_iter().zip(args));
+                self.thir_universe_with_subst(body, &nested)
+            }
+            TypeKind::Apply { .. } | TypeKind::Con(_) | TypeKind::Error => self
+                .thir
+                .type_universes
+                .get(ty.0 as usize)
+                .copied()
+                .unwrap_or(0),
+        }
     }
 
     pub(super) fn named_tyvar(&mut self, binding: BindingId) -> TlcTypeVar {

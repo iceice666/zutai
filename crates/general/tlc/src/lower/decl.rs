@@ -11,11 +11,12 @@ impl<'thir> Lowerer<'thir> {
         let binding = decl.binding;
         let tlc_decl = match decl.kind.clone() {
             ThirDeclKind::TypeAlias { params, ty } => {
-                use crate::ir::{Kind, TlcType};
+                use crate::ir::TlcType;
                 let mut body = self.lower_type(ty);
                 for &p in params.iter().rev() {
                     let tyvar = self.named_tyvar(p);
-                    body = self.alloc_type(TlcType::TyLamK(tyvar, Kind::ground(), body));
+                    body =
+                        self.alloc_type(TlcType::TyLamK(tyvar, self.kind_for_type_param(p), body));
                 }
                 TlcDecl::TypeAlias {
                     binding,
@@ -90,11 +91,11 @@ impl<'thir> Lowerer<'thir> {
                     for (type_param_binding, _) in ep.iter().rev() {
                         let tyvar = self.named_tyvar(*type_param_binding);
                         // A `<Rest>` parameter used as a row tail quantifies with
-                        // `Kind::Row`; an ordinary type parameter with the ground kind.
+                        // `Kind::Row`; an ordinary type parameter uses its solved THIR kind.
                         let kind = if row_params.contains(&type_param_binding.0) {
-                            Kind::Row(Box::new(Kind::ground()))
+                            Kind::Row(Box::new(self.kind_for_type_param(*type_param_binding)))
                         } else {
-                            Kind::ground()
+                            self.kind_for_type_param(*type_param_binding)
                         };
                         let span = self.spans.get(&current_body).copied().unwrap_or_default();
                         current_ty =
@@ -128,7 +129,7 @@ impl<'thir> Lowerer<'thir> {
                 fields,
                 derive,
             } => {
-                use crate::ir::{Kind, TlcType};
+                use crate::ir::TlcType;
 
                 // Register a dict param for each bound on each witness param, so
                 // constraint-method calls inside the field bodies dispatch through
@@ -137,14 +138,14 @@ impl<'thir> Lowerer<'thir> {
                 // `TyLam` per param followed by a `Lam` per bound, matching the
                 // `TyApp`/`App` order in `resolve_conditional_witness`.
                 enum Binder {
-                    Ty(crate::ir::TlcTypeVar),
+                    Ty(BindingId, crate::ir::TlcTypeVar),
                     Dict(BindingId, crate::ir::TlcTypeId),
                 }
                 let mut binders: Vec<Binder> = Vec::new();
                 let mut registered: Vec<(u32, u32)> = Vec::new();
                 for (param, bounds) in params.iter().zip(param_bounds.iter()) {
                     let tyvar = self.named_tyvar(*param);
-                    binders.push(Binder::Ty(tyvar));
+                    binders.push(Binder::Ty(*param, tyvar));
                     for &cst_b in bounds.iter() {
                         let dict_param = self.fresh_synth_binding();
                         let dict_ty = self.alloc_type(TlcType::Record(Row::REmpty));
@@ -207,13 +208,11 @@ impl<'thir> Lowerer<'thir> {
                             for &mp in mparams.iter().rev() {
                                 let tyvar = self.named_tyvar(mp);
                                 let body_ty = self.expr_types[&value_expr];
-                                let forall_ty = self.alloc_type(TlcType::ForAll(
-                                    tyvar,
-                                    Kind::ground(),
-                                    body_ty,
-                                ));
+                                let kind = self.kind_for_type_param(mp);
+                                let forall_ty =
+                                    self.alloc_type(TlcType::ForAll(tyvar, kind.clone(), body_ty));
                                 value_expr = self.alloc_expr(
-                                    TlcExpr::TyLam(tyvar, Kind::ground(), value_expr),
+                                    TlcExpr::TyLam(tyvar, kind, value_expr),
                                     forall_ty,
                                     span,
                                 );
@@ -242,13 +241,11 @@ impl<'thir> Lowerer<'thir> {
                             for &mp in mparams.iter().rev() {
                                 let tyvar = self.named_tyvar(mp);
                                 let body_ty = self.expr_types[&value_expr];
-                                let forall_ty = self.alloc_type(TlcType::ForAll(
-                                    tyvar,
-                                    Kind::ground(),
-                                    body_ty,
-                                ));
+                                let kind = self.kind_for_type_param(mp);
+                                let forall_ty =
+                                    self.alloc_type(TlcType::ForAll(tyvar, kind.clone(), body_ty));
                                 value_expr = self.alloc_expr(
-                                    TlcExpr::TyLam(tyvar, Kind::ground(), value_expr),
+                                    TlcExpr::TyLam(tyvar, kind, value_expr),
                                     forall_ty,
                                     span,
                                 );
@@ -280,14 +277,12 @@ impl<'thir> Lowerer<'thir> {
                                 span,
                             );
                         }
-                        Binder::Ty(tyvar) => {
+                        Binder::Ty(param, tyvar) => {
+                            let kind = self.kind_for_type_param(param);
                             body_ty =
-                                self.alloc_type(TlcType::ForAll(tyvar, Kind::ground(), body_ty));
-                            body = self.alloc_expr(
-                                TlcExpr::TyLam(tyvar, Kind::ground(), body),
-                                body_ty,
-                                span,
-                            );
+                                self.alloc_type(TlcType::ForAll(tyvar, kind.clone(), body_ty));
+                            body =
+                                self.alloc_expr(TlcExpr::TyLam(tyvar, kind, body), body_ty, span);
                         }
                     }
                 }
@@ -310,20 +305,18 @@ impl<'thir> Lowerer<'thir> {
         inner_ty: crate::ir::TlcTypeId,
         inner_body: crate::ir::TlcExprId,
     ) -> (crate::ir::TlcTypeId, crate::ir::TlcExprId) {
-        use crate::ir::{Kind, TlcExpr, TlcType};
+        use crate::ir::{TlcExpr, TlcType};
 
         let mut current_body = inner_body;
         let mut current_ty = inner_ty;
 
         for &v in scheme_vars.iter().rev() {
             let tyvar = self.inferred_tyvar(v);
-            current_ty = self.alloc_type(TlcType::ForAll(tyvar, Kind::ground(), current_ty));
+            let kind = self.kind_for_infer_var(v);
+            current_ty = self.alloc_type(TlcType::ForAll(tyvar, kind.clone(), current_ty));
             let span = self.spans.get(&inner_body).copied().unwrap_or_default();
-            current_body = self.alloc_expr(
-                TlcExpr::TyLam(tyvar, Kind::ground(), current_body),
-                current_ty,
-                span,
-            );
+            current_body =
+                self.alloc_expr(TlcExpr::TyLam(tyvar, kind, current_body), current_ty, span);
         }
         (current_ty, current_body)
     }

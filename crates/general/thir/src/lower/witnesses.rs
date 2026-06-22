@@ -178,9 +178,9 @@ impl<'hir> Lowerer<'hir> {
                 .type_param_kinds
                 .get(&task.constraint_param)
                 .cloned()
-                .unwrap_or(Kind::Star);
-            let target_kind = self.kind_of(task.target);
-            if expected_kind != target_kind {
+                .unwrap_or_else(Kind::ground);
+            let target_kind = self.kind_of(task.target, task.span);
+            if !self.kind_compatible(&expected_kind, &target_kind, task.span) {
                 let target_name = self.type_name(task.target);
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::WitnessTargetKindMismatch {

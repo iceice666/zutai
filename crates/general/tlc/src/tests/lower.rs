@@ -538,13 +538,13 @@ example
     let (_, left_ty) = row_field(node_row, "left").expect("left field");
     assert!(matches!(
         &m.type_arena[left_ty],
-        TlcType::TyVar(TlcTypeVar::Named(id), Kind::Type(0)) if *id == tree_binding.0
+        TlcType::TyVar(TlcTypeVar::Named(id), kind) if *id == tree_binding.0 && *kind == Kind::ground()
     ));
 
     let (_, right_ty) = row_field(node_row, "right").expect("right field");
     assert!(matches!(
         &m.type_arena[right_ty],
-        TlcType::TyVar(TlcTypeVar::Named(id), Kind::Type(0)) if *id == tree_binding.0
+        TlcType::TyVar(TlcTypeVar::Named(id), kind) if *id == tree_binding.0 && *kind == Kind::ground()
     ));
 }
 

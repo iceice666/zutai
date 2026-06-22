@@ -9,7 +9,7 @@ use zutai_syntax::Span;
 use crate::diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 use crate::ir::{
     EffectOp, EffectRow, Kind, RowTail, Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
-    UnionVariant,
+    UnionVariant, UniverseLevel,
 };
 
 use super::{Lowerer, RowSolution};
@@ -21,6 +21,7 @@ mod constructors;
 mod generalize;
 mod instantiate;
 mod kind;
+mod levels;
 mod lower;
 mod match_;
 mod patch;

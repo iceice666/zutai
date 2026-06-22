@@ -107,6 +107,9 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         TypeLevelEvalLimitExceeded => {
             "type-level computation exceeded evaluation limit".to_string()
         }
+        UniverseLevelCycle { name } => {
+            format!("universe level cycle in `{name}`: definition would require Type ℓ : Type ℓ")
+        }
         WitnessFieldTypeMismatch {
             name,
             expected,

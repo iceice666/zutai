@@ -23,6 +23,73 @@ p
 }
 
 #[test]
+fn pair_int_type_kind_checks_at_higher_level() {
+    let file = completed_file(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+MetaPair :: type Pair Int Type
+MetaPair
+"#,
+    );
+    let meta_pair = file
+        .decls
+        .iter()
+        .map(|&id| &file.decl_arena[id])
+        .find(|decl| file.binding_names[decl.binding.0 as usize] == "MetaPair")
+        .expect("MetaPair declaration");
+    let ty = match meta_pair.kind {
+        ThirDeclKind::TypeAlias { ty, .. } => ty,
+        ref other => panic!("expected MetaPair type alias, got {other:?}"),
+    };
+    assert_eq!(file.type_universes[ty.0 as usize], 1);
+}
+
+#[test]
+fn pair_int_text_defaults_to_ground_level() {
+    let file = completed_file(
+        r#"
+Pair :: <A, B> type { first : A; second : B; }
+TextIntPair :: type Pair Text Int
+TextIntPair
+"#,
+    );
+    let text_int_pair = file
+        .decls
+        .iter()
+        .map(|&id| &file.decl_arena[id])
+        .find(|decl| file.binding_names[decl.binding.0 as usize] == "TextIntPair")
+        .expect("TextIntPair declaration");
+    let ty = match text_int_pair.kind {
+        ThirDeclKind::TypeAlias { ty, .. } => ty,
+        ref other => panic!("expected TextIntPair type alias, got {other:?}"),
+    };
+    assert_eq!(file.type_universes[ty.0 as usize], 0);
+}
+
+#[test]
+fn unused_higher_universe_alias_arg_does_not_raise_result_level() {
+    let file = completed_file(
+        r#"
+Const :: <A, B> type A
+ConstIntType :: type Const Int Type
+ConstIntType
+"#,
+    );
+    let const_int_type = file
+        .decls
+        .iter()
+        .map(|&id| &file.decl_arena[id])
+        .find(|decl| file.binding_names[decl.binding.0 as usize] == "ConstIntType")
+        .expect("ConstIntType declaration");
+    let ty = match const_int_type.kind {
+        ThirDeclKind::TypeAlias { ty, .. } => ty,
+        ref other => panic!("expected ConstIntType type alias, got {other:?}"),
+    };
+    assert_eq!(file.type_universes[ty.0 as usize], 0);
+    assert_eq!(file.type_universes.len(), file.type_arena.len());
+}
+
+#[test]
 fn recursive_union_alias_elaborates_without_expanding() {
     let file = completed_file(
         r#"

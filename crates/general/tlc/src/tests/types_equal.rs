@@ -161,3 +161,15 @@ fn types_equal_deep_fun_arm() {
         "Fun(Int, Bool, REmpty) == Fun(Int, Bool, REmpty) structurally"
     );
 }
+
+#[test]
+fn types_equal_distinguishes_concrete_universe_levels() {
+    use la_arena::Arena;
+    let mut ta: Arena<TlcType> = Arena::new();
+    let var = TlcTypeVar::Named(5);
+    let ground = ta.alloc(TlcType::TyVar(var, Kind::Type(0)));
+    let higher = ta.alloc(TlcType::TyVar(var, Kind::Type(1)));
+    let mut m = make_module(ta);
+
+    assert!(!m.types_equal(ground, higher));
+}

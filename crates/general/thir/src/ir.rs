@@ -13,13 +13,68 @@ pub type ThirPatId = Idx<ThirPat>;
 /// (`next_infer_var` / `infer_subst` in the lowerer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId(pub u32);
-/// The kind of a type: `Star` is the kind of ordinary types (`Int`, `List Int`);
-/// `Arrow` is the kind of a type constructor (`List : Type -> Type`). Used to
-/// kind-check higher-kinded constraints/witnesses. Mirrors TLC's richer `Kind`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Internal universe level attached to `Type`. Surface syntax still writes only
+/// `Type`; the lowerer solves metas and defaulting before exporting a `ThirFile`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UniverseLevel {
+    Known(u32),
+    Meta(u32),
+    Max(Vec<UniverseLevel>),
+    Succ(Box<UniverseLevel>),
+}
+
+impl UniverseLevel {
+    pub fn known(level: u32) -> Self {
+        Self::Known(level)
+    }
+
+    pub fn meta(id: u32) -> Self {
+        Self::Meta(id)
+    }
+
+    pub fn succ(level: UniverseLevel) -> Self {
+        Self::Succ(Box::new(level))
+    }
+
+    pub fn max(levels: impl IntoIterator<Item = UniverseLevel>) -> Self {
+        let mut flat = Vec::new();
+        let mut known = 0;
+        for level in levels {
+            match level {
+                Self::Known(n) => known = known.max(n),
+                Self::Max(levels) => flat.extend(levels),
+                other => flat.push(other),
+            }
+        }
+        flat.retain(|level| !matches!(level, Self::Known(0)));
+        if flat.is_empty() {
+            Self::Known(known)
+        } else {
+            if known > 0 {
+                flat.push(Self::Known(known));
+            }
+            Self::Max(flat)
+        }
+    }
+}
+
+/// The kind of a type. `Type(ℓ)` is the kind of concrete types at universe level
+/// `ℓ`; `Arrow` is the kind of a type constructor (`List : Type ℓ -> Type ℓ`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Kind {
-    Star,
+    Type(UniverseLevel),
+    Row(Box<Kind>),
     Arrow(Box<Kind>, Box<Kind>),
+}
+
+impl Kind {
+    pub fn ground() -> Self {
+        Self::Type(UniverseLevel::Known(0))
+    }
+
+    pub fn is_concrete_type(&self) -> bool {
+        matches!(self, Self::Type(_))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,9 +86,12 @@ pub struct ThirFile {
     pub pat_arena: Arena<ThirPat>,
     pub type_arena: Vec<Type>,
     pub poly_schemes: std::collections::HashMap<zutai_hir::BindingId, Vec<u32>>,
+    /// Solved/defaulted universe level for each `TypeId`, parallel to
+    /// `type_arena`. No level metas reach this exported vector.
+    pub type_universes: Vec<u32>,
     /// Declared kind of each type parameter (`<F :: Type -> Type>` → `Arrow`),
-    /// keyed by the param's `BindingId`. Absent params have kind `Star`. Carried
-    /// for TLC so higher-kinded quantifiers/vars get the right kind.
+    /// keyed by the param's `BindingId`. Absent params have `Kind::ground()`.
+    /// Carried for TLC so higher-kinded quantifiers/vars get the right kind.
     pub type_param_kinds: std::collections::HashMap<zutai_hir::BindingId, Kind>,
     pub binding_names: Vec<String>,
     pub binding_kinds: Vec<zutai_hir::BindingKind>,

@@ -12,7 +12,7 @@ use crate::import::{ImportKey, ImportedType};
 use crate::ir::{
     EffectOp, EffectRow, Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
     ThirExprKind, ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField,
-    TypeTupleItem, UnionVariant,
+    TypeTupleItem, UnionVariant, UniverseLevel,
 };
 
 pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
@@ -127,9 +127,14 @@ struct Lowerer<'hir> {
     /// the surrounding environment).
     poly_schemes: HashMap<BindingId, Vec<u32>>,
     /// Declared kind of each type parameter, from `<F :: Type -> Type>` kind
-    /// annotations. Absent params are `Star`. Used for kind-checking higher-kinded
-    /// constraints/witnesses and carried into `ThirFile` for TLC.
+    /// annotations. Absent params default to `Kind::ground()`. Used for
+    /// kind-checking higher-kinded constraints/witnesses and carried into
+    /// `ThirFile` for TLC.
     type_param_kinds: HashMap<BindingId, Kind>,
+    next_level_meta: u32,
+    level_lower_bounds: HashMap<u32, u32>,
+    level_equalities: HashMap<u32, UniverseLevel>,
+    type_universe_cache: HashMap<TypeId, UniverseLevel>,
     /// Params of each parametric type constructor (generic alias or type-level
     /// function), keyed by binding. Presence marks the binding as a parametric
     /// constructor applied via `AliasApply` at use sites.

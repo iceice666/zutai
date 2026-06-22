@@ -1,47 +1,111 @@
 use super::*;
 
 impl<'hir> Lowerer<'hir> {
-    /// Interpret a kind annotation type-expression: `Type -> Type` → `Arrow`,
-    /// everything else (the `Type` leaf) → `Star`.
-    pub(in crate::lower) fn hir_kind_of(&self, hir_ty: HirTypeId) -> Kind {
-        match &self.hir_type(hir_ty).kind {
+    /// Interpret a kind annotation type-expression: `Type -> Type` lowers to an
+    /// arrow kind over fresh universe metas; a `Type` leaf is `Type α`.
+    pub(in crate::lower) fn hir_kind_of(&mut self, hir_ty: HirTypeId) -> Kind {
+        let ty = self.hir_type(hir_ty);
+        match &ty.kind {
             HirTypeKind::Arrow { from, to } => Kind::Arrow(
                 Box::new(self.hir_kind_of(*from)),
                 Box::new(self.hir_kind_of(*to)),
             ),
-            _ => Kind::Star,
-        }
-    }
-
-    /// Compute the kind of a type. `TypeVar` looks up its declared kind; `Con`
-    /// (builtin `List`/`Optional`) is `Type -> Type`; a bare named `Alias` is the
-    /// arrow chain of its arity; `Apply` drops one arrow off its head's kind.
-    /// All saturated/ground forms are `Star`.
-    pub(in crate::lower) fn kind_of(&self, ty: TypeId) -> Kind {
-        let ty = self.resolve(ty);
-        match &self.type_arena[ty.0 as usize].kind {
-            TypeKind::TypeVar(b) => self.type_param_kinds.get(b).cloned().unwrap_or(Kind::Star),
-            TypeKind::Con(_) => Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star)),
-            TypeKind::Alias(b) => {
-                let arity = self.alias_params.get(b).map(|p| p.len()).unwrap_or(0);
-                (0..arity).fold(Kind::Star, |acc, _| {
-                    Kind::Arrow(Box::new(Kind::Star), Box::new(acc))
-                })
+            HirTypeKind::BindingRef(binding)
+                if self.hir.bindings[binding.0 as usize].name == "Type" =>
+            {
+                Kind::Type(self.fresh_level_meta())
             }
-            TypeKind::Apply { func, .. } => match self.kind_of(*func) {
-                Kind::Arrow(_, res) => *res,
-                Kind::Star => Kind::Star,
-            },
-            _ => Kind::Star,
+            _ => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason: "kind annotations must be Type or arrows over Type",
+                    },
+                    span: ty.span,
+                });
+                Kind::ground()
+            }
         }
     }
 
-    /// Verify a type used in a value position (value annotation, function
-    /// signature) is fully applied — kind `Star`. A partial application
-    /// (`Pair Text`, kind `Type -> Type`) is not a value type; re-emit the
-    /// `TypeConstructorArityMismatch` so v1's new partial-application support
-    /// does not silently accept under-applied constructors outside witness
-    /// targets. A saturated `F A` (kind `Star`) is fine; recurse its arguments.
+    /// Compute the kind of a type. Concrete, saturated forms return
+    /// `Kind::Type(level)`; constructors return arrows over universe-carrying
+    /// kinds. Cumulativity is checked by `kind_compatible`, not exact equality.
+    pub(in crate::lower) fn kind_of(&mut self, ty: TypeId, span: Span) -> Kind {
+        let ty = self.resolve(ty);
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::TypeVar(b) => self
+                .type_param_kinds
+                .get(&b)
+                .cloned()
+                .unwrap_or_else(Kind::ground),
+            TypeKind::Con(_) => {
+                let level = self.fresh_level_meta();
+                Kind::Arrow(
+                    Box::new(Kind::Type(level.clone())),
+                    Box::new(Kind::Type(level)),
+                )
+            }
+            TypeKind::Alias(b) => self.alias_constructor_kind(b, span),
+            TypeKind::Apply { func, arg } => {
+                let head_kind = self.kind_of(func, span);
+                match head_kind {
+                    Kind::Arrow(param, result) => {
+                        let arg_kind = self.kind_of(arg, span);
+                        if self.kind_compatible(&param, &arg_kind, span) {
+                            *result
+                        } else {
+                            Kind::ground()
+                        }
+                    }
+                    Kind::Type(_) => Kind::ground(),
+                    Kind::Row(_) => Kind::ground(),
+                }
+            }
+            _ => Kind::Type(self.type_universe(ty, span)),
+        }
+    }
+
+    pub(in crate::lower) fn alias_constructor_kind(
+        &mut self,
+        binding: BindingId,
+        span: Span,
+    ) -> Kind {
+        let params = self.alias_params.get(&binding).cloned().unwrap_or_default();
+        if params.is_empty() {
+            if let Some(body) = self.aliases.get(&binding).copied() {
+                return Kind::Type(self.type_universe(body, span));
+            }
+            return Kind::ground();
+        }
+
+        let mut subst = HashMap::new();
+        let mut param_kinds = Vec::with_capacity(params.len());
+        for param in &params {
+            let level = self.fresh_level_meta();
+            let kind = Kind::Type(level.clone());
+            param_kinds.push(kind);
+            let ty = self.alloc_type(Type {
+                kind: TypeKind::TypeVar(*param),
+                span,
+            });
+            self.type_universe_cache.insert(ty, level);
+            subst.insert(*param, ty);
+        }
+
+        let result = if let Some(body) = self.aliases.get(&binding).copied() {
+            let body = self.instantiate_type_vars(body, &subst);
+            Kind::Type(self.type_universe(body, span))
+        } else {
+            Kind::ground()
+        };
+
+        param_kinds.into_iter().rev().fold(result, |acc, param| {
+            Kind::Arrow(Box::new(param), Box::new(acc))
+        })
+    }
+
+    /// Verify a type used in a value position is fully applied. Any
+    /// `Kind::Type(_)` is concrete; arrows remain under-applied constructors.
     pub(in crate::lower) fn require_ground_type(&mut self, ty: TypeId, span: Span) {
         let r = self.resolve(ty);
         match self.type_arena[r.0 as usize].kind.clone() {
@@ -87,7 +151,7 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
             TypeKind::Apply { .. } => {
-                if self.kind_of(r) == Kind::Star {
+                if self.kind_of(r, span).is_concrete_type() {
                     let (_, args) = self.app_spine(r);
                     for a in args {
                         self.require_ground_type(a, span);
@@ -107,7 +171,7 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 });
             }
-            TypeKind::Alias(_) if self.kind_of(r) != Kind::Star => {
+            TypeKind::Alias(_) if !self.kind_of(r, span).is_concrete_type() => {
                 self.report_underapplied(r, span);
             }
             _ => {}

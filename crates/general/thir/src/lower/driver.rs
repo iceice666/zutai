@@ -26,6 +26,10 @@ impl<'hir> Lowerer<'hir> {
             resume_stack: Vec::new(),
             poly_schemes: HashMap::new(),
             type_param_kinds: HashMap::new(),
+            next_level_meta: 0,
+            level_lower_bounds: HashMap::new(),
+            level_equalities: HashMap::new(),
+            type_universe_cache: HashMap::new(),
             alias_params: HashMap::new(),
             type_param_scope: HashSet::new(),
             type_eval_fuel: 10_000,
@@ -98,6 +102,11 @@ impl<'hir> Lowerer<'hir> {
         // concrete types so downstream consumers see fully-resolved types.
         self.zonk_type_arena();
 
+        let type_universes = self.finalized_type_universes();
+        let type_param_kinds = std::mem::take(&mut self.type_param_kinds)
+            .into_iter()
+            .map(|(binding, kind)| (binding, self.finalized_kind(kind)))
+            .collect();
         let file = ThirFile {
             decls,
             final_expr,
@@ -106,7 +115,8 @@ impl<'hir> Lowerer<'hir> {
             pat_arena: std::mem::take(&mut self.pat_arena),
             type_arena: std::mem::take(&mut self.type_arena),
             poly_schemes: std::mem::take(&mut self.poly_schemes),
-            type_param_kinds: std::mem::take(&mut self.type_param_kinds),
+            type_universes,
+            type_param_kinds,
             binding_names: self
                 .hir
                 .bindings
@@ -130,7 +140,7 @@ impl<'hir> Lowerer<'hir> {
     }
     /// Populate `type_param_kinds` from every type parameter's `<.. :: Kind>`
     /// annotation across constraint, witness, function, and constraint-method
-    /// param lists. Params without an annotation default to `Star` (absent).
+    /// param lists. Params without an annotation default to `Kind::ground()`.
     pub(in crate::lower) fn collect_type_param_kinds(&mut self) {
         let mut pending: Vec<(BindingId, Kind)> = Vec::new();
         for &decl_id in &self.hir.decls {

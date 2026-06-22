@@ -1,0 +1,354 @@
+use super::*;
+
+impl<'hir> Lowerer<'hir> {
+    pub(in crate::lower) fn fresh_level_meta(&mut self) -> UniverseLevel {
+        let id = self.next_level_meta;
+        self.next_level_meta += 1;
+        UniverseLevel::meta(id)
+    }
+
+    pub(in crate::lower) fn constrain_level_at_least(
+        &mut self,
+        level: UniverseLevel,
+        lower: u32,
+        span: Span,
+    ) {
+        match self.normalize_level(level) {
+            UniverseLevel::Known(n) if n < lower => {
+                self.push_universe_level_cycle("<anonymous>", span)
+            }
+            UniverseLevel::Meta(id) => {
+                let entry = self.level_lower_bounds.entry(id).or_insert(0);
+                *entry = (*entry).max(lower);
+            }
+            UniverseLevel::Max(levels) => {
+                for level in levels {
+                    self.constrain_level_at_least(level, lower, span);
+                }
+            }
+            UniverseLevel::Succ(inner) if lower > 0 => {
+                self.constrain_level_at_least(*inner, lower - 1, span);
+            }
+            _ => {}
+        }
+    }
+
+    pub(in crate::lower) fn constrain_level_leq(
+        &mut self,
+        found: UniverseLevel,
+        expected: UniverseLevel,
+        span: Span,
+    ) -> bool {
+        let found = self.normalize_level(found);
+        let expected = self.normalize_level(expected);
+        if self.level_occurs_strictly_in(&expected, &found) {
+            self.push_universe_level_cycle("<anonymous>", span);
+            return false;
+        }
+        match (found, expected) {
+            (UniverseLevel::Known(f), UniverseLevel::Known(e)) => f <= e,
+            (UniverseLevel::Known(f), UniverseLevel::Meta(e)) => {
+                self.constrain_level_at_least(UniverseLevel::Meta(e), f, span);
+                true
+            }
+            (UniverseLevel::Meta(f), UniverseLevel::Known(e)) => {
+                self.level_equalities.insert(f, UniverseLevel::Known(e));
+                true
+            }
+            (UniverseLevel::Meta(f), rhs) => {
+                if self.level_occurs_in(f, &rhs) {
+                    self.push_universe_level_cycle("<anonymous>", span);
+                    false
+                } else {
+                    self.level_equalities.insert(f, rhs);
+                    true
+                }
+            }
+            (UniverseLevel::Max(levels), rhs) => levels
+                .into_iter()
+                .all(|level| self.constrain_level_leq(level, rhs.clone(), span)),
+            (UniverseLevel::Succ(inner), rhs) => {
+                self.constrain_level_leq(*inner, UniverseLevel::succ(rhs), span)
+            }
+            (lhs, UniverseLevel::Max(levels)) => {
+                let solved_lhs = self.default_level(lhs);
+                let solved_rhs = levels
+                    .into_iter()
+                    .map(|level| self.default_level(level))
+                    .max()
+                    .unwrap_or(0);
+                solved_lhs <= solved_rhs
+            }
+            (lhs, UniverseLevel::Succ(rhs)) => {
+                let lhs = self.default_level(lhs);
+                let rhs = self.default_level(*rhs);
+                lhs <= rhs.saturating_add(1)
+            }
+        }
+    }
+
+    pub(in crate::lower) fn solve_level(
+        &mut self,
+        level: UniverseLevel,
+        _span: Span,
+    ) -> Option<u32> {
+        Some(self.default_level(level))
+    }
+
+    pub(in crate::lower) fn default_level(&mut self, level: UniverseLevel) -> u32 {
+        match self.normalize_level(level) {
+            UniverseLevel::Known(n) => n,
+            UniverseLevel::Meta(id) => *self.level_lower_bounds.get(&id).unwrap_or(&0),
+            UniverseLevel::Max(levels) => levels
+                .into_iter()
+                .map(|level| self.default_level(level))
+                .max()
+                .unwrap_or(0),
+            UniverseLevel::Succ(level) => self.default_level(*level).saturating_add(1),
+        }
+    }
+
+    pub(in crate::lower) fn kind_compatible(
+        &mut self,
+        expected: &Kind,
+        found: &Kind,
+        span: Span,
+    ) -> bool {
+        match (expected, found) {
+            (Kind::Type(expected), Kind::Type(found)) => {
+                self.constrain_level_leq(found.clone(), expected.clone(), span)
+            }
+            (Kind::Row(expected), Kind::Row(found)) => self.kind_compatible(expected, found, span),
+            (Kind::Arrow(exp_from, exp_to), Kind::Arrow(found_from, found_to)) => {
+                self.kind_compatible(exp_from, found_from, span)
+                    && self.kind_compatible(exp_to, found_to, span)
+            }
+            _ => false,
+        }
+    }
+
+    pub(in crate::lower) fn type_universe(&mut self, ty: TypeId, span: Span) -> UniverseLevel {
+        let ty = self.resolve(ty);
+        if let Some(level) = self.type_universe_cache.get(&ty).cloned() {
+            return level;
+        }
+        self.type_universe_cache.insert(ty, UniverseLevel::Known(0));
+        let level = match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Type => UniverseLevel::Known(1),
+            TypeKind::Bool
+            | TypeKind::Text
+            | TypeKind::Int
+            | TypeKind::Float
+            | TypeKind::FixedNum(_)
+            | TypeKind::Posit(_)
+            | TypeKind::Atom(_)
+            | TypeKind::True
+            | TypeKind::False
+            | TypeKind::Never => UniverseLevel::Known(0),
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Patch { target: inner, .. } => self.type_universe(inner, span),
+            TypeKind::Record(fields, _) => UniverseLevel::max(
+                fields
+                    .into_iter()
+                    .map(|field| self.type_universe(field.ty, field.span)),
+            ),
+            TypeKind::Union(variants, _) => UniverseLevel::max(
+                variants
+                    .into_iter()
+                    .filter_map(|v| v.payload.map(|payload| self.type_universe(payload, v.span))),
+            ),
+            TypeKind::Tuple(items) => {
+                UniverseLevel::max(items.into_iter().map(|item| match item {
+                    TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => {
+                        self.type_universe(ty, span)
+                    }
+                }))
+            }
+            TypeKind::Function { from, to } => {
+                UniverseLevel::max([self.type_universe(from, span), self.type_universe(to, span)])
+            }
+            TypeKind::Effect { base, row } => {
+                let mut levels = vec![self.type_universe(base, span)];
+                for op in row.ops {
+                    levels.push(self.type_universe(op.param, op.span));
+                    levels.push(self.type_universe(op.result, op.span));
+                }
+                UniverseLevel::max(levels)
+            }
+            TypeKind::TypeVar(binding) => self
+                .type_param_kinds
+                .get(&binding)
+                .cloned()
+                .and_then(|kind| match kind {
+                    Kind::Type(level) => Some(level),
+                    _ => None,
+                })
+                .unwrap_or_else(|| self.fresh_level_meta()),
+            TypeKind::InferVar(v) => self
+                .infer_subst
+                .get(&v)
+                .copied()
+                .map(|solved| self.type_universe(solved, span))
+                .unwrap_or(UniverseLevel::Known(0)),
+            TypeKind::Alias(binding) => {
+                if self
+                    .alias_params
+                    .get(&binding)
+                    .is_some_and(|params| !params.is_empty())
+                {
+                    UniverseLevel::Known(0)
+                } else if let Some(body) = self.aliases.get(&binding).copied() {
+                    self.type_universe(body, span)
+                } else {
+                    UniverseLevel::Known(0)
+                }
+            }
+            TypeKind::AliasApply { binding, args } => {
+                self.alias_apply_universe(binding, &args, span)
+            }
+            TypeKind::Apply { .. } => self.apply_universe(ty, span),
+            TypeKind::Con(_) | TypeKind::Error => UniverseLevel::Known(0),
+        };
+        self.type_universe_cache.insert(ty, level.clone());
+        level
+    }
+
+    pub(in crate::lower) fn finalized_type_universes(&mut self) -> Vec<u32> {
+        let mut universes = Vec::new();
+        let mut i = 0;
+        while i < self.type_arena.len() {
+            let span = self.type_arena[i].span;
+            let level = self.type_universe(TypeId(i as u32), span);
+            universes.push(self.solve_level(level, span).unwrap_or(0));
+            i += 1;
+        }
+        universes
+    }
+
+    fn alias_apply_universe(
+        &mut self,
+        binding: BindingId,
+        args: &[TypeId],
+        span: Span,
+    ) -> UniverseLevel {
+        let Some(params) = self.alias_params.get(&binding).cloned() else {
+            return UniverseLevel::Known(0);
+        };
+        if params.len() != args.len() {
+            return UniverseLevel::Known(0);
+        }
+        let Some(body) = self.aliases.get(&binding).copied() else {
+            return UniverseLevel::Known(0);
+        };
+        let subst: HashMap<BindingId, TypeId> =
+            params.into_iter().zip(args.iter().copied()).collect();
+        let expanded = self.instantiate_type_vars(body, &subst);
+        self.type_universe(expanded, span)
+    }
+
+    fn apply_universe(&mut self, ty: TypeId, span: Span) -> UniverseLevel {
+        let (head, args) = self.app_spine(ty);
+        let head = self.resolve(head);
+        match self.type_arena[head.0 as usize].kind.clone() {
+            TypeKind::Con(b) => {
+                let name = self.hir.bindings[b.0 as usize].name.as_str();
+                if args.len() == 1
+                    && matches!(name, "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch")
+                {
+                    self.type_universe(args[0], span)
+                } else {
+                    UniverseLevel::Known(0)
+                }
+            }
+            TypeKind::Alias(binding) => self.alias_apply_universe(binding, &args, span),
+            _ => match self.kind_of(ty, span) {
+                Kind::Type(level) => level,
+                _ => UniverseLevel::Known(0),
+            },
+        }
+    }
+
+    fn normalize_level(&self, level: UniverseLevel) -> UniverseLevel {
+        match level {
+            UniverseLevel::Meta(id) => self
+                .level_equalities
+                .get(&id)
+                .cloned()
+                .map(|level| self.normalize_level(level))
+                .unwrap_or(UniverseLevel::Meta(id)),
+            UniverseLevel::Max(levels) => {
+                UniverseLevel::max(levels.into_iter().map(|level| self.normalize_level(level)))
+            }
+            UniverseLevel::Succ(level) => UniverseLevel::succ(self.normalize_level(*level)),
+            other => other,
+        }
+    }
+
+    fn level_occurs_in(&self, needle: u32, level: &UniverseLevel) -> bool {
+        match level {
+            UniverseLevel::Meta(id) => *id == needle,
+            UniverseLevel::Max(levels) => levels
+                .iter()
+                .any(|level| self.level_occurs_in(needle, level)),
+            UniverseLevel::Succ(level) => self.level_occurs_in(needle, level),
+            UniverseLevel::Known(_) => false,
+        }
+    }
+
+    fn level_occurs_strictly_in(&self, expected: &UniverseLevel, found: &UniverseLevel) -> bool {
+        match (expected, found) {
+            (UniverseLevel::Meta(e), UniverseLevel::Succ(inner)) => self.level_occurs_in(*e, inner),
+            (UniverseLevel::Meta(e), level) => self.level_occurs_in(*e, level),
+            (_, UniverseLevel::Max(levels)) => levels
+                .iter()
+                .any(|level| self.level_occurs_strictly_in(expected, level)),
+            (_, UniverseLevel::Succ(inner)) => self.level_occurs_strictly_in(expected, inner),
+            _ => false,
+        }
+    }
+
+    pub(in crate::lower) fn finalized_kind(&mut self, kind: Kind) -> Kind {
+        match kind {
+            Kind::Type(level) => Kind::Type(UniverseLevel::Known(self.default_level(level))),
+            Kind::Row(inner) => Kind::Row(Box::new(self.finalized_kind(*inner))),
+            Kind::Arrow(from, to) => Kind::Arrow(
+                Box::new(self.finalized_kind(*from)),
+                Box::new(self.finalized_kind(*to)),
+            ),
+        }
+    }
+
+    pub(in crate::lower) fn push_universe_level_cycle(&mut self, name: &str, span: Span) {
+        self.diagnostics.push(ThirDiagnostic {
+            kind: ThirDiagnosticKind::UniverseLevelCycle {
+                name: name.to_string(),
+            },
+            span,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn universe_circular_definition_reports_kind_diagnostic() {
+        let parsed = zutai_syntax::parse("1");
+        let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+        let mut lowerer = Lowerer::new(&hir.file, HashMap::new());
+        let level = lowerer.fresh_level_meta();
+
+        assert!(!lowerer.constrain_level_leq(
+            UniverseLevel::succ(level.clone()),
+            level,
+            Span::default(),
+        ));
+        assert!(lowerer.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.kind,
+            ThirDiagnosticKind::UniverseLevelCycle { .. }
+        )));
+    }
+}

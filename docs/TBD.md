@@ -9,21 +9,6 @@ _Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
 short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
 here._
 
-### Phase 24: Universe-level foundation
-
-Source of truth: [`v2_spec/04-universe-levels.md`](v2_spec/04-universe-levels.md).
-
-- Wire internal `Type ℓ` through HIR/THIR/TLC kind lowering instead of pinning
-  every kind to `Type(0)` / `Kind::ground()`.
-- Add level metavariables, level constraints, cumulativity, level-polymorphic
-  type constructors, and lowest-consistent-level defaulting. Surface syntax still
-  exposes only `Type`; explicit level annotations remain out of scope.
-- Keep type-level fuel unchanged: fuel bounds normalization, while universe
-  levels reject universe-circular definitions statically.
-- Acceptance: existing higher-kinded constraints and v1 type-level programs stay
-  accepted; `Pair Int Type` kind-checks at a higher inferred level; ill-founded
-  definitions that require `Type ℓ : Type ℓ` produce a kind diagnostic; runtime
-  erasure and backend output for ordinary value programs are unchanged.
 
 ### Phase 25: Recursive type aliases and equirecursive equality
 

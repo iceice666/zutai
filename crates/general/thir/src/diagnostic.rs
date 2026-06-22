@@ -79,6 +79,9 @@ pub enum ThirDiagnosticKind {
     },
     /// Type-level alias expansion exceeded the deterministic evaluation budget.
     TypeLevelEvalLimitExceeded,
+    UniverseLevelCycle {
+        name: String,
+    },
     ValueTypeUnavailable {
         name: String,
     },

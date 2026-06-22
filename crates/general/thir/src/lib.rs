@@ -18,11 +18,11 @@ pub use diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 pub use export::{ExportUnsupported, export_type};
 pub use import::{ImportKey, ImportedField, ImportedTupleItem, ImportedType};
 pub use ir::{
-    EffectOp, EffectRow, FixedWidth, RowTail, ThirClause, ThirConstraintMethod, ThirDecl,
+    EffectOp, EffectRow, FixedWidth, Kind, RowTail, ThirClause, ThirConstraintMethod, ThirDecl,
     ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirHandleClause,
     ThirLocalBinding, ThirPat, ThirPatId, ThirPatKind, ThirRecordField, ThirRecordPatField,
     ThirTupleItem, ThirTuplePatItem, ThirWitnessField, Type, TypeId, TypeKind, TypeRecordField,
-    TypeTupleItem,
+    TypeTupleItem, UniverseLevel,
 };
 pub use lower::{LoweredThir, ThirLowerOptions, lower_hir, lower_hir_with_options};
 pub use pass::{ThirPass, ThirPassReport, run_default_passes, run_passes};

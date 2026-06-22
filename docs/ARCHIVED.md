@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-21 after closing Phase 23.4 AOT effect fold cutover._
+_Last updated: 2026-06-22 after closing Phase 24 universe-level foundation._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -47,6 +47,9 @@ _Last updated: 2026-06-21 after closing Phase 23.4 AOT effect fold cutover._
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
   operator lowering, source effect markers, CPS elaboration for handled effects,
   and runtime `io.print` lowering through ordinary TLC function values.
+- THIR and TLC carry internal universe levels for surface `Type`. Explicit level
+  syntax is still unsupported; level-polymorphic type constructors default to
+  the lowest consistent universe and erase before runtime/backend lowering.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
   Record/tuple access is slot-indexed; union construction now uses dense
   per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
@@ -122,6 +125,19 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 24: Universe-level foundation ✅
+
+- Internal universe levels now flow through THIR kind checking and TLC kind
+  lowering. Surface syntax still exposes only `Type`; explicit level annotations
+  remain unsupported.
+- Type constructors and higher-kinded constraints are level-polymorphic with
+  cumulativity and lowest-consistent defaulting, so ordinary v1 type-level/HKT
+  programs remain accepted while `Pair Int Type` checks at a higher inferred
+  universe.
+- Type-level fuel still bounds normalization only; universe-circular definitions
+  produce a dedicated kind diagnostic. Runtime erasure and backend output for
+  ordinary value programs remain unchanged.
 
 ### Phase 23: Effect CPS lowering and runtime dispatch ✅
 
