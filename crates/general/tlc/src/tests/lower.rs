@@ -480,6 +480,75 @@ fn row_field(row: &Row, name: &str) -> Option<(bool, TlcTypeId)> {
 }
 
 #[test]
+fn recursive_union_alias_lowers_recursive_fields_to_alias_tyvars() {
+    let m = tlc_of(
+        r#"
+Tree :: type {
+  #leaf;
+  #node : { value : Int; left : Tree; right : Tree; };
+}
+
+example :: Tree =
+  #node {
+    value = 1;
+    left  = #leaf;
+    right = #node { value = 2; left = #leaf; right = #leaf; };
+  }
+
+example
+"#,
+    );
+
+    let (tree_binding, body) = m
+        .decls
+        .iter()
+        .find_map(|&id| match &m.decl_arena[id] {
+            TlcDecl::TypeAlias {
+                binding,
+                params,
+                body,
+            } if params.is_empty() => Some((*binding, *body)),
+            _ => None,
+        })
+        .expect("Tree type alias");
+
+    let row = match &m.type_arena[body] {
+        TlcType::VariantT(row) => row,
+        other => panic!("expected Tree to lower to VariantT, got {other:?}"),
+    };
+
+    let (_, leaf_ty) = row_field(row, "leaf").expect("leaf variant");
+    assert!(matches!(
+        &m.type_arena[leaf_ty],
+        TlcType::Singleton(Literal::Atom(name)) if name == "leaf"
+    ));
+
+    let (_, node_ty) = row_field(row, "node").expect("node variant");
+    let node_row = match &m.type_arena[node_ty] {
+        TlcType::Record(node_row) => node_row,
+        other => panic!("expected node payload to lower to Record, got {other:?}"),
+    };
+
+    let (_, value_ty) = row_field(node_row, "value").expect("value field");
+    assert!(matches!(
+        &m.type_arena[value_ty],
+        TlcType::Prim(PrimTy::Int)
+    ));
+
+    let (_, left_ty) = row_field(node_row, "left").expect("left field");
+    assert!(matches!(
+        &m.type_arena[left_ty],
+        TlcType::TyVar(TlcTypeVar::Named(id), Kind::Type(0)) if *id == tree_binding.0
+    ));
+
+    let (_, right_ty) = row_field(node_row, "right").expect("right field");
+    assert!(matches!(
+        &m.type_arena[right_ty],
+        TlcType::TyVar(TlcTypeVar::Named(id), Kind::Type(0)) if *id == tree_binding.0
+    ));
+}
+
+#[test]
 fn effect_alias_application_lowers_to_non_empty_fun_effect_row() {
     let m = tlc_of(
         r#"

@@ -23,6 +23,86 @@ p
 }
 
 #[test]
+fn recursive_union_alias_elaborates_without_expanding() {
+    let file = completed_file(
+        r#"
+Tree :: type {
+  #leaf;
+  #node : { value : Int; left : Tree; right : Tree; };
+}
+
+example :: Tree =
+  #node {
+    value = 1;
+    left  = #leaf;
+    right = #node { value = 2; left = #leaf; right = #leaf; };
+  }
+
+example
+"#,
+    );
+
+    let tree_decl = file
+        .decls
+        .iter()
+        .map(|&id| &file.decl_arena[id])
+        .find(|decl| file.binding_names[decl.binding.0 as usize] == "Tree")
+        .expect("Tree declaration");
+    let tree_binding = tree_decl.binding;
+
+    let tree_ty = match &tree_decl.kind {
+        ThirDeclKind::TypeAlias { params, ty } => {
+            assert!(params.is_empty());
+            *ty
+        }
+        other => panic!("expected Tree type alias, got {other:?}"),
+    };
+
+    let variants = match &file.type_arena[tree_ty.0 as usize].kind {
+        TypeKind::Union(variants, RowTail::Closed) => variants,
+        other => panic!("expected closed union alias body, got {other:?}"),
+    };
+
+    let leaf = variants
+        .iter()
+        .find(|variant| variant.name == "leaf")
+        .expect("leaf variant");
+    assert!(leaf.payload.is_none());
+
+    let node = variants
+        .iter()
+        .find(|variant| variant.name == "node")
+        .expect("node variant");
+    let node_payload = node.payload.expect("node payload");
+    let fields = match &file.type_arena[node_payload.0 as usize].kind {
+        TypeKind::Record(fields, RowTail::Closed) => fields,
+        other => panic!("expected closed node record payload, got {other:?}"),
+    };
+
+    let left = fields
+        .iter()
+        .find(|field| field.name == "left")
+        .expect("left field");
+    let right = fields
+        .iter()
+        .find(|field| field.name == "right")
+        .expect("right field");
+
+    assert!(matches!(
+        &file.type_arena[left.ty.0 as usize].kind,
+        TypeKind::Alias(binding) if *binding == tree_binding
+    ));
+    assert!(matches!(
+        &file.type_arena[right.ty.0 as usize].kind,
+        TypeKind::Alias(binding) if *binding == tree_binding
+    ));
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::Alias(binding) if *binding == tree_binding
+    ));
+}
+
+#[test]
 fn generic_alias_used_in_function_signature() {
     // A function that takes a `Pair Int Int` and returns the first field.
     let file = completed_file(

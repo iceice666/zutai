@@ -74,6 +74,64 @@ Foo
 }
 
 #[test]
+fn parse_recursive_union_alias_keeps_recursive_fields() {
+    let file = parse_str(
+        r#"
+Tree :: type {
+  #leaf;
+  #node : { value : Int; left : Tree; right : Tree; };
+}
+Tree
+"#,
+    );
+
+    let (name, params, ty) = as_alias(decl_by(&file, "Tree"));
+    assert_eq!(name, "Tree");
+    assert!(params.is_empty());
+
+    let variants = match ty {
+        TypeExpr::Union { variants, tail, .. } => {
+            assert!(tail.is_none());
+            assert_eq!(variants.len(), 2);
+            variants
+        }
+        other => panic!("expected union alias body, got {other:?}"),
+    };
+
+    assert_eq!(variants[0].name, "leaf");
+    assert!(variants[0].payload.is_none());
+
+    assert_eq!(variants[1].name, "node");
+    let fields = match variants[1].payload.as_deref() {
+        Some(TypeExpr::Record { fields, tail, .. }) => {
+            assert!(tail.is_none());
+            assert_eq!(
+                fields
+                    .iter()
+                    .map(|field| field.name.as_str())
+                    .collect::<Vec<_>>(),
+                ["value", "left", "right"]
+            );
+            fields
+        }
+        other => panic!("expected node record payload, got {other:?}"),
+    };
+
+    assert!(matches!(
+        &fields[0].ty,
+        TypeExpr::Ident { name, .. } if name == "Int"
+    ));
+    assert!(matches!(
+        &fields[1].ty,
+        TypeExpr::Ident { name, .. } if name == "Tree"
+    ));
+    assert!(matches!(
+        &fields[2].ty,
+        TypeExpr::Ident { name, .. } if name == "Tree"
+    ));
+}
+
+#[test]
 fn parse_type_forms_section() {
     parse_str(
         r#"{
