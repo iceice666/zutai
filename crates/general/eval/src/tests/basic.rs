@@ -351,6 +351,30 @@ fn list_equality() {
     assert_eq!(run("[1; 2; 3;] == [1; 2; 4;]"), Value::Bool(false));
 }
 
+#[test]
+fn stream_generator_evaluates_as_stream_backed_list() {
+    match run("xs :: Stream Int = stream { yield 1; yield 2; }\nxs") {
+        Value::List(items) => {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].peek(), Some(Value::Int(1)));
+            assert_eq!(items[1].peek(), Some(Value::Int(2)));
+        }
+        other => panic!("expected stream/list value, got {other:?}"),
+    }
+}
+
+#[test]
+fn bare_stream_constructor_is_rejected_as_value_type() {
+    let err = run_err("bad :: Stream = []\nbad");
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages.iter().any(|msg| msg.contains("Stream")),
+        "expected Stream type diagnostic, got {messages:?}"
+    );
+}
+
 // ─── tuples ───────────────────────────────────────────────────────────────────
 
 #[test]

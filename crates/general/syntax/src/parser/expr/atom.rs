@@ -119,6 +119,9 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             if input.starts_with("witness") && peek(kw("witness")).parse_next(input).is_ok() {
                 return parse_witness_reflect(input);
             }
+            if starts_generator(input) {
+                return parse_generator(input, options);
+            }
             if input.starts_with("select") && peek(kw("select")).parse_next(input).is_ok() {
                 return parse_select(input, options);
             }
@@ -467,6 +470,56 @@ fn parse_list_inner(input: &mut &str, options: ExprOptions) -> Result<Vec<Expr>>
     ws(input)?;
     ']'.parse_next(input)?;
     Ok(items)
+}
+
+// ---------------------------------------------------------------------------
+// Generator sugar: `stream { yield expr; ... }`
+// ---------------------------------------------------------------------------
+
+fn starts_generator(input: &str) -> bool {
+    let mut tmp = input;
+    if kw("stream").parse_next(&mut tmp).is_err() || ws(&mut tmp).is_err() {
+        return false;
+    }
+    if !tmp.starts_with('{') {
+        return false;
+    }
+    let mut body = &tmp[1..];
+    if ws(&mut body).is_err() || kw("yield").parse_next(&mut body).is_err() {
+        return false;
+    }
+    ws(&mut body).is_ok() && !matches!(body.chars().next(), Some('=' | ';' | '}') | None)
+}
+
+fn parse_generator(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("stream")).parse_next(input)?;
+    ws(input)?;
+    let (yields, end_span) = parse_generator_block(input, options)?;
+    Ok(Expr::Generator {
+        yields,
+        span: start_span.merge(end_span),
+    })
+}
+
+fn parse_generator_block(input: &mut &str, options: ExprOptions) -> Result<(Vec<Expr>, Span)> {
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut yields = Vec::new();
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        kw("yield").parse_next(input)?;
+        ws(input)?;
+        let value = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        yields.push(value);
+    }
+    ws(input)?;
+    let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
+    Ok((yields, end_span))
 }
 
 // ---------------------------------------------------------------------------

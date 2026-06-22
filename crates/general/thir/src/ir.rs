@@ -519,8 +519,8 @@ pub enum TypeKind {
         param_bounds: Vec<Vec<BindingId>>,
         body: TypeId,
     },
-    /// A bare, unapplied builtin type constructor (`List`, `Optional`, `Maybe`) used as a
-    /// higher-kinded witness/constraint target (`Functor @List`). Named aliases
+    /// A bare, unapplied builtin type constructor (`List`, `Stream`, `Optional`,
+    /// `Maybe`) used as a higher-kinded witness/constraint target (`Functor @List`).
     /// use `Alias(binding)` for their bare head; `Con` exists only for builtins
     /// that have no alias body.
     Con(BindingId),

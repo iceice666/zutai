@@ -1,19 +1,26 @@
 # Generator and Yield Syntax
 
-Status: deferred beyond v2; design intent and constraints only. This page does
-not define final syntax or grammar productions.
+Status: accepted shell. Phase 29 implements a pure generator expression that
+desugars to the current `Stream A ≡ List A` representation; richer generator
+semantics remain future work.
 
 ## Decisions
 
-- `yield`/generator syntax is deferred beyond v2.
-- Any generator form must desugar to `Stream` or to algebraic effects/handlers
-  that produce `Stream`; it must not introduce a second effect system.
-- Generators are not ambient host iterators. Filesystem, environment, clock,
-  randomness, and future network-backed generation require explicit
-  capabilities.
-- The v3 design must settle cancellation/finalization, resource lifetime,
-  interaction with laziness, and whether `yield` is expression syntax or handler
-  sugar before implementation.
+- Implemented syntax: `stream { yield expr; yield expr; }`.
+- `stream` is contextual. It starts a generator only when the following block
+  begins with `yield`; otherwise `stream` remains an ordinary identifier and
+  `stream { field = value; }` remains normal function application.
+- The implemented shell desugars each yielded expression to an element of a
+  `Stream` value. In the current compiler, `Stream A` lowers transparently to
+  `List A`, so pure finite generators evaluate through the existing lazy list
+  machinery.
+- Generator bodies use normal expression typing and effect rows. Resource-backed
+  generation still requires ordinary capability parameters/effect rows, and
+  unsupported residual host operations keep rejecting before backend erasure.
+  No second effect system or host iterator abstraction is introduced.
+- Future work must still settle cancellation/finalization, resource lifetime,
+  interaction with infinite/lazy streams, and whether richer `yield` forms are
+  expression syntax or handler sugar.
 
 ## Design intent
 
@@ -28,9 +35,9 @@ network source needs ordinary capability parameters and effect rows. Residual
 host operations that are not handled or granted must keep rejecting before
 backend erasure.
 
-## Non-goals for this shell
+## Remaining non-goals for this shell
 
-- No grammar productions for `yield`.
-- No parser, HIR, THIR, evaluator, TLC, or backend implementation.
 - No ambient filesystem, environment, clock, randomness, or network iteration.
 - No second iterator abstraction beside `Stream`.
+- No stateful, infinite, cancellation-aware, or finalization-aware generator
+  runtime beyond finite pure `yield` sequences.

@@ -58,6 +58,9 @@ impl Lowerer {
             ast::Expr::List { items, .. } => {
                 HirExprKind::List(items.iter().map(|item| self.lower_expr(item)).collect())
             }
+            ast::Expr::Generator { yields, .. } => {
+                HirExprKind::List(yields.iter().map(|item| self.lower_expr(item)).collect())
+            }
             ast::Expr::Block {
                 bindings, result, ..
             } => {

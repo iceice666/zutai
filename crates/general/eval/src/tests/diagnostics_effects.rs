@@ -350,6 +350,28 @@ abort
     );
 }
 
+#[test]
+fn stream_generator_preserves_effect_row_requirements() {
+    let src = r#"
+load :: FsRead -> Stream Text ! { fs.read : Path -> Text }
+  = fs => stream { yield perform fs.read "Cargo.toml"; };
+1
+"#;
+    assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn stream_generator_rejects_unsupported_residual_host_effects() {
+    let err = run_err(r#"stream { yield perform net.next (); }"#);
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages.iter().any(|msg| msg.contains("net.next")),
+        "expected net.next effect diagnostic, got {messages:?}"
+    );
+}
+
 // ─── prelude `print` effect binding ───────────────────────────────────────────
 
 #[test]

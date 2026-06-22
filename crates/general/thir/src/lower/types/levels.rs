@@ -289,7 +289,10 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Con(b) => {
                 let name = self.hir.bindings[b.0 as usize].name.as_str();
                 if args.len() == 1
-                    && matches!(name, "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch")
+                    && matches!(
+                        name,
+                        "List" | "Stream" | "Optional" | "Maybe" | "Patch" | "DeepPatch"
+                    )
                 {
                     self.type_universe(args[0], span)
                 } else {

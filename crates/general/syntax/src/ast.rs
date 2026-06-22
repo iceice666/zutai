@@ -291,6 +291,10 @@ pub enum Expr {
         items: Vec<Expr>,
         span: Span,
     },
+    Generator {
+        yields: Vec<Expr>,
+        span: Span,
+    },
     Block {
         bindings: Vec<LocalBinding>,
         result: Box<Expr>,
@@ -388,6 +392,7 @@ impl Expr {
             | Expr::RecordUpdate { span, .. }
             | Expr::Tuple { span, .. }
             | Expr::List { span, .. }
+            | Expr::Generator { span, .. }
             | Expr::Block { span, .. }
             | Expr::Lambda { span, .. }
             | Expr::If { span, .. }

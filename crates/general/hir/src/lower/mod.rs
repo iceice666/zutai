@@ -109,6 +109,7 @@ impl Lowerer {
             "f32",
             "f64",
             "List",
+            "Stream",
             "Optional",
             "Maybe",
             "Patch",

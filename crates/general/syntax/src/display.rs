@@ -227,6 +227,18 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             }
             Ok(())
         }
+        Expr::Generator { yields, .. } => {
+            writeln!(f, "{prefix}Generator")?;
+            for item in yields {
+                write_expr(
+                    f,
+                    item,
+                    &format!("{indent}├─ yield "),
+                    &format!("{indent}│  "),
+                )?;
+            }
+            Ok(())
+        }
         Expr::Block {
             bindings, result, ..
         } => {

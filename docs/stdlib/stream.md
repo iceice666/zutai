@@ -1,9 +1,13 @@
 # Standard Library: Stream
 
-Status: planned; depends on v2 recursive types for a source-level recursive Stream representation.
+Status: accepted shell. `Stream A` currently lowers transparently to `List A`
+for finite pure generators; the full recursive stream API remains planned once
+source-level recursive stream representation is stable.
 
 `Stream A` is a pure lazy sequence for iterator-style pipelines when producing
-or consuming every element as a `List A` would be unnecessary.
+or consuming every element as a `List A` would be unnecessary. Phase 29's
+`stream { yield expr; ... }` syntax produces finite stream-backed values through
+the current list representation.
 
 ## Initial API surface
 
@@ -39,9 +43,10 @@ toList    :: <A> Stream A -> List A
 ## Source and intrinsic policy
 
 Define stream functions in `.zt` when recursive types and list/optional
-primitives can express them. Compiler intrinsics are allowed only to preserve
-sharing, avoid repeated thunk allocation, or optimize stream stepping without
-changing the source binding semantics.
+primitives can express them. Today only the `Stream` type constructor and finite
+`stream { yield ...; }` producer shell are implemented; compiler intrinsics are
+allowed only to preserve sharing, avoid repeated thunk allocation, or optimize
+stream stepping without changing the source binding semantics.
 
 ## Host boundary policy
 

@@ -100,6 +100,20 @@ fn run_valid_zt_file_prints_result() {
 }
 
 #[test]
+fn run_stream_generator_prints_stream_backed_value() {
+    let path = write_tmp(
+        "cli_test_stream_generator.zt",
+        "xs :: Stream Int = stream { yield 1; yield 2; }\nxs\n",
+    );
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[1; 2]"));
+}
+
+#[test]
 fn run_posit_file_prints_posit_result() {
     let path = write_tmp("cli_test_posit_run.zt", "1p32 + 2p32\n");
     cli()

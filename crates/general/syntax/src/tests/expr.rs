@@ -157,6 +157,38 @@ fn parse_list_value() {
 }
 
 #[test]
+fn parse_stream_generator_yields_values() {
+    let e = parse_expr_str("stream { yield 1; yield 2; }");
+    let Expr::Generator { yields, .. } = e else {
+        panic!("expected generator, got {e:?}");
+    };
+    assert_eq!(yields.len(), 2);
+    assert_eq!(as_int(&yields[0]), 1);
+    assert_eq!(as_int(&yields[1]), 2);
+}
+
+#[test]
+fn stream_without_generator_block_remains_identifier() {
+    assert_eq!(as_ident(&parse_expr_str("stream")), "stream");
+}
+
+#[test]
+fn stream_record_application_is_not_generator() {
+    let e = parse_expr_str("stream { value = 1; }");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "stream");
+    assert_eq!(as_int(&as_record(arg)[0].value), 1);
+}
+
+#[test]
+fn stream_record_with_yield_field_is_not_generator() {
+    let e = parse_expr_str("stream { yield = 1; }");
+    let (func, arg) = as_apply(&e);
+    assert_eq!(as_ident(func), "stream");
+    assert_eq!(as_int(&as_record(arg)[0].value), 1);
+}
+
+#[test]
 fn parse_empty_list() {
     let e = parse_expr_str("[]");
     let items = as_list(&e);

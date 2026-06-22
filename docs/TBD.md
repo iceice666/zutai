@@ -3,28 +3,10 @@
 Open work is now grouped by deferral horizon. Completed milestones live in
 `docs/ARCHIVED.md`; new implementation phases should be added here when scoped.
 
-## Deferred to v2 (see `docs/v2_spec/`)
+## Deferred to v2/v3
 
-_Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
-short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
-here._
-
-
-## Deferred to v3 (see `docs/v3_spec/`)
-
-### Phase 29: Stream-backed generator syntax
-
-Source of truth: [`v3_spec/01-generators.md`](v3_spec/01-generators.md).
-
-- Design generator/yield syntax only after `Stream` is specified.
-- Desugar generator forms to `Stream` or effect handlers that produce `Stream`;
-  do not introduce a second effect system.
-- Preserve explicit host capabilities; no ambient filesystem, environment,
-  clock, randomness, or network iteration.
-- Acceptance: examples that use pure generators type-check and evaluate through
-  `Stream`; resource-backed examples require capability parameters and effect
-  rows; unsupported residual host operations keep rejecting before backend
-  erasure.
+_No active scoped v2/v3 milestones. Add new dependency-ordered work here when
+scoped; completed milestones live in `docs/ARCHIVED.md`._
 
 ## Deferred beyond planned v3 work
 

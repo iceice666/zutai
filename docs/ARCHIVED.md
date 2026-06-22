@@ -35,17 +35,18 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 28 derive recipes._
+_Last updated: 2026-06-22 after closing Phase 29 stream-backed generators._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and
   elaborates complete programs to TLC.
-- THIR covers v0 plus implemented v1/v2-adjacent semantics: row-polymorphic
-  records/unions, `select`, constraints/witnesses, `derive`, method-level type
-  params, higher-kinded constraints, algebraic-effect typing, higher-rank
-  annotation checking, predicative inference, guarded recursive type aliases, and
-  standard host capability/effect-row checking.
+- THIR covers v0 plus implemented v1/v2/v3-adjacent semantics:
+  row-polymorphic records/unions, `select`, constraints/witnesses, `derive`,
+  method-level type params, higher-kinded constraints, algebraic-effect typing,
+  higher-rank annotation checking, predicative inference, guarded recursive type
+  aliases, stream-backed generator sugar, and standard host capability/effect-row
+  checking.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
   operator lowering, source effect markers, higher-rank `ForAll`/`TyLam`/`TyApp`
   elaboration, CPS elaboration for handled effects, equirecursive alias identity,
@@ -137,6 +138,24 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 29: Stream-backed generator syntax ✅
+
+- Added contextual generator syntax `stream { yield expr; ... }`. It parses only
+  when a `stream` block starts with `yield`, preserving ordinary `stream`
+  identifier usage and record application, including `yield` as a record field.
+- `Expr::Generator` is source-preserving at syntax/display/span boundaries and
+  desugars during HIR lowering to the existing lazy list representation. No
+  second effect system or iterator IR was introduced.
+- `Stream A` is accepted as a standard one-argument type constructor and
+  currently lowers transparently to `List A`; THIR type application, alias
+  normalization, and universe-level computation all share that treatment.
+- Generator body effects use the existing expression/list effect machinery:
+  resource-backed examples require the same capability/effect-row declarations
+  as ordinary expressions, and unsupported residual host operations still reject.
+- Verification: `cargo fmt --check`; `cargo test --workspace` (1432 passed);
+  `cargo clippy --workspace --all-targets`; `cargo llvm-cov nextest --workspace`
+  (function coverage 87.91%; line coverage 81.16%).
 
 ### Phase 28: Derive recipes and witness reflection ✅
 
