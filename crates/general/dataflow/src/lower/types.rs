@@ -33,6 +33,7 @@ impl<'m> Lowerer<'m> {
                 self.types.alloc(ty)
             }
             TlcType::Prim(PrimTy::Posit(spec)) => self.types.alloc(DfTy::Posit(spec)),
+            TlcType::Opaque(name) => self.types.alloc(DfTy::Opaque(name)),
             TlcType::Prim(PrimTy::Bool) => self.types.alloc(DfTy::Bool),
             TlcType::Prim(PrimTy::Str) => self.types.alloc(DfTy::Text),
             TlcType::Prim(PrimTy::Atom) => self.types.alloc(DfTy::Atom),
@@ -307,6 +308,7 @@ impl<'m> Lowerer<'m> {
             | DfTy::Posit(_)
             | DfTy::Bool
             | DfTy::Text
+            | DfTy::Opaque(_)
             | DfTy::Atom
             | DfTy::True
             | DfTy::False

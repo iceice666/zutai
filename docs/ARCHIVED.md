@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 26 higher-rank polymorphism._
+_Last updated: 2026-06-22 after closing Phase 27 host capabilities._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -44,20 +44,24 @@ _Last updated: 2026-06-22 after closing Phase 26 higher-rank polymorphism._
 - THIR covers v0 plus implemented v1/v2-adjacent semantics: row-polymorphic
   records/unions, `select`, constraints/witnesses, `derive`, method-level type
   params, higher-kinded constraints, algebraic-effect typing, higher-rank
-  annotation checking, predicative inference, and guarded recursive type aliases.
+  annotation checking, predicative inference, guarded recursive type aliases, and
+  standard host capability/effect-row checking.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
   operator lowering, source effect markers, higher-rank `ForAll`/`TyLam`/`TyApp`
   elaboration, CPS elaboration for handled effects, equirecursive alias identity,
-  and runtime `io.print` lowering through ordinary TLC function values.
+  runtime `io.print` lowering through ordinary TLC function values, and residual
+  host-effect grant gating before Dataflow Core.
 - THIR and TLC carry internal universe levels for surface `Type`. Explicit level
   syntax is still unsupported; level-polymorphic type constructors default to
   the lowest consistent universe and erase before runtime/backend lowering.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
   Record/tuple access is slot-indexed; union construction now uses dense
   per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
-  recursive and generic recursive aliases lower to finite cyclic `DfTyId` graphs;
-  codegen emits static descriptors for `zutai.show`; `@main` renders through the
-  type-directed runtime display path and rejects function / `Type` results.
+  granted v2 host operations lower to explicit `HostOp` nodes through
+  Dataflow/ANF/SSA/LLVM/runtime; recursive and generic recursive aliases lower
+  to finite cyclic `DfTyId` graphs; codegen emits static descriptors for
+  `zutai.show`; `@main` renders through the type-directed runtime display path
+  and rejects function / `Type` results.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce
@@ -128,6 +132,25 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 27: Host capabilities beyond ambient `io.print` ✅
+
+- Standard host capability type names are seeded in the root scope:
+  `FsRead`, `FsWrite`, `Env`, `Clock`, `Rng`, and explicit `IoPrint`. `Path`
+  and `Instant` are accepted as standard text-shaped host boundary types.
+- THIR effect rows recognize standard operations `fs.read`, `fs.write`,
+  `env.get`, `clock.now`, and `rng.next`; capability values remain ordinary
+  parameters and authority is advisory only.
+- TLC keeps residual host effects explicit and rejects ungranted operations by
+  default before TLC→DC lowering. CLI `run`, `dataflow`, and native/LLVM compile
+  boundaries grant the standard host set and lower granted residual effects.
+- Dataflow adds `HostOp`, ANF/SSA/codegen preserve it, and the runtime/evaluator
+  dispatch filesystem read/write, environment lookup, clock, and deterministic
+  RNG helpers. Ambient `io.print` remains source-compatible, and source handlers
+  can still intercept host operations before the boundary.
+- Verification: `cargo fmt --check`; `cargo test --workspace`; `cargo clippy
+  --workspace --all-targets`; `cargo llvm-cov nextest --workspace` (function
+  coverage 88.17%; line coverage 81.29%).
 
 ### Phase 26: Higher-rank polymorphism ✅
 

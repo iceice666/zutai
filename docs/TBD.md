@@ -9,28 +9,6 @@ _Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
 short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
 here._
 
-### Phase 27: Host capabilities beyond ambient `io.print`
-
-Source of truth: [`v2_spec/02-host-capabilities.md`](v2_spec/02-host-capabilities.md).
-
-- Add opaque standard capability types and declarations for `FsRead`, `FsWrite`,
-  `Env`, `Clock`, `Rng`, and explicit `IoPrint`, plus standard operations
-  `fs.read`, `fs.write`, `env.get`, `clock.now`, and `rng.next`.
-- Thread capability values as ordinary parameters while effect rows continue to
-  state which host operations may occur. Authority is advisory only;
-  unforgeable capability tokens remain beyond v2.
-- Extend the `run`/native entry boundary so the host grants requested
-  capabilities, dispatches residual granted operations, and rejects ungranted
-  residual host operations as boundary errors. Ambient `io.print` remains
-  source-compatible.
-- Preserve handler interception: source handlers can mock or discharge host
-  operations before the boundary.
-- Acceptance: capability-parameter programs type-check only when their effect
-  rows mention the performed operation; source handlers can make `fs.read` pure;
-  granted operations have `run`/compiled-output parity; ungranted filesystem,
-  environment, clock, and randomness operations reject before unsafe backend
-  erasure.
-
 ### Phase 28: Derive recipes and witness reflection
 
 Source of truth: [`v2_spec/03-derive-recipes.md`](v2_spec/03-derive-recipes.md).

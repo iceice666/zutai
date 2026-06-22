@@ -124,6 +124,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Posit(spec) => Some(spec.type_name()),
             TypeKind::Bool | TypeKind::True | TypeKind::False => Some("Bool".to_string()),
             TypeKind::Text => Some("Text".to_string()),
+            TypeKind::Opaque(name) => Some(name),
             TypeKind::Atom(name) => Some(format!("#{name}")),
             TypeKind::List(inner) => {
                 Some(format!("[{}]", self.structural_witness_key(inner, seen)?))

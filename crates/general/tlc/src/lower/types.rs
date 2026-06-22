@@ -22,6 +22,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Float => self.alloc_type(TlcType::Prim(PrimTy::Float)),
             TypeKind::FixedNum(fw) => self.alloc_type(TlcType::Prim(PrimTy::FixedNum(fw))),
             TypeKind::Posit(spec) => self.alloc_type(TlcType::Prim(PrimTy::Posit(spec))),
+            TypeKind::Opaque(name) => self.alloc_type(TlcType::Opaque(name)),
             TypeKind::Bool => self.alloc_type(TlcType::Prim(PrimTy::Bool)),
             // Singleton types — preserve discrimination (Phase 0 bug fix).
             TypeKind::True => self.alloc_type(TlcType::Singleton(Literal::Bool(true))),
@@ -583,6 +584,7 @@ impl<'thir> Lowerer<'thir> {
             | TypeKind::Float
             | TypeKind::FixedNum(_)
             | TypeKind::Posit(_)
+            | TypeKind::Opaque(_)
             | TypeKind::Atom(_)
             | TypeKind::True
             | TypeKind::False

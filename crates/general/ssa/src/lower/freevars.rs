@@ -66,6 +66,7 @@ pub(super) fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             .cloned()
             .collect(),
         AnfExpr::Variant { value, .. } => free_vars_atom(value),
+        AnfExpr::HostOp { value, .. } => free_vars_atom(value),
         AnfExpr::Error => HashSet::new(),
     }
 }

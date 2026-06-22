@@ -186,7 +186,8 @@ impl<'hir> Lowerer<'hir> {
 
         let kind = match name {
             "Type" => TypeKind::Type,
-            "Text" => TypeKind::Text,
+            "Text" | "Path" | "Instant" => TypeKind::Text,
+            "Unit" => TypeKind::Tuple(Vec::new()),
             "Bool" => TypeKind::Bool,
             "Int" | "i64" => TypeKind::Int,
             "Float" | "f64" => TypeKind::Float,
@@ -198,6 +199,9 @@ impl<'hir> Lowerer<'hir> {
             "u32" => TypeKind::FixedNum(FixedWidth::U32),
             "u64" => TypeKind::FixedNum(FixedWidth::U64),
             "f32" => TypeKind::FixedNum(FixedWidth::F32),
+            "FsRead" | "FsWrite" | "Env" | "Clock" | "Rng" | "IoPrint" => {
+                TypeKind::Opaque(name.to_string())
+            }
             _ => return None,
         };
         Some(self.alloc_type(Type { kind, span }))

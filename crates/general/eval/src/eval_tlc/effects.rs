@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl<'a> TlcEvaluator<'a> {
     pub(super) fn apply<'eval>(
@@ -195,18 +197,114 @@ impl<'a> TlcEvaluator<'a> {
     {
         match control {
             EvalControl::Value(value) => Ok(value),
-            EvalControl::Perform { op, arg, cont } if op == "io.print" => match arg {
-                Value::Text(text) => {
-                    println!("{text}");
-                    let next = cont(Value::Text(text))?;
-                    self.finish_top(next)
-                }
-                other => Err(EvalError::TypeMismatch {
+            EvalControl::Perform { op, arg, cont } => {
+                let value = eval_host_op(&op, arg, self)?;
+                let next = cont(value)?;
+                self.finish_top(next)
+            }
+        }
+    }
+}
+
+static RNG_STATE: AtomicU64 = AtomicU64::new(0x9e37_79b9_7f4a_7c15);
+
+fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Value, EvalError> {
+    match op {
+        "io.print" => match arg {
+            Value::Text(text) => {
+                println!("{text}");
+                Ok(Value::Text(text))
+            }
+            other => Err(EvalError::TypeMismatch {
+                expected: "Text",
+                found: value_type_name(&other),
+            }),
+        },
+        "fs.read" => {
+            let Value::Text(path) = arg else {
+                return Err(EvalError::TypeMismatch {
                     expected: "Text",
-                    found: value_type_name(&other),
-                }),
-            },
-            EvalControl::Perform { op, .. } => Err(EvalError::UnhandledEffect(op)),
+                    found: value_type_name(&arg),
+                });
+            };
+            std::fs::read_to_string(path.as_ref())
+                .map(|text| Value::Text(Rc::from(text)))
+                .map_err(|err| EvalError::EffectfulNotExecutable(format!("fs.read failed: {err}")))
+        }
+        "fs.write" => {
+            let Value::Record(fields) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Record",
+                    found: value_type_name(&arg),
+                });
+            };
+            let path = force_record_text(&fields, "path", evaluator)?;
+            let contents = force_record_text(&fields, "contents", evaluator)?;
+            std::fs::write(path.as_ref(), contents.as_ref()).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.write failed: {err}"))
+            })?;
+            Ok(Value::Tuple(Rc::from([])))
+        }
+        "env.get" => {
+            let Value::Text(name) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            match std::env::var(name.as_ref()) {
+                Ok(value) => Ok(tagged_slot_value("some", Value::Text(Rc::from(value)))),
+                Err(_) => Ok(Value::Atom(Rc::from("none"))),
+            }
+        }
+        "clock.now" => {
+            let millis = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            Ok(Value::Text(Rc::from(millis.to_string())))
+        }
+        "rng.next" => Ok(Value::Int(next_rng())),
+        _ => Err(EvalError::UnhandledEffect(op.to_string())),
+    }
+}
+
+fn tagged_slot_value(tag: &'static str, value: Value) -> Value {
+    Value::TaggedValue {
+        tag: Rc::from(tag),
+        payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+    }
+}
+
+fn force_record_text(
+    fields: &[(Rc<str>, Thunk)],
+    name: &str,
+    evaluator: TlcEvaluator<'_>,
+) -> Result<Rc<str>, EvalError> {
+    let Some((_, thunk)) = fields.iter().find(|(field, _)| field.as_ref() == name) else {
+        return Err(EvalError::TypeMismatch {
+            expected: "Record field",
+            found: "Record",
+        });
+    };
+    match thunk.force_tlc(&evaluator)? {
+        Value::Text(text) => Ok(text),
+        other => Err(EvalError::TypeMismatch {
+            expected: "Text",
+            found: value_type_name(&other),
+        }),
+    }
+}
+
+fn next_rng() -> i64 {
+    let mut state = RNG_STATE.load(Ordering::Relaxed);
+    loop {
+        let next = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        match RNG_STATE.compare_exchange_weak(state, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return (next >> 1) as i64,
+            Err(found) => state = found,
         }
     }
 }

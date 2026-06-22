@@ -444,6 +444,10 @@ pub enum TypeKind {
     Float,
     FixedNum(FixedWidth),
     Posit(PositSpec),
+    /// Opaque standard host capability token type (`FsRead`, `Env`, …).
+    /// Values are synthesized only by the host entry boundary; source cannot
+    /// construct them.
+    Opaque(String),
     Atom(String),
     True,
     False,

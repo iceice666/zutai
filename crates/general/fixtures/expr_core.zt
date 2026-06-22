@@ -2,7 +2,7 @@
 -- Exercises every atom-level form and operator precedence layer.
 
 AtomTag :: type {#dev; #x86_64-linux;}
-Env :: type {#dev; #prod; #stage;}
+BuildEnv :: type {#dev; #prod; #stage;}
 Sign :: type {#pos; #nonpos;}
 
 {
@@ -11,7 +11,7 @@ Sign :: type {#pos; #nonpos;}
   atom_tags : List AtomTag = [#dev; #x86_64-linux;];
   missing_int : Int? = #none;
   present_int : Int? = #some (5);
-  env : Env = #prod;
+  env : BuildEnv = #prod;
   {
     -- Scalars
     bool_vals      = [true; false;];

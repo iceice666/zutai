@@ -34,6 +34,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
         .map(|i| match &i.op {
             SsaOp::ApplyClosure { .. } => "ApplyClosure".to_string(),
             SsaOp::HostPrint { .. } => "HostPrint".to_string(),
+            SsaOp::HostOp { .. } => "HostOp".to_string(),
             SsaOp::MakeClosure { .. } => "MakeClosure".to_string(),
             SsaOp::LoadCapture { .. } => "LoadCapture".to_string(),
             SsaOp::CallGlobal { .. } => "CallGlobal".to_string(),

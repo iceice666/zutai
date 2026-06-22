@@ -56,6 +56,7 @@ fn export(
         TypeKind::FixedNum(fw) => Ok(ImportedType::FixedNum(fw)),
         TypeKind::Posit(spec) => Ok(ImportedType::Posit(spec)),
         TypeKind::Text => Ok(ImportedType::Text),
+        TypeKind::Opaque(_) => Ok(ImportedType::Unknown),
         TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
         TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export(
             file, aliases, inner, seen,

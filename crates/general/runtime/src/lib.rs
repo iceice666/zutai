@@ -20,7 +20,11 @@ use fast_posit::{Posit, RoundInto};
 
 use std::slice;
 use std::str;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{
+    LazyLock, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Object headers (D-0009, Role B reserves the high bits) ──────────────────────
 
@@ -370,6 +374,107 @@ pub extern "C" fn text_concat(a: i64, b: i64) -> i64 {
         std::ptr::copy_nonoverlapping(sa.as_ptr(), dst, sa.len());
         std::ptr::copy_nonoverlapping(sb.as_ptr(), dst.add(sa.len()), sb.len());
         text_from_global(dst as i64, total as i64)
+    }
+}
+
+fn text_from_bytes(bytes: &[u8]) -> i64 {
+    let dst = arena_alloc(bytes.len());
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
+    }
+    text_from_global(dst as i64, bytes.len() as i64)
+}
+
+fn text_from_string(s: String) -> i64 {
+    text_from_bytes(s.as_bytes())
+}
+
+fn runtime_error(message: &str) -> ! {
+    eprintln!("zutai host boundary error: {message}");
+    std::process::exit(1);
+}
+
+fn optional_text(value: Option<String>) -> i64 {
+    match value {
+        Some(text) => {
+            let tuple = tuple_new(1);
+            tuple_set(tuple, 0, text_from_string(text));
+            variant_new(1, tuple)
+        }
+        None => text_from_bytes(b"none"),
+    }
+}
+
+// ── Host capability operations ─────────────────────────────────────────────────
+
+#[unsafe(export_name = "zutai.host.io_print")]
+pub extern "C" fn host_io_print(v: i64) -> i64 {
+    print_text(v);
+    let newline = text_from_bytes(b"\n");
+    print_text(newline);
+    v
+}
+
+#[unsafe(export_name = "zutai.host.fs_read")]
+pub extern "C" fn host_fs_read(path: i64) -> i64 {
+    let path = unsafe {
+        str::from_utf8(text_parts(path))
+            .unwrap_or_else(|_| runtime_error("fs.read path is not UTF-8"))
+    };
+    match std::fs::read_to_string(path) {
+        Ok(contents) => text_from_string(contents),
+        Err(err) => runtime_error(&format!("fs.read failed for {path:?}: {err}")),
+    }
+}
+
+#[unsafe(export_name = "zutai.host.fs_write")]
+pub extern "C" fn host_fs_write(request: i64) -> i64 {
+    unsafe {
+        // Dataflow/Core and SSA sort record fields by name, so the standard
+        // `{ contents : Text; path : Path; }` payload stores contents at slot 0
+        // and path at slot 1.
+        let contents = str::from_utf8(text_parts(word(request, 1)))
+            .unwrap_or_else(|_| runtime_error("fs.write contents are not UTF-8"));
+        let path = str::from_utf8(text_parts(word(request, 2)))
+            .unwrap_or_else(|_| runtime_error("fs.write path is not UTF-8"));
+        if let Err(err) = std::fs::write(path, contents) {
+            runtime_error(&format!("fs.write failed for {path:?}: {err}"));
+        }
+    }
+    tuple_new(0)
+}
+
+#[unsafe(export_name = "zutai.host.env_get")]
+pub extern "C" fn host_env_get(name: i64) -> i64 {
+    let name = unsafe {
+        str::from_utf8(text_parts(name))
+            .unwrap_or_else(|_| runtime_error("env.get name is not UTF-8"))
+    };
+    optional_text(std::env::var(name).ok())
+}
+
+#[unsafe(export_name = "zutai.host.clock_now")]
+pub extern "C" fn host_clock_now(_unit: i64) -> i64 {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    text_from_string(millis.to_string())
+}
+
+static RNG_STATE: AtomicU64 = AtomicU64::new(0x9e37_79b9_7f4a_7c15);
+
+#[unsafe(export_name = "zutai.host.rng_next")]
+pub extern "C" fn host_rng_next(_unit: i64) -> i64 {
+    let mut state = RNG_STATE.load(Ordering::Relaxed);
+    loop {
+        let next = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        match RNG_STATE.compare_exchange_weak(state, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return (next >> 1) as i64,
+            Err(found) => state = found,
+        }
     }
 }
 

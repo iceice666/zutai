@@ -5,7 +5,9 @@
 //! basic blocks with explicit terminators. Phi nodes merge values at join
 //! points (e.g. after match arms or conditional branches).
 
-pub use zutai_anf::{DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes};
+pub use zutai_anf::{
+    DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes, HostOp,
+};
 
 mod lower;
 
@@ -46,6 +48,8 @@ pub enum SsaOp {
     ApplyClosure { closure: SsaValue, arg: SsaValue },
     /// Runtime host `io.print`: print Text, append newline, return the same Text.
     HostPrint { value: SsaValue },
+    /// Runtime host operation authorized by an explicit v2 capability.
+    HostOp { op: HostOp, value: SsaValue },
     /// Allocate a closure object for a lambda value: `{ header, code, caps[] }`.
     MakeClosure {
         code: String,

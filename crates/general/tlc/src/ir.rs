@@ -154,11 +154,99 @@ impl<'a> Iterator for RowIter<'a> {
     }
 }
 
+// ── Host operations ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HostOp {
+    IoPrint,
+    FsRead,
+    FsWrite,
+    EnvGet,
+    ClockNow,
+    RngNext,
+}
+
+impl HostOp {
+    pub const ALL: [Self; 6] = [
+        Self::IoPrint,
+        Self::FsRead,
+        Self::FsWrite,
+        Self::EnvGet,
+        Self::ClockNow,
+        Self::RngNext,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::IoPrint => "io.print",
+            Self::FsRead => "fs.read",
+            Self::FsWrite => "fs.write",
+            Self::EnvGet => "env.get",
+            Self::ClockNow => "clock.now",
+            Self::RngNext => "rng.next",
+        }
+    }
+
+    pub const fn capability_type(self) -> &'static str {
+        match self {
+            Self::IoPrint => "IoPrint",
+            Self::FsRead => "FsRead",
+            Self::FsWrite => "FsWrite",
+            Self::EnvGet => "Env",
+            Self::ClockNow => "Clock",
+            Self::RngNext => "Rng",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|op| op.name() == name)
+    }
+
+    pub fn from_capability_type(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|op| op.capability_type() == name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostEffectSet(u8);
+
+impl HostEffectSet {
+    pub const EMPTY: Self = Self(0);
+    pub const AMBIENT: Self = Self(1 << HostOp::IoPrint as u8);
+    pub const ALL: Self = Self(
+        (1 << HostOp::IoPrint as u8)
+            | (1 << HostOp::FsRead as u8)
+            | (1 << HostOp::FsWrite as u8)
+            | (1 << HostOp::EnvGet as u8)
+            | (1 << HostOp::ClockNow as u8)
+            | (1 << HostOp::RngNext as u8),
+    );
+
+    pub fn with(mut self, op: HostOp) -> Self {
+        self.0 |= 1 << (op as u8);
+        self
+    }
+
+    pub fn contains(self, op: HostOp) -> bool {
+        self.0 & (1 << (op as u8)) != 0
+    }
+}
+
+impl Default for HostEffectSet {
+    fn default() -> Self {
+        Self::AMBIENT
+    }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TlcType {
     Prim(PrimTy),
+    /// Opaque host capability token type.
+    Opaque(String),
     /// Singleton type: `true`, `false`, `#atom`, integer literal, …
     /// Fixes the silent `True`/`False` and `Atom` data-loss bugs.
     Singleton(Literal),

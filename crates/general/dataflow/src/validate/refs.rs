@@ -39,6 +39,7 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
             | (DfTy::Atom, DfTy::Atom)
             | (DfTy::Type, DfTy::Type)
             | (DfTy::Error, DfTy::Error) => true,
+            (DfTy::Opaque(a), DfTy::Opaque(b)) => a == b,
             (DfTy::Posit(a), DfTy::Posit(b)) => a == b,
             (DfTy::Bool, DfTy::True | DfTy::False) | (DfTy::True | DfTy::False, DfTy::Bool) => true,
             (DfTy::TyVar(a), DfTy::TyVar(b)) => a == b,
@@ -277,7 +278,7 @@ pub(super) fn is_opaque_shape_type(graph: &DataflowGraph, ty: DfTyId) -> bool {
     type_exists(graph, ty)
         && matches!(
             graph.types[ty],
-            DfTy::TyVar(_) | DfTy::TyApp(_, _) | DfTy::Type | DfTy::Error
+            DfTy::TyVar(_) | DfTy::TyApp(_, _) | DfTy::Opaque(_) | DfTy::Type | DfTy::Error
         )
 }
 
@@ -348,6 +349,7 @@ pub(super) fn validate_type_refs(graph: &DataflowGraph, errors: &mut Vec<Validat
             | DfTy::Bool
             | DfTy::Text
             | DfTy::Atom
+            | DfTy::Opaque(_)
             | DfTy::True
             | DfTy::False
             | DfTy::TyVar(_)
@@ -405,6 +407,9 @@ pub(super) fn check_node_refs(
             check_node_ref(graph, owner, "arg", *arg, errors);
         }
         DfNodeKind::HostPrint { arg } => {
+            check_node_ref(graph, owner, "arg", *arg, errors);
+        }
+        DfNodeKind::HostOp { arg, .. } => {
             check_node_ref(graph, owner, "arg", *arg, errors);
         }
         DfNodeKind::TyLam { body, .. } => {

@@ -37,6 +37,7 @@ pub(super) fn types_equal_deep(arena: &Arena<TlcType>, a: TlcTypeId, b: TlcTypeI
     }
     match (arena[a].clone(), arena[b].clone()) {
         (TlcType::Prim(pa), TlcType::Prim(pb)) => pa == pb,
+        (TlcType::Opaque(a), TlcType::Opaque(b)) => a == b,
         (TlcType::Singleton(la), TlcType::Singleton(lb)) => la == lb,
         (TlcType::TyVar(va, ka), TlcType::TyVar(vb, kb)) => va == vb && ka == kb,
         (TlcType::Fun(f1, t1, e1), TlcType::Fun(f2, t2, e2)) => {

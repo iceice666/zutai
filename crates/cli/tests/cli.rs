@@ -15,6 +15,10 @@ fn write_tmp(name: &str, content: &str) -> String {
     path.to_str().unwrap().to_string()
 }
 
+fn zt_string_literal(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn compile_stdout(name: &str, content: &str) -> String {
     let path = write_tmp(name, content);
     let output = cli()
@@ -1563,6 +1567,102 @@ fn compile_local_print_binding_does_not_dispatch_host_effect() {
 "#,
     );
     assert_eq!(out, "\"local\"\n");
+}
+
+#[test]
+fn run_fs_read_dispatches_granted_host_effect() {
+    let data_path = write_tmp("cli_test_host_fs_read_data.txt", "phase27");
+    let source = format!(
+        r#"
+readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+  = path => perform fs.read path;
+readFile "{}"
+"#,
+        zt_string_literal(&data_path)
+    );
+    let out = run_stdout("cli_test_host_fs_read.zt", &source);
+    assert_eq!(out, "\"phase27\"\n");
+}
+
+#[test]
+fn compile_fs_read_dispatches_granted_host_effect_at_runtime() {
+    let data_path = write_tmp("cli_test_compile_host_fs_read_data.txt", "compiled");
+    let source = format!(
+        r#"
+readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+  = path => perform fs.read path;
+readFile "{}"
+"#,
+        zt_string_literal(&data_path)
+    );
+    let out = compile_bin_stdout("cli_test_compile_host_fs_read", &source);
+    assert_eq!(out, "\"compiled\"\n");
+}
+
+#[test]
+fn compile_env_get_dispatches_optional_host_effect() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_host_env_get",
+        r#"
+lookup :: Text -> Text? ! { env.get : Text -> Text? }
+  = name => perform env.get name;
+lookup "__ZUTAI_PHASE27_UNSET__" ?? "missing"
+"#,
+    );
+    assert_eq!(out, "\"missing\"\n");
+}
+
+#[test]
+fn compile_env_get_some_branch_dispatches_optional_host_effect() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_host_env_get_some",
+        r#"
+lookup :: Text -> Text? ! { env.get : Text -> Text? }
+  = name => perform env.get name;
+lookup "HOME" ?? "__missing_home__"
+"#,
+    );
+    assert_ne!(out, "\"__missing_home__\"\n");
+}
+
+#[test]
+fn compile_fs_write_dispatches_and_can_read_back() {
+    let path = write_tmp("cli_test_compile_host_fs_write_data.txt", "");
+    let source = format!(
+        r#"
+{{ perform fs.write {{ contents = "written"; path = "{}"; }}; perform fs.read "{}"; }}
+"#,
+        zt_string_literal(&path),
+        zt_string_literal(&path)
+    );
+    let out = compile_bin_stdout("cli_test_compile_host_fs_write", &source);
+    assert_eq!(out, "\"written\"\n");
+}
+
+#[test]
+fn compile_clock_now_dispatches_host_effect() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_host_clock_now",
+        r#"
+now :: Unit -> Instant ! { clock.now : Unit -> Instant }
+  = tick => perform clock.now tick;
+now ()
+"#,
+    );
+    assert!(out.starts_with('"') && out.ends_with("\"\n"), "{out:?}");
+}
+
+#[test]
+fn compile_rng_next_dispatches_deterministic_host_effect() {
+    let out = compile_bin_stdout(
+        "cli_test_compile_host_rng_next",
+        r#"
+next :: Unit -> Int ! { rng.next : Unit -> Int }
+  = tick => perform rng.next tick;
+next ()
+"#,
+    );
+    assert_eq!(out, "1618330555464769024\n");
 }
 
 #[test]

@@ -104,6 +104,10 @@ pub(super) fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: 
         AnfExpr::HostPrint { value } => SsaOp::HostPrint {
             value: lower_atom_value(value, fb, ctx),
         },
+        AnfExpr::HostOp { op, value } => SsaOp::HostOp {
+            op: *op,
+            value: lower_atom_value(value, fb, ctx),
+        },
 
         AnfExpr::TyApp { poly, ty_args } => SsaOp::TyApp {
             poly: lower_atom_value(poly, fb, ctx),

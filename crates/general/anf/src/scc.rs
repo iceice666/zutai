@@ -35,6 +35,9 @@ fn collect_global_refs(
         DfNodeKind::HostPrint { arg } => {
             collect_global_refs(graph, *arg, out, visited);
         }
+        DfNodeKind::HostOp { arg, .. } => {
+            collect_global_refs(graph, *arg, out, visited);
+        }
         DfNodeKind::TyLam { ty_params: _, body } => {
             collect_global_refs(graph, *body, out, visited);
         }

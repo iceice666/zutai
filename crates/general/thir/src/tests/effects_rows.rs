@@ -349,13 +349,43 @@ bad
 fn dotted_capability_effect_checks() {
     completed_file(
         r#"
-FsRead :: type { token : Text; }
-Path :: type Text
 IOError :: type Text
 load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }
   = fs path => perform fs.read path;
 load
 "#,
+    );
+}
+
+#[test]
+fn standard_host_capability_types_and_ops_typecheck() {
+    completed_file(
+        r#"
+WriteRequest :: type { path : Path; contents : Text; }
+readConfig :: FsRead -> Path -> Text ! { fs.read : Path -> Text }
+  = fs path => perform fs.read path;
+lookup :: Env -> Text -> Text? ! { env.get : Text -> Text? }
+  = env name => perform env.get name;
+timestamp :: Clock -> Unit -> Instant ! { clock.now : Unit -> Instant }
+  = clock tick => perform clock.now tick;
+randomInt :: Rng -> Unit -> Int ! { rng.next : Unit -> Int }
+  = rng tick => perform rng.next tick;
+save :: FsWrite -> WriteRequest -> Unit ! { fs.write : WriteRequest -> Unit }
+  = fs req => perform fs.write req;
+readConfig
+"#,
+    );
+}
+
+#[test]
+fn standard_host_ops_still_require_declared_function_effect_rows() {
+    rejects_with(
+        r#"
+bad :: Path -> Text ! {}
+  = path => perform fs.read path;
+bad
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fs.read"),
     );
 }
 

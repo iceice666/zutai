@@ -267,12 +267,19 @@ impl<'m> Lowerer<'m> {
                 }
             }
 
-            TlcExpr::Perform { op, arg } if op == "io.print" => {
-                let arg = self.lower_expr(arg);
-                self.alloc_node(DfNodeKind::HostPrint { arg }, df_ty, span)
-            }
+            TlcExpr::Perform { op, arg } => match zutai_tlc::HostOp::from_name(&op) {
+                Some(zutai_tlc::HostOp::IoPrint) => {
+                    let arg = self.lower_expr(arg);
+                    self.alloc_node(DfNodeKind::HostPrint { arg }, df_ty, span)
+                }
+                Some(op) => {
+                    let arg = self.lower_expr(arg);
+                    self.alloc_node(DfNodeKind::HostOp { op, arg }, df_ty, span)
+                }
+                None => self.alloc_node(DfNodeKind::Error, self.error_ty, span),
+            },
 
-            TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
+            TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
                 self.alloc_node(DfNodeKind::Error, self.error_ty, span)
             }
         }

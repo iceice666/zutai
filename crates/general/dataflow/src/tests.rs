@@ -53,6 +53,52 @@ parse
 }
 
 #[test]
+fn granted_standard_host_effect_lowers_to_host_op() {
+    let parsed = zutai_syntax::parse(
+        r#"
+readFile :: Path -> Text ! { fs.read : Path -> Text }
+  = path => perform fs.read path;
+readFile "Cargo.toml"
+"#,
+    );
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "HIR errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "THIR errors: {:?}",
+        thir.diagnostics
+    );
+    let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
+    try_lower_tlc(&tlc, &hir.file.bindings).expect_err("fs.read needs an explicit host grant");
+    let grants = zutai_tlc::HostEffectSet::AMBIENT.with(zutai_tlc::HostOp::FsRead);
+    let graph = try_lower_tlc_with_host_grants(&tlc, &hir.file.bindings, grants)
+        .expect("granted fs.read should lower");
+    assert!(
+        graph.nodes.iter().any(|(_, node)| {
+            matches!(
+                node.kind,
+                DfNodeKind::HostOp {
+                    op: zutai_tlc::HostOp::FsRead,
+                    ..
+                }
+            )
+        }),
+        "granted fs.read should lower to a HostOp: {graph:#?}"
+    );
+    validate(&graph).expect("granted host op graph should validate");
+}
+
+#[test]
 fn ambient_io_print_lowers_to_runtime_host_print() {
     let g = dc_of(r#"print "x""#);
     assert!(

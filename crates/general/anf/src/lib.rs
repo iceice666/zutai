@@ -8,6 +8,7 @@
 
 pub use zutai_dataflow::{
     DataflowGraph, DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes,
+    HostOp,
 };
 
 mod lower;
@@ -55,6 +56,8 @@ pub enum AnfExpr {
     Apply { func: AnfAtom, arg: AnfAtom },
     /// Runtime `io.print` dispatch. Prints the Text atom and returns it.
     HostPrint { value: AnfAtom },
+    /// Runtime host operation authorized by an explicit v2 capability.
+    HostOp { op: HostOp, value: AnfAtom },
     /// Type application at a polymorphic call site.
     TyApp { poly: AnfAtom, ty_args: Vec<DfTyId> },
     /// Lambda abstraction. `param` is the parameter name (from a DC Bind node).

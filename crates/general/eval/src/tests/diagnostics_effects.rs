@@ -268,6 +268,36 @@ fn top_level_io_print_is_handled_by_host_boundary() {
 }
 
 #[test]
+fn top_level_standard_host_effect_is_handled_by_host_boundary() {
+    let path = std::env::temp_dir().join("zutai_eval_host_fs_read.txt");
+    std::fs::write(&path, "host-read").unwrap();
+    let path = path
+        .to_str()
+        .unwrap()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let src = format!(
+        r#"
+readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+  = path => perform fs.read path;
+readFile "{path}"
+"#
+    );
+    assert_eq!(run(&src), Value::Text("host-read".into()));
+}
+
+#[test]
+fn source_handler_can_make_standard_host_effect_pure() {
+    assert_eq!(
+        run(r#"
+result ::= handle { perform fs.read "ignored"; } with { fs.read = \path. "mock"; }
+result
+"#),
+        Value::Text("mock".into())
+    );
+}
+
+#[test]
 fn source_handler_intercepts_repointed_print_builtin() {
     assert_eq!(
         run(r#"

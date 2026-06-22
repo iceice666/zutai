@@ -54,6 +54,7 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
             DfTy::Bool | DfTy::True | DfTy::False => vec![i64_word(DESC_BOOL)],
             DfTy::Float => vec![i64_word(DESC_FLOAT)],
             DfTy::Text => vec![i64_word(DESC_TEXT)],
+            DfTy::Opaque(_) => vec![i64_word(DESC_INT)],
             DfTy::Atom => vec![i64_word(DESC_ATOM)],
             DfTy::Posit(spec) => vec![
                 i64_word(DESC_POSIT),
@@ -153,6 +154,7 @@ pub(crate) fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             collect_from_value(arg, constants);
         }
         SsaOp::HostPrint { value } => collect_from_value(value, constants),
+        SsaOp::HostOp { value, .. } => collect_from_value(value, constants),
         SsaOp::MakeClosure { code: _, captures } => {
             for c in captures {
                 collect_from_value(c, constants);

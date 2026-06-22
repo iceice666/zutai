@@ -127,6 +127,20 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             out.push_str(&format!("  %{} = add i64 {}, 0\n", dest, value));
         }
 
+        // ── HostOp (runtime capability driver) ──────────────────────────────
+        SsaOp::HostOp { op, value } => {
+            let value = emit_value_operand(out, tmp, value);
+            let helper = match op {
+                HostOp::IoPrint => "@zutai.host.io_print",
+                HostOp::FsRead => "@zutai.host.fs_read",
+                HostOp::FsWrite => "@zutai.host.fs_write",
+                HostOp::EnvGet => "@zutai.host.env_get",
+                HostOp::ClockNow => "@zutai.host.clock_now",
+                HostOp::RngNext => "@zutai.host.rng_next",
+            };
+            out.push_str(&format!("  %{} = call i64 {helper}(i64 {})\n", dest, value));
+        }
+
         // ── MakeClosure (heap closure allocation) ───────────────────────────
         SsaOp::MakeClosure { code, captures } => {
             let bytes = (2 + captures.len()) * 8;

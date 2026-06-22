@@ -151,6 +151,9 @@ pub(super) fn walk_node(
         DfNodeKind::HostPrint { arg } => {
             walk_child(graph, id, "arg", *arg, scope, owners, visited, errors);
         }
+        DfNodeKind::HostOp { arg, .. } => {
+            walk_child(graph, id, "arg", *arg, scope, owners, visited, errors);
+        }
         DfNodeKind::Sequence(items) => {
             for item in items {
                 walk_child(graph, id, "item", *item, scope, owners, visited, errors);

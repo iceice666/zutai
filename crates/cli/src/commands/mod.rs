@@ -287,9 +287,12 @@ pub(crate) fn run_compile(
     // HostPrint path.
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
+    let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
-    let residual_effect_reason = zutai_tlc::residual_effect_reason(&module);
-    if uses_reflection && (has_host_io_print || residual_effect_reason.is_some()) {
+    let has_unfolded_effects = zutai_tlc::residual_effect_reason(&module).is_some();
+    let residual_effect_reason =
+        zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants);
+    if uses_reflection && (has_host_io_print || has_unfolded_effects) {
         eprintln!(
             "compile error: reflection builtins cannot be AOT-folded with effectful code yet"
         );
@@ -310,7 +313,9 @@ pub(crate) fn run_compile(
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
-    if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
+    if let Some(reason) =
+        zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants)
+    {
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
@@ -319,7 +324,8 @@ pub(crate) fn run_compile(
         .unwrap_or(original_hir_bindings.as_slice());
 
     // DC → ANF → SSA → LLVM IR pipeline.
-    let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
+    let graph =
+        zutai_dataflow::lower_tlc_with_host_grants(&module, hir_bindings, boundary_host_grants);
     let anf = zutai_anf::lower_dc(&graph);
     let ssa = zutai_ssa::lower_anf(&anf);
     if let Some(reason) = zutai_codegen::unsupported_entry_type_reason(&ssa) {
@@ -408,9 +414,12 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
 
     let mut module = zutai_tlc::lower_thir(thir);
     let mut folded_bindings = None;
+    let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
-    let residual_effect_reason = zutai_tlc::residual_effect_reason(&module);
-    if uses_reflection && (has_host_io_print || residual_effect_reason.is_some()) {
+    let has_unfolded_effects = zutai_tlc::residual_effect_reason(&module).is_some();
+    let residual_effect_reason =
+        zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants);
+    if uses_reflection && (has_host_io_print || has_unfolded_effects) {
         eprintln!("error: reflection builtins cannot be AOT-folded with effectful code yet");
         std::process::exit(1);
     }
@@ -429,14 +438,17 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         eprintln!("error: {reason}");
         std::process::exit(1);
     }
-    if let Some(reason) = zutai_tlc::residual_effect_reason(&module) {
+    if let Some(reason) =
+        zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants)
+    {
         eprintln!("error: {reason}");
         std::process::exit(1);
     }
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-    let graph = zutai_dataflow::lower_tlc(&module, hir_bindings);
+    let graph =
+        zutai_dataflow::lower_tlc_with_host_grants(&module, hir_bindings, boundary_host_grants);
     println!("{graph:#?}");
     Ok(())
 }

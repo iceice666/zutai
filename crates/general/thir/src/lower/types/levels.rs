@@ -141,6 +141,7 @@ impl<'hir> Lowerer<'hir> {
             | TypeKind::Float
             | TypeKind::FixedNum(_)
             | TypeKind::Posit(_)
+            | TypeKind::Opaque(_)
             | TypeKind::Atom(_)
             | TypeKind::True
             | TypeKind::False

@@ -61,7 +61,7 @@ pub(super) fn collect_free(
                 collect_free(arena, t, bound, free);
             }
         }
-        TlcType::Prim(_) | TlcType::Singleton(_) => {}
+        TlcType::Prim(_) | TlcType::Opaque(_) | TlcType::Singleton(_) => {}
     }
 }
 
@@ -161,7 +161,7 @@ pub(super) fn alpha_rename(
                 .collect();
             arena.alloc(TlcType::Tuple(new_items))
         }
-        TlcType::Prim(_) | TlcType::Singleton(_) => ty,
+        TlcType::Prim(_) | TlcType::Opaque(_) | TlcType::Singleton(_) => ty,
     }
 }
 
@@ -331,7 +331,7 @@ pub(super) fn subst_inner(
             arena.alloc(TlcType::Tuple(new_items))
         }
         // Atoms — nothing to substitute.
-        TlcType::Prim(_) | TlcType::Singleton(_) => ty,
+        TlcType::Prim(_) | TlcType::Opaque(_) | TlcType::Singleton(_) => ty,
     }
 }
 

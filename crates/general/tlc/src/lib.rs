@@ -9,9 +9,9 @@ mod normalize;
 mod tests;
 
 pub use ir::{
-    BuiltinOp, Kind, Literal, PrimTy, Row, TlcAlt, TlcDecl, TlcDeclId, TlcExpr, TlcExprId,
-    TlcHandleClause, TlcModule, TlcPat, TlcPatItem, TlcTupleField, TlcTupleItem, TlcType,
-    TlcTypeId, TlcTypeVar,
+    BuiltinOp, HostEffectSet, HostOp, Kind, Literal, PrimTy, Row, TlcAlt, TlcDecl, TlcDeclId,
+    TlcExpr, TlcExprId, TlcHandleClause, TlcModule, TlcPat, TlcPatItem, TlcTupleField,
+    TlcTupleItem, TlcType, TlcTypeId, TlcTypeVar,
 };
 pub use lower::lower_thir;
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
@@ -22,43 +22,57 @@ pub use normalize::{DEFAULT_FUEL, NormalizeError};
 /// before TLC enters Dataflow Core. Residual unsupported effect nodes or open /
 /// unsupported effect rows must not be silently erased before compilation.
 pub fn residual_effect_reason(module: &TlcModule) -> Option<&'static str> {
+    residual_effect_reason_with_grants(module, HostEffectSet::AMBIENT)
+}
+
+/// Return why a TLC module cannot enter Dataflow Core under a host grant set.
+///
+/// `io.print` is always ambient for source compatibility. v2 host capability
+/// entry points extend this set with explicitly requested standard operations.
+pub fn residual_effect_reason_with_grants(
+    module: &TlcModule,
+    grants: HostEffectSet,
+) -> Option<&'static str> {
     let final_has_residual_effect = module.final_expr.is_some_and(|expr| {
         let mut visited = HashSet::new();
-        reachable_expr_has_effect(module, expr, &mut visited, true)
+        reachable_expr_has_effect(module, expr, &mut visited, grants)
     });
     let decl_has_residual_effect = module.decls.iter().any(|&decl_id| {
         let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
             return false;
         };
         let mut visited = HashSet::new();
-        reachable_expr_has_effect(module, body, &mut visited, true)
+        reachable_expr_has_effect(module, body, &mut visited, grants)
     });
     let has_residual_effect = final_has_residual_effect || decl_has_residual_effect;
 
     if has_residual_effect {
         return Some(
-            "algebraic effects remain after TLC lowering; compile/dataflow effect lowering is not implemented yet",
+            "algebraic effects remain after TLC lowering; compile/dataflow effect lowering is not implemented yet or the host capability was not granted",
         );
     }
 
     if module.type_arena.iter().any(|(_, ty)| {
         matches!(
             ty,
-            TlcType::Fun(_, _, row) if row_has_unsupported_effect(row)
+            TlcType::Fun(_, _, row) if row_has_unsupported_effect(row, grants)
         )
     }) {
         return Some(
-            "unsupported effectful function types remain after TLC lowering; compile/dataflow effect lowering is not implemented yet",
+            "unsupported effectful function types remain after TLC lowering; compile/dataflow effect lowering is not implemented yet or the host capability was not granted",
         );
     }
 
     None
 }
 
-fn row_has_unsupported_effect(row: &Row) -> bool {
+fn row_has_unsupported_effect(row: &Row, grants: HostEffectSet) -> bool {
     match row {
         Row::REmpty => false,
-        Row::RExtend { label, tail, .. } => label != "io.print" || row_has_unsupported_effect(tail),
+        Row::RExtend { label, tail, .. } => {
+            HostOp::from_name(label).is_none_or(|op| !grants.contains(op))
+                || row_has_unsupported_effect(tail, grants)
+        }
         Row::RVar(_) => true,
     }
 }
@@ -85,64 +99,69 @@ fn reachable_expr_has_effect(
     module: &TlcModule,
     id: TlcExprId,
     visited: &mut HashSet<TlcExprId>,
-    allow_host_print: bool,
+    grants: HostEffectSet,
 ) -> bool {
     if !visited.insert(id) {
         return false;
     }
     match &module.expr_arena[id] {
-        TlcExpr::Perform { op, arg } if op == "io.print" && allow_host_print => {
-            reachable_expr_has_effect(module, *arg, visited, allow_host_print)
+        TlcExpr::Perform { op, arg } => {
+            if HostOp::from_name(op).is_some_and(|host_op| grants.contains(host_op)) {
+                reachable_expr_has_effect(module, *arg, visited, grants)
+            } else {
+                true
+            }
         }
-        TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => true,
+        TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => true,
         TlcExpr::Sequence(items) => items
             .iter()
-            .any(|item| reachable_expr_has_effect(module, *item, visited, allow_host_print)),
+            .any(|item| reachable_expr_has_effect(module, *item, visited, grants)),
         TlcExpr::Var(_) | TlcExpr::Lit(_) | TlcExpr::Import(_) => false,
         TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
-            reachable_expr_has_effect(module, *body, visited, allow_host_print)
+            reachable_expr_has_effect(module, *body, visited, grants)
         }
         TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
-            reachable_expr_has_effect(module, *func, visited, allow_host_print)
-                || reachable_expr_has_effect(module, *arg, visited, allow_host_print)
+            reachable_expr_has_effect(module, *func, visited, grants)
+                || reachable_expr_has_effect(module, *arg, visited, grants)
         }
         TlcExpr::RecordUpdate { receiver, fields } => {
-            reachable_expr_has_effect(module, *receiver, visited, allow_host_print)
-                || fields.iter().any(|(_, value)| {
-                    reachable_expr_has_effect(module, *value, visited, allow_host_print)
-                })
+            reachable_expr_has_effect(module, *receiver, visited, grants)
+                || fields
+                    .iter()
+                    .any(|(_, value)| reachable_expr_has_effect(module, *value, visited, grants))
         }
         TlcExpr::Let { value, body, .. } => {
-            reachable_expr_has_effect(module, *value, visited, allow_host_print)
-                || reachable_expr_has_effect(module, *body, visited, allow_host_print)
+            reachable_expr_has_effect(module, *value, visited, grants)
+                || reachable_expr_has_effect(module, *body, visited, grants)
         }
         TlcExpr::Letrec { bindings, body } => {
-            bindings.iter().any(|(_, _, value)| {
-                reachable_expr_has_effect(module, *value, visited, allow_host_print)
-            }) || reachable_expr_has_effect(module, *body, visited, allow_host_print)
+            bindings
+                .iter()
+                .any(|(_, _, value)| reachable_expr_has_effect(module, *value, visited, grants))
+                || reachable_expr_has_effect(module, *body, visited, grants)
         }
         TlcExpr::Case(scrutinee, alts) => {
-            reachable_expr_has_effect(module, *scrutinee, visited, allow_host_print)
+            reachable_expr_has_effect(module, *scrutinee, visited, grants)
                 || alts.iter().any(|alt| {
                     alt.guard.is_some_and(|guard| {
-                        reachable_expr_has_effect(module, guard, visited, allow_host_print)
-                    }) || reachable_expr_has_effect(module, alt.body, visited, allow_host_print)
+                        reachable_expr_has_effect(module, guard, visited, grants)
+                    }) || reachable_expr_has_effect(module, alt.body, visited, grants)
                 })
         }
         TlcExpr::Record(fields) => fields
             .iter()
-            .any(|(_, value)| reachable_expr_has_effect(module, *value, visited, allow_host_print)),
+            .any(|(_, value)| reachable_expr_has_effect(module, *value, visited, grants)),
         TlcExpr::GetField(expr, _) | TlcExpr::Variant(_, expr) => {
-            reachable_expr_has_effect(module, *expr, visited, allow_host_print)
+            reachable_expr_has_effect(module, *expr, visited, grants)
         }
         TlcExpr::Tuple(items) => items.iter().any(|item| match item {
             TlcTupleItem::Named { value, .. } | TlcTupleItem::Positional(value) => {
-                reachable_expr_has_effect(module, *value, visited, allow_host_print)
+                reachable_expr_has_effect(module, *value, visited, grants)
             }
         }),
         TlcExpr::List(items) => items
             .iter()
-            .any(|item| reachable_expr_has_effect(module, *item, visited, allow_host_print)),
+            .any(|item| reachable_expr_has_effect(module, *item, visited, grants)),
     }
 }
 

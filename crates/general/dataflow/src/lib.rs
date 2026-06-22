@@ -12,6 +12,8 @@ use la_arena::{Arena, Idx};
 use zutai_syntax::Span;
 use zutai_syntax::posit::{PositLiteral, PositSpec};
 
+pub use zutai_tlc::HostOp;
+
 mod lower;
 mod validate;
 
@@ -117,6 +119,11 @@ pub enum DfNodeKind {
     HostPrint {
         arg: NodeId,
     },
+    /// Runtime host operation authorized by an explicit v2 capability.
+    HostOp {
+        op: HostOp,
+        arg: NodeId,
+    },
 
     // ── Type polymorphism ──
     TyLam {
@@ -218,6 +225,7 @@ pub enum DfTy {
     Posit(PositSpec),
     Bool,
     Text,
+    Opaque(String),
     Atom,
     True,
     False,
@@ -295,12 +303,34 @@ pub fn lower_tlc(
         .expect("residual TLC effects must be handled before Dataflow Core")
 }
 
+/// Lower a TLC module under an explicit v2 host grant set.
+pub fn lower_tlc_with_host_grants(
+    module: &zutai_tlc::TlcModule,
+    hir_bindings: &[zutai_hir::Binding],
+    grants: zutai_tlc::HostEffectSet,
+) -> DataflowGraph {
+    try_lower_tlc_with_host_grants(module, hir_bindings, grants)
+        .expect("ungranted residual TLC effects must not enter Dataflow Core")
+}
+
 /// Fallible form of [`lower_tlc`] that preserves the Phase 19 no-erasure gate.
 pub fn try_lower_tlc(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],
 ) -> Result<DataflowGraph, &'static str> {
     if let Some(reason) = zutai_tlc::residual_effect_reason(module) {
+        return Err(reason);
+    }
+    Ok(lower::lower_tlc(module, hir_bindings))
+}
+
+/// Fallible lowering under an explicit v2 host grant set.
+pub fn try_lower_tlc_with_host_grants(
+    module: &zutai_tlc::TlcModule,
+    hir_bindings: &[zutai_hir::Binding],
+    grants: zutai_tlc::HostEffectSet,
+) -> Result<DataflowGraph, &'static str> {
+    if let Some(reason) = zutai_tlc::residual_effect_reason_with_grants(module, grants) {
         return Err(reason);
     }
     Ok(lower::lower_tlc(module, hir_bindings))

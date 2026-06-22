@@ -50,6 +50,34 @@ fn posit_module(spec: PositSpec, op: DfPositOp, entry_ty: DfTy) -> SsaModule {
 }
 
 #[test]
+fn host_op_emits_runtime_capability_helper_call() {
+    let module = test_module(
+        Vec::new(),
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![SsaInstr {
+                    dest: "result".to_string(),
+                    op: SsaOp::HostOp {
+                        op: HostOp::FsRead,
+                        value: SsaValue::Lit(DfLit::Text("Cargo.toml".to_string())),
+                    },
+                }],
+                terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+            }],
+        },
+        DfTy::Text,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm(&module);
+    assert!(llvm.contains("declare i64 @zutai.host.fs_read(i64)"));
+    assert!(llvm.contains("call i64 @zutai.host.fs_read"));
+}
+
+#[test]
 fn coalesce_emits_runtime_helper_call() {
     let module = test_module(
         Vec::new(),

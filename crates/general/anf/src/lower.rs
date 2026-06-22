@@ -114,6 +114,10 @@ impl<'g> BodyLowerer<'g> {
                 let value = self.lower_to_atom(arg);
                 AnfExpr::HostPrint { value }
             }
+            DfNodeKind::HostOp { op, arg } => {
+                let value = self.lower_to_atom(arg);
+                AnfExpr::HostOp { op, value }
+            }
             DfNodeKind::TyApp { poly, ty_args } => {
                 let p = self.lower_to_atom(poly);
                 AnfExpr::TyApp { poly: p, ty_args }

@@ -46,20 +46,90 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn enter_host_effect_boundary(&mut self, span: Span) -> EffectRow {
-        let row = self.io_print_effect_row(span);
+        let row = self.host_boundary_effect_row(span);
         std::mem::replace(&mut self.effect_ambient, row)
     }
 
     pub(in crate::lower) fn io_print_effect_row(&mut self, span: Span) -> EffectRow {
-        let param = self.text_type(span);
-        let result = self.text_type(span);
+        let text = self.text_type(span);
         EffectRow {
             ops: vec![EffectOp {
                 name: "io.print".to_string(),
-                param,
-                result,
+                param: text,
+                result: text,
                 span,
             }],
+            tail: RowTail::Closed,
+        }
+    }
+
+    pub(in crate::lower) fn host_boundary_effect_row(&mut self, span: Span) -> EffectRow {
+        let text = self.text_type(span);
+        let unit = self.unit_type(span);
+        let int = self.int_type(span);
+        let maybe_text = self.alloc_type(Type {
+            kind: TypeKind::Optional(text),
+            span,
+        });
+        let write_arg = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "contents".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "path".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        EffectRow {
+            ops: vec![
+                EffectOp {
+                    name: "io.print".to_string(),
+                    param: text,
+                    result: text,
+                    span,
+                },
+                EffectOp {
+                    name: "fs.read".to_string(),
+                    param: text,
+                    result: text,
+                    span,
+                },
+                EffectOp {
+                    name: "fs.write".to_string(),
+                    param: write_arg,
+                    result: unit,
+                    span,
+                },
+                EffectOp {
+                    name: "env.get".to_string(),
+                    param: text,
+                    result: maybe_text,
+                    span,
+                },
+                EffectOp {
+                    name: "clock.now".to_string(),
+                    param: unit,
+                    result: text,
+                    span,
+                },
+                EffectOp {
+                    name: "rng.next".to_string(),
+                    param: unit,
+                    result: int,
+                    span,
+                },
+            ],
             tail: RowTail::Closed,
         }
     }

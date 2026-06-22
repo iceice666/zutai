@@ -351,6 +351,49 @@ pub(super) fn check_node_type_compat(
                 }
             }
         }
+        DfNodeKind::HostOp { op, arg } => {
+            if let Some(arg_ty) = child_ty(graph, *arg) {
+                match op {
+                    HostOp::FsRead | HostOp::EnvGet
+                        if !matches!(&graph.types[arg_ty], DfTy::Text) =>
+                    {
+                        unexpected_type(owner, "arg", "Text", arg_ty, errors);
+                    }
+                    HostOp::FsWrite if !matches!(&graph.types[arg_ty], DfTy::Record(_)) => {
+                        unexpected_type(owner, "arg", "record", arg_ty, errors);
+                    }
+                    HostOp::ClockNow | HostOp::RngNext if !matches!(&graph.types[arg_ty], DfTy::Tuple(items) if items.is_empty()) =>
+                    {
+                        unexpected_type(owner, "arg", "Unit", arg_ty, errors);
+                    }
+                    HostOp::IoPrint if !matches!(&graph.types[arg_ty], DfTy::Text) => {
+                        unexpected_type(owner, "arg", "Text", arg_ty, errors);
+                    }
+                    _ => {}
+                }
+            }
+            match op {
+                HostOp::IoPrint | HostOp::FsRead | HostOp::ClockNow => {
+                    if !matches!(&graph.types[node.ty], DfTy::Text) {
+                        unexpected_type(owner, "type", "Text", node.ty, errors);
+                    }
+                }
+                HostOp::FsWrite => {
+                    if !matches!(&graph.types[node.ty], DfTy::Tuple(items) if items.is_empty()) {
+                        unexpected_type(owner, "type", "Unit", node.ty, errors);
+                    }
+                }
+                HostOp::EnvGet => match &graph.types[node.ty] {
+                    DfTy::Optional(inner) if matches!(&graph.types[*inner], DfTy::Text) => {}
+                    _ => unexpected_type(owner, "type", "Text?", node.ty, errors),
+                },
+                HostOp::RngNext => {
+                    if !matches!(&graph.types[node.ty], DfTy::Int) {
+                        unexpected_type(owner, "type", "Int", node.ty, errors);
+                    }
+                }
+            }
+        }
         DfNodeKind::Builtin(op, lhs, rhs) => check_builtin(graph, owner, *op, *lhs, *rhs, errors),
         DfNodeKind::Sequence(items) => {
             if let Some(last) = items.last().and_then(|item| child_ty(graph, *item)) {

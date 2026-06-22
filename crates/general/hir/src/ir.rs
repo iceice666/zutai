@@ -15,6 +15,17 @@ pub type HirTypeId = Idx<HirTypeExpr>;
 /// assignment, and the reference interpreter.
 pub const BUILTIN_VALUE_NAMES: &[&str] = &["print", "fields", "schema", "overlay", "overlayDeep"];
 
+/// Opaque standard host-capability types. They are seeded into every root scope
+/// as builtin types, but source programs cannot construct values of these types;
+/// the host entry boundary synthesizes advisory capability tokens.
+pub const HOST_CAPABILITY_TYPE_NAMES: &[&str] =
+    &["FsRead", "FsWrite", "Env", "Clock", "Rng", "IoPrint"];
+
+/// Standard support type names needed by v2 host operation signatures. `Path`
+/// and `Instant` are represented as `Text` at runtime in the v2 implementation;
+/// `Unit` is the existing empty tuple type.
+pub const HOST_SUPPORT_TYPE_NAMES: &[&str] = &["Unit", "Path", "Instant"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);
 

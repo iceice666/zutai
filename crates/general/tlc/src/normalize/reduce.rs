@@ -125,7 +125,9 @@ pub(super) fn normalize_ty(
             Ok(arena.alloc(TlcType::Tuple(new_items)))
         }
         // Atoms — nothing to reduce.
-        TlcType::Prim(_) | TlcType::Singleton(_) | TlcType::TyVar(_, _) => Ok(ty),
+        TlcType::Prim(_) | TlcType::Opaque(_) | TlcType::Singleton(_) | TlcType::TyVar(_, _) => {
+            Ok(ty)
+        }
     }
 }
 

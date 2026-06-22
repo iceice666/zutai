@@ -56,6 +56,14 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare void @zutai.print_posit(i64, i64, i64)\n");
     out.push_str("declare void @zutai.show(i64, i64)\n");
 
+    // Host capability operations
+    out.push_str("declare i64 @zutai.host.io_print(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_read(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_write(i64)\n");
+    out.push_str("declare i64 @zutai.host.env_get(i64)\n");
+    out.push_str("declare i64 @zutai.host.clock_now(i64)\n");
+    out.push_str("declare i64 @zutai.host.rng_next(i64)\n");
+
     // Record operations
     out.push_str("declare i64 @zutai.record_new(i64)\n");
     out.push_str("declare void @zutai.record_set(i64, i64, i64)\n");

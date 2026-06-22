@@ -124,6 +124,7 @@ impl<'a> Evaluator<'a> {
             RuntimeTypeView::Maybe(inner) => Ok(format!("Maybe {}", self.type_label(&inner)?)),
             RuntimeTypeView::Record(_, RowTail::Closed) => Ok("record".to_string()),
             RuntimeTypeView::Record(_, _) => Err(open_row_reflection_error("record")),
+            RuntimeTypeView::Opaque(name) => Ok(name),
             RuntimeTypeView::Union(_, RowTail::Closed) => Ok("union".to_string()),
             RuntimeTypeView::Union(_, _) => Err(open_row_reflection_error("union")),
             RuntimeTypeView::Tuple(items) => {
@@ -171,6 +172,7 @@ impl<'a> Evaluator<'a> {
             TypeKind::Float => Ok(RuntimeTypeView::Float),
             TypeKind::FixedNum(fw) => Ok(RuntimeTypeView::FixedNum(fw)),
             TypeKind::Posit(spec) => Ok(RuntimeTypeView::Posit(spec)),
+            TypeKind::Opaque(name) => Ok(RuntimeTypeView::Opaque(name)),
             TypeKind::Atom(name) => Ok(RuntimeTypeView::Atom(name)),
             TypeKind::True => Ok(RuntimeTypeView::True),
             TypeKind::False => Ok(RuntimeTypeView::False),
@@ -347,6 +349,7 @@ enum RuntimeTypeView {
     True,
     False,
     Never,
+    Opaque(String),
     List(RuntimeType),
     Optional(RuntimeType),
     Maybe(RuntimeType),

@@ -116,6 +116,12 @@ impl Lowerer {
         ] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }
+        for name in crate::ir::HOST_CAPABILITY_TYPE_NAMES
+            .iter()
+            .chain(crate::ir::HOST_SUPPORT_TYPE_NAMES)
+        {
+            lowerer.define_current((*name).to_string(), BindingKind::BuiltinType, file_span);
+        }
         for nbits in [32u8, 64] {
             lowerer.define_current(format!("Posit{nbits}"), BindingKind::BuiltinType, file_span);
             for es in 0..nbits {
