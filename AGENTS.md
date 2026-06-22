@@ -11,6 +11,8 @@ Zutai is an experimental two-mode language system:
 
 The implementation is an early Rust workspace. The v0 language design lives under `docs/v0_spec/` and should be treated as the current implementation source of truth when changing parser, AST, type-system, or language behavior. Deferred post-v0 language features live under `docs/v1_spec/`.
 
+Local skill: use `skill://zutai-language` (project-local `.omp/skills/zutai-language/SKILL.md`) for quick routing to Zutai language facts, source-of-truth docs, implementation support levels, and compiler-layer references before answering language questions or changing language behavior.
+
 ## Compilation pipeline
 
 General mode compiles through the following stages:
