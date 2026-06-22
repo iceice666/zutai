@@ -9,6 +9,7 @@
 - [TLC IR design](tlc-core.md)
 - [Dataflow Core IR design](dataflow-core.md)
 - [v1 deferred feature specification](v1_spec/00-index.md)
+- [v2 deferred feature specification](v2_spec/00-index.md)
 - [Standard library](stdlib/00-index.md)
 
 ## General-mode compiler layers

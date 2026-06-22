@@ -154,20 +154,34 @@ oracle is the differential check for the whole phase.
 toolchain (`llc` / `clang` / `libzutai_rt`) is present, skipped with a diagnostic
 otherwise.
 
-### Deferred (recorded, not Phase 23): free-monad data form
+### Deferred to v2 (see `docs/v2_spec/`)
 
-The literal `docs/tlc-core.md` §9 free-monad encoding needs a Dataflow Core
-recursive-type representation — a `Mu` / nominal type node, or knot-tying a
-placeholder `DfTyId` in `lower_type` before recursing into members. Worth doing
-only if a reified, optimizable effect tree is wanted; CPS (Phase 23) covers v1
-effect semantics without it.
+The following post-v1 features are specified in
+[`v2_spec/`](v2_spec/00-index.md); their implementation milestones are scheduled
+after Phase 23.
 
+- **Recursive types** (`v2_spec/01-recursive-types.md`) — user-defined recursive
+  data types, lowered via a Dataflow Core recursive-type representation
+  (knot-tying a placeholder `DfTyId` in `lower_type` before recursing into
+  members, or a `Mu` / nominal type node). This also unblocks the literal
+  `docs/tlc-core.md` §9 free-monad effect encoding, which CPS (Phase 23)
+  otherwise covers without a reified, optimizable effect tree.
+- **Host capabilities** (`v2_spec/02-host-capabilities.md`) — filesystem,
+  environment, clock, and randomness as capability-gated effects; depends on the
+  Phase 23 runtime effect driver.
+- **Derive recipes** (`v2_spec/03-derive-recipes.md`) — user-defined
+  compile-time derivation with the `witness` reflection primitive; unifies the
+  type-value reflection and TLC derive-synthesis paths.
+- **Universe levels** (`v2_spec/04-universe-levels.md`) — internal
+  `Type0 : Type1` stratification with cumulativity; the TLC kind already carries
+  the level slot (`Type(level)`).
+- **Higher-rank polymorphism** (`v2_spec/05-higher-rank-polymorphism.md`) —
+  rank-N quantifiers in annotations with bidirectional checking; inference stays
+  predicative.
 
-## Out of scope by v1 spec
+## Deferred beyond v2
 
-Deliberately not milestones: host capabilities beyond `io.print`
-(filesystem/network/environment/clock/randomness, reserved as non-ambient in
-`v1_spec/05-effects.md`), user-defined `derive` recipes
-(`v1_spec/03-constraints.md` marks post-v1), and universe-level enforcement
-(`v1_spec/02-type-level-computation.md` states it as a "should"; type-level
-evaluation is fuel-bounded so `Type : Type` is not a runtime-soundness risk).
+GADT-style local type equalities and the coercion/cast core node (an explicit
+non-goal, `tlc-core.md` §10), impredicative instantiation, unforgeable
+capability tokens, and nominal recursive types. See `v2_spec/00-index.md`
+"Deferred beyond v2".

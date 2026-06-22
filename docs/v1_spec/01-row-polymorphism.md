@@ -212,7 +212,7 @@ v0 polymorphism is predicative. A type variable may be instantiated with ordinar
 
 v1 row polymorphism remains predicative and does not include impredicative instantiation, where a type variable is instantiated with another polymorphic type.
 
-v1 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension.
+v1 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension. See [higher-rank polymorphism](../v2_spec/05-higher-rank-polymorphism.md) for the v2 design.
 
 ---
 

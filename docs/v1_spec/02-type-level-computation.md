@@ -157,3 +157,5 @@ Type2 : Type3
 ```
 
 The user normally writes only `Type`.
+
+See [universe levels](../v2_spec/04-universe-levels.md) for the v2 stratification design.
