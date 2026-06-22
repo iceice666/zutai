@@ -549,6 +549,15 @@ impl<'thir> Lowerer<'thir> {
     }
 
     fn thir_universe_with_subst(&self, ty: TypeId, subst: &HashMap<BindingId, TypeId>) -> u32 {
+        self.thir_universe_with_subst_seen(ty, subst, &mut HashSet::new())
+    }
+
+    fn thir_universe_with_subst_seen(
+        &self,
+        ty: TypeId,
+        subst: &HashMap<BindingId, TypeId>,
+        alias_seen: &mut HashSet<BindingId>,
+    ) -> u32 {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type => 1,
             TypeKind::Bool
@@ -564,83 +573,58 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::List(inner)
             | TypeKind::Optional(inner)
             | TypeKind::Maybe(inner)
-            | TypeKind::Patch { target: inner, .. } => self.thir_universe_with_subst(inner, subst),
+            | TypeKind::Patch { target: inner, .. } => {
+                self.thir_universe_with_subst_seen(inner, subst, alias_seen)
+            }
             TypeKind::Record(fields, _) => fields
                 .into_iter()
-                .map(|field| self.thir_universe_with_subst(field.ty, subst))
+                .map(|field| self.thir_universe_with_subst_seen(field.ty, subst, alias_seen))
                 .max()
                 .unwrap_or(0),
             TypeKind::Union(variants, _) => variants
                 .into_iter()
                 .filter_map(|variant| variant.payload)
-                .map(|payload| self.thir_universe_with_subst(payload, subst))
+                .map(|payload| self.thir_universe_with_subst_seen(payload, subst, alias_seen))
                 .max()
                 .unwrap_or(0),
             TypeKind::Tuple(items) => items
                 .into_iter()
                 .map(|item| match item {
                     TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => {
-                        self.thir_universe_with_subst(ty, subst)
+                        self.thir_universe_with_subst_seen(ty, subst, alias_seen)
                     }
                 })
                 .max()
                 .unwrap_or(0),
             TypeKind::Function { from, to } => self
-                .thir_universe_with_subst(from, subst)
-                .max(self.thir_universe_with_subst(to, subst)),
-            TypeKind::Effect { base, row } => {
-                row.ops
-                    .into_iter()
-                    .fold(self.thir_universe_with_subst(base, subst), |acc, op| {
-                        acc.max(self.thir_universe_with_subst(op.param, subst))
-                            .max(self.thir_universe_with_subst(op.result, subst))
-                    })
-            }
-            TypeKind::TypeVar(binding) => subst
-                .get(&binding)
-                .copied()
-                .map(|ty| self.thir_universe_with_subst(ty, subst))
-                .unwrap_or_else(|| match self.thir.type_param_kinds.get(&binding) {
-                    Some(ThirKind::Type(UniverseLevel::Known(level))) => *level,
-                    _ => 0,
-                }),
-            TypeKind::InferVar(_) => self
-                .thir
-                .type_universes
-                .get(ty.0 as usize)
-                .copied()
-                .unwrap_or(0),
-            TypeKind::Alias(binding) => self
-                .thir
-                .decls
-                .iter()
-                .find_map(|&decl_id| {
-                    let decl = &self.thir.decl_arena[decl_id];
-                    if decl.binding == binding
-                        && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
-                        && params.is_empty()
-                    {
-                        Some(*ty)
-                    } else {
-                        None
-                    }
-                })
-                .map(|body| self.thir_universe_with_subst(body, subst))
-                .unwrap_or(0),
-            TypeKind::AliasApply { binding, args } => {
-                let Some((params, body)) = self.thir.decls.iter().find_map(|&decl_id| {
-                    let decl = &self.thir.decl_arena[decl_id];
-                    if decl.binding == binding
-                        && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
-                    {
-                        Some((params.clone(), *ty))
-                    } else {
-                        None
-                    }
-                }) else {
-                    return 0;
+                .thir_universe_with_subst_seen(from, subst, alias_seen)
+                .max(self.thir_universe_with_subst_seen(to, subst, alias_seen)),
+            TypeKind::Effect { base, row } => row.ops.into_iter().fold(
+                self.thir_universe_with_subst_seen(base, subst, alias_seen),
+                |acc, op| {
+                    acc.max(self.thir_universe_with_subst_seen(op.param, subst, alias_seen))
+                        .max(self.thir_universe_with_subst_seen(op.result, subst, alias_seen))
+                },
+            ),
+            TypeKind::TypeVar(binding) => {
+                let Some(subst_ty) = subst.get(&binding).copied() else {
+                    return match self.thir.type_param_kinds.get(&binding) {
+                        Some(ThirKind::Type(UniverseLevel::Known(level))) => *level,
+                        _ => 0,
+                    };
                 };
-                if params.len() != args.len() {
+                if matches!(
+                    self.thir.type_arena.get(subst_ty.0 as usize).map(|t| &t.kind),
+                    Some(TypeKind::TypeVar(b)) if *b == binding
+                ) {
+                    return self
+                        .thir
+                        .type_universes
+                        .get(subst_ty.0 as usize)
+                        .copied()
+                        .unwrap_or(0);
+                }
+                if !alias_seen.insert(binding) {
                     return self
                         .thir
                         .type_universes
@@ -648,9 +632,87 @@ impl<'thir> Lowerer<'thir> {
                         .copied()
                         .unwrap_or(0);
                 }
-                let mut nested = subst.clone();
-                nested.extend(params.into_iter().zip(args));
-                self.thir_universe_with_subst(body, &nested)
+                let result = self.thir_universe_with_subst_seen(subst_ty, subst, alias_seen);
+                alias_seen.remove(&binding);
+                result
+            }
+            TypeKind::InferVar(_) => self
+                .thir
+                .type_universes
+                .get(ty.0 as usize)
+                .copied()
+                .unwrap_or(0),
+            TypeKind::Alias(binding) => {
+                if !alias_seen.insert(binding) {
+                    return self
+                        .thir
+                        .type_universes
+                        .get(ty.0 as usize)
+                        .copied()
+                        .unwrap_or(0);
+                }
+                // O(decls): consider a binding→decl index if this becomes hot.
+                let level = self
+                    .thir
+                    .decls
+                    .iter()
+                    .find_map(|&decl_id| {
+                        let decl = &self.thir.decl_arena[decl_id];
+                        if decl.binding == binding
+                            && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
+                            && params.is_empty()
+                        {
+                            Some(*ty)
+                        } else {
+                            None
+                        }
+                    })
+                    .map(|body| self.thir_universe_with_subst_seen(body, subst, alias_seen))
+                    .unwrap_or(0);
+                alias_seen.remove(&binding);
+                level
+            }
+            TypeKind::AliasApply { binding, args } => {
+                if !alias_seen.insert(binding) {
+                    return self
+                        .thir
+                        .type_universes
+                        .get(ty.0 as usize)
+                        .copied()
+                        .unwrap_or(0);
+                }
+                // O(decls): consider a binding→decl index if this becomes hot.
+                let level = self
+                    .thir
+                    .decls
+                    .iter()
+                    .find_map(|&decl_id| {
+                        let decl = &self.thir.decl_arena[decl_id];
+                        if decl.binding == binding
+                            && let ThirDeclKind::TypeAlias { params, ty } = &decl.kind
+                        {
+                            Some((params.clone(), *ty))
+                        } else {
+                            None
+                        }
+                    })
+                    .filter(|(params, _)| params.len() == args.len())
+                    .map(|(params, body)| {
+                        let mut next_subst = subst.clone();
+                        for (param, arg) in params.into_iter().zip(args) {
+                            next_subst.insert(param, arg);
+                        }
+                        self.thir_universe_with_subst_seen(body, &next_subst, alias_seen)
+                    })
+                    .unwrap_or_else(|| {
+                        self.thir
+                            .type_universes
+                            .get(ty.0 as usize)
+                            .copied()
+                            .unwrap_or(0)
+                    });
+                alias_seen.remove(&binding);
+                level
             }
             TypeKind::Apply { .. } | TypeKind::Con(_) | TypeKind::Error => self
                 .thir

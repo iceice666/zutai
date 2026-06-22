@@ -128,16 +128,70 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn type_matches(&mut self, expected: TypeId, found: TypeId) -> bool {
         let e_span = self.type_arena[expected.0 as usize].span;
         let f_span = self.type_arena[found.0 as usize].span;
+        let expected_head = self.resolve(expected);
+        let found_head = self.resolve(found);
+        let head_kinds = (
+            self.type_arena[expected_head.0 as usize].kind.clone(),
+            self.type_arena[found_head.0 as usize].kind.clone(),
+        );
+        if expected_head == found_head
+            && !matches!(
+                head_kinds.0,
+                TypeKind::Alias(_) | TypeKind::AliasApply { .. }
+            )
+        {
+            return true;
+        }
+        let guard_key = if matches!(
+            head_kinds.0,
+            TypeKind::Alias(_) | TypeKind::AliasApply { .. }
+        ) && matches!(
+            head_kinds.1,
+            TypeKind::Alias(_) | TypeKind::AliasApply { .. }
+        ) {
+            let key = (expected_head, found_head);
+            if !self.type_match_in_progress.insert(key) {
+                return true;
+            }
+            Some(key)
+        } else {
+            None
+        };
+        match head_kinds {
+            (
+                TypeKind::AliasApply {
+                    binding: eb,
+                    args: ea,
+                },
+                TypeKind::AliasApply {
+                    binding: fb,
+                    args: fa,
+                },
+            ) if eb == fb && ea.len() == fa.len() && self.alias_is_recursive(eb) => {
+                let result = ea
+                    .iter()
+                    .zip(fa.iter())
+                    .all(|(&ea, &fa)| self.type_matches(ea, fa) && self.type_matches(fa, ea));
+                if let Some(key) = guard_key {
+                    self.type_match_in_progress.remove(&key);
+                }
+                return result;
+            }
+            _ => {}
+        }
         let expected = self.resolve_alias(expected, &mut HashSet::new(), e_span);
         let found = self.resolve_alias(found, &mut HashSet::new(), f_span);
         if expected == found {
+            if let Some(key) = guard_key {
+                self.type_match_in_progress.remove(&key);
+            }
             return true;
         }
 
         let ek = self.type_arena[expected.0 as usize].kind.clone();
         let fk = self.type_arena[found.0 as usize].kind.clone();
 
-        match (ek, fk) {
+        let result = match (ek, fk) {
             (TypeKind::Error, _) | (_, TypeKind::Error) => true,
             (_, TypeKind::Never) => true,
 
@@ -237,6 +291,102 @@ impl<'hir> Lowerer<'hir> {
                 self.type_matches(ef, ff) && self.type_matches(ea, fa)
             }
             (left, right) => left == right,
+        };
+        if let Some(key) = guard_key {
+            self.type_match_in_progress.remove(&key);
+        }
+        result
+    }
+
+    fn alias_is_recursive(&mut self, binding: BindingId) -> bool {
+        if let Some(&cached) = self.alias_recursive_cache.get(&binding) {
+            return cached;
+        }
+        // Insert `false` first so a self-reference encountered during the walk
+        // does not recurse back into this method (the walk uses its own visited
+        // set, but this also guards re-entry through the cache).
+        self.alias_recursive_cache.insert(binding, false);
+        let result = match self.aliases.get(&binding).copied() {
+            Some(body) => {
+                let mut visited = HashSet::new();
+                self.type_references_alias(body, binding, &mut visited)
+            }
+            None => false,
+        };
+        self.alias_recursive_cache.insert(binding, result);
+        result
+    }
+
+    /// Does `ty` transitively reference alias `target` through alias/apply edges?
+    /// Walks the alias-reference graph (following referenced bodies via
+    /// `self.aliases`) with a binding `visited` set so mutual cycles terminate.
+    fn type_references_alias(
+        &self,
+        ty: TypeId,
+        target: BindingId,
+        visited: &mut HashSet<BindingId>,
+    ) -> bool {
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Alias(b) => {
+                if b == target {
+                    return true;
+                }
+                if visited.insert(b)
+                    && let Some(body) = self.aliases.get(&b).copied()
+                {
+                    return self.type_references_alias(body, target, visited);
+                }
+                false
+            }
+            TypeKind::AliasApply { binding: b, args } => {
+                if b == target {
+                    return true;
+                }
+                if args
+                    .iter()
+                    .any(|&a| self.type_references_alias(a, target, visited))
+                {
+                    return true;
+                }
+                if visited.insert(b)
+                    && let Some(body) = self.aliases.get(&b).copied()
+                {
+                    return self.type_references_alias(body, target, visited);
+                }
+                false
+            }
+            TypeKind::List(t)
+            | TypeKind::Optional(t)
+            | TypeKind::Maybe(t)
+            | TypeKind::Patch { target: t, .. } => self.type_references_alias(t, target, visited),
+            TypeKind::Function { from, to } => {
+                self.type_references_alias(from, target, visited)
+                    || self.type_references_alias(to, target, visited)
+            }
+            TypeKind::Apply { func, arg } => {
+                self.type_references_alias(func, target, visited)
+                    || self.type_references_alias(arg, target, visited)
+            }
+            TypeKind::Record(fields, _) => fields
+                .iter()
+                .any(|f| self.type_references_alias(f.ty, target, visited)),
+            TypeKind::Union(variants, _) => variants
+                .iter()
+                .filter_map(|v| v.payload)
+                .any(|p| self.type_references_alias(p, target, visited)),
+            TypeKind::Tuple(items) => items.iter().any(|it| match it {
+                TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => {
+                    self.type_references_alias(*ty, target, visited)
+                }
+            }),
+            TypeKind::Effect { base, row } => {
+                self.type_references_alias(base, target, visited)
+                    || row.ops.iter().any(|op| {
+                        self.type_references_alias(op.param, target, visited)
+                            || self.type_references_alias(op.result, target, visited)
+                    })
+            }
+            _ => false,
         }
     }
 

@@ -216,14 +216,26 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn finalized_type_universes(&mut self) -> Vec<u32> {
-        let mut universes = Vec::new();
+        // Snapshot the arena length *before* iterating. Generic recursive aliases
+        // (e.g. `Tree :: <A> type { #node : { left : Tree A; ... } }`) may call
+        // `alias_apply_universe` → `instantiate_type_vars`, which allocates fresh
+        // TypeId nodes.  Processing those fresh nodes would trigger further expansion,
+        // making the `while i < self.type_arena.len()` loop infinite.  Nodes added
+        // during universe computation are internal expansion artefacts; they are never
+        // stored in user-visible IR positions, so their level is 0 (ground).
+        let initial_len = self.type_arena.len();
+        let mut universes = Vec::with_capacity(initial_len);
         let mut i = 0;
-        while i < self.type_arena.len() {
+        while i < initial_len {
             let span = self.type_arena[i].span;
             let level = self.type_universe(TypeId(i as u32), span);
             universes.push(self.solve_level(level, span).unwrap_or(0));
             i += 1;
         }
+        // Fill entries for any freshly-allocated nodes so
+        // `type_universes.len() == type_arena.len()` holds.
+        let extra = self.type_arena.len().saturating_sub(initial_len);
+        universes.extend(std::iter::repeat_n(0u32, extra));
         universes
     }
 
@@ -233,19 +245,39 @@ impl<'hir> Lowerer<'hir> {
         args: &[TypeId],
         span: Span,
     ) -> UniverseLevel {
+        // Recursive guard: generic recursive aliases re-instantiate their bodies on
+        // every call, minting fresh TypeIds that defeat the `type_universe_cache`
+        // per-TypeId cycle break. On re-entry, use the applied args as a
+        // conservative universe upper bound.
+        if !self.alias_universe_in_progress.insert(binding) {
+            // Conservative upper bound: max universe of the applied args.
+            // Keep the binding-keyed guard (do NOT re-key by `(binding, args)`:
+            // instantiate_type_vars mints fresh TypeIds per level, so an
+            // `(binding, args)` key never repeats and would not terminate).
+            // Collect first — a lazy `.map(|a| self.type_universe(..))` closure
+            // plus a `.fold` closure would both borrow `&mut self` at once.
+            let arg_levels: Vec<UniverseLevel> =
+                args.iter().map(|&a| self.type_universe(a, span)).collect();
+            return UniverseLevel::max(arg_levels);
+        }
         let Some(params) = self.alias_params.get(&binding).cloned() else {
+            self.alias_universe_in_progress.remove(&binding);
             return UniverseLevel::Known(0);
         };
         if params.len() != args.len() {
+            self.alias_universe_in_progress.remove(&binding);
             return UniverseLevel::Known(0);
         }
         let Some(body) = self.aliases.get(&binding).copied() else {
+            self.alias_universe_in_progress.remove(&binding);
             return UniverseLevel::Known(0);
         };
         let subst: HashMap<BindingId, TypeId> =
             params.into_iter().zip(args.iter().copied()).collect();
         let expanded = self.instantiate_type_vars(body, &subst);
-        self.type_universe(expanded, span)
+        let level = self.type_universe(expanded, span);
+        self.alias_universe_in_progress.remove(&binding);
+        level
     }
 
     fn apply_universe(&mut self, ty: TypeId, span: Span) -> UniverseLevel {

@@ -135,6 +135,20 @@ struct Lowerer<'hir> {
     level_lower_bounds: HashMap<u32, u32>,
     level_equalities: HashMap<u32, UniverseLevel>,
     type_universe_cache: HashMap<TypeId, UniverseLevel>,
+    /// Alias bindings whose universe level is currently being computed. Guards
+    /// `alias_apply_universe` against equirecursive generic aliases (e.g.
+    /// `Tree :: <A> type { #node : { left : Tree A; ... } }`): re-instantiating
+    /// the body on each call mints fresh `TypeId`s that defeat the
+    /// `type_universe_cache` cycle break, so a recursive occurrence is treated as
+    /// the fixpoint base (`Known(0)`) instead of expanding forever.
+    alias_universe_in_progress: HashSet<BindingId>,
+    /// Type pairs currently being matched. Recursive aliases can unfold back to
+    /// the same pair through record/union fields; re-entry means the equirecursive
+    /// comparison has reached its fixpoint.
+    type_match_in_progress: HashSet<(TypeId, TypeId)>,
+    /// Memoized "is this alias (directly or mutually) recursive?" — gates the
+    /// bidirectional same-binding AliasApply fast path in `type_matches`.
+    alias_recursive_cache: HashMap<BindingId, bool>,
     /// Params of each parametric type constructor (generic alias or type-level
     /// function), keyed by binding. Presence marks the binding as a parametric
     /// constructor applied via `AliasApply` at use sites.

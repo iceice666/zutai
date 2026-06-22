@@ -396,6 +396,191 @@ fn optional_value_lowers_to_optional_type() {
     );
 }
 
+#[test]
+fn recursive_union_alias_value_lowers_and_validates() {
+    let g = dc_of(
+        r#"
+Tree :: type {
+  #leaf;
+  #node : { value : Int; left : Tree; right : Tree; };
+}
+example :: Tree =
+  #node {
+    value = 1;
+    left = #leaf;
+    right = #node { value = 2; left = #leaf; right = #leaf; };
+  }
+example == example
+"#,
+    );
+    validate(&g).expect("recursive union aliases should produce valid Dataflow Core");
+}
+
+#[test]
+fn generic_recursive_union_alias_value_lowers_and_validates() {
+    let g = dc_of(
+        r#"
+Tree :: <A> type {
+  #leaf;
+  #node : { value : A; left : Tree A; right : Tree A; };
+}
+example :: Tree Int =
+  #node { value = 1; left = #leaf; right = #leaf; }
+example == example
+"#,
+    );
+    validate(&g).expect("generic recursive union aliases should produce valid Dataflow Core");
+}
+
+#[test]
+fn generic_recursive_union_alias_instantiates_entry_type() {
+    let g = dc_of(
+        r#"
+Tree :: <A> type {
+  #leaf;
+  #node : { value : A; left : Tree A; right : Tree A; };
+}
+example :: Tree Int =
+  #node { value = 1; left = #leaf; right = #leaf; }
+example
+"#,
+    );
+    let root_ty = g.nodes[g.root].ty;
+    let DfTy::Union(variants) = &g.types[root_ty] else {
+        panic!(
+            "expected Tree Int root to instantiate to Union, got {:?}",
+            g.types[root_ty]
+        );
+    };
+    let node_record = variants
+        .iter()
+        .find(|variant| variant.tag == "node")
+        .expect("node variant")
+        .ty;
+    let DfTy::Record(fields) = &g.types[node_record] else {
+        panic!("expected node payload to instantiate to Record");
+    };
+    let recursive_fields: Vec<_> = fields
+        .iter()
+        .filter(|field| field.name == "left" || field.name == "right")
+        .collect();
+    assert_eq!(
+        recursive_fields.len(),
+        2,
+        "expected exactly two recursive fields (left, right) in node payload"
+    );
+    assert!(
+        recursive_fields
+            .iter()
+            .all(|field| matches!(g.types[field.ty], DfTy::Union(_))),
+        "recursive fields should instantiate to Tree Int union types"
+    );
+}
+
+#[test]
+fn generic_alias_instantiation_preserves_nested_recursive_alias() {
+    let g = dc_of(
+        r#"
+List_ :: type {
+  #nil;
+  #cons : { head : Int; tail : List_; };
+}
+Wrap :: <A> type { item : A; rest : List_; }
+x :: Wrap Int = { item = 1; rest = #nil; }
+x
+"#,
+    );
+    validate(&g).expect("generic alias containing recursive alias should validate");
+    // Assert the cons.tail back-edge: Wrap Int root has a `rest` field of type
+    // List_ (Union); the `cons` variant's `tail` field must also be Union.
+    let root_ty = g.nodes[g.root].ty;
+    let DfTy::Record(root_fields) = &g.types[root_ty] else {
+        panic!("expected Wrap Int root to be DfTy::Record");
+    };
+    let rest_ty = root_fields
+        .iter()
+        .find(|f| f.name == "rest")
+        .expect("rest field")
+        .ty;
+    let DfTy::Union(list_variants) = &g.types[rest_ty] else {
+        panic!("expected rest to be DfTy::Union (List_)");
+    };
+    let cons_payload_ty = list_variants
+        .iter()
+        .find(|v| v.tag == "cons")
+        .expect("cons variant")
+        .ty;
+    let DfTy::Record(cons_fields) = &g.types[cons_payload_ty] else {
+        panic!("expected cons payload to be DfTy::Record");
+    };
+    let tail_ty = cons_fields
+        .iter()
+        .find(|f| f.name == "tail")
+        .expect("tail field")
+        .ty;
+    assert!(
+        matches!(g.types[tail_ty], DfTy::Union(_)),
+        "cons.tail should be a DfTy::Union (equirecursive List_ back-edge)"
+    );
+}
+
+#[test]
+fn mutual_recursive_aliases_lower_without_hang() {
+    // Expr and Args are mutually recursive (non-generic); neither has params.
+    // Nullary `#lit` construction mirrors the proven `#leaf` pattern.
+    let g = dc_of(
+        r#"
+Expr :: type { #lit; #call : { args : Args; }; }
+Args :: type { #none; #cons : { head : Expr; tail : Args; }; }
+example :: Expr = #lit
+example
+"#,
+    );
+    validate(&g).expect("mutually-referencing aliases should validate");
+    let root_ty = g.nodes[g.root].ty;
+    assert!(
+        matches!(g.types[root_ty], DfTy::Union(_)),
+        "Expr should lower to DfTy::Union"
+    );
+}
+
+#[test]
+fn instantiate_df_type_covers_container_arms() {
+    let g = dc_of(
+        r#"
+Holder :: <A> type { items : List A; opt : A?; pair : (A, Int); }
+h :: Holder Int = { items = [1; 2;]; opt = #none; pair = (1, 2); }
+h
+"#,
+    );
+    validate(&g).expect("generic alias with container fields should validate");
+    let DfTy::Record(fields) = &g.types[g.nodes[g.root].ty] else {
+        panic!(
+            "expected Holder Int root to be DfTy::Record, got {:?}",
+            g.types[g.nodes[g.root].ty]
+        );
+    };
+    let field_ty = |name: &str| {
+        fields
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("missing field {name}"))
+            .ty
+    };
+    assert!(
+        matches!(g.types[field_ty("items")], DfTy::List(_)),
+        "items should instantiate to DfTy::List"
+    );
+    assert!(
+        matches!(g.types[field_ty("opt")], DfTy::Optional(_)),
+        "opt should instantiate to DfTy::Optional"
+    );
+    assert!(
+        matches!(g.types[field_ty("pair")], DfTy::Tuple(_)),
+        "pair should instantiate to DfTy::Tuple"
+    );
+}
+
 // ── Tuple ─────────────────────────────────────────────────────────────────────
 
 #[test]

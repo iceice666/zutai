@@ -46,6 +46,38 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::TaggedValue { tag, payload } => {
                 self.lower_tagged_value_expr(id, tag, *payload, Some(expected), expr.span)
             }
+            HirExprKind::Atom(name) => {
+                let atom_ty = self.alloc_type(Type {
+                    kind: TypeKind::Atom(name.clone()),
+                    span: expr.span,
+                });
+                let contextual_atom = {
+                    let resolved = self.resolve_alias(expected, &mut HashSet::new(), expr.span);
+                    matches!(
+                        self.type_arena[resolved.0 as usize].kind,
+                        TypeKind::Union(_, _) | TypeKind::Optional(_) | TypeKind::Maybe(_)
+                    )
+                };
+                let matches = self.type_matches(expected, atom_ty);
+                if contextual_atom && matches {
+                    self.alloc_expr(ThirExpr {
+                        source: id,
+                        ty: expected,
+                        kind: ThirExprKind::Atom(name.clone()),
+                        span: expr.span,
+                    })
+                } else {
+                    if !matches {
+                        self.type_mismatch(expected, atom_ty, expr.span);
+                    }
+                    self.alloc_expr(ThirExpr {
+                        source: id,
+                        ty: atom_ty,
+                        kind: ThirExprKind::Atom(name.clone()),
+                        span: expr.span,
+                    })
+                }
+            }
             HirExprKind::Sequence(items) => self.lower_sequence_expr(id, items, Some(expected)),
             _ => {
                 let lowered = self.infer_expr(id);

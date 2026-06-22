@@ -716,3 +716,81 @@ patch
     assert!(row_field(server_row, "host").expect("host field").0);
     assert!(row_field(server_row, "port").expect("port field").0);
 }
+
+#[test]
+fn generic_recursive_union_alias_lowers_with_value() {
+    let m = tlc_of(
+        r#"
+Tree :: <A> type {
+  #leaf;
+  #node : { value : A; left : Tree A; right : Tree A; };
+}
+example :: Tree Int =
+  #node { value = 1; left = #leaf; right = #leaf; }
+example == example
+"#,
+    );
+
+    assert!(m.decls.iter().any(|&id| matches!(
+        &m.decl_arena[id],
+        TlcDecl::TypeAlias { params, .. } if params.len() == 1
+    )));
+    assert!(
+        m.decls
+            .iter()
+            .any(|&id| matches!(&m.decl_arena[id], TlcDecl::Value { .. }))
+    );
+    // The value decl's type must be the applied-alias spine TyApp(TyVar(Tree), Int),
+    // confirming the universe/identity path produced a real applied type.
+    // NOTE: TlcType has no Error variant (THIR Error is unreachable in TLC), so the
+    // meaningful identity assertion is the TyApp shape.
+    let value_ty = m
+        .decls
+        .iter()
+        .find_map(|&id| match &m.decl_arena[id] {
+            TlcDecl::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })
+        .expect("value decl type");
+    assert!(
+        matches!(m.type_arena[value_ty], TlcType::TyApp(_, _)),
+        "example :: Tree Int should lower to a TyApp alias spine, got {:?}",
+        m.type_arena[value_ty]
+    );
+}
+
+#[test]
+fn mutual_generic_aliases_do_not_overflow_universe() {
+    let m = tlc_of(
+        r#"
+Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; }
+Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; }
+x :: Odd Int = #nil
+x
+"#,
+    );
+    // Reaching this line at all proves no stack overflow in the TLC universe
+    // computation. Both alias decls and the value decl must be present.
+    let alias_count = m
+        .decls
+        .iter()
+        .filter(|&&id| matches!(&m.decl_arena[id], TlcDecl::TypeAlias { params, .. } if params.len() == 1))
+        .count();
+    assert_eq!(
+        alias_count, 2,
+        "expected two generic (1-param) type aliases"
+    );
+    let value_ty = m
+        .decls
+        .iter()
+        .find_map(|&id| match &m.decl_arena[id] {
+            TlcDecl::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })
+        .expect("value decl type");
+    assert!(
+        matches!(m.type_arena[value_ty], TlcType::TyApp(_, _)),
+        "x :: Odd Int should lower to a TyApp alias spine, got {:?}",
+        m.type_arena[value_ty]
+    );
+}

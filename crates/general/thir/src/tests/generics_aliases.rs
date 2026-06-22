@@ -646,3 +646,127 @@ get_port #none
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
+
+#[test]
+fn generic_recursive_union_alias_checks_values() {
+    let file = completed_file(
+        r#"
+Tree :: <A> type {
+  #leaf;
+  #node : { value : A; left : Tree A; right : Tree A; };
+}
+example :: Tree Int =
+  #node { value = 1; left = #leaf; right = #leaf; }
+example == example
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Bool));
+}
+
+#[test]
+fn repeated_recursive_alias_mismatch_does_not_reuse_stale_fixpoint() {
+    let lowered = lower(
+        r#"
+Tree :: <A> type {
+  #leaf;
+  #node : { value : A; left : Tree A; right : Tree A; };
+}
+f :: Tree Bool -> Int = t => 0;
+y :: Tree Int = #leaf
+a :: Int = f y
+b :: Int = f y
+b
+"#,
+    );
+    let mismatches = lowered
+        .diagnostics
+        .iter()
+        .filter(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. }))
+        .count();
+    assert!(
+        mismatches >= 2,
+        "both repeated bad calls should report TypeMismatch, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn alias_application_fast_path_does_not_ignore_variance() {
+    let lowered = lower(
+        r#"
+Fn :: <A> type A -> Int
+g :: Fn true = x => 0;
+h :: Fn Bool = g
+h
+"#,
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. })),
+        "contravariant alias parameter mismatch should be rejected, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn covariant_alias_arg_accepted_at_expected_type() {
+    // Pair :: <A, B> type { first: A; second: B } is covariant in A.
+    // Pair true Int should be assignable to Pair Bool Int (true is a subtype of Bool).
+    let lowered = lower(
+        r#"
+TrueT :: type true
+Pair :: <A, B> type { first : A; second : B; }
+f :: Pair Bool Int -> Int = x => 0;
+g :: Pair TrueT Int -> Int = f
+g
+"#,
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .all(|d| !matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. })),
+        "Pair true Int should be assignable to Pair Bool Int (covariant), got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn deep_mismatch_behind_recursion_not_masked_by_coinductive_guard() {
+    let lowered = lower(
+        r#"
+TreeA :: type { #leaf; #node : { value : Int; child : TreeA; }; }
+TreeB :: type { #leaf; #node : { value : Text; child : TreeB; }; }
+f :: TreeA -> Int = t => 0;
+y :: TreeB = #leaf
+z :: Int = f y
+z
+"#,
+    );
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. })),
+        "deep value mismatch (Int vs Text) must surface despite the recursive child back-edge, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn mutual_generic_aliases_elaborate_cleanly_in_thir() {
+    let file = completed_file(
+        r#"
+Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; }
+Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; }
+x :: Odd Int = #nil
+x
+"#,
+    );
+    assert!(matches!(
+        final_type_kind(&file),
+        TypeKind::AliasApply { .. }
+    ));
+}

@@ -116,6 +116,21 @@ struct Lowerer<'m> {
     type_aliases: HashMap<BindingId, TlcTypeId>,
     /// Pre-allocated error type ID.
     error_ty: DfTyId,
+    /// Named alias bindings → their canonical DC type `DfTyId`.  All
+    /// `TyVar(Named(binding))` occurrences return the same slot, regardless of
+    /// the source `TlcTypeId` (multiple arena nodes may represent the same alias
+    /// reference).  During body lowering the slot holds a placeholder `DfTy::Error`
+    /// back-reference; after lowering the slot is overwritten with the real body
+    /// content, making the DfTy arena equirecursively cyclic.  Never cleared — it
+    /// is a permanent alias-binding → DfTyId cache that also serves as the
+    /// in-progress guard.
+    alias_binding_type: HashMap<BindingId, DfTyId>,
+    /// Saturated `TyFun` applications instantiated into concrete DC shapes.
+    /// Recursive generic aliases (e.g. `Tree Int`) back-reference the same
+    /// application key from their own fields, so this cache is also the
+    /// equirecursive placeholder guard.
+    type_app_cache: HashMap<(DfTyId, Vec<DfTyId>), DfTyId>,
+    type_app_depth: u32,
 }
 
 impl<'m> Lowerer<'m> {
@@ -129,6 +144,9 @@ impl<'m> Lowerer<'m> {
             types,
             globals: IndexMap::new(),
             spans: Vec::new(),
+            alias_binding_type: HashMap::new(),
+            type_app_cache: HashMap::new(),
+            type_app_depth: 0,
             type_cache: HashMap::new(),
             local_env: HashMap::new(),
             global_names: HashMap::new(),

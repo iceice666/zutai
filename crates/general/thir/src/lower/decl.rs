@@ -39,17 +39,27 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn predeclare_decl_types(&mut self) {
+        // Pass 1: register every parametric alias's arity before lowering any
+        // body. Generic self- and mutually-recursive aliases (e.g.
+        // `Tree :: <A> type { #node : { left : Tree A; ... }; ... }`) reference
+        // their own/each other's constructor inside the body, so `lower_type_apply`
+        // must already see the arity to build an `AliasApply` node instead of
+        // rejecting `Tree A` as "not a parametric constructor". Definition order
+        // is irrelevant because every alias is known before any body is lowered.
+        for decl_id in &self.hir.decls {
+            let decl = self.hir_decl(*decl_id);
+            if let HirDeclKind::TypeAlias { params, .. } = &decl.kind
+                && !params.is_empty()
+            {
+                self.alias_params.insert(decl.binding, params.clone());
+            }
+        }
         for decl_id in &self.hir.decls {
             let decl = self.hir_decl(*decl_id);
             match &decl.kind {
-                HirDeclKind::TypeAlias { params, ty } => {
+                HirDeclKind::TypeAlias { ty, .. } => {
                     let ty = self.lower_type(*ty);
                     self.aliases.insert(decl.binding, ty);
-                    if !params.is_empty() {
-                        // Generic alias: record the params so use sites can build
-                        // AliasApply nodes and resolve_alias can expand them.
-                        self.alias_params.insert(decl.binding, params.clone());
-                    }
                     self.value_types.insert(decl.binding, self.type_type);
                 }
                 HirDeclKind::Value {

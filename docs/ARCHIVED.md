@@ -35,24 +35,27 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 24 universe-level foundation._
+_Last updated: 2026-06-22 after closing Phase 25 recursive type aliases._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and
   elaborates complete programs to TLC.
-- THIR covers v0 plus implemented v1-adjacent semantics: row-polymorphic
+- THIR covers v0 plus implemented v1/v2-adjacent semantics: row-polymorphic
   records/unions, `select`, constraints/witnesses, `derive`, method-level type
-  params, higher-kinded constraints, and algebraic-effect typing.
+  params, higher-kinded constraints, algebraic-effect typing, and guarded
+  recursive type aliases.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
   operator lowering, source effect markers, CPS elaboration for handled effects,
-  and runtime `io.print` lowering through ordinary TLC function values.
+  equirecursive alias identity, and runtime `io.print` lowering through ordinary
+  TLC function values.
 - THIR and TLC carry internal universe levels for surface `Type`. Explicit level
   syntax is still unsupported; level-polymorphic type constructors default to
   the lowest consistent universe and erase before runtime/backend lowering.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
   Record/tuple access is slot-indexed; union construction now uses dense
   per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
+  recursive and generic recursive aliases lower to finite cyclic `DfTyId` graphs;
   codegen emits static descriptors for `zutai.show`; `@main` renders through the
   type-directed runtime display path and rejects function / `Type` results.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
@@ -125,6 +128,22 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 25: Recursive type aliases and equirecursive equality ✅
+
+- Guarded recursive and mutually recursive aliases now check through THIR/TLC:
+  recursive occurrences under records/unions carry alias identity instead of
+  eager expansion, while bare/non-productive cycles still report alias-cycle or
+  fuel diagnostics.
+- Generic recursive aliases such as `Tree A` pre-register constructor arity,
+  preserve universe levels through recursive alias applications, and compare via
+  scoped equirecursive type matching without stale fixpoint state or variance
+  shortcuts.
+- Dataflow Core instantiates generic recursive aliases into finite cyclic
+  `DfTyId` graphs; validation remains enabled in debug builds, LLVM descriptor
+  emission gets finite back-references, and `check`, `run`, `dataflow`, and
+  `compile --emit llvm` cover recursive `Tree`, mutual `Expr`/`Args`, generic
+  `Tree A`, and structural equality examples.
 
 ### Phase 24: Universe-level foundation ✅
 

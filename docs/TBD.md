@@ -9,28 +9,6 @@ _Scoped 2026-06-22. Order is dependency-aware; when a phase completes, move a
 short support-level summary to `docs/ARCHIVED.md` and leave unfinished follow-up
 here._
 
-
-### Phase 25: Recursive type aliases and equirecursive equality
-
-Source of truth: [`v2_spec/01-recursive-types.md`](v2_spec/01-recursive-types.md).
-
-- Resolve top-level type aliases in SCC binding groups so definition order does
-  not matter for mutually recursive aliases.
-- Permit guarded self, mutual, and generic recursive aliases under records,
-  unions, tuples, lists, optionals, and function arrows; reject bare/non-productive
-  alias cycles before type-level evaluation.
-- Lower aliases by reference (`TyVar` / `TyLamK` / `TyApp`) rather than eager
-  expansion, and extend NbE/type equality with fuel-bounded equirecursive
-  unfolding.
-- Carry recursive type identity through Dataflow Core `DfTyId`s and static runtime
-  type descriptors; reflection emits finite named back-references rather than
-  infinite expanded shapes.
-- Acceptance: recursive `Tree`, mutually recursive `Expr`/`Args`, and generic
-  `Tree A` examples check, evaluate finite values, render through `run` and
-  compiled output, and compare via the built-in structural equality derivation;
-  unguarded cycles keep rejecting with a productivity diagnostic; cyclic runtime
-  values remain unsupported/non-goal.
-
 ### Phase 26: Higher-rank polymorphism
 
 Source of truth: [`v2_spec/05-higher-rank-polymorphism.md`](v2_spec/05-higher-rank-polymorphism.md).
