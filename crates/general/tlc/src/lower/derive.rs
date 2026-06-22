@@ -2,7 +2,7 @@ use zutai_hir::BindingId;
 use zutai_thir::{RowTail, ThirConstraintMethod, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
 use crate::ir::{
-    BuiltinOp, Literal, Row, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcTupleField,
+    BuiltinOp, Literal, PrimTy, Row, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcTupleField,
     TlcTupleItem, TlcType,
 };
 
@@ -31,6 +31,30 @@ impl<'thir> Lowerer<'thir> {
         let Some((constraint_param, methods)) = self.constraint_info(constraint) else {
             return Vec::new();
         };
+
+        if self.constraint_has_recipe(constraint) {
+            return methods
+                .iter()
+                .filter_map(|method| match derive_recipe_kind(&method.name) {
+                    Some(DeriveRecipeKind::Show) => {
+                        let value =
+                            self.synthesize_show_method(method.sig, constraint_param, target)?;
+                        Some((method.name.clone(), value))
+                    }
+                    Some(DeriveRecipeKind::Ord) => {
+                        let value = self.synthesize_ord_method(
+                            constraint,
+                            &method.name,
+                            method.sig,
+                            constraint_param,
+                            target,
+                        )?;
+                        Some((method.name.clone(), value))
+                    }
+                    None => None,
+                })
+                .collect();
+        }
 
         let Some(eq_method_name) = methods
             .iter()
@@ -61,6 +85,19 @@ impl<'thir> Lowerer<'thir> {
             .collect()
     }
 
+    fn constraint_has_recipe(&self, constraint: BindingId) -> bool {
+        self.thir.decls.iter().any(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            decl.binding == constraint
+                && matches!(
+                    &decl.kind,
+                    ThirDeclKind::Constraint {
+                        recipe: Some(_),
+                        ..
+                    }
+                )
+        })
+    }
     fn constraint_info(
         &self,
         constraint: BindingId,
@@ -115,6 +152,462 @@ impl<'thir> Lowerer<'thir> {
         match self.thir.type_arena[ty.0 as usize].kind {
             TypeKind::TypeVar(binding) if binding == constraint_param => target,
             _ => ty,
+        }
+    }
+
+    fn unary_text_method_parts(
+        &self,
+        sig: TypeId,
+        constraint_param: BindingId,
+        target: TypeId,
+    ) -> Option<(TypeId, TypeId)> {
+        let TypeKind::Function { from, to } = self.thir.type_arena[sig.0 as usize].kind else {
+            return None;
+        };
+        if !matches!(self.thir.type_arena[to.0 as usize].kind, TypeKind::Text) {
+            return None;
+        }
+        let arg = self.substitute_constraint_arg(from, constraint_param, target);
+        (arg == target).then_some((target, to))
+    }
+
+    fn binary_ord_method_parts(
+        &self,
+        sig: TypeId,
+        constraint_param: BindingId,
+        target: TypeId,
+    ) -> Option<(TypeId, TypeId)> {
+        let TypeKind::Function { from, to } = self.thir.type_arena[sig.0 as usize].kind else {
+            return None;
+        };
+        let TypeKind::Function {
+            from: second,
+            to: result,
+        } = self.thir.type_arena[to.0 as usize].kind
+        else {
+            return None;
+        };
+        let first = self.substitute_constraint_arg(from, constraint_param, target);
+        let second = self.substitute_constraint_arg(second, constraint_param, target);
+        (first == target && second == target).then_some((target, result))
+    }
+
+    fn synthesize_show_method(
+        &mut self,
+        sig: TypeId,
+        constraint_param: BindingId,
+        target: TypeId,
+    ) -> Option<TlcExprId> {
+        let (arg_ty, result_ty) = self.unary_text_method_parts(sig, constraint_param, target)?;
+        let span = zutai_syntax::Span::default();
+        let arg = self.fresh_synth_binding();
+        let arg_tlc_ty = self.lower_type(arg_ty);
+        let result_tlc_ty = self.lower_type(result_ty);
+        let arg_expr = self.alloc_expr(TlcExpr::Var(arg), arg_tlc_ty, span);
+        let body = self.derive_show_expr(target, arg_expr);
+        let fn_ty = self.alloc_type(TlcType::Fun(arg_tlc_ty, result_tlc_ty, Row::REmpty));
+        Some(self.alloc_expr(TlcExpr::Lam(arg, arg_tlc_ty, body), fn_ty, span))
+    }
+
+    fn synthesize_ord_method(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        sig: TypeId,
+        constraint_param: BindingId,
+        target: TypeId,
+    ) -> Option<TlcExprId> {
+        let (arg_ty, result_ty) = self.binary_ord_method_parts(sig, constraint_param, target)?;
+        let span = zutai_syntax::Span::default();
+        let lhs = self.fresh_synth_binding();
+        let rhs = self.fresh_synth_binding();
+        let arg_tlc_ty = self.lower_type(arg_ty);
+        let result_tlc_ty = self.lower_type(result_ty);
+        let lhs_expr = self.alloc_expr(TlcExpr::Var(lhs), arg_tlc_ty, span);
+        let rhs_expr = self.alloc_expr(TlcExpr::Var(rhs), arg_tlc_ty, span);
+        let body = self.derive_ord_expr(
+            constraint,
+            method_name,
+            target,
+            result_ty,
+            lhs_expr,
+            rhs_expr,
+        );
+        let inner_ty = self.alloc_type(TlcType::Fun(arg_tlc_ty, result_tlc_ty, Row::REmpty));
+        let inner = self.alloc_expr(TlcExpr::Lam(rhs, arg_tlc_ty, body), inner_ty, span);
+        let outer_ty = self.alloc_type(TlcType::Fun(arg_tlc_ty, inner_ty, Row::REmpty));
+        Some(self.alloc_expr(TlcExpr::Lam(lhs, arg_tlc_ty, inner), outer_ty, span))
+    }
+
+    fn derive_show_expr(&mut self, ty: TypeId, arg: TlcExprId) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let text_ty = self.alloc_type(TlcType::Prim(PrimTy::Str));
+        match self.derive_shape(ty) {
+            DeriveShape::Union(variants) => {
+                let mut alts = Vec::with_capacity(variants.len() + 1);
+                for variant in variants {
+                    let body = self.alloc_expr(
+                        TlcExpr::Lit(Literal::Str(format!("#{}", variant.name))),
+                        text_ty,
+                        span,
+                    );
+                    alts.push(TlcAlt {
+                        pat: self.variant_wildcard_pat(&variant),
+                        guard: None,
+                        body,
+                    });
+                }
+                let fallback = self.alloc_expr(
+                    TlcExpr::Lit(Literal::Str("union".to_string())),
+                    text_ty,
+                    span,
+                );
+                alts.push(TlcAlt {
+                    pat: TlcPat::Wildcard,
+                    guard: None,
+                    body: fallback,
+                });
+                self.alloc_expr(TlcExpr::Case(arg, alts), text_ty, span)
+            }
+            DeriveShape::Record(fields) => {
+                let names = fields
+                    .into_iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.alloc_expr(
+                    TlcExpr::Lit(Literal::Str(format!("{{{names}}}"))),
+                    text_ty,
+                    span,
+                )
+            }
+            DeriveShape::Tuple(items) => {
+                let names = items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (name, _))| name.unwrap_or_else(|| index.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.alloc_expr(
+                    TlcExpr::Lit(Literal::Str(format!("({names})"))),
+                    text_ty,
+                    span,
+                )
+            }
+            DeriveShape::Leaf => self.alloc_expr(
+                TlcExpr::Lit(Literal::Str(self.type_label_for_derive(ty))),
+                text_ty,
+                span,
+            ),
+        }
+    }
+
+    fn derive_ord_expr(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        ty: TypeId,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+    ) -> TlcExprId {
+        match self.derive_shape(ty) {
+            DeriveShape::Record(fields) => {
+                self.derive_ord_record(constraint, method_name, result_ty, lhs, rhs, fields)
+            }
+            DeriveShape::Union(variants) => {
+                self.derive_ord_union(constraint, method_name, result_ty, lhs, rhs, variants)
+            }
+            _ => self.derive_leaf_ord(ty, result_ty, lhs, rhs),
+        }
+    }
+
+    fn derive_ord_record(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        fields: Vec<(String, TypeId)>,
+    ) -> TlcExprId {
+        let mut expr = self.ordering_atom("eq", result_ty);
+        for (name, field_ty) in fields.into_iter().rev() {
+            let left = self.derive_get_field(lhs, name.as_str(), field_ty);
+            let right = self.derive_get_field(rhs, name.as_str(), field_ty);
+            let cmp = self.derive_component_ord(
+                constraint,
+                method_name,
+                field_ty,
+                result_ty,
+                left,
+                right,
+            );
+            expr = self.if_ordering_eq(cmp, expr, cmp, result_ty);
+        }
+        expr
+    }
+
+    fn derive_ord_union(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        variants: Vec<DeriveVariant>,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let lhs_ty = self
+            .expr_types
+            .get(&lhs)
+            .copied()
+            .unwrap_or_else(|| self.lower_type(result_ty));
+        let rhs_ty = self.expr_types.get(&rhs).copied().unwrap_or(lhs_ty);
+        let scrut_ty = self.alloc_type(TlcType::Tuple(vec![
+            TlcTupleField::Positional(lhs_ty),
+            TlcTupleField::Positional(rhs_ty),
+        ]));
+        let scrutinee = self.alloc_expr(
+            TlcExpr::Tuple(vec![
+                TlcTupleItem::Positional(lhs),
+                TlcTupleItem::Positional(rhs),
+            ]),
+            scrut_ty,
+            span,
+        );
+        let mut alts = Vec::new();
+        for (left_index, left_variant) in variants.iter().enumerate() {
+            for (right_index, right_variant) in variants.iter().enumerate() {
+                let (left_pat, right_pat, body) = if left_index == right_index {
+                    let (left_pat, right_pat, body) = self.derive_ord_union_payload(
+                        constraint,
+                        method_name,
+                        result_ty,
+                        left_variant,
+                    );
+                    (left_pat, right_pat, body)
+                } else if left_index < right_index {
+                    (
+                        self.variant_wildcard_pat(left_variant),
+                        self.variant_wildcard_pat(right_variant),
+                        self.ordering_atom("lt", result_ty),
+                    )
+                } else {
+                    (
+                        self.variant_wildcard_pat(left_variant),
+                        self.variant_wildcard_pat(right_variant),
+                        self.ordering_atom("gt", result_ty),
+                    )
+                };
+                alts.push(TlcAlt {
+                    pat: TlcPat::Tuple(vec![
+                        TlcPatItem::Positional(left_pat),
+                        TlcPatItem::Positional(right_pat),
+                    ]),
+                    guard: None,
+                    body,
+                });
+            }
+        }
+        let fallback = self.ordering_atom("eq", result_ty);
+        alts.push(TlcAlt {
+            pat: TlcPat::Wildcard,
+            guard: None,
+            body: fallback,
+        });
+        let result_tlc_ty = self.lower_type(result_ty);
+        self.alloc_expr(TlcExpr::Case(scrutinee, alts), result_tlc_ty, span)
+    }
+
+    fn derive_ord_union_payload(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        result_ty: TypeId,
+        variant: &DeriveVariant,
+    ) -> (TlcPat, TlcPat, TlcExprId) {
+        let span = zutai_syntax::Span::default();
+        let mut left_fields = Vec::with_capacity(variant.payload_fields.len());
+        let mut right_fields = Vec::with_capacity(variant.payload_fields.len());
+        let mut components = Vec::with_capacity(variant.payload_fields.len());
+        for (field_name, field_ty) in &variant.payload_fields {
+            let left_binding = self.fresh_synth_binding();
+            let right_binding = self.fresh_synth_binding();
+            let field_tlc_ty = self.lower_type(*field_ty);
+            let left_expr = self.alloc_expr(TlcExpr::Var(left_binding), field_tlc_ty, span);
+            let right_expr = self.alloc_expr(TlcExpr::Var(right_binding), field_tlc_ty, span);
+            left_fields.push((field_name.clone(), TlcPat::Bind(left_binding)));
+            right_fields.push((field_name.clone(), TlcPat::Bind(right_binding)));
+            components.push((*field_ty, left_expr, right_expr));
+        }
+        let left_pat = if left_fields.is_empty() {
+            TlcPat::Atom(variant.name.clone())
+        } else {
+            TlcPat::Variant(variant.name.clone(), Box::new(TlcPat::Record(left_fields)))
+        };
+        let right_pat = if right_fields.is_empty() {
+            TlcPat::Atom(variant.name.clone())
+        } else {
+            TlcPat::Variant(variant.name.clone(), Box::new(TlcPat::Record(right_fields)))
+        };
+        let mut body = self.ordering_atom("eq", result_ty);
+        for (field_ty, left_expr, right_expr) in components.into_iter().rev() {
+            let cmp = self.derive_component_ord(
+                constraint,
+                method_name,
+                field_ty,
+                result_ty,
+                left_expr,
+                right_expr,
+            );
+            body = self.if_ordering_eq(cmp, body, cmp, result_ty);
+        }
+        (left_pat, right_pat, body)
+    }
+
+    fn variant_wildcard_pat(&self, variant: &DeriveVariant) -> TlcPat {
+        if variant.payload_fields.is_empty() {
+            TlcPat::Atom(variant.name.clone())
+        } else {
+            TlcPat::Variant(variant.name.clone(), Box::new(TlcPat::Wildcard))
+        }
+    }
+
+    fn derive_component_ord(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        ty: TypeId,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+    ) -> TlcExprId {
+        if self.has_witness_binding(constraint, ty) {
+            let span = zutai_syntax::Span::default();
+            let component_ty = self.lower_type(ty);
+            let result_tlc_ty = self.lower_type(result_ty);
+            let after_first_ty =
+                self.alloc_type(TlcType::Fun(component_ty, result_tlc_ty, Row::REmpty));
+            let method_ty =
+                self.alloc_type(TlcType::Fun(component_ty, after_first_ty, Row::REmpty));
+            let dict = self.get_dict_expr(constraint, ty, span);
+            let method = self.alloc_expr(
+                TlcExpr::GetField(dict, method_name.to_string()),
+                method_ty,
+                span,
+            );
+            self.register_dict_field_slot(method, constraint, method_name);
+            let first = self.alloc_expr(TlcExpr::App(method, lhs), after_first_ty, span);
+            return self.alloc_expr(TlcExpr::App(first, rhs), result_tlc_ty, span);
+        }
+        self.derive_leaf_ord(ty, result_ty, lhs, rhs)
+    }
+
+    fn derive_leaf_ord(
+        &mut self,
+        _ty: TypeId,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let bool_ty = self.alloc_type(TlcType::Prim(PrimTy::Bool));
+        let result_tlc_ty = self.lower_type(result_ty);
+        let lt = self.alloc_expr(TlcExpr::Builtin(BuiltinOp::Lt, lhs, rhs), bool_ty, span);
+        let gt = self.alloc_expr(TlcExpr::Builtin(BuiltinOp::Gt, lhs, rhs), bool_ty, span);
+        let lt_atom = self.ordering_atom("lt", result_ty);
+        let gt_atom = self.ordering_atom("gt", result_ty);
+        let eq_atom = self.ordering_atom("eq", result_ty);
+        let ge = self.alloc_expr(
+            TlcExpr::Case(
+                gt,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Lit(Literal::Bool(true)),
+                        guard: None,
+                        body: gt_atom,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Wildcard,
+                        guard: None,
+                        body: eq_atom,
+                    },
+                ],
+            ),
+            result_tlc_ty,
+            span,
+        );
+        self.alloc_expr(
+            TlcExpr::Case(
+                lt,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Lit(Literal::Bool(true)),
+                        guard: None,
+                        body: lt_atom,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Wildcard,
+                        guard: None,
+                        body: ge,
+                    },
+                ],
+            ),
+            result_tlc_ty,
+            span,
+        )
+    }
+
+    fn if_ordering_eq(
+        &mut self,
+        cmp: TlcExprId,
+        then_expr: TlcExprId,
+        else_expr: TlcExprId,
+        result_ty: TypeId,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let bool_ty = self.alloc_type(TlcType::Prim(PrimTy::Bool));
+        let result_tlc_ty = self.lower_type(result_ty);
+        let eq_atom = self.ordering_atom("eq", result_ty);
+        let is_eq = self.alloc_expr(TlcExpr::Builtin(BuiltinOp::Eq, cmp, eq_atom), bool_ty, span);
+        self.alloc_expr(
+            TlcExpr::Case(
+                is_eq,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Lit(Literal::Bool(true)),
+                        guard: None,
+                        body: then_expr,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Wildcard,
+                        guard: None,
+                        body: else_expr,
+                    },
+                ],
+            ),
+            result_tlc_ty,
+            span,
+        )
+    }
+
+    fn ordering_atom(&mut self, name: &str, result_ty: TypeId) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let ty = self.lower_type(result_ty);
+        self.alloc_expr(TlcExpr::Lit(Literal::Atom(name.to_string())), ty, span)
+    }
+
+    fn type_label_for_derive(&self, ty: TypeId) -> String {
+        match self.resolve_alias_shape(ty) {
+            TypeKind::Bool | TypeKind::True | TypeKind::False => "Bool".to_string(),
+            TypeKind::Text => "Text".to_string(),
+            TypeKind::Int => "Int".to_string(),
+            TypeKind::Float => "Float".to_string(),
+            TypeKind::Posit(spec) => spec.type_name(),
+            TypeKind::Atom(name) => format!("#{name}"),
+            TypeKind::Opaque(name) => name,
+            _ => "value".to_string(),
         }
     }
 
@@ -594,6 +1087,20 @@ fn derive_equality_kind(method_name: &str) -> Option<EqualityKind> {
     match method_name {
         "eq" | "==" => Some(EqualityKind::Eq),
         "neq" | "!=" => Some(EqualityKind::Ne),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeriveRecipeKind {
+    Show,
+    Ord,
+}
+
+fn derive_recipe_kind(method_name: &str) -> Option<DeriveRecipeKind> {
+    match method_name {
+        "show" => Some(DeriveRecipeKind::Show),
+        "compare" => Some(DeriveRecipeKind::Ord),
         _ => None,
     }
 }

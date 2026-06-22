@@ -16,6 +16,7 @@ impl<'hir> Lowerer<'hir> {
             methods: Vec<(String, bool, bool, TypeId)>,
             method_params: HashMap<String, Vec<BindingId>>,
             derivable: bool,
+            has_recipe: bool,
         }
 
         let mut constraint_map: HashMap<BindingId, ConstraintInfo> = HashMap::new();
@@ -24,6 +25,7 @@ impl<'hir> Lowerer<'hir> {
                 params,
                 methods,
                 derivable,
+                recipe,
                 ..
             } = &decl.kind
             {
@@ -44,6 +46,7 @@ impl<'hir> Lowerer<'hir> {
                         methods: owned_methods,
                         method_params: owned_method_params,
                         derivable: *derivable,
+                        has_recipe: recipe.is_some(),
                     },
                 );
             }
@@ -64,6 +67,7 @@ impl<'hir> Lowerer<'hir> {
             constraint_name: String,
             methods: Vec<(String, bool, bool, TypeId)>,
             derivable: bool,
+            has_recipe: bool,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
         let mut derive_tasks: Vec<DeriveTask> = Vec::new();
@@ -122,6 +126,7 @@ impl<'hir> Lowerer<'hir> {
                         constraint_name: cst_info.name.clone(),
                         methods: cst_info.methods.clone(),
                         derivable: cst_info.derivable,
+                        has_recipe: cst_info.has_recipe,
                     });
                     continue;
                 }
@@ -262,23 +267,41 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .any(|(name, _, _, _)| derive_method_is_eq(name));
             let mut unsupported = false;
-            for (name, optional, has_default, _) in &task.methods {
-                if *optional || *has_default {
-                    continue;
+            if !task.has_recipe {
+                for (name, optional, has_default, _) in &task.methods {
+                    if *optional || *has_default {
+                        continue;
+                    }
+                    // A method is structurally derivable only if it is equality-family
+                    // AND a positive `eq`/`==` recipe exists to build on (a lone
+                    // `neq`/`!=` cannot be derived: there is nothing to negate).
+                    if !derive_method_is_equality(name) || !has_eq_method {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::DeriveUnsupportedMethod {
+                                constraint: task.constraint_name.clone(),
+                                method: name.clone(),
+                            },
+                            span: task.span,
+                        });
+                        unsupported = true;
+                    }
                 }
-                // A method is structurally derivable only if it is equality-family
-                // AND a positive `eq`/`==` recipe exists to build on (a lone
-                // `neq`/`!=` cannot be derived: there is nothing to negate).
-                if !derive_method_is_equality(name) || !has_eq_method {
-                    self.diagnostics.push(ThirDiagnostic {
-                        kind: ThirDiagnosticKind::DeriveUnsupportedMethod {
-                            constraint: task.constraint_name.clone(),
-                            method: name.clone(),
-                        },
-                        span: task.span,
-                    });
-                    unsupported = true;
-                }
+            } else if !task.methods.iter().any(|(name, _, _, _)| {
+                matches!(
+                    derive_recipe_method_kind(name),
+                    Some(DeriveRecipeMethodKind::Show | DeriveRecipeMethodKind::Ord)
+                )
+            }) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
+                        constraint: task.constraint_name.clone(),
+                        method: "<recipe>".to_string(),
+                        expected: "supported Show/Ord-style method".to_string(),
+                        found: "custom recipe".to_string(),
+                    },
+                    span: task.span,
+                });
+                unsupported = true;
             }
             if unsupported {
                 continue;
@@ -381,28 +404,34 @@ impl<'hir> Lowerer<'hir> {
         ty: TypeId,
         methods: &[(String, bool, bool, TypeId)],
     ) -> bool {
-        if !methods
+        let supports_eq = methods
             .iter()
-            .any(|(name, _, _, _)| derive_method_is_equality(name))
-        {
+            .any(|(name, _, _, _)| derive_method_is_equality(name));
+        let supports_show = methods.iter().any(|(name, _, _, _)| {
+            matches!(
+                derive_recipe_method_kind(name),
+                Some(DeriveRecipeMethodKind::Show)
+            )
+        });
+        let supports_ord = methods.iter().any(|(name, _, _, _)| {
+            matches!(
+                derive_recipe_method_kind(name),
+                Some(DeriveRecipeMethodKind::Ord)
+            )
+        });
+        if !(supports_eq || supports_show || supports_ord) {
             return false;
         }
 
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
-        // Fixed-width numeric literals are type-only in v0: no arithmetic or
-        // comparison witnesses are auto-derived until fixed-width operations exist.
-        matches!(
-            self.type_arena[ty.0 as usize].kind,
-            TypeKind::Bool
-                | TypeKind::True
-                | TypeKind::False
-                | TypeKind::Text
-                | TypeKind::Int
-                | TypeKind::Float
-                | TypeKind::Posit(_)
-                | TypeKind::Atom(_)
-        )
+        match self.type_arena[ty.0 as usize].kind {
+            TypeKind::Int | TypeKind::Float | TypeKind::Posit(_) | TypeKind::Text => true,
+            TypeKind::Bool | TypeKind::True | TypeKind::False | TypeKind::Atom(_) => {
+                supports_eq || supports_show
+            }
+            _ => false,
+        }
     }
 
     /// Enforce coherence: at most one witness per `(Constraint, Type)` pair.
@@ -461,4 +490,20 @@ fn derive_method_is_equality(method_name: &str) -> bool {
 
 fn derive_method_is_eq(method_name: &str) -> bool {
     matches!(method_name, "eq" | "==")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::lower) enum DeriveRecipeMethodKind {
+    Show,
+    Ord,
+}
+
+pub(in crate::lower) fn derive_recipe_method_kind(
+    method_name: &str,
+) -> Option<DeriveRecipeMethodKind> {
+    match method_name {
+        "show" => Some(DeriveRecipeMethodKind::Show),
+        "compare" => Some(DeriveRecipeMethodKind::Ord),
+        _ => None,
+    }
 }

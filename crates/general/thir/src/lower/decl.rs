@@ -4,8 +4,8 @@ use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::ImportedType;
 
 use crate::ir::{
-    ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirWitnessField, Type,
-    TypeId, TypeKind,
+    ThirClause, ThirConstraintMethod, ThirDecl, ThirDeclId, ThirDeclKind, ThirDeriveRecipe,
+    ThirWitnessField, Type, TypeId, TypeKind,
 };
 
 use super::Lowerer;
@@ -216,6 +216,7 @@ impl<'hir> Lowerer<'hir> {
                 target,
                 methods,
                 derivable,
+                recipe,
             } => {
                 let target = self.lower_type(*target);
                 let params: Vec<_> = params.iter().map(|p| p.binding).collect();
@@ -245,11 +246,20 @@ impl<'hir> Lowerer<'hir> {
                         }
                     })
                     .collect();
+                let recipe = recipe.as_ref().map(|recipe| {
+                    let body = self.infer_expr(recipe.body);
+                    ThirDeriveRecipe {
+                        params: recipe.params.iter().map(|param| param.binding).collect(),
+                        body,
+                        span: recipe.span,
+                    }
+                });
                 ThirDeclKind::Constraint {
                     params,
                     target,
                     methods,
                     derivable: *derivable,
+                    recipe,
                 }
             }
             HirDeclKind::Witness {
@@ -308,7 +318,7 @@ impl<'hir> Lowerer<'hir> {
     /// substituted by the witness target. Requires the constraint decl to be
     /// already lowered (constraints are lowered before witnesses). Returns an
     /// empty map for multi-param constraints (handled elsewhere).
-    fn witness_method_sigs(
+    pub(super) fn witness_method_sigs(
         &mut self,
         constraint: zutai_hir::BindingId,
         target: TypeId,

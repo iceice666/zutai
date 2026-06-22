@@ -21,6 +21,16 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    pub(super) fn reflect_variants_value(&self, value: Value) -> Result<Value, EvalError> {
+        match value {
+            Value::TypeValue(ty) => self.reflect_variants(&ty),
+            other => Err(EvalError::TypeMismatch {
+                expected: "Type",
+                found: value_type_name(&other),
+            }),
+        }
+    }
+
     fn reflect_fields(&self, ty: &RuntimeType) -> Result<Value, EvalError> {
         match self.runtime_type_view(ty, 0)? {
             RuntimeTypeView::Record(fields, RowTail::Closed) => fields
@@ -42,6 +52,49 @@ impl<'a> Evaluator<'a> {
                 "`fields` expects a record type".to_string(),
             )),
         }
+    }
+
+    fn reflect_variants(&self, ty: &RuntimeType) -> Result<Value, EvalError> {
+        match self.runtime_type_view(ty, 0)? {
+            RuntimeTypeView::Union(variants, RowTail::Closed) => variants
+                .into_iter()
+                .map(|variant| self.reflect_variant(variant))
+                .collect::<Result<Vec<_>, _>>()
+                .map(list_value),
+            RuntimeTypeView::Union(_, _) => Err(open_row_reflection_error("union")),
+            _ => Err(EvalError::ReflectionUnsupported(
+                "`variants` expects a union type".to_string(),
+            )),
+        }
+    }
+
+    fn reflect_variant(&self, variant: ReflectedUnionVariant) -> Result<Value, EvalError> {
+        let fields = match variant.payload {
+            Some(payload) => match self.runtime_type_view(&payload, 0)? {
+                RuntimeTypeView::Record(fields, RowTail::Closed) => fields
+                    .into_iter()
+                    .map(|field| {
+                        Ok(record_value(vec![
+                            ("name", Value::Text(Rc::from(field.name.as_str()))),
+                            ("Type", Value::TypeValue(field.ty)),
+                            ("optional", Value::Bool(field.optional)),
+                        ]))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(list_value)?,
+                RuntimeTypeView::Record(_, _) => return Err(open_row_reflection_error("record")),
+                _ => {
+                    return Err(EvalError::ReflectionUnsupported(
+                        "union variant payload reflection expects a record payload".to_string(),
+                    ));
+                }
+            },
+            None => list_value(Vec::new()),
+        };
+        Ok(record_value(vec![
+            ("name", Value::Text(Rc::from(variant.name.as_str()))),
+            ("fields", fields),
+        ]))
     }
 
     fn reflect_schema(&self, ty: &RuntimeType) -> Result<Value, EvalError> {

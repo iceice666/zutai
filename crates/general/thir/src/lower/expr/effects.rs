@@ -321,7 +321,8 @@ impl<'hir> Lowerer<'hir> {
             | HirExprKind::BindingRef(_)
             | HirExprKind::UnresolvedIdent(_)
             | HirExprKind::Import(_)
-            | HirExprKind::TypeForm(_) => 0,
+            | HirExprKind::TypeForm(_)
+            | HirExprKind::WitnessReflect { .. } => 0,
         }
     }
 

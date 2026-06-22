@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 27 host capabilities._
+_Last updated: 2026-06-22 after closing Phase 28 derive recipes._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -51,6 +51,11 @@ _Last updated: 2026-06-22 after closing Phase 27 host capabilities._
   elaboration, CPS elaboration for handled effects, equirecursive alias identity,
   runtime `io.print` lowering through ordinary TLC function values, and residual
   host-effect grant gating before Dataflow Core.
+  Constraint-attached derive recipes are stored through Syntax/HIR/THIR and
+  drive specialized TLC Show/Ord dictionary synthesis; `witness C @T` reflects
+  resolvable dictionaries using the same concrete/conditional lookup as implicit
+  method dispatch. Runtime type reflection includes `fields`, `variants`, and
+  `schema` views.
 - THIR and TLC carry internal universe levels for surface `Type`. Explicit level
   syntax is still unsupported; level-polymorphic type constructors default to
   the lowest consistent universe and erase before runtime/backend lowering.
@@ -132,6 +137,26 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 28: Derive recipes and witness reflection ✅
+
+- Constraint declarations can carry `derive = <T> => ...` recipe bodies through
+  Syntax, HIR, and THIR; recipe expressions are type-checked before TLC consumes
+  the recipe marker.
+- `witness C @T` is parsed, typed as a method-record dictionary, lowers to TLC
+  dictionary resolution, and reports `WitnessReflectNotInScope` for unresolved
+  dictionaries while accepting conditional witnesses such as `Eq @(List A)` for
+  `witness Eq @(List Int)`.
+- Type-value reflection now includes `variants` alongside `fields` and `schema`,
+  returning union variant names and payload-field metadata with recursive
+  `Type` back-references preserved as runtime type values.
+- Built-in structural equality remains the default derive path. Constraint
+  recipes synthesize specialized Show and lexicographic Ord witnesses for records
+  and unions, including same-variant payload ordering and derived-dictionary
+  reflection.
+- Verification: `cargo fmt --check`; `cargo test --workspace` (1423 passed);
+  `cargo clippy --workspace --all-targets`; `cargo llvm-cov nextest --workspace`
+  (function coverage 87.89%; line coverage 81.11%).
 
 ### Phase 27: Host capabilities beyond ambient `io.print` ✅
 

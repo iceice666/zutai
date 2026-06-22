@@ -176,6 +176,7 @@ impl Lowerer {
                 target,
                 methods,
                 derivable,
+                recipe,
                 span,
                 ..
             } => {
@@ -228,6 +229,17 @@ impl Lowerer {
                         binding: method_binding,
                     });
                 }
+                let recipe = recipe.as_ref().map(|recipe| {
+                    self.push_scope();
+                    let params = self.lower_hir_type_params(&recipe.params);
+                    let body = self.lower_expr(&recipe.body);
+                    self.pop_scope();
+                    HirDeriveRecipe {
+                        params,
+                        body,
+                        span: recipe.span,
+                    }
+                });
                 self.pop_scope();
                 (
                     HirDeclKind::Constraint {
@@ -235,6 +247,7 @@ impl Lowerer {
                         target: hir_target,
                         methods: hir_methods,
                         derivable: *derivable,
+                        recipe,
                     },
                     *span,
                 )

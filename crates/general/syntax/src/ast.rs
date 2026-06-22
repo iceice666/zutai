@@ -103,6 +103,7 @@ pub enum Decl {
         target: TypeExpr,
         methods: Vec<ConstraintMethod>,
         derivable: bool,
+        recipe: Option<DeriveRecipe>,
         span: Span,
     },
     Witness {
@@ -146,6 +147,13 @@ impl Decl {
 pub struct FuncClause {
     pub patterns: Vec<Pattern>,
     pub guard: Option<Expr>,
+    pub body: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DeriveRecipe {
+    pub params: Vec<TypeParam>,
     pub body: Expr,
     pub span: Span,
 }
@@ -308,6 +316,11 @@ pub enum Expr {
         ty: Box<TypeExpr>,
         span: Span,
     },
+    WitnessReflect {
+        constraint: String,
+        target: Box<TypeExpr>,
+        span: Span,
+    },
     Select {
         receiver: Box<Expr>,
         fields: Vec<SelectField>,
@@ -380,6 +393,7 @@ impl Expr {
             | Expr::If { span, .. }
             | Expr::Match { span, .. }
             | Expr::TypeForm { span, .. }
+            | Expr::WitnessReflect { span, .. }
             | Expr::Select { span, .. }
             | Expr::Perform { span, .. }
             | Expr::Handle { span, .. }

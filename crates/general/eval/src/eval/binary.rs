@@ -39,6 +39,10 @@ impl<'a> Evaluator<'a> {
                 let arg = args[0].force(self)?;
                 self.reflect_fields_value(arg)
             }
+            BuiltinFn::Variants => {
+                let arg = args[0].force(self)?;
+                self.reflect_variants_value(arg)
+            }
             BuiltinFn::Schema => {
                 let arg = args[0].force(self)?;
                 self.reflect_schema_value(arg)

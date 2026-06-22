@@ -111,6 +111,28 @@ impl Lowerer {
                 arms: arms.iter().map(|arm| self.lower_clause(arm)).collect(),
             },
             ast::Expr::TypeForm { ty, .. } => HirExprKind::TypeForm(self.lower_type(ty)),
+            ast::Expr::WitnessReflect {
+                constraint,
+                target,
+                span,
+            } => {
+                let constraint = match self.resolve(constraint) {
+                    Some(binding) => Some(binding),
+                    None => {
+                        self.diagnostics.push(HirDiagnostic {
+                            kind: HirDiagnosticKind::UnknownConstraint {
+                                name: constraint.clone(),
+                            },
+                            span: *span,
+                        });
+                        None
+                    }
+                };
+                HirExprKind::WitnessReflect {
+                    constraint,
+                    target: self.lower_type(target),
+                }
+            }
             ast::Expr::Select {
                 receiver, fields, ..
             } => {

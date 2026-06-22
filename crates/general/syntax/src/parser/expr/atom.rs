@@ -116,6 +116,9 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
                 return parse_type_form(input);
             }
+            if input.starts_with("witness") && peek(kw("witness")).parse_next(input).is_ok() {
+                return parse_witness_reflect(input);
+            }
             if input.starts_with("select") && peek(kw("select")).parse_next(input).is_ok() {
                 return parse_select(input, options);
             }
@@ -590,6 +593,26 @@ fn parse_type_form(input: &mut &str) -> Result<Expr> {
     let span = start_span.merge(ty.span());
     Ok(Expr::TypeForm {
         ty: Box::new(ty),
+        span,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Witness reflection: `witness Constraint @Type`
+// ---------------------------------------------------------------------------
+
+fn parse_witness_reflect(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("witness")).parse_next(input)?;
+    ws(input)?;
+    let (constraint, _) = spanned(parse_ident).parse_next(input)?;
+    ws(input)?;
+    '@'.parse_next(input)?;
+    ws(input)?;
+    let target = parse_type_expr(input)?;
+    let span = start_span.merge(target.span());
+    Ok(Expr::WitnessReflect {
+        constraint,
+        target: Box::new(target),
         span,
     })
 }

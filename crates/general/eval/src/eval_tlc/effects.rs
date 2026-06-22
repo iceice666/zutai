@@ -62,9 +62,11 @@ impl<'a> TlcEvaluator<'a> {
                     }),
                 }
             }
-            BuiltinFn::Fields | BuiltinFn::Schema => Err(EvalError::EffectfulNotExecutable(
-                "reflection builtins execute through the THIR type-value evaluator".to_string(),
-            )),
+            BuiltinFn::Fields | BuiltinFn::Variants | BuiltinFn::Schema => {
+                Err(EvalError::EffectfulNotExecutable(
+                    "reflection builtins execute through the THIR type-value evaluator".to_string(),
+                ))
+            }
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => {
                 let patch = args[0].force_tlc(&self)?;
                 let base = args[1].force_tlc(&self)?;

@@ -13,7 +13,14 @@ pub type HirTypeId = Idx<HirTypeExpr>;
 /// root scope ("the prelude"). `print` is a compatibility binding over the
 /// `io.print` effect. Single source of truth shared by HIR seeding, THIR type
 /// assignment, and the reference interpreter.
-pub const BUILTIN_VALUE_NAMES: &[&str] = &["print", "fields", "schema", "overlay", "overlayDeep"];
+pub const BUILTIN_VALUE_NAMES: &[&str] = &[
+    "print",
+    "fields",
+    "variants",
+    "schema",
+    "overlay",
+    "overlayDeep",
+];
 
 /// Opaque standard host-capability types. They are seeded into every root scope
 /// as builtin types, but source programs cannot construct values of these types;
@@ -128,6 +135,7 @@ pub enum HirDeclKind {
         target: HirTypeId,
         methods: Vec<HirConstraintMethod>,
         derivable: bool,
+        recipe: Option<HirDeriveRecipe>,
     },
     Witness {
         constraint: Option<BindingId>,
@@ -136,6 +144,13 @@ pub enum HirDeclKind {
         fields: Vec<HirWitnessField>,
         derive: bool,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirDeriveRecipe {
+    pub params: Vec<HirTypeParam>,
+    pub body: HirExprId,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -193,6 +208,10 @@ pub enum HirExprKind {
     },
     Import(HirImportSource),
     TypeForm(HirTypeId),
+    WitnessReflect {
+        constraint: Option<BindingId>,
+        target: HirTypeId,
+    },
     Select {
         receiver: HirExprId,
         fields: Vec<HirSelectField>,

@@ -348,6 +348,15 @@ impl<'thir> Lowerer<'thir> {
             ThirExprKind::TypeValue(_) => {
                 self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
             }
+            ThirExprKind::WitnessReflect { constraint, target } => {
+                let dict = constraint
+                    .map(|constraint| self.get_dict_expr(constraint, target, span))
+                    .unwrap_or_else(|| {
+                        self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span)
+                    });
+                self.expr_types.insert(dict, tlc_ty);
+                dict
+            }
             ThirExprKind::TaggedValue { tag, payload } => {
                 let payload_tlc = self.lower_expr(payload);
                 self.alloc_expr(TlcExpr::Variant(tag, payload_tlc), tlc_ty, span)

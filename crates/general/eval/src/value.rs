@@ -105,6 +105,7 @@ pub enum BuiltinFn {
     Print,
     Fields,
     Schema,
+    Variants,
     Overlay,
     OverlayDeep,
 }
@@ -117,6 +118,7 @@ impl BuiltinFn {
             "print" => Some(BuiltinFn::Print),
             "fields" => Some(BuiltinFn::Fields),
             "schema" => Some(BuiltinFn::Schema),
+            "variants" => Some(BuiltinFn::Variants),
             "overlay" => Some(BuiltinFn::Overlay),
             "overlayDeep" => Some(BuiltinFn::OverlayDeep),
             _ => None,
@@ -125,7 +127,7 @@ impl BuiltinFn {
 
     pub fn arity(self) -> usize {
         match self {
-            BuiltinFn::Print | BuiltinFn::Fields | BuiltinFn::Schema => 1,
+            BuiltinFn::Print | BuiltinFn::Fields | BuiltinFn::Variants | BuiltinFn::Schema => 1,
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => 2,
         }
     }
@@ -134,6 +136,7 @@ impl BuiltinFn {
         match self {
             BuiltinFn::Print => "print",
             BuiltinFn::Fields => "fields",
+            BuiltinFn::Variants => "variants",
             BuiltinFn::Schema => "schema",
             BuiltinFn::Overlay => "overlay",
             BuiltinFn::OverlayDeep => "overlayDeep",

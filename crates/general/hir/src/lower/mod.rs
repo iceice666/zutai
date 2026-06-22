@@ -7,11 +7,11 @@ use zutai_syntax::ast;
 use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
     Binding, BindingId, BindingKind, HirClause, HirConstraintMethod, HirDecl, HirDeclId,
-    HirDeclKind, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind, HirFile,
-    HirHandleClause, HirHandleOp, HirImportSource, HirLocalBinding, HirPat, HirPatId, HirPatKind,
-    HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField, HirTupleItem,
-    HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam, HirTypeRecordField,
-    HirTypeTupleItem, HirUnionVariant, HirWitnessField,
+    HirDeclKind, HirDeriveRecipe, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind,
+    HirFile, HirHandleClause, HirHandleOp, HirImportSource, HirLocalBinding, HirPat, HirPatId,
+    HirPatKind, HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField,
+    HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam,
+    HirTypeRecordField, HirTypeTupleItem, HirUnionVariant, HirWitnessField,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 

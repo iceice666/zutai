@@ -324,6 +324,12 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             writeln!(f, "{prefix}TypeForm")?;
             write_type_expr(f, ty, &format!("{indent}└─ "), &format!("{indent}   "))
         }
+        Expr::WitnessReflect {
+            constraint, target, ..
+        } => {
+            writeln!(f, "{prefix}Witness({constraint})")?;
+            write_type_expr(f, target, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
         Expr::Select {
             receiver, fields, ..
         } => {

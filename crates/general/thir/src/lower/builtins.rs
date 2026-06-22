@@ -49,6 +49,7 @@ impl<'hir> Lowerer<'hir> {
                 }))
             }
             "fields" => Some(self.fields_builtin_type(span)),
+            "variants" => Some(self.variants_builtin_type(span)),
             "schema" => Some(self.schema_builtin_type(span)),
             "overlay" => Some(self.overlay_builtin_type(span, false)),
             "overlayDeep" => Some(self.overlay_builtin_type(span, true)),
@@ -106,6 +107,72 @@ impl<'hir> Lowerer<'hir> {
         });
         let result = self.alloc_type(Type {
             kind: TypeKind::List(field_ty),
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: self.type_type,
+                to: result,
+            },
+            span,
+        })
+    }
+
+    pub(in crate::lower) fn variants_builtin_type(&mut self, span: Span) -> TypeId {
+        let text = self.text_type(span);
+        let bool_ty = self.bool_type(span);
+        let field_ty = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "name".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "Type".to_string(),
+                        optional: false,
+                        ty: self.type_type,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "optional".to_string(),
+                        optional: false,
+                        ty: bool_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let field_list_ty = self.alloc_type(Type {
+            kind: TypeKind::List(field_ty),
+            span,
+        });
+        let variant_ty = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "name".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "fields".to_string(),
+                        optional: false,
+                        ty: field_list_ty,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
+        let result = self.alloc_type(Type {
+            kind: TypeKind::List(variant_ty),
             span,
         });
         self.alloc_type(Type {

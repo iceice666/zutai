@@ -79,6 +79,36 @@ impl<'a> Evaluator<'a> {
                 self.active_module,
                 *ty,
             ))),
+            ThirExprKind::WitnessReflect { constraint, target } => {
+                let Some(constraint) = constraint else {
+                    return Err(EvalError::UnresolvedWitness {
+                        method: "witness".to_string(),
+                    });
+                };
+                let aliases = self.build_alias_map();
+                let key = type_key(&self.file.type_arena, &aliases, *target);
+                for &decl_id in &self.file.decls {
+                    let decl = self.decl(decl_id);
+                    if let ThirDeclKind::Witness {
+                        constraint: Some(c),
+                        target: witness_target,
+                        fields,
+                        ..
+                    } = &decl.kind
+                        && *c == *constraint
+                        && type_key(&self.file.type_arena, &aliases, *witness_target) == key
+                    {
+                        let mut dict = HashMap::new();
+                        for field in fields {
+                            dict.insert(field.name.clone(), self.eval(field.value, env)?);
+                        }
+                        return Ok(Value::WitnessDict(dict));
+                    }
+                }
+                Err(EvalError::UnresolvedWitness {
+                    method: "witness".to_string(),
+                })
+            }
             ThirExprKind::TaggedValue { tag, payload } => {
                 let payload_val = self.eval(*payload, env)?;
                 let fields = match payload_val {

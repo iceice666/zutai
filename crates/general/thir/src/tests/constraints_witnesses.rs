@@ -31,6 +31,25 @@ fn constraint_and_witness_produce_thir_decls() {
     assert_eq!(n_fields, 1, "Eq @Int should have one field");
 }
 
+#[test]
+fn witness_reflection_without_dictionary_emits_diagnostic() {
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n(witness Eq @Int).eq";
+    let lowered = lower(src);
+    assert!(
+        lowered.file.is_none(),
+        "missing reflected witness should null LoweredThir.file"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::WitnessReflectNotInScope { constraint, target }
+                if constraint == "Eq" && target == "Int"
+        )),
+        "expected WitnessReflectNotInScope; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
 /// Constraint method sig resolves to a `Function { from: TypeVar, … }` — not Error.
 /// This confirms the `BindingKind::TypeParam → TypeKind::TypeVar` path (types.rs:246).
 #[test]

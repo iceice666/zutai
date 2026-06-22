@@ -104,6 +104,119 @@ eq ok err
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
 }
+
+#[test]
+fn explicit_witness_reflection_dispatches_dictionary() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+(witness Eq @Int).eq 1 1
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn witness_reflection_accepts_conditional_dictionary_resolution() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
+(witness Eq @(List Int)).eq [1;] [2;]
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn variants_builtin_reflects_union_payload_types() {
+    let value = eval_file(
+        r#"
+Result :: type { #ok: { value : Int; }; #err; }
+variants (type Result)
+"#,
+    )
+    .unwrap();
+    let ok = list_item(&value, 0);
+    assert_eq!(record_field_value(&ok, "name"), Value::Text("ok".into()));
+    let fields = record_field_value(&ok, "fields");
+    let field = list_item(&fields, 0);
+    assert_eq!(record_field_value(&field, "Type").to_string(), "<type>");
+}
+
+#[test]
+fn recipe_show_derives_record_witness() {
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p :: Point = { x = 1; y = 2; }
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Point :: derive
+show p
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+}
+
+#[test]
+fn recipe_witness_reflection_dispatches_derived_dictionary() {
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p :: Point = { x = 1; y = 2; }
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Point :: derive
+(witness Show @Point).show p
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+}
+
+#[test]
+fn recipe_ord_derives_lexicographic_record_witness() {
+    let src = r#"
+Ordering :: type { #lt; #eq; #gt; }
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 1; y = 3; }
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
+Ord @Point :: derive
+compare p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Atom("lt".into()));
+}
+
+#[test]
+fn recipe_show_and_ord_derive_union_witnesses() {
+    let show_src = r#"
+Status :: type { #ok; #err; }
+s :: Status = #err
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Status :: derive
+show s
+"#;
+    assert_eq!(eval_tlc_file(show_src).unwrap(), Value::Text("#err".into()));
+
+    let ord_src = r#"
+Ordering :: type { #lt; #eq; #gt; }
+Status :: type { #ok; #err; }
+ok :: Status = #ok
+err :: Status = #err
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
+Ord @Status :: derive
+compare ok err
+"#;
+    assert_eq!(eval_tlc_file(ord_src).unwrap(), Value::Atom("lt".into()));
+
+    let payload_ord_src = r#"
+Ordering :: type { #lt; #eq; #gt; }
+Result :: type { #ok: { value : Int; }; #err; }
+lhs :: Result = #ok { value = 1; }
+rhs :: Result = #ok { value = 2; }
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
+Ord @Result :: derive
+compare lhs rhs
+"#;
+    assert_eq!(
+        eval_tlc_file(payload_ord_src).unwrap(),
+        Value::Atom("lt".into())
+    );
+}
+
 // ─── Phase 13: conditional (parametric) witnesses ─────────────────────────────
 
 /// Direct call site: `eq` on two `List Int` resolves the conditional witness

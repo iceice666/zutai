@@ -123,6 +123,19 @@ pub enum ThirDiagnosticKind {
         constraint: String,
         method: String,
     },
+    WitnessReflectNotInScope {
+        constraint: String,
+        target: String,
+    },
+    DeriveRecipeFuelExhausted {
+        constraint: String,
+    },
+    DeriveRecipeTypeMismatch {
+        constraint: String,
+        method: String,
+        expected: String,
+        found: String,
+    },
     /// Two witnesses claim the same `(Constraint, Type)` pair.
     ConflictingWitness {
         constraint: String,

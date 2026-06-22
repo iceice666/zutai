@@ -4,8 +4,8 @@ use winnow::combinator::fail;
 use winnow::token::take_till;
 
 use crate::ast::{
-    ConstraintMethod, Decl, File, FuncClause, MethodName, TypeParam, TypeParamBound, WitnessBody,
-    WitnessField,
+    ConstraintMethod, Decl, DeriveRecipe, File, FuncClause, MethodName, TypeParam, TypeParamBound,
+    WitnessBody, WitnessField,
 };
 use crate::span::Span;
 
@@ -396,14 +396,18 @@ fn parse_constraint_body(
     }
     let (_, close_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
     ws(input)?;
-    let derivable = consume_contextual_derive(input);
-    let span = name_span.merge(close_span);
+    let (derivable, recipe) = parse_derive_recipe(input)?;
+    let span = recipe
+        .as_ref()
+        .map(|recipe| name_span.merge(recipe.span))
+        .unwrap_or_else(|| name_span.merge(close_span));
     Ok(Decl::Constraint {
         name,
         params,
         target,
         methods,
         derivable,
+        recipe,
         span,
     })
 }
@@ -549,6 +553,29 @@ fn parse_method_name(input: &mut &str) -> Result<MethodName> {
     } else {
         Ok(MethodName::Ident(parse_ident(input)?))
     }
+}
+
+fn parse_derive_recipe(input: &mut &str) -> Result<(bool, Option<DeriveRecipe>)> {
+    if !consume_contextual_derive(input) {
+        return Ok((false, None));
+    }
+    ws(input)?;
+    if !input.starts_with('=') || input.starts_with("==") {
+        return Ok((true, None));
+    }
+    '='.parse_next(input)?;
+    ws(input)?;
+    let params = if input.starts_with('<') {
+        parse_type_param_list(input)?
+    } else {
+        Vec::new()
+    };
+    ws(input)?;
+    "=>".parse_next(input)?;
+    ws(input)?;
+    let body = parse_expr(input)?;
+    let span = body.span();
+    Ok((true, Some(DeriveRecipe { params, body, span })))
 }
 
 /// Consume `derive` as a contextual keyword (D4).

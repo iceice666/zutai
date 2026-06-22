@@ -135,6 +135,20 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
                 "cannot derive `{constraint}`: method `{method}` has no structural derivation recipe"
             )
         }
+        WitnessReflectNotInScope { constraint, target } => {
+            format!("no witness in scope for `{constraint} @{target}`")
+        }
+        DeriveRecipeFuelExhausted { constraint } => {
+            format!("derive recipe for `{constraint}` exhausted type-level fuel")
+        }
+        DeriveRecipeTypeMismatch {
+            constraint,
+            method,
+            expected,
+            found,
+        } => format!(
+            "derive recipe for `{constraint}` produced `{method}` with type {found}, expected {expected}"
+        ),
         ConflictingWitness { constraint, target } => {
             format!("conflicting witnesses for constraint `{constraint}` at type `{target}`")
         }
@@ -351,7 +365,8 @@ fn has_reachable_error(file: &ThirFile) -> bool {
             | ThirExprKind::Atom(_)
             | ThirExprKind::BindingRef(_)
             | ThirExprKind::Import(_)
-            | ThirExprKind::TypeValue(_) => {}
+            | ThirExprKind::TypeValue(_)
+            | ThirExprKind::WitnessReflect { .. } => {}
         }
     }
     false

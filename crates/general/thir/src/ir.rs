@@ -134,6 +134,7 @@ pub enum ThirDeclKind {
         target: TypeId,
         methods: Vec<ThirConstraintMethod>,
         derivable: bool,
+        recipe: Option<ThirDeriveRecipe>,
     },
     /// A constraint witness: `Eq @Int :: { eq = intEq; }`.
     /// `constraint` is the resolved binding of the named constraint (None if unresolved).
@@ -173,6 +174,12 @@ pub struct ThirConstraintMethod {
     /// Lowered default clause body, if one was provided in the constraint definition (D6/4a).
     /// `None` means no default; `Some(clauses)` carries the type-checked clauses.
     pub default: Option<Vec<ThirClause>>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThirDeriveRecipe {
+    pub params: Vec<BindingId>,
+    pub body: ThirExprId,
+    pub span: Span,
 }
 
 /// A single field in a constraint witness.
@@ -254,6 +261,10 @@ pub enum ThirExprKind {
     Sequence(Vec<ThirExprId>),
     Import(HirImportSource),
     TypeValue(TypeId),
+    WitnessReflect {
+        constraint: Option<BindingId>,
+        target: TypeId,
+    },
     Apply {
         func: ThirExprId,
         arg: ThirExprId,
