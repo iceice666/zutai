@@ -145,6 +145,8 @@ Phase 19 effect lowering plus a reify-at-boundary handler convention ever cover 
 1. List-destructuring patterns + strict-`fold` intrinsic + `map`/`filter`/`fold` in source.
 2. `prelude.zt` resolution + seeding in `zutai-semantic` and both evaluators.
 3. `fn`, `list`, `optional`.
-4. `result` (with `Validation`).
-5. Intrinsic-heavy `text`, `num`.
-6. Fold `config`/`reflect` under the import scheme.
+4. `stream` depends on v2 recursive types for a clean source representation, but
+   remains an explicit module.
+5. `result` (with `Validation`).
+6. Intrinsic-heavy `text`, `num`.
+7. Fold `config`/`reflect` under the import scheme.

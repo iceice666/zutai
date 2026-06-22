@@ -40,6 +40,7 @@ list verbs `map filter fold`; `id`; `print`.
 | [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; full record-literal overlays lower to AOT record updates |
 | `fn` | `const compose flip` | planned (source) |
 | `list` | `foldr foldl' length reverse append zip flatten take drop find any all sum product partition sortBy groupBy indexOf uncons head? tail?` | planned (source + spine intrinsics) |
+| `stream` | `Stream empty singleton cons unfold uncons map filter take drop fold fromList toList` | planned after v2 recursive types; pure lazy sequence API, source-canonical where expressible with intrinsic optimization only for representation-sensitive spine/step operations |
 | `optional` | `map andThen filter withDefault isSome toList` | planned (source) |
 | `result` | `Result Validation ok err valid invalid map map2 mapErr andThen withDefault errors` | planned (source); see [Prelude](prelude.md) error model |
 | `num` | `min max abs clamp pow rem gcd toFloat round truncate` | planned (source + conversion intrinsics) |
@@ -49,5 +50,12 @@ list verbs `map filter fold`; `id`; `print`.
 
 `sortBy`/`groupBy`/`cmp` take explicit comparators: v0 has no `Ord`/`Eq` typeclass, so
 ad-hoc ordering is passed as a function until v1 constraints land.
+
+`Stream` is the standard-library home for iterator-like pure APIs. It is not
+auto-imported; the prelude remains only the names listed in
+[`prelude.md`](prelude.md). Language-level producer syntax is not a
+standard-library function and is deferred to v3 language design. Host-backed
+streams such as file lines, environment scans, clock events, and randomness
+require explicit capabilities after Phase 27; they must not become ambient APIs.
 
 Standard-library names are ordinary bindings, not language keywords, unless a page explicitly says otherwise.
