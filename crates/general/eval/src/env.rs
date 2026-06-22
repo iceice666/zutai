@@ -1,7 +1,7 @@
 //! Lexical environment for the Zutai reference interpreter.
 //!
 //! An `Env` is a singly-linked list of frames (parent-pointer tree), each
-//! holding a `HashMap<BindingId, Thunk>`.  Each `Env` is an `Rc<Frame>` so
+//! holding an `FxHashMap<BindingId, Thunk>`.  Each `Env` is an `Rc<Frame>` so
 //! sharing the parent is cheap and closures can capture by cloning the `Env`.
 //!
 //! Interior mutability via `RefCell` lets the *top-level* letrec frame be
@@ -10,8 +10,8 @@
 //!
 //! This module is IR-agnostic.
 
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use zutai_hir::BindingId;
@@ -24,7 +24,7 @@ pub struct Env(pub Rc<Frame>);
 
 #[derive(Debug)]
 pub struct Frame {
-    pub bindings: RefCell<HashMap<BindingId, Thunk>>,
+    pub bindings: RefCell<FxHashMap<BindingId, Thunk>>,
     pub parent: Option<Env>,
 }
 
@@ -32,7 +32,7 @@ impl Env {
     /// Create a fresh empty environment with no parent.
     pub fn empty() -> Self {
         Env(Rc::new(Frame {
-            bindings: RefCell::new(HashMap::new()),
+            bindings: RefCell::new(FxHashMap::default()),
             parent: None,
         }))
     }
@@ -40,7 +40,7 @@ impl Env {
     /// Create a child environment whose parent is `self`.
     pub fn push_frame(&self) -> Self {
         Env(Rc::new(Frame {
-            bindings: RefCell::new(HashMap::new()),
+            bindings: RefCell::new(FxHashMap::default()),
             parent: Some(self.clone()),
         }))
     }

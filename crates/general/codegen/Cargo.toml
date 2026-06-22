@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 zutai-ssa = { path = "../ssa" }
+rustc-hash = "2.0.0"
 
 [dev-dependencies]
 zutai-syntax = { path = "../syntax" }

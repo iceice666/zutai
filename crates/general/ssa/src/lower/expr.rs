@@ -3,7 +3,7 @@
 //! Converts flat ANF bindings into basic blocks with phi nodes at join points.
 
 use crate::*;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use zutai_anf::{AnfAtom, AnfBody, AnfExpr, AnfTupleItem};
 
 use super::*;
@@ -13,7 +13,7 @@ use super::match_::*;
 
 // ── Converting ANF atoms to SSA values ─────────────────────────────────────────
 
-pub(super) fn atom_to_value(atom: &AnfAtom, globals: &HashSet<String>) -> SsaValue {
+pub(super) fn atom_to_value(atom: &AnfAtom, globals: &FxHashSet<String>) -> SsaValue {
     match atom {
         AnfAtom::Var(name) => SsaValue::Reg(name.clone()),
         AnfAtom::Lit(lit) => SsaValue::Lit(lit.clone()),

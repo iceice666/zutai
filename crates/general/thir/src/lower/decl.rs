@@ -322,7 +322,7 @@ impl<'hir> Lowerer<'hir> {
         &mut self,
         constraint: zutai_hir::BindingId,
         target: TypeId,
-    ) -> std::collections::HashMap<String, TypeId> {
+    ) -> rustc_hash::FxHashMap<String, TypeId> {
         let info = self.decl_arena.iter().find_map(|(_, decl)| {
             if decl.binding == constraint
                 && let ThirDeclKind::Constraint {
@@ -338,14 +338,14 @@ impl<'hir> Lowerer<'hir> {
             None
         });
         let Some((params, sigs)) = info else {
-            return std::collections::HashMap::new();
+            return rustc_hash::FxHashMap::default();
         };
         if params.len() != 1 {
-            return std::collections::HashMap::new();
+            return rustc_hash::FxHashMap::default();
         }
         sigs.into_iter()
             .map(|(name, sig, method_params)| {
-                let mut subst: std::collections::HashMap<zutai_hir::BindingId, TypeId> =
+                let mut subst: rustc_hash::FxHashMap<zutai_hir::BindingId, TypeId> =
                     [(params[0], target)].into_iter().collect();
                 // Method-level type params become fresh InferVars per field so a
                 // witness implementation need not be parametric in them (e.g.

@@ -4,7 +4,8 @@
 //! depth.  This module is deliberately IR-agnostic: nothing here imports THIR
 //! directly; the THIR-specific eval walker lives in `eval.rs`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::fmt;
 use std::rc::Rc;
 
@@ -81,7 +82,7 @@ pub enum Value {
     /// the evaluated closure for that field.  Injected into the environment at
     /// bounded call sites so that method dispatch inside the body can fall back
     /// to this dict when the type key is a TypeVar at the call site.
-    WitnessDict(HashMap<String, Value>),
+    WitnessDict(FxHashMap<Rc<str>, Value>),
     /// A closure created by the TLC evaluator — stores a single-parameter lambda
     /// body and its captured environment.  Distinct from `Closure` (which is
     /// THIR-based) so the two evaluators never confuse each other's closures.
@@ -91,7 +92,7 @@ pub enum Value {
     Builtin(BuiltinFn),
     BuiltinPartial {
         func: BuiltinFn,
-        args: Vec<Thunk>,
+        args: SmallVec<[Thunk; 2]>,
     },
 }
 
@@ -323,7 +324,7 @@ pub struct Closure {
     /// The environment captured at the point the closure was created.
     pub env: Env,
     /// Arguments already applied (thunks, in order).  Length < arity.
-    pub applied: Vec<crate::thunk::Thunk>,
+    pub applied: SmallVec<[crate::thunk::Thunk; 4]>,
     /// The module in whose arena the clauses' `ThirExprId`s / `ThirPatId`s live.
     /// `apply_closure` switches the active module to this before evaluating any
     /// clause body or guard so arena look-ups hit the right file.

@@ -274,7 +274,7 @@ impl<'hir> Lowerer<'hir> {
             self.alias_universe_in_progress.remove(&binding);
             return UniverseLevel::Known(0);
         };
-        let subst: HashMap<BindingId, TypeId> =
+        let subst: FxHashMap<BindingId, TypeId> =
             params.into_iter().zip(args.iter().copied()).collect();
         let expanded = self.instantiate_type_vars(body, &subst);
         let level = self.type_universe(expanded, span);
@@ -375,7 +375,7 @@ mod tests {
     fn universe_circular_definition_reports_kind_diagnostic() {
         let parsed = zutai_syntax::parse("1");
         let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
-        let mut lowerer = Lowerer::new(&hir.file, HashMap::new());
+        let mut lowerer = Lowerer::new(&hir.file, FxHashMap::default());
         let level = lowerer.fresh_level_meta();
 
         assert!(!lowerer.constrain_level_leq(

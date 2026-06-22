@@ -78,7 +78,7 @@ impl<'hir> Lowerer<'hir> {
             return Kind::ground();
         }
 
-        let mut subst = HashMap::new();
+        let mut subst = FxHashMap::default();
         let mut param_kinds = Vec::with_capacity(params.len());
         for param in &params {
             let level = self.fresh_level_meta();

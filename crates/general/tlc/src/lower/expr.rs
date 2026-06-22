@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 use zutai_syntax::{Span, ast::BinOp};
@@ -373,8 +373,15 @@ impl<'thir> Lowerer<'thir> {
     ) -> Option<TlcExprId> {
         let (patch, deep) = self.overlay_full_apply_parts(func)?;
         let base = self.lower_expr(base);
-        let patch_fields = self.record_literal_fields(patch, &mut HashSet::new())?;
-        self.lower_overlay_record(base, patch_fields, target, &HashMap::new(), deep, span)
+        let patch_fields = self.record_literal_fields(patch, &mut FxHashSet::default())?;
+        self.lower_overlay_record(
+            base,
+            patch_fields,
+            target,
+            &FxHashMap::default(),
+            deep,
+            span,
+        )
     }
 
     fn overlay_full_apply_parts(&self, func: ThirExprId) -> Option<(ThirExprId, bool)> {
@@ -412,7 +419,7 @@ impl<'thir> Lowerer<'thir> {
     fn record_literal_fields(
         &self,
         expr: ThirExprId,
-        seen: &mut HashSet<BindingId>,
+        seen: &mut FxHashSet<BindingId>,
     ) -> Option<Vec<(String, ThirExprId)>> {
         match &self.thir.expr_arena[expr].kind {
             ThirExprKind::Record(fields) => Some(
@@ -452,7 +459,7 @@ impl<'thir> Lowerer<'thir> {
         base: TlcExprId,
         patch_fields: Vec<(String, ThirExprId)>,
         target: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
         deep: bool,
         span: Span,
     ) -> Option<TlcExprId> {
@@ -482,7 +489,7 @@ impl<'thir> Lowerer<'thir> {
         base: TlcExprId,
         patch_value: ThirExprId,
         field: &TypeRecordField,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
         deep: bool,
         span: Span,
     ) -> Option<TlcExprId> {
@@ -493,7 +500,8 @@ impl<'thir> Lowerer<'thir> {
             let field_ty = self.lower_type_with_subst(field.ty, subst);
             let base_field =
                 self.alloc_expr(TlcExpr::GetField(base, field.name.clone()), field_ty, span);
-            let patch_fields = self.record_literal_fields(patch_value, &mut HashSet::new())?;
+            let patch_fields =
+                self.record_literal_fields(patch_value, &mut FxHashSet::default())?;
             return self.lower_overlay_record(
                 base_field,
                 patch_fields,

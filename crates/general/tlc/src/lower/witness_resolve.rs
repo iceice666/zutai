@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 use zutai_syntax::Span;
@@ -39,8 +39,8 @@ impl<'thir> Lowerer<'thir> {
             .collect();
         let mut result = None;
         for cw in candidates {
-            let mut subst: HashMap<BindingId, TypeId> = HashMap::new();
-            let holes: HashSet<BindingId> = cw.params.iter().copied().collect();
+            let mut subst: FxHashMap<BindingId, TypeId> = FxHashMap::default();
+            let holes: FxHashSet<BindingId> = cw.params.iter().copied().collect();
             if !self.unify_witness_target(cw.target, concrete, &holes, &mut subst) {
                 continue;
             }
@@ -88,14 +88,14 @@ impl<'thir> Lowerer<'thir> {
         &self,
         target: TypeId,
         concrete: TypeId,
-        holes: &HashSet<BindingId>,
-        subst: &mut HashMap<BindingId, TypeId>,
+        holes: &FxHashSet<BindingId>,
+        subst: &mut FxHashMap<BindingId, TypeId>,
     ) -> bool {
         self.unify_env(
             target,
-            &HashMap::new(),
+            &FxHashMap::default(),
             concrete,
-            &HashMap::new(),
+            &FxHashMap::default(),
             holes,
             subst,
             0,
@@ -106,17 +106,17 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn unify_env(
         &self,
         target: TypeId,
-        tenv: &HashMap<BindingId, TypeId>,
+        tenv: &FxHashMap<BindingId, TypeId>,
         concrete: TypeId,
-        cenv: &HashMap<BindingId, TypeId>,
-        holes: &HashSet<BindingId>,
-        subst: &mut HashMap<BindingId, TypeId>,
+        cenv: &FxHashMap<BindingId, TypeId>,
+        holes: &FxHashSet<BindingId>,
+        subst: &mut FxHashMap<BindingId, TypeId>,
         depth: u32,
     ) -> bool {
         if depth > 64 {
             return false;
         }
-        let no_holes = HashSet::new();
+        let no_holes = FxHashSet::default();
         let (target, tenv) = self.norm_ty(target, tenv, holes);
         let t_kind = self.thir.type_arena[target.0 as usize].kind.clone();
         // A hole matches any concrete type, but must bind consistently. Follow the
@@ -216,9 +216,9 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn norm_ty(
         &self,
         ty: TypeId,
-        env: &HashMap<BindingId, TypeId>,
-        holes: &HashSet<BindingId>,
-    ) -> (TypeId, HashMap<BindingId, TypeId>) {
+        env: &FxHashMap<BindingId, TypeId>,
+        holes: &FxHashSet<BindingId>,
+    ) -> (TypeId, FxHashMap<BindingId, TypeId>) {
         let mut ty = ty;
         let mut env = env.clone();
         let mut fuel = 64u32;
@@ -253,7 +253,7 @@ impl<'thir> Lowerer<'thir> {
     /// Follow a `TypeVar` substitution chain through `env` (no alias expansion),
     /// yielding a self-contained `TypeId`. Used when binding a witness hole so the
     /// bound type keeps its `AliasApply` shape for later re-resolution.
-    pub(super) fn resolve_env_var(&self, ty: TypeId, env: &HashMap<BindingId, TypeId>) -> TypeId {
+    pub(super) fn resolve_env_var(&self, ty: TypeId, env: &FxHashMap<BindingId, TypeId>) -> TypeId {
         let mut ty = ty;
         let mut fuel = 64u32;
         while fuel > 0 {
@@ -276,8 +276,8 @@ impl<'thir> Lowerer<'thir> {
             return true;
         }
         match (
-            self.structural_witness_key(a, &mut HashSet::new()),
-            self.structural_witness_key(b, &mut HashSet::new()),
+            self.structural_witness_key(a, &mut FxHashSet::default()),
+            self.structural_witness_key(b, &mut FxHashSet::default()),
         ) {
             (Some(ka), Some(kb)) => ka == kb,
             _ => false,

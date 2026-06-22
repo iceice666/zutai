@@ -3,7 +3,7 @@ use super::*;
 impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn new(
         hir: &'hir HirFile,
-        imports: HashMap<ImportKey, ImportedType>,
+        imports: FxHashMap<ImportKey, ImportedType>,
     ) -> Self {
         let mut lowerer = Self {
             hir,
@@ -12,32 +12,32 @@ impl<'hir> Lowerer<'hir> {
             expr_arena: Arena::new(),
             pat_arena: Arena::new(),
             type_arena: Vec::new(),
-            aliases: HashMap::new(),
-            value_types: HashMap::new(),
+            aliases: FxHashMap::default(),
+            value_types: FxHashMap::default(),
             diagnostics: Vec::new(),
             error_type: TypeId(0),
             type_type: TypeId(0),
             next_infer_var: 0,
-            infer_subst: HashMap::new(),
+            infer_subst: FxHashMap::default(),
             next_row_var: 0,
-            row_subst: HashMap::new(),
+            row_subst: FxHashMap::default(),
             effect_ambient: EffectRow::closed_empty(),
             handled_stack: Vec::new(),
             resume_stack: Vec::new(),
-            poly_schemes: HashMap::new(),
-            type_param_kinds: HashMap::new(),
+            poly_schemes: FxHashMap::default(),
+            type_param_kinds: FxHashMap::default(),
             next_level_meta: 0,
-            level_lower_bounds: HashMap::new(),
-            level_equalities: HashMap::new(),
-            type_universe_cache: HashMap::new(),
-            alias_universe_in_progress: HashSet::new(),
-            type_match_in_progress: HashSet::new(),
-            alias_recursive_cache: HashMap::new(),
-            alias_params: HashMap::new(),
-            type_param_scope: HashSet::new(),
+            level_lower_bounds: FxHashMap::default(),
+            level_equalities: FxHashMap::default(),
+            type_universe_cache: FxHashMap::default(),
+            alias_universe_in_progress: FxHashSet::default(),
+            type_match_in_progress: FxHashSet::default(),
+            alias_recursive_cache: FxHashMap::default(),
+            alias_params: FxHashMap::default(),
+            type_param_scope: FxHashSet::default(),
             type_eval_fuel: 10_000,
-            binding_import_key: HashMap::new(),
-            import_type_denotations: HashMap::new(),
+            binding_import_key: FxHashMap::default(),
+            import_type_denotations: FxHashMap::default(),
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,
@@ -71,7 +71,7 @@ impl<'hir> Lowerer<'hir> {
                     HirDeclKind::Constraint { .. } | HirDeclKind::Witness { .. }
                 )
             });
-        let mut id_map: HashMap<HirDeclId, ThirDeclId> = HashMap::new();
+        let mut id_map: FxHashMap<HirDeclId, ThirDeclId> = FxHashMap::default();
         for id in normal_ids {
             id_map.insert(id, self.lower_decl(id));
         }

@@ -6,7 +6,7 @@ impl<'a> Evaluator<'a> {
     pub(super) fn apply_builtin_expr(
         &self,
         func: BuiltinFn,
-        mut args: Vec<Thunk>,
+        mut args: SmallVec<[Thunk; 2]>,
         arg: ThirExprId,
         env: &Env,
     ) -> Result<Value, EvalError> {
@@ -155,8 +155,7 @@ impl<'a> Evaluator<'a> {
                 }
                 // D5: if the operand type is unresolved and an equality witness
                 // exists, refuse rather than silently returning a structural bool.
-                let aliases = self.build_alias_map();
-                let key = type_key(&self.file.type_arena, &aliases, self.expr(lhs).ty);
+                let key = self.cached_type_key(self.expr(lhs).ty);
                 if key_is_ambiguous(&key) && self.has_eq_operator_witness() {
                     return Err(EvalError::Internal(
                         "equality dispatch: unresolved operand type with (==) witnesses in scope",
@@ -171,8 +170,7 @@ impl<'a> Evaluator<'a> {
                 {
                     return Ok(v);
                 }
-                let aliases = self.build_alias_map();
-                let key = type_key(&self.file.type_arena, &aliases, self.expr(lhs).ty);
+                let key = self.cached_type_key(self.expr(lhs).ty);
                 if key_is_ambiguous(&key) && self.has_eq_operator_witness() {
                     return Err(EvalError::Internal(
                         "equality dispatch: unresolved operand type with (==) witnesses in scope",

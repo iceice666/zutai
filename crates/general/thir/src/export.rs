@@ -11,7 +11,7 @@
 //! stamped by the evaluator (for closures) and denotation descriptors embedded
 //! in `ImportedType::Type` (for type aliases).  Both are now representable.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 
@@ -27,12 +27,12 @@ pub struct ExportUnsupported {
 /// Convert `ty` (a type in `file`'s arena) into a neutral [`ImportedType`].
 pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUnsupported> {
     let aliases = build_alias_map(file);
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::default();
     export(file, &aliases, ty, &mut seen)
 }
 
-fn build_alias_map(file: &ThirFile) -> HashMap<BindingId, TypeId> {
-    let mut map = HashMap::new();
+fn build_alias_map(file: &ThirFile) -> FxHashMap<BindingId, TypeId> {
+    let mut map = FxHashMap::default();
     for (_, decl) in file.decl_arena.iter() {
         if let ThirDeclKind::TypeAlias { ty, .. } = decl.kind {
             map.insert(decl.binding, ty);
@@ -43,9 +43,9 @@ fn build_alias_map(file: &ThirFile) -> HashMap<BindingId, TypeId> {
 
 fn export(
     file: &ThirFile,
-    aliases: &HashMap<BindingId, TypeId>,
+    aliases: &FxHashMap<BindingId, TypeId>,
     ty: TypeId,
-    seen: &mut HashSet<BindingId>,
+    seen: &mut FxHashSet<BindingId>,
 ) -> Result<ImportedType, ExportUnsupported> {
     match file.type_arena[ty.0 as usize].kind.clone() {
         // Imported data is just a value, so a singleton `true`/`false` type is

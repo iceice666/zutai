@@ -3,7 +3,7 @@
 //! Converts flat ANF bindings into basic blocks with phi nodes at join points.
 
 use crate::*;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use zutai_anf::{AnfAtom, AnfBody, AnfDecl, AnfExpr, AnfModule};
 
 mod expr;
@@ -111,11 +111,11 @@ struct Ctx {
     /// Lambda functions lifted out during lowering.
     lambdas: Vec<SsaFunc>,
     /// Names of top-level functions represented by static closure objects.
-    global_closures: HashSet<String>,
+    global_closures: FxHashSet<String>,
 }
 
 impl Ctx {
-    fn new(global_closures: HashSet<String>) -> Self {
+    fn new(global_closures: FxHashSet<String>) -> Self {
         Ctx {
             fresh: Fresh::default(),
             lambdas: Vec::new(),
@@ -129,7 +129,7 @@ impl Ctx {
 /// Lower a complete ANF module into SSA form.
 pub fn lower_anf(module: &AnfModule) -> SsaModule {
     let closure_exports = collect_closure_exports(module);
-    let global_closures: HashSet<String> = closure_exports.iter().cloned().collect();
+    let global_closures: FxHashSet<String> = closure_exports.iter().cloned().collect();
     let mut ctx = Ctx::new(global_closures);
     let mut decls = Vec::new();
 
@@ -200,7 +200,7 @@ fn top_level_lambda(body: &AnfBody) -> Option<(&String, &AnfBody)> {
 /// closure objects, in declaration order, deduplicated by first occurrence.
 fn collect_closure_exports(module: &AnfModule) -> Vec<String> {
     let mut exports = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::default();
     for decl in &module.decls {
         match decl {
             AnfDecl::Let { name, body } => {

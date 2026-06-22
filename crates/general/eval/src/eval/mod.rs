@@ -9,7 +9,8 @@
 //! file.  When applying a cross-module closure, callers use `for_module(home)`
 //! to obtain a copy with the correct active file before calling `eval`.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -43,6 +44,7 @@ mod reflection;
 mod top_env;
 mod type_key;
 use ops::{FloatBinOp, cmp_op, numeric_binop, value_type_name};
+pub(crate) use smallvec::{SmallVec, smallvec};
 use type_key::{key_is_ambiguous, resolve_alias_chain, type_key};
 
 /// A slice of all evaluated modules for this run, keyed by position = `ModuleId`.
@@ -55,6 +57,19 @@ pub struct RuntimeWitness {
     pub target_key: String,
 }
 
+pub(crate) type AliasMap = FxHashMap<BindingId, (Vec<BindingId>, TypeId)>;
+
+/// Per-run memoization shared across every `Evaluator` copy (the evaluator is
+/// `Copy` and is recreated constantly via `for_module`, so the cache lives in a
+/// longer-lived owner referenced by `&'a`). Keyed by `ModuleId` because each
+/// module's THIR arenas are independent; a recompute is byte-identical, so this
+/// is pure memoization with no behavioral effect.
+#[derive(Default)]
+pub(crate) struct EvalCaches {
+    alias_maps: RefCell<FxHashMap<ModuleId, Rc<AliasMap>>>,
+    type_keys: RefCell<FxHashMap<(ModuleId, TypeId), Rc<str>>>,
+}
+
 /// Holds read-only access to the THIR arenas while evaluating.
 ///
 /// `Evaluator` is cheaply `Copy` — it's two references plus a `usize`.
@@ -64,17 +79,19 @@ pub struct Evaluator<'a> {
     file: &'a ThirFile,
     registry: &'a [Arc<ThirFile>],
     active_module: ModuleId,
-    imports: &'a HashMap<ImportKey, Value>,
+    imports: &'a FxHashMap<ImportKey, Value>,
     witnesses: &'a [RuntimeWitness],
+    caches: &'a EvalCaches,
 }
 
 impl<'a> Evaluator<'a> {
-    pub fn new(
+    pub(crate) fn new(
         file: &'a ThirFile,
         registry: &'a [Arc<ThirFile>],
         active_module: ModuleId,
-        imports: &'a HashMap<ImportKey, Value>,
+        imports: &'a FxHashMap<ImportKey, Value>,
         witnesses: &'a [RuntimeWitness],
+        caches: &'a EvalCaches,
     ) -> Self {
         Self {
             file,
@@ -82,6 +99,7 @@ impl<'a> Evaluator<'a> {
             active_module,
             imports,
             witnesses,
+            caches,
         }
     }
 
@@ -96,6 +114,7 @@ impl<'a> Evaluator<'a> {
             registry: self.registry,
             imports: self.imports,
             witnesses: self.witnesses,
+            caches: self.caches,
         }
     }
 

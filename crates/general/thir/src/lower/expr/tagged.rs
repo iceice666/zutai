@@ -14,10 +14,10 @@ impl<'hir> Lowerer<'hir> {
         expected: Option<TypeId>,
         span: Span,
     ) -> ThirExprId {
-        use std::collections::HashSet;
+        use rustc_hash::FxHashSet;
 
         if let Some(expected_ty) = expected {
-            let resolved = self.resolve_alias(expected_ty, &mut HashSet::new(), span);
+            let resolved = self.resolve_alias(expected_ty, &mut FxHashSet::default(), span);
             let kind = self.ty(resolved).kind.clone();
 
             match kind {

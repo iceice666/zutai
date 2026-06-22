@@ -987,7 +987,7 @@ impl<'thir> Lowerer<'thir> {
                 let Some((params, body)) = self.type_alias_params_body(binding) else {
                     return TypeKind::AliasApply { binding, args };
                 };
-                let subst: std::collections::HashMap<BindingId, TypeId> =
+                let subst: rustc_hash::FxHashMap<BindingId, TypeId> =
                     params.into_iter().zip(args).collect();
                 self.substitute_alias_shape(body, &subst)
             }
@@ -998,7 +998,7 @@ impl<'thir> Lowerer<'thir> {
     fn substitute_alias_shape(
         &self,
         ty: TypeId,
-        subst: &std::collections::HashMap<BindingId, TypeId>,
+        subst: &rustc_hash::FxHashMap<BindingId, TypeId>,
     ) -> TypeKind {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::TypeVar(binding) => subst
@@ -1049,7 +1049,7 @@ impl<'thir> Lowerer<'thir> {
     fn substitute_component_type(
         &self,
         ty: TypeId,
-        subst: &std::collections::HashMap<BindingId, TypeId>,
+        subst: &rustc_hash::FxHashMap<BindingId, TypeId>,
     ) -> TypeId {
         match self.thir.type_arena[ty.0 as usize].kind {
             TypeKind::TypeVar(binding) => subst.get(&binding).copied().unwrap_or(ty),

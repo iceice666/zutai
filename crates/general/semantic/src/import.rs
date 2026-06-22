@@ -15,7 +15,7 @@
 //! evaluator.  Type-valued fields carry their denotation in `ImportedType::Type`
 //! so annotation-position access (`x : serverLib.Server`) type-checks.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -33,7 +33,7 @@ use crate::{Analysis, AnalysisOptions};
 #[derive(Default)]
 pub(crate) struct ImportContext {
     in_progress: Vec<PathBuf>,
-    cache: HashMap<PathBuf, Rc<Analysis>>,
+    cache: FxHashMap<PathBuf, Rc<Analysis>>,
 }
 
 impl ImportContext {
@@ -51,11 +51,11 @@ impl ImportContext {
 /// Everything resolved for a single file's imports.
 pub(crate) struct ResolvedImports {
     /// Structural types, keyed by import source — fed into THIR lowering.
-    pub types: HashMap<ImportKey, ImportedType>,
+    pub types: FxHashMap<ImportKey, ImportedType>,
     /// Parsed `.zti` values, keyed by import source — consumed by the evaluator.
-    pub values: HashMap<ImportKey, zutai_im::Value>,
+    pub values: FxHashMap<ImportKey, zutai_im::Value>,
     /// Analyzed `.zt` sub-modules, keyed by import source — evaluated recursively.
-    pub modules: HashMap<ImportKey, Rc<Analysis>>,
+    pub modules: FxHashMap<ImportKey, Rc<Analysis>>,
     /// Witnesses exported by imported `.zt` modules, including re-exports.
     pub witnesses: Vec<WitnessExport>,
     pub diagnostics: Vec<ImportDiagnostic>,
@@ -129,11 +129,11 @@ enum Kind {
 
 struct Resolver<'a> {
     base: Option<&'a Path>,
-    types: HashMap<ImportKey, ImportedType>,
-    values: HashMap<ImportKey, zutai_im::Value>,
-    modules: HashMap<ImportKey, Rc<Analysis>>,
+    types: FxHashMap<ImportKey, ImportedType>,
+    values: FxHashMap<ImportKey, zutai_im::Value>,
+    modules: FxHashMap<ImportKey, Rc<Analysis>>,
     witnesses: Vec<WitnessExport>,
-    witness_keys: HashMap<(String, String), PathBuf>,
+    witness_keys: FxHashMap<(String, String), PathBuf>,
     diagnostics: Vec<ImportDiagnostic>,
 }
 
@@ -145,16 +145,16 @@ pub(crate) fn resolve_imports(
 ) -> ResolvedImports {
     let mut resolver = Resolver {
         base,
-        types: HashMap::new(),
-        values: HashMap::new(),
-        modules: HashMap::new(),
+        types: FxHashMap::default(),
+        values: FxHashMap::default(),
+        modules: FxHashMap::default(),
         witnesses: Vec::new(),
-        witness_keys: HashMap::new(),
+        witness_keys: FxHashMap::default(),
         diagnostics: Vec::new(),
     };
 
     // Resolve each distinct source once, using the first span seen for diagnostics.
-    let mut seen: HashSet<&HirImportSource> = HashSet::new();
+    let mut seen: FxHashSet<&HirImportSource> = FxHashSet::default();
     for (_, expr) in hir.expr_arena.iter() {
         let HirExprKind::Import(source) = &expr.kind else {
             continue;
@@ -394,7 +394,7 @@ pub(crate) fn merge_witness_exports(
 ) -> (Vec<WitnessExport>, Vec<ImportDiagnostic>) {
     let mut merged = Vec::new();
     let mut diagnostics = Vec::new();
-    let mut keys: HashMap<(String, String), PathBuf> = HashMap::new();
+    let mut keys: FxHashMap<(String, String), PathBuf> = FxHashMap::default();
     for witness in imported.into_iter().chain(local) {
         let key = (witness.constraint.clone(), witness.target_key.clone());
         match keys.get(&key) {

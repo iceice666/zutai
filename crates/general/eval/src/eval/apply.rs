@@ -11,7 +11,7 @@ impl<'a> Evaluator<'a> {
     pub(super) fn apply_closure(
         &self,
         closure: &Closure,
-        args: Vec<Thunk>,
+        args: SmallVec<[Thunk; 4]>,
     ) -> Result<Value, EvalError> {
         let home_ev = self.for_module(closure.home);
         for clause in closure.clauses.iter() {

@@ -98,9 +98,9 @@ impl<'a> Evaluator<'a> {
                         && *c == *constraint
                         && type_key(&self.file.type_arena, &aliases, *witness_target) == key
                     {
-                        let mut dict = HashMap::new();
+                        let mut dict = FxHashMap::default();
                         for field in fields {
-                            dict.insert(field.name.clone(), self.eval(field.value, env)?);
+                            dict.insert(Rc::from(field.name.as_str()), self.eval(field.value, env)?);
                         }
                         return Ok(Value::WitnessDict(dict));
                     }
@@ -319,10 +319,10 @@ impl<'a> Evaluator<'a> {
                                             continue;
                                         }
                                         // Build the witness dict from the witness fields.
-                                        let mut dict: HashMap<String, Value> = HashMap::new();
+                                        let mut dict: FxHashMap<Rc<str>, Value> = FxHashMap::default();
                                         for field in fields {
                                             let v = self.eval(field.value, env)?;
-                                            dict.insert(field.name.clone(), v);
+                                            dict.insert(Rc::from(field.name.as_str()), v);
                                         }
                                         // NOTE: injecting into the caller's frame only works when
                                         // the callee's closure.env is an ancestor of this frame —
@@ -383,7 +383,7 @@ impl<'a> Evaluator<'a> {
                             self.apply_closure(&c, applied)
                         }
                     }
-                    Value::Builtin(func) => self.apply_builtin_expr(func, Vec::new(), *arg, env),
+                    Value::Builtin(func) => self.apply_builtin_expr(func, SmallVec::new(), *arg, env),
                     Value::BuiltinPartial { func, args } => {
                         self.apply_builtin_expr(func, args, *arg, env)
                     }
@@ -407,7 +407,7 @@ impl<'a> Evaluator<'a> {
                     arity: params.len(),
                     clauses: Rc::from([clause]),
                     env: env.clone(),
-                    applied: Vec::new(),
+                    applied: SmallVec::new(),
                     home: self.active_module,
                 };
                 Ok(Value::Closure(Rc::new(closure)))

@@ -7,7 +7,7 @@
 //!
 //! * `normalize` / `normalize_with_fuel` are methods on `TlcModule` — the normalizer runs
 //!   **post-hoc**, after `lower_thir` has built the complete module (all alias decls exist).
-//! * An owned `alias_env: HashMap<u32, TlcTypeId>` maps each alias's `BindingId.0` to the
+//! * An owned `alias_env: FxHashMap<u32, TlcTypeId>` maps each alias's `BindingId.0` to the
 //!   `TyLamK`-chain body stored in its `TlcDecl::TypeAlias { body }`. This avoids the
 //!   `&self.decl_arena` + `&mut self.type_arena` borrow conflict inside the recursive worker.
 //! * The inner worker takes `(&mut Arena<TlcType>, &alias_env, &mut u32 /*fuel*/)` and
@@ -43,7 +43,7 @@
 //! `Fun` carries an effect row (Phase 4); its effect row is compared via the same
 //! order-insensitive `rows_equal_deep` — correct for effect sets. In v0, `eff = REmpty` always.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use la_arena::Arena;
 
@@ -110,7 +110,7 @@ impl TlcModule {
 // ── Alias environment ─────────────────────────────────────────────────────────
 
 /// Map every alias's `BindingId.0` → its `TyLamK`-chain body.
-fn build_alias_env(decl_arena: &Arena<TlcDecl>) -> HashMap<u32, TlcTypeId> {
+fn build_alias_env(decl_arena: &Arena<TlcDecl>) -> FxHashMap<u32, TlcTypeId> {
     decl_arena
         .iter()
         .filter_map(|(_, decl)| match decl {

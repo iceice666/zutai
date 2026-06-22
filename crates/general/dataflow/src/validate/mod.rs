@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 mod compat;
 mod refs;
@@ -32,7 +32,7 @@ struct Scope {
 fn collect_structural_errors(
     graph: &DataflowGraph,
     errors: &mut Vec<ValidationError>,
-) -> (bool, HashMap<NodeId, BindOwner>) {
+) -> (bool, FxHashMap<NodeId, BindOwner>) {
     if graph.spans.len() != graph.nodes.len() {
         errors.push(ValidationError::SpanTableSizeMismatch {
             spans: graph.spans.len(),
@@ -97,7 +97,7 @@ pub(crate) fn validate(graph: &DataflowGraph) -> Result<(), Vec<ValidationError>
     let mut errors = Vec::new();
 
     let (root_valid, owners) = collect_structural_errors(graph, &mut errors);
-    let mut visited = HashSet::new();
+    let mut visited = FxHashSet::default();
 
     if root_valid {
         let mut scope = Scope::default();

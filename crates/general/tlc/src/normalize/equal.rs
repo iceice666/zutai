@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use la_arena::Arena;
 
@@ -93,7 +93,7 @@ pub(super) fn rows_equal_deep(arena: &Arena<TlcType>, a: &Row, b: &Row) -> bool 
     }
 
     // Build a label → (ty, optional) map for b's fields.
-    let map_b: HashMap<&str, (TlcTypeId, bool)> = fields_b
+    let map_b: FxHashMap<&str, (TlcTypeId, bool)> = fields_b
         .iter()
         .map(|&(l, ty, opt)| (l, (ty, opt)))
         .collect();

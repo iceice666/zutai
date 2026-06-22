@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use la_arena::Arena;
 use zutai_hir::BindingId;
@@ -35,30 +35,30 @@ struct Lowerer<'thir> {
     decl_arena: Arena<TlcDecl>,
     expr_arena: Arena<TlcExpr>,
     type_arena: Arena<TlcType>,
-    expr_types: HashMap<TlcExprId, TlcTypeId>,
-    spans: HashMap<TlcExprId, Span>,
-    dict_field_slots: HashMap<TlcExprId, usize>,
-    type_cache: HashMap<u32, TlcTypeId>,
-    infer_to_tyvar: HashMap<u32, TlcTypeVar>,
-    named_to_tyvar: HashMap<u32, TlcTypeVar>,
-    decl_thir_types: HashMap<BindingId, TypeId>,
+    expr_types: FxHashMap<TlcExprId, TlcTypeId>,
+    spans: FxHashMap<TlcExprId, Span>,
+    dict_field_slots: FxHashMap<TlcExprId, usize>,
+    type_cache: FxHashMap<u32, TlcTypeId>,
+    infer_to_tyvar: FxHashMap<u32, TlcTypeVar>,
+    named_to_tyvar: FxHashMap<u32, TlcTypeVar>,
+    decl_thir_types: FxHashMap<BindingId, TypeId>,
     next_synth: u32,
     /// constraint method BindingId → (constraint BindingId, method name).
     /// Used in the Apply arm to dispatch to `GetField` on the active dict param.
-    constraint_methods: HashMap<BindingId, ConstraintMethodInfo>,
+    constraint_methods: FxHashMap<BindingId, ConstraintMethodInfo>,
     /// Constraint operator methods in declaration order for binary operator lowering.
     operator_methods: Vec<ConstraintMethodInfo>,
     /// (constraint BindingId.0, WitnessTargetKey) → witness decl BindingId.
     /// Populated for every `Witness` THIR decl; queried at concrete call sites.
-    witness_bindings: HashMap<(u32, WitnessTargetKey), BindingId>,
+    witness_bindings: FxHashMap<(u32, WitnessTargetKey), BindingId>,
     /// function BindingId → vec of (type-param BindingId, constraint BindingIds),
     /// sorted ascending by type-param BindingId.0 to match THIR `collect_type_vars`.
-    fn_explicit_params: HashMap<BindingId, Vec<(BindingId, Vec<BindingId>)>>,
+    fn_explicit_params: FxHashMap<BindingId, Vec<(BindingId, Vec<BindingId>)>>,
     /// (constraint BindingId.0, type-param BindingId.0) → active dict Lam BindingId.
     /// Set when entering a bounded function body; cleared on exit.
-    active_dict_params: HashMap<(u32, u32), BindingId>,
+    active_dict_params: FxHashMap<(u32, u32), BindingId>,
     /// dict Lam BindingId → its TLC type (Record placeholder).
-    active_dict_types: HashMap<BindingId, TlcTypeId>,
+    active_dict_types: FxHashMap<BindingId, TlcTypeId>,
     /// Next fresh row-variable id for anonymous open rows (`...`). Allocated from
     /// the top of the id space and mapped to `TlcTypeVar::Inferred`, so it never
     /// collides with a THIR `InferVar` id (small, counted from zero).
@@ -68,7 +68,7 @@ struct Lowerer<'thir> {
     /// Recursion guard for conditional-witness resolution: `(constraint.0,
     /// concrete TypeId.0)` pairs currently being resolved. Re-entry signals a
     /// non-terminating witness search; resolution bails to avoid a stack overflow.
-    resolving_dicts: HashSet<(u32, u32)>,
+    resolving_dicts: FxHashSet<(u32, u32)>,
     /// Operator-method witness body currently being lowered, as `(witness decl
     /// binding, operator name)`. While set, an operator call inside the body
     /// whose dispatch would resolve back to *this same* witness method falls back
@@ -84,23 +84,23 @@ impl<'thir> Lowerer<'thir> {
             decl_arena: Arena::new(),
             expr_arena: Arena::new(),
             type_arena: Arena::new(),
-            expr_types: HashMap::new(),
-            spans: HashMap::new(),
-            dict_field_slots: HashMap::new(),
-            type_cache: HashMap::new(),
-            infer_to_tyvar: HashMap::new(),
-            named_to_tyvar: HashMap::new(),
-            decl_thir_types: HashMap::new(),
+            expr_types: FxHashMap::default(),
+            spans: FxHashMap::default(),
+            dict_field_slots: FxHashMap::default(),
+            type_cache: FxHashMap::default(),
+            infer_to_tyvar: FxHashMap::default(),
+            named_to_tyvar: FxHashMap::default(),
+            decl_thir_types: FxHashMap::default(),
             next_synth: u32::MAX,
-            constraint_methods: HashMap::new(),
+            constraint_methods: FxHashMap::default(),
             operator_methods: Vec::new(),
-            witness_bindings: HashMap::new(),
-            fn_explicit_params: HashMap::new(),
-            active_dict_params: HashMap::new(),
-            active_dict_types: HashMap::new(),
+            witness_bindings: FxHashMap::default(),
+            fn_explicit_params: FxHashMap::default(),
+            active_dict_params: FxHashMap::default(),
+            active_dict_types: FxHashMap::default(),
             next_row_var: u32::MAX,
             conditional_witnesses: Vec::new(),
-            resolving_dicts: HashSet::new(),
+            resolving_dicts: FxHashSet::default(),
             defining_op_witness: None,
         }
     }

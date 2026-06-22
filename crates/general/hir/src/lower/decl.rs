@@ -183,7 +183,7 @@ impl Lowerer {
                 self.push_scope();
                 let hir_params = self.lower_hir_type_params(params);
                 let hir_target = self.lower_type(target);
-                let mut seen_methods: HashMap<String, Span> = HashMap::new();
+                let mut seen_methods: FxHashMap<String, Span> = FxHashMap::default();
                 let mut hir_methods = Vec::new();
                 for (idx, method) in methods.iter().enumerate() {
                     let key = method.name.as_str().to_string();
@@ -277,7 +277,7 @@ impl Lowerer {
                 let (hir_fields, derive) = match body {
                     ast::WitnessBody::Derive => (Vec::new(), true),
                     ast::WitnessBody::Fields(fields) => {
-                        let mut seen: HashMap<String, Span> = HashMap::new();
+                        let mut seen: FxHashMap<String, Span> = FxHashMap::default();
                         let mut hir_fields = Vec::new();
                         for field in fields {
                             let key = field.name.as_str().to_string();

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::*;
 
@@ -12,8 +12,8 @@ pub(super) fn walk_child(
     field: &'static str,
     target: NodeId,
     scope: &mut Scope,
-    owners: &HashMap<NodeId, BindOwner>,
-    visited: &mut HashSet<(NodeId, Scope)>,
+    owners: &FxHashMap<NodeId, BindOwner>,
+    visited: &mut FxHashSet<(NodeId, Scope)>,
     errors: &mut Vec<ValidationError>,
 ) {
     if check_node_ref(graph, owner, field, target, errors) {
@@ -25,8 +25,8 @@ pub(super) fn walk_node(
     graph: &DataflowGraph,
     id: NodeId,
     scope: &mut Scope,
-    owners: &HashMap<NodeId, BindOwner>,
-    visited: &mut HashSet<(NodeId, Scope)>,
+    owners: &FxHashMap<NodeId, BindOwner>,
+    visited: &mut FxHashSet<(NodeId, Scope)>,
     errors: &mut Vec<ValidationError>,
 ) {
     if !node_exists(graph, id) {

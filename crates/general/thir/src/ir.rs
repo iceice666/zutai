@@ -85,14 +85,14 @@ pub struct ThirFile {
     pub expr_arena: Arena<ThirExpr>,
     pub pat_arena: Arena<ThirPat>,
     pub type_arena: Vec<Type>,
-    pub poly_schemes: std::collections::HashMap<zutai_hir::BindingId, Vec<u32>>,
+    pub poly_schemes: rustc_hash::FxHashMap<zutai_hir::BindingId, Vec<u32>>,
     /// Solved/defaulted universe level for each `TypeId`, parallel to
     /// `type_arena`. No level metas reach this exported vector.
     pub type_universes: Vec<u32>,
     /// Declared kind of each type parameter (`<F :: Type -> Type>` → `Arrow`),
     /// keyed by the param's `BindingId`. Absent params have `Kind::ground()`.
     /// Carried for TLC so higher-kinded quantifiers/vars get the right kind.
-    pub type_param_kinds: std::collections::HashMap<zutai_hir::BindingId, Kind>,
+    pub type_param_kinds: rustc_hash::FxHashMap<zutai_hir::BindingId, Kind>,
     pub binding_names: Vec<String>,
     pub binding_kinds: Vec<zutai_hir::BindingKind>,
 }

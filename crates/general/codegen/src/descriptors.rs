@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use zutai_ssa::*;
 
@@ -16,8 +16,8 @@ pub(crate) fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
     let mut emitter = DescriptorEmitter {
         types: &module.types,
         out,
-        cache: HashMap::new(),
-        strings: HashMap::new(),
+        cache: FxHashMap::default(),
+        strings: FxHashMap::default(),
         next: 0,
     };
     let entry = emitter.emit(module.entry_ty_id);
@@ -28,8 +28,8 @@ pub(crate) fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
 pub(crate) struct DescriptorEmitter<'a, 'o> {
     types: &'a DfTypes,
     out: &'o mut String,
-    cache: HashMap<DfTyId, String>,
-    strings: HashMap<String, String>,
+    cache: FxHashMap<DfTyId, String>,
+    strings: FxHashMap<String, String>,
     next: usize,
 }
 

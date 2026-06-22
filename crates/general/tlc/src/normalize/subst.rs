@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use la_arena::Arena;
 
@@ -9,17 +9,17 @@ use crate::ir::{Row, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 /// Collect all type variables (`TyVar`) that appear free in `ty`.
 /// Row variables (`RVar`) are ignored — they have a different kind and cannot be
 /// captured by `TyLamK`/`ForAll` binders, which bind type-kinded variables.
-pub(super) fn free_type_vars(arena: &Arena<TlcType>, ty: TlcTypeId) -> HashSet<TlcTypeVar> {
-    let mut free = HashSet::new();
-    collect_free(arena, ty, &HashSet::new(), &mut free);
+pub(super) fn free_type_vars(arena: &Arena<TlcType>, ty: TlcTypeId) -> FxHashSet<TlcTypeVar> {
+    let mut free = FxHashSet::default();
+    collect_free(arena, ty, &FxHashSet::default(), &mut free);
     free
 }
 
 pub(super) fn collect_free(
     arena: &Arena<TlcType>,
     ty: TlcTypeId,
-    bound: &HashSet<TlcTypeVar>,
-    free: &mut HashSet<TlcTypeVar>,
+    bound: &FxHashSet<TlcTypeVar>,
+    free: &mut FxHashSet<TlcTypeVar>,
 ) {
     match arena[ty].clone() {
         TlcType::TyVar(v, _) => {
@@ -68,8 +68,8 @@ pub(super) fn collect_free(
 pub(super) fn collect_free_row(
     arena: &Arena<TlcType>,
     row: &Row,
-    bound: &HashSet<TlcTypeVar>,
-    free: &mut HashSet<TlcTypeVar>,
+    bound: &FxHashSet<TlcTypeVar>,
+    free: &mut FxHashSet<TlcTypeVar>,
 ) {
     match row {
         Row::REmpty => {}
@@ -217,7 +217,7 @@ pub(super) fn subst_inner(
     ty: TlcTypeId,
     var: TlcTypeVar,
     replacement: TlcTypeId,
-    replacement_free: &HashSet<TlcTypeVar>,
+    replacement_free: &FxHashSet<TlcTypeVar>,
     next_fresh: &mut u32,
 ) -> TlcTypeId {
     match arena[ty].clone() {
@@ -340,7 +340,7 @@ pub(super) fn subst_row_inner(
     row: &Row,
     var: TlcTypeVar,
     replacement: TlcTypeId,
-    replacement_free: &HashSet<TlcTypeVar>,
+    replacement_free: &FxHashSet<TlcTypeVar>,
     next_fresh: &mut u32,
 ) -> Row {
     match row {

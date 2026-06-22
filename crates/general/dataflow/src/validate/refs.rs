@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::*;
 
@@ -17,7 +17,7 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
         graph: &DataflowGraph,
         expected: DfTyId,
         actual: DfTyId,
-        seen: &mut HashSet<(DfTyId, DfTyId)>,
+        seen: &mut FxHashSet<(DfTyId, DfTyId)>,
     ) -> bool {
         if expected == actual {
             return true;
@@ -95,7 +95,7 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
         }
     }
 
-    go(graph, expected, actual, &mut HashSet::new())
+    go(graph, expected, actual, &mut FxHashSet::default())
 }
 
 pub(super) fn check_node_ref(
@@ -161,9 +161,9 @@ pub(super) fn collect_bind_nodes(pat: &DfPattern, out: &mut Vec<NodeId>) {
 pub(super) fn collect_bind_owners(
     graph: &DataflowGraph,
     errors: &mut Vec<ValidationError>,
-) -> HashMap<NodeId, BindOwner> {
-    let mut counts: HashMap<NodeId, usize> = HashMap::new();
-    let mut candidates: HashMap<NodeId, BindOwner> = HashMap::new();
+) -> FxHashMap<NodeId, BindOwner> {
+    let mut counts: FxHashMap<NodeId, usize> = FxHashMap::default();
+    let mut candidates: FxHashMap<NodeId, BindOwner> = FxHashMap::default();
 
     for (owner, node) in graph.nodes.iter() {
         match &node.kind {
@@ -210,7 +210,7 @@ pub(super) fn collect_bind_owners(
         }
     }
 
-    let mut owners = HashMap::new();
+    let mut owners = FxHashMap::default();
     for (node_id, node) in graph.nodes.iter() {
         if matches!(&node.kind, DfNodeKind::Bind) {
             let count = counts.get(&node_id).copied().unwrap_or(0);

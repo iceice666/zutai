@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 mod cps;
 mod eligible;
@@ -37,13 +37,13 @@ type Kont<'kont> = Box<dyn FnOnce(&mut EffectElaborator<'_>, TlcExprId) -> TlcEx
 
 struct EffectElaborator<'module> {
     module: &'module mut TlcModule,
-    used_bindings: HashSet<BindingId>,
+    used_bindings: FxHashSet<BindingId>,
     next_fresh: u32,
 }
 
 impl<'module> EffectElaborator<'module> {
     fn new(module: &'module mut TlcModule) -> Self {
-        let mut used_bindings = HashSet::new();
+        let mut used_bindings = FxHashSet::default();
         for (_, decl) in module.decl_arena.iter() {
             let binding = match decl {
                 TlcDecl::Value { binding, .. } | TlcDecl::TypeAlias { binding, .. } => binding,
@@ -202,7 +202,7 @@ impl<'module> EffectElaborator<'module> {
     }
 }
 
-fn collect_expr_bindings(expr: &TlcExpr, used: &mut HashSet<BindingId>) {
+fn collect_expr_bindings(expr: &TlcExpr, used: &mut FxHashSet<BindingId>) {
     match expr {
         TlcExpr::Var(binding) | TlcExpr::Lam(binding, _, _) => {
             used.insert(*binding);
@@ -224,7 +224,7 @@ fn collect_expr_bindings(expr: &TlcExpr, used: &mut HashSet<BindingId>) {
     }
 }
 
-fn collect_pat_bindings(pat: &crate::ir::TlcPat, used: &mut HashSet<BindingId>) {
+fn collect_pat_bindings(pat: &crate::ir::TlcPat, used: &mut FxHashSet<BindingId>) {
     match pat {
         crate::ir::TlcPat::Bind(binding) => {
             used.insert(*binding);
@@ -248,7 +248,7 @@ fn collect_pat_bindings(pat: &crate::ir::TlcPat, used: &mut HashSet<BindingId>) 
 }
 
 fn restore_subst(
-    subst: &mut HashMap<BindingId, BindingId>,
+    subst: &mut FxHashMap<BindingId, BindingId>,
     binding: BindingId,
     old: Option<BindingId>,
 ) {

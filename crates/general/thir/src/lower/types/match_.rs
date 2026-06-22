@@ -25,7 +25,7 @@ impl<'hir> Lowerer<'hir> {
         ty: TypeId,
         span: Span,
     ) -> Option<(Vec<TypeRecordField>, RowTail)> {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind.clone() {
             TypeKind::Record(fields, tail) => Some(self.flatten_record_row(fields, tail)),
             TypeKind::Patch { target, deep } => self.expand_patch_type(target, deep, span),
@@ -34,7 +34,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn list_item_type(&mut self, ty: TypeId, span: Span) -> Option<TypeId> {
-        let alias_resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let alias_resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         let resolved = self.resolve(alias_resolved);
         match self.ty(resolved).kind {
             TypeKind::List(item) => Some(item),
@@ -61,7 +61,7 @@ impl<'hir> Lowerer<'hir> {
         ty: TypeId,
         span: Span,
     ) -> Option<TypeId> {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind {
             TypeKind::Optional(inner) => Some(inner),
             _ => None,
@@ -73,7 +73,7 @@ impl<'hir> Lowerer<'hir> {
         ty: TypeId,
         span: Span,
     ) -> Option<(WrapperKind, TypeId)> {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind {
             TypeKind::Optional(inner) => Some((WrapperKind::Optional, inner)),
             TypeKind::Maybe(inner) => Some((WrapperKind::Maybe, inner)),
@@ -87,7 +87,7 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
     ) -> Option<(TypeId, TypeId)> {
         // First resolve named aliases, then chase any InferVar substitutions.
-        let alias_resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let alias_resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         let resolved = self.resolve(alias_resolved);
         match self.ty(resolved).kind {
             TypeKind::Function { from, to } => Some((from, to)),
@@ -114,7 +114,7 @@ impl<'hir> Lowerer<'hir> {
         let mut params = Vec::new();
         let mut current = ty;
         loop {
-            let resolved = self.resolve_alias(current, &mut HashSet::new(), span);
+            let resolved = self.resolve_alias(current, &mut FxHashSet::default(), span);
             match self.ty(resolved).kind {
                 TypeKind::Function { from, to } => {
                     params.push(from);
@@ -179,8 +179,8 @@ impl<'hir> Lowerer<'hir> {
             }
             _ => {}
         }
-        let expected = self.resolve_alias(expected, &mut HashSet::new(), e_span);
-        let found = self.resolve_alias(found, &mut HashSet::new(), f_span);
+        let expected = self.resolve_alias(expected, &mut FxHashSet::default(), e_span);
+        let found = self.resolve_alias(found, &mut FxHashSet::default(), f_span);
         if expected == found {
             if let Some(key) = guard_key {
                 self.type_match_in_progress.remove(&key);
@@ -325,7 +325,8 @@ impl<'hir> Lowerer<'hir> {
         if expected_params.len() != found_params.len() {
             return false;
         }
-        let mut subst = HashMap::with_capacity(expected_params.len());
+        let mut subst =
+            FxHashMap::with_capacity_and_hasher(expected_params.len(), Default::default());
         for (&expected_param, &found_param) in expected_params.iter().zip(found_params.iter()) {
             let found_param_ty = self.alloc_type(Type {
                 kind: TypeKind::TypeVar(found_param),
@@ -347,7 +348,7 @@ impl<'hir> Lowerer<'hir> {
         self.alias_recursive_cache.insert(binding, false);
         let result = match self.aliases.get(&binding).copied() {
             Some(body) => {
-                let mut visited = HashSet::new();
+                let mut visited = FxHashSet::default();
                 self.type_references_alias(body, binding, &mut visited)
             }
             None => false,
@@ -363,7 +364,7 @@ impl<'hir> Lowerer<'hir> {
         &self,
         ty: TypeId,
         target: BindingId,
-        visited: &mut HashSet<BindingId>,
+        visited: &mut FxHashSet<BindingId>,
     ) -> bool {
         match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Alias(b) => {
@@ -444,7 +445,7 @@ impl<'hir> Lowerer<'hir> {
     ) -> bool {
         let (ef, et) = self.flatten_record_row(ef.to_vec(), et);
         let (ff, ft) = self.flatten_record_row(ff.to_vec(), ft);
-        let found_by_name: HashMap<&str, &TypeRecordField> =
+        let found_by_name: FxHashMap<&str, &TypeRecordField> =
             ff.iter().map(|f| (f.name.as_str(), f)).collect();
         for e in &ef {
             match found_by_name.get(e.name.as_str()) {
@@ -460,7 +461,7 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
         }
-        let expected_names: HashSet<&str> = ef.iter().map(|f| f.name.as_str()).collect();
+        let expected_names: FxHashSet<&str> = ef.iter().map(|f| f.name.as_str()).collect();
         let extras: Vec<TypeRecordField> = ff
             .iter()
             .filter(|f| !expected_names.contains(f.name.as_str()))
@@ -503,7 +504,7 @@ impl<'hir> Lowerer<'hir> {
     ) -> bool {
         let (ev, et) = self.flatten_union_row(ev.to_vec(), et);
         let (fv, ft) = self.flatten_union_row(fv.to_vec(), ft);
-        let expected_by_name: HashMap<&str, &UnionVariant> =
+        let expected_by_name: FxHashMap<&str, &UnionVariant> =
             ev.iter().map(|v| (v.name.as_str(), v)).collect();
         let mut extras: Vec<UnionVariant> = Vec::new();
         for f in &fv {

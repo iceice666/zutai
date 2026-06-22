@@ -91,7 +91,7 @@ impl<'hir> Lowerer<'hir> {
             }
             HirTypeKind::Select { receiver, fields } => {
                 let receiver_ty = self.lower_predicative_type(*receiver);
-                let resolved = self.resolve_alias(receiver_ty, &mut HashSet::new(), ty.span);
+                let resolved = self.resolve_alias(receiver_ty, &mut FxHashSet::default(), ty.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Record(rec_fields, _) => {
                         let mut selected = Vec::with_capacity(fields.len());
@@ -242,7 +242,7 @@ impl<'hir> Lowerer<'hir> {
                 let name = op.path.join(".");
                 let (param, result) = if let Some(sig) = op.signature {
                     let sig = self.lower_type(sig);
-                    let resolved = self.resolve_alias(sig, &mut HashSet::new(), op.span);
+                    let resolved = self.resolve_alias(sig, &mut FxHashSet::default(), op.span);
                     match self.ty(resolved).kind {
                         TypeKind::Function { from, to } => (from, to),
                         TypeKind::Error => (self.error_type, self.error_type),
@@ -328,7 +328,7 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Spread(binding) => {
                 let source = self.hir.bindings[binding.0 as usize].name.clone();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
-                let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
+                let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), tail.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Record(spread_fields, spread_tail) => {
                         for sf in spread_fields {
@@ -383,7 +383,7 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Spread(binding) => {
                 let source = self.hir.bindings[binding.0 as usize].name.clone();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
-                let resolved = self.resolve_alias(spread, &mut HashSet::new(), tail.span);
+                let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), tail.span);
                 match self.ty(resolved).kind.clone() {
                     TypeKind::Union(spread_variants, spread_tail) => {
                         for sv in spread_variants {

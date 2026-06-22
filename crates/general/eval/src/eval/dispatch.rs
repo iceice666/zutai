@@ -123,7 +123,7 @@ impl<'a> Evaluator<'a> {
                                     arity,
                                     clauses: clauses.as_slice().into(),
                                     env: env.clone(),
-                                    applied: Vec::new(),
+                                    applied: SmallVec::new(),
                                     home: self.active_module,
                                 }))));
                             }
@@ -143,7 +143,7 @@ impl<'a> Evaluator<'a> {
         // through to UnresolvedWitness rather than a wrong-answer default.
         if let Ok(thunk) = env.lookup(constraint_binding)
             && let Value::WitnessDict(dict) = thunk.force(self)?
-            && let Some(v) = dict.get(&method_name)
+            && let Some(v) = dict.get(method_name.as_str())
         {
             return Ok(Some(v.clone()));
         }
@@ -229,7 +229,7 @@ impl<'a> Evaluator<'a> {
         &self,
         op_name: &str,
         key: &str,
-        aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
+        aliases: &FxHashMap<BindingId, (Vec<BindingId>, TypeId)>,
         lv: &Value,
         rv: &Value,
         env: &Env,
@@ -244,7 +244,8 @@ impl<'a> Evaluator<'a> {
                         let fv = self.eval(field.value, env)?;
                         match fv {
                             Value::Closure(c) => {
-                                let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                                let args =
+                                    smallvec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
                                 return Ok(Some(self.apply_closure(&c, args)?));
                             }
                             _ => return Ok(None),
@@ -256,7 +257,7 @@ impl<'a> Evaluator<'a> {
         if let Some(fv) = self.eval_imported_witness_field("", op_name, key)? {
             match fv {
                 Value::Closure(c) => {
-                    let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                    let args = smallvec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
                     return Ok(Some(self.apply_closure(&c, args)?));
                 }
                 _ => return Ok(None),
@@ -291,7 +292,7 @@ impl<'a> Evaluator<'a> {
                     && let Value::WitnessDict(dict) = thunk.force(self)?
                     && let Some(Value::Closure(c)) = dict.get(op_name)
                 {
-                    let args = vec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
+                    let args = smallvec![Thunk::ready(lv.clone()), Thunk::ready(rv.clone())];
                     return Ok(Some(self.apply_closure(c, args)?));
                 }
             }
@@ -353,15 +354,44 @@ impl<'a> Evaluator<'a> {
 
     /// Build a map from alias `BindingId` to its underlying `TypeId` for
     /// alias-resolved `type_key` calls.
-    pub(super) fn build_alias_map(&self) -> HashMap<BindingId, (Vec<BindingId>, TypeId)> {
-        let mut m = HashMap::new();
+    pub(super) fn build_alias_map(&self) -> Rc<AliasMap> {
+        if let Some(m) = self
+            .caches
+            .alias_maps
+            .borrow()
+            .get(&self.active_module)
+            .cloned()
+        {
+            return m;
+        }
+        let mut m: AliasMap = FxHashMap::default();
         for &decl_id in &self.file.decls {
             let decl = self.decl(decl_id);
             if let ThirDeclKind::TypeAlias { params, ty } = &decl.kind {
                 m.insert(decl.binding, (params.clone(), *ty));
             }
         }
-        m
+        let rc = Rc::new(m);
+        self.caches
+            .alias_maps
+            .borrow_mut()
+            .insert(self.active_module, rc.clone());
+        rc
+    }
+
+    /// Structural type key for `ty`, memoized per `(active_module, ty)`.
+    ///
+    /// Use only at dispatch sites that need the key alone; sites that also reuse
+    /// the alias map keep calling `build_alias_map` (now O(1) cached).
+    pub(super) fn cached_type_key(&self, ty: TypeId) -> Rc<str> {
+        let ck = (self.active_module, ty);
+        if let Some(k) = self.caches.type_keys.borrow().get(&ck).cloned() {
+            return k;
+        }
+        let aliases = self.build_alias_map();
+        let key: Rc<str> = Rc::from(type_key(&self.file.type_arena, &aliases, ty).as_str());
+        self.caches.type_keys.borrow_mut().insert(ck, key.clone());
+        key
     }
 
     /// Return `true` if the file has any witness with a `(==)` or `(!=)` operator field.

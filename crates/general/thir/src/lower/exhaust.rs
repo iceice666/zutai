@@ -17,7 +17,7 @@
 //! clause cannot be assumed to match), but a guarded clause is still tested for
 //! its own reachability.
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_syntax::Span;
 use zutai_syntax::posit::PositLiteral;
@@ -120,7 +120,7 @@ impl<'hir> Lowerer<'hir> {
         // Resolve every column up front so the matrix algebra sees concrete kinds.
         let mut cols = Vec::with_capacity(width);
         for &ty in col_tys {
-            cols.push(self.resolve_alias(ty, &mut HashSet::new(), span));
+            cols.push(self.resolve_alias(ty, &mut FxHashSet::default(), span));
         }
 
         // Don't pile non-exhaustive errors on top of an existing type error.
@@ -271,7 +271,7 @@ impl<'hir> Lowerer<'hir> {
 
     /// The constructor signature of a column type.
     fn column_signature(&mut self, col_ty: TypeId, span: Span) -> Signature {
-        let resolved = self.resolve_alias(col_ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(col_ty, &mut FxHashSet::default(), span);
         let ctors = match self.ty(resolved).kind.clone() {
             TypeKind::Bool => Some(vec![
                 SigCtor::nullary(Ctor::Bool(true)),
@@ -321,7 +321,7 @@ impl<'hir> Lowerer<'hir> {
             let (ctor, fields) = match variant.payload {
                 None => (Ctor::Tagged(variant.name.clone()), vec![]),
                 Some(payload_ty) => {
-                    let resolved = self.resolve_alias(payload_ty, &mut HashSet::new(), span);
+                    let resolved = self.resolve_alias(payload_ty, &mut FxHashSet::default(), span);
                     match self.ty(resolved).kind.clone() {
                         TypeKind::Record(fields, _) => (
                             Ctor::Tagged(variant.name.clone()),
@@ -346,7 +346,7 @@ impl<'hir> Lowerer<'hir> {
     /// sub-patterns into the column type's canonical order.
     fn decon_pattern(&mut self, pat: ThirPatId, col_ty: TypeId) -> DeconPat {
         let pat = self.pat_arena[pat].clone();
-        let col_ty = self.resolve_alias(col_ty, &mut HashSet::new(), pat.span);
+        let col_ty = self.resolve_alias(col_ty, &mut FxHashSet::default(), pat.span);
         match pat.kind {
             ThirPatKind::Error | ThirPatKind::Wildcard | ThirPatKind::Bind(_) => DeconPat::Wild,
             ThirPatKind::True => DeconPat::nullary(Ctor::Bool(true)),
@@ -401,7 +401,7 @@ impl<'hir> Lowerer<'hir> {
         let TypeKind::Record(type_fields, _) = self.ty(col_ty).kind.clone() else {
             return DeconPat::Wild;
         };
-        let by_name: HashMap<&str, ThirPatId> = fields
+        let by_name: FxHashMap<&str, ThirPatId> = fields
             .iter()
             .map(|f| (f.name.as_str(), f.pattern))
             .collect();
@@ -446,7 +446,7 @@ impl<'hir> Lowerer<'hir> {
         col_ty: TypeId,
         span: Span,
     ) -> DeconPat {
-        use std::collections::HashMap;
+        use rustc_hash::FxHashMap;
         match self.ty(col_ty).kind.clone() {
             TypeKind::Optional(_) if tag == "none" => DeconPat::nullary(Ctor::OptNone),
             TypeKind::Optional(inner) if tag == "some" => {
@@ -480,10 +480,10 @@ impl<'hir> Lowerer<'hir> {
                         None => DeconPat::nullary(Ctor::Tagged(tag)),
                         Some(payload_ty) => {
                             let resolved =
-                                self.resolve_alias(payload_ty, &mut HashSet::new(), span);
+                                self.resolve_alias(payload_ty, &mut FxHashSet::default(), span);
                             match self.ty(resolved).kind.clone() {
                                 TypeKind::Record(type_fields, _) => {
-                                    let by_name: HashMap<&str, ThirPatId> = payload
+                                    let by_name: FxHashMap<&str, ThirPatId> = payload
                                         .iter()
                                         .map(|f| (f.name.as_str(), f.pattern))
                                         .collect();
@@ -500,7 +500,7 @@ impl<'hir> Lowerer<'hir> {
                                     }
                                 }
                                 TypeKind::Tuple(type_items) => {
-                                    let by_name: HashMap<&str, ThirPatId> = payload
+                                    let by_name: FxHashMap<&str, ThirPatId> = payload
                                         .iter()
                                         .map(|f| (f.name.as_str(), f.pattern))
                                         .collect();
@@ -577,7 +577,7 @@ fn default_matrix(matrix: &[Vec<DeconPat>]) -> Vec<Vec<DeconPat>> {
 }
 
 /// The set of head constructors appearing in column 0 of the matrix.
-fn present_ctors(matrix: &[Vec<DeconPat>]) -> HashSet<Ctor> {
+fn present_ctors(matrix: &[Vec<DeconPat>]) -> FxHashSet<Ctor> {
     matrix
         .iter()
         .filter_map(|row| match &row[0] {
@@ -601,7 +601,7 @@ fn rewrap(tag: &Ctor, arity: usize, mut witness: Vec<DeconPat>) -> Vec<DeconPat>
 
 /// A witness value for an uncovered first column: a named missing constructor
 /// when one exists, otherwise a wildcard.
-fn missing_witness(sig: &Signature, present: &HashSet<Ctor>) -> DeconPat {
+fn missing_witness(sig: &Signature, present: &FxHashSet<Ctor>) -> DeconPat {
     if present.is_empty() {
         return DeconPat::Wild;
     }

@@ -4,7 +4,7 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn resolve_alias(
         &mut self,
         ty: TypeId,
-        seen: &mut HashSet<BindingId>,
+        seen: &mut FxHashSet<BindingId>,
         span: Span,
     ) -> TypeId {
         // Resolve InferVar chains first so alias resolution sees the concrete type.
@@ -42,7 +42,7 @@ impl<'hir> Lowerer<'hir> {
                 let Some(body) = self.aliases.get(&binding).copied() else {
                     return ty;
                 };
-                let subst: HashMap<BindingId, TypeId> = params.into_iter().zip(args).collect();
+                let subst: FxHashMap<BindingId, TypeId> = params.into_iter().zip(args).collect();
                 let expanded = self.instantiate_type_vars(body, &subst);
                 self.resolve_alias(expanded, seen, span)
             }
@@ -89,7 +89,7 @@ impl<'hir> Lowerer<'hir> {
                         let Some(body) = self.aliases.get(&b).copied() else {
                             return ty;
                         };
-                        let subst: HashMap<BindingId, TypeId> =
+                        let subst: FxHashMap<BindingId, TypeId> =
                             params.into_iter().zip(spine_args).collect();
                         let expanded = self.instantiate_type_vars(body, &subst);
                         self.resolve_alias(expanded, seen, span)
@@ -111,7 +111,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn type_name(&mut self, ty: TypeId) -> String {
         let span = self.type_arena[ty.0 as usize].span;
-        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),
@@ -224,7 +224,7 @@ impl<'hir> Lowerer<'hir> {
     /// always produce distinct keys. This is used as the second half of
     /// the coherence-check map key `(constraint BindingId, target key)`.
     pub(in crate::lower) fn witness_target_key(&mut self, ty: TypeId) -> String {
-        self.witness_target_key_with(ty, &HashMap::new())
+        self.witness_target_key_with(ty, &FxHashMap::default())
     }
 
     /// Like `witness_target_key`, but each binding in `norm` (a witness's own
@@ -234,10 +234,10 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn witness_target_key_with(
         &mut self,
         ty: TypeId,
-        norm: &std::collections::HashMap<BindingId, usize>,
+        norm: &rustc_hash::FxHashMap<BindingId, usize>,
     ) -> String {
         let span = self.type_arena[ty.0 as usize].span;
-        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),

@@ -7,7 +7,7 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn instantiate_type_vars(
         &mut self,
         ty: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> TypeId {
         if subst.is_empty() {
             return ty;
@@ -198,7 +198,7 @@ impl<'hir> Lowerer<'hir> {
                 param_bounds,
                 body,
             } => {
-                let inner_subst: HashMap<BindingId, TypeId> = subst
+                let inner_subst: FxHashMap<BindingId, TypeId> = subst
                     .iter()
                     .filter(|(binding, _)| !params.contains(binding))
                     .map(|(&binding, &ty)| (binding, ty))
@@ -225,7 +225,7 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn instantiate_row_params(
         &mut self,
         ty: TypeId,
-        subst: &HashMap<BindingId, RowTail>,
+        subst: &FxHashMap<BindingId, RowTail>,
     ) -> TypeId {
         if subst.is_empty() {
             return ty;
@@ -365,7 +365,7 @@ impl<'hir> Lowerer<'hir> {
                 param_bounds,
                 body,
             } => {
-                let inner_subst: HashMap<BindingId, RowTail> = subst
+                let inner_subst: FxHashMap<BindingId, RowTail> = subst
                     .iter()
                     .filter(|(binding, _)| !params.contains(binding))
                     .map(|(&binding, &row)| (binding, row))

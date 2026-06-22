@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirDeclKind, HirExprId, HirExprKind, HirHandleClause, HirHandleOp,
@@ -52,7 +52,8 @@ impl<'hir> Lowerer<'hir> {
                     span: expr.span,
                 });
                 let contextual_atom = {
-                    let resolved = self.resolve_alias(expected, &mut HashSet::new(), expr.span);
+                    let resolved =
+                        self.resolve_alias(expected, &mut FxHashSet::default(), expr.span);
                     matches!(
                         self.type_arena[resolved.0 as usize].kind,
                         TypeKind::Union(_, _) | TypeKind::Optional(_) | TypeKind::Maybe(_)
@@ -308,7 +309,7 @@ impl<'hir> Lowerer<'hir> {
             if self.witness_target_key(witness_target) == target_key {
                 return true;
             }
-            let params: HashSet<_> = params.into_iter().map(|param| param.binding).collect();
+            let params: FxHashSet<_> = params.into_iter().map(|param| param.binding).collect();
             !params.is_empty() && self.witness_pattern_matches(witness_target, target, &params)
         })
     }
@@ -317,16 +318,16 @@ impl<'hir> Lowerer<'hir> {
         &mut self,
         pattern: TypeId,
         actual: TypeId,
-        params: &HashSet<BindingId>,
+        params: &FxHashSet<BindingId>,
     ) -> bool {
         let pattern = self.resolve_alias(
             pattern,
-            &mut HashSet::new(),
+            &mut FxHashSet::default(),
             self.type_arena[pattern.0 as usize].span,
         );
         let actual = self.resolve_alias(
             actual,
-            &mut HashSet::new(),
+            &mut FxHashSet::default(),
             self.type_arena[actual.0 as usize].span,
         );
         if self.witness_target_key(pattern) == self.witness_target_key(actual) {

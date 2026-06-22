@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirEffectRow, HirRowTail, HirRowTailKind, HirTypeId, HirTypeKind,

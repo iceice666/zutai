@@ -7,7 +7,7 @@ impl<'hir> Lowerer<'hir> {
         deep: bool,
         span: Span,
     ) -> TypeId {
-        let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(target, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind {
             TypeKind::Record(_, _)
             | TypeKind::InferVar(_)
@@ -42,7 +42,7 @@ impl<'hir> Lowerer<'hir> {
         deep: bool,
         span: Span,
     ) -> Option<(Vec<TypeRecordField>, RowTail)> {
-        let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(target, &mut FxHashSet::default(), span);
         let TypeKind::Record(fields, tail) = self.ty(resolved).kind.clone() else {
             return None;
         };
@@ -52,7 +52,7 @@ impl<'hir> Lowerer<'hir> {
             .map(|field| {
                 let ty = if deep {
                     let resolved_field =
-                        self.resolve_alias(field.ty, &mut HashSet::new(), field.span);
+                        self.resolve_alias(field.ty, &mut FxHashSet::default(), field.span);
                     if matches!(self.ty(resolved_field).kind, TypeKind::Record(_, _)) {
                         self.alloc_type(Type {
                             kind: TypeKind::Patch {

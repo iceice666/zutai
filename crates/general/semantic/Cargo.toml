@@ -10,3 +10,4 @@ zutai-syntax = { path = "../syntax" }
 zutai-thir = { path = "../thir" }
 zutai-tlc = { path = "../tlc" }
 zutai-im = { path = "../../immediate/core" }
+rustc-hash = "2.0.0"

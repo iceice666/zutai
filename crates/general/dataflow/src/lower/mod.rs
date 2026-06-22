@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use indexmap::IndexMap;
 use la_arena::Arena;
@@ -103,17 +103,17 @@ struct Lowerer<'m> {
     types: Arena<DfTy>,
     globals: IndexMap<String, NodeId>,
     spans: Vec<Option<Span>>,
-    type_cache: HashMap<TlcTypeId, DfTyId>,
+    type_cache: FxHashMap<TlcTypeId, DfTyId>,
     /// Local binding table: maps BindingId → the DC NodeId for that binding.
     /// This is the sharing mechanism: each local is lowered once; all references
     /// become edges to the same NodeId (tree-to-graph transformation).
-    local_env: HashMap<BindingId, NodeId>,
+    local_env: FxHashMap<BindingId, NodeId>,
     /// Global bindings: BindingId → string name (for GlobalRef emission).
-    global_names: HashMap<BindingId, String>,
+    global_names: FxHashMap<BindingId, String>,
     /// Global bindings: BindingId → TLC type (for GlobalRef node types).
-    global_types: HashMap<BindingId, TlcTypeId>,
+    global_types: FxHashMap<BindingId, TlcTypeId>,
     /// Type alias binding → TLC body, used only to recover record field names for slots.
-    type_aliases: HashMap<BindingId, TlcTypeId>,
+    type_aliases: FxHashMap<BindingId, TlcTypeId>,
     /// Pre-allocated error type ID.
     error_ty: DfTyId,
     /// Named alias bindings → their canonical DC type `DfTyId`.  All
@@ -124,12 +124,12 @@ struct Lowerer<'m> {
     /// content, making the DfTy arena equirecursively cyclic.  Never cleared — it
     /// is a permanent alias-binding → DfTyId cache that also serves as the
     /// in-progress guard.
-    alias_binding_type: HashMap<BindingId, DfTyId>,
+    alias_binding_type: FxHashMap<BindingId, DfTyId>,
     /// Saturated `TyFun` applications instantiated into concrete DC shapes.
     /// Recursive generic aliases (e.g. `Tree Int`) back-reference the same
     /// application key from their own fields, so this cache is also the
     /// equirecursive placeholder guard.
-    type_app_cache: HashMap<(DfTyId, Vec<DfTyId>), DfTyId>,
+    type_app_cache: FxHashMap<(DfTyId, Vec<DfTyId>), DfTyId>,
     type_app_depth: u32,
 }
 
@@ -144,14 +144,14 @@ impl<'m> Lowerer<'m> {
             types,
             globals: IndexMap::new(),
             spans: Vec::new(),
-            alias_binding_type: HashMap::new(),
-            type_app_cache: HashMap::new(),
+            alias_binding_type: FxHashMap::default(),
+            type_app_cache: FxHashMap::default(),
             type_app_depth: 0,
-            type_cache: HashMap::new(),
-            local_env: HashMap::new(),
-            global_names: HashMap::new(),
-            global_types: HashMap::new(),
-            type_aliases: HashMap::new(),
+            type_cache: FxHashMap::default(),
+            local_env: FxHashMap::default(),
+            global_names: FxHashMap::default(),
+            global_types: FxHashMap::default(),
+            type_aliases: FxHashMap::default(),
             error_ty,
         }
     }
@@ -237,7 +237,7 @@ impl<'m> Lowerer<'m> {
         &mut self,
         ty: TlcTypeId,
         field: &str,
-        seen_aliases: &mut HashSet<BindingId>,
+        seen_aliases: &mut FxHashSet<BindingId>,
     ) -> Option<usize> {
         match self.module.type_arena[ty].clone() {
             TlcType::Record(_) => {
@@ -262,7 +262,7 @@ impl<'m> Lowerer<'m> {
 
     fn record_slot_for_expr_type(&mut self, expr: TlcExprId, field: &str) -> Option<usize> {
         let ty = self.module.expr_types.get(&expr).copied()?;
-        self.record_slot_for_tlc_type(ty, field, &mut HashSet::new())
+        self.record_slot_for_tlc_type(ty, field, &mut FxHashSet::default())
     }
 
     // ── First pass: collect global names and types ────────────────────────────
@@ -355,7 +355,7 @@ fn row_to_fields(row: &Row) -> Vec<(String, bool, TlcTypeId)> {
     result
 }
 
-fn remove_pat_bindings(pat: &TlcPat, env: &mut HashMap<BindingId, NodeId>) {
+fn remove_pat_bindings(pat: &TlcPat, env: &mut FxHashMap<BindingId, NodeId>) {
     match pat {
         TlcPat::Bind(b) => {
             env.remove(b);

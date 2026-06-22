@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use la_arena::{Arena, Idx};
 use zutai_hir::{BindingId, HirImportSource};
@@ -430,12 +430,12 @@ pub struct TlcModule {
     pub decl_arena: Arena<TlcDecl>,
     pub expr_arena: Arena<TlcExpr>,
     pub type_arena: Arena<TlcType>,
-    pub expr_types: HashMap<TlcExprId, TlcTypeId>,
+    pub expr_types: FxHashMap<TlcExprId, TlcTypeId>,
     /// Resolved ordinal slot for each witnessed-method `GetField` (dict access),
     /// keyed by the `GetField` expr id. Value-record slots are resolved from the
     /// base record type during TLC→DC lowering and are absent here.
-    pub dict_field_slots: HashMap<TlcExprId, usize>,
-    pub spans: HashMap<TlcExprId, Span>,
+    pub dict_field_slots: FxHashMap<TlcExprId, usize>,
+    pub spans: FxHashMap<TlcExprId, Span>,
     /// The module's final expression — evaluated to produce the module's value.
     pub final_expr: Option<TlcExprId>,
 }

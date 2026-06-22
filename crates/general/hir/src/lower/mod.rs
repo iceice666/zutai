@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use la_arena::Arena;
 use zutai_syntax::Span;
@@ -48,7 +48,7 @@ pub fn lower_file_with_options(file: &ast::File, options: HirLowerOptions) -> Lo
 
 #[derive(Default)]
 struct Scope {
-    names: HashMap<String, BindingId>,
+    names: FxHashMap<String, BindingId>,
 }
 
 /// Tracks the lexically-nearest `handle` clause body during lowering so that
@@ -69,7 +69,7 @@ struct Lowerer {
     diagnostics: Vec<HirDiagnostic>,
     /// Maps each constraint's `BindingId` to the index-aligned vector of
     /// per-method bindings allocated in Pass 1.  `None` entries are operator methods.
-    constraint_method_bindings: HashMap<BindingId, Vec<Option<BindingId>>>,
+    constraint_method_bindings: FxHashMap<BindingId, Vec<Option<BindingId>>>,
     /// The lexically-nearest enclosing `handle` clause body, if any. `resume`
     /// is only valid when this is `Some(HandlerClauseKind::Operation)`.
     handler_clause: Option<HandlerClauseKind>,
@@ -89,7 +89,7 @@ impl Lowerer {
             type_arena: Arena::new(),
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
-            constraint_method_bindings: HashMap::new(),
+            constraint_method_bindings: FxHashMap::default(),
             handler_clause: None,
         };
         for name in [

@@ -71,7 +71,7 @@ impl<'hir> Lowerer<'hir> {
         }
 
         let result_ty = self.fresh_infer_var(span);
-        let mut layer = HashMap::new();
+        let mut layer = FxHashMap::default();
         for (name, clause) in &op_clauses {
             let param = self.fresh_infer_var(clause.span);
             let result = self.fresh_infer_var(clause.span);

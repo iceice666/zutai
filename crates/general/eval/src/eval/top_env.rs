@@ -39,7 +39,7 @@ impl<'a> Evaluator<'a> {
                         arity,
                         clauses: clauses.as_slice().into(),
                         env: top.clone(),
-                        applied: Vec::new(),
+                        applied: SmallVec::new(),
                         home: self.active_module,
                     };
                     // Functions are pre-evaluated to closures.

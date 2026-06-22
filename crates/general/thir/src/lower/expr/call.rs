@@ -11,11 +11,11 @@ impl<'hir> Lowerer<'hir> {
     /// parameter with a fresh InferVar. Returns the inner type and the fresh
     /// infer-variable TypeIds in parameter order.
     pub(super) fn peel_forall(&mut self, ty: TypeId, span: Span) -> (TypeId, Vec<TypeId>) {
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         let resolved = self.resolve(resolved);
         match self.type_arena[resolved.0 as usize].kind.clone() {
             TypeKind::ForAll { params, body, .. } => {
-                let mut subst = HashMap::new();
+                let mut subst = FxHashMap::default();
                 let mut infer_ids = Vec::with_capacity(params.len());
                 for param in &params {
                     let fresh = self.fresh_infer_var(span);
@@ -81,7 +81,7 @@ impl<'hir> Lowerer<'hir> {
         let (from, to, instantiation) = if type_vars.is_empty() {
             (from, to, Vec::new())
         } else {
-            let mut subst = HashMap::new();
+            let mut subst = FxHashMap::default();
             let mut inst = Vec::new();
             for var in &type_vars {
                 let fresh = self.fresh_infer_var(span);
@@ -108,7 +108,7 @@ impl<'hir> Lowerer<'hir> {
         let (from, to) = if row_params.is_empty() {
             (from, to)
         } else {
-            let mut row_subst = HashMap::new();
+            let mut row_subst = FxHashMap::default();
             for var in &row_params {
                 row_subst.insert(*var, self.fresh_row_var());
             }
@@ -123,7 +123,7 @@ impl<'hir> Lowerer<'hir> {
         // an effectful computation, discharge that row into the current ambient
         // or handler layer and expose the pure base type to the caller.
         let result_ty = self.resolve(to);
-        let effect_ty = self.resolve_alias(to, &mut HashSet::new(), span);
+        let effect_ty = self.resolve_alias(to, &mut FxHashSet::default(), span);
         let result_ty = match self.type_arena[effect_ty.0 as usize].kind.clone() {
             TypeKind::Effect { base, row } => {
                 self.discharge_row(&row, span);
@@ -255,7 +255,7 @@ impl<'hir> Lowerer<'hir> {
             Some(ty) => {
                 let ty = match self.poly_schemes.get(&binding).cloned() {
                     Some(scheme) => {
-                        let subst: HashMap<u32, TypeId> = scheme
+                        let subst: FxHashMap<u32, TypeId> = scheme
                             .into_iter()
                             .map(|v| (v, self.fresh_infer_var(span)))
                             .collect();
@@ -383,7 +383,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     fn strip_forall_expected(&mut self, expected: TypeId, span: Span) -> TypeId {
-        let mut current = self.resolve_alias(expected, &mut HashSet::new(), span);
+        let mut current = self.resolve_alias(expected, &mut FxHashSet::default(), span);
         loop {
             let resolved = self.resolve(current);
             match self.type_arena[resolved.0 as usize].kind.clone() {

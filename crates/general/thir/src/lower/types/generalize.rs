@@ -75,8 +75,8 @@ impl<'hir> Lowerer<'hir> {
     /// All `InferVar` ids free in the stored type of any binding other than
     /// `exclude`. These are "in the environment": generalizing them would be
     /// unsound, so they stay monomorphic.
-    pub(in crate::lower) fn env_infer_vars(&self, exclude: BindingId) -> HashSet<u32> {
-        let mut set = HashSet::new();
+    pub(in crate::lower) fn env_infer_vars(&self, exclude: BindingId) -> FxHashSet<u32> {
+        let mut set = FxHashSet::default();
         for (&binding, &ty) in &self.value_types {
             if binding == exclude {
                 continue;
@@ -113,7 +113,7 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn instantiate_infer_vars(
         &mut self,
         ty: TypeId,
-        subst: &HashMap<u32, TypeId>,
+        subst: &FxHashMap<u32, TypeId>,
     ) -> TypeId {
         let ty = self.resolve(ty);
         if subst.is_empty() {

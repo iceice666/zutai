@@ -70,20 +70,24 @@ pub(super) fn eval_default_analysis(
 /// applied across a module boundary.
 fn eval_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
     let mut registry: ModuleRegistry = Vec::new();
-    let mut module_paths: HashMap<PathBuf, ModuleId> = HashMap::new();
-    let mut imports: HashMap<ImportKey, Value> = HashMap::new();
+    let mut module_paths: FxHashMap<PathBuf, ModuleId> = FxHashMap::default();
+    let mut imports: FxHashMap<ImportKey, Value> = FxHashMap::default();
+    let caches = EvalCaches::default();
     eval_analysis_into(
         analysis,
         &mut registry,
         &mut module_paths,
         &mut imports,
         false,
+        &caches,
     )?;
     let witnesses = runtime_witnesses(analysis, &module_paths);
     // The root module is the last entry in the registry.
     let root_id = ModuleId(registry.len() - 1);
     let root_file = Arc::clone(registry.last().unwrap());
-    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports, &witnesses);
+    let evaluator = Evaluator::new(
+        &root_file, &registry, root_id, &imports, &witnesses, &caches,
+    );
     let top = evaluator.build_top_env();
     let result = evaluator.eval(root_file.final_expr, &top)?;
     force_deep(result, &evaluator)
@@ -93,19 +97,23 @@ fn eval_analysis_allow_repointed_print(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<Value, EvalError> {
     let mut registry: ModuleRegistry = Vec::new();
-    let mut module_paths: HashMap<PathBuf, ModuleId> = HashMap::new();
-    let mut imports: HashMap<ImportKey, Value> = HashMap::new();
+    let mut module_paths: FxHashMap<PathBuf, ModuleId> = FxHashMap::default();
+    let mut imports: FxHashMap<ImportKey, Value> = FxHashMap::default();
+    let caches = EvalCaches::default();
     eval_analysis_into(
         analysis,
         &mut registry,
         &mut module_paths,
         &mut imports,
         true,
+        &caches,
     )?;
     let witnesses = runtime_witnesses(analysis, &module_paths);
     let root_id = ModuleId(registry.len() - 1);
     let root_file = Arc::clone(registry.last().unwrap());
-    let evaluator = Evaluator::new(&root_file, &registry, root_id, &imports, &witnesses);
+    let evaluator = Evaluator::new(
+        &root_file, &registry, root_id, &imports, &witnesses, &caches,
+    );
     let top = evaluator.build_top_env();
     let result = evaluator.eval(root_file.final_expr, &top)?;
     force_deep(result, &evaluator)
@@ -158,9 +166,10 @@ fn has_tlc_effect_syntax_recursive(analysis: &zutai_semantic::Analysis) -> bool 
 fn eval_analysis_into(
     analysis: &zutai_semantic::Analysis,
     registry: &mut ModuleRegistry,
-    module_paths: &mut HashMap<PathBuf, ModuleId>,
-    imports: &mut HashMap<ImportKey, Value>,
+    module_paths: &mut FxHashMap<PathBuf, ModuleId>,
+    imports: &mut FxHashMap<ImportKey, Value>,
     allow_repointed_print: bool,
+    caches: &EvalCaches,
 ) -> Result<ModuleId, EvalError> {
     let file = if allow_repointed_print {
         if has_tlc_effect_syntax(analysis) {
@@ -191,11 +200,12 @@ fn eval_analysis_into(
                 module_paths,
                 imports,
                 allow_repointed_print,
+                caches,
             )?;
             // Now evaluate the dependency's final expression in its own module.
             let dep_file = Arc::clone(&registry[dep_id.0]);
             let witnesses = runtime_witnesses(module, module_paths);
-            let dep_ev = Evaluator::new(&dep_file, registry, dep_id, imports, &witnesses);
+            let dep_ev = Evaluator::new(&dep_file, registry, dep_id, imports, &witnesses, caches);
             let dep_top = dep_ev.build_top_env();
             let dep_result = dep_ev.eval(dep_file.final_expr, &dep_top)?;
             let dep_value = force_deep(dep_result, &dep_ev)?;
@@ -214,7 +224,7 @@ fn eval_analysis_into(
 
 fn runtime_witnesses(
     analysis: &zutai_semantic::Analysis,
-    module_paths: &HashMap<PathBuf, ModuleId>,
+    module_paths: &FxHashMap<PathBuf, ModuleId>,
 ) -> Vec<RuntimeWitness> {
     analysis
         .witness_exports
@@ -231,7 +241,7 @@ fn runtime_witnesses(
 }
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with no imports.
 pub fn eval_thir(file: &ThirFile) -> Result<Value, EvalError> {
-    eval_thir_with_imports(file, &HashMap::new())
+    eval_thir_with_imports(file, &FxHashMap::default())
 }
 
 /// Evaluate a pre-analyzed, gate-checked `ThirFile` with resolved import values.
@@ -240,11 +250,12 @@ pub fn eval_thir(file: &ThirFile) -> Result<Value, EvalError> {
 /// registered as module 0 in a single-entry registry.
 pub fn eval_thir_with_imports(
     file: &ThirFile,
-    imports: &HashMap<ImportKey, Value>,
+    imports: &FxHashMap<ImportKey, Value>,
 ) -> Result<Value, EvalError> {
     let registry: ModuleRegistry = vec![Arc::new(file.clone())];
     let witnesses = Vec::new();
-    let evaluator = Evaluator::new(file, &registry, ModuleId(0), imports, &witnesses);
+    let caches = EvalCaches::default();
+    let evaluator = Evaluator::new(file, &registry, ModuleId(0), imports, &witnesses, &caches);
     let top = evaluator.build_top_env();
     let result = evaluator.eval(file.final_expr, &top)?;
     force_deep(result, &evaluator)

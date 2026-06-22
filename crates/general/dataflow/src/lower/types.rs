@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use zutai_hir::BindingId;
 use zutai_tlc::{Literal as TlcLit, PrimTy, TlcTupleField, TlcType, TlcTypeId, TlcTypeVar};
 
@@ -191,8 +191,8 @@ impl<'m> Lowerer<'m> {
 
         let place = self.types.alloc(DfTy::Error);
         self.type_app_cache.insert(key, place);
-        let subst: HashMap<DfTyVar, DfTyId> = params.into_iter().zip(args).collect();
-        let lowered = self.instantiate_df_type(body, &subst, &mut HashMap::new());
+        let subst: FxHashMap<DfTyVar, DfTyId> = params.into_iter().zip(args).collect();
+        let lowered = self.instantiate_df_type(body, &subst, &mut FxHashMap::default());
         let body_ty = self.types[lowered].clone();
         self.types[place] = body_ty;
         self.type_app_depth -= 1;
@@ -202,10 +202,10 @@ impl<'m> Lowerer<'m> {
     fn instantiate_df_type(
         &mut self,
         ty: DfTyId,
-        subst: &HashMap<DfTyVar, DfTyId>,
-        memo: &mut HashMap<DfTyId, DfTyId>,
+        subst: &FxHashMap<DfTyVar, DfTyId>,
+        memo: &mut FxHashMap<DfTyId, DfTyId>,
     ) -> DfTyId {
-        if !self.df_ty_mentions(ty, subst, &mut HashSet::new()) {
+        if !self.df_ty_mentions(ty, subst, &mut FxHashSet::default()) {
             return ty;
         }
         match self.types[ty].clone() {
@@ -326,8 +326,8 @@ impl<'m> Lowerer<'m> {
     fn df_ty_mentions(
         &self,
         ty: DfTyId,
-        subst: &HashMap<DfTyVar, DfTyId>,
-        visited: &mut HashSet<DfTyId>,
+        subst: &FxHashMap<DfTyVar, DfTyId>,
+        visited: &mut FxHashSet<DfTyId>,
     ) -> bool {
         if !visited.insert(ty) {
             return false;

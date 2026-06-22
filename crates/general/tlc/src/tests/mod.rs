@@ -35,15 +35,15 @@ pub(super) fn assert_no_data_loss(m: &TlcModule) {
 }
 
 pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap;
     TlcModule {
         decls: Vec::new(),
         decl_arena: la_arena::Arena::new(),
         expr_arena: la_arena::Arena::new(),
         type_arena,
-        expr_types: HashMap::new(),
-        dict_field_slots: HashMap::new(),
-        spans: HashMap::new(),
+        expr_types: FxHashMap::default(),
+        dict_field_slots: FxHashMap::default(),
+        spans: FxHashMap::default(),
         final_expr: None,
     }
 }
@@ -64,15 +64,15 @@ mod types_equal;
 #[test]
 fn tlc_module_is_constructible() {
     use la_arena::Arena;
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap;
     let _m = TlcModule {
         decls: Vec::new(),
         decl_arena: Arena::new(),
         expr_arena: Arena::new(),
         type_arena: Arena::new(),
-        expr_types: HashMap::new(),
-        dict_field_slots: HashMap::new(),
-        spans: HashMap::new(),
+        expr_types: FxHashMap::default(),
+        dict_field_slots: FxHashMap::default(),
+        spans: FxHashMap::default(),
         final_expr: None,
     };
 }

@@ -286,7 +286,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
         }
     }
 
-    let mut visited = std::collections::HashSet::new();
+    let mut visited = rustc_hash::FxHashSet::default();
     let mut stack = to_visit;
     while let Some(id) = stack.pop() {
         if !visited.insert(id) {

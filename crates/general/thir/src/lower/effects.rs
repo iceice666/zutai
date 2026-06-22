@@ -31,7 +31,11 @@ impl<'hir> Lowerer<'hir> {
         return_ty: TypeId,
     ) -> (TypeId, EffectRow) {
         let saved = std::mem::replace(&mut self.effect_ambient, EffectRow::closed_empty());
-        let resolved = self.resolve_alias(return_ty, &mut HashSet::new(), self.ty(return_ty).span);
+        let resolved = self.resolve_alias(
+            return_ty,
+            &mut FxHashSet::default(),
+            self.ty(return_ty).span,
+        );
         match self.type_arena[resolved.0 as usize].kind.clone() {
             TypeKind::Effect { base, row } => {
                 self.effect_ambient = row;
@@ -136,7 +140,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn is_non_function_effect_type(&mut self, ty: TypeId) -> bool {
         let span = self.ty(ty).span;
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         matches!(
             &self.type_arena[resolved.0 as usize].kind,
             TypeKind::Effect { row, .. } if !row.is_pure()
@@ -145,7 +149,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn is_never_type(&mut self, ty: TypeId) -> bool {
         let span = self.ty(ty).span;
-        let resolved = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         matches!(self.type_arena[resolved.0 as usize].kind, TypeKind::Never)
     }
 

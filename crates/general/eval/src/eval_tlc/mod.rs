@@ -12,7 +12,7 @@
 //! `peek()` always returns `Some`; there are no deferred thunks in TLC
 //! evaluation.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::rc::Rc;
 
 use zutai_thir::ImportKey;
@@ -56,8 +56,8 @@ pub struct TlcEvaluator<'a> {
     pub module: &'a TlcModule,
     registry: Option<&'a [&'a TlcModule]>,
     active_module: ModuleId,
-    imports: Option<&'a HashMap<ImportKey, Value>>,
-    operator_witnesses: Option<&'a HashMap<(String, String), Value>>,
+    imports: Option<&'a FxHashMap<ImportKey, Value>>,
+    operator_witnesses: Option<&'a FxHashMap<(String, String), Value>>,
     defer_aggregates: bool,
 }
 
@@ -73,6 +73,7 @@ pub use builtin::eval_literal;
 pub use force::tlc_force_deep;
 
 use builtin::{lit_matches, tlc_module_can_defer_aggregates, value_cont, value_type_name};
+pub(crate) use smallvec::SmallVec;
 
 impl<'a> TlcEvaluator<'a> {
     pub fn new(module: &'a TlcModule) -> Self {
@@ -86,7 +87,10 @@ impl<'a> TlcEvaluator<'a> {
         }
     }
 
-    pub fn new_with_imports(module: &'a TlcModule, imports: &'a HashMap<ImportKey, Value>) -> Self {
+    pub fn new_with_imports(
+        module: &'a TlcModule,
+        imports: &'a FxHashMap<ImportKey, Value>,
+    ) -> Self {
         Self {
             module,
             registry: None,
@@ -100,7 +104,7 @@ impl<'a> TlcEvaluator<'a> {
     pub fn new_in_registry(
         registry: &'a [&'a TlcModule],
         active_module: ModuleId,
-        imports: &'a HashMap<ImportKey, Value>,
+        imports: &'a FxHashMap<ImportKey, Value>,
     ) -> Result<Self, EvalError> {
         let module = registry
             .get(active_module.0)
@@ -119,8 +123,8 @@ impl<'a> TlcEvaluator<'a> {
     pub fn new_in_registry_with_operator_witnesses(
         registry: &'a [&'a TlcModule],
         active_module: ModuleId,
-        imports: &'a HashMap<ImportKey, Value>,
-        operator_witnesses: &'a HashMap<(String, String), Value>,
+        imports: &'a FxHashMap<ImportKey, Value>,
+        operator_witnesses: &'a FxHashMap<(String, String), Value>,
     ) -> Result<Self, EvalError> {
         let module = registry
             .get(active_module.0)

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::ir::{Row, TlcExpr, TlcExprId, TlcHandleClause, TlcType, TlcTypeId};
 
@@ -258,7 +258,7 @@ impl<'module> EffectElaborator<'module> {
             resume_ty,
         );
 
-        let mut subst = HashMap::new();
+        let mut subst = FxHashMap::default();
         let handler = self.rewrite_handler_expr(
             clause.body,
             resume_lam,

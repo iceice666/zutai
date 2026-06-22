@@ -2,23 +2,23 @@
 //!
 //! Converts flat ANF bindings into basic blocks with phi nodes at join points.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use zutai_anf::{AnfArm, AnfAtom, AnfBody, AnfExpr, AnfPattern, AnfTupleItem, AnfTuplePatItem};
 
 // ── Free variable analysis ─────────────────────────────────────────────────────
 
-pub(super) fn free_vars_atom(atom: &AnfAtom) -> HashSet<String> {
+pub(super) fn free_vars_atom(atom: &AnfAtom) -> FxHashSet<String> {
     match atom {
         AnfAtom::Var(name) => {
-            let mut s = HashSet::new();
+            let mut s = FxHashSet::default();
             s.insert(name.clone());
             s
         }
-        AnfAtom::Lit(_) | AnfAtom::Global(_) => HashSet::new(),
+        AnfAtom::Lit(_) | AnfAtom::Global(_) => FxHashSet::default(),
     }
 }
 
-pub(super) fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
+pub(super) fn free_vars_expr(expr: &AnfExpr) -> FxHashSet<String> {
     match expr {
         AnfExpr::Atom(atom) => free_vars_atom(atom),
         AnfExpr::Apply { func, arg } => free_vars_atom(func)
@@ -67,11 +67,11 @@ pub(super) fn free_vars_expr(expr: &AnfExpr) -> HashSet<String> {
             .collect(),
         AnfExpr::Variant { value, .. } => free_vars_atom(value),
         AnfExpr::HostOp { value, .. } => free_vars_atom(value),
-        AnfExpr::Error => HashSet::new(),
+        AnfExpr::Error => FxHashSet::default(),
     }
 }
 
-pub(super) fn free_vars_arm(arm: &AnfArm) -> HashSet<String> {
+pub(super) fn free_vars_arm(arm: &AnfArm) -> FxHashSet<String> {
     let mut fv = free_vars_body(&arm.body);
     if let Some(guard) = &arm.guard {
         fv.extend(free_vars_body(guard));
@@ -102,9 +102,9 @@ pub(super) fn pattern_bindings(pat: &AnfPattern) -> Vec<String> {
     }
 }
 
-pub(super) fn free_vars_body(body: &AnfBody) -> HashSet<String> {
-    let mut fv = HashSet::new();
-    let mut bound = HashSet::new();
+pub(super) fn free_vars_body(body: &AnfBody) -> FxHashSet<String> {
+    let mut fv = FxHashSet::default();
+    let mut bound = FxHashSet::default();
     for (name, expr) in &body.bindings {
         for v in free_vars_expr(expr) {
             if !bound.contains(&v) {

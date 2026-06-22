@@ -282,11 +282,11 @@ impl<'hir> Lowerer<'hir> {
             return self.infer_record_expr(id, fields, span);
         };
 
-        let expected_by_name: HashMap<_, _> = expected_fields
+        let expected_by_name: FxHashMap<_, _> = expected_fields
             .iter()
             .map(|field| (field.name.as_str(), field))
             .collect();
-        let actual_names: HashSet<_> = fields.iter().map(|field| field.name.as_str()).collect();
+        let actual_names: FxHashSet<_> = fields.iter().map(|field| field.name.as_str()).collect();
 
         for expected_field in &expected_fields {
             if !expected_field.optional && !actual_names.contains(expected_field.name.as_str()) {
@@ -395,7 +395,7 @@ impl<'hir> Lowerer<'hir> {
             return self.error_expr(id, span);
         }
 
-        let by_name: HashMap<&str, &TypeRecordField> = record_fields
+        let by_name: FxHashMap<&str, &TypeRecordField> = record_fields
             .iter()
             .map(|field| (field.name.as_str(), field))
             .collect();
@@ -620,8 +620,8 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(super) fn resolve_alias_for_expr(&mut self, ty: TypeId) -> TypeId {
-        use std::collections::HashSet;
+        use rustc_hash::FxHashSet;
 
-        self.resolve_alias(ty, &mut HashSet::new(), self.ty(ty).span)
+        self.resolve_alias(ty, &mut FxHashSet::default(), self.ty(ty).span)
     }
 }

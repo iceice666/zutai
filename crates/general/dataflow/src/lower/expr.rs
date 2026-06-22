@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use zutai_tlc::{BuiltinOp, PrimTy, TlcExpr, TlcExprId, TlcTupleItem, TlcType};
 
@@ -165,7 +165,7 @@ impl<'m> Lowerer<'m> {
                         let value = self.lower_expr(*expr_id);
                         let slot = result_ty
                             .and_then(|ty| {
-                                self.record_slot_for_tlc_type(ty, name, &mut HashSet::new())
+                                self.record_slot_for_tlc_type(ty, name, &mut FxHashSet::default())
                             })
                             .or_else(|| self.record_slot_for_df_ty(df_ty, name))
                             .unwrap_or(0);

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use zutai_hir::BindingId;
 
@@ -13,7 +13,7 @@ impl<'module> EffectElaborator<'module> {
         id: TlcExprId,
         resume_lam: TlcExprId,
         result_ty: TlcTypeId,
-        subst: &mut HashMap<BindingId, BindingId>,
+        subst: &mut FxHashMap<BindingId, BindingId>,
         parent_handlers: &[TlcHandleClause],
         k: Kont<'_>,
     ) -> TlcExprId {
@@ -154,7 +154,7 @@ impl<'module> EffectElaborator<'module> {
         items: Vec<TlcExprId>,
         resume_lam: TlcExprId,
         result_ty: TlcTypeId,
-        subst: &mut HashMap<BindingId, BindingId>,
+        subst: &mut FxHashMap<BindingId, BindingId>,
         parent_handlers: &[TlcHandleClause],
         k: Kont<'_>,
     ) -> TlcExprId {
@@ -256,7 +256,7 @@ impl<'module> EffectElaborator<'module> {
         id: TlcExprId,
         resume_lam: TlcExprId,
         result_ty: TlcTypeId,
-        subst: &mut HashMap<BindingId, BindingId>,
+        subst: &mut FxHashMap<BindingId, BindingId>,
         parent_handlers: &[TlcHandleClause],
     ) -> TlcExprId {
         match self.module.expr_arena[id].clone() {
@@ -530,7 +530,7 @@ impl<'module> EffectElaborator<'module> {
     pub(super) fn freshen_pat(
         &mut self,
         pat: crate::ir::TlcPat,
-        subst: &mut HashMap<BindingId, BindingId>,
+        subst: &mut FxHashMap<BindingId, BindingId>,
         old_bindings: &mut Vec<(BindingId, Option<BindingId>)>,
     ) -> crate::ir::TlcPat {
         match pat {
@@ -581,7 +581,7 @@ impl<'module> EffectElaborator<'module> {
         items: Vec<TlcExprId>,
         resume_lam: TlcExprId,
         result_ty: TlcTypeId,
-        subst: &mut HashMap<BindingId, BindingId>,
+        subst: &mut FxHashMap<BindingId, BindingId>,
         parent_handlers: &[TlcHandleClause],
     ) -> TlcExprId {
         if items

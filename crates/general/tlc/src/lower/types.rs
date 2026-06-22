@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 use zutai_thir::{
@@ -32,7 +32,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Text => self.alloc_type(TlcType::Prim(PrimTy::Str)),
             TypeKind::Function { from, to } => {
                 let from_tlc = self.lower_type(from);
-                match self.lower_effect_type_to_tlc(to, &HashMap::new()) {
+                match self.lower_effect_type_to_tlc(to, &FxHashMap::default()) {
                     Some((base_tlc, eff_row)) => {
                         self.alloc_type(TlcType::Fun(from_tlc, base_tlc, eff_row))
                     }
@@ -57,7 +57,7 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_type(TlcType::Maybe(inner_tlc))
             }
             TypeKind::Patch { target, deep } => {
-                self.lower_patch_type_with_subst(target, deep, &HashMap::new())
+                self.lower_patch_type_with_subst(target, deep, &FxHashMap::default())
             }
             TypeKind::Record(fields, tail) => {
                 let row_fields: Vec<(String, TlcTypeId, bool)> = fields
@@ -180,7 +180,7 @@ impl<'thir> Lowerer<'thir> {
     fn lower_effect_type_to_tlc(
         &mut self,
         ty: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> Option<(TlcTypeId, Row)> {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::TypeVar(binding) => subst
@@ -214,7 +214,7 @@ impl<'thir> Lowerer<'thir> {
         &mut self,
         binding: BindingId,
         args: &[TypeId],
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> Option<(TlcTypeId, Row)> {
         let (params, body) = self.type_alias_params_body(binding)?;
         if params.len() != args.len() {
@@ -230,7 +230,7 @@ impl<'thir> Lowerer<'thir> {
     fn lower_effect_row_to_tlc_with_subst(
         &mut self,
         row: &EffectRow,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> Row {
         let fields: Vec<_> = row
             .ops
@@ -249,7 +249,7 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn lower_type_with_subst(
         &mut self,
         ty: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> TlcTypeId {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::TypeVar(binding) => match subst.get(&binding).copied() {
@@ -372,13 +372,13 @@ impl<'thir> Lowerer<'thir> {
 
     /// Collect the bindings of every `<Rest>` row parameter used as a row tail in
     /// `sig`. These quantify with `Kind::Row`, unlike ordinary type parameters.
-    pub(super) fn sig_row_param_bindings(&self, sig: TypeId) -> HashSet<u32> {
-        let mut out = HashSet::new();
+    pub(super) fn sig_row_param_bindings(&self, sig: TypeId) -> FxHashSet<u32> {
+        let mut out = FxHashSet::default();
         self.collect_sig_row_params(sig, &mut out);
         out
     }
 
-    fn collect_sig_row_params(&self, ty: TypeId, out: &mut HashSet<u32>) {
+    fn collect_sig_row_params(&self, ty: TypeId, out: &mut FxHashSet<u32>) {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Function { from, to } => {
                 self.collect_sig_row_params(from, out);
@@ -430,7 +430,7 @@ impl<'thir> Lowerer<'thir> {
         &mut self,
         target: TypeId,
         deep: bool,
-        subst: &HashMap<BindingId, TypeId>,
+        subst: &FxHashMap<BindingId, TypeId>,
     ) -> TlcTypeId {
         let Some((fields, tail, env)) = self.record_shape_with_subst(target, subst) else {
             return self.alloc_type(TlcType::Record(Row::REmpty));
@@ -455,8 +455,8 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn record_shape_with_subst(
         &self,
         target: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
-    ) -> Option<(Vec<TypeRecordField>, RowTail, HashMap<BindingId, TypeId>)> {
+        subst: &FxHashMap<BindingId, TypeId>,
+    ) -> Option<(Vec<TypeRecordField>, RowTail, FxHashMap<BindingId, TypeId>)> {
         let mut ty = target;
         let mut env = subst.clone();
         let mut fuel = 64u32;
@@ -555,7 +555,7 @@ impl<'thir> Lowerer<'thir> {
             return Kind::ground();
         };
         let result = if params.len() == args.len() {
-            let subst: HashMap<BindingId, TypeId> =
+            let subst: FxHashMap<BindingId, TypeId> =
                 params.iter().copied().zip(args.iter().copied()).collect();
             Kind::Type(self.thir_universe_with_subst(ty, &subst))
         } else {
@@ -566,15 +566,15 @@ impl<'thir> Lowerer<'thir> {
         })
     }
 
-    fn thir_universe_with_subst(&self, ty: TypeId, subst: &HashMap<BindingId, TypeId>) -> u32 {
-        self.thir_universe_with_subst_seen(ty, subst, &mut HashSet::new())
+    fn thir_universe_with_subst(&self, ty: TypeId, subst: &FxHashMap<BindingId, TypeId>) -> u32 {
+        self.thir_universe_with_subst_seen(ty, subst, &mut FxHashSet::default())
     }
 
     fn thir_universe_with_subst_seen(
         &self,
         ty: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
-        alias_seen: &mut HashSet<BindingId>,
+        subst: &FxHashMap<BindingId, TypeId>,
+        alias_seen: &mut FxHashSet<BindingId>,
     ) -> u32 {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type => 1,
@@ -765,7 +765,7 @@ impl<'thir> Lowerer<'thir> {
         scheme_ty: TypeId,
         ref_ty: TypeId,
     ) -> Vec<(TlcTypeVar, TlcTypeId)> {
-        let mut mapping: HashMap<u32, TypeId> = HashMap::new();
+        let mut mapping: FxHashMap<u32, TypeId> = FxHashMap::default();
         self.match_types(scheme_ty, ref_ty, &mut mapping);
         scheme_vars
             .iter()
@@ -781,7 +781,7 @@ impl<'thir> Lowerer<'thir> {
             .collect()
     }
 
-    fn match_types(&self, template: TypeId, instance: TypeId, out: &mut HashMap<u32, TypeId>) {
+    fn match_types(&self, template: TypeId, instance: TypeId, out: &mut FxHashMap<u32, TypeId>) {
         use TypeKind::*;
         match self.thir.type_arena[template.0 as usize].kind.clone() {
             InferVar(v) => {

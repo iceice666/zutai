@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use la_arena::Arena;
 
@@ -12,7 +12,7 @@ use super::subst::*;
 
 pub(super) fn normalize_ty(
     arena: &mut Arena<TlcType>,
-    alias_env: &HashMap<u32, TlcTypeId>,
+    alias_env: &FxHashMap<u32, TlcTypeId>,
     ty: TlcTypeId,
     fuel: &mut u32,
     fuel_limit: u32,
@@ -133,7 +133,7 @@ pub(super) fn normalize_ty(
 
 pub(super) fn normalize_tuple_fields(
     arena: &mut Arena<TlcType>,
-    alias_env: &HashMap<u32, TlcTypeId>,
+    alias_env: &FxHashMap<u32, TlcTypeId>,
     items: &[TlcTupleField],
     fuel: &mut u32,
     fuel_limit: u32,
@@ -159,7 +159,7 @@ pub(super) fn normalize_tuple_fields(
 
 pub(super) fn normalize_row(
     arena: &mut Arena<TlcType>,
-    alias_env: &HashMap<u32, TlcTypeId>,
+    alias_env: &FxHashMap<u32, TlcTypeId>,
     row: &Row,
     fuel: &mut u32,
     fuel_limit: u32,

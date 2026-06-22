@@ -4,7 +4,7 @@
 //! Tarjan returns SCCs in reverse topological order; callers must reverse the
 //! result to get forward topological order (dependencies before dependents).
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_dataflow::{
     DataflowGraph, DfNodeKind, DfPattern, DfTupleNodeItem, DfTuplePatItem, NodeId,
@@ -15,8 +15,8 @@ use zutai_dataflow::{
 fn collect_global_refs(
     graph: &DataflowGraph,
     root: NodeId,
-    out: &mut HashSet<String>,
-    visited: &mut HashSet<NodeId>,
+    out: &mut FxHashSet<String>,
+    visited: &mut FxHashSet<NodeId>,
 ) {
     if !visited.insert(root) {
         return;
@@ -115,8 +115,8 @@ fn collect_global_refs(
 fn collect_pat_refs(
     graph: &DataflowGraph,
     pat: &DfPattern,
-    out: &mut HashSet<String>,
-    visited: &mut HashSet<NodeId>,
+    out: &mut FxHashSet<String>,
+    visited: &mut FxHashSet<NodeId>,
 ) {
     match pat {
         DfPattern::Bind(id) => collect_global_refs(graph, *id, out, visited),
@@ -153,13 +153,13 @@ fn collect_pat_refs(
 /// - `self_loops`: set of global names that have a self-edge.
 pub fn build_dep_graph(
     graph: &DataflowGraph,
-) -> (HashMap<String, HashSet<String>>, HashSet<String>) {
-    let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut self_loops: HashSet<String> = HashSet::new();
+) -> (FxHashMap<String, FxHashSet<String>>, FxHashSet<String>) {
+    let mut adj: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
+    let mut self_loops: FxHashSet<String> = FxHashSet::default();
 
     for (name, &root) in &graph.globals {
-        let mut all_refs: HashSet<String> = HashSet::new();
-        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut all_refs: FxHashSet<String> = FxHashSet::default();
+        let mut visited: FxHashSet<NodeId> = FxHashSet::default();
         collect_global_refs(graph, root, &mut all_refs, &mut visited);
 
         if all_refs.remove(name.as_str()) {
@@ -177,10 +177,10 @@ pub fn build_dep_graph(
 // ── Tarjan's SCC ─────────────────────────────────────────────────────────────
 
 struct TarjanState<'a> {
-    adj: &'a HashMap<String, HashSet<String>>,
-    index: HashMap<String, usize>,
-    lowlink: HashMap<String, usize>,
-    on_stack: HashSet<String>,
+    adj: &'a FxHashMap<String, FxHashSet<String>>,
+    index: FxHashMap<String, usize>,
+    lowlink: FxHashMap<String, usize>,
+    on_stack: FxHashSet<String>,
     stack: Vec<String>,
     counter: usize,
     sccs: Vec<Vec<String>>,
@@ -234,12 +234,12 @@ impl<'a> TarjanState<'a> {
 /// (has an edge to Y), then Y appears *before* X. The first SCC has no
 /// outgoing edges to later SCCs — it is a leaf in the condensation DAG and
 /// may safely be emitted first. No reversal is needed by callers.
-pub fn tarjan_sccs(adj: &HashMap<String, HashSet<String>>) -> Vec<Vec<String>> {
+pub fn tarjan_sccs(adj: &FxHashMap<String, FxHashSet<String>>) -> Vec<Vec<String>> {
     let mut state = TarjanState {
         adj,
-        index: HashMap::new(),
-        lowlink: HashMap::new(),
-        on_stack: HashSet::new(),
+        index: FxHashMap::default(),
+        lowlink: FxHashMap::default(),
+        on_stack: FxHashSet::default(),
         stack: Vec::new(),
         counter: 0,
         sccs: Vec::new(),

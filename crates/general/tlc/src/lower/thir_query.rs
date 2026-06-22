@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 use zutai_thir::{ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
@@ -8,7 +8,7 @@ use super::*;
 
 impl<'thir> Lowerer<'thir> {
     pub(super) fn thir_type_to_resolved_witness_key(&self, ty: TypeId) -> Option<WitnessTargetKey> {
-        let key = self.structural_witness_key(ty, &mut HashSet::new())?;
+        let key = self.structural_witness_key(ty, &mut FxHashSet::default())?;
         match key.as_str() {
             "Int" => Some(WitnessTargetKey::Int),
             "Float" => Some(WitnessTargetKey::Float),
@@ -115,7 +115,7 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn structural_witness_key(
         &self,
         ty: TypeId,
-        seen: &mut HashSet<BindingId>,
+        seen: &mut FxHashSet<BindingId>,
     ) -> Option<String> {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Int => Some("Int".to_string()),
@@ -243,8 +243,8 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn structural_witness_key_subst(
         &self,
         ty: TypeId,
-        subst: &HashMap<BindingId, TypeId>,
-        seen: &mut HashSet<BindingId>,
+        subst: &FxHashMap<BindingId, TypeId>,
+        seen: &mut FxHashSet<BindingId>,
     ) -> Option<String> {
         match self.thir.type_arena[ty.0 as usize].kind {
             TypeKind::TypeVar(binding) => subst

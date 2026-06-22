@@ -6,7 +6,7 @@
 //! 3. For each SCC decide let vs letrec and lower the node(s).
 //! 4. Lower the root node as the module result.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use zutai_dataflow::{
     DataflowGraph, DfBuiltinOp, DfLit, DfNodeKind, DfPattern, DfTupleNodeItem, DfTuplePatItem,
@@ -24,10 +24,10 @@ use crate::{
 struct BodyLowerer<'g> {
     graph: &'g DataflowGraph,
     /// Maps DC Bind NodeIds to their assigned ANF variable name.
-    bind_names: &'g HashMap<NodeId, String>,
+    bind_names: &'g FxHashMap<NodeId, String>,
     /// Memoized results: if a node has already been lowered in this scope,
     /// reuse the atom (sharing). Reset when entering a nested lambda body.
-    memo: HashMap<NodeId, AnfAtom>,
+    memo: FxHashMap<NodeId, AnfAtom>,
     /// Accumulated let-bindings for the current body, in order.
     bindings: Vec<(String, AnfExpr)>,
     /// Shared fresh name counter.
@@ -37,13 +37,13 @@ struct BodyLowerer<'g> {
 impl<'g> BodyLowerer<'g> {
     fn new(
         graph: &'g DataflowGraph,
-        bind_names: &'g HashMap<NodeId, String>,
+        bind_names: &'g FxHashMap<NodeId, String>,
         counter: &'g mut u32,
     ) -> Self {
         Self {
             graph,
             bind_names,
-            memo: HashMap::new(),
+            memo: FxHashMap::default(),
             bindings: Vec::new(),
             counter,
         }
@@ -239,7 +239,7 @@ impl<'g> BodyLowerer<'g> {
 
     fn lower_arm(&mut self, arm: zutai_dataflow::DfArm) -> AnfArm {
         // Name all Bind nodes in the pattern BEFORE lowering guard/body.
-        let mut pat_binds: HashMap<NodeId, String> = HashMap::new();
+        let mut pat_binds: FxHashMap<NodeId, String> = FxHashMap::default();
         collect_pat_bind_names(&arm.pattern, self.counter, &mut pat_binds);
 
         // Merge pattern bind names into our bind_names temporarily.
@@ -250,7 +250,7 @@ impl<'g> BodyLowerer<'g> {
         let anf_pattern = lower_dc_pattern(&arm.pattern, &pat_binds);
 
         // Build an extended bind map for this arm's body scope.
-        let mut extended_binds: HashMap<NodeId, String> = self
+        let mut extended_binds: FxHashMap<NodeId, String> = self
             .bind_names
             .iter()
             .map(|(&k, v)| (k, v.clone()))
@@ -293,7 +293,7 @@ fn lower_op(op: DfBuiltinOp) -> DfBuiltinOp {
 /// Lower a Lambda body in a fresh memo scope (closure starts a new scope).
 fn lower_body_in_new_scope(
     graph: &DataflowGraph,
-    bind_names: &HashMap<NodeId, String>,
+    bind_names: &FxHashMap<NodeId, String>,
     counter: &mut u32,
     body_node: NodeId,
 ) -> AnfBody {
@@ -302,7 +302,7 @@ fn lower_body_in_new_scope(
 
 fn lower_body_with_binds(
     graph: &DataflowGraph,
-    bind_names: &HashMap<NodeId, String>,
+    bind_names: &FxHashMap<NodeId, String>,
     counter: &mut u32,
     root: NodeId,
 ) -> AnfBody {
@@ -311,7 +311,7 @@ fn lower_body_with_binds(
 }
 
 /// Collect all `Bind` nodes in a DC pattern and assign them fresh names.
-fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut HashMap<NodeId, String>) {
+fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut FxHashMap<NodeId, String>) {
     match pat {
         DfPattern::Bind(id) => {
             let n = *counter;
@@ -339,7 +339,7 @@ fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut HashMap<
     }
 }
 
-fn lower_dc_pattern(pat: &DfPattern, pat_binds: &HashMap<NodeId, String>) -> AnfPattern {
+fn lower_dc_pattern(pat: &DfPattern, pat_binds: &FxHashMap<NodeId, String>) -> AnfPattern {
     match pat {
         DfPattern::Wildcard => AnfPattern::Wildcard,
         DfPattern::Lit(l) => AnfPattern::Lit(l.clone()),
@@ -392,8 +392,8 @@ fn lower_dc_pattern(pat: &DfPattern, pat_binds: &HashMap<NodeId, String>) -> Anf
 /// Only Lambda params need pre-pass naming. Match-arm Bind nodes are
 /// re-named locally inside `lower_arm` via `collect_pat_bind_names`, so
 /// pre-assigning them here would produce unused names.
-fn collect_all_bind_names(graph: &DataflowGraph, counter: &mut u32) -> HashMap<NodeId, String> {
-    let mut names: HashMap<NodeId, String> = HashMap::new();
+fn collect_all_bind_names(graph: &DataflowGraph, counter: &mut u32) -> FxHashMap<NodeId, String> {
+    let mut names: FxHashMap<NodeId, String> = FxHashMap::default();
     for (_, node) in graph.nodes.iter() {
         if let DfNodeKind::Lambda { param, .. } = &node.kind {
             names.entry(*param).or_insert_with(|| {

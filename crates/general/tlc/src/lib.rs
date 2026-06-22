@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 mod erase;
 mod ir;
@@ -34,14 +34,14 @@ pub fn residual_effect_reason_with_grants(
     grants: HostEffectSet,
 ) -> Option<&'static str> {
     let final_has_residual_effect = module.final_expr.is_some_and(|expr| {
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         reachable_expr_has_effect(module, expr, &mut visited, grants)
     });
     let decl_has_residual_effect = module.decls.iter().any(|&decl_id| {
         let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
             return false;
         };
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         reachable_expr_has_effect(module, body, &mut visited, grants)
     });
     let has_residual_effect = final_has_residual_effect || decl_has_residual_effect;
@@ -86,19 +86,19 @@ fn row_has_unsupported_effect(row: &Row, grants: HostEffectSet) -> bool {
 pub fn contains_host_io_print(module: &TlcModule) -> bool {
     module
         .final_expr
-        .is_some_and(|expr| reachable_host_io_print(module, expr, &mut HashSet::new()))
+        .is_some_and(|expr| reachable_host_io_print(module, expr, &mut FxHashSet::default()))
         || module.decls.iter().any(|&decl_id| {
             let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
                 return false;
             };
-            reachable_host_io_print(module, body, &mut HashSet::new())
+            reachable_host_io_print(module, body, &mut FxHashSet::default())
         })
 }
 
 fn reachable_expr_has_effect(
     module: &TlcModule,
     id: TlcExprId,
-    visited: &mut HashSet<TlcExprId>,
+    visited: &mut FxHashSet<TlcExprId>,
     grants: HostEffectSet,
 ) -> bool {
     if !visited.insert(id) {
@@ -168,7 +168,7 @@ fn reachable_expr_has_effect(
 fn reachable_host_io_print(
     module: &TlcModule,
     id: TlcExprId,
-    visited: &mut HashSet<TlcExprId>,
+    visited: &mut FxHashSet<TlcExprId>,
 ) -> bool {
     if !visited.insert(id) {
         return false;

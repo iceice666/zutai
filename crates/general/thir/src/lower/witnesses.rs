@@ -14,12 +14,12 @@ impl<'hir> Lowerer<'hir> {
             name: String,
             params: Vec<BindingId>,
             methods: Vec<(String, bool, bool, TypeId)>,
-            method_params: HashMap<String, Vec<BindingId>>,
+            method_params: FxHashMap<String, Vec<BindingId>>,
             derivable: bool,
             has_recipe: bool,
         }
 
-        let mut constraint_map: HashMap<BindingId, ConstraintInfo> = HashMap::new();
+        let mut constraint_map: FxHashMap<BindingId, ConstraintInfo> = FxHashMap::default();
         for (_, decl) in self.decl_arena.iter() {
             if let ThirDeclKind::Constraint {
                 params,
@@ -33,7 +33,7 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|m| (m.name.clone(), m.optional, m.default.is_some(), m.sig))
                     .collect();
-                let owned_method_params: HashMap<String, Vec<BindingId>> = methods
+                let owned_method_params: FxHashMap<String, Vec<BindingId>> = methods
                     .iter()
                     .map(|m| (m.name.clone(), m.params.clone()))
                     .collect();
@@ -57,7 +57,7 @@ impl<'hir> Lowerer<'hir> {
             constraint_param: BindingId,
             constraint_name: String,
             methods: Vec<(String, bool, bool, TypeId)>,
-            method_params: HashMap<String, Vec<BindingId>>,
+            method_params: FxHashMap<String, Vec<BindingId>>,
             fields: Vec<(String, ThirExprId, Span)>,
         }
         struct DeriveTask {
@@ -160,7 +160,7 @@ impl<'hir> Lowerer<'hir> {
         // by a *different* constraint (`Eq @A :: <A: Ord>`) makes progress —
         // consuming an `Ord` dict to produce an `Eq` dict — and is not recursive.
         for (name, target, params, param_bounds, cst_binding, span) in recursive_candidates {
-            let resolved = self.resolve_alias(target, &mut HashSet::new(), span);
+            let resolved = self.resolve_alias(target, &mut FxHashSet::default(), span);
             if let TypeKind::TypeVar(b) = self.type_arena[resolved.0 as usize].kind
                 && let Some(idx) = params.iter().position(|p| *p == b)
                 && param_bounds
@@ -196,10 +196,10 @@ impl<'hir> Lowerer<'hir> {
                 });
                 continue;
             }
-            let subst: HashMap<BindingId, TypeId> =
+            let subst: FxHashMap<BindingId, TypeId> =
                 [(task.constraint_param, task.target)].into_iter().collect();
 
-            let field_names: HashSet<String> =
+            let field_names: FxHashSet<String> =
                 task.fields.iter().map(|(n, _, _)| n.clone()).collect();
 
             for (fname, value_expr, fspan) in &task.fields {
@@ -328,7 +328,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn collect_explicit_witness_keys(
         &mut self,
-    ) -> HashSet<(BindingId, String)> {
+    ) -> FxHashSet<(BindingId, String)> {
         let witnesses: Vec<(BindingId, TypeId)> = self
             .decl_arena
             .iter()
@@ -354,7 +354,7 @@ impl<'hir> Lowerer<'hir> {
 
     pub(in crate::lower) fn derive_components(&mut self, target: TypeId) -> Vec<TypeId> {
         let span = self.type_arena[target.0 as usize].span;
-        let target = self.resolve_alias(target, &mut HashSet::new(), span);
+        let target = self.resolve_alias(target, &mut FxHashSet::default(), span);
         match self.type_arena[target.0 as usize].kind.clone() {
             TypeKind::Record(fields, _) => fields.into_iter().map(|field| field.ty).collect(),
             TypeKind::Tuple(items) => items
@@ -369,7 +369,7 @@ impl<'hir> Lowerer<'hir> {
                     if let Some(payload) = variant.payload {
                         let payload_span = self.type_arena[payload.0 as usize].span;
                         let payload =
-                            self.resolve_alias(payload, &mut HashSet::new(), payload_span);
+                            self.resolve_alias(payload, &mut FxHashSet::default(), payload_span);
                         match self.type_arena[payload.0 as usize].kind.clone() {
                             TypeKind::Record(fields, _) => {
                                 components.extend(fields.into_iter().map(|field| field.ty));
@@ -389,7 +389,7 @@ impl<'hir> Lowerer<'hir> {
         constraint: BindingId,
         component: TypeId,
         methods: &[(String, bool, bool, TypeId)],
-        witness_keys: &HashSet<(BindingId, String)>,
+        witness_keys: &FxHashSet<(BindingId, String)>,
     ) -> bool {
         if self.derive_can_use_builtin_leaf(component, methods) {
             return true;
@@ -424,7 +424,7 @@ impl<'hir> Lowerer<'hir> {
         }
 
         let span = self.type_arena[ty.0 as usize].span;
-        let ty = self.resolve_alias(ty, &mut HashSet::new(), span);
+        let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind {
             TypeKind::Int | TypeKind::Float | TypeKind::Posit(_) | TypeKind::Text => true,
             TypeKind::Bool | TypeKind::True | TypeKind::False | TypeKind::Atom(_) => {
@@ -461,9 +461,9 @@ impl<'hir> Lowerer<'hir> {
         // Phase 2: mutable — compute param-normalized keys, detect duplicates so
         // two conditional witnesses that overlap (e.g. two `Eq @(List A)`) are
         // flagged as ambiguous.
-        let mut seen: HashMap<(BindingId, String), ()> = HashMap::new();
+        let mut seen: FxHashMap<(BindingId, String), ()> = FxHashMap::default();
         for (cst, target, params, span) in entries {
-            let norm: HashMap<BindingId, usize> =
+            let norm: FxHashMap<BindingId, usize> =
                 params.iter().enumerate().map(|(i, &p)| (p, i)).collect();
             let target_key = self.witness_target_key_with(target, &norm);
             let key = (cst, target_key);

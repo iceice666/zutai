@@ -13,7 +13,7 @@
 //! value/module maps for the evaluator, witness export merging, and backend /
 //! evaluator gate predicates over completed staged output.
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -29,10 +29,10 @@ pub struct Analysis {
     pub diagnostics: Vec<SemanticDiagnostic>,
     pub pass_reports: Vec<SemanticPassReport>,
     /// Parsed `.zti` import values, keyed by import source, for the evaluator.
-    pub import_values: HashMap<zutai_thir::ImportKey, zutai_im::Value>,
+    pub import_values: FxHashMap<zutai_thir::ImportKey, zutai_im::Value>,
     /// Analyzed `.zt` sub-modules, keyed by import source, for the evaluator to
     /// evaluate recursively.
-    pub import_modules: HashMap<zutai_thir::ImportKey, Rc<Analysis>>,
+    pub import_modules: FxHashMap<zutai_thir::ImportKey, Rc<Analysis>>,
     /// TLC module produced by lowering THIR; `None` when THIR is incomplete.
     pub tlc: Option<zutai_tlc::TlcModule>,
     pub witness_exports: Vec<WitnessExport>,
@@ -263,8 +263,8 @@ pub(crate) fn analyze_inner(
             thir: None,
             diagnostics: parse_diagnostics,
             pass_reports: Vec::new(),
-            import_values: HashMap::new(),
-            import_modules: HashMap::new(),
+            import_values: FxHashMap::default(),
+            import_modules: FxHashMap::default(),
             tlc: None,
             witness_exports: Vec::new(),
         };
@@ -277,8 +277,8 @@ pub(crate) fn analyze_inner(
             thir: None,
             diagnostics: parse_diagnostics,
             pass_reports: Vec::new(),
-            import_values: HashMap::new(),
-            import_modules: HashMap::new(),
+            import_values: FxHashMap::default(),
+            import_modules: FxHashMap::default(),
             tlc: None,
             witness_exports: Vec::new(),
         };
@@ -310,8 +310,8 @@ pub(crate) fn analyze_inner(
         })
         .collect();
 
-    let mut import_values = HashMap::new();
-    let mut import_modules = HashMap::new();
+    let mut import_values = FxHashMap::default();
+    let mut import_modules = FxHashMap::default();
     let mut imported_witnesses = Vec::new();
     let thir =
         if hir.diagnostics.is_empty() {

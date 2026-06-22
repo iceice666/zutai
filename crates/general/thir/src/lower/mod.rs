@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use la_arena::Arena;
 use zutai_hir::{
@@ -15,7 +15,7 @@ use crate::ir::{
     TypeTupleItem, UnionVariant, UniverseLevel,
 };
 
-pub(super) type BindingImportKey = HashMap<BindingId, ImportKey>;
+pub(super) type BindingImportKey = FxHashMap<BindingId, ImportKey>;
 use crate::pass::{ThirPassReport, run_default_passes};
 
 mod arena;
@@ -45,7 +45,7 @@ pub struct ThirLowerOptions {
     /// Pre-resolved import types, keyed by import source.  Built by the semantic
     /// layer (which owns filesystem access); empty when lowering with no module
     /// context, in which case every `import` becomes an unsupported `Error` node.
-    pub imports: HashMap<ImportKey, ImportedType>,
+    pub imports: FxHashMap<ImportKey, ImportedType>,
     /// Override the type-level alias expansion fuel budget.  `None` uses the
     /// default (10 000 steps).  Set to a small value in tests to trigger the
     /// `TypeLevelEvalLimitExceeded` diagnostic deterministically.
@@ -56,7 +56,7 @@ impl Default for ThirLowerOptions {
     fn default() -> Self {
         Self {
             run_passes: true,
-            imports: HashMap::new(),
+            imports: FxHashMap::default(),
             type_eval_fuel: None,
         }
     }
@@ -100,64 +100,64 @@ enum RowSolution {
 
 struct Lowerer<'hir> {
     hir: &'hir HirFile,
-    imports: HashMap<ImportKey, ImportedType>,
+    imports: FxHashMap<ImportKey, ImportedType>,
     decl_arena: Arena<ThirDecl>,
     expr_arena: Arena<ThirExpr>,
     pat_arena: Arena<ThirPat>,
     type_arena: Vec<Type>,
-    aliases: HashMap<BindingId, TypeId>,
-    value_types: HashMap<BindingId, TypeId>,
+    aliases: FxHashMap<BindingId, TypeId>,
+    value_types: FxHashMap<BindingId, TypeId>,
     diagnostics: Vec<ThirDiagnostic>,
     error_type: TypeId,
     type_type: TypeId,
     next_infer_var: u32,
-    infer_subst: HashMap<u32, TypeId>,
+    infer_subst: FxHashMap<u32, TypeId>,
     /// Next flexible row-variable id (`RowTail::Infer`). A separate id space from
     /// `next_infer_var` because row variables range over fields/members, not types.
     next_row_var: u32,
     /// Solutions for flexible row variables, mirroring `infer_subst` for types.
-    row_subst: HashMap<u32, RowSolution>,
+    row_subst: FxHashMap<u32, RowSolution>,
     effect_ambient: EffectRow,
-    handled_stack: Vec<HashMap<String, (TypeId, TypeId)>>,
+    handled_stack: Vec<FxHashMap<String, (TypeId, TypeId)>>,
     resume_stack: Vec<(TypeId, TypeId)>,
     /// HM let-generalization schemes: for each generalized binding, the list of
     /// `InferVar` ids quantified over. A reference instantiates these with fresh
     /// independent `InferVar`s so unifying one use site does not monomorphize others.
     /// Bindings absent here are monomorphic (used at a single type, or shared with
     /// the surrounding environment).
-    poly_schemes: HashMap<BindingId, Vec<u32>>,
+    poly_schemes: FxHashMap<BindingId, Vec<u32>>,
     /// Declared kind of each type parameter, from `<F :: Type -> Type>` kind
     /// annotations. Absent params default to `Kind::ground()`. Used for
     /// kind-checking higher-kinded constraints/witnesses and carried into
     /// `ThirFile` for TLC.
-    type_param_kinds: HashMap<BindingId, Kind>,
+    type_param_kinds: FxHashMap<BindingId, Kind>,
     next_level_meta: u32,
-    level_lower_bounds: HashMap<u32, u32>,
-    level_equalities: HashMap<u32, UniverseLevel>,
-    type_universe_cache: HashMap<TypeId, UniverseLevel>,
+    level_lower_bounds: FxHashMap<u32, u32>,
+    level_equalities: FxHashMap<u32, UniverseLevel>,
+    type_universe_cache: FxHashMap<TypeId, UniverseLevel>,
     /// Alias bindings whose universe level is currently being computed. Guards
     /// `alias_apply_universe` against equirecursive generic aliases (e.g.
     /// `Tree :: <A> type { #node : { left : Tree A; ... } }`): re-instantiating
     /// the body on each call mints fresh `TypeId`s that defeat the
     /// `type_universe_cache` cycle break, so a recursive occurrence is treated as
     /// the fixpoint base (`Known(0)`) instead of expanding forever.
-    alias_universe_in_progress: HashSet<BindingId>,
+    alias_universe_in_progress: FxHashSet<BindingId>,
     /// Type pairs currently being matched. Recursive aliases can unfold back to
     /// the same pair through record/union fields; re-entry means the equirecursive
     /// comparison has reached its fixpoint.
-    type_match_in_progress: HashSet<(TypeId, TypeId)>,
+    type_match_in_progress: FxHashSet<(TypeId, TypeId)>,
     /// Memoized "is this alias (directly or mutually) recursive?" — gates the
     /// bidirectional same-binding AliasApply fast path in `type_matches`.
-    alias_recursive_cache: HashMap<BindingId, bool>,
+    alias_recursive_cache: FxHashMap<BindingId, bool>,
     /// Params of each parametric type constructor (generic alias or type-level
     /// function), keyed by binding. Presence marks the binding as a parametric
     /// constructor applied via `AliasApply` at use sites.
-    alias_params: HashMap<BindingId, Vec<BindingId>>,
+    alias_params: FxHashMap<BindingId, Vec<BindingId>>,
     /// Bindings currently in scope as type-variable substitution targets while
     /// lowering a type-level function's body. Populated transiently during
     /// `lower_decl` for type-level functions so that `Param` bindings used in
     /// a type expression map to `TypeKind::TypeVar` instead of erroring.
-    type_param_scope: HashSet<BindingId>,
+    type_param_scope: FxHashSet<BindingId>,
     /// Total type-level alias expansion budget. Decremented in `resolve_alias`
     /// on every expansion step. When it reaches zero a `TypeLevelEvalLimitExceeded`
     /// diagnostic is emitted and expansion short-circuits to the error type.
@@ -173,5 +173,5 @@ struct Lowerer<'hir> {
     /// `ImportedType` is `Type(inner)`.
     /// Queried by the `HirTypeKind::Access` arm when the field's type is
     /// `TypeKind::Type` and the receiver is a known import binding.
-    pub(super) import_type_denotations: HashMap<(ImportKey, String), TypeId>,
+    pub(super) import_type_denotations: FxHashMap<(ImportKey, String), TypeId>,
 }

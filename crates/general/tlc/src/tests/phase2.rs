@@ -122,7 +122,7 @@ fn nbe_fuel_exhaustion_is_clean_error() {
     // THIR rejects recursive type functions, so we cannot go through tlc_of here.
     use crate::ir::{Kind, TlcDecl, TlcModule, TlcType, TlcTypeVar};
     use la_arena::Arena;
-    use std::collections::HashMap;
+    use rustc_hash::FxHashMap;
     use zutai_hir::BindingId;
 
     let mut type_arena: Arena<TlcType> = Arena::new();
@@ -152,9 +152,9 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         decl_arena,
         expr_arena: Arena::new(),
         type_arena,
-        expr_types: HashMap::new(),
-        dict_field_slots: HashMap::new(),
-        spans: HashMap::new(),
+        expr_types: FxHashMap::default(),
+        dict_field_slots: FxHashMap::default(),
+        spans: FxHashMap::default(),
         final_expr: None,
     };
 

@@ -1302,6 +1302,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 name = "zutai-anf"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash 2.1.2",
  "zutai-dataflow",
  "zutai-hir",
  "zutai-syntax",
@@ -1337,6 +1338,7 @@ dependencies = [
 name = "zutai-codegen"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash 2.1.2",
  "zutai-ssa",
  "zutai-syntax",
 ]
@@ -1347,6 +1349,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "la-arena",
+ "rustc-hash 2.1.2",
  "zutai-hir",
  "zutai-syntax",
  "zutai-thir",
@@ -1358,6 +1361,8 @@ name = "zutai-eval"
 version = "0.1.0"
 dependencies = [
  "fast-posit",
+ "rustc-hash 2.1.2",
+ "smallvec",
  "thiserror",
  "zutai-hir",
  "zutai-im",
@@ -1372,6 +1377,7 @@ name = "zutai-hir"
 version = "0.1.0"
 dependencies = [
  "la-arena",
+ "rustc-hash 2.1.2",
  "zutai-syntax",
 ]
 
@@ -1416,6 +1422,7 @@ dependencies = [
 name = "zutai-semantic"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash 2.1.2",
  "zutai-hir",
  "zutai-im",
  "zutai-syntax",
@@ -1427,6 +1434,7 @@ dependencies = [
 name = "zutai-ssa"
 version = "0.1.0"
 dependencies = [
+ "rustc-hash 2.1.2",
  "zutai-anf",
  "zutai-dataflow",
  "zutai-hir",
@@ -1452,6 +1460,7 @@ name = "zutai-thir"
 version = "0.1.0"
 dependencies = [
  "la-arena",
+ "rustc-hash 2.1.2",
  "zutai-hir",
  "zutai-syntax",
 ]
@@ -1461,6 +1470,7 @@ name = "zutai-tlc"
 version = "0.1.0"
 dependencies = [
  "la-arena",
+ "rustc-hash 2.1.2",
  "zutai-hir",
  "zutai-syntax",
  "zutai-thir",

@@ -36,7 +36,7 @@ mod tlc_entry;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -45,7 +45,7 @@ use zutai_thir::{
     ImportKey, RowTail, ThirDeclKind, ThirExprKind, ThirFile, TypeKind, TypeTupleItem,
 };
 
-use eval::{Evaluator, ModuleRegistry, RuntimeWitness};
+use eval::{EvalCaches, Evaluator, ModuleRegistry, RuntimeWitness};
 use value::ModuleId;
 
 pub use analysis_eval::{

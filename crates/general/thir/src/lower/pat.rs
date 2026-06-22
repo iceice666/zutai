@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::{BindingId, HirPatId, HirPatKind, HirRecordPatField, HirTuplePatItem};
 use zutai_syntax::Span;
@@ -116,7 +116,7 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
         scoped_bindings: &mut Vec<BindingId>,
     ) -> ThirPatId {
-        let resolved = self.resolve_alias(expected, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), span);
         let type_items = match self.tuple_scrutinee_items(resolved) {
             Some(type_items) => type_items,
             None => {
@@ -325,8 +325,8 @@ impl<'hir> Lowerer<'hir> {
             });
         };
 
-        use std::collections::HashMap;
-        let type_by_name: HashMap<&str, _> =
+        use rustc_hash::FxHashMap;
+        let type_by_name: FxHashMap<&str, _> =
             type_fields.iter().map(|f| (f.name.as_str(), f)).collect();
 
         let lowered: Vec<ThirRecordPatField> = fields
@@ -370,7 +370,7 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
         scoped_bindings: &mut Vec<BindingId>,
     ) -> ThirPatId {
-        let resolved = self.resolve_alias(expected, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), span);
         let kind = self.ty(resolved).kind.clone();
 
         let lowered_payload: Vec<ThirRecordPatField> = match kind {
@@ -513,10 +513,10 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
         scoped_bindings: &mut Vec<BindingId>,
     ) -> Vec<ThirRecordPatField> {
-        let resolved = self.resolve_alias(payload_ty, &mut HashSet::new(), span);
+        let resolved = self.resolve_alias(payload_ty, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind.clone() {
             TypeKind::Record(type_fields, _) => {
-                let type_by_name: HashMap<&str, TypeId> = type_fields
+                let type_by_name: FxHashMap<&str, TypeId> = type_fields
                     .iter()
                     .map(|f| (f.name.as_str(), f.ty))
                     .collect();

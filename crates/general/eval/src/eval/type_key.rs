@@ -7,16 +7,16 @@ use super::*;
 /// operand whose inferred type is the equivalent structural record.
 pub(super) fn type_key(
     type_arena: &[Type],
-    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
+    aliases: &FxHashMap<BindingId, (Vec<BindingId>, TypeId)>,
     ty: TypeId,
 ) -> String {
-    type_key_subst(type_arena, aliases, &HashMap::new(), ty, 0)
+    type_key_subst(type_arena, aliases, &FxHashMap::default(), ty, 0)
 }
 
 pub(super) fn type_key_subst(
     type_arena: &[Type],
-    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
-    subst: &HashMap<BindingId, TypeId>,
+    aliases: &FxHashMap<BindingId, (Vec<BindingId>, TypeId)>,
+    subst: &FxHashMap<BindingId, TypeId>,
     ty: TypeId,
     depth: u32,
 ) -> String {
@@ -200,7 +200,7 @@ pub(super) fn row_tail_key(tail: RowTail) -> String {
 /// a non-alias type or an unknown alias is reached.
 pub(super) fn resolve_alias_chain(
     type_arena: &[Type],
-    aliases: &HashMap<BindingId, (Vec<BindingId>, TypeId)>,
+    aliases: &FxHashMap<BindingId, (Vec<BindingId>, TypeId)>,
     mut ty: TypeId,
 ) -> TypeId {
     let mut fuel = 64u8;

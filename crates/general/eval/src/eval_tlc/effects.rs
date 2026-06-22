@@ -19,7 +19,7 @@ impl<'a> TlcEvaluator<'a> {
                 let home_ev = self.for_module(c.home)?;
                 home_ev.eval_control(c.body, &child, resume)
             }
-            Value::Builtin(func) => self.apply_builtin(func, Vec::new(), arg),
+            Value::Builtin(func) => self.apply_builtin(func, SmallVec::new(), arg),
             Value::BuiltinPartial { func, args } => self.apply_builtin(func, args, arg),
             other => Err(EvalError::TypeMismatch {
                 expected: "Function",
@@ -31,7 +31,7 @@ impl<'a> TlcEvaluator<'a> {
     fn apply_builtin<'eval>(
         self,
         func: BuiltinFn,
-        mut args: Vec<Thunk>,
+        mut args: SmallVec<[Thunk; 2]>,
         arg: Value,
     ) -> Result<EvalControl<'eval>, EvalError>
     where

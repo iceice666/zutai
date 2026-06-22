@@ -197,8 +197,8 @@ impl<'hir> Lowerer<'hir> {
                     )
                 };
                 if app_like(&left) || app_like(&right) {
-                    let r1 = self.resolve_alias(t1, &mut HashSet::new(), span);
-                    let r2 = self.resolve_alias(t2, &mut HashSet::new(), span);
+                    let r1 = self.resolve_alias(t1, &mut FxHashSet::default(), span);
+                    let r2 = self.resolve_alias(t2, &mut FxHashSet::default(), span);
                     if r1 != t1 || r2 != t2 {
                         self.unify(r1, r2, span);
                         return;

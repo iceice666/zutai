@@ -59,8 +59,8 @@ fn completed_tlc_inputs(
 
 pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
     let mut registry = Vec::new();
-    let mut imports = HashMap::new();
-    let mut operator_witnesses = HashMap::new();
+    let mut imports = FxHashMap::default();
+    let mut operator_witnesses = FxHashMap::default();
     let root_id = eval_tlc_analysis_into(
         analysis,
         &mut registry,
@@ -87,8 +87,8 @@ pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<V
 fn eval_tlc_analysis_into<'a>(
     analysis: &'a zutai_semantic::Analysis,
     registry: &mut eval_tlc::TlcModuleRegistry<'a>,
-    imports: &mut HashMap<ImportKey, Value>,
-    operator_witnesses: &mut HashMap<(String, String), Value>,
+    imports: &mut FxHashMap<ImportKey, Value>,
+    operator_witnesses: &mut FxHashMap<(String, String), Value>,
 ) -> Result<ModuleId, EvalError> {
     let (_thir_file, module) = completed_tlc_inputs(analysis)?;
 
@@ -130,7 +130,7 @@ fn collect_tlc_operator_witnesses(
     thir_file: &ThirFile,
     ev: &eval_tlc::TlcEvaluator<'_>,
     top: &env::Env,
-    out: &mut HashMap<(String, String), Value>,
+    out: &mut FxHashMap<(String, String), Value>,
 ) -> Result<(), EvalError> {
     for &decl_id in &thir_file.decls {
         let decl = &thir_file.decl_arena[decl_id];

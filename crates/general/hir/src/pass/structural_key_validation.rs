@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
@@ -61,7 +61,7 @@ impl HirPass for StructuralKeyValidationPass {
 }
 
 fn validate_record_fields(fields: &[HirRecordField], diagnostics: &mut Vec<HirDiagnostic>) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for field in fields {
         if let Some(first_span) = seen.get(&field.name).copied() {
             diagnostics.push(HirDiagnostic {
@@ -81,7 +81,7 @@ fn validate_type_record_fields(
     fields: &[HirTypeRecordField],
     diagnostics: &mut Vec<HirDiagnostic>,
 ) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for field in fields {
         if let Some(first_span) = seen.get(&field.name).copied() {
             diagnostics.push(HirDiagnostic {
@@ -101,7 +101,7 @@ fn validate_record_pattern_fields(
     fields: &[HirRecordPatField],
     diagnostics: &mut Vec<HirDiagnostic>,
 ) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for field in fields {
         if let Some(first_span) = seen.get(&field.name).copied() {
             diagnostics.push(HirDiagnostic {
@@ -118,7 +118,7 @@ fn validate_record_pattern_fields(
 }
 
 fn validate_tuple_items(items: &[HirTupleItem], diagnostics: &mut Vec<HirDiagnostic>) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for item in items {
         let HirTupleItem::Named { name, span, .. } = item else {
             continue;
@@ -138,7 +138,7 @@ fn validate_tuple_items(items: &[HirTupleItem], diagnostics: &mut Vec<HirDiagnos
 }
 
 fn validate_type_tuple_items(items: &[HirTypeTupleItem], diagnostics: &mut Vec<HirDiagnostic>) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for item in items {
         let HirTypeTupleItem::Named { name, span, .. } = item else {
             continue;
@@ -158,7 +158,7 @@ fn validate_type_tuple_items(items: &[HirTypeTupleItem], diagnostics: &mut Vec<H
 }
 
 fn validate_tuple_pattern_items(items: &[HirTuplePatItem], diagnostics: &mut Vec<HirDiagnostic>) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for item in items {
         let HirTuplePatItem::Named { name, span, .. } = item else {
             continue;
@@ -178,7 +178,7 @@ fn validate_tuple_pattern_items(items: &[HirTuplePatItem], diagnostics: &mut Vec
 }
 
 fn validate_select_fields(fields: &[HirSelectField], diagnostics: &mut Vec<HirDiagnostic>) {
-    let mut seen = HashMap::new();
+    let mut seen = FxHashMap::default();
     for field in fields {
         if let Some(first_span) = seen.get(&field.name).copied() {
             diagnostics.push(HirDiagnostic {
