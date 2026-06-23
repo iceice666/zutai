@@ -146,10 +146,10 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
-### Phase A: Module-import native lowering (.zti + .zt) ✅
+### Phase A: Module-import native lowering (.zti + .zt) + witness naming fix ✅
 
 _Completed 2026-06-25. Closes the "Module imports" sub-item of the v1 native-backend
-constraints/witnesses item in `TBD.md`._
+constraints/witnesses item in `TBD.md`; also fixes a conditional-witness dispatch segfault._
 
 - **Phase A.a** (`05fa320`): `.zti` data imports lower inline to Dataflow Core
   constants. `ImportEnv { zti }` threaded through `Lowerer`; CLI builds the map
@@ -166,10 +166,13 @@ constraints/witnesses item in `TBD.md`._
     `Rc` pointer (not source string) for correct diamond dedup.
   - Witness gate: modules that export typeclass witnesses are rejected before DC
     (`IMPORT_WITNESS_REASON`); cross-module witness dispatch is still interpreter-only.
-- Differential tests: `compile_zt_value_import_matches_oracle`,
-  `compile_zt_int_import_matches_oracle`, `compile_zt_function_import_matches_oracle`,
-  `compile_zt_transitive_import_matches_oracle` (chain `.zt→.zt→.zti`),
-  `compile_zt_diamond_import_matches_oracle`.
+- **Witness instance naming** (`5b6d90d`): `Eq @Int` and `Eq @(Pair A)` both got HIR
+  binding name `"Eq"`, causing DC to overwrite the concrete dict with the conditional
+  TyLam. The conditional dispatch then passed the TyLam (a closure) as the concrete
+  `Eq_A_dict`, leading to a `GetField` on a closure at runtime — segfault. Fixed in
+  `collect_globals` by appending `$w{binding_id}` to `TopWitness` global names,
+  making every witness instance unique. Adds `conditional_pair_witness` to
+  `COMPILED_WITNESS_FIXTURES` (differential coverage for field-access inside conditional).
 - Gate stack: 1540 workspace tests pass; `cargo fmt` and `cargo clippy` clean.
 
 ### Near-term backend hardening: witness dispatch, open-row gate, corpus ✅
