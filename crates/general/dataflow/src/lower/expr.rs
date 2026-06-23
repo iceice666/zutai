@@ -251,6 +251,15 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::Import(source) => {
+                // `.zti` data imports resolved by the front end lower inline to a
+                // Dataflow Core constant. `.zt` imports (and any unresolved `.zti`)
+                // fall through to an `Import` node, which the lowering gate rejects.
+                if is_zti_import(&source)
+                    && let Some(value) = self.imports.zti.get(&source)
+                {
+                    let value = *value;
+                    return self.lower_immediate(value, df_ty);
+                }
                 let (path, kind) = lower_import_source(&source);
                 self.alloc_node(DfNodeKind::Import { path, kind }, df_ty, span)
             }

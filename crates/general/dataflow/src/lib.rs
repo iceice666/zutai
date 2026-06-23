@@ -9,6 +9,8 @@
 
 use indexmap::IndexMap;
 use la_arena::{Arena, Idx};
+use rustc_hash::FxHashMap;
+use zutai_hir::HirImportSource;
 use zutai_syntax::Span;
 use zutai_syntax::posit::{PositLiteral, PositSpec};
 
@@ -54,6 +56,25 @@ pub enum DfLit {
 pub enum ImportKind {
     Zti,
     Zt,
+}
+
+// ── Resolved imports ──────────────────────────────────────────────────────────
+
+/// Imports resolved by the front end and available to native lowering.
+///
+/// Keyed by the import source (`ImportKey == HirImportSource`), matching how the
+/// reference interpreter resolves imports. `.zti` data values are lowered inline
+/// to Dataflow Core constants; `.zt` module imports are not yet supported by the
+/// native backend (Phase A.a) and are gated out before lowering.
+#[derive(Default)]
+pub struct ImportEnv<'a> {
+    /// `.zti` import values keyed by import source.
+    pub zti: FxHashMap<HirImportSource, &'a zutai_types::Value>,
+}
+
+/// True when an import source designates a `.zti` data file.
+fn is_zti_import(source: &HirImportSource) -> bool {
+    matches!(source, HirImportSource::String(path) if path.ends_with(".zti"))
 }
 
 // ── Builtin binary ops ────────────────────────────────────────────────────────
@@ -360,24 +381,49 @@ fn open_row_select_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str>
     None
 }
 
-/// Returns a static reason when `module` contains a module `import`. TLC→DC
-/// lowers `TlcExpr::Import` to `DfNodeKind::Import`, which ANF lowering treats
-/// as an `AnfExpr::Error` leaf — the imported module is never lowered or linked
-/// into the compiled binary, so a compiled program that imports crashes at
-/// runtime. Cross-module backend linking is unimplemented, so reject before
-/// Dataflow Core; the interpreter resolves imports.
+/// Returns a static reason when `module` contains a module import that native
+/// lowering cannot yet resolve. `.zti` data imports present in `imports` lower
+/// inline to Dataflow Core constants (Phase A.a); `.zt` module imports are not
+/// yet linked into the compiled binary, so they are gated here and the
+/// interpreter resolves them instead.
 ///
-/// Returns `None` when the module is import-free and safe to lower.
-fn import_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str> {
+/// Returns `None` when every import is resolvable.
+fn unresolved_import_reason(
+    module: &zutai_tlc::TlcModule,
+    imports: &ImportEnv,
+) -> Option<&'static str> {
     use zutai_tlc::TlcExpr;
     module
         .expr_arena
         .iter()
-        .any(|(_, expr)| matches!(expr, TlcExpr::Import(_)))
+        .any(|(_, expr)| match expr {
+            TlcExpr::Import(source) => !(is_zti_import(source) && imports.zti.contains_key(source)),
+            _ => false,
+        })
         .then_some(
-            "native backend does not support module imports yet: imported modules are not \
-            linked into the compiled binary. Use `zutai run` (interpreter)",
+            "native backend does not support `.zt` module imports yet: imported modules are \
+            not linked into the compiled binary. Use `zutai run` (interpreter)",
         )
+}
+
+/// Shared lowering gate: residual-effect (caller-computed), open-row select, and
+/// unresolved-import checks, then lower.
+fn try_lower_inner(
+    module: &zutai_tlc::TlcModule,
+    hir_bindings: &[zutai_hir::Binding],
+    imports: &ImportEnv,
+    effect_reason: Option<&'static str>,
+) -> Result<DataflowGraph, &'static str> {
+    if let Some(reason) = effect_reason {
+        return Err(reason);
+    }
+    if let Some(reason) = open_row_select_reason(module) {
+        return Err(reason);
+    }
+    if let Some(reason) = unresolved_import_reason(module, imports) {
+        return Err(reason);
+    }
+    Ok(lower::lower_tlc(module, hir_bindings, imports))
 }
 
 /// Fallible form of [`lower_tlc`] that preserves the Phase 19 no-erasure gate.
@@ -385,16 +431,12 @@ pub fn try_lower_tlc(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],
 ) -> Result<DataflowGraph, &'static str> {
-    if let Some(reason) = zutai_tlc::residual_effect_reason(module) {
-        return Err(reason);
-    }
-    if let Some(reason) = open_row_select_reason(module) {
-        return Err(reason);
-    }
-    if let Some(reason) = import_reason(module) {
-        return Err(reason);
-    }
-    Ok(lower::lower_tlc(module, hir_bindings))
+    try_lower_inner(
+        module,
+        hir_bindings,
+        &ImportEnv::default(),
+        zutai_tlc::residual_effect_reason(module),
+    )
 }
 
 /// Fallible lowering under an explicit v2 host grant set.
@@ -403,16 +445,28 @@ pub fn try_lower_tlc_with_host_grants(
     hir_bindings: &[zutai_hir::Binding],
     grants: zutai_tlc::HostEffectSet,
 ) -> Result<DataflowGraph, &'static str> {
-    if let Some(reason) = zutai_tlc::residual_effect_reason_with_grants(module, grants) {
-        return Err(reason);
-    }
-    if let Some(reason) = open_row_select_reason(module) {
-        return Err(reason);
-    }
-    if let Some(reason) = import_reason(module) {
-        return Err(reason);
-    }
-    Ok(lower::lower_tlc(module, hir_bindings))
+    try_lower_inner(
+        module,
+        hir_bindings,
+        &ImportEnv::default(),
+        zutai_tlc::residual_effect_reason_with_grants(module, grants),
+    )
+}
+
+/// Fallible lowering under a host grant set with resolved imports. `.zti` data
+/// imports in `imports` lower inline; `.zt` imports are still gated (Phase A.a).
+pub fn try_lower_tlc_with_host_grants_and_imports(
+    module: &zutai_tlc::TlcModule,
+    hir_bindings: &[zutai_hir::Binding],
+    grants: zutai_tlc::HostEffectSet,
+    imports: &ImportEnv,
+) -> Result<DataflowGraph, &'static str> {
+    try_lower_inner(
+        module,
+        hir_bindings,
+        imports,
+        zutai_tlc::residual_effect_reason_with_grants(module, grants),
+    )
 }
 
 /// Validation errors produced by [`validate`].

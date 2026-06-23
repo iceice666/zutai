@@ -8,10 +8,11 @@ use zutai_tlc::{
     BuiltinOp, Literal as TlcLit, Row, TlcDecl, TlcExprId, TlcModule, TlcPat, TlcPatItem, TlcType,
     TlcTypeId, TlcTypeVar,
 };
+use zutai_types::Value;
 
 use crate::{
     DataflowGraph, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPositOp, DfRecordField, DfTupleField,
-    DfTy, DfTyId, DfTyVar, ImportKind, NodeId,
+    DfTy, DfTyId, DfTyVar, ImportEnv, ImportKind, NodeId, is_zti_import,
 };
 
 mod expr;
@@ -99,6 +100,7 @@ fn lower_import_source(source: &HirImportSource) -> (String, ImportKind) {
 struct Lowerer<'m> {
     module: &'m TlcModule,
     hir_bindings: &'m [Binding],
+    imports: &'m ImportEnv<'m>,
     nodes: Arena<DfNode>,
     types: Arena<DfTy>,
     globals: IndexMap<String, NodeId>,
@@ -134,12 +136,13 @@ struct Lowerer<'m> {
 }
 
 impl<'m> Lowerer<'m> {
-    fn new(module: &'m TlcModule, hir_bindings: &'m [Binding]) -> Self {
+    fn new(module: &'m TlcModule, hir_bindings: &'m [Binding], imports: &'m ImportEnv<'m>) -> Self {
         let mut types = Arena::new();
         let error_ty = types.alloc(DfTy::Error);
         Self {
             module,
             hir_bindings,
+            imports,
             nodes: Arena::new(),
             types,
             globals: IndexMap::new(),
@@ -165,6 +168,46 @@ impl<'m> Lowerer<'m> {
             "spans table out of sync with nodes arena"
         );
         id
+    }
+
+    /// Lower a `.zti` immediate data value to a Dataflow Core constant node,
+    /// typed against `ty` (the import expression's lowered type). Record fields
+    /// are sorted by name to match the slot-indexed record ABI, exactly as
+    /// ordinary record-literal lowering does.
+    fn lower_immediate(&mut self, value: &Value, ty: DfTyId) -> NodeId {
+        match value {
+            Value::True => self.alloc_node(DfNodeKind::Lit(DfLit::Bool(true)), ty, None),
+            Value::False => self.alloc_node(DfNodeKind::Lit(DfLit::Bool(false)), ty, None),
+            Value::Integer(n) => self.alloc_node(DfNodeKind::Lit(DfLit::Int(*n)), ty, None),
+            Value::Float(f) => self.alloc_node(DfNodeKind::Lit(DfLit::Float(*f)), ty, None),
+            Value::String(s) => self.alloc_node(DfNodeKind::Lit(DfLit::Text(s.clone())), ty, None),
+            Value::Atom(s) => self.alloc_node(DfNodeKind::Lit(DfLit::Atom(s.clone())), ty, None),
+            Value::Array(items) => {
+                let elem_ty = match &self.types[ty] {
+                    DfTy::List(elem) => *elem,
+                    _ => self.error_ty,
+                };
+                let nodes: Vec<NodeId> = items
+                    .iter()
+                    .map(|item| self.lower_immediate(item, elem_ty))
+                    .collect();
+                self.alloc_node(DfNodeKind::List(nodes), ty, None)
+            }
+            Value::Block(block) => {
+                let mut fields: Vec<(String, NodeId)> = block
+                    .iter()
+                    .map(|pair| {
+                        let field_ty = self
+                            .record_field_ty_for_df_ty(ty, &pair.field_name)
+                            .unwrap_or(self.error_ty);
+                        let node = self.lower_immediate(&pair.value, field_ty);
+                        (pair.field_name.clone(), node)
+                    })
+                    .collect();
+                fields.sort_by(|a, b| a.0.cmp(&b.0));
+                self.alloc_node(DfNodeKind::Record(fields), ty, None)
+            }
+        }
     }
 
     fn record_slot_for_df_ty(&self, ty: DfTyId, field: &str) -> Option<usize> {
@@ -380,7 +423,11 @@ fn remove_pat_bindings(pat: &TlcPat, env: &mut FxHashMap<BindingId, NodeId>) {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-pub(crate) fn lower_tlc(module: &TlcModule, hir_bindings: &[Binding]) -> DataflowGraph {
-    let mut lowerer = Lowerer::new(module, hir_bindings);
+pub(crate) fn lower_tlc(
+    module: &TlcModule,
+    hir_bindings: &[Binding],
+    imports: &ImportEnv,
+) -> DataflowGraph {
+    let mut lowerer = Lowerer::new(module, hir_bindings, imports);
     lowerer.lower_file()
 }

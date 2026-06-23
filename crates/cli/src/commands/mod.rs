@@ -457,11 +457,19 @@ pub(crate) fn run_compile(
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
 
-    // DC → ANF → SSA → LLVM IR pipeline.
-    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants(
+    // DC → ANF → SSA → LLVM IR pipeline. `.zti` data imports lower inline.
+    let import_env = zutai_dataflow::ImportEnv {
+        zti: analysis
+            .import_values
+            .iter()
+            .map(|(key, value)| (key.clone(), value))
+            .collect(),
+    };
+    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants_and_imports(
         &module,
         hir_bindings,
         boundary_host_grants,
+        &import_env,
     ) {
         Ok(g) => g,
         Err(reason) => {
@@ -590,10 +598,18 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants(
+    let import_env = zutai_dataflow::ImportEnv {
+        zti: analysis
+            .import_values
+            .iter()
+            .map(|(key, value)| (key.clone(), value))
+            .collect(),
+    };
+    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants_and_imports(
         &module,
         hir_bindings,
         boundary_host_grants,
+        &import_env,
     ) {
         Ok(g) => g,
         Err(reason) => {

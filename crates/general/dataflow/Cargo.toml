@@ -10,6 +10,7 @@ indexmap = "2"
 zutai-hir = { path = "../hir" }
 zutai-syntax = { path = "../syntax" }
 zutai-tlc = { path = "../tlc" }
+zutai-types = { path = "../../immediate/types" }
 rustc-hash = "2.0.0"
 
 [dev-dependencies]

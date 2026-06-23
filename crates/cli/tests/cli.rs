@@ -475,10 +475,11 @@ fn run_imported_function_can_flow_through_print_effect() {
 
 #[test]
 fn compile_module_import_is_rejected_with_diagnostic() {
-    // A `.zt`/`.zti` import lowers to a DfNodeKind::Import the backend never
+    // A `.zt` module import lowers to a DfNodeKind::Import the backend never
     // links, so a compiled importing program crashed at runtime. The backend
-    // gate must reject it cleanly. `run` still resolves imports via the
-    // interpreter (covered by run_imported_* tests).
+    // gate must reject `.zt` imports cleanly. `run` still resolves imports via
+    // the interpreter (covered by run_imported_* tests). `.zti` data imports do
+    // lower natively (see compile_zti_import_* tests).
     write_tmp(
         "cli_test_compile_import_dep.zt",
         "base ::= 21\n{ doubled = base; name = \"svc\"; }\n",
@@ -492,7 +493,7 @@ fn compile_module_import_is_rejected_with_diagnostic() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("does not support module imports"));
+        .stderr(predicate::str::contains("module imports yet"));
 }
 
 #[test]
@@ -511,7 +512,7 @@ fn compile_bin_module_import_is_rejected_before_toolchain() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("does not support module imports"));
+        .stderr(predicate::str::contains("module imports yet"));
 }
 
 // ─── parse with type/semantic errors ─────────────────────────────────────────
@@ -2265,4 +2266,107 @@ fn compile_entry_function_is_rejected() {
         .stderr(predicate::str::contains(
             "compiled entry point returns a function",
         ));
+}
+
+/// Write an importer plus its imported files into a fresh, unique temp directory
+/// so relative imports resolve, then return `(interpreter_stdout, native_stdout)`
+/// for the importer. Both paths must succeed; callers compare the two outputs to
+/// each other (the differential property) and to an expected literal.
+fn import_run_vs_compile(test: &str, importer: &str, files: &[(&str, &str)]) -> (String, String) {
+    let dir = std::env::temp_dir().join(format!("zutai_imp_{test}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, content) in files {
+        std::fs::write(dir.join(name), content).unwrap();
+    }
+    let importer_path = dir.join(importer);
+    let interp = cli()
+        .arg("run")
+        .arg(&importer_path)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let interp = String::from_utf8(interp).expect("run output should be UTF-8");
+    let bin = dir.join("out.bin");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&importer_path)
+        .arg("-o")
+        .arg(&bin)
+        .assert()
+        .success();
+    let native = StdCommand::new(&bin).output().unwrap();
+    assert!(native.status.success(), "{native:?}");
+    let native = String::from_utf8(native.stdout).expect("native output should be UTF-8");
+    (interp, native)
+}
+
+#[test]
+fn compile_zti_import_field_matches_oracle() {
+    let (interp, native) = import_run_vs_compile(
+        "zti_field",
+        "main.zt",
+        &[
+            (
+                "config.zti",
+                "{\n  host = \"127.0.0.1\";\n  port = 8080;\n}\n",
+            ),
+            ("main.zt", "cfg :: import \"config.zti\"\ncfg.port\n"),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert_eq!(native, "8080\n");
+}
+
+#[test]
+fn compile_zti_import_whole_record_matches_oracle() {
+    // Nested record, list, atom, bool, text, and int data all lower inline and
+    // must render identically to the interpreter (name-sorted record display).
+    let (interp, native) = import_run_vs_compile(
+        "zti_record",
+        "main.zt",
+        &[
+            (
+                "data.zti",
+                "{\n  a = 1;\n  nested = { b = 2; };\n  items = [10; 20;];\n  flag = true;\n  tag = #ok;\n  name = \"hi\";\n}\n",
+            ),
+            ("main.zt", "d :: import \"data.zti\"\nd\n"),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_import_is_rejected() {
+    // `.zt` module imports are not yet linked natively (Phase A.a): compile must
+    // reject cleanly while the interpreter still runs the program.
+    let dir = std::env::temp_dir().join("zutai_imp_zt_reject");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.zt"),
+        "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("main.zt"), "f :: import \"lib.zt\"\nf 2 3\n").unwrap();
+    let main = dir.join("main.zt");
+    cli()
+        .arg("run")
+        .arg(&main)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("5"));
+    let bin = dir.join("out.bin");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&main)
+        .arg("-o")
+        .arg(&bin)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("import"));
 }
