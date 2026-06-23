@@ -203,6 +203,18 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   TLC path. Now `variants (Color)` and `(witness Show @Point).show p` fold to the
   interpreter's value, and a bare non-serializable `witness` dictionary is
   rejected cleanly instead of crashing the compiler. Commits `3033284`, `14aff1b`.
+- **Module-import backend gate** (`crates/general/dataflow/src/lib.rs`). A
+  compiled program that imports a `.zt`/`.zti` module crashed at runtime: TLC→DC
+  lowers `TlcExpr::Import` to `DfNodeKind::Import`, which ANF turns into an
+  `AnfExpr::Error` leaf, and the imported module is never lowered or linked.
+  Programs segfaulted, and an imported operator witness silently dispatched to
+  the builtin operator (compiled `1 == 1` against an imported
+  `Eq @Int { (==) = \a b. false; }` returned true vs the interpreter's false).
+  `import_reason` now gates any module containing an import out of Dataflow Core
+  in both `try_lower_tlc` paths; THIR already rejected bare-binding imports as
+  "unsupported feature: imports", and this catches record-valued imports that
+  slipped past. Cross-module backend linking remains unimplemented; the
+  interpreter still resolves imports. Commits `5a6d070`, `aad96ea`.
 - Verification: `cargo fmt`; `cargo clippy --workspace --all-targets` (clean);
   `cargo test --workspace` (all pass). Touched-code coverage exceeds 85%; the
   only unhit added line is a defensive `else continue` guard in

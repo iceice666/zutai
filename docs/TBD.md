@@ -29,14 +29,28 @@ Ranked by remaining work:
    corpus (`COMPILED_WITNESS_FIXTURES`) confirms native parity for two-method
    sorted-slot dispatch, derived record equality, a conditional `List` witness,
    and a method-level type parameter (the dict field-slot was being dropped
-   during effect rewriting — fixed in commit `69e6758`). The prior "zero native
-   support" claim was stale for these shapes. Remaining unverified native
-   shapes: imported witness dictionaries used as *invoked methods* (import
-   value parity exists, witnessed dispatch through an import is unconfirmed),
-   operator-method witnesses, higher-kinded instantiation, and Show/Ord
-   `derive` *rendering* through the native display path. Completing this means
-   extending the witness corpus to those shapes and lowering any that do not
-   yet erase onto the existing record/dispatch backend.
+   during effect rewriting — fixed in commit `69e6758`). Probing since confirmed
+   native parity for operator-method witnesses (`==`/`<` direct and bounded),
+   structural Show/Ord `derive` rendering, and union `derive` equality too, so
+   the prior "zero native support" claim was broadly stale. Genuinely open
+   shapes: **higher-kinded instantiation** stays check-only by design — eval and
+   compile both refuse HKT execution (`unify.rs` "a refused check is the safe
+   direction"), and a type-checking `mapTwice (\x. x) [1; 2;]` is consistently
+   rejected at the type-check stage on both paths. **Imported witnesses used as
+   invoked methods** is the real remaining gap, now folded into the import gap
+   below: a compiled module that imports an operator witness used to silently
+   dispatch to the builtin operator, and is now rejected with the rest of the
+   import gate. Completing native witnesses means cross-module witness lowering
+   (see imports) and a backend HKT-dispatch story.
+
+   - **Module imports (large, cross-cutting).** `.zt`/`.zti` imports do not lower
+     to the native backend at all: the imported module is never lowered or
+     linked, so compiled importing programs segfaulted. As of 2026-06-23
+     `import_reason` (commit `5a6d070`) rejects any module containing an import
+     before Dataflow Core. Completing this is a cross-module compilation feature
+     — lower and link each imported module's TLC, then thread imported witness
+     dictionaries into the importing module's dispatch — and unblocks imported
+     witness methods.
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
    the interpreter runs row-typed code as ordinary records/unions. Confirmed
