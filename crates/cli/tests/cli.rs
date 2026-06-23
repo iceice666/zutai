@@ -536,6 +536,11 @@ parse :: Text -> Config ! { fail ParseError }
 parse
 "#;
 
+const OPEN_ROW_SELECT_SRC: &str = r#"
+getN :: { n : Int; ...; } -> Int = x => x.n;
+getN { extra = 7; n = 5; }
+"#;
+
 const HANDLED_EFFECT_SRC: &str = r#"
 result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
 result
@@ -819,6 +824,39 @@ fn compile_effect_bin_is_rejected_before_toolchain() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn compile_open_row_select_is_rejected_with_diagnostic() {
+    // Open-row record field access would silently miscompile in the slot-based
+    // native backend (wrong slot → wrong value). The gate must reject it before
+    // emitting LLVM IR, with a diagnostic mentioning "open record row".
+    let path = write_tmp("cli_test_compile_open_row.zt", OPEN_ROW_SELECT_SRC);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("open record row"));
+}
+
+#[test]
+fn compile_bin_open_row_select_is_rejected_with_diagnostic() {
+    let path = write_tmp("cli_test_compile_bin_open_row.zt", OPEN_ROW_SELECT_SRC);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("open record row"));
+}
+
+#[test]
+fn run_open_row_select_evaluates_correctly() {
+    // The interpreter resolves fields by name and handles open records soundly.
+    let output = run_stdout("cli_test_run_open_row.zt", OPEN_ROW_SELECT_SRC);
+    assert_eq!(output.trim(), "5");
 }
 
 #[test]

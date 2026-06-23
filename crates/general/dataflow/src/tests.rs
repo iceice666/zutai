@@ -972,3 +972,92 @@ fn curried_polymorphic_lambdas_get_per_layer_function_types() {
     ))
     .expect("curried polymorphic lowering must validate");
 }
+
+// ── Open-row select gate ──────────────────────────────────────────────────────
+
+fn tlc_of(src: &str) -> (zutai_tlc::TlcModule, Vec<zutai_hir::Binding>) {
+    let parsed = zutai_syntax::parse(src);
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "HIR errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "THIR errors: {:?}",
+        thir.diagnostics
+    );
+    let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
+    let bindings = hir.file.bindings.clone();
+    (tlc, bindings)
+}
+
+#[test]
+fn open_row_select_is_rejected_before_dataflow_core() {
+    // A polymorphic function that selects a field from an open record type would
+    // silently miscompile: the slot computed from the view type does not match the
+    // slot in the concrete runtime layout. try_lower_tlc must intercept this.
+    let (tlc, bindings) = tlc_of(
+        r#"
+getN :: { n : Int; ...; } -> Int = x => x.n;
+getN { extra = 7; n = 5; }
+"#,
+    );
+    let reason =
+        try_lower_tlc(&tlc, &bindings).expect_err("open-row select must be gated before DC");
+    assert!(
+        reason.contains("open record row"),
+        "reason should mention open record row, got: {reason}"
+    );
+}
+
+#[test]
+fn closed_record_select_lowers_without_error() {
+    // Concrete/closed record field access must still work.
+    let (tlc, bindings) = tlc_of(
+        r#"
+r :: { a : Int; b : Int; } = { a = 3; b = 9; }
+r.b
+"#,
+    );
+    try_lower_tlc(&tlc, &bindings).expect("closed-record select must lower to DC");
+}
+
+#[test]
+fn open_row_passthrough_without_select_lowers_without_error() {
+    // Passing an open record through unchanged (no GetField) is sound: the caller
+    // provides a concrete record; the function never reads a field by slot.
+    let (tlc, bindings) = tlc_of(
+        r#"
+idRec :: { n : Int; ...; } -> { n : Int; ...; } = x => x;
+idRec { extra = 7; n = 5; }
+"#,
+    );
+    try_lower_tlc(&tlc, &bindings)
+        .expect("open-row passthrough without field access must lower to DC");
+}
+
+#[test]
+fn open_row_select_is_gated_under_host_grants_too() {
+    // The host-grant lowering path must apply the same open-row gate, so an
+    // effectful-capable compile cannot smuggle an open-row select into the backend.
+    let (tlc, bindings) = tlc_of(
+        r#"
+getN :: { n : Int; ...; } -> Int = x => x.n;
+getN { extra = 7; n = 5; }
+"#,
+    );
+    let reason = try_lower_tlc_with_host_grants(&tlc, &bindings, zutai_tlc::HostEffectSet::ALL)
+        .expect_err("open-row select must be gated under host grants");
+    assert!(
+        reason.contains("open record row"),
+        "reason should mention open record row, got: {reason}"
+    );
+}
