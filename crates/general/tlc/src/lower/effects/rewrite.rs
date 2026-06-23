@@ -665,6 +665,9 @@ impl<'module> EffectElaborator<'module> {
     ) -> TlcExprId {
         let id = self.module.expr_arena.alloc(expr);
         self.module.expr_types.insert(id, ty);
+        if let Some(slot) = self.module.dict_field_slots.get(&source).copied() {
+            self.module.dict_field_slots.insert(id, slot);
+        }
         let span = self.module.spans.get(&source).copied().unwrap_or_default();
         self.module.spans.insert(id, span);
         id
