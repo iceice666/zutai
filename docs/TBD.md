@@ -10,21 +10,10 @@ Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
 Phase 30–32 performance series. Per-feature support-level status for each gap is
 detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
 
-Recommended start: **Phase D** — the last open Track 1 item (open-union match
-lowering), unblocked now that Phase C landed. (Phases B, 33, and C landed
-2026-06-25 — see `docs/ARCHIVED.md`.)
-
-### Phase D — Open-union match lowering (Track 1)
-
-- **Gap.** A polymorphic match over a `...Rest`-tailed union is
-  check-plus-interpreter only; the type-checker rejects it on both paths, so
-  there is no silent miscompile today.
-- **Approach.** The union analog of Phase C — reuse C's row-erased
-  monomorphization (inline concrete-argument matches, substituting the union row
-  variable), then lift the type-checker rejection and lower.
-- **Acceptance.** Open-union differential corpus; pairs with the landed
-  `compiled_union_extension_matches_oracle`.
-- **Phase C landed 2026-06-25**, so this is unblocked.
+All Track 1 (v1-native-backend) phases — A, B, C, D — have landed (2026-06-25;
+see `docs/ARCHIVED.md`), as have Track 2 performance Phases 30–33. The only
+remaining scheduled item is **Phase 34** (the GC collector), which stays gated on
+a demonstrated GC workload.
 
 ### Phase 34 — Conservative mark-sweep GC (Track 2)
 
@@ -108,10 +97,13 @@ Ranked by remaining work:
    slot is recomputed for the concrete record (`monomorphize_open_row_selects`).
    The `open_row_select_reason` gate is now reachability-scoped and still rejects
    genuinely-polymorphic open-row selects (a function applied to a still-open
-   argument). Open unions (a polymorphic match over a `...Rest`-tailed union type)
-   remain check-plus-interpreter only: the type-checker rejects the open-union
-   match expression on both `run` and `compile` paths so there is no backend
-   parity gap — Phase D lifts that with the same monomorphization technique.
+   argument). Open-union matches (a polymorphic match over a `...Rest`-tailed
+   union type) **landed 2026-06-25** (Phase D): unlike record selects they are
+   tag-dispatched (no slot hazard, no monomorphization needed), so lifting the
+   over-restrictive `union_rows_match` rigid-tail check — a closed member pattern
+   is a valid case of a rigid open union — is the whole fix; the backend already
+   lowered the tag dispatch. With this, the whole row-polymorphism item is
+   native-complete.
 
 3. **Residual-effect runtime (medium; partly a non-goal).** Effects a `handle`
    fully discharges are CPS-elaborated to ordinary functions/matches before

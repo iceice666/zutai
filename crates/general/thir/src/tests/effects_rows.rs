@@ -658,6 +658,16 @@ fn open_union_match_with_wildcard_is_exhaustive() {
 }
 
 #[test]
+fn rest_tailed_union_match_typechecks() {
+    // Phase D: a match over a `<Rest>`-tailed (rigid) open union type-checks — a
+    // member pattern is a valid case of the rigid open union, and a wildcard
+    // covers the tail.
+    completed_file(
+        "classify :: <Rest> { #dev; #test; ...Rest; } -> Text\n  = #dev => \"d\";\n  = #test => \"t\";\n  = _ => \"o\";\nclassify #dev",
+    );
+}
+
+#[test]
 fn open_union_match_without_wildcard_is_non_exhaustive() {
     let lowered = lower(
         "classify :: { #dev; #test; ...; } -> Text\n  = #dev => \"d\";\n  = #test => \"t\";\nclassify #dev",

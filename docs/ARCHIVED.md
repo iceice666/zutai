@@ -146,6 +146,34 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase D: Open-union match lowering ✅
+
+_Completed 2026-06-25. Closes the Track 1 Phase D item in `TBD.md` and the
+open-union half of the v1 row-polymorphism gap. A polymorphic match over a
+`<Rest>`-tailed open union now type-checks and compiles with parity, completing
+native row polymorphism._
+
+- **Finding.** An anonymous `...` open-union match (`RowTail::Open`) already
+  type-checked, ran, and compiled (union matches are tag-dispatched). Only the
+  named `<Rest>` form (`RowTail::Param`) failed — at type-checking, with
+  "type mismatch: expected union, found #dev". Unlike record selects (Phase C),
+  union dispatch is by tag, not by slot, so there is no slot hazard and no
+  monomorphization is needed.
+- **Fix** (`crates/general/thir/src/lower/types/match_.rs`, `union_rows_match`):
+  the rigid `RowTail::Param(p)` case required the found tail to equal the row
+  variable (`ft == RowTail::Param(p)`), rejecting a closed member pattern
+  (`#dev`, tail `Closed`). It now also accepts a closed found whose members are
+  all explicit members of the rigid open union (`extras.is_empty() && (ft ==
+  Closed || ft == Param(p))`) — such a value/pattern is a valid case of the
+  union; a different rigid tail or an open/flexible found stays rejected as not
+  provably covered. The backend's existing tag dispatch lowers the match
+  unchanged. Exhaustiveness is unaffected: a `<Rest>` match still needs a
+  wildcard (the rigid tail has unknown members).
+- Tests: `compiled_open_union_rest_match_matches_oracle` and
+  `open_union_rest_match_without_wildcard_is_non_exhaustive` (cli),
+  `rest_tailed_union_match_typechecks` (thir). Gate stack: 1560 workspace tests
+  pass; `cargo fmt` and `cargo clippy` clean.
+
 ### Phase C: Open-row select lowering ✅
 
 _Completed 2026-06-25. Closes the Track 1 Phase C item in `TBD.md` and the

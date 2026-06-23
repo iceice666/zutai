@@ -1276,6 +1276,43 @@ f (#square { side = 4; })
 }
 
 #[test]
+fn compiled_open_union_rest_match_matches_oracle() {
+    // Phase D: a polymorphic match over a `<Rest>`-tailed open union. The
+    // type-checker now accepts a member pattern against the rigid open union
+    // (`union_rows_match` no longer demands the found tail equal the row var);
+    // the match is tag-dispatched, so it compiles with no special row lowering.
+    // Cover explicit members (`#dev`, `#test`) and a tail member (`#prod` → `_`).
+    let src = "classify :: <Rest> { #dev; #test; ...Rest; } -> Int\n\
+               = #dev => 1;\n  = #test => 2;\n  = _ => 9;\n\
+               (classify #dev, classify #test, classify #prod)\n";
+    let run_output = run_stdout("cli_test_open_union_rest_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_open_union_rest_compiled", src);
+    assert_eq!(compiled_output, run_output, "native must match the oracle");
+    assert!(
+        compiled_output.contains('1')
+            && compiled_output.contains('2')
+            && compiled_output.contains('9'),
+        "expected (1, 2, 9), got {compiled_output:?}"
+    );
+}
+
+#[test]
+fn open_union_rest_match_without_wildcard_is_non_exhaustive() {
+    // The rigid `<Rest>` tail has unknown members, so a match over it still
+    // requires a wildcard to be exhaustive.
+    let path = write_tmp(
+        "cli_test_open_union_rest_noexh.zt",
+        "classify :: <Rest> { #dev; ...Rest; } -> Int = #dev => 1;\nclassify #dev\n",
+    );
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("non-exhaustive"));
+}
+
+#[test]
 fn compiled_witness_reflection_dispatch_matches_oracle() {
     // `(witness C @T).method arg` is the `WitnessReflect` expression form, not a
     // builtin binding, so it escaped reflection detection and ICE'd the backend

@@ -524,7 +524,14 @@ impl<'hir> Lowerer<'hir> {
         match et {
             RowTail::Closed => extras.is_empty() && ft == RowTail::Closed,
             RowTail::Open => true,
-            RowTail::Param(p) => extras.is_empty() && ft == RowTail::Param(p),
+            RowTail::Param(p) => {
+                // A closed value/pattern whose members are all explicit members of
+                // the rigid open union is a valid case of it (the `<Rest>` tail is
+                // simply not exercised); a value with the same rigid tail matches
+                // exactly. A different rigid tail or an open/flexible found is not
+                // provably covered, so stays rejected.
+                extras.is_empty() && (ft == RowTail::Closed || ft == RowTail::Param(p))
+            }
             RowTail::Infer(r) => {
                 if ft == RowTail::Infer(r) {
                     extras.is_empty()
