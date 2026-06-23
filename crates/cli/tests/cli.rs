@@ -473,6 +473,47 @@ fn run_imported_function_can_flow_through_print_effect() {
         .stdout(predicate::str::contains("using import").and(predicate::str::contains("5")));
 }
 
+#[test]
+fn compile_module_import_is_rejected_with_diagnostic() {
+    // A `.zt`/`.zti` import lowers to a DfNodeKind::Import the backend never
+    // links, so a compiled importing program crashed at runtime. The backend
+    // gate must reject it cleanly. `run` still resolves imports via the
+    // interpreter (covered by run_imported_* tests).
+    write_tmp(
+        "cli_test_compile_import_dep.zt",
+        "base ::= 21\n{ doubled = base; name = \"svc\"; }\n",
+    );
+    let path = write_tmp(
+        "cli_test_compile_import_main.zt",
+        "dep :: import \"./cli_test_compile_import_dep.zt\"\ndep\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not support module imports"));
+}
+
+#[test]
+fn compile_bin_module_import_is_rejected_before_toolchain() {
+    write_tmp(
+        "cli_test_compile_bin_import_dep.zt",
+        "base ::= 7\n{ value = base; tag = \"x\"; }\n",
+    );
+    let path = write_tmp(
+        "cli_test_compile_bin_import_main.zt",
+        "dep :: import \"./cli_test_compile_bin_import_dep.zt\"\ndep\n",
+    );
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not support module imports"));
+}
+
 // ─── parse with type/semantic errors ─────────────────────────────────────────
 
 #[test]

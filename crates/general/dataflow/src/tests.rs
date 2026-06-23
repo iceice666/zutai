@@ -1061,3 +1061,48 @@ getN { extra = 7; n = 5; }
         "reason should mention open record row, got: {reason}"
     );
 }
+
+// ── Module-import backend gate ────────────────────────────────────────────────
+
+#[test]
+fn module_import_is_rejected_before_dataflow_core() {
+    // TLC→DC lowers `TlcExpr::Import` to `DfNodeKind::Import`, which ANF treats
+    // as an `AnfExpr::Error` leaf — imported modules are never linked, so a
+    // compiled program that imports crashes at runtime. `try_lower_tlc` must
+    // reject any module containing an import. Build a minimal module by hand
+    // because the `tlc_of` helper cannot resolve a real import without a base
+    // directory.
+    use la_arena::Arena;
+    use rustc_hash::FxHashMap;
+    use zutai_hir::HirImportSource;
+    use zutai_tlc::{Row, TlcExpr, TlcModule, TlcType};
+
+    let mut type_arena = Arena::new();
+    let unit_ty = type_arena.alloc(TlcType::Record(Row::REmpty));
+    let mut expr_arena = Arena::new();
+    let import_expr = expr_arena.alloc(TlcExpr::Import(HirImportSource::String(
+        "data_module.zt".into(),
+    )));
+    let mut expr_types = FxHashMap::default();
+    expr_types.insert(import_expr, unit_ty);
+
+    let module = TlcModule {
+        decls: Vec::new(),
+        decl_arena: Arena::new(),
+        expr_arena,
+        type_arena,
+        expr_types,
+        dict_field_slots: FxHashMap::default(),
+        spans: FxHashMap::default(),
+        final_expr: Some(import_expr),
+    };
+
+    let reason = try_lower_tlc(&module, &[]).expect_err("module import must be gated before DC");
+    assert!(
+        reason.contains("import"),
+        "reason should mention imports, got: {reason}"
+    );
+    let reason = try_lower_tlc_with_host_grants(&module, &[], zutai_tlc::HostEffectSet::ALL)
+        .expect_err("module import must be gated under host grants");
+    assert!(reason.contains("import"), "{reason}");
+}
