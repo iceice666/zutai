@@ -614,6 +614,46 @@ apply print
     ),
 ];
 
+const COMPILED_WITNESS_FIXTURES: &[(&str, &str)] = &[
+    (
+        "two_method_sorted_slot",
+        r#"
+Ord :: <A> @A { lt :: A -> A -> Bool; gt :: A -> A -> Bool; }
+Ord @Int :: { lt = \a b. a < b; gt = \a b. a > b; }
+lt 1 2
+"#,
+    ),
+    (
+        "derive_eq_record",
+        r#"
+Point :: type { x : Int; y : Int; }
+p1 :: Point = { x = 1; y = 2; }
+p2 :: Point = { x = 9; y = 2; }
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+eq p1 p2
+"#,
+    ),
+    (
+        "conditional_list_witness",
+        r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Int :: { eq = \a b. a == b; }
+Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
+eq [1; 2;] [3; 4;]
+"#,
+    ),
+    (
+        "method_level_type_param",
+        r#"
+Conv :: <A> @A { conv :: <B> A -> B -> A; }
+Conv @Int :: { conv = \a b. a; }
+useConv :: <A: Conv> A -> A = x => conv x 0;
+useConv 5
+"#,
+    ),
+];
+
 const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     (
         "nullary_union",
@@ -787,6 +827,19 @@ fn compiled_effect_fixtures_match_eval_tlc_oracle() {
         let run_output = run_stdout(&format!("cli_test_effect_oracle_{name}.zt"), source);
         let compiled_output =
             compile_bin_stdout(&format!("cli_test_effect_compiled_{name}"), source);
+        assert_eq!(
+            compiled_output, run_output,
+            "compiled output must match eval_tlc oracle for {name}"
+        );
+    }
+}
+
+#[test]
+fn compiled_witness_fixtures_match_eval_tlc_oracle() {
+    for (name, source) in COMPILED_WITNESS_FIXTURES {
+        let run_output = run_stdout(&format!("cli_test_witness_oracle_{name}.zt"), source);
+        let compiled_output =
+            compile_bin_stdout(&format!("cli_test_witness_compiled_{name}"), source);
         assert_eq!(
             compiled_output, run_output,
             "compiled output must match eval_tlc oracle for {name}"
