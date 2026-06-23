@@ -142,7 +142,7 @@ The pure core still has no ambient forms such as direct filesystem reads,
 environment lookup, clocks, or randomness. Those operations must be expressed as
 effects and authorized with capability values.
 
-See [host capabilities](../v2_spec/02-host-capabilities.md) for the v2 design that makes these capabilities real.
+See [host capabilities](../../v2_spec/02-host-capabilities.md) for the v2 design that makes these capabilities real.
 
 ---
 

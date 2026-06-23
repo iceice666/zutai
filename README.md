@@ -5,7 +5,7 @@ Zutai is an experimental two-mode language system for data, configuration, valid
 - `.zti` is an inert data literal format: deterministic, non-evaluating, and optimized for fast parsing and lazy materialization.
 - `.zt` is a pure, lazy, typed computation language over data.
 
-The current repository is an early Rust workspace containing parser, semantic IR, CLI, and editor-support work alongside the v0 language design documents.
+The current repository is an early Rust workspace containing parser, semantic IR, CLI, and editor-support work alongside the versioned language specifications under `docs/spec/`.
 
 ## Repository layout
 
@@ -31,8 +31,9 @@ docs/
   language-manual.md     User-facing language manual
   ARCHIVED.md          Archived implementation status and completed milestones
   TBD.md               Open work ledger
-  v0_spec/             Zutai v0 language specification
-  v1_spec/             Deferred post-v0 language design notes
+  spec/                Versioned language specifications
+  spec/v0/             Zutai v0 language specification
+  spec/v1/             Deferred post-v0 language design notes
   stdlib/              Standard library notes
 ```
 
@@ -44,8 +45,8 @@ Start with the language manual or documentation index:
 - [docs/README.md](docs/README.md)
 - [Archived implementation status](docs/ARCHIVED.md)
 - [Open work ledger](docs/TBD.md)
-- [Zutai v0 language specification](docs/v0_spec/00-index.md)
-- [Final design statement](docs/v0_spec/01-overview/final-design-statement.md)
+- [Zutai v0 language specification](docs/spec/v0/00-index.md)
+- [Final design statement](docs/spec/v0/01-overview/final-design-statement.md)
 
 ## Development
 

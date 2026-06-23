@@ -86,7 +86,7 @@ This distinguishes recursive *data types* — productive, with the recursion und
 a record/union/tuple/list/optional/function constructor — from recursive
 *type-level functions* such as `Loop :: Type -> Type = T => Loop T;`, which are
 non-productive and fail type-level evaluation by exhausting fuel (see
-[type-level computation extensions](../v1_spec/02-type-level-computation.md)).
+[type-level computation extensions](../spec/v1/02-type-level-computation.md)).
 Guardedness is the static rule; fuel is the dynamic backstop.
 
 Recursion is permitted in every guarded position, including under a function
@@ -120,7 +120,7 @@ A structurally derived witness for a recursive type is itself recursive.
 Deriving `Eq @Tree` produces an equality witness that refers to itself on the
 recursive fields, resolved as a recursive binding — the same mechanism that lets
 conditional witnesses like `Eq @(List A) :: <A: Eq>` recurse through their type
-arguments (see [constraints](../v1_spec/03-constraints.md)).
+arguments (see [constraints](../spec/v1/03-constraints.md)).
 
 ---
 

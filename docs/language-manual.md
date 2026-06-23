@@ -2,7 +2,7 @@
 
 This is the user-facing guide to current Zutai.
 
-The [v0 language specification](v0_spec/00-index.md) is normative for stable syntax; implemented v1-adjacent features are summarized here with support levels and linked to the [v1 deferred feature specification](v1_spec/00-index.md) and [current implementation status](ARCHIVED.md#current-baseline).
+The [v0 language specification](spec/v0/00-index.md) is normative for stable syntax; implemented v1-adjacent features are summarized here with support levels and linked to the [v1 deferred feature specification](spec/v1/00-index.md) and [current implementation status](ARCHIVED.md#current-baseline).
 
 ## Quick start
 
@@ -358,13 +358,13 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 
 | Feature | User syntax | Support level |
 | --- | --- | --- |
-| [Row tails/open records/open unions](v1_spec/01-row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
-| [Selective projection](v1_spec/01-row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
-| [Constraints/witnesses/derive](v1_spec/03-constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; do not claim full native-backend parity |
-| [Reflection](v1_spec/04-metaprogramming.md) | `fields T`, `variants T`, `schema T`, and `witness C @T` | THIR/TLC/evaluator support; compile/dataflow fold supported reflection to backend values or reject residual reflection before lowering |
-| [Algebraic effects](v1_spec/05-effects.md) | `! { ... }`, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
-| [Record update](v0_spec/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
-| [`print`](v1_spec/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
+| [Row tails/open records/open unions](spec/v1/01-row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
+| [Selective projection](spec/v1/01-row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
+| [Constraints/witnesses/derive](spec/v1/03-constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; do not claim full native-backend parity |
+| [Reflection](spec/v1/04-metaprogramming.md) | `fields T`, `variants T`, `schema T`, and `witness C @T` | THIR/TLC/evaluator support; compile/dataflow fold supported reflection to backend values or reject residual reflection before lowering |
+| [Algebraic effects](spec/v1/05-effects.md) | `! { ... }`, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
+| [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
+| [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 | [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }` and `Stream A` | finite pure generator shell; syntax desugars through HIR to the current lazy list-backed `Stream` representation and uses existing effect rows |
 
 ## Errors and diagnostics
@@ -399,7 +399,7 @@ Common parse-diagnostic mistakes should receive specific messages when the parse
 
 ## Further reading
 
-- [v0 language specification](v0_spec/00-index.md)
-- [v1 deferred feature specification](v1_spec/00-index.md)
+- [v0 language specification](spec/v0/00-index.md)
+- [v1 deferred feature specification](spec/v1/00-index.md)
 - [standard library](stdlib/00-index.md)
 - [implementation status](ARCHIVED.md)

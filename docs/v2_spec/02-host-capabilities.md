@@ -1,6 +1,6 @@
 # Host Capabilities (v2)
 
-[Algebraic effects (v1)](../v1_spec/05-effects.md) split an effectful computation
+[Algebraic effects (v1)](../spec/v1/05-effects.md) split an effectful computation
 into two parts: the effect row records *what* may happen, and a capability value
 records *who authorized it*. v1 ships exactly one host capability — `io.print`,
 provided ambiently by the `run` boundary — and reserves filesystem, environment,

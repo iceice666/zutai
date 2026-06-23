@@ -2,8 +2,8 @@
 
 This document tracks implemented status, validation notes, archived decisions,
 and completed milestones. Open milestones and TBD items live in
-[`TBD.md`](TBD.md). Language design still comes from `docs/v0_spec/` for v0 and
-`docs/v1_spec/` for deferred v1 features.
+[`TBD.md`](TBD.md). Language design still comes from `docs/spec/v0/` for v0 and
+`docs/spec/v1/` for deferred v1 features.
 
 ## Compilation pipeline
 
@@ -35,8 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-23 after Unicode (UAX #31) identifiers, atoms, and
-field names landed across general and immediate modes._
+_Last updated: 2026-06-23 after the language specs moved to `docs/spec/`,
+Unicode XID names landed, and recent evaluator/backend hardening was archived._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -76,7 +76,8 @@ field names landed across general and immediate modes._
 - `zutai-eval` has both the THIR oracle and TLC evaluator. Differential coverage
   includes constraints, optionals, `.zti` imports, `.zt` imports, imported
   functions, transitive imports, imported witness dictionaries, record update,
-  config overlay, effects, and reflection/type-value boundaries.
+  config overlay, effects, reflection/type-value boundaries, polymorphic
+  curried helpers, repeated nested destructures, and name-sorted record display.
 - `print` remains a prelude compatibility binding, but its type is now
   `Text -> Text ! { io.print : Text -> Text }`. TLC lowers the builtin value to
   a runtime-dispatching function; source handlers can intercept `io.print`, and
@@ -128,7 +129,7 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 - [x] **Compiler entry-type gate cleanup** — CLI `compile` and `dataflow`
   reject final runtime `Type` values before TLC→DC/LLVM lowering, including raw
   `type Int` entries and alias-value entries such as `MyInt :: type Int; MyInt`.
-- [x] **v0 spec conformance sweep** — code fences from `docs/v0_spec/` are
+- [x] **v0 spec conformance sweep** — code fences from `docs/spec/v0/` are
   extracted and routed through `check`/`run` for `.zt` survivors and the immediate
   parser for `.zti` survivors; stable survivors are promoted to acceptance tests.
 - [x] **Diagnostic polish** — record-vs-record type mismatches render source-like
@@ -139,6 +140,19 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Documentation spec tree merge ✅
+
+- Merged the v0 and v1 language specifications under `docs/spec/` as
+  `docs/spec/v0/` and `docs/spec/v1/`, with `docs/spec/README.md` as the
+  versioned specification entry point.
+- Updated repository docs, roadmap/archive links, v2 cross-links, the v0 spec
+  conformance test fixture paths, and the local `zutai-language` skill routing
+  to the new spec paths.
+- Recent implementation docs now reflect Unicode XID names, canonical
+  interpreter/backend record display, nested destructure SSA hardening,
+  per-layer curried lambda typing, TLC evaluator tail-call trampolining, and the
+  v1 native-backend backlog.
 
 ### Unicode identifiers, atoms, and field names ✅
 
@@ -464,7 +478,7 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ### Phase 16: Effect evaluation and ordering model ✅
 
-- `docs/v1_spec/05-effects.md` now specifies sequencing for `perform`, `handle`,
+- `docs/spec/v1/05-effects.md` now specifies sequencing for `perform`, `handle`,
   operation clauses, `resume`, and sequence expressions.
 - TLC evaluation supports handled effects with delimited continuations.
 - `print` was re-pointed to `io.print`; host `run` handles residual `io.print`.

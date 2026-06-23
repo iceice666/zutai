@@ -2,7 +2,7 @@
 
 v1 polymorphism is predicative and rank-1: every quantifier sits at the outside
 of a type, and a function that takes a polymorphic function as an argument is
-[reserved for a future version](../v1_spec/01-row-polymorphism.md). v2 adds
+[reserved for a future version](../spec/v1/01-row-polymorphism.md). v2 adds
 higher-rank polymorphism — quantifiers nested inside a function's argument types
 — with explicit annotations and bidirectional checking. Inference stays
 predicative.
@@ -42,7 +42,7 @@ against that polymorphic type.
 
 A higher-rank function used without sufficient annotation, where the type is not
 principal, is a type error asking for an annotation — consistent with v1's
-inference-boundary policy (see [row polymorphism](../v1_spec/01-row-polymorphism.md)).
+inference-boundary policy (see [row polymorphism](../spec/v1/01-row-polymorphism.md)).
 This keeps inference decidable and predictable.
 
 ---

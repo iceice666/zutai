@@ -41,7 +41,7 @@ Rationale:
 
 - The **types** are needed to write any signature; they are already intrinsic type
   constructors.
-- The **list verbs** are the advertised idiom (`docs/v0_spec/05-type-system/lists.md`):
+- The **list verbs** are the advertised idiom (`docs/spec/v0/05-type-system/lists.md`):
   `items |> filter pred |> map f |> fold step init`. `fold` is the strict left fold.
 - `id` is the no-op combinator pipelines and higher-order functions reach for.
 - `print` is the one host effect (`io.print`); it stays a pipeline-friendly tap.
@@ -55,7 +55,7 @@ Excluded from the prelude on purpose:
 
 Naming note: the list-specialized `map`/`fold` may later become the witness-dispatched
 `Functor`/`Foldable` methods once v1 constraints land
-(`docs/v1_spec/03-constraints.md`). That is a smooth migration, not a conflict.
+(`docs/spec/v1/03-constraints.md`). That is a smooth migration, not a conflict.
 
 ## Source-canonical, intrinsic-optimized
 
@@ -125,7 +125,7 @@ effect (fail / warn)        = control: propagate, abort, capability boundaries
 Result / Validation (data)  = collect, store, pattern-match, serialize
 ```
 
-`fail`/`warn` (`docs/v1_spec/05-effects.md`) is the *default, blessed* error idiom and is
+`fail`/`warn` (`docs/spec/v1/05-effects.md`) is the *default, blessed* error idiom and is
 **not** mirrored by a prelude `Result`. But `Result` (and an accumulating `Validation`)
 earn an explicit `result` module, because effects do not cover:
 

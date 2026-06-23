@@ -85,11 +85,11 @@ Kind ::= Type ℓ           -- universe at level ℓ  (ℓ ∈ ℕ)
        | Kind -> Kind      -- type-constructor kind  e.g. Type -> Type  [HKT / F-ω layer]
 ```
 
-Universe levels: `Type 0 : Type 1`, `Type 1 : Type 2`, … — this avoids `Type : Type` unsoundness (see `v1_spec/02-type-level-computation.md` §"Universe Levels").
+Universe levels: `Type 0 : Type 1`, `Type 1 : Type 2`, … — this avoids `Type : Type` unsoundness (see `spec/v1/02-type-level-computation.md` §"Universe Levels").
 
 `Row κ` is deliberately parameterized. Records, unions, and effect rows all use the same row machinery (§4 Row constructors), just at different entry kinds.
 
-Arrow kinds give HKT type variables: `F : Type -> Type` means F takes one concrete type and returns a concrete type — the basis for the constraint system's `Functor`, `Foldable`, etc. (see `v1_spec/03-constraints.md` §"Higher-Kinded Constraints").
+Arrow kinds give HKT type variables: `F : Type -> Type` means F takes one concrete type and returns a concrete type — the basis for the constraint system's `Functor`, `Foldable`, etc. (see `spec/v1/03-constraints.md` §"Higher-Kinded Constraints").
 
 ---
 
@@ -164,7 +164,7 @@ RExtend("circle", RecordT(RExtend("radius", Prim(Float), REmpty)), …)
 
 **`TyLamK` replaces eager alias expansion.** The current `types.rs` eagerly expands `Alias`/`AliasApply` to concrete types, which cannot handle recursive type functions. Instead, `Alias(b)` lowers to `TyVar(b)` (where `b` is the alias binding, kinded `Type 0`) or `TyLamK(params, body)` for generic aliases; `AliasApply { binding, args }` lowers to `TyApp(TyVar(b), args)`. The NbE normalizer (§9) reduces applications on demand.
 
-**`RecordT`/`VariantT` over `Row` — one row machinery.** Closed records (v0) have no `RVar`; open records (v1 row polymorphism, `v1_spec/01-row-polymorphism.md`) carry `RVar r` as the row tail. The identical structure applies to union types and effect rows.
+**`RecordT`/`VariantT` over `Row` — one row machinery.** Closed records (v0) have no `RVar`; open records (v1 row polymorphism, `spec/v1/01-row-polymorphism.md`) carry `RVar r` as the row tail. The identical structure applies to union types and effect rows.
 
 **No `Coerce`/cast node.** Equality is normalization-based (§9). Coercions would be needed only if GADT-style local type equalities were introduced. No such feature is planned; this is an explicit design boundary (see §10 non-goals).
 
@@ -346,7 +346,7 @@ Driven by `poly_schemes: HashMap<BindingId, Vec<u32>>` from `ThirFile`.
 
 *(Encodings in this section are approved under Decision 0003 and carried over from the design spec. They have not been re-derived in this consolidation pass.)*
 
-Zutai v1 constraint witnesses (`v1_spec/03-constraints.md`) elaborate entirely into existing term nodes via **dictionaries-as-records**.
+Zutai v1 constraint witnesses (`spec/v1/03-constraints.md`) elaborate entirely into existing term nodes via **dictionaries-as-records**.
 
 **Elaboration rule.** A constrained function:
 ```zt
@@ -392,7 +392,7 @@ The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Recor
 
 ## 9. Algebraic effects — implemented CPS boundary
 
-Zutai v1 source effects (`v1_spec/05-effects.md`) are eliminated before the
+Zutai v1 source effects (`spec/v1/05-effects.md`) are eliminated before the
 general backend sees source control markers. TLC may contain temporary
 `Perform`/`Handle`/`Resume`/`Sequence` nodes after THIR lowering, but
 `TlcModule::elaborate_effects` rewrites the supported handled subset into the
@@ -479,7 +479,7 @@ Each `TyApp` reduction step consumes one unit of fuel. Default limit: 1 000 step
 ```
 error: type-level computation exceeded evaluation limit
 ```
-This handles recursive type functions like `Loop :: Type -> Type` with clause `= T => Loop T;` (see `v1_spec/02-type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
+This handles recursive type functions like `Loop :: Type -> Type` with clause `= T => Loop T;` (see `spec/v1/02-type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
 
 ### Coercion boundary
 
@@ -677,5 +677,5 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 
 - **`docs/dataflow-core.md`** — the next compile stage; the TLC→DC lowering pass lives in `zutai-dataflow::lower`.
 - **`docs/ARCHIVED.md`** — Phase 2 is the TLC phase; this document is the canonical spec for it.
-- **`docs/v0_spec/`** — source of truth for v0 syntax and semantics; every v0 construct has a Phase 0 encoding in §16.
-- **`docs/v1_spec/`** — design context for v1 features; all v1 constructs in §16 are expressible as elaboration in Phases 1–5.
+- **`docs/spec/v0/`** — source of truth for v0 syntax and semantics; every v0 construct has a Phase 0 encoding in §16.
+- **`docs/spec/v1/`** — design context for v1 features; all v1 constructs in §16 are expressible as elaboration in Phases 1–5.

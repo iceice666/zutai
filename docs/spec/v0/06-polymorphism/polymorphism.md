@@ -36,9 +36,9 @@ Body
 
 The v0 type system is predicative explicit polymorphism with HM-style let generalization and bidirectional checking.
 
-Type parameters are unconstrained in v0. A constrained type parameter (e.g., `<A: Eq>`) requires the constraint system, which is a v1 feature. See [Constraints](../../v1_spec/03-constraints.md).
+Type parameters are unconstrained in v0. A constrained type parameter (e.g., `<A: Eq>`) requires the constraint system, which is a v1 feature. See [Constraints](../../v1/03-constraints.md).
 
-Row-polymorphic records and open union types are also v1 features. See [Row polymorphism](../../v1_spec/01-row-polymorphism.md).
+Row-polymorphic records and open union types are also v1 features. See [Row polymorphism](../../v1/01-row-polymorphism.md).
 
 ### Instantiation
 

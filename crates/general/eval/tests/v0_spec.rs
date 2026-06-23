@@ -1,4 +1,4 @@
-//! Acceptance sweep for runnable/checkable code fences in `docs/v0_spec`.
+//! Acceptance sweep for runnable/checkable code fences in `docs/spec/v0`.
 //!
 //! The v0 spec intentionally contains a mix of complete programs, snippets,
 //! pseudo grammar, and known-invalid examples. This test still extracts every
@@ -21,93 +21,93 @@ struct Fence {
 }
 
 const EXPECTED_ZTI_PARSE: &[&str] = &[
-    "docs/v0_spec/01-overview/file-modes.md#01",
-    "docs/v0_spec/02-lexical/conventions.md#10",
-    "docs/v0_spec/02-lexical/conventions.md#11",
-    "docs/v0_spec/02-lexical/conventions.md#15",
-    "docs/v0_spec/03-immediate-mode/immediate-mode.md#02",
-    "docs/v0_spec/03-immediate-mode/immediate-mode.md#06",
-    "docs/v0_spec/07-modules/serialization-boundary.md#05",
-    "docs/v0_spec/08-reference/complete-example.md#01",
-    "docs/v0_spec/08-reference/complete-example.md#03",
+    "docs/spec/v0/01-overview/file-modes.md#01",
+    "docs/spec/v0/02-lexical/conventions.md#10",
+    "docs/spec/v0/02-lexical/conventions.md#11",
+    "docs/spec/v0/02-lexical/conventions.md#15",
+    "docs/spec/v0/03-immediate-mode/immediate-mode.md#02",
+    "docs/spec/v0/03-immediate-mode/immediate-mode.md#06",
+    "docs/spec/v0/07-modules/serialization-boundary.md#05",
+    "docs/spec/v0/08-reference/complete-example.md#01",
+    "docs/spec/v0/08-reference/complete-example.md#03",
 ];
 const EXPECTED_ZT_CHECK: &[&str] = &[
-    "docs/v0_spec/02-lexical/conventions.md#16",
-    "docs/v0_spec/02-lexical/conventions.md#24",
-    "docs/v0_spec/04-general-mode/file-structure.md#15",
-    "docs/v0_spec/04-general-mode/file-structure.md#17",
-    "docs/v0_spec/04-general-mode/functions.md#14",
-    "docs/v0_spec/04-general-mode/imports.md#05",
-    "docs/v0_spec/04-general-mode/values.md#03",
-    "docs/v0_spec/04-general-mode/values.md#04",
-    "docs/v0_spec/04-general-mode/values.md#05",
-    "docs/v0_spec/04-general-mode/values.md#07",
-    "docs/v0_spec/04-general-mode/values.md#13",
-    "docs/v0_spec/04-general-mode/values.md#14",
-    "docs/v0_spec/05-type-system/field-access.md#03",
-    "docs/v0_spec/05-type-system/field-access.md#04",
-    "docs/v0_spec/05-type-system/records.md#04",
-    "docs/v0_spec/05-type-system/records.md#05",
-    "docs/v0_spec/05-type-system/records.md#06",
-    "docs/v0_spec/07-modules/modules.md#01",
-    "docs/v0_spec/07-modules/serialization-boundary.md#04",
-    "docs/v0_spec/07-modules/serialization-boundary.md#06",
+    "docs/spec/v0/02-lexical/conventions.md#16",
+    "docs/spec/v0/02-lexical/conventions.md#24",
+    "docs/spec/v0/04-general-mode/file-structure.md#15",
+    "docs/spec/v0/04-general-mode/file-structure.md#17",
+    "docs/spec/v0/04-general-mode/functions.md#14",
+    "docs/spec/v0/04-general-mode/imports.md#05",
+    "docs/spec/v0/04-general-mode/values.md#03",
+    "docs/spec/v0/04-general-mode/values.md#04",
+    "docs/spec/v0/04-general-mode/values.md#05",
+    "docs/spec/v0/04-general-mode/values.md#07",
+    "docs/spec/v0/04-general-mode/values.md#13",
+    "docs/spec/v0/04-general-mode/values.md#14",
+    "docs/spec/v0/05-type-system/field-access.md#03",
+    "docs/spec/v0/05-type-system/field-access.md#04",
+    "docs/spec/v0/05-type-system/records.md#04",
+    "docs/spec/v0/05-type-system/records.md#05",
+    "docs/spec/v0/05-type-system/records.md#06",
+    "docs/spec/v0/07-modules/modules.md#01",
+    "docs/spec/v0/07-modules/serialization-boundary.md#04",
+    "docs/spec/v0/07-modules/serialization-boundary.md#06",
 ];
 const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     (
-        "docs/v0_spec/02-lexical/conventions.md#16",
+        "docs/spec/v0/02-lexical/conventions.md#16",
         "{ profile = #prod }",
     ),
     (
-        "docs/v0_spec/02-lexical/conventions.md#24",
+        "docs/spec/v0/02-lexical/conventions.md#24",
         "{ host = \"localhost\";  target_triple = \"x86_64-linux\" }",
     ),
     (
-        "docs/v0_spec/04-general-mode/file-structure.md#15",
+        "docs/spec/v0/04-general-mode/file-structure.md#15",
         "<function/1>",
     ),
-    ("docs/v0_spec/04-general-mode/file-structure.md#17", "120"),
+    ("docs/spec/v0/04-general-mode/file-structure.md#17", "120"),
     (
-        "docs/v0_spec/04-general-mode/functions.md#14",
+        "docs/spec/v0/04-general-mode/functions.md#14",
         "<function/1>",
     ),
-    ("docs/v0_spec/04-general-mode/imports.md#05", "#prod"),
-    ("docs/v0_spec/04-general-mode/values.md#03", "<type>"),
-    ("docs/v0_spec/04-general-mode/values.md#04", "<type>"),
-    ("docs/v0_spec/04-general-mode/values.md#05", "\"hello\""),
+    ("docs/spec/v0/04-general-mode/imports.md#05", "#prod"),
+    ("docs/spec/v0/04-general-mode/values.md#03", "<type>"),
+    ("docs/spec/v0/04-general-mode/values.md#04", "<type>"),
+    ("docs/spec/v0/04-general-mode/values.md#05", "\"hello\""),
     (
-        "docs/v0_spec/04-general-mode/values.md#07",
+        "docs/spec/v0/04-general-mode/values.md#07",
         "{ host = \"localhost\";  port = 8080 }",
     ),
     (
-        "docs/v0_spec/04-general-mode/values.md#13",
+        "docs/spec/v0/04-general-mode/values.md#13",
         "[\"alpha\"; \"beta\"; \"gamma\"]",
     ),
     (
-        "docs/v0_spec/04-general-mode/values.md#14",
+        "docs/spec/v0/04-general-mode/values.md#14",
         "[\"alpha\"; \"beta\"; \"gamma\"]",
     ),
-    ("docs/v0_spec/05-type-system/field-access.md#03", "#absent"),
+    ("docs/spec/v0/05-type-system/field-access.md#03", "#absent"),
     (
-        "docs/v0_spec/05-type-system/field-access.md#04",
+        "docs/spec/v0/05-type-system/field-access.md#04",
         "#present (8080)",
     ),
     (
-        "docs/v0_spec/05-type-system/records.md#04",
+        "docs/spec/v0/05-type-system/records.md#04",
         "{ host = \"localhost\";  port = 8080 }",
     ),
-    ("docs/v0_spec/05-type-system/records.md#05", "<type>"),
-    ("docs/v0_spec/05-type-system/records.md#06", "<type>"),
+    ("docs/spec/v0/05-type-system/records.md#05", "<type>"),
+    ("docs/spec/v0/05-type-system/records.md#06", "<type>"),
     (
-        "docs/v0_spec/07-modules/modules.md#01",
+        "docs/spec/v0/07-modules/modules.md#01",
         "{ RawServer = <type>;  Server = <type>;  normalize = <function/1> }",
     ),
     (
-        "docs/v0_spec/07-modules/serialization-boundary.md#04",
+        "docs/spec/v0/07-modules/serialization-boundary.md#04",
         "{ profile = #prod }",
     ),
     (
-        "docs/v0_spec/07-modules/serialization-boundary.md#06",
+        "docs/spec/v0/07-modules/serialization-boundary.md#06",
         "{ a = #quit;  b = #spawn { command = \"ghostty\" } }",
     ),
 ];
@@ -164,7 +164,7 @@ fn v0_spec_code_fences_have_stable_acceptance_coverage() {
 
 fn extract_v0_spec_fences() -> Vec<Fence> {
     let root = repo_root();
-    let docs = root.join("docs/v0_spec");
+    let docs = root.join("docs/spec/v0");
     let mut files = Vec::new();
     collect_markdown_files(&docs, &mut files);
     files.sort();

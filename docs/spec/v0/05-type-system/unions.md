@@ -156,4 +156,4 @@ Tagged union values have no `.zti` representation; only JSON rendering is suppor
 
 ---
 
-Open union types and union extension are v1 features. See [Row polymorphism](../../v1_spec/01-row-polymorphism.md).
+Open union types and union extension are v1 features. See [Row polymorphism](../../v1/01-row-polymorphism.md).

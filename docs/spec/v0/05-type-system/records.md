@@ -120,4 +120,4 @@ record with {
 
 ---
 
-Open record types (view types), named row tails, row-polymorphic field access, and selective projection are v1 features. See [Row polymorphism](../../v1_spec/01-row-polymorphism.md).
+Open record types (view types), named row tails, row-polymorphic field access, and selective projection are v1 features. See [Row polymorphism](../../v1/01-row-polymorphism.md).

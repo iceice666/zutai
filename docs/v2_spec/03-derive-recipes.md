@@ -1,6 +1,6 @@
 # Derive Recipes (v2)
 
-[Constraints (v1)](../v1_spec/03-constraints.md) let a constraint be marked
+[Constraints (v1)](../spec/v1/03-constraints.md) let a constraint be marked
 `derive`, and the compiler synthesizes a structural witness from a type's shape.
 v1 supplies exactly one built-in recipe — the equality family (`eq`, `!=`) — and
 states that user-defined derive recipes are post-v1. v2 lets a constraint carry
@@ -21,7 +21,7 @@ witness Eq @Int            // the Eq dictionary for Int
 
 If no witness for `(C, T)` is in scope, `witness C @T` is a compile error — the
 same resolution and coherence rules as implicit witness passing (see
-[constraints](../v1_spec/03-constraints.md)), made explicit. Witness reflection
+[constraints](../spec/v1/03-constraints.md)), made explicit. Witness reflection
 is available inside derive recipes, where it lets a recipe delegate to the
 witnesses of a type's components.
 
@@ -101,7 +101,7 @@ A recipe is pure, compile-time code, evaluated under the type-level fuel bound
    signatures before it enters the dictionary-passing path.
 
 The resulting witness obeys the usual coherence rule: at most one witness per
-`(constraint, type)` pair (see [constraints](../v1_spec/03-constraints.md)).
+`(constraint, type)` pair (see [constraints](../spec/v1/03-constraints.md)).
 Recipe failures — a missing component witness, a fuel-exhausted recipe, or a
 result that does not match the method signatures — are compile errors located at
 the derivation request.

@@ -276,4 +276,4 @@ eq = \a b => match (a, b) {
 };
 ```
 
-User-defined derive recipes are post-v1. In v1 the compiler supplies the structural recipe for any constraint marked `derive`. Future versions will allow constraints to supply their own compile-time recipe using `fields` and witness reflection. See [derive recipes](../v2_spec/03-derive-recipes.md) for the v2 design.
+User-defined derive recipes are post-v1. In v1 the compiler supplies the structural recipe for any constraint marked `derive`. Future versions will allow constraints to supply their own compile-time recipe using `fields` and witness reflection. See [derive recipes](../../v2_spec/03-derive-recipes.md) for the v2 design.

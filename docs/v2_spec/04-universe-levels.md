@@ -1,6 +1,6 @@
 # Universe Levels (v2)
 
-[Type-level computation (v1)](../v1_spec/02-type-level-computation.md) exposes a
+[Type-level computation (v1)](../spec/v1/02-type-level-computation.md) exposes a
 single surface sort, `Type`, and notes that the implementation *should* use
 internal universe levels to avoid literal `Type : Type`. v1 leaves the core flat
 — `Type : Type` — and relies on a deterministic fuel bound so that type-level
@@ -53,7 +53,7 @@ Pair :: Type -> Type -> Type
 `Pair` quantifies over the levels of `A` and `B`; `Pair Int Text` stays at
 `Type0`, while `Pair Int Type` is accepted at the appropriate higher level.
 Higher-kinded constraint targets such as `F :: Type -> Type` (see
-[constraints](../v1_spec/03-constraints.md)) are likewise level-polymorphic, so
+[constraints](../spec/v1/03-constraints.md)) are likewise level-polymorphic, so
 witnesses like `Functor @List` resolve without level annotations.
 
 ---
@@ -84,7 +84,7 @@ Levels and fuel are orthogonal and both retained:
 - **Fuel** bounds type-level *evaluation* — it guarantees normalization
   terminates, handling non-productive recursive type functions such as
   `Loop :: Type -> Type = T => Loop T;` (see
-  [type-level computation](../v1_spec/02-type-level-computation.md)).
+  [type-level computation](../spec/v1/02-type-level-computation.md)).
 - **Levels** bound type-level *self-reference* — they rule out universe-circular
   definitions statically.
 

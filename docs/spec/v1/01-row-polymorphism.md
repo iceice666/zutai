@@ -94,14 +94,19 @@ Implementations may infer simple row-polymorphic types for local expressions, bu
 ---
 
 ## Selective Projection
-
-Selective projection uses `select`. The `select` syntax is a v1 feature for
-both values and type values.
+Selective projection uses either keyword or postfix-operator syntax. Both forms
+are v1 features for values and type values.
 
 For values:
 
 ```zt
 select server { host; port; }
+```
+
+The postfix operator form is equivalent:
+
+```zt
+server >>= { host; port; }
 ```
 
 means:
@@ -117,6 +122,12 @@ For type values:
 
 ```zt
 select Server { host; port; }
+```
+
+The type postfix operator form is equivalent:
+
+```zt
+Server >>= { host; port; }
 ```
 
 returns the closed record type:
@@ -212,7 +223,7 @@ v0 polymorphism is predicative. A type variable may be instantiated with ordinar
 
 v1 row polymorphism remains predicative and does not include impredicative instantiation, where a type variable is instantiated with another polymorphic type.
 
-v1 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension. See [higher-rank polymorphism](../v2_spec/05-higher-rank-polymorphism.md) for the v2 design.
+v1 does not require higher-rank inference. Functions that accept polymorphic functions as arguments are reserved for a future version unless explicitly supported by an implementation extension. See [higher-rank polymorphism](../../v2_spec/05-higher-rank-polymorphism.md) for the v2 design.
 
 ---
 

@@ -11,8 +11,8 @@ Open work is now grouped by deferral horizon. Completed milestones live in
 block) wraps every TyLam and dictionary `Lam` layer of a polymorphic lambda
 expression with the lambda's full `outer_ty` instead of peeling one
 quantifier/arrow per layer. This is the same shape as the value-parameter
-currying bug fixed 2026-06-22 (commit `c81f207`), where reusing one type
-across curried layers made an inner layer's declared type disagree with its
+currying bug fixed in commit `6684b99`, where reusing one type across curried
+layers made an inner layer's declared type disagree with its
 bind and aborted the Dataflow Core structural validator with an
 internal-compiler-error panic.
 
@@ -34,7 +34,7 @@ divergence in how the two render a value is invisible unless the corpus
 exercises that shape. Record field ordering was such a silent divergence
 (the backend sorts fields by name for slot layout; the interpreter kept
 source order) and went unnoticed until 2026-06-22 because every exercised
-record happened to be alphabetical (fixed in commit `e0e8235`, interpreter
+record happened to be alphabetical (fixed in commit `a249413`, interpreter
 `Display` now sorts). Expand the differential corpus to cover
 non-alphabetical records, variants, nested tuples, text escaping, and
 negative integers so the next rendering divergence fails a test instead of
@@ -79,7 +79,7 @@ Ranked by remaining work:
    `HostPrint` path. Effects that escape to the entry boundary other than
    `io.print`, open effect rows, and effectful entry shapes the runtime ABI
    cannot display are **rejected** before Dataflow Core
-   (`docs/v1_spec/05-effects.md` "Laziness and Ordering"). A general
+   (`docs/spec/v1/05-effects.md` "Laziness and Ordering"). A general
    residual-effect ABI is the gap; whether it is in scope is itself a design
    decision — the strict AOT backend may keep rejecting unhandled effects.
 
@@ -98,7 +98,7 @@ Ranked by remaining work:
 - **Rejecting unhandled non-`io.print` effects** at the backend is the
   committed strict-AOT behavior, not an unfinished feature.
 - **Annotation-required inference** where row/constraint inference is not
-  principal is specified behavior (`docs/v1_spec/01-row-polymorphism.md`
+  principal is specified behavior (`docs/spec/v1/01-row-polymorphism.md`
   "Extended Inference"), not a backend gap.
 
 ## Deferred to v2/v3
