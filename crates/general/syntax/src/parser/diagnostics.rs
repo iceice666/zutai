@@ -553,7 +553,7 @@ impl<'a> Scanner<'a> {
         if !prefix
             .chars()
             .next()
-            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+            .is_some_and(crate::ident::is_ident_start)
         {
             return false;
         }
@@ -583,13 +583,11 @@ impl<'a> Scanner<'a> {
             .map_or(0, |idx| idx + 1);
         let prefix = self.src[segment_start..offset].trim();
         if prefix.is_empty()
-            || !prefix
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            || !prefix.chars().all(crate::ident::is_ident_continue)
             || !prefix
                 .chars()
                 .next()
-                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+                .is_some_and(crate::ident::is_ident_start)
         {
             return false;
         }
@@ -622,7 +620,7 @@ impl<'a> Scanner<'a> {
             && prefix
                 .chars()
                 .next()
-                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+                .is_some_and(crate::ident::is_ident_start)
     }
 
     fn looks_like_type_param_angle(&self, offset: usize) -> bool {

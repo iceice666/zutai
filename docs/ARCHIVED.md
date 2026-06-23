@@ -35,8 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after Phase 32 TLC evaluator tail-call trampoline,
-matching the Phase 31 backend `musttail` depth._
+_Last updated: 2026-06-23 after Unicode (UAX #31) identifiers, atoms, and
+field names landed across general and immediate modes._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -139,6 +139,16 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Unicode identifiers, atoms, and field names ✅
+
+- General mode (`.zt`) and immediate mode (`.zti`) now accept Unicode UAX #31
+  XID names for binding identifiers, field names, and atom bodies, with `_`
+  accepted explicitly and atom bodies additionally accepting `-`. Names compare
+  by raw Unicode scalar sequence with no normalization. The standard and
+  SIMD/NEON immediate parsers share the same behavior; general-mode parsing,
+  lossless tokenization, diagnostics lookaheads, type checking, evaluation, and
+  the CLI `run` path all cover Unicode bindings such as `café ::= 42`.
 
 ### Phase 32: TLC evaluator tail-call trampoline ✅
 

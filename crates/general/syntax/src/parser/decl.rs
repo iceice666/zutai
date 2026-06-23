@@ -60,13 +60,11 @@ fn is_decl_start(input: &mut &str) -> bool {
     // Skip whitespace
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must start with an identifier
-    if !tmp.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+    if !tmp.starts_with(crate::ident::is_ident_start) {
         return false;
     }
     // Consume ident
-    while tmp.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
-        tmp = &tmp[1..];
-    }
+    tmp = tmp.trim_start_matches(crate::ident::is_ident_continue);
     // Skip ws
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must be followed by `::`, `@` (witness), or a pattern-then-`=` sequence.
@@ -82,7 +80,7 @@ fn is_nosig_fn_start(s: &str) -> bool {
     if s.starts_with('(') || s.starts_with('#') || s.starts_with('_') {
         return true;
     }
-    if s.starts_with(|c: char| c.is_ascii_alphabetic()) {
+    if s.starts_with(crate::ident::is_ident_start) {
         // Ensure it's not a keyword-only expression starter
         return true;
     }
@@ -586,7 +584,7 @@ fn consume_contextual_derive(input: &mut &str) -> bool {
     if after
         .chars()
         .next()
-        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        .is_some_and(crate::ident::is_ident_continue)
     {
         return false;
     }

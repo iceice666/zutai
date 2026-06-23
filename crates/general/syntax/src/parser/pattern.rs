@@ -31,7 +31,7 @@ fn parse_wildcard(input: &mut &str) -> Result<Pattern> {
     let (_, span) = spanned('_').parse_next(input)?;
     // Verify not followed by ident continuation
     if let Some(c) = input.chars().next()
-        && (c.is_ascii_alphanumeric() || c == '_')
+        && crate::ident::is_ident_continue(c)
     {
         return fail.parse_next(input);
     }

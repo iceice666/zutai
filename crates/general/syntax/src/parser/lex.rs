@@ -184,27 +184,11 @@ const RESERVED: &[&str] = &[
     "select", "perform", "handle", "with", "resume",
 ];
 
-fn is_ident_continuation(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-fn is_field_name_continuation(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-fn is_atom_body_continuation(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '-'
-}
-
-fn is_atom_start(c: char) -> bool {
-    c.is_ascii_alphabetic() || c == '_'
-}
-
 /// Match exactly the keyword `kw` and verify the next char is not an
 /// identifier continuation (so "type" doesn't match "typeof").
 pub fn kw<'i>(keyword: &'static str) -> impl Parser<&'i str, (), winnow::error::ContextError> {
     move |input: &mut &'i str| {
-        (keyword, not(peek(one_of(is_ident_continuation))))
+        (keyword, not(peek(one_of(crate::ident::is_ident_continue))))
             .void()
             .parse_next(input)
     }
@@ -233,8 +217,8 @@ pub fn op<'i>(op_str: &'static str) -> impl Parser<&'i str, (), winnow::error::C
 
 pub fn parse_atom_body(input: &mut &str) -> Result<String> {
     let body = (
-        one_of(is_atom_start),
-        take_while(0.., is_atom_body_continuation),
+        one_of(crate::ident::is_ident_start),
+        take_while(0.., crate::ident::is_atom_continue),
     )
         .take()
         .parse_next(input)?;
@@ -245,8 +229,8 @@ pub fn parse_atom_body(input: &mut &str) -> Result<String> {
 pub fn parse_ident(input: &mut &str) -> Result<String> {
     let start = *input;
     let name = (
-        one_of(is_atom_start),
-        take_while(0.., is_ident_continuation),
+        one_of(crate::ident::is_ident_start),
+        take_while(0.., crate::ident::is_ident_continue),
     )
         .take()
         .parse_next(input)?;
@@ -262,8 +246,8 @@ pub fn parse_ident(input: &mut &str) -> Result<String> {
 /// Field name: identifier-like shape, without keyword rejection.
 pub fn parse_field_name(input: &mut &str) -> Result<String> {
     let name = (
-        one_of(is_atom_start),
-        take_while(0.., is_field_name_continuation),
+        one_of(crate::ident::is_ident_start),
+        take_while(0.., crate::ident::is_ident_continue),
     )
         .take()
         .parse_next(input)?;

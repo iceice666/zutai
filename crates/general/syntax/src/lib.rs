@@ -6,6 +6,7 @@
 pub mod ast;
 pub mod diagnostic;
 pub mod error;
+pub mod ident;
 pub mod line_index;
 pub mod numlit;
 pub mod parser;

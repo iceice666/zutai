@@ -1400,6 +1400,7 @@ dependencies = [
  "criterion",
  "rustc-hash 2.1.2",
  "thiserror",
+ "unicode-ident",
  "zutai-im-syntax",
  "zutai-types",
 ]
@@ -1409,6 +1410,7 @@ name = "zutai-im-syntax"
 version = "0.1.0"
 dependencies = [
  "rustc-hash 2.1.2",
+ "unicode-ident",
  "winnow",
  "zutai-types",
 ]
@@ -1454,6 +1456,7 @@ dependencies = [
  "num-traits",
  "rowan",
  "rustc-hash 2.1.2",
+ "unicode-ident",
  "winnow",
 ]
 

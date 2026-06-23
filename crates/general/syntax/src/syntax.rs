@@ -254,7 +254,7 @@ impl<'a> Lexer<'a> {
             }
             '0'..='9' => self.consume_number(false),
             '-' if self.next_char_is_ascii_digit() => self.consume_number(true),
-            'A'..='Z' | 'a'..='z' | '_' => self.consume_word(start),
+            c if crate::ident::is_ident_start(c) => self.consume_word(start),
             '{' => self.bump(SyntaxKind::LBrace),
             '}' => self.bump(SyntaxKind::RBrace),
             '[' => self.bump(SyntaxKind::LBracket),
@@ -384,11 +384,11 @@ impl<'a> Lexer<'a> {
 
     fn consume_atom(&mut self) {
         self.pos += 1;
-        self.consume_while(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+        self.consume_while(crate::ident::is_atom_continue);
     }
 
     fn consume_word(&mut self, start: usize) -> SyntaxKind {
-        self.consume_while(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        self.consume_while(crate::ident::is_ident_continue);
         match &self.src[start..self.pos] {
             "type" => SyntaxKind::KeywordType,
             "match" => SyntaxKind::KeywordMatch,

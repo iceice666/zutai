@@ -62,6 +62,11 @@ fn parse_complex_fixture_matches_winnow() {
 }
 
 #[test]
+fn parse_unicode_names_and_atoms_match_winnow() {
+    assert_same_as_winnow("{ café = #ünïcode; 名前 = \"x\"; }");
+}
+
+#[test]
 fn rejects_top_level_non_block() {
     assert!(matches!(
         parse("[1;]").unwrap_err().kind,

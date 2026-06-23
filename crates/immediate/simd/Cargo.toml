@@ -8,6 +8,7 @@ version.workspace = true
 thiserror = "2"
 rustc-hash = "2.0.0"
 zutai-types = { path = "../types" }
+unicode-ident = "1"
 
 [dev-dependencies]
 criterion = "0.5.1"

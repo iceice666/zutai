@@ -8,3 +8,4 @@ version.workspace = true
 zutai-types = { path = "../types" }
 winnow = "1.0.3"
 rustc-hash = "2.0.0"
+unicode-ident = "1"

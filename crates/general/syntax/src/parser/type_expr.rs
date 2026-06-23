@@ -219,7 +219,7 @@ fn starts_type_atom(input: &str) -> bool {
         || input
             .chars()
             .next()
-            .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+            .is_some_and(crate::ident::is_ident_start)
 }
 
 fn starts_braced_type_atom(input: &str) -> bool {

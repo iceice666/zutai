@@ -18,15 +18,15 @@ pub fn parse(input: &mut &str) -> Result<Block> {
 }
 
 fn is_atom_body_continuation(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+    is_field_name_continuation(c) || c == '-'
 }
 
 fn is_field_name_continuation(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
+    c == '_' || unicode_ident::is_xid_continue(c)
 }
 
 fn is_atom_start(c: char) -> bool {
-    c.is_ascii_alphabetic() || c == '_'
+    c == '_' || unicode_ident::is_xid_start(c)
 }
 
 pub fn parse_block(input: &mut &str) -> Result<Block> {

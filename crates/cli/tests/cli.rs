@@ -108,6 +108,14 @@ fn run_valid_zt_file_prints_result() {
 }
 
 #[test]
+fn run_unicode_identifier_prints_result() {
+    assert_eq!(
+        run_stdout("cli_test_unicode_ident.zt", "café ::= 42\ncafé\n"),
+        "42\n"
+    );
+}
+
+#[test]
 fn run_stream_generator_prints_stream_backed_value() {
     let path = write_tmp(
         "cli_test_stream_generator.zt",

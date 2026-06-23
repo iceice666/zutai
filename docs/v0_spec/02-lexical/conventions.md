@@ -132,7 +132,7 @@ These postfixed literals are invalid:
 In `.zti`, atom literals use the same `#` prefix as `.zt`:
 
 ```ebnf
-atom_body ::= [A-Za-z_][A-Za-z0-9_-]*
+atom_body ::= ("_" | XID_Start) ("_" | XID_Continue | "-")*
 atom      ::= "#" atom_body
 ```
 
@@ -186,7 +186,7 @@ In `.zt`, atom literals also use a `#` prefix:
 The atom body uses the same simple atom shape as immediate mode:
 
 ```ebnf
-atom_body ::= [A-Za-z_][A-Za-z0-9_-]*
+atom_body ::= ("_" | XID_Start) ("_" | XID_Continue | "-")*
 atom      ::= "#" atom_body
 ```
 
@@ -212,10 +212,10 @@ Imported into `.zt`, the value is equivalent to:
 
 ### Identifiers
 
-Binding identifiers use:
+Binding identifiers follow Unicode UAX #31 identifier classes:
 
 ```ebnf
-ident ::= [A-Za-z_][A-Za-z0-9_]*
+ident ::= ("_" | XID_Start) ("_" | XID_Continue)*
 ```
 
 Syntactic keywords and reserved literals cannot be used as identifiers. This includes:
@@ -250,6 +250,8 @@ RawServer
 Config
 ```
 
+Unicode identifiers such as `café` and `名前` are valid. Identifiers are compared by Unicode scalar sequence; no normalization is applied.
+
 Type-valued bindings should be capitalized:
 
 ```zt
@@ -268,14 +270,14 @@ server :: Server = {
 }
 ```
 
-This capitalization rule is enforced statically. Parsers and elaborators must error when a type-valued binding starts with a lowercase letter, or when a runtime value binding starts with an uppercase letter.
+This capitalization rule is enforced statically for scripts with case. Parsers and elaborators must error when a cased type-valued binding starts with a lowercase letter, or when a cased runtime value binding starts with an uppercase letter; identifiers whose first scalar is caseless are unaffected.
 
 ### Field names
 
-Field names are bare labels and use the identifier-like shape:
+Field names are bare labels and use the identifier-like Unicode shape:
 
 ```ebnf
-field_name ::= [A-Za-z_][A-Za-z0-9_]*
+field_name ::= ("_" | XID_Start) ("_" | XID_Continue)*
 ```
 
 Atoms may contain `-`; field names may not. Use `_` or camel case for multiword

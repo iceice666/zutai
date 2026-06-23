@@ -694,3 +694,27 @@ fn parse_unicode_ws_multi_byte_no_panic() {
         );
     }
 }
+
+#[test]
+fn parse_unicode_ident_atom_and_field_name() {
+    let parsed = parse_ast_only("café ::= #café\n{ café = café; }");
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let ast = parsed.ast().expect("unicode program should parse");
+    let rendered = format!("{ast:?}");
+    assert!(rendered.contains("café"), "{rendered}");
+}
+
+#[test]
+fn parse_cjk_identifier_without_case() {
+    let parsed = parse_ast_only("名前 ::= 1\n名前");
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    assert!(parsed.ast().is_some());
+}

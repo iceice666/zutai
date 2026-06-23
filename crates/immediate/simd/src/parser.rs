@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
 
     fn parse_name(&mut self) -> Result<String, ParseError> {
         let start = self.pos;
-        let Some(first) = self.peek_byte() else {
+        let Some(first) = self.peek_char() else {
             return Err(error(
                 start,
                 ParseErrorKind::Expected {
@@ -146,12 +146,12 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        self.pos += 1;
-        while let Some(byte) = self.peek_byte() {
-            if !is_name_continue(byte) {
+        self.pos += first.len_utf8();
+        while let Some(c) = self.peek_char() {
+            if !is_name_continue(c) {
                 break;
             }
-            self.pos += 1;
+            self.pos += c.len_utf8();
         }
         if self.peek_byte() == Some(b'-') {
             return Err(error(
@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         self.expect_byte(b'#', "`#`")?;
 
-        let Some(first) = self.peek_byte() else {
+        let Some(first) = self.peek_char() else {
             return Err(error(start, ParseErrorKind::InvalidAtom));
         };
         if !is_name_start(first) {
@@ -177,12 +177,12 @@ impl<'a> Parser<'a> {
         }
 
         let atom_start = self.pos;
-        self.pos += 1;
-        while let Some(byte) = self.peek_byte() {
-            if !is_atom_continue(byte) {
+        self.pos += first.len_utf8();
+        while let Some(c) = self.peek_char() {
+            if !is_atom_continue(c) {
                 break;
             }
-            self.pos += 1;
+            self.pos += c.len_utf8();
         }
 
         Ok(self.input[atom_start..self.pos].to_string())
@@ -196,10 +196,10 @@ impl<'a> Parser<'a> {
                 ParseErrorKind::Expected { expected: keyword },
             ));
         }
-        if self
-            .bytes
-            .get(end)
-            .is_some_and(|byte| is_atom_continue(*byte))
+        if self.input[end..]
+            .chars()
+            .next()
+            .is_some_and(is_atom_continue)
         {
             return Err(error(
                 self.pos,
@@ -379,6 +379,10 @@ impl<'a> Parser<'a> {
 
     fn peek_byte(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.input[self.pos..].chars().next()
     }
 
     fn skip_to_next_significant(&mut self) {

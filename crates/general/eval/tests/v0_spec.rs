@@ -51,6 +51,7 @@ const EXPECTED_ZT_CHECK: &[&str] = &[
     "docs/v0_spec/05-type-system/records.md#06",
     "docs/v0_spec/07-modules/modules.md#01",
     "docs/v0_spec/07-modules/serialization-boundary.md#04",
+    "docs/v0_spec/07-modules/serialization-boundary.md#06",
 ];
 const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     (
@@ -104,6 +105,10 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     (
         "docs/v0_spec/07-modules/serialization-boundary.md#04",
         "{ profile = #prod }",
+    ),
+    (
+        "docs/v0_spec/07-modules/serialization-boundary.md#06",
+        "{ a = #quit;  b = #spawn { command = \"ghostty\" } }",
     ),
 ];
 
