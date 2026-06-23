@@ -480,3 +480,35 @@ server.port ?? 8080";
         ops
     );
 }
+
+#[test]
+fn match_arms_reusing_record_slots_get_unique_ssa_names() {
+    // Several match arms in `area` each destructure a record field at slot 0
+    // (`#circle`'s `radius`, `#rect`'s `width`). The SSA lowerer used to name the
+    // destructure temporary by slot, so every arm produced `%__rec_0` — a duplicate
+    // definition in one LLVM function that `llc` rejects. Each function's
+    // instruction `dest`s must be unique.
+    let src = "\
+Shape :: type {
+  #circle : { radius : Int; };
+  #rect : { width : Int; height : Int; };
+}
+area :: Shape -> Int
+  = #circle { radius = r; } => r;
+  = #rect { width = w; height = h; } => w;
+{ a = area #circle { radius = 5; }; b = area #rect { width = 3; height = 4; }; }";
+    let module = ssa_of(src);
+    for func in all_funcs(&module) {
+        let mut seen = std::collections::HashSet::new();
+        for block in &func.blocks {
+            for instr in &block.instructions {
+                assert!(
+                    seen.insert(instr.dest.as_str()),
+                    "duplicate SSA dest %{} in @{}",
+                    instr.dest,
+                    func.name
+                );
+            }
+        }
+    }
+}

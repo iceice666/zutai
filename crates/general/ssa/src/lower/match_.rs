@@ -53,7 +53,12 @@ pub(super) fn lower_match(
         lower_match_arm_test(&scrutinee_value, arm, &arm_label, &next_label, fb, ctx);
 
         if arm.guard.is_none() {
-            bind_pattern(&arm.pattern, &scrutinee_value, &mut fb.active);
+            bind_pattern(
+                &arm.pattern,
+                &scrutinee_value,
+                &mut fb.active,
+                &mut ctx.fresh,
+            );
         }
         let arm_result = lower_body(&arm.body, fb, ctx);
         let arm_exit_label = fb.active.label.clone();
@@ -112,7 +117,7 @@ pub(super) fn lower_match_arm_test(
     }
 
     if let Some(guard) = &arm.guard {
-        bind_pattern(&arm.pattern, scrutinee, &mut fb.active);
+        bind_pattern(&arm.pattern, scrutinee, &mut fb.active, &mut ctx.fresh);
         let guard_cond = lower_body(guard, fb, ctx);
         fb.finish_and_start(
             SsaTerminator::Branch {
@@ -270,7 +275,12 @@ pub(super) fn combine_optional_conditions(
 // ── Pattern binding ────────────────────────────────────────────────────────────
 
 /// Emit instructions to bind pattern variables from a scrutinee value.
-pub(super) fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut BlockBuilder) {
+pub(super) fn bind_pattern(
+    pattern: &AnfPattern,
+    scrutinee: &SsaValue,
+    bb: &mut BlockBuilder,
+    fresh: &mut Fresh,
+) {
     match pattern {
         AnfPattern::Wildcard | AnfPattern::Lit(_) | AnfPattern::Atom(_) => {}
         AnfPattern::Bind(name) => {
@@ -288,7 +298,7 @@ pub(super) fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut 
                         name,
                         pattern: inner,
                     } => {
-                        let tmp = format!("__tup_{i}_{name}");
+                        let tmp = fresh.next_label(&format!("tup_{i}_{name}"));
                         bb.instrs.push(SsaInstr {
                             dest: tmp.clone(),
                             op: SsaOp::Select {
@@ -296,10 +306,10 @@ pub(super) fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut 
                                 slot: i,
                             },
                         });
-                        bind_pattern(inner, &SsaValue::Reg(tmp), bb);
+                        bind_pattern(inner, &SsaValue::Reg(tmp), bb, fresh);
                     }
                     AnfTuplePatItem::Positional(inner) => {
-                        let tmp = format!("__tup_{i}");
+                        let tmp = fresh.next_label(&format!("tup_{i}"));
                         bb.instrs.push(SsaInstr {
                             dest: tmp.clone(),
                             op: SsaOp::Select {
@@ -307,14 +317,14 @@ pub(super) fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut 
                                 slot: i,
                             },
                         });
-                        bind_pattern(inner, &SsaValue::Reg(tmp), bb);
+                        bind_pattern(inner, &SsaValue::Reg(tmp), bb, fresh);
                     }
                 }
             }
         }
         AnfPattern::Record(fields) => {
             for (slot, inner) in fields {
-                let tmp = format!("__rec_{slot}");
+                let tmp = fresh.next_label(&format!("rec_{slot}"));
                 bb.instrs.push(SsaInstr {
                     dest: tmp.clone(),
                     op: SsaOp::Select {
@@ -322,18 +332,18 @@ pub(super) fn bind_pattern(pattern: &AnfPattern, scrutinee: &SsaValue, bb: &mut 
                         slot: *slot,
                     },
                 });
-                bind_pattern(inner, &SsaValue::Reg(tmp), bb);
+                bind_pattern(inner, &SsaValue::Reg(tmp), bb, fresh);
             }
         }
         AnfPattern::Variant { tag, pattern, .. } => {
-            let tmp = format!("__var_{tag}");
+            let tmp = fresh.next_label(&format!("var_{tag}"));
             bb.instrs.push(SsaInstr {
                 dest: tmp.clone(),
                 op: SsaOp::VariantValue {
                     scrutinee: scrutinee.clone(),
                 },
             });
-            bind_pattern(pattern, &SsaValue::Reg(tmp), bb);
+            bind_pattern(pattern, &SsaValue::Reg(tmp), bb, fresh);
         }
     }
 }
