@@ -127,6 +127,7 @@ Record
 
 ValueField
   ::= FieldName "=" Expr ";"
+   | FieldName "=" ";"
 
 Block
   ::= "{" LocalBinding* Expr (";" Expr)* ";"? "}"
@@ -338,6 +339,7 @@ Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `impo
 - Top-level function declarations and constraint-method defaults use `= pat => body` clauses after the signature. `match` arms use `{ | pat => body; }` clause blocks.
 - `:` is type binding; `=` is value or pattern binding. Type record fields, type tuple fields, and union payload annotations use `:`. Value records, tuples, witness fields, and patterns use `=`.
 - In expression position, `{}` is an empty value record. A non-empty `{ ... }` is a value record only when its first item starts as `FieldName =`; otherwise it is a block expression.
+- A value-record field written `name =;` is field-pun shorthand for `name = name;`: the omitted value is the identifier `name`. It applies to record literals and record-update (`with`) fields.
 - In type position, `{ field : Type; }` is a record type and `{ #tag; }` is a union type.
 - Record row tails (`...;` or `...Rest;`) are last and unique. Union row tails/spreads are also unique and may appear among variants.
 - Function application by whitespace is left-associative. At delimiter depth zero, a newline stops application unless an enclosing operator production consumes it.

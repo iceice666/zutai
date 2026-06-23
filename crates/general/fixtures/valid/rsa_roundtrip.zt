@@ -1,6 +1,6 @@
 -- rsa_roundtrip.zt: Toy RSA round trip over the full compiler pipeline.
 -- Exercises recursive arithmetic, Euclid coefficients, tagged unions, guarded
--- pattern matching, records as final runtime output, and native display.
+-- pattern matching, field-pun record shorthand as final runtime output, and native display.
 
 Bezout :: type {
   gcd : Int;
@@ -63,7 +63,7 @@ verifyRoundTrip :: Int -> Int -> Int -> Int -> Verification
       cipher := encrypt modulus publicExponent message;
       plain := decrypt modulus privateExponent cipher;
       if plain == message then
-        #ok { plain = plain; cipher = cipher; private_exponent = privateExponent; }
+        #ok { plain =; cipher =; private_exponent = privateExponent; }
       else
         #bad { expected = message; actual = plain; }
     };
@@ -84,12 +84,12 @@ decrypted ::= decrypt modulus privateExponent cipher
 verdict ::= verifyRoundTrip modulus publicExponent privateExponent message
 
 {
-  modulus = modulus;
-  phi = phi;
+  modulus =;
+  phi =;
   public_exponent = publicExponent;
   private_exponent = privateExponent;
-  cipher = cipher;
-  decrypted = decrypted;
+  cipher =;
+  decrypted =;
   score = verificationScore verdict;
-  verdict = verdict;
+  verdict =;
 }

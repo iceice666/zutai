@@ -181,6 +181,7 @@ Brace syntax is disambiguated by the first item after `{`:
 | Shape | Parses as |
 | --- | --- |
 | `{ field = value; ... }` | record value |
+| `{ field =; ... }` | record value with field-pun shorthand (`field = field;`) |
 | `{ name := expr; final_expr }` | block with inferred local binding |
 | `{ name : TypeExpr = expr; final_expr }` | block with typed local binding |
 | `type { field : TypeExpr; ... }` | record type |
@@ -221,7 +222,7 @@ profile ::= #prod
 }
 ```
 
-Records use semicolon-terminated fields. Lists use semicolon-terminated elements. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
+Records use semicolon-terminated fields. A field whose value is the identifier with the same name may omit the value: `{ host =; port =; }` is shorthand for `{ host = host; port = port; }`, and the same form works in record updates such as `cfg with { port =; }`. Lists use semicolon-terminated elements. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
 
 Tagged union values are atoms with optional payloads. A no-payload tag is a bare atom such as `#prod`. A record payload is written as an atom followed by a record, such as `#circle { radius = 5.0; }`.
 

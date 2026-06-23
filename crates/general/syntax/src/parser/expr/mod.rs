@@ -443,7 +443,15 @@ fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Spa
             return fail.parse_next(input);
         }
         ws(input)?;
-        let value = parse_expr(input)?;
+        let value = if input.starts_with(';') {
+            // Field-pun shorthand: `name =;` is sugar for `name = name;`.
+            Expr::Ident {
+                name: name.clone(),
+                span: name_span,
+            }
+        } else {
+            parse_expr(input)?
+        };
         ws(input)?;
         ';'.parse_next(input)?;
         let span = name_span.merge(value.span());

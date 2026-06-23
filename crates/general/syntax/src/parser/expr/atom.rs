@@ -239,7 +239,15 @@ fn parse_record_value_tail(input: &mut &str, _start: &str, options: ExprOptions)
             return fail.parse_next(input);
         }
         ws(input)?;
-        let value = super::parse_expr_with_options(input, options)?;
+        let value = if input.starts_with(';') {
+            // Field-pun shorthand: `name =;` is sugar for `name = name;`.
+            Expr::Ident {
+                name: name.clone(),
+                span: name_span,
+            }
+        } else {
+            super::parse_expr_with_options(input, options)?
+        };
         ws(input)?;
         ';'.parse_next(input)?;
         let span = name_span.merge(value.span());

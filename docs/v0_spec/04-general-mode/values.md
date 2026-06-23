@@ -75,6 +75,26 @@ Record values use `.zti`-style fields:
 
 Fields are semicolon-terminated.
 
+When a field value is the identifier with the same name as the field, the value may be omitted, leaving the `=` in place. The field `name =;` is shorthand for `name = name;`:
+
+```zt
+{
+  host =;
+  port =;
+}
+```
+
+is equivalent to:
+
+```zt
+{
+  host = host;
+  port = port;
+}
+```
+
+The shorthand also applies to record-update fields, so `cfg with { port =; }` means `cfg with { port = port; }`.
+
 ### Tagged union values
 
 A tag with no payload is a bare atom:

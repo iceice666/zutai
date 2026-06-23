@@ -304,6 +304,25 @@ applyPatch ::= overlay patch
     assert_eq!(eval_thir_file(src).unwrap(), Value::Int(8080));
 }
 
+// ─── record field-pun shorthand ──────────────────────────────────────────────
+
+#[test]
+fn record_field_pun_desugars_to_same_value() {
+    // `{ port =; }` is sugar for `{ port = port; }`.
+    let punned = run("port ::= 8080\n({ port =; }).port");
+    let explicit = run("port ::= 8080\n({ port = port; }).port");
+    assert_eq!(punned, Value::Int(8080));
+    assert_eq!(punned, explicit);
+}
+
+#[test]
+fn record_update_field_pun_uses_binding_in_scope() {
+    // `cfg with { port =; }` is sugar for `cfg with { port = port; }`, so the
+    // updated field takes the in-scope `port`, not the receiver's old value.
+    let v = run("cfg ::= { host = \"h\"; port = 1; }\nport ::= 8080\n(cfg with { port =; }).port");
+    assert_eq!(v, Value::Int(8080));
+}
+
 // ─── select projection ─────────────────────────────────────────────────────────
 
 #[test]

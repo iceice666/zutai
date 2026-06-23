@@ -138,6 +138,34 @@ fn parse_record_update() {
 }
 
 #[test]
+fn parse_record_field_pun() {
+    let e = parse_expr_str("{ host =; port =; }");
+    let fields = as_record(&e);
+    assert_eq!(fields.len(), 2);
+    assert_eq!(as_ident(field_val(fields, "host")), "host");
+    assert_eq!(as_ident(field_val(fields, "port")), "port");
+}
+
+#[test]
+fn parse_record_field_pun_mixed_with_explicit() {
+    let e = parse_expr_str("{ host =; port = 8080; }");
+    let fields = as_record(&e);
+    assert_eq!(fields.len(), 2);
+    assert_eq!(as_ident(field_val(fields, "host")), "host");
+    assert_eq!(as_int(field_val(fields, "port")), 8080);
+}
+
+#[test]
+fn parse_record_update_field_pun() {
+    let e = parse_expr_str("cfg with { port =; }");
+    let (receiver, fields) = as_record_update(&e);
+    assert_eq!(as_ident(receiver), "cfg");
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "port");
+    assert_eq!(as_ident(&fields[0].value), "port");
+}
+
+#[test]
 fn parse_access_over_grouped_record_update() {
     let e = parse_expr_str("(cfg with { port = 8080; }).port");
     let (receiver, field) = as_access(&e);
