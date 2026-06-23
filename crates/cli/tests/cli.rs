@@ -805,6 +805,22 @@ fn compiled_polymorphic_and_nested_match_fixtures_match_oracle() {
         );
     }
 }
+
+#[test]
+fn compiled_rank2_lambda_arg_matches_oracle() {
+    // A lambda argument checked against a rank-2 type (`<A> A -> A`) used to
+    // abort backend compilation: TLC typed the value lambda layer with the full
+    // `∀`-type, so the Dataflow structural validator found a non-`Fun` where a
+    // `Lam` node requires one and panicked with an ICE. The compiled output must
+    // now lower cleanly and match the interpreter oracle.
+    let src = "apply :: (<A> A -> A) -> Int = \\g. g 1\napply (\\x. x)\n";
+    let run_output = run_stdout("cli_test_rank2_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_rank2_compiled", src);
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled output must match eval_tlc oracle for the rank-2 lambda argument"
+    );
+}
 #[test]
 fn rsa_fixture_runs_and_emits_llvm_pipeline() {
     let source =

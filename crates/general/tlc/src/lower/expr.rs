@@ -707,15 +707,46 @@ impl<'thir> Lowerer<'thir> {
             }
         }
 
-        // Peel one function arrow per parameter so each curried lambda layer is
-        // typed `param -> rest` instead of sharing the full `outer_ty`. Sharing it
-        // gives inner lambdas a param type from the wrong position and fails the
-        // Dataflow structural validator when parameters have distinct types.
-        let arity = params.len();
-        let mut layer_tys = Vec::with_capacity(arity);
+        // Peel `outer_ty` so each abstraction layer is typed with its own slice
+        // (`∀a. rest`, `dict -> rest`, or `param -> rest`) instead of sharing the
+        // full `outer_ty`. Sharing it gives an inner layer a type from the wrong
+        // position, which the Dataflow structural validator rejects with an ICE.
+        // This mirrors the per-layer wrapping in `lower/decl.rs`.
+        //
+        // `outer_ty` for a polymorphic lambda is `∀a…. dict… -> value-fun`: the
+        // forall/dict prefix wraps the value-function type. Record each
+        // forall-layer binder's own type while advancing `cur` past the prefix,
+        // then peel the value arrows from the value-function type that remains.
         let mut cur = outer_ty;
+        let mut forall_layer_tys: Vec<Vec<(TlcTypeId, Vec<TlcTypeId>)>> =
+            Vec::with_capacity(forall_layers.len());
+        for layer in &forall_layers {
+            let mut layer_tys = Vec::with_capacity(layer.len());
+            for (_param, dicts) in layer {
+                let tylam_ty = cur;
+                cur = match self.type_arena[cur].clone() {
+                    TlcType::ForAll(_, _, body) => body,
+                    _ => cur,
+                };
+                let mut dict_tys = Vec::with_capacity(dicts.len());
+                for _ in dicts {
+                    dict_tys.push(cur);
+                    cur = match self.type_arena[cur].clone() {
+                        TlcType::Fun(_, result, _) => result,
+                        _ => cur,
+                    };
+                }
+                layer_tys.push((tylam_ty, dict_tys));
+            }
+            forall_layer_tys.push(layer_tys);
+        }
+
+        // `cur` is now the value-function type; peel one arrow per value parameter
+        // so each curried value lambda is typed `param -> rest`.
+        let arity = params.len();
+        let mut value_layer_tys = Vec::with_capacity(arity);
         for _ in 0..arity {
-            layer_tys.push(cur);
+            value_layer_tys.push(cur);
             cur = match self.type_arena[cur].clone() {
                 TlcType::Fun(_, result, _) => result,
                 _ => cur,
@@ -735,19 +766,22 @@ impl<'thir> Lowerer<'thir> {
             };
             expr = self.alloc_expr(
                 TlcExpr::Lam(param_binding, param_ty, expr),
-                layer_tys[i],
+                value_layer_tys[i],
                 span,
             );
         }
 
-        for layer in forall_layers.iter().rev() {
-            for &(param, ref dicts) in layer.iter().rev() {
-                for &(_, dict_param, dict_ty) in dicts.iter().rev() {
-                    expr = self.alloc_expr(TlcExpr::Lam(dict_param, dict_ty, expr), outer_ty, span);
+        for (layer, layer_tys) in forall_layers.iter().zip(forall_layer_tys.iter()).rev() {
+            for (&(param, ref dicts), (tylam_ty, dict_tys)) in
+                layer.iter().zip(layer_tys.iter()).rev()
+            {
+                for (&(_, dict_param, dict_ty), &lam_ty) in dicts.iter().zip(dict_tys.iter()).rev()
+                {
+                    expr = self.alloc_expr(TlcExpr::Lam(dict_param, dict_ty, expr), lam_ty, span);
                 }
                 let tyvar = self.named_tyvar(param);
                 let kind = self.kind_for_type_param(param);
-                expr = self.alloc_expr(TlcExpr::TyLam(tyvar, kind, expr), outer_ty, span);
+                expr = self.alloc_expr(TlcExpr::TyLam(tyvar, kind, expr), *tylam_ty, span);
             }
         }
         expr

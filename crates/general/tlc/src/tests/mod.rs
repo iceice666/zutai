@@ -185,6 +185,46 @@ fn polymorphic_identity_gets_tylam_and_forall() {
 }
 
 #[test]
+fn rank2_lambda_arg_value_layer_typed_as_fun_not_forall() {
+    // A lambda argument checked against a rank-2 type (`<A> A -> A`) is stored
+    // with a `ForAll` THIR type, so `lower_lambda`'s forall block runs. Each
+    // abstraction layer must carry its own peeled type: the `TyLam` is the
+    // `∀`-type, but the value `Lam` under it must be `param -> rest`, not the
+    // shared `ForAll` outer type. Sharing it gave the value lambda a ∀-type
+    // where the Dataflow structural validator expects `Fun`, aborting backend
+    // compilation with an ICE for rank-2 arguments.
+    let m = tlc_of("apply :: (<A> A -> A) -> Int = \\g. g 1\napply (\\x. x)");
+    let mut found = false;
+    for (id, e) in m.expr_arena.iter() {
+        let crate::TlcExpr::TyLam(_, _, body) = e else {
+            continue;
+        };
+        if !matches!(m.expr_arena[*body], crate::TlcExpr::Lam(_, _, _)) {
+            continue;
+        }
+        found = true;
+        assert!(
+            matches!(
+                m.type_arena[m.expr_types[&id]],
+                crate::TlcType::ForAll(_, _, _)
+            ),
+            "TyLam must carry a ForAll type, got {:?}",
+            m.type_arena[m.expr_types[&id]]
+        );
+        let body_ty = m.expr_types[body];
+        assert!(
+            matches!(m.type_arena[body_ty], crate::TlcType::Fun(_, _, _)),
+            "value Lam under TyLam must be typed Fun(param -> rest), got {:?}",
+            m.type_arena[body_ty]
+        );
+    }
+    assert!(
+        found,
+        "expected a TyLam wrapping a value Lam from the rank-2 lambda argument"
+    );
+}
+
+#[test]
 fn if_desugars_to_case() {
     let m = tlc_of("f x = if x then 1 else 2\nf true");
     let has_case = m
