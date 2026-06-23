@@ -54,18 +54,22 @@ Ranked by remaining work:
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
    the interpreter runs row-typed code as ordinary records/unions. Confirmed
-   native today: concrete/closed value-level `select` and field access, plus
-   open-row *passthrough* (a polymorphic function that returns its record
-   argument without reading a field by slot). As of 2026-06-23 an open-row
-   *field select* — a polymorphic `{ f : T; ...; }` parameter whose body reads
-   `f` — is **rejected** before Dataflow Core (`open_row_select_reason`,
-   commit `b9012d6`) because the field's runtime slot depends on the concrete
-   record's hidden tail fields, which the slot-based ABI cannot recover; it
-   previously miscompiled silently. Open unions, union extension (`...Shape`),
-   and named row-tail *selects* remain check-plus-interpreter only. Completing
-   this means a sound open-row select lowering (row-erased specialization or
-   runtime field-offset descriptors) plus a backend compile-test corpus for
-   row-typed programs; until then the gate keeps the backend honest.
+   native today: concrete/closed value-level `select` and field access; open-row
+   *passthrough* (a polymorphic function that returns its record argument without
+   reading a field by slot); **union extension** (`...Shape` spreading an
+   existing union into a new type — both spread-member and new-member tag
+   dispatch compile with full parity, per `compiled_union_extension_matches_oracle`).
+   Named row-tail *selects* — open-row field reads (`getHost :: <Rest> { host :
+   Text; ...Rest; } -> Text = x => x.host`) — are **rejected** before Dataflow
+   Core (`open_row_select_reason`, commit `b9012d6`) because the field's runtime
+   slot depends on hidden tail fields the slot-based ABI cannot recover; that
+   previously miscompiled silently. Open unions (a polymorphic match over a
+   `...Rest`-tailed union type) remain check-plus-interpreter only: the
+   type-checker rejects the open-union match expression on both `run` and
+   `compile` paths so there is no backend parity gap. Completing this item means
+   a sound open-row select lowering (row-erased specialization or runtime
+   field-offset descriptors) plus a backend compile-test corpus for row-typed
+   programs; until then the gate keeps the backend honest.
 
 3. **Residual-effect runtime (medium; partly a non-goal).** Effects a `handle`
    fully discharges are CPS-elaborated to ordinary functions/matches before
