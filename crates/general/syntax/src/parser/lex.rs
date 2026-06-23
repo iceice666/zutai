@@ -16,6 +16,31 @@ thread_local! {
     pub(crate) static BASE_PTR: Cell<usize> = const { Cell::new(0) };
     /// Delimiter depth: 0 = top level; >0 = inside `{}` / `[]` / `()`.
     pub(crate) static DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Furthest byte offset any parse branch advanced to during the current
+    /// `parse()` call. Backtracking rewinds the winnow cursor, so this
+    /// high-water mark is the best estimate of where parsing actually got
+    /// stuck when the top-level parse fails.
+    static FURTHEST: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Record that a parse branch successfully advanced to `off`; the stored value
+/// only ever increases.
+fn bump_furthest(off: usize) {
+    FURTHEST.with(|c| {
+        if off > c.get() {
+            c.set(off);
+        }
+    });
+}
+
+/// The furthest byte offset reached during the current parse.
+pub(crate) fn furthest_offset() -> usize {
+    FURTHEST.with(|c| c.get())
+}
+
+/// Reset the high-water mark; called once at the start of each parse.
+pub(crate) fn reset_furthest() {
+    FURTHEST.with(|c| c.set(0));
 }
 
 /// RAII guard that decrements the delimiter depth on drop.
@@ -118,7 +143,9 @@ fn skip_ws_or_comment(input: &mut &str) -> Result<()> {
 
 /// Consumes any mix of whitespace and comments (including newlines).
 pub fn ws(input: &mut &str) -> Result<()> {
-    skip_ws_or_comment(input)
+    skip_ws_or_comment(input)?;
+    bump_furthest(current_offset(input));
+    Ok(())
 }
 
 /// Consumes inline whitespace and comments that don't span lines.
@@ -142,6 +169,7 @@ where
         let start = current_offset(i);
         let result = p.parse_next(i)?;
         let end = current_offset(i);
+        bump_furthest(end);
         Ok((result, Span::new(start, end)))
     }
 }

@@ -58,17 +58,27 @@ impl Diagnostic {
         let kind = err.kind;
         let code = kind.code();
         let help = kind.help().map(str::to_string);
+        let span = err.span;
+        // For the generic fallback the synthesized `message` carries the
+        // specific "unexpected `x`" / "unexpected end of input" detail; surface
+        // it at the caret and keep a stable "syntax error" headline. Curated
+        // kinds keep their static label and detailed message.
+        let (headline, label_message) = if matches!(kind, ParseErrorKind::Generic) {
+            ("syntax error".to_string(), err.message)
+        } else {
+            (err.message, kind.label().to_string())
+        };
         let labels = vec![DiagnosticLabel {
-            span: err.span,
-            message: kind.label().to_string(),
+            span,
+            message: label_message,
             style: LabelStyle::Primary,
         }];
-        let fixes = fix_for(err.span, &kind);
+        let fixes = fix_for(span, &kind);
         Self {
             severity: Severity::Error,
             kind,
             code,
-            message: err.message,
+            message: headline,
             labels,
             help,
             notes: Vec::new(),

@@ -300,3 +300,37 @@ fn parse_error_from_kind_derives_dynamic_message() {
         delim.message
     );
 }
+
+#[test]
+fn generic_fallback_names_offending_token() {
+    // `@` mid-declaration is not caught by the heuristic scanner, so the
+    // winnow fallback fires. It must name the stuck token and point a caret at
+    // it, not emit a blank message at the construct's start.
+    let parsed = parse("main ::= foo @ bar\nmain\n");
+    let diag = parsed
+        .diagnostics()
+        .iter()
+        .find(|d| d.kind == ParseErrorKind::Generic)
+        .expect("expected a generic fallback diagnostic");
+    assert_eq!(diag.message, "syntax error");
+    let label = &diag.labels[0];
+    assert_eq!(label.message, "unexpected `@`", "label names the token");
+    assert_eq!(label.span.start, 13, "caret points at the `@`");
+}
+
+#[test]
+fn generic_fallback_reports_end_of_input() {
+    // A trailing binary operator with no following operand consumes through
+    // EOF; the fallback should say so rather than pointing at a stale token.
+    let parsed = parse("x ::= 1 +\nx\n");
+    let diag = parsed
+        .diagnostics()
+        .iter()
+        .find(|d| d.kind == ParseErrorKind::Generic)
+        .expect("expected a generic fallback diagnostic");
+    assert!(
+        diag.labels[0].message.contains("end of input"),
+        "label reports EOF: {}",
+        diag.labels[0].message
+    );
+}
