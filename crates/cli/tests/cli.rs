@@ -2491,3 +2491,38 @@ fn compile_zt_imported_ord_witness_matches_oracle() {
         "expected true, got {native:?}"
     );
 }
+
+#[test]
+fn compile_zt_imported_multi_instance_witness_matches_oracle() {
+    // A dep exports TWO concrete witnesses for the same constraint method
+    // (`Eq @Int` and `Eq @Bool`). Each call site must dispatch to the instance
+    // whose target matches the operand. The interpreter previously resolved
+    // imported methods by NAME only, so two same-named instances were ambiguous
+    // and the call refused; native dispatches via the type-keyed extern table.
+    // The `Eq @Bool` witness returns a constant `false` (≠ structural equality of
+    // `true == true`), so the result discriminates correct dispatch from wrong.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_multi",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. a == b; }\nEq @Bool :: { eq = \\a b. false; }\n1\n",
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "(eq 3 3, eq true true)\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq 3 3 -> true (Int witness ==), eq true true -> false (Bool witness sentinel).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected both true (Int) and false (Bool), got {native:?}"
+    );
+}

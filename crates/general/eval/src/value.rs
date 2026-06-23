@@ -464,10 +464,13 @@ impl PartialEq for Value {
                 if a.len() != b.len() {
                     return false;
                 }
+                // Order-independent: sort by field NAME CONTENT (not pointer
+                // address — that is nondeterministic across runs and makes record
+                // equality flip true/false). Mirrors `values_equal`.
                 let mut fa: Vec<_> = a.iter().collect();
                 let mut fb: Vec<_> = b.iter().collect();
-                fa.sort_by_key(|(n, _)| n.as_ref() as *const str);
-                fb.sort_by_key(|(n, _)| n.as_ref() as *const str);
+                fa.sort_by(|(na, _), (nb, _)| na.as_ref().cmp(nb.as_ref()));
+                fb.sort_by(|(na, _), (nb, _)| na.as_ref().cmp(nb.as_ref()));
                 fa.iter().zip(fb.iter()).all(|((na, ta), (nb, tb))| {
                     na == nb && matches!((ta.peek(), tb.peek()), (Some(va), Some(vb)) if va == vb)
                 })

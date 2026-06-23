@@ -1093,6 +1093,7 @@ fn module_import_is_rejected_before_dataflow_core() {
         type_arena,
         expr_types,
         dict_field_slots: FxHashMap::default(),
+        dict_dispatch_keys: FxHashMap::default(),
         spans: FxHashMap::default(),
         final_expr: Some(import_expr),
         extern_global_bindings: rustc_hash::FxHashMap::default(),

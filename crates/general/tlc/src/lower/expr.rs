@@ -247,6 +247,20 @@ impl<'thir> Lowerer<'thir> {
                             span,
                         );
                         self.register_dict_field_slot(acc, info.constraint, &method_name);
+                        // Record the concrete dispatch key (the instantiated
+                        // operand type) so the interpreter can dispatch an imported
+                        // witness method to the instance whose target matches the
+                        // operand. The `GetField` node's own type is the generic
+                        // method scheme, so the concrete type is captured here. An
+                        // abstract/unkeyable operand yields "" (never matches a
+                        // witness → dispatch refuses).
+                        let dispatch_key = self
+                            .structural_witness_key(
+                                dict_inst,
+                                &mut rustc_hash::FxHashSet::default(),
+                            )
+                            .unwrap_or_default();
+                        self.dict_dispatch_keys.insert(acc, dispatch_key);
                         // Each method-level type param becomes a `TyApp`, in
                         // declaration order, so the dict's `TyLam`-wrapped method is
                         // instantiated at the call site's inferred type arguments.

@@ -183,6 +183,27 @@ fn record_equality() {
     assert_eq!(run("{ x = 1; } == { x = 2; }"), Value::Bool(false));
 }
 
+/// Record equality is order-independent AND deterministic. The TLC evaluator's
+/// `PartialEq` once sorted fields by the field-name string's POINTER ADDRESS,
+/// which is nondeterministic across runs (ASLR / allocation order) and made
+/// `==` on equal records flip between `true` and `false`. Fields are now sorted
+/// by name CONTENT, so permuted-order records compare equal every time.
+#[test]
+fn record_equality_is_order_independent() {
+    assert_eq!(
+        run("{ a = 1; b = 2; } == { b = 2; a = 1; }"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        run("{ p = { x = 1; y = 2; }; q = 3; } == { q = 3; p = { y = 2; x = 1; }; }"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        run("{ p = { x = 1; y = 2; }; } == { p = { x = 1; y = 9; }; }"),
+        Value::Bool(false)
+    );
+}
+
 #[test]
 fn record_update_replaces_only_named_field() {
     let v = run(r#"{ host = "h"; port = 80; } with { port = 8080; }"#);

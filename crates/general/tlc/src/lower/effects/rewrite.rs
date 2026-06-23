@@ -668,6 +668,9 @@ impl<'module> EffectElaborator<'module> {
         if let Some(slot) = self.module.dict_field_slots.get(&source).copied() {
             self.module.dict_field_slots.insert(id, slot);
         }
+        if let Some(key) = self.module.dict_dispatch_keys.get(&source).cloned() {
+            self.module.dict_dispatch_keys.insert(id, key);
+        }
         let span = self.module.spans.get(&source).copied().unwrap_or_default();
         self.module.spans.insert(id, span);
         id

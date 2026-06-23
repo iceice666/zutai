@@ -17,7 +17,11 @@ self-contained, 33 is independent and the highest performance ROI.
 
 - **Gap.** Witness exports with a parametric target (`Eq @(List A)`,
   `target_key` contains `?`) are rejected at import; concrete instances already
-  dispatch natively (commit `d28bc5d`).
+  dispatch natively (commit `d28bc5d`). As of the oracle-consistency fix, the
+  interpreter (`run`) now *refuses* imported conditional witnesses cleanly (no
+  silent wrong value), so Phase B must teach BOTH the native backend and the
+  interpreter (`eval_tlc`/`dict_dispatch_keys`) to dispatch them — making the
+  oracle return a value where it currently refuses.
 - **Touch.** CLI gate `IMPORT_WITNESS_REASON`
   (`crates/cli/src/commands/mod.rs:367`), fired at `mod.rs:522-532` (compile) and
   `:697-704` (dataflow) on `w.target_key.contains('?')`; TLC fallback

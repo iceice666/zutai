@@ -211,7 +211,7 @@ impl<'a> TlcEvaluator<'a> {
                                 .project_record_field(ty_id, &fields, field.as_str())
                                 .map(EvalControl::Value),
                             Value::Nothing => {
-                                if let Some(method) = this.imported_method_by_name(field.as_str()) {
+                                if let Some(method) = this.imported_method(field.as_str(), id) {
                                     Ok(EvalControl::Value(method))
                                 } else {
                                     Err(EvalError::UnboundBinding(zutai_hir::BindingId(u32::MAX)))
@@ -237,7 +237,7 @@ impl<'a> TlcEvaluator<'a> {
                         Ok(EvalControl::Value(Value::Nothing))
                     }
                     Value::Nothing => {
-                        if let Some(method) = this.imported_method_by_name(field.as_str()) {
+                        if let Some(method) = this.imported_method(field.as_str(), id) {
                             Ok(EvalControl::Value(method))
                         } else {
                             Err(EvalError::UnboundBinding(zutai_hir::BindingId(u32::MAX)))

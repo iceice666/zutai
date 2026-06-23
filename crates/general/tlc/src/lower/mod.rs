@@ -56,6 +56,10 @@ struct Lowerer<'thir> {
     expr_types: FxHashMap<TlcExprId, TlcTypeId>,
     spans: FxHashMap<TlcExprId, Span>,
     dict_field_slots: FxHashMap<TlcExprId, usize>,
+    /// Concrete witness-dispatch target key per constraint-method `GetField`
+    /// (operand type's `target_key` string). Collected into
+    /// `TlcModule::dict_dispatch_keys` for runtime imported-witness dispatch.
+    dict_dispatch_keys: FxHashMap<TlcExprId, String>,
     type_cache: FxHashMap<u32, TlcTypeId>,
     infer_to_tyvar: FxHashMap<u32, TlcTypeVar>,
     named_to_tyvar: FxHashMap<u32, TlcTypeVar>,
@@ -117,6 +121,7 @@ impl<'thir> Lowerer<'thir> {
             expr_types: FxHashMap::default(),
             spans: FxHashMap::default(),
             dict_field_slots: FxHashMap::default(),
+            dict_dispatch_keys: FxHashMap::default(),
             type_cache: FxHashMap::default(),
             infer_to_tyvar: FxHashMap::default(),
             named_to_tyvar: FxHashMap::default(),
@@ -174,6 +179,7 @@ impl<'thir> Lowerer<'thir> {
             type_arena: std::mem::take(&mut self.type_arena),
             expr_types: std::mem::take(&mut self.expr_types),
             dict_field_slots: std::mem::take(&mut self.dict_field_slots),
+            dict_dispatch_keys: std::mem::take(&mut self.dict_dispatch_keys),
             spans: std::mem::take(&mut self.spans),
             extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
         }

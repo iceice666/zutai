@@ -1,0 +1,4 @@
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Eq @Bool :: { eq = \a b. false; }
+1

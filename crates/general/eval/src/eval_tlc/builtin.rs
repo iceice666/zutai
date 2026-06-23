@@ -111,6 +111,32 @@ impl<'a> TlcEvaluator<'a> {
         }
         found
     }
+
+    /// Type-directed imported-witness method dispatch.
+    ///
+    /// `getfield_id` is the `GetField(dict, method)` node for a constraint-method
+    /// call. Its recorded TLC type is the *generic* method scheme, so the concrete
+    /// operand type is not recoverable from it; instead the lowerer records the
+    /// call site's concrete dispatch key in `dict_dispatch_keys`. We key the
+    /// imported-witness lookup on that string so multiple same-method instances
+    /// (`Eq @Int`, `Eq @Bool`) resolve to the witness whose target matches the
+    /// operand.
+    ///
+    /// When a dispatch key was recorded but no witness matches it — including an
+    /// abstract/unkeyable operand (empty key) or a parametric/conditional target
+    /// no concrete instance covers — we refuse rather than fall back to a
+    /// type-unaware by-name pick: a wrong witness is worse than a refused
+    /// evaluation. Only nodes with no recorded key (non-constraint-method field
+    /// access) use the unambiguous by-name match.
+    pub(super) fn imported_method(&self, method: &str, getfield_id: TlcExprId) -> Option<Value> {
+        if let Some(target) = self.module.dict_dispatch_keys.get(&getfield_id) {
+            let witnesses = self.operator_witnesses?;
+            return witnesses
+                .get(&(method.to_string(), target.clone()))
+                .cloned();
+        }
+        self.imported_method_by_name(method)
+    }
 }
 
 // ── standalone helpers ─────────────────────────────────────────────────────────

@@ -435,6 +435,16 @@ pub struct TlcModule {
     /// keyed by the `GetField` expr id. Value-record slots are resolved from the
     /// base record type during TLC→DC lowering and are absent here.
     pub dict_field_slots: FxHashMap<TlcExprId, usize>,
+    /// Concrete witness-dispatch target key for each constraint-method `GetField`,
+    /// keyed by the `GetField` expr id. Recorded at lowering from the call site's
+    /// instantiated operand type (the type the dict is selected on), in the same
+    /// string format as `WitnessExport::target_key`. The interpreter uses this to
+    /// dispatch an imported witness method to the instance whose target matches
+    /// the operand — the `GetField` node's own type is the *generic* method
+    /// scheme, so the concrete type is not otherwise recoverable at runtime. An
+    /// empty string marks an abstract/unkeyable operand (never matches a witness,
+    /// so dispatch refuses rather than guessing).
+    pub dict_dispatch_keys: FxHashMap<TlcExprId, String>,
     pub spans: FxHashMap<TlcExprId, Span>,
     /// The module's final expression — evaluated to produce the module's value.
     pub final_expr: Option<TlcExprId>,

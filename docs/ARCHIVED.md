@@ -146,6 +146,34 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Interpreter oracle consistency: record equality + imported-method dispatch ✅
+
+_Completed 2026-06-25. Two latent interpreter (TLC-evaluator) correctness bugs found
+while probing cross-module conditional witnesses; both fixed independently of the
+still-open Phase B native conditional dispatch._
+
+- **Record equality was nondeterministic.** `Value`'s `PartialEq` (the default
+  `run`/TLC path) sorted record fields by the field-name string's POINTER ADDRESS
+  (`n.as_ref() as *const str`), so two records' independently-allocated name `Rc<str>`s
+  sorted in unrelated orders and the zipped comparison mismatched fields. `{fst=1;snd=2}
+  == {fst=1;snd=2}` flipped `true`/`false` across runs (ASLR/alloc-order entropy). Fixed
+  to sort by name CONTENT (`crates/general/eval/src/value.rs`), matching the THIR oracle
+  `values_equal`. Regression: `record_equality_is_order_independent`.
+- **Imported-method dispatch was type-unaware.** `imported_method_by_name` resolved an
+  imported witness method by NAME only, ignoring the operand type: two same-method
+  concrete instances (`Eq @Int` + `Eq @Bool`) were ambiguous → refused (`UnboundBinding`),
+  and an imported conditional witness silently ran the wrong instance. The `GetField`
+  node carries only the *generic* method scheme, so the concrete operand type is recorded
+  at lowering in a new `TlcModule::dict_dispatch_keys` side table (operand `target_key`
+  per constraint-method `GetField`, carried through effect elaboration's `alloc_like`).
+  `imported_method` now dispatches type-directed: matching instance → correct value;
+  no match (including parametric/conditional or abstract operand) → refuse, never a
+  type-mismatched by-name pick. Fixes multi-instance concrete dispatch; makes imported
+  conditional witnesses refuse cleanly instead of silently miscomputing. Regressions:
+  `dispatch_imported_type_directed_witness_selection` (eval),
+  `compile_zt_imported_multi_instance_witness_matches_oracle` (cli differential).
+- Gate stack: 1546 workspace tests pass; `cargo fmt` and `cargo clippy` clean.
+
 ### Phase A: Module-import native lowering (.zti + .zt) + witness naming fix ✅
 
 _Completed 2026-06-25. Closes the "Module imports" sub-item of the v1 native-backend

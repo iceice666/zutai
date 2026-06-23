@@ -418,6 +418,31 @@ eq 1 2
     assert_eq!(run_in_imports(src), Value::Bool(true));
 }
 
+/// Cross-module type-directed selection: a dep exports TWO concrete witnesses for
+/// the same constraint method (`Eq @Int` and `Eq @Bool`). Each call site must
+/// dispatch to the instance whose target matches the operand type. Before the
+/// fix the interpreter resolved imported methods by NAME only, so two same-named
+/// instances were ambiguous and the call refused (`UnboundBinding`). The `Eq @Bool`
+/// witness returns a constant `false` (≠ structural equality of `true`/`true`),
+/// so the result discriminates a correct dispatch from a wrong one.
+#[test]
+fn dispatch_imported_type_directed_witness_selection() {
+    let src = r#"
+w :: import "witness_eq_int_bool.zt"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+(eq 1 1, eq true true)
+"#;
+    let v = run_import(src);
+    match v {
+        Value::Tuple(fields) => {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].value.peek(), Some(Value::Bool(true)));
+            assert_eq!(fields[1].value.peek(), Some(Value::Bool(false)));
+        }
+        other => panic!("expected Tuple, got {other:?}"),
+    }
+}
+
 /// Type-directed selection: two witnesses for the same constraint, each with a
 /// different target type — the dispatch must pick the right one per call site.
 #[test]
