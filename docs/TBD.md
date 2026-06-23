@@ -42,14 +42,17 @@ Ranked by remaining work:
    shapes: **higher-kinded instantiation** stays check-only by design — eval and
    compile both refuse HKT execution (`unify.rs` "a refused check is the safe
    direction"), and a type-checking `mapTwice (\x. x) [1; 2;]` is consistently
-   rejected at the type-check stage on both paths. **Imported witnesses used as
-   invoked methods** is the real remaining gap: `.zt`/`.zti` imports without
-   witness exports now compile natively via one-arena Dataflow Core merge (Phase
-   A — see `docs/ARCHIVED.md`); modules whose imports export typeclass witnesses
-   are rejected before DC by the witness gate (`IMPORT_WITNESS_REASON`), so
-   there is no silent miscompile. Completing native witnesses means teaching the
-   one-arena merge to thread imported witness dictionaries into the importing
-   module's dispatch, then adding a backend HKT-dispatch story.
+   rejected at the type-check stage on both paths. **Imported witnesses — concrete
+   instances only** — now dispatch natively as of 2026-06-25 (commit `d28bc5d`):
+   `WitnessExport::binding_id` lets the CLI compute each dep's DC global name
+   (`$dep{idx}${constraint}$w{binding_id}`); the TLC lowerer's extern witness table
+   maps `(constraint_name, target_key_str)` to that global; the DC `Var` arm
+   emits a `GlobalRef`. Differential tests confirm parity for `Eq @Int`, `Eq @Bool`,
+   `Ord @Int` imports. **Remaining gap**: modules whose witness exports have a
+   parametric target (target_key contains `?` — conditional instances like `Eq @(List A)`)
+   are still rejected before DC by the narrowed gate, so there is no silent miscompile.
+   Completing conditional cross-module witnesses means extending the conditional-witness
+   search to the imported dep's graph, plus a backend HKT-dispatch story.
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
    the interpreter runs row-typed code as ordinary records/unions. Confirmed
