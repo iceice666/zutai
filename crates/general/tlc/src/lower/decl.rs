@@ -396,6 +396,21 @@ impl<'thir> Lowerer<'thir> {
 
         let case_expr = self.alloc_expr(TlcExpr::Case(scrutinee, alts), sig_tlc, span);
 
+        // Each curried lambda layer needs its own progressively-peeled function
+        // type: the outermost lambda is `sig_tlc` (`A -> B -> R`), the next its
+        // result (`B -> R`), and so on. Reusing `sig_tlc` for every layer hands an
+        // inner lambda a param type from the wrong position, which the Dataflow
+        // structural validator rejects whenever two parameters have distinct types.
+        let mut layer_tys = Vec::with_capacity(arity);
+        let mut cur = sig_tlc;
+        for _ in 0..arity {
+            layer_tys.push(cur);
+            cur = match self.type_arena[cur].clone() {
+                TlcType::Fun(_, result, _) => result,
+                _ => cur,
+            };
+        }
+
         arg_bindings
             .iter()
             .rev()
@@ -404,7 +419,7 @@ impl<'thir> Lowerer<'thir> {
                 let rev_i = arity - 1 - i;
                 let pat_ty = self.thir.pat_arena[clauses[0].patterns[rev_i]].ty;
                 let arg_tlc_ty = self.lower_type(pat_ty);
-                self.alloc_expr(TlcExpr::Lam(arg, arg_tlc_ty, inner), sig_tlc, span)
+                self.alloc_expr(TlcExpr::Lam(arg, arg_tlc_ty, inner), layer_tys[rev_i], span)
             })
     }
     /// The method-level type params of constraint method `name`, by scanning the

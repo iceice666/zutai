@@ -957,3 +957,18 @@ fn validate_structural_accepts_well_formed_graph() {
     validate_structural(&dc_of("make :: Int -> Int -> Int\n  = x y => x;\nmake 1 2"))
         .expect("well-formed graph must pass structural validation");
 }
+
+#[test]
+fn curried_polymorphic_lambdas_get_per_layer_function_types() {
+    // `constFn` curries over two distinct type variables (`A -> B -> A`). TLC used
+    // to type every curried lambda layer with the full signature, so the inner
+    // lambda's declared param type (`A`) disagreed with its bind type (`B`), and the
+    // structural validator rejected the graph (a hard panic during lowering). With
+    // per-layer peeled function types the graph is well-formed. The monomorphic
+    // `validate_structural_accepts_well_formed_graph` above never exercised this
+    // because all parameters shared one type.
+    validate_structural(&dc_of(
+        "constFn :: <A, B> A -> B -> A = a b => a;\nconstFn 7 5",
+    ))
+    .expect("curried polymorphic lowering must validate");
+}

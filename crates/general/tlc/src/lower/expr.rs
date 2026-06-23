@@ -707,7 +707,23 @@ impl<'thir> Lowerer<'thir> {
             }
         }
 
-        let mut expr = params.iter().rev().fold(body_expr, |inner, &pat_id| {
+        // Peel one function arrow per parameter so each curried lambda layer is
+        // typed `param -> rest` instead of sharing the full `outer_ty`. Sharing it
+        // gives inner lambdas a param type from the wrong position and fails the
+        // Dataflow structural validator when parameters have distinct types.
+        let arity = params.len();
+        let mut layer_tys = Vec::with_capacity(arity);
+        let mut cur = outer_ty;
+        for _ in 0..arity {
+            layer_tys.push(cur);
+            cur = match self.type_arena[cur].clone() {
+                TlcType::Fun(_, result, _) => result,
+                _ => cur,
+            };
+        }
+
+        let mut expr = body_expr;
+        for (i, &pat_id) in params.iter().enumerate().rev() {
             let pat = &self.thir.pat_arena[pat_id];
             let (param_binding, param_ty) = match pat.kind {
                 ThirPatKind::Bind(b) => (b, self.lower_type(pat.ty)),
@@ -717,8 +733,12 @@ impl<'thir> Lowerer<'thir> {
                     (fresh, ty)
                 }
             };
-            self.alloc_expr(TlcExpr::Lam(param_binding, param_ty, inner), outer_ty, span)
-        });
+            expr = self.alloc_expr(
+                TlcExpr::Lam(param_binding, param_ty, expr),
+                layer_tys[i],
+                span,
+            );
+        }
 
         for layer in forall_layers.iter().rev() {
             for &(param, ref dicts) in layer.iter().rev() {
