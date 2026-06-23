@@ -141,6 +141,59 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Near-term backend hardening: witness dispatch, open-row gate, corpus ✅
+
+_Completed 2026-06-23. Closes both "Near-term hardening" TBD items and advances
+the v1 native-backend constraints/witnesses and row-polymorphism items._
+
+- **Per-layer forall-lambda typing** (`crates/general/tlc/src/lower/expr.rs`).
+  `lower_lambda` wrapped every TyLam/dict-`Lam` layer and the value-parameter
+  peel with the lambda's full `outer_ty`. For a lambda checked against a rank-2
+  annotation (`apply (\x. x)` where `apply :: (<A> A -> A) -> Int`) `outer_ty`
+  is a `ForAll`, so the value-parameter peel never advanced and every value
+  `Lam` was typed `ForAll`; the Dataflow Core structural validator (which
+  requires a `Lam` type to be `Fun`) aborted with an ICE while the interpreter
+  ran the same program. Now the forall/dict prefix is peeled one
+  quantifier/arrow per layer, mirroring `lower/decl.rs`. Confirmed live, not
+  just defensive. Commit `accf422`.
+- **LLVM string quote escaping** (`crates/general/codegen/src/descriptors.rs`).
+  `llvm_string_bytes` emitted a double quote as `\"` inside a `c"..."`
+  constant, which closed the literal early and made `llc` reject the constant
+  with a length mismatch. Any compiled program with a quote in a rendered text
+  value failed to assemble. Emit the `\22` hex escape. Commit `3efa936`.
+- **Differential value-rendering corpus** (`crates/cli/tests/cli.rs`). Expanded
+  `COMPILED_SHOW_FIXTURES` to cover non-alphabetical records (flat/nested),
+  user-union variants, nested tuples, text escaping, and negative integers so a
+  compiled-vs-interpreter rendering divergence fails a test. Commit `a654c1a`.
+- **Witness dict field-slot preservation** (`crates/general/tlc/src/lower/effects/rewrite.rs`).
+  `elaborate_effects` rebuilds expressions through `alloc_like`, which copied
+  `expr_types` and `spans` but not `dict_field_slots`. A `GetField` selecting a
+  witness method by its sorted dictionary slot lost the slot during effect
+  rewriting and the backend fell back to slot 0, dispatching the wrong method:
+  `lt 1 2` against an `Ord` witness (sorted slots `gt=0`, `lt=1`) compiled to
+  `gt` and returned `false` where the interpreter returned `true`. `alloc_like`
+  now propagates `dict_field_slots`. A new `COMPILED_WITNESS_FIXTURES` corpus
+  confirms native parity for two-method sorted-slot dispatch, derived record
+  equality, a conditional list witness, and a method-level type parameter —
+  evidence the prior "zero native support" note for witnesses was stale for
+  these shapes. Commits `69e6758`, `608f5f1`.
+- **Open-row field-select backend gate** (`crates/general/dataflow/src/lib.rs`,
+  `crates/cli/src/commands/mod.rs`). Selecting a field from an open record type
+  silently miscompiled: a parameter typed `{ n : Int; ...; }` hides its tail
+  fields, so the slot computed from the view type disagreed with the concrete
+  runtime layout (`getN { extra = 7; n = 5; }` returned 7 natively vs 5 in the
+  interpreter). The slot-based record ABI carries no field names or offsets, so
+  open-row select cannot lower soundly without row-erased specialization or
+  runtime descriptors. `open_row_select_reason` now gates value-record
+  `GetField` on open rows out of Dataflow Core in both `try_lower_tlc` paths,
+  and the CLI surfaces it as a clean compile error. Dict-method selects and
+  closed records are unaffected; the interpreter still evaluates open rows.
+  Commits `b9012d6`, `347d82d`.
+- Verification: `cargo fmt`; `cargo clippy --workspace --all-targets` (clean);
+  `cargo test --workspace` (all pass). Touched-code coverage exceeds 85%; the
+  only unhit added line is a defensive `else continue` guard in
+  `open_row_select_reason`.
+
 ### Documentation spec tree merge ✅
 
 - Merged the v0 and v1 language specifications under `docs/spec/` as

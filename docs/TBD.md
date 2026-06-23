@@ -5,40 +5,10 @@ Open work is now grouped by deferral horizon. Completed milestones live in
 
 ## Near-term hardening
 
-### Per-layer typing for the forall-lambda lowering
-
-`lower_lambda` (`crates/general/tlc/src/lower/expr.rs`, the `forall_layers`
-block) wraps every TyLam and dictionary `Lam` layer of a polymorphic lambda
-expression with the lambda's full `outer_ty` instead of peeling one
-quantifier/arrow per layer. This is the same shape as the value-parameter
-currying bug fixed in commit `6684b99`, where reusing one type across curried
-layers made an inner layer's declared type disagree with its
-bind and aborted the Dataflow Core structural validator with an
-internal-compiler-error panic.
-
-Not yet a confirmed live bug: the value-parameter layers just above it are
-peeled correctly, and the only reachable trigger — a polymorphic class
-witness such as `Functor @(Result E) { map = \f r. r; }` — compiles without
-an ICE today, because an unused witness is not lowered and witness-method
-dispatch does not yet reach the backend through a value binding. TyLam/dict
-layers also validate differently from the value-`Lam` `Fun`-param check that
-the original bug tripped. Treat as defensive hardening: peel one
-`ForAll`/`Fun` per layer so each layer carries `param -> rest`, mirroring the
-correct per-layer wrapping in `crates/general/tlc/src/lower/decl.rs`, and add
-a backend compile test once a polymorphic witness can be invoked end to end.
-
-### Differential-corpus coverage for value rendering
-
-The compiled-vs-interpreter differential gate compares stdout, so any
-divergence in how the two render a value is invisible unless the corpus
-exercises that shape. Record field ordering was such a silent divergence
-(the backend sorts fields by name for slot layout; the interpreter kept
-source order) and went unnoticed until 2026-06-22 because every exercised
-record happened to be alphabetical (fixed in commit `a249413`, interpreter
-`Display` now sorts). Expand the differential corpus to cover
-non-alphabetical records, variants, nested tuples, text escaping, and
-negative integers so the next rendering divergence fails a test instead of
-shipping silently.
+_Both prior near-term items (per-layer forall-lambda typing; differential
+value-rendering corpus) landed 2026-06-23 — see `docs/ARCHIVED.md` "Near-term
+backend hardening: witness dispatch, open-row gate, corpus". No near-term
+hardening items are currently open._
 
 ## v1 native-backend lowering
 
@@ -54,24 +24,34 @@ levels below cite the manual's "Implemented extensions beyond v0" table
 
 Ranked by remaining work:
 
-1. **Constraints / witnesses / derive (largest).** Direct, bounded,
-   conditional, imported, operator, method-level, and higher-kinded witnesses
-   plus structural Show/Ord derive are supported through THIR/TLC dictionary
-   passing and the interpreter, but the table states **no full native-backend
-   parity**. Completing this means lowering dictionary passing — witness
-   records, superconstraint/conditional resolution, and higher-kinded
-   instantiation — through Dataflow Core -> ANF -> SSA -> LLVM and the runtime,
-   the path that record/tuple/union values already take. This is an entire v1
-   area at zero native support.
+1. **Constraints / witnesses / derive (largest).** Dictionary passing already
+   reaches the native backend: as of 2026-06-23 a compiled-vs-interpreter
+   corpus (`COMPILED_WITNESS_FIXTURES`) confirms native parity for two-method
+   sorted-slot dispatch, derived record equality, a conditional `List` witness,
+   and a method-level type parameter (the dict field-slot was being dropped
+   during effect rewriting — fixed in commit `69e6758`). The prior "zero native
+   support" claim was stale for these shapes. Remaining unverified native
+   shapes: imported witness dictionaries used as *invoked methods* (import
+   value parity exists, witnessed dispatch through an import is unconfirmed),
+   operator-method witnesses, higher-kinded instantiation, and Show/Ord
+   `derive` *rendering* through the native display path. Completing this means
+   extending the witness corpus to those shapes and lowering any that do not
+   yet erase onto the existing record/dispatch backend.
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
-   the interpreter runs row-typed code as ordinary records/unions, but only
-   **concrete value-level `select`** is confirmed to lower through
-   DC/ANF/SSA/LLVM. Open records/unions, named row tails (`...Rest`), and
-   union extension (`...Shape`) are not confirmed past TLC. Completing this
-   means confirming row erasure onto the existing record/union backend (or
-   adding explicit lowering) plus a backend compile-test corpus for row-typed
-   programs.
+   the interpreter runs row-typed code as ordinary records/unions. Confirmed
+   native today: concrete/closed value-level `select` and field access, plus
+   open-row *passthrough* (a polymorphic function that returns its record
+   argument without reading a field by slot). As of 2026-06-23 an open-row
+   *field select* — a polymorphic `{ f : T; ...; }` parameter whose body reads
+   `f` — is **rejected** before Dataflow Core (`open_row_select_reason`,
+   commit `b9012d6`) because the field's runtime slot depends on the concrete
+   record's hidden tail fields, which the slot-based ABI cannot recover; it
+   previously miscompiled silently. Open unions, union extension (`...Shape`),
+   and named row-tail *selects* remain check-plus-interpreter only. Completing
+   this means a sound open-row select lowering (row-erased specialization or
+   runtime field-offset descriptors) plus a backend compile-test corpus for
+   row-typed programs; until then the gate keeps the backend honest.
 
 3. **Residual-effect runtime (medium; partly a non-goal).** Effects a `handle`
    fully discharges are CPS-elaborated to ordinary functions/matches before
