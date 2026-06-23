@@ -88,6 +88,8 @@ pub enum SyntaxKind {
     Unknown = 62,
     At = 63,
     PostfixedNumber = 64,
+    SelectOperator = 65,
+    Caret = 66,
 }
 
 impl SyntaxKind {
@@ -158,6 +160,8 @@ impl SyntaxKind {
             62 => Self::Unknown,
             63 => Self::At,
             64 => Self::PostfixedNumber,
+            65 => Self::SelectOperator,
+            66 => Self::Caret,
             _ => Self::Unknown,
         }
     }
@@ -274,6 +278,7 @@ impl<'a> Lexer<'a> {
             '<' if self.starts_with("<|") => self.bump_n(2, SyntaxKind::PipeBackward),
             '<' if self.starts_with("<=") => self.bump_n(2, SyntaxKind::LtEq),
             '<' => self.bump(SyntaxKind::Lt),
+            '>' if self.starts_with(">>=") => self.bump_n(3, SyntaxKind::SelectOperator),
             '>' if self.starts_with(">=") => self.bump_n(2, SyntaxKind::GtEq),
             '>' => self.bump(SyntaxKind::Gt),
             '-' if self.starts_with("->") => self.bump_n(2, SyntaxKind::Arrow),
@@ -287,6 +292,7 @@ impl<'a> Lexer<'a> {
             '&' if self.starts_with("&&") => self.bump_n(2, SyntaxKind::AmpAmp),
             '!' if self.starts_with("!=") => self.bump_n(2, SyntaxKind::BangEq),
             '!' => self.bump(SyntaxKind::Bang),
+            '^' => self.bump(SyntaxKind::Caret),
             '@' => self.bump(SyntaxKind::At),
             _ => {
                 self.pos += ch.len_utf8();

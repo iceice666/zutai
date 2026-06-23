@@ -169,13 +169,13 @@ TypeForm
   ::= "type" TypeExpr
 
 Select
-  ::= "select" Postfix SelectFields
+  ::= ("select" | ">>=") Postfix SelectFields
 
 SelectFields
   ::= "{" (FieldName ";")* "}"
 
 Perform
-  ::= "perform" EffectPath Expr
+  ::= ("perform" | "!") EffectPath Expr
 
 Handle
   ::= "handle" Expr "with" "{" HandleClause* "}"
@@ -184,7 +184,7 @@ HandleClause
   ::= EffectPath "=" Expr ";"
 
 Resume
-  ::= "resume" Expr
+  ::= ("resume" | "^") Expr
 
 EffectPath
   ::= FieldName ("." FieldName)*
@@ -249,7 +249,7 @@ TypeTupleItem
    | TypeExpr
 
 TypeSelect
-  ::= "select" TypePostfix SelectFields
+  ::= ("select" | ">>=") TypePostfix SelectFields
 
 EffectRow
   ::= "{" EffectOp (("," | ";") EffectOp)* ("," | ";")? "}"

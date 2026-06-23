@@ -109,8 +109,47 @@ fn v1_value_select_preserves_field_order() {
 }
 
 #[test]
+fn v1_value_select_operator_preserves_field_order() {
+    let e = parse_expr_str(">>= server { host; port; }");
+    match e {
+        Expr::Select {
+            receiver, fields, ..
+        } => {
+            assert_eq!(as_ident(&receiver), "server");
+            assert_eq!(
+                fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                ["host", "port"]
+            );
+        }
+        other => panic!("expected Select, got {other:?}"),
+    }
+}
+
+#[test]
 fn v1_type_select_preserves_field_order() {
     let e = parse_expr_str("type select Server { host; port; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Select {
+                receiver, fields, ..
+            } => {
+                assert!(
+                    matches!(receiver.as_ref(), TypeExpr::Ident { name, .. } if name == "Server")
+                );
+                assert_eq!(
+                    fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+                    ["host", "port"]
+                );
+            }
+            other => panic!("expected TySelect, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_type_select_operator_preserves_field_order() {
+    let e = parse_expr_str("type >>= Server { host; port; }");
     match e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
             TypeExpr::Select {
@@ -191,6 +230,15 @@ fn v1_perform_handle_resume_parse() {
         other => panic!("expected Perform, got {other:?}"),
     }
 
+    let e = parse_expr_str("! fail err");
+    match e {
+        Expr::Perform { op, arg, .. } => {
+            assert_eq!(op, vec!["fail"]);
+            assert_eq!(as_ident(&arg), "err");
+        }
+        other => panic!("expected Perform, got {other:?}"),
+    }
+
     let e = parse_expr_str(
         "handle check cfg with { warn = \\diagnostic => { perform log diagnostic; resume (); }; }",
     );
@@ -198,6 +246,18 @@ fn v1_perform_handle_resume_parse() {
         Expr::Handle { clauses, .. } => {
             assert_eq!(clauses[0].op, vec!["warn"]);
             assert!(format!("{:?}", clauses[0].body).contains("Resume"));
+        }
+        other => panic!("expected Handle, got {other:?}"),
+    }
+
+    let e = parse_expr_str(
+        "handle check cfg with { warn = \\diagnostic => { ! log diagnostic; ^ (); }; }",
+    );
+    match e {
+        Expr::Handle { clauses, .. } => {
+            assert_eq!(clauses[0].op, vec!["warn"]);
+            assert!(format!("{:?}", clauses[0].body).contains("Resume"));
+            assert!(format!("{:?}", clauses[0].body).contains("Perform"));
         }
         other => panic!("expected Handle, got {other:?}"),
     }
@@ -478,7 +538,7 @@ fn parse_lossless_traversal_covers_from_raw() {
         // Keywords (13-25)
         "type match if then else import true false select perform handle with resume\n",
         // Punctuation and multi-char operators
-        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > -> ?? ?. ? + - * / && != @ $\n",
+        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > >>= -> ?? ?. ? + - * / && != ! ^ @ $\n",
         // Comments (on their own line so the lexer doesn't swallow the operators above)
         "--[ block comment ]--\n",
         "--|  doc comment\n",
@@ -500,6 +560,9 @@ fn parse_lossless_traversal_covers_from_raw() {
     assert!(kinds.contains(&SyntaxKind::At), "@ token");
     assert!(kinds.contains(&SyntaxKind::ColonColon), "::");
     assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select keyword");
+    assert!(kinds.contains(&SyntaxKind::SelectOperator), ">>=");
+    assert!(kinds.contains(&SyntaxKind::Bang), "!");
+    assert!(kinds.contains(&SyntaxKind::Caret), "^");
 }
 
 // ── Unicode escape coverage ───────────────────────────────────────────────────

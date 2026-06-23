@@ -122,16 +122,16 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             if starts_generator(input) {
                 return parse_generator(input, options);
             }
-            if input.starts_with("select") && peek(kw("select")).parse_next(input).is_ok() {
+            if starts_select(input) {
                 return parse_select(input, options);
             }
-            if input.starts_with("perform") && peek(kw("perform")).parse_next(input).is_ok() {
+            if starts_perform(input) {
                 return parse_perform(input, options);
             }
             if input.starts_with("handle") && peek(kw("handle")).parse_next(input).is_ok() {
                 return parse_handle(input);
             }
-            if input.starts_with("resume") && peek(kw("resume")).parse_next(input).is_ok() {
+            if starts_resume(input) {
                 return parse_resume(input, options);
             }
             let (name, span) = spanned(parse_ident).parse_next(input)?;
@@ -679,7 +679,7 @@ fn parse_witness_reflect(input: &mut &str) -> Result<Expr> {
 // ---------------------------------------------------------------------------
 
 fn parse_select(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let (_, start_span) = spanned(kw("select")).parse_next(input)?;
+    let (_, start_span) = spanned(parse_select_marker).parse_next(input)?;
     ws(input)?;
     let receiver = super::parse_postfix_with_options(input, options)?;
     ws(input)?;
@@ -693,6 +693,18 @@ fn parse_select(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         fields,
         span,
     })
+}
+
+fn starts_select(input: &str) -> bool {
+    input.starts_with(">>=")
+        || input.starts_with("select") && peek(kw("select")).parse_next(&mut &*input).is_ok()
+}
+
+fn parse_select_marker(input: &mut &str) -> Result<()> {
+    if input.starts_with(">>=") {
+        return ">>=".void().parse_next(input);
+    }
+    kw("select").parse_next(input)
 }
 
 fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
@@ -718,7 +730,7 @@ fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
 }
 
 fn parse_perform(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let (_, start_span) = spanned(kw("perform")).parse_next(input)?;
+    let (_, start_span) = spanned(parse_perform_marker).parse_next(input)?;
     ws(input)?;
     let op = parse_effect_path(input)?;
     ws(input)?;
@@ -729,6 +741,18 @@ fn parse_perform(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         arg: Box::new(arg),
         span,
     })
+}
+
+fn starts_perform(input: &str) -> bool {
+    input.starts_with('!') && !input.starts_with("!=")
+        || input.starts_with("perform") && peek(kw("perform")).parse_next(&mut &*input).is_ok()
+}
+
+fn parse_perform_marker(input: &mut &str) -> Result<()> {
+    if input.starts_with('!') && !input.starts_with("!=") {
+        return '!'.void().parse_next(input);
+    }
+    kw("perform").parse_next(input)
 }
 
 fn parse_handle(input: &mut &str) -> Result<Expr> {
@@ -778,7 +802,7 @@ fn parse_handle_clauses(input: &mut &str) -> Result<Vec<HandleClause>> {
 }
 
 fn parse_resume(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let (_, start_span) = spanned(kw("resume")).parse_next(input)?;
+    let (_, start_span) = spanned(parse_resume_marker).parse_next(input)?;
     ws(input)?;
     let value = super::parse_expr_with_options(input, options)?;
     let span = start_span.merge(value.span());
@@ -786,6 +810,18 @@ fn parse_resume(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         value: Box::new(value),
         span,
     })
+}
+
+fn starts_resume(input: &str) -> bool {
+    input.starts_with('^')
+        || input.starts_with("resume") && peek(kw("resume")).parse_next(&mut &*input).is_ok()
+}
+
+fn parse_resume_marker(input: &mut &str) -> Result<()> {
+    if input.starts_with('^') {
+        return '^'.void().parse_next(input);
+    }
+    kw("resume").parse_next(input)
 }
 
 fn parse_effect_path(input: &mut &str) -> Result<Vec<String>> {

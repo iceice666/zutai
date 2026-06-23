@@ -38,6 +38,8 @@ Read the smallest relevant set; do not answer from memory when a file can ground
 - `.zt` general mode is pure, lazy, typed computation over data; a file contains zero or more declarations followed by one final expression.
 - Top-level declarations use `::=` for inferred values, `:: Type =` for typed values, function signatures followed by `= pattern => body;` clauses, and `Name :: type TypeExpr` for type aliases.
 - Function application is whitespace and left-associative; functions are curried; lambdas use `\x. body` with required whitespace after the dot.
+- Selective projection accepts keyword and punctuation forms: `select value { field; }` / `>>= value { field; }` and `select TypeValue { field; }` / `>>= TypeValue { field; }`.
+- Algebraic effects accept keyword and punctuation forms for operations: `perform op arg` / `! op arg` and `resume value` / `^ value`; handlers still use `handle expr with { ... }`.
 - v0 stable behavior lives under `docs/v0_spec/`; v1 pages are deferred unless the manual/archive says a v1-adjacent feature is implemented.
 - THIR is source-preserving and error-tolerant; TLC is produced only after successful type checking and is the clean input to Dataflow Core and later backend stages.
 

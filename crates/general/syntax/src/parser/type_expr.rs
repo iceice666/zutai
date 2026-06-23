@@ -127,11 +127,7 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
 pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     ws(input)?;
 
-    if input.starts_with("select")
-        && winnow::combinator::peek(kw("select"))
-            .parse_next(input)
-            .is_ok()
-    {
+    if starts_type_select(input) {
         return parse_type_select(input);
     }
     if input.starts_with('{') {
@@ -465,7 +461,7 @@ fn parse_row_tail(input: &mut &str) -> Result<RowTail> {
 }
 
 fn parse_type_select(input: &mut &str) -> Result<TypeExpr> {
-    let (_, start_span) = spanned(kw("select")).parse_next(input)?;
+    let (_, start_span) = spanned(parse_select_marker).parse_next(input)?;
     ws(input)?;
     let receiver = parse_type_postfix(input)?;
     ws(input)?;
@@ -479,6 +475,21 @@ fn parse_type_select(input: &mut &str) -> Result<TypeExpr> {
         fields,
         span,
     })
+}
+
+fn starts_type_select(input: &str) -> bool {
+    input.starts_with(">>=")
+        || input.starts_with("select")
+            && winnow::combinator::peek(kw("select"))
+                .parse_next(&mut &*input)
+                .is_ok()
+}
+
+fn parse_select_marker(input: &mut &str) -> Result<()> {
+    if input.starts_with(">>=") {
+        return ">>=".void().parse_next(input);
+    }
+    kw("select").parse_next(input)
 }
 
 fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
