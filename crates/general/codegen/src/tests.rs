@@ -317,3 +317,22 @@ fn capturing_lambda_allocates_heap_closure() {
     );
     assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
 }
+
+#[test]
+fn llvm_string_bytes_uses_hex_escape_for_quote_and_control_bytes() {
+    // LLVM `c"..."` literals only accept `\\` and `\HH` (two hex digits). A
+    // double quote MUST be `\22`, not `\"` — emitting `\"` terminated the
+    // string early and made `llc` reject the constant with a length mismatch.
+    let esc = crate::descriptors::llvm_string_bytes("q\"b\\s\tz");
+    // q, \22 (quote), b, \\ (backslash), s, \09 (tab), z, then the \00 terminator.
+    assert_eq!(esc.escaped, "q\\22b\\\\s\\09z\\00");
+    // Length counts the source bytes plus the null terminator, never the
+    // multi-character escape spellings.
+    assert_eq!(esc.len, "q\"b\\s\tz".len() + 1);
+    // No raw `"` may appear before the closing `\00`, or the literal closes early.
+    assert!(
+        !esc.escaped.trim_end_matches("\\00").contains('"'),
+        "raw quote leaked into LLVM string literal: {}",
+        esc.escaped
+    );
+}

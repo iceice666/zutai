@@ -238,7 +238,7 @@ pub(crate) fn llvm_string_bytes(s: &str) -> EscapedString {
     for b in s.bytes() {
         match b {
             b'\\' => escaped.push_str(r"\\"),
-            b'"' => escaped.push_str("\\\""),
+            b'"' => escaped.push_str("\\22"),
             0x20..=0x7e => escaped.push(b as char),
             _ => escaped.push_str(&format!("\\{:02x}", b)),
         }
