@@ -3,6 +3,87 @@
 Open work is now grouped by deferral horizon. Completed milestones live in
 `docs/ARCHIVED.md`; new implementation phases should be added here when scoped.
 
+## Scheduled phases
+
+Top-to-bottom is implementation priority. **Track 1** (lettered) continues the
+Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
+Phase 30–32 performance series. Per-feature support-level status for each gap is
+detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
+
+Recommended start: **Phase B** and **Phase 33** in parallel — B is small and
+self-contained, 33 is independent and the highest performance ROI.
+
+### Phase B — Conditional cross-module witnesses (Track 1)
+
+- **Gap.** Witness exports with a parametric target (`Eq @(List A)`,
+  `target_key` contains `?`) are rejected at import; concrete instances already
+  dispatch natively (commit `d28bc5d`).
+- **Touch.** CLI gate `IMPORT_WITNESS_REASON`
+  (`crates/cli/src/commands/mod.rs:367`), fired at `mod.rs:522-532` (compile) and
+  `:697-704` (dataflow) on `w.target_key.contains('?')`; TLC fallback
+  `try_extern_witness_expr` early-returns on `key.contains('?')`
+  (`crates/general/tlc/src/lower/witness.rs:194-200`).
+- **Approach.** Extend the in-module conditional-witness structural search
+  (`tlc/src/lower/witness.rs`) to the imported dep's witness graph, then emit the
+  dep-namespaced applied-witness expression
+  (`$dep{idx}${constraint}$w{binding_id}` applied to recursively-resolved
+  component dicts).
+- **Scope boundary.** Concrete call sites only (e.g. imported `eq` used on
+  `List Int`). The polymorphic-passing case needs HKT dispatch and stays
+  check-only by design — do not chase it.
+- **Acceptance.** Differential parity for `Eq @(List A)` / `Eq @(Pair A)`
+  imports; mirror the in-module conditional test (`crates/cli/tests/cli.rs:1661`)
+  and the concrete-import test (`:2411`).
+
+### Phase 33 — Uncurrying / known-call optimization (Track 2)
+
+- **Gap.** ~2/3 of accumulator allocation is calling-convention churn (one
+  arg-tuple + one closure per curried call), not user data — higher ROI than GC.
+- **Touch.** New ANF/SSA pass, sibling to `crates/general/ssa/src/tco.rs`, driven
+  by `lower_anf`.
+- **Approach.** Collapse saturated curried calls to direct multi-arg calls;
+  detect known-callee saturation and skip the per-call closure/arg-tuple alloc.
+- **Acceptance.** `ZUTAI_HEAP_STATS` shows the arg-tuple/closure allocation drop
+  on accumulator loops; existing differential corpus unchanged. Independent of
+  Track 1.
+
+### Phase C — Open-row select lowering (Track 1)
+
+- **Gap.** Open-row field reads (`getHost :: <Rest> { host : Text; ...Rest; } ->
+  Text`) rejected — the slot computed from the view type differs from the
+  concrete runtime-layout slot.
+- **Touch.** `open_row_select_reason` (`crates/general/dataflow/src/lib.rs:379`,
+  fired at `:448`).
+- **Approach.** Pick one: (a) row-erased monomorphization at concrete call sites,
+  or (b) runtime field-offset descriptors (the row carries a hidden offset/shape
+  vector). (a) is simpler and matches strict-AOT; (b) generalizes to genuinely
+  polymorphic boundaries. Recommend (a).
+- **Acceptance.** Open-row select corpus compiles and matches the oracle; the
+  rejection tests `dataflow/src/tests.rs:1003,1048` flip to parity tests.
+- **Largest item; gates Phase D.**
+
+### Phase D — Open-union match lowering (Track 1)
+
+- **Gap.** A polymorphic match over a `...Rest`-tailed union is
+  check-plus-interpreter only; the type-checker rejects it on both paths, so
+  there is no silent miscompile today.
+- **Approach.** The union analog of Phase C — reuse C's row-representation
+  decision, then lift the type-checker rejection and lower.
+- **Acceptance.** Open-union differential corpus; pairs with the landed
+  `compiled_union_extension_matches_oracle`.
+- **Depends on Phase C.**
+
+### Phase 34 — Conservative mark-sweep GC (Track 2)
+
+- **Gate.** Schedule only once a real GC workload exists (unbounded streams reach
+  the backend, or accumulator garbage dominates after Phase 33).
+- **Approach.** Zero-ABI **non-moving** mark-sweep as the bridge. A precise
+  moving collector (Cheney endgame) needs root-finding over untagged `i64`
+  (D-0002) — a shadow stack or stack maps, an ABI change beyond D-0008/D-0009 —
+  so it is out of scope here. The lazy-backend path stays rejected
+  (strict-plus-TCO is committed).
+- **Depends on Phase 33** and a demonstrated workload.
+
 ## Near-term hardening
 
 _Both prior near-term items (per-layer forall-lambda typing; differential
@@ -17,9 +98,10 @@ THIR, elaborates to TLC, and runs in the `zutai-eval` reference interpreter
 that serves as the differential oracle (`docs/ARCHIVED.md` "Current
 baseline"). What is missing for "complete" by the v0 bar — full LLVM/native
 lowering plus runtime — is the **backend half of the pipeline** for most v1
-features. None of this is currently scheduled; the project has deliberately
-settled v1 at check-plus-interpreter and deferred native parity. Support
-levels below cite the manual's "Implemented extensions beyond v0" table
+features. Track 1 native parity is now **scheduled** as Phases B/C/D under
+"Scheduled phases" above — the project no longer defers v1 native parity
+wholesale. The ranked detail below is the per-feature support-level reference,
+citing the manual's "Implemented extensions beyond v0" table
 (`docs/language-manual.md`).
 
 Ranked by remaining work:
@@ -130,9 +212,9 @@ Empirical basis (measured with `ZUTAI_HEAP_STATS`):
 
 Reordered trajectory (was: leak → mark-sweep → generational copying):
 
-1. **Uncurrying / known-call optimization** — collapse saturated curried calls
-   to direct multi-arg calls, removing the per-call closure+tuple churn.
-2. **Collector**, only once a real GC workload exists (unbounded streams reach
+1. **Uncurrying / known-call optimization** (Phase 33) — collapse saturated
+   curried calls to direct multi-arg calls, removing the per-call closure+tuple churn.
+2. **Collector** (Phase 34), only once a real GC workload exists (unbounded streams reach
    the backend, or accumulator garbage dominates). Root-finding, not the
    algorithm, is the open gap: untagged `i64` values (D-0002) make conservative
    scanning ambiguous, so a precise moving collector needs a shadow stack or
