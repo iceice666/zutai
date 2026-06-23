@@ -1318,6 +1318,7 @@ dependencies = [
  "clap",
  "miette",
  "predicates",
+ "rustc-hash 2.1.2",
  "rustyline",
  "serde_json",
  "thiserror",
@@ -1355,6 +1356,7 @@ dependencies = [
  "zutai-syntax",
  "zutai-thir",
  "zutai-tlc",
+ "zutai-types",
 ]
 
 [[package]]

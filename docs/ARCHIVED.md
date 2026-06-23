@@ -35,8 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-23 after the language specs moved to `docs/spec/`,
-Unicode XID names landed, and recent evaluator/backend hardening was archived._
+_Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening) and
+2026-06-25 (Phase A: `.zt`/`.zti` native module-import lowering)._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -68,7 +68,12 @@ Unicode XID names landed, and recent evaluator/backend hardening was archived._
   Dataflow/ANF/SSA/LLVM/runtime; recursive and generic recursive aliases lower
   to finite cyclic `DfTyId` graphs; codegen emits static descriptors for
   `zutai.show`; `@main` renders through the type-directed runtime display path
-  and rejects function / `Type` results.
+  and rejects function / `Type` results. **`.zti` data imports and `.zt` pure
+  value/function imports compile natively** via one-arena Dataflow Core merge
+  (Phase A): imported modules are lowered into the same graph under a `$dep{idx}$`
+  namespace prefix; the root references the dep's module-value global
+  (`$dep{idx}$$value`). Modules that export typeclass witnesses are rejected before
+  DC by the witness gate (cross-module witness dispatch is still interpreter-only).
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce
@@ -140,6 +145,32 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase A: Module-import native lowering (.zti + .zt) ✅
+
+_Completed 2026-06-25. Closes the "Module imports" sub-item of the v1 native-backend
+constraints/witnesses item in `TBD.md`._
+
+- **Phase A.a** (`05fa320`): `.zti` data imports lower inline to Dataflow Core
+  constants. `ImportEnv { zti }` threaded through `Lowerer`; CLI builds the map
+  from `analysis.import_values`.
+- **Phase A.b + A.c**: `.zt` value/function imports — plus transitive and diamond
+  chains — compile natively via one-arena Dataflow Core merge.
+  - `ImportEnv` replaced by `ImportTarget` (Zti/Zt) + `ModuleInput` + `ProgramInput`.
+  - `try_lower_tlc_with_host_grants_and_imports` → `try_lower_program_with_host_grants`.
+  - `Lowerer` extended with `enter_module` (clears per-module `BindingId`/`TlcTypeId`
+    caches; preserves shared arenas) and `lower_dep_module` / `lower_root_module`.
+  - Dependency globals namespaced under `$dep{idx}$`; dep module-value synthetic
+    global `$dep{idx}$$value`; collision-free under `mangle`.
+  - CLI `collect_dep_analyses` DFS post-order; `build_module_imports` keyed by
+    `Rc` pointer (not source string) for correct diamond dedup.
+  - Witness gate: modules that export typeclass witnesses are rejected before DC
+    (`IMPORT_WITNESS_REASON`); cross-module witness dispatch is still interpreter-only.
+- Differential tests: `compile_zt_value_import_matches_oracle`,
+  `compile_zt_int_import_matches_oracle`, `compile_zt_function_import_matches_oracle`,
+  `compile_zt_transitive_import_matches_oracle` (chain `.zt→.zt→.zti`),
+  `compile_zt_diamond_import_matches_oracle`.
+- Gate stack: 1540 workspace tests pass; `cargo fmt` and `cargo clippy` clean.
 
 ### Near-term backend hardening: witness dispatch, open-row gate, corpus ✅
 

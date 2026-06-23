@@ -12,7 +12,7 @@ use zutai_types::Value;
 
 use crate::{
     DataflowGraph, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPositOp, DfRecordField, DfTupleField,
-    DfTy, DfTyId, DfTyVar, ImportEnv, ImportKind, NodeId, is_zti_import,
+    DfTy, DfTyId, DfTyVar, ImportKind, ImportTarget, ModuleInput, NodeId, ProgramInput,
 };
 
 mod expr;
@@ -100,7 +100,9 @@ fn lower_import_source(source: &HirImportSource) -> (String, ImportKind) {
 struct Lowerer<'m> {
     module: &'m TlcModule,
     hir_bindings: &'m [Binding],
-    imports: &'m ImportEnv<'m>,
+    current_imports: &'m FxHashMap<HirImportSource, ImportTarget<'m>>,
+    /// Namespace prefix for this module's globals (empty for the root module).
+    module_prefix: String,
     nodes: Arena<DfNode>,
     types: Arena<DfTy>,
     globals: IndexMap<String, NodeId>,
@@ -136,13 +138,14 @@ struct Lowerer<'m> {
 }
 
 impl<'m> Lowerer<'m> {
-    fn new(module: &'m TlcModule, hir_bindings: &'m [Binding], imports: &'m ImportEnv<'m>) -> Self {
+    fn new(program: &'m ProgramInput<'m>) -> Self {
         let mut types = Arena::new();
         let error_ty = types.alloc(DfTy::Error);
         Self {
-            module,
-            hir_bindings,
-            imports,
+            module: program.root.module,
+            hir_bindings: program.root.hir_bindings,
+            current_imports: &program.root.imports,
+            module_prefix: String::new(),
             nodes: Arena::new(),
             types,
             globals: IndexMap::new(),
@@ -157,6 +160,35 @@ impl<'m> Lowerer<'m> {
             type_aliases: FxHashMap::default(),
             error_ty,
         }
+    }
+
+    /// Switch the lowerer to a new source module: repoint the module, its HIR
+    /// bindings, resolved imports, and namespace prefix, then clear every cache
+    /// keyed by per-module `BindingId`/`TlcTypeId`. Those ids are per-`Analysis`,
+    /// so they collide across modules that share the one node/type arena. The
+    /// shared arenas, `globals`, and `error_ty` are preserved — all modules merge
+    /// into a single graph.
+    fn enter_module(&mut self, input: &'m ModuleInput<'m>, prefix: String) {
+        self.module = input.module;
+        self.hir_bindings = input.hir_bindings;
+        self.current_imports = &input.imports;
+        self.module_prefix = prefix;
+        self.type_cache.clear();
+        self.local_env.clear();
+        self.global_names.clear();
+        self.global_types.clear();
+        self.type_aliases.clear();
+        self.alias_binding_type.clear();
+        self.type_app_cache.clear();
+        self.type_app_depth = 0;
+    }
+
+    /// Insert a global into the shared map. Within-module overwrites are permitted
+    /// (typeclass instances for the same class can produce the same name; the last
+    /// one wins). Cross-module collisions cannot occur: the `$dep{idx}$` prefix
+    /// keeps all namespaced dependency globals injective under `mangle`.
+    fn insert_global(&mut self, name: String, node: NodeId) {
+        self.globals.insert(name, node);
     }
 
     fn alloc_node(&mut self, kind: DfNodeKind, ty: DfTyId, span: Option<Span>) -> NodeId {
@@ -315,7 +347,8 @@ impl<'m> Lowerer<'m> {
             match &self.module.decl_arena[decl_id] {
                 TlcDecl::Value { binding, ty, .. } => {
                     if let Some(b) = self.hir_bindings.get(binding.0 as usize) {
-                        self.global_names.insert(*binding, b.name.clone());
+                        self.global_names
+                            .insert(*binding, format!("{}{}", self.module_prefix, b.name));
                         self.global_types.insert(*binding, *ty);
                     }
                 }
@@ -326,30 +359,48 @@ impl<'m> Lowerer<'m> {
         }
     }
 
-    // ── Main lowering pass ────────────────────────────────────────────────────
-
-    fn lower_file(&mut self) -> DataflowGraph {
+    /// Collect this module's globals, then lower every value decl into the shared
+    /// `globals` map under its namespaced name. `Import` leaves resolve against
+    /// `current_imports` during expression lowering.
+    fn lower_module_decls(&mut self) {
         self.collect_globals();
 
-        // Lower each value decl into globals.
-        // Collect (binding, name, body) to avoid borrow conflicts.
-        let decls: Vec<(BindingId, String, TlcExprId)> = self
+        // Collect (name, body) to avoid borrowing self while lowering.
+        let decls: Vec<(String, TlcExprId)> = self
             .module
             .decls
             .iter()
             .filter_map(|&decl_id| match &self.module.decl_arena[decl_id] {
                 TlcDecl::Value { binding, body, .. } => {
                     let name = self.global_names.get(binding)?.clone();
-                    Some((*binding, name, *body))
+                    Some((name, *body))
                 }
                 TlcDecl::TypeAlias { .. } => None,
             })
             .collect();
 
-        for (_binding, name, body_id) in decls {
+        for (name, body_id) in decls {
             let node_id = self.lower_expr(body_id);
-            self.globals.insert(name, node_id);
+            self.insert_global(name, node_id);
         }
+    }
+
+    /// Lower a dependency module and bind its module value (the final expression)
+    /// to a synthetic global named by [`dep_value_global`], which importers reference.
+    fn lower_dep_module(&mut self, idx: usize, input: &'m ModuleInput<'m>) {
+        self.enter_module(input, dep_prefix(idx));
+        self.lower_module_decls();
+        let value = match self.module.final_expr {
+            Some(final_id) => self.lower_expr(final_id),
+            None => self.alloc_node(DfNodeKind::Error, self.error_ty, None),
+        };
+        self.insert_global(dep_value_global(idx), value);
+    }
+
+    /// Lower the root module, take ownership of the merged arenas, and validate.
+    fn lower_root_module(&mut self, input: &'m ModuleInput<'m>) -> DataflowGraph {
+        self.enter_module(input, String::new());
+        self.lower_module_decls();
 
         let root = match self.module.final_expr {
             Some(final_id) => self.lower_expr(final_id),
@@ -423,11 +474,24 @@ fn remove_pat_bindings(pat: &TlcPat, env: &mut FxHashMap<BindingId, NodeId>) {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-pub(crate) fn lower_tlc(
-    module: &TlcModule,
-    hir_bindings: &[Binding],
-    imports: &ImportEnv,
-) -> DataflowGraph {
-    let mut lowerer = Lowerer::new(module, hir_bindings, imports);
-    lowerer.lower_file()
+pub(crate) fn lower_program(program: &ProgramInput) -> DataflowGraph {
+    let mut lowerer = Lowerer::new(program);
+    for (idx, dep) in program.deps.iter().enumerate() {
+        lowerer.lower_dep_module(idx, dep);
+    }
+    lowerer.lower_root_module(&program.root)
+}
+
+/// Namespace prefix for dependency `idx`'s globals. `$` is not a Zutai identifier
+/// character, so prefixed names never collide with root globals (which have none)
+/// and survive `mangle` for codegen.
+fn dep_prefix(idx: usize) -> String {
+    format!("$dep{idx}$")
+}
+
+/// Synthetic global holding dependency `idx`'s module value (its final
+/// expression). The extra `$` before `value` cannot occur in any prefixed user
+/// binding (a single `$` then identifier chars), so it is collision-free.
+fn dep_value_global(idx: usize) -> String {
+    format!("{}$value", dep_prefix(idx))
 }

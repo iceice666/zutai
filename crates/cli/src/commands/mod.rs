@@ -357,6 +357,107 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// ── Module-import program assembly ─────────────────────────────────────────────
+
+/// Reject reason when native lowering cannot safely link an imported `.zt`
+/// module: a module that exports typeclass witnesses is dispatched dynamically by
+/// the interpreter, but the importer's TLC carries no static reference to those
+/// witness globals, so a native build would silently drop them. Gate such
+/// programs to the interpreter rather than miscompile.
+const IMPORT_WITNESS_REASON: &str = "native backend does not support importing modules that export typeclass \
+    instances yet. Use `zutai run` (interpreter)";
+
+/// Collect the transitive `.zt` dependency analyses of `analysis` in topological
+/// order (post-order DFS), so a dependency always precedes the modules that
+/// import it (`deps[i]` may only import `deps[j]` with `j < i`). Dependencies that
+/// failed to lower (no `tlc`) are omitted; the lowering gate rejects any import
+/// still referencing them. Diamond imports are deduplicated by `Rc` pointer
+/// identity, and the front end rejects import cycles, so the walk terminates.
+fn collect_dep_analyses(
+    analysis: &zutai_semantic::Analysis,
+) -> (
+    Vec<std::rc::Rc<zutai_semantic::Analysis>>,
+    std::collections::HashMap<*const zutai_semantic::Analysis, usize>,
+) {
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    fn recurse(
+        dep: &Rc<zutai_semantic::Analysis>,
+        analyses: &mut Vec<Rc<zutai_semantic::Analysis>>,
+        ptr_to_idx: &mut HashMap<*const zutai_semantic::Analysis, usize>,
+    ) {
+        let ptr = Rc::as_ptr(dep);
+        if ptr_to_idx.contains_key(&ptr) || dep.tlc.is_none() {
+            return;
+        }
+        for child in dep.import_modules.values() {
+            recurse(child, analyses, ptr_to_idx);
+        }
+        let idx = analyses.len();
+        analyses.push(Rc::clone(dep));
+        ptr_to_idx.insert(ptr, idx);
+    }
+
+    let mut analyses = Vec::new();
+    let mut ptr_to_idx = HashMap::new();
+    for dep in analysis.import_modules.values() {
+        recurse(dep, &mut analyses, &mut ptr_to_idx);
+    }
+    (analyses, ptr_to_idx)
+}
+
+/// Build one module's import-resolution map: `.zti` data imports resolve to inline
+/// constants; `.zt` module imports resolve to their dependency index. Import
+/// sources are raw, module-local strings (the same string can name different
+/// files from different directories), so `.zt` targets are keyed by the imported
+/// analysis's `Rc` pointer, never the source string.
+fn build_module_imports<'a>(
+    module_analysis: &'a zutai_semantic::Analysis,
+    ptr_to_idx: &std::collections::HashMap<*const zutai_semantic::Analysis, usize>,
+) -> rustc_hash::FxHashMap<zutai_hir::HirImportSource, zutai_dataflow::ImportTarget<'a>> {
+    let mut map = rustc_hash::FxHashMap::default();
+    for (source, value) in &module_analysis.import_values {
+        map.insert(source.clone(), zutai_dataflow::ImportTarget::Zti(value));
+    }
+    for (source, dep) in &module_analysis.import_modules {
+        if let Some(&idx) = ptr_to_idx.get(&std::rc::Rc::as_ptr(dep)) {
+            map.insert(source.clone(), zutai_dataflow::ImportTarget::Zt(idx));
+        }
+    }
+    map
+}
+
+/// Assemble the dependency [`zutai_dataflow::ModuleInput`]s for a program, borrowing
+/// each dependency's TLC and HIR bindings from `dep_analyses`. The returned vector
+/// is index-aligned with `dep_analyses` (and therefore with the `Zt` targets in
+/// every import map).
+fn dep_module_inputs<'a>(
+    dep_analyses: &'a [std::rc::Rc<zutai_semantic::Analysis>],
+    ptr_to_idx: &std::collections::HashMap<*const zutai_semantic::Analysis, usize>,
+) -> Vec<zutai_dataflow::ModuleInput<'a>> {
+    dep_analyses
+        .iter()
+        .map(|dep| {
+            let module = dep
+                .tlc
+                .as_ref()
+                .expect("dependency with no TLC must be filtered by collect_dep_analyses");
+            let hir_bindings = dep
+                .hir
+                .as_ref()
+                .map(|hir| hir.file.bindings.as_slice())
+                .unwrap_or(&[]);
+            let imports = build_module_imports(dep, ptr_to_idx);
+            zutai_dataflow::ModuleInput {
+                module,
+                hir_bindings,
+                imports,
+            }
+        })
+        .collect()
+}
+
 /// Compile a `.zt` file. LLVM emits text; object/binary modes invoke the host LLVM toolchain.
 pub(crate) fn run_compile(
     path: &str,
@@ -457,26 +558,33 @@ pub(crate) fn run_compile(
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
 
-    // DC → ANF → SSA → LLVM IR pipeline. `.zti` data imports lower inline.
-    let import_env = zutai_dataflow::ImportEnv {
-        zti: analysis
-            .import_values
-            .iter()
-            .map(|(key, value)| (key.clone(), value))
-            .collect(),
+    // DC → ANF → SSA → LLVM IR pipeline. Imported `.zti` data lowers inline; `.zt`
+    // modules are merged into one Dataflow Core graph (transitive deps in dep
+    // order). Witness-exporting imports are gated to the interpreter.
+    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
+    if dep_analyses
+        .iter()
+        .any(|dep| !dep.witness_exports.is_empty())
+    {
+        eprintln!("compile error: {IMPORT_WITNESS_REASON}");
+        std::process::exit(1);
+    }
+    let program = zutai_dataflow::ProgramInput {
+        root: zutai_dataflow::ModuleInput {
+            module: &module,
+            hir_bindings,
+            imports: build_module_imports(&analysis, &ptr_to_idx),
+        },
+        deps: dep_module_inputs(&dep_analyses, &ptr_to_idx),
     };
-    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants_and_imports(
-        &module,
-        hir_bindings,
-        boundary_host_grants,
-        &import_env,
-    ) {
-        Ok(g) => g,
-        Err(reason) => {
-            eprintln!("compile error: {reason}");
-            std::process::exit(1);
-        }
-    };
+    let graph =
+        match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {
+            Ok(g) => g,
+            Err(reason) => {
+                eprintln!("compile error: {reason}");
+                std::process::exit(1);
+            }
+        };
     let anf = zutai_anf::lower_dc(&graph);
     let ssa = zutai_ssa::lower_anf(&anf);
     if let Some(reason) = zutai_codegen::unsupported_entry_type_reason(&ssa) {
@@ -598,25 +706,30 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-    let import_env = zutai_dataflow::ImportEnv {
-        zti: analysis
-            .import_values
-            .iter()
-            .map(|(key, value)| (key.clone(), value))
-            .collect(),
+    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
+    if dep_analyses
+        .iter()
+        .any(|dep| !dep.witness_exports.is_empty())
+    {
+        eprintln!("error: {IMPORT_WITNESS_REASON}");
+        std::process::exit(1);
+    }
+    let program = zutai_dataflow::ProgramInput {
+        root: zutai_dataflow::ModuleInput {
+            module: &module,
+            hir_bindings,
+            imports: build_module_imports(&analysis, &ptr_to_idx),
+        },
+        deps: dep_module_inputs(&dep_analyses, &ptr_to_idx),
     };
-    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants_and_imports(
-        &module,
-        hir_bindings,
-        boundary_host_grants,
-        &import_env,
-    ) {
-        Ok(g) => g,
-        Err(reason) => {
-            eprintln!("error: {reason}");
-            std::process::exit(1);
-        }
-    };
+    let graph =
+        match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {
+            Ok(g) => g,
+            Err(reason) => {
+                eprintln!("error: {reason}");
+                std::process::exit(1);
+            }
+        };
     println!("{graph:#?}");
     Ok(())
 }

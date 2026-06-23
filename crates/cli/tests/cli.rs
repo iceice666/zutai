@@ -474,45 +474,37 @@ fn run_imported_function_can_flow_through_print_effect() {
 }
 
 #[test]
-fn compile_module_import_is_rejected_with_diagnostic() {
-    // A `.zt` module import lowers to a DfNodeKind::Import the backend never
-    // links, so a compiled importing program crashed at runtime. The backend
-    // gate must reject `.zt` imports cleanly. `run` still resolves imports via
-    // the interpreter (covered by run_imported_* tests). `.zti` data imports do
-    // lower natively (see compile_zti_import_* tests).
-    write_tmp(
-        "cli_test_compile_import_dep.zt",
-        "base ::= 21\n{ doubled = base; name = \"svc\"; }\n",
+fn compile_zt_value_import_matches_oracle() {
+    // A pure `.zt` module exporting a record: native must merge it into one
+    // Dataflow Core graph and produce the same output as the interpreter.
+    let (interp, native) = import_run_vs_compile(
+        "zt_value",
+        "main.zt",
+        &[
+            (
+                "dep.zt",
+                "base ::= 21\n{ doubled = base; name = \"svc\"; }\n",
+            ),
+            ("main.zt", "dep :: import \"dep.zt\"\ndep\n"),
+        ],
     );
-    let path = write_tmp(
-        "cli_test_compile_import_main.zt",
-        "dep :: import \"./cli_test_compile_import_dep.zt\"\ndep\n",
-    );
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("module imports yet"));
+    assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
 #[test]
-fn compile_bin_module_import_is_rejected_before_toolchain() {
-    write_tmp(
-        "cli_test_compile_bin_import_dep.zt",
-        "base ::= 7\n{ value = base; tag = \"x\"; }\n",
+fn compile_zt_int_import_matches_oracle() {
+    // A `.zt` module exporting a computed integer: numeric globals cross the
+    // module boundary correctly.
+    let (interp, native) = import_run_vs_compile(
+        "zt_int",
+        "main.zt",
+        &[
+            ("lib.zt", "x ::= 7\ny ::= 6\nx * y\n"),
+            ("main.zt", "n :: import \"lib.zt\"\nn + 1\n"),
+        ],
     );
-    let path = write_tmp(
-        "cli_test_compile_bin_import_main.zt",
-        "dep :: import \"./cli_test_compile_bin_import_dep.zt\"\ndep\n",
-    );
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("module imports yet"));
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(native.trim().contains("43"), "expected 43, got {native:?}");
 }
 
 // ─── parse with type/semantic errors ─────────────────────────────────────────
@@ -2340,33 +2332,65 @@ fn compile_zti_import_whole_record_matches_oracle() {
 }
 
 #[test]
-fn compile_zt_import_is_rejected() {
-    // `.zt` module imports are not yet linked natively (Phase A.a): compile must
-    // reject cleanly while the interpreter still runs the program.
-    let dir = std::env::temp_dir().join("zutai_imp_zt_reject");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("lib.zt"),
-        "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
-    )
-    .unwrap();
-    std::fs::write(dir.join("main.zt"), "f :: import \"lib.zt\"\nf 2 3\n").unwrap();
-    let main = dir.join("main.zt");
-    cli()
-        .arg("run")
-        .arg(&main)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("5"));
-    let bin = dir.join("out.bin");
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&main)
-        .arg("-o")
-        .arg(&bin)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("import"));
+fn compile_zt_function_import_matches_oracle() {
+    // A `.zt` module exporting a function: native compile lowers the function
+    // and applies it correctly.
+    let (interp, native) = import_run_vs_compile(
+        "zt_func",
+        "main.zt",
+        &[
+            (
+                "lib.zt",
+                "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
+            ),
+            ("main.zt", "f :: import \"lib.zt\"\nf 2 3\n"),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(native.trim().contains("5"), "expected 5, got {native:?}");
+}
+
+#[test]
+fn compile_zt_transitive_import_matches_oracle() {
+    // Chain: top.zt → mid.zt (imports config.zti) — tests A.c: a one-arena
+    // merge across a .zt→.zt→.zti chain.
+    let (interp, native) = import_run_vs_compile(
+        "zt_chain",
+        "top.zt",
+        &[
+            ("config.zti", "{ host = \"127.0.0.1\"; port = 8080; }\n"),
+            (
+                "mid.zt",
+                "cfg :: import \"config.zti\"\n{ port = cfg.port; }\n",
+            ),
+            ("top.zt", "mid :: import \"mid.zt\"\nmid.port\n"),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.trim().contains("8080"),
+        "expected 8080, got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_diamond_import_matches_oracle() {
+    // Diamond: main imports a and b, both import base independently (two
+    // separate Analysis objects for the same file). Each gets its own namespace
+    // prefix; results are numerically correct.
+    let (interp, native) = import_run_vs_compile(
+        "zt_diamond",
+        "main.zt",
+        &[
+            ("base.zt", "n ::= 10\nn\n"),
+            ("a.zt", "base :: import \"base.zt\"\nbase + 1\n"),
+            ("b.zt", "base :: import \"base.zt\"\nbase + 2\n"),
+            (
+                "main.zt",
+                "a :: import \"a.zt\"\nb :: import \"b.zt\"\na + b\n",
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(native.trim().contains("23"), "expected 23, got {native:?}");
 }

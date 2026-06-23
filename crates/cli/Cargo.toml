@@ -8,6 +8,7 @@ miette = { version = "7.6.0", features = ["fancy"] }
 clap = { version = "4", features = ["derive"] }
 rustyline = "15"
 thiserror = "2.0.18"
+rustc-hash = "2.0.0"
 serde_json = "1"
 zutai-anf = { path = "../general/anf" }
 zutai-codegen = { path = "../general/codegen" }

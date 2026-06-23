@@ -37,20 +37,13 @@ Ranked by remaining work:
    compile both refuse HKT execution (`unify.rs` "a refused check is the safe
    direction"), and a type-checking `mapTwice (\x. x) [1; 2;]` is consistently
    rejected at the type-check stage on both paths. **Imported witnesses used as
-   invoked methods** is the real remaining gap, now folded into the import gap
-   below: a compiled module that imports an operator witness used to silently
-   dispatch to the builtin operator, and is now rejected with the rest of the
-   import gate. Completing native witnesses means cross-module witness lowering
-   (see imports) and a backend HKT-dispatch story.
-
-   - **Module imports (large, cross-cutting).** `.zt`/`.zti` imports do not lower
-     to the native backend at all: the imported module is never lowered or
-     linked, so compiled importing programs segfaulted. As of 2026-06-23
-     `import_reason` (commit `5a6d070`) rejects any module containing an import
-     before Dataflow Core. Completing this is a cross-module compilation feature
-     — lower and link each imported module's TLC, then thread imported witness
-     dictionaries into the importing module's dispatch — and unblocks imported
-     witness methods.
+   invoked methods** is the real remaining gap: `.zt`/`.zti` imports without
+   witness exports now compile natively via one-arena Dataflow Core merge (Phase
+   A — see `docs/ARCHIVED.md`); modules whose imports export typeclass witnesses
+   are rejected before DC by the witness gate (`IMPORT_WITNESS_REASON`), so
+   there is no silent miscompile. Completing native witnesses means teaching the
+   one-arena merge to thread imported witness dictionaries into the importing
+   module's dispatch, then adding a backend HKT-dispatch story.
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
    the interpreter runs row-typed code as ordinary records/unions. Confirmed
