@@ -10,19 +10,22 @@
 //! inline; heap values (records, tuples, lists, variants, text) are pointers
 //! cast to `i64`, each beginning with a one-word header (D-0009).
 //!
-//! Memory is a bump arena owned by a process-lifetime `LazyLock` (D-0008); the
-//! arena's chunks are owned, never leaked, and `zutai.free` is a no-op in v0.
+//! Memory is a per-thread bump arena (D-0008): each OS thread owns a
+//! `thread_local!` arena whose owned chunks are never leaked, bounded by
+//! `ZUTAI_HEAP_MAX` (default 2 GiB) so a runaway allocation aborts with a clear
+//! diagnostic instead of OOM-killing the host. `zutai.free` is a no-op in v0.
 //!
 //! Closures (D-0003) are built and applied inline by codegen, so no closure
 //! symbol lives here. `TAG_CLOSURE` is reserved for the header layout only.
 
 use fast_posit::{Posit, RoundInto};
 
+use std::cell::RefCell;
 use std::slice;
 use std::str;
 use std::sync::{
-    LazyLock, Mutex,
-    atomic::{AtomicU64, Ordering},
+    Once, OnceLock,
+    atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -151,49 +154,263 @@ macro_rules! match_p64_es {
 
 const CHUNK_BYTES: usize = 1 << 20;
 
-/// A chunked bump allocator. Chunks are owned by the `ARENA` static (process
-/// lifetime), so returned pointers stay valid; `Box<[u8]>` payloads keep a
-/// stable address across `chunks` vector growth.
+/// Default heap ceiling (2 GiB) when `ZUTAI_HEAP_MAX` is unset: generous enough
+/// for any v0 fixture/spec program, low enough to abort a runaway leak cleanly
+/// before the OS OOM-killer steps in.
+const DEFAULT_HEAP_MAX: usize = 2 << 30;
+
+/// A chunked bump allocator. Chunks are owned by the per-thread `ARENA` (process
+/// lifetime on the single mutator thread), so returned pointers stay valid;
+/// `Box<[u128]>` payloads are 16-byte aligned and keep a stable address across
+/// `chunks` growth.
 struct Arena {
-    chunks: Vec<Box<[u8]>>,
+    chunks: Vec<Box<[u128]>>,
+    /// Byte offset into the last chunk.
     off: usize,
+    /// Total bytes committed across all chunks; never exceeds `cap`.
+    committed: usize,
+    /// Maximum committed bytes; `usize::MAX` means unlimited.
+    cap: usize,
 }
 
 impl Arena {
-    const fn new() -> Self {
+    fn with_cap(cap: usize) -> Self {
         Arena {
             chunks: Vec::new(),
             off: 0,
+            committed: 0,
+            cap,
         }
     }
 
-    fn alloc(&mut self, bytes: usize) -> *mut u8 {
+    /// Bump-allocate `bytes` (16-byte aligned). Returns `None` when growing the
+    /// arena would push committed memory past `cap`; the caller turns that into a
+    /// runtime diagnostic. A new chunk is clamped to the cap's remaining budget,
+    /// so committed never exceeds `cap`.
+    fn try_alloc(&mut self, bytes: usize) -> Option<*mut u8> {
         let bytes = (bytes + 15) & !15; // 16-byte alignment
         let need_new = match self.chunks.last() {
-            Some(chunk) => self.off + bytes > chunk.len(),
+            Some(chunk) => self.off + bytes > chunk.len() * 16,
             None => true,
         };
         if need_new {
-            let size = bytes.max(CHUNK_BYTES);
-            self.chunks.push(vec![0u8; size].into_boxed_slice());
+            let remaining = self.cap.saturating_sub(self.committed);
+            if bytes > remaining {
+                return None; // cap reached
+            }
+            // `bytes` is 16-aligned and <= remaining, so masking keeps size >= bytes.
+            let size = (bytes.max(CHUNK_BYTES).min(remaining)) & !15;
+            self.chunks.push(vec![0u128; size / 16].into_boxed_slice());
+            self.committed += size;
             self.off = 0;
         }
         let chunk = self.chunks.last_mut().expect("chunk present after push");
-        // SAFETY: `off + bytes <= chunk.len()` holds by the check above.
-        let ptr = unsafe { chunk.as_mut_ptr().add(self.off) };
+        // SAFETY: `off + bytes <= chunk.len() * 16` holds by the check above, and
+        // the `u128` payload guarantees a 16-aligned base.
+        let ptr = unsafe { (chunk.as_mut_ptr() as *mut u8).add(self.off) };
         self.off += bytes;
-        ptr
+        Some(ptr)
     }
 }
 
-static ARENA: LazyLock<Mutex<Arena>> = LazyLock::new(|| Mutex::new(Arena::new()));
+thread_local! {
+    /// Per-thread bump arena. v0 mutators are single-threaded, so a compiled
+    /// program uses one arena on the main thread; isolating per-thread keeps the
+    /// unsynchronized `RefCell` sound under parallel `cargo test`.
+    static ARENA: RefCell<Arena> = RefCell::new(Arena::with_cap(heap_cap()));
+}
+
+/// Resolve the heap ceiling once per process from `ZUTAI_HEAP_MAX`.
+fn heap_cap() -> usize {
+    static CAP: OnceLock<usize> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("ZUTAI_HEAP_MAX")
+            .ok()
+            .and_then(|s| parse_cap_bytes(&s))
+            .unwrap_or(DEFAULT_HEAP_MAX)
+    })
+}
+
+/// Parse a `ZUTAI_HEAP_MAX` value: a byte count with an optional binary suffix
+/// (`k`/`kib`, `m`/`mib`, `g`/`gib`, case-insensitive). `0`, `unlimited`, and
+/// `none` mean no limit. Returns `None` on a malformed value (caller falls back
+/// to the default).
+fn parse_cap_bytes(s: &str) -> Option<usize> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("unlimited") || s.eq_ignore_ascii_case("none") {
+        return Some(usize::MAX);
+    }
+    let lower = s.to_ascii_lowercase();
+    let (num, mult) = if let Some(n) = lower
+        .strip_suffix("gib")
+        .or_else(|| lower.strip_suffix('g'))
+    {
+        (n, 1usize << 30)
+    } else if let Some(n) = lower
+        .strip_suffix("mib")
+        .or_else(|| lower.strip_suffix('m'))
+    {
+        (n, 1usize << 20)
+    } else if let Some(n) = lower
+        .strip_suffix("kib")
+        .or_else(|| lower.strip_suffix('k'))
+    {
+        (n, 1usize << 10)
+    } else {
+        (lower.as_str(), 1usize)
+    };
+    let value: usize = num.trim().parse().ok()?;
+    if value == 0 {
+        return Some(usize::MAX); // 0 = unlimited
+    }
+    value.checked_mul(mult)
+}
+
+/// Abort with an actionable diagnostic when the arena hits its ceiling.
+fn heap_limit_exceeded(bytes: usize, cap: usize) -> ! {
+    eprintln!(
+        "zutai runtime error: heap limit exceeded (cap {cap} bytes; cannot allocate {bytes} more). \
+Raise it with ZUTAI_HEAP_MAX (e.g. ZUTAI_HEAP_MAX=4G), or ZUTAI_HEAP_MAX=0 for unlimited."
+    );
+    std::process::exit(1);
+}
 
 fn arena_alloc(bytes: usize) -> *mut u8 {
-    ARENA.lock().expect("arena mutex poisoned").alloc(bytes)
+    let outcome =
+        ARENA.with_borrow_mut(|a| a.try_alloc(bytes).map(|p| (p, a.committed)).ok_or(a.cap));
+    match outcome {
+        Ok((ptr, committed)) => {
+            stats_record_alloc((bytes + 15) & !15, committed);
+            ptr
+        }
+        Err(cap) => heap_limit_exceeded(bytes, cap),
+    }
 }
 
 fn alloc_words(n: usize) -> *mut i64 {
     arena_alloc(n * 8).cast::<i64>()
+}
+
+// ── Heap statistics (measurement groundwork for the GC decision) ─────────────────
+
+/// Process-global allocation counters. Updated on every allocation (a few
+/// relaxed atomic adds, negligible beside the bump and header writes) so the
+/// numbers are always exact; the human-readable dump at process exit is gated on
+/// `ZUTAI_HEAP_STATS`. Counters aggregate across every thread's arena.
+struct HeapStats {
+    /// Cumulative bytes handed out (16-byte-aligned footprint).
+    bytes: AtomicUsize,
+    /// Cumulative object count.
+    objects: AtomicUsize,
+    /// High-water committed arena bytes. Commit is monotonic without a
+    /// collector, so this is the final footprint — the memory a non-collecting
+    /// run actually holds for an O(1)-live program.
+    peak_committed: AtomicUsize,
+    /// Per-kind object counts, indexed by `TAG_*`; index 0 is unused.
+    by_tag: [AtomicUsize; 8],
+}
+
+static STATS: HeapStats = HeapStats {
+    bytes: AtomicUsize::new(0),
+    objects: AtomicUsize::new(0),
+    peak_committed: AtomicUsize::new(0),
+    by_tag: [const { AtomicUsize::new(0) }; 8],
+};
+
+/// Whether to print the exit-time dump; resolved once from `ZUTAI_HEAP_STATS`
+/// (`1`/`true`/`yes`/`on`).
+fn stats_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("ZUTAI_HEAP_STATS")
+            .map(|v| {
+                let v = v.trim();
+                v == "1"
+                    || v.eq_ignore_ascii_case("true")
+                    || v.eq_ignore_ascii_case("yes")
+                    || v.eq_ignore_ascii_case("on")
+            })
+            .unwrap_or(false)
+    })
+}
+
+unsafe extern "C" {
+    /// C runtime; runs registered callbacks on normal `main` return or `exit`.
+    fn atexit(cb: extern "C" fn()) -> i32;
+}
+
+/// Record one allocation (`bytes` = aligned footprint, `committed` = the arena's
+/// new committed total). Registers the exit dump on first use when enabled.
+fn stats_record_alloc(bytes: usize, committed: usize) {
+    use Ordering::Relaxed;
+    STATS.bytes.fetch_add(bytes, Relaxed);
+    STATS.objects.fetch_add(1, Relaxed);
+    STATS.peak_committed.fetch_max(committed, Relaxed);
+
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        if stats_enabled() {
+            // SAFETY: `atexit` comes from the linked C runtime; the callback only
+            // reads atomics and writes stderr.
+            unsafe { atexit(dump_heap_stats) };
+        }
+    });
+}
+
+/// Bump the per-kind counter for a freshly allocated object.
+fn note_tag(tag: i64) {
+    STATS.by_tag[tag as usize].fetch_add(1, Ordering::Relaxed);
+}
+
+/// Render the one-line stats report. Pure (testable) given a counter snapshot;
+/// `by_tag` is indexed by `TAG_*`. Objects not covered by a tracked tag
+/// (closures, raw `Text` byte buffers) fall into `closure/raw`.
+fn format_stats_line(
+    objects: usize,
+    bytes: usize,
+    peak: usize,
+    by_tag: &[usize; 8],
+    cap: usize,
+) -> String {
+    let avg = bytes.checked_div(objects).unwrap_or(0);
+    let typed = by_tag[TAG_RECORD as usize]
+        + by_tag[TAG_TUPLE as usize]
+        + by_tag[TAG_CONS as usize]
+        + by_tag[TAG_VARIANT as usize]
+        + by_tag[TAG_TEXT as usize];
+    let raw = objects.saturating_sub(typed);
+    let cap_s = if cap == usize::MAX {
+        "unlimited".to_string()
+    } else {
+        cap.to_string()
+    };
+    format!(
+        "zutai heap stats: allocated {bytes} bytes in {objects} objects (avg {avg} B); \
+peak committed {peak} bytes (cap {cap_s}). by kind: record {}, tuple {}, cons {}, variant {}, text {}, closure/raw {}.",
+        by_tag[TAG_RECORD as usize],
+        by_tag[TAG_TUPLE as usize],
+        by_tag[TAG_CONS as usize],
+        by_tag[TAG_VARIANT as usize],
+        by_tag[TAG_TEXT as usize],
+        raw,
+    )
+}
+
+/// Exit-time dump to stderr, gated on `ZUTAI_HEAP_STATS`.
+extern "C" fn dump_heap_stats() {
+    use Ordering::Relaxed;
+    if !stats_enabled() {
+        return;
+    }
+    let by_tag = std::array::from_fn(|i| STATS.by_tag[i].load(Relaxed));
+    let line = format_stats_line(
+        STATS.objects.load(Relaxed),
+        STATS.bytes.load(Relaxed),
+        STATS.peak_committed.load(Relaxed),
+        &by_tag,
+        heap_cap(),
+    );
+    eprintln!("{line}");
 }
 
 // ── Raw word access ─────────────────────────────────────────────────────────────
@@ -238,6 +455,7 @@ pub extern "C" fn free(_p: i64) {
 pub extern "C" fn record_new(n: i64) -> i64 {
     let p = alloc_words(1 + n as usize);
     unsafe { *p = header(TAG_RECORD, n as u64) };
+    note_tag(TAG_RECORD);
     p as i64
 }
 
@@ -261,6 +479,7 @@ pub extern "C" fn record_update(r: i64, slot: i64, v: i64) -> i64 {
         }
         let out = p as i64;
         set_word(out, 1 + slot as usize, v);
+        note_tag(TAG_RECORD);
         out
     }
 }
@@ -271,6 +490,7 @@ pub extern "C" fn record_update(r: i64, slot: i64, v: i64) -> i64 {
 pub extern "C" fn tuple_new(n: i64) -> i64 {
     let p = alloc_words(1 + n as usize);
     unsafe { *p = header(TAG_TUPLE, n as u64) };
+    note_tag(TAG_TUPLE);
     p as i64
 }
 
@@ -286,15 +506,20 @@ pub extern "C" fn tuple_get(t: i64, slot: i64) -> i64 {
 
 // ── List ABI (D-0005) ───────────────────────────────────────────────────────────
 
-static NIL: LazyLock<i64> = LazyLock::new(|| {
-    let p = alloc_words(1);
-    unsafe { *p = header(TAG_NIL, 0) };
-    p as i64
-});
+/// The nil sentinel is a process-static one-word object (just a `TAG_NIL`
+/// header). Keeping it out of the per-thread arena means `list_nil()` returns a
+/// pointer valid on every thread and for the whole process lifetime.
+#[repr(align(16))]
+// The header word is read through the raw pointer in `coalesce`/`render`, never
+// via the field, so the compiler cannot see the use.
+#[allow(dead_code)]
+struct NilObj(i64);
+
+static NIL_OBJ: NilObj = NilObj(header(TAG_NIL, 0));
 
 #[unsafe(export_name = "zutai.list_nil")]
 pub extern "C" fn list_nil() -> i64 {
-    *NIL
+    (&raw const NIL_OBJ) as i64
 }
 
 #[unsafe(export_name = "zutai.list_cons")]
@@ -305,6 +530,7 @@ pub extern "C" fn list_cons(head: i64, tail: i64) -> i64 {
         *p.add(1) = head;
         *p.add(2) = tail;
     }
+    note_tag(TAG_CONS);
     p as i64
 }
 
@@ -318,6 +544,7 @@ pub extern "C" fn variant_new(tag: i64, payload: i64) -> i64 {
         *p.add(1) = tag;
         *p.add(2) = payload;
     }
+    note_tag(TAG_VARIANT);
     p as i64
 }
 
@@ -355,6 +582,7 @@ pub extern "C" fn text_from_global(ptr: i64, len: i64) -> i64 {
         *p.add(1) = len;
         *p.add(2) = ptr;
     }
+    note_tag(TAG_TEXT);
     p as i64
 }
 /// Build a free-standing atom value. Atoms carry their source spelling for

@@ -231,3 +231,107 @@ fn bool_render() {
     assert_eq!(render_str(1, &bool_d), "true");
     assert_eq!(render_str(0, &bool_d), "false");
 }
+
+// ── Arena cap + accounting (D-0008 release valve) ───────────────────────────────
+
+#[test]
+fn arena_allocates_below_cap_aligned_and_distinct() {
+    let mut a = Arena::with_cap(CHUNK_BYTES);
+    let p1 = a.try_alloc(8).expect("first alloc fits");
+    let p2 = a.try_alloc(8).expect("second alloc fits");
+    assert_ne!(p1, p2, "distinct allocations");
+    assert_eq!(p1 as usize % 16, 0, "p1 is 16-byte aligned");
+    assert_eq!(p2 as usize % 16, 0, "p2 is 16-byte aligned");
+    // An 8-byte request rounds up to 16, so the two are exactly 16 bytes apart.
+    assert_eq!(p2 as usize - p1 as usize, 16);
+}
+
+#[test]
+fn arena_try_alloc_returns_none_past_cap() {
+    // Cap below one chunk: the first chunk is clamped to the cap, then exhausts.
+    let mut a = Arena::with_cap(64);
+    assert!(a.try_alloc(32).is_some(), "32 fits in a 64-byte cap");
+    assert!(
+        a.try_alloc(32).is_some(),
+        "another 32 fills the cap exactly"
+    );
+    assert!(a.try_alloc(16).is_none(), "cap exhausted -> None");
+    assert!(
+        a.committed <= 64,
+        "committed never exceeds cap: {}",
+        a.committed
+    );
+}
+
+#[test]
+fn arena_oversized_request_past_cap_is_rejected() {
+    let mut a = Arena::with_cap(64);
+    assert!(
+        a.try_alloc(128).is_none(),
+        "a single request bigger than the cap -> None"
+    );
+    assert_eq!(a.committed, 0, "nothing is committed on rejection");
+}
+
+#[test]
+fn arena_committed_tracks_chunk_growth() {
+    let mut a = Arena::with_cap(usize::MAX);
+    assert_eq!(a.committed, 0);
+    a.try_alloc(8).expect("alloc");
+    assert_eq!(a.committed, CHUNK_BYTES, "first chunk is one CHUNK_BYTES");
+    // Fill the rest of the first chunk without growing.
+    a.try_alloc(CHUNK_BYTES - 16).expect("alloc");
+    assert_eq!(a.committed, CHUNK_BYTES, "still one chunk");
+    // The next allocation forces a second chunk.
+    a.try_alloc(8).expect("alloc");
+    assert_eq!(a.committed, 2 * CHUNK_BYTES, "second chunk committed");
+}
+
+#[test]
+fn parse_cap_bytes_handles_suffixes_and_unlimited() {
+    assert_eq!(parse_cap_bytes("1024"), Some(1024));
+    assert_eq!(parse_cap_bytes("2k"), Some(2 * 1024));
+    assert_eq!(parse_cap_bytes("2KiB"), Some(2 * 1024));
+    assert_eq!(parse_cap_bytes("4m"), Some(4 * 1024 * 1024));
+    assert_eq!(parse_cap_bytes("1G"), Some(1024 * 1024 * 1024));
+    assert_eq!(parse_cap_bytes("  8M  "), Some(8 * 1024 * 1024));
+    assert_eq!(parse_cap_bytes("unlimited"), Some(usize::MAX));
+    assert_eq!(parse_cap_bytes("none"), Some(usize::MAX));
+    assert_eq!(parse_cap_bytes("0"), Some(usize::MAX));
+    assert_eq!(parse_cap_bytes("garbage"), None);
+    assert_eq!(parse_cap_bytes(""), None);
+}
+
+// ── Heap-stats reporting ────────────────────────────────────────────────────────
+
+#[test]
+fn format_stats_line_reports_totals_and_kinds() {
+    let mut by_tag = [0usize; 8];
+    by_tag[TAG_RECORD as usize] = 4000;
+    by_tag[TAG_CONS as usize] = 10;
+    by_tag[TAG_TEXT as usize] = 1;
+    // 4013 objects total => 2 not covered by a tracked tag (closures / raw bytes).
+    let line = format_stats_line(4013, 96_312, 1 << 20, &by_tag, 2 << 30);
+    assert!(
+        line.contains("allocated 96312 bytes in 4013 objects"),
+        "{line}"
+    );
+    assert!(line.contains("avg 24 B"), "{line}");
+    assert!(
+        line.contains("peak committed 1048576 bytes (cap 2147483648)"),
+        "{line}"
+    );
+    assert!(line.contains("record 4000"), "{line}");
+    assert!(line.contains("cons 10"), "{line}");
+    assert!(line.contains("text 1"), "{line}");
+    assert!(line.contains("closure/raw 2"), "{line}");
+}
+
+#[test]
+fn format_stats_line_unlimited_cap_and_empty() {
+    let by_tag = [0usize; 8];
+    let line = format_stats_line(0, 0, 0, &by_tag, usize::MAX);
+    assert!(line.contains("in 0 objects (avg 0 B)"), "{line}");
+    assert!(line.contains("(cap unlimited)"), "{line}");
+    assert!(line.contains("closure/raw 0"), "{line}");
+}

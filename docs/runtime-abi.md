@@ -277,16 +277,41 @@ parity-breaking `<function>`. (`Type`/witness results are already gated upstream
 stdout is flushed before exit so streamed `io.print` and the final line are
 never reordered or lost.
 
-### D-0008 — Memory model: bump arena, leak-by-default
+### D-0008 — Memory model: thread-local bump arena, capped leak-by-default
 
-- `i64 zutai.alloc(i64 nbytes)` — bump a global, chunk-growing arena (mmap /
-  `realloc` of large chunks), 16-byte aligned.
+- `i64 zutai.alloc(i64 nbytes)` — bump a **thread-local**, chunk-growing arena
+  (1 MiB `Box<[u128]>` chunks, so every result is 16-byte aligned *by
+  construction*, not by the system allocator's luck). Returns the pointer as
+  `i64`. Thread-local rather than global: no lock on the hot path, and each host
+  thread gets its own arena, which keeps the `rlib` sound when linked into a
+  multi-threaded host (e.g. the parallel test harness).
 - `void zutai.free(i64 p)` — **no-op in v0.** Declared for ABI stability.
-- The OS reclaims everything at process exit.
+- **Heap ceiling.** Committed arena bytes are capped — default **2 GiB**,
+  overridable via `ZUTAI_HEAP_MAX` (`k`/`m`/`g` suffixes; `0`/`unlimited`/`none`
+  disables). An allocation that would grow the arena past the cap aborts with a
+  `heap limit exceeded` diagnostic and `exit(1)`, turning the unbounded leak
+  into a clean, debuggable failure instead of an OS OOM-kill. Nothing is
+  reclaimed below the cap; the OS reclaims everything at process exit.
+- The `nil` sentinel is a single process-static (16-byte aligned), not an arena
+  allocation — a per-thread arena cannot back a process-global pointer.
 
 - *Rationale.* A first runnable, *correct* backend should not block on a
   collector. The pure/lazy core means reachable allocation is bounded by what
-  the program forces; for the v0 fixture/spec programs this is fine.
+  the program forces; for the v0 fixture/spec programs this is fine, and the cap
+  bounds the blast radius when it is not.
+- *GC urgency — decision (A), 2026-06-22.* The native backend commits to
+  **strict semantics plus tail-call optimization** (`musttail`; ANF→SSA return
+  sinking + tail marking, Phase 31), and **defers GC**. Measured rationale:
+  before TCO the native stack overflowed (~10^5–10^6 frames) long before the
+  heap cap (~10^7–10^8 objects), so GC could not help those programs — TCO
+  could. After TCO, deep tail recursion runs in O(1) stack and the **heap
+  becomes the binding constraint**, making GC a real space optimization for
+  bounded-live / unbounded-allocation programs. ~2/3 of accumulator allocation
+  is calling-convention overhead (one arg-tuple + one closure per curried call),
+  so **uncurrying lands before any collector**. Caveat to "without an ABI break"
+  below: that holds for the *object layout*, but **root-finding** does not —
+  untagged `i64` roots (D-0002) need a shadow stack or stack maps for a precise
+  collector, which is a calling-convention change. Full record in `TBD.md`.
 - *Deferred GC trajectory.* The per-object header (D-0009) and type descriptors
   (exact pointer-vs-immediate slot maps) make a **precise**, and even **moving**,
   collector safe, so a collector can be added **without an ABI break**. The
@@ -410,7 +435,7 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 
 | Symbol | Signature | Semantics |
 | --- | --- | --- |
-| `zutai.alloc` | `i64 (i64 nbytes)` | Bump-allocate, 16-byte aligned; returns pointer as `i64`. |
+| `zutai.alloc` | `i64 (i64 nbytes)` | Bump-allocate from a thread-local arena, 16-byte aligned; returns pointer as `i64`. Aborts (`exit 1`) past the `ZUTAI_HEAP_MAX` cap (default 2 GiB). |
 | `zutai.free` | `void (i64 p)` | No-op in v0. |
 | `zutai.record_new` | `i64 (i64 n)` | Allocate a record of `n` slots. |
 | `zutai.record_set` | `void (i64 r, i64 slot, i64 v)` | Set slot by **ordinal index**. |

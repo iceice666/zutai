@@ -1285,6 +1285,83 @@ fn compile_emit_bin_recursive_function_runs() {
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "55\n");
 }
 
+// A bounded-depth recursion that allocates one short-lived record per step:
+// O(n) heap garbage for an O(1) live set — the canonical arena-leak shape.
+const HEAP_STRESS_SRC: &str = r#"box :: Int -> { v: Int; }
+  = n => { v = n; };
+unbox :: { v: Int; } -> Int
+  = { v = x; } => x;
+sum :: Int -> Int -> Int
+  = n acc => if n < 1 then acc else sum (n - 1) (acc + unbox (box n));
+sum 4000 0
+"#;
+
+#[test]
+fn compile_emit_bin_heap_stress_runs_under_default_cap() {
+    // Under the default ceiling the heavy-allocating program still runs and
+    // produces the right value (the cap must not regress legitimate programs).
+    assert_eq!(
+        compile_bin_stdout("cli_test_heap_stress", HEAP_STRESS_SRC),
+        "8002000\n"
+    );
+}
+
+#[test]
+fn compile_emit_bin_heap_stress_aborts_over_cap() {
+    let path = write_tmp("cli_test_heap_stress_cap.zt", HEAP_STRESS_SRC);
+    let out = write_tmp("cli_test_heap_stress_cap", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    // ~4000 records (~64 KiB) overrun a 32 KiB ceiling: abort cleanly with a
+    // diagnostic instead of leaking until the OS OOM-kills the process.
+    let output = StdCommand::new(&out)
+        .env("ZUTAI_HEAP_MAX", "32k")
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "a tiny heap cap should abort the program: {output:?}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("heap limit exceeded"),
+        "abort should explain the heap-cap; stderr: {stderr}"
+    );
+}
+
+#[test]
+fn compile_emit_bin_heap_stats_dump_reports_allocations() {
+    let path = write_tmp("cli_test_heap_stats.zt", HEAP_STRESS_SRC);
+    let out = write_tmp("cli_test_heap_stats", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    // ZUTAI_HEAP_STATS prints an exit-time allocation report on stderr without
+    // changing program output (4000 `box` records => "record 4000").
+    let output = StdCommand::new(&out)
+        .env("ZUTAI_HEAP_STATS", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "program should run: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "8002000\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("zutai heap stats:") && stderr.contains("record 4000"),
+        "stats dump should report record allocations; stderr: {stderr}"
+    );
+}
+
 #[test]
 fn compile_derive_witness_program_passes() {
     let src = r#"
