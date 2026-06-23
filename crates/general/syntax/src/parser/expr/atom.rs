@@ -679,7 +679,7 @@ fn parse_witness_reflect(input: &mut &str) -> Result<Expr> {
 // ---------------------------------------------------------------------------
 
 fn parse_select(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let (_, start_span) = spanned(parse_select_marker).parse_next(input)?;
+    let (_, start_span) = spanned(kw("select")).parse_next(input)?;
     ws(input)?;
     let receiver = super::parse_postfix_with_options(input, options)?;
     ws(input)?;
@@ -696,18 +696,10 @@ fn parse_select(input: &mut &str, options: ExprOptions) -> Result<Expr> {
 }
 
 fn starts_select(input: &str) -> bool {
-    input.starts_with(">>=")
-        || input.starts_with("select") && peek(kw("select")).parse_next(&mut &*input).is_ok()
+    input.starts_with("select") && peek(kw("select")).parse_next(&mut &*input).is_ok()
 }
 
-fn parse_select_marker(input: &mut &str) -> Result<()> {
-    if input.starts_with(">>=") {
-        return ">>=".void().parse_next(input);
-    }
-    kw("select").parse_next(input)
-}
-
-fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
+pub(super) fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut fields = vec![];

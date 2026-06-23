@@ -83,7 +83,10 @@ Add
   ::= Mul (("+" | "-") Mul)*
 
 Mul
-  ::= Application (("*" | "/") Application)*
+  ::= SelectOp (("*" | "/") SelectOp)*
+
+SelectOp
+  ::= Application (">>=" SelectFields)*
 
 Application
   ::= Postfix (application-whitespace Postfix)*
@@ -169,7 +172,7 @@ TypeForm
   ::= "type" TypeExpr
 
 Select
-  ::= ("select" | ">>=") Postfix SelectFields
+  ::= "select" Postfix SelectFields
 
 SelectFields
   ::= "{" (FieldName ";")* "}"
@@ -199,7 +202,10 @@ TypeExpr
   ::= TypeEffect ("->" TypeExpr)?
 
 TypeEffect
-  ::= TypeApplication ("!" EffectRow)?
+  ::= TypeSelectOp ("!" EffectRow)?
+
+TypeSelectOp
+  ::= TypeApplication (">>=" SelectFields)*
 
 TypeApplication
   ::= TypePostfix (inline-whitespace TypePostfix)*
@@ -249,7 +255,7 @@ TypeTupleItem
    | TypeExpr
 
 TypeSelect
-  ::= ("select" | ">>=") TypePostfix SelectFields
+  ::= "select" TypePostfix SelectFields
 
 EffectRow
   ::= "{" EffectOp (("," | ";") EffectOp)* ("," | ";")? "}"

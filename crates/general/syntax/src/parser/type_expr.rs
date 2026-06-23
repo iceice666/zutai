@@ -37,7 +37,7 @@ pub fn parse_type_expr(input: &mut &str) -> Result<TypeExpr> {
 }
 
 fn parse_type_effect(input: &mut &str) -> Result<TypeExpr> {
-    let base = parse_type_application(input)?;
+    let base = parse_type_select_op(input)?;
     let checkpoint = *input;
     ws(input)?;
     if !input.starts_with('!') || input.starts_with("!=") {
@@ -54,6 +54,36 @@ fn parse_type_effect(input: &mut &str) -> Result<TypeExpr> {
         effects,
         span,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Type select operator `Type >>= { field; ... }` (left-assoc)
+// ---------------------------------------------------------------------------
+
+fn parse_type_select_op(input: &mut &str) -> Result<TypeExpr> {
+    let mut lhs = parse_type_application(input)?;
+    loop {
+        let checkpoint = *input;
+        ws(input)?;
+        if input.starts_with(">>=") {
+            ">>=".parse_next(input)?;
+            ws(input)?;
+            let fields = parse_select_fields(input)?;
+            let span = fields
+                .last()
+                .map(|field| lhs.span().merge(field.span))
+                .unwrap_or_else(|| lhs.span());
+            lhs = TypeExpr::Select {
+                receiver: Box::new(lhs),
+                fields,
+                span,
+            };
+        } else {
+            *input = checkpoint;
+            break;
+        }
+    }
+    Ok(lhs)
 }
 
 /// Type constructor application, e.g. `List Int` or `Pair Text Int`.
@@ -461,7 +491,7 @@ fn parse_row_tail(input: &mut &str) -> Result<RowTail> {
 }
 
 fn parse_type_select(input: &mut &str) -> Result<TypeExpr> {
-    let (_, start_span) = spanned(parse_select_marker).parse_next(input)?;
+    let (_, start_span) = spanned(kw("select")).parse_next(input)?;
     ws(input)?;
     let receiver = parse_type_postfix(input)?;
     ws(input)?;
@@ -478,18 +508,10 @@ fn parse_type_select(input: &mut &str) -> Result<TypeExpr> {
 }
 
 fn starts_type_select(input: &str) -> bool {
-    input.starts_with(">>=")
-        || input.starts_with("select")
-            && winnow::combinator::peek(kw("select"))
-                .parse_next(&mut &*input)
-                .is_ok()
-}
-
-fn parse_select_marker(input: &mut &str) -> Result<()> {
-    if input.starts_with(">>=") {
-        return ">>=".void().parse_next(input);
-    }
-    kw("select").parse_next(input)
+    input.starts_with("select")
+        && winnow::combinator::peek(kw("select"))
+            .parse_next(&mut &*input)
+            .is_ok()
 }
 
 fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {

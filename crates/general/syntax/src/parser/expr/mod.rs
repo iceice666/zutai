@@ -270,7 +270,7 @@ fn parse_add_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
 // ---------------------------------------------------------------------------
 
 fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let mut lhs = parse_application_with_options(input, options)?;
+    let mut lhs = parse_select_op_level(input, options)?;
     loop {
         let ws_checkpoint = *input;
         ws(input)?;
@@ -285,7 +285,7 @@ fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
             break;
         };
         ws(input)?;
-        let rhs = parse_application_with_options(input, options)?;
+        let rhs = parse_select_op_level(input, options)?;
         let span = lhs.span().merge(rhs.span());
         lhs = Expr::Binary {
             op: op_val,
@@ -293,6 +293,36 @@ fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
             rhs: Box::new(rhs),
             span,
         };
+    }
+    Ok(lhs)
+}
+
+// ---------------------------------------------------------------------------
+// Level 2.5: select operator `expr >>= { field; ... }` (left-assoc)
+// ---------------------------------------------------------------------------
+
+fn parse_select_op_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let mut lhs = parse_application_with_options(input, options)?;
+    loop {
+        let checkpoint = *input;
+        ws(input)?;
+        if input.starts_with(">>=") {
+            ">>=".parse_next(input)?;
+            ws(input)?;
+            let fields = atom::parse_select_fields(input)?;
+            let span = fields
+                .last()
+                .map(|field| lhs.span().merge(field.span))
+                .unwrap_or_else(|| lhs.span());
+            lhs = Expr::Select {
+                receiver: Box::new(lhs),
+                fields,
+                span,
+            };
+        } else {
+            *input = checkpoint;
+            break;
+        }
     }
     Ok(lhs)
 }

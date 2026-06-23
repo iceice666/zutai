@@ -110,7 +110,7 @@ fn v1_value_select_preserves_field_order() {
 
 #[test]
 fn v1_value_select_operator_preserves_field_order() {
-    let e = parse_expr_str(">>= server { host; port; }");
+    let e = parse_expr_str("server >>= { host; port; }");
     match e {
         Expr::Select {
             receiver, fields, ..
@@ -149,7 +149,7 @@ fn v1_type_select_preserves_field_order() {
 
 #[test]
 fn v1_type_select_operator_preserves_field_order() {
-    let e = parse_expr_str("type >>= Server { host; port; }");
+    let e = parse_expr_str("type Server >>= { host; port; }");
     match e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
             TypeExpr::Select {

@@ -345,6 +345,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn operator_at(&mut self, offset: usize) -> Option<(usize, bool)> {
+        if self.starts_at(offset, ">>=") {
+            return Some((3, false));
+        }
         if self.starts_at(offset, "<|") {
             self.note_pipeline(PipelineDir::Backward, offset);
             self.break_compare_chain();
