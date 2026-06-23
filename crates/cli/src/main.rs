@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     match cli.command {
         Some(Commands::Run { path }) => commands::run_file(&path)?,
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
+        Some(Commands::Json { path }) => commands::run_json(&path)?,
         Some(Commands::Check { path }) => commands::run_check(&path)?,
         Some(Commands::Compile { path, output, emit }) => {
             commands::run_compile(&path, output.as_deref(), emit.into())?;
@@ -65,6 +66,11 @@ enum Commands {
     },
     /// Parse a file and print the AST
     Parse {
+        /// Path to the .zt or .zti file
+        path: String,
+    },
+    /// Parse .zti or evaluate .zt and print the final result as JSON
+    Json {
         /// Path to the .zt or .zti file
         path: String,
     },

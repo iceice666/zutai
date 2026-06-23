@@ -207,6 +207,62 @@ wrapper 1
         .stdout(predicate::str::contains("true"));
 }
 
+// ─── `json` subcommand ────────────────────────────────────────────────────────
+
+#[test]
+fn json_zti_file_prints_natural_json() {
+    let path = write_tmp(
+        "cli_test_json.zti",
+        "{ host = \"localhost\"; port = 8080; mode = #prod; flags = [true; #fast;]; }\n",
+    );
+    cli()
+        .arg("json")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"host\": \"localhost\""))
+        .stdout(predicate::str::contains("\"port\": 8080"))
+        .stdout(predicate::str::contains("\"mode\": \"#prod\""))
+        .stdout(predicate::str::contains("\"flags\""));
+}
+
+#[test]
+fn json_zt_file_evaluates_final_result() {
+    let path = write_tmp(
+        "cli_test_json_eval.zt",
+        "cfg ::= { host = \"localhost\"; port = 8000 + 80; }\ncfg\n",
+    );
+    cli()
+        .arg("json")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"port\": 8080"))
+        .stdout(predicate::str::contains("8000 + 80").not());
+}
+
+#[test]
+fn json_zt_type_error_exits_nonzero() {
+    let path = write_tmp("cli_test_json_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    cli()
+        .arg("json")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("type error"));
+}
+
+#[test]
+fn json_unsupported_extension_exits_nonzero() {
+    let path = write_tmp("cli_test_json_unsupported.txt", "{ x = 1; }\n");
+    cli()
+        .arg("json")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Unsupported"));
+}
+
 // ─── `parse` subcommand ───────────────────────────────────────────────────────
 
 #[test]

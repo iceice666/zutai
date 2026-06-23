@@ -187,6 +187,107 @@ impl Value {
             )),
         }
     }
+
+    /// Convert a fully `force_deep`'d runtime value into natural JSON.
+    ///
+    /// Booleans, numbers, text, lists, and records map to their JSON
+    /// counterparts; atoms become strings with the leading `#`; tagged union
+    /// values become `{ "tag": ..., "payload": ... }`. Non-data values
+    /// (closures, types, witnesses, builtins) and non-finite floats are
+    /// rejected to keep the output JSON-compliant and lossless-free.
+    ///
+    /// Thunks must already be forced; this never forces. An unforced thunk
+    /// means an internal value escaped the deep-force performed by the eval
+    /// entry points, which is an interpreter bug.
+    pub fn to_json(&self) -> Result<serde_json::Value, EvalError> {
+        use serde_json::Value as J;
+        match self {
+            Value::Bool(b) => Ok(J::Bool(*b)),
+            Value::Int(n) => Ok(serde_json::json!(n)),
+            Value::Float(x) => {
+                if x.is_finite() {
+                    Ok(serde_json::json!(x))
+                } else {
+                    Err(EvalError::Internal(
+                        "cannot serialize non-finite float to JSON",
+                    ))
+                }
+            }
+            Value::Posit(literal) => Ok(J::String(format_posit(*literal))),
+            Value::Text(s) => Ok(J::String(s.to_string())),
+            Value::Atom(a) => Ok(J::String(format!("#{a}"))),
+            Value::Nothing => Ok(J::Null),
+            Value::List(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    out.push(forced_json_value(item)?);
+                }
+                Ok(J::Array(out))
+            }
+            Value::Tuple(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for field in items.iter() {
+                    out.push(forced_json_value(&field.value)?);
+                }
+                Ok(J::Array(out))
+            }
+            Value::Record(fields) => {
+                let mut map = serde_json::Map::with_capacity(fields.len());
+                for (name, thunk) in fields.iter() {
+                    map.insert(name.to_string(), forced_json_value(thunk)?);
+                }
+                Ok(J::Object(map))
+            }
+            Value::TaggedValue { tag, payload } => {
+                let payload_json = if payload.is_empty() {
+                    J::Null
+                } else {
+                    let positional = payload
+                        .iter()
+                        .enumerate()
+                        .all(|(index, (name, _))| name.parse::<usize>() == Ok(index));
+                    if positional {
+                        let mut out = Vec::with_capacity(payload.len());
+                        for (_, thunk) in payload.iter() {
+                            out.push(forced_json_value(thunk)?);
+                        }
+                        J::Array(out)
+                    } else {
+                        let mut map = serde_json::Map::with_capacity(payload.len());
+                        for (name, thunk) in payload.iter() {
+                            map.insert(name.to_string(), forced_json_value(thunk)?);
+                        }
+                        J::Object(map)
+                    }
+                };
+                let mut map = serde_json::Map::with_capacity(2);
+                map.insert("tag".to_string(), J::String(tag.to_string()));
+                map.insert("payload".to_string(), payload_json);
+                Ok(J::Object(map))
+            }
+            Value::Closure(_)
+            | Value::TlcClosure(_)
+            | Value::TypeValue(_)
+            | Value::WitnessDict(_)
+            | Value::Builtin(_)
+            | Value::BuiltinPartial { .. } => Err(EvalError::Internal(
+                "cannot serialize non-data runtime value to JSON",
+            )),
+        }
+    }
+}
+
+/// Convert an already-forced thunk to JSON, rejecting unforced thunks.
+///
+/// Eval entry points deep-force their result, so a `None` peek here means an
+/// internal unforced value escaped into the serializer — an interpreter bug.
+fn forced_json_value(thunk: &crate::thunk::Thunk) -> Result<serde_json::Value, EvalError> {
+    match thunk.peek() {
+        Some(value) => value.to_json(),
+        None => Err(EvalError::Internal(
+            "cannot serialize unforced thunk to JSON",
+        )),
+    }
 }
 
 pub(crate) fn update_record_value(

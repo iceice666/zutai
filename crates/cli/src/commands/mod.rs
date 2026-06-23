@@ -113,11 +113,28 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
     let base = Path::new(path).parent();
     match eval_isolated(&contents, base) {
         EvalOutcome::Ok(rendered) => println!("{rendered}"),
+        outcome => exit_for_eval_failure(path, &contents, base, outcome),
+    }
+    Ok(())
+}
+
+/// Render a non-`Ok` `.zt` evaluation outcome to stderr and exit nonzero.
+///
+/// Shared by `run_file` and `run_json` so `.zt` parse/import/type/runtime/panic
+/// diagnostics and exit codes stay identical across both commands.
+fn exit_for_eval_failure(
+    path: &str,
+    contents: &str,
+    base: Option<&Path>,
+    outcome: EvalOutcome,
+) -> ! {
+    match outcome {
+        EvalOutcome::Ok(_) => unreachable!("exit_for_eval_failure called with EvalOutcome::Ok"),
         EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
             // These are parse/HIR/import errors — render with miette if possible,
             // otherwise fall back to the semantic analyzer for pretty output.
             let analysis = zutai_semantic::analyze_with_base(
-                &contents,
+                contents,
                 base,
                 zutai_semantic::AnalysisOptions::default(),
             );
@@ -130,7 +147,7 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
                 })
                 .collect();
             if !parse_errors.is_empty() {
-                print_zt_errors(path, &contents, &parse_errors);
+                print_zt_errors(path, contents, &parse_errors);
                 std::process::exit(1);
             }
             let import_errors: Vec<_> = analysis
@@ -167,7 +184,6 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
     }
-    Ok(())
 }
 
 /// Parse a `.zt` file and print the AST (the old default behavior).
@@ -228,6 +244,71 @@ pub(crate) fn run_parse_zti(path: &str) -> Result<(), Box<dyn Error>> {
     let ast = zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
     print_ast("zti", &ast);
     Ok(())
+}
+
+/// Parse a `.zti` or evaluate a `.zt` file and print the final result as
+/// natural JSON.
+///
+/// `.zti` documents are parsed and their inert data serialized directly; `.zt`
+/// programs are fully evaluated (under the same isolated large-stack worker as
+/// `run`) and the forced final value serialized. Encoding is natural JSON:
+/// atoms become `#`-prefixed strings and tagged values become
+/// `{ "tag", "payload" }` objects.
+pub(crate) fn run_json(path: &str) -> Result<(), Box<dyn Error>> {
+    match extension_or_error(path)?.as_str() {
+        "zti" => {
+            let contents = fs::read_to_string(path)?;
+            let block =
+                zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
+            let json = zti_block_to_json(&block);
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        "zt" => {
+            let contents = fs::read_to_string(path)?;
+            let base = Path::new(path).parent();
+            let owned_contents = contents.clone();
+            let owned_base = base.map(Path::to_path_buf);
+            let outcome = run_isolated(move || {
+                zutai_eval::eval_with_base(&owned_contents, owned_base.as_deref())
+                    .and_then(|value| value.to_json())
+                    .map(|json| {
+                        serde_json::to_string_pretty(&json)
+                            .expect("serializing serde_json::Value cannot fail")
+                    })
+            });
+            match outcome {
+                EvalOutcome::Ok(rendered) => println!("{rendered}"),
+                outcome => exit_for_eval_failure(path, &contents, base, outcome),
+            }
+        }
+        other => return Err(format!("Unsupported extension: {other}").into()),
+    }
+    Ok(())
+}
+
+/// Convert a parsed `.zti` block into a natural JSON object.
+fn zti_block_to_json(block: &zutai_im::Block) -> serde_json::Value {
+    let mut map = serde_json::Map::with_capacity(block.len());
+    for pair in block.iter() {
+        map.insert(pair.field_name.clone(), zti_value_to_json(&pair.value));
+    }
+    serde_json::Value::Object(map)
+}
+
+/// Convert a parsed `.zti` value into natural JSON.
+fn zti_value_to_json(value: &zutai_im::Value) -> serde_json::Value {
+    use serde_json::Value as J;
+    use zutai_im::Value as Im;
+    match value {
+        Im::True => J::Bool(true),
+        Im::False => J::Bool(false),
+        Im::Integer(n) => serde_json::json!(n),
+        Im::Float(f) => serde_json::json!(f),
+        Im::String(s) => J::String(s.clone()),
+        Im::Atom(s) => J::String(format!("#{s}")),
+        Im::Array(items) => J::Array(items.iter().map(zti_value_to_json).collect()),
+        Im::Block(block) => zti_block_to_json(block),
+    }
 }
 
 /// Run the type-checker on a `.zt` file and print diagnostics.
