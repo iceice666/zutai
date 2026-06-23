@@ -51,13 +51,14 @@ crates/
   general/syntax/      Parser and AST definitions for general mode (`.zt`)
   general/hir/         Name-resolved high-level IR and structural validation
   general/thir/        Typed HIR — error-tolerant, source-preserving, LSP foundation
-  general/tlc/         Type Lambda Calculus — fully elaborated, explicit TyLam/TyApp (planned)
+  general/tlc/         Type Lambda Calculus — fully elaborated, explicit TyLam/TyApp
   general/semantic/    Facade wiring parse -> HIR -> THIR; also exposes TLC when available
-  general/eval/        Interim THIR reference interpreter + REPL (semantics oracle)
-  general/dataflow/    Dataflow Core IR — graph-based pure computation representation (planned)
-  general/anf/         Administrative Normal Form lowering from Dataflow Core (planned)
-  general/ssa/         SSA form lowering from ANF (planned)
-  general/codegen/     LLVM IR code generation from SSA (planned)
+  general/eval/        Reference interpreter + REPL — TLC-first eval, THIR semantics oracle
+  general/dataflow/    Dataflow Core IR — graph-based pure computation representation
+  general/anf/         Administrative Normal Form lowering from Dataflow Core
+  general/ssa/         SSA form lowering from ANF
+  general/codegen/     LLVM IR code generation from SSA
+  general/runtime/     Runtime library + ABI (zutai-rt) linked into compiled programs
   immediate/core/      Immediate-mode facade over selectable parser backends
   immediate/syntax/    Parser definitions for immediate mode (`.zti`)
   immediate/simd/      SIMD-accelerated parser for immediate mode (`.zti`)
