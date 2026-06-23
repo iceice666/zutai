@@ -1200,6 +1200,28 @@ fn compiled_variants_reflection_matches_oracle() {
 }
 
 #[test]
+fn compiled_union_extension_matches_oracle() {
+    // Union extension (`...Shape` spreading an existing union into a new one)
+    // was listed as check-plus-interpreter only, but the spread members keep
+    // their tags through TLC->DC, so both construction and tag dispatch across
+    // the extended union compile with full parity. Cover a spread member
+    // (`#square` from `Shape`) and a freshly added member (`#sphere`).
+    let src = r#"
+Shape :: type { #circle: { radius : Int; }; #square: { side : Int; }; }
+Shape3D :: type { ...Shape; #sphere: { radius : Int; }; }
+f :: Shape3D -> Int
+  = #circle { radius = r; } => r;
+  = #square { side = s; } => s + 100;
+  = #sphere { radius = r; } => r * 10;
+f (#square { side = 4; })
+"#;
+    let run_output = run_stdout("cli_test_union_extension_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_union_extension_compiled", src);
+    assert_eq!(compiled_output, run_output);
+    assert_eq!(compiled_output.trim(), "104");
+}
+
+#[test]
 fn compiled_witness_reflection_dispatch_matches_oracle() {
     // `(witness C @T).method arg` is the `WitnessReflect` expression form, not a
     // builtin binding, so it escaped reflection detection and ICE'd the backend
