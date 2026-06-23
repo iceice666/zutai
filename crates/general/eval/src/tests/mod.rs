@@ -73,4 +73,5 @@ mod diagnostics_effects;
 mod display_runtime;
 mod functions_patterns;
 mod imports;
+mod json;
 mod witnesses;

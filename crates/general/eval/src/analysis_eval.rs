@@ -25,6 +25,21 @@ pub fn eval_with_base(source: &str, base: Option<&Path>) -> Result<Value, EvalEr
     eval_default_analysis(&analysis)
 }
 
+/// Evaluate a `.zt` source string and serialize the final value to JSON.
+pub fn eval_file_to_json(source: &str) -> Result<serde_json::Value, EvalError> {
+    eval_with_base(source, None)?.to_json()
+}
+
+/// Evaluate a `.zt` file on disk and serialize the final value to JSON,
+/// resolving `import`s relative to the file's directory.
+pub fn eval_path_to_json(path: impl AsRef<Path>) -> Result<serde_json::Value, EvalError> {
+    let path = path.as_ref();
+    let source = std::fs::read_to_string(path)
+        .map_err(|_| EvalError::Internal("failed to read source for JSON evaluation"))?;
+    let base = path.parent();
+    eval_with_base(&source, base)?.to_json()
+}
+
 /// Evaluate a `.zt` source string with the explicit THIR regression oracle.
 pub fn eval_thir_file(source: &str) -> Result<Value, EvalError> {
     eval_thir_with_base(source, None)

@@ -1319,6 +1319,7 @@ dependencies = [
  "miette",
  "predicates",
  "rustyline",
+ "serde_json",
  "thiserror",
  "zutai-anf",
  "zutai-codegen",
@@ -1362,6 +1363,7 @@ version = "0.1.0"
 dependencies = [
  "fast-posit",
  "rustc-hash 2.1.2",
+ "serde_json",
  "smallvec",
  "thiserror",
  "zutai-hir",

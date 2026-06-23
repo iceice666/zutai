@@ -49,8 +49,8 @@ use eval::{EvalCaches, Evaluator, ModuleRegistry, RuntimeWitness};
 use value::ModuleId;
 
 pub use analysis_eval::{
-    eval_file, eval_path, eval_thir, eval_thir_file, eval_thir_path, eval_thir_with_base,
-    eval_thir_with_imports, eval_with_base,
+    eval_file, eval_file_to_json, eval_path, eval_path_to_json, eval_thir, eval_thir_file,
+    eval_thir_path, eval_thir_with_base, eval_thir_with_imports, eval_with_base,
 };
 pub use errors::EvalError;
 pub use force::force_deep;
