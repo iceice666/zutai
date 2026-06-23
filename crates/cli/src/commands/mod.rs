@@ -409,7 +409,7 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
-    let uses_reflection = analysis.reflection_builtin_program().is_some();
+    let uses_reflection = analysis.aot_reflection_program().is_some();
 
     if let Some(reason) = analysis.config_overlay_builtin_program() {
         eprintln!("compile error: {reason}");
@@ -549,7 +549,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     }
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
-    let uses_reflection = analysis.reflection_builtin_program().is_some();
+    let uses_reflection = analysis.aot_reflection_program().is_some();
     if let Some(reason) = analysis.config_overlay_builtin_program() {
         eprintln!("error: {reason}");
         std::process::exit(1);

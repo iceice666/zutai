@@ -142,6 +142,12 @@ impl Analysis {
         }
     }
 
+    /// Reflection that the TLC-first evaluator cannot execute and that must be
+    /// served by the THIR oracle instead: `fields`/`schema` build runtime
+    /// `Type`-reflection values TLC has no representation for. `variants` and
+    /// `witness` reflection are intentionally absent — the TLC evaluator
+    /// evaluates both, so they stay on the default TLC path (see
+    /// `aot_reflection_program` for the broader compile-time fold gate).
     pub fn reflection_builtin_program(&self) -> Option<&'static str> {
         if self
             .import_modules
@@ -163,6 +169,47 @@ impl Analysis {
             };
             hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
                 && (hir_binding.name == "fields" || hir_binding.name == "schema")
+        });
+        if uses_reflection {
+            Some(
+                "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
+            )
+        } else {
+            None
+        }
+    }
+
+    /// Compile-time reflection that must be AOT-folded to a backend value or
+    /// rejected before Dataflow Core — the superset of [`Self::reflection_builtin_program`]
+    /// that also covers `variants` and the `witness C @T` reflection expression.
+    /// `fold_aot_reflection` evaluates the program through the default evaluator
+    /// (TLC for `variants`/`witness`, THIR for `fields`/`schema`) and serializes
+    /// the result; a non-serializable result (a raw witness dictionary, a
+    /// function, a `Type`) is rejected rather than lowered. Used by the CLI
+    /// `compile`/`dataflow` paths, never by the run-time evaluator routing, so
+    /// `witness`/`variants` programs keep evaluating on the TLC path.
+    pub fn aot_reflection_program(&self) -> Option<&'static str> {
+        if self
+            .import_modules
+            .values()
+            .any(|module| module.as_ref().aot_reflection_program().is_some())
+        {
+            return Some(
+                "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
+            );
+        }
+        let hir = &self.hir.as_ref()?.file;
+        let file = self.thir.as_ref()?.file.as_ref()?;
+        let uses_reflection = file.expr_arena.iter().any(|(_, expr)| match &expr.kind {
+            zutai_thir::ThirExprKind::WitnessReflect { .. } => true,
+            zutai_thir::ThirExprKind::BindingRef(binding) => hir
+                .bindings
+                .get(binding.0 as usize)
+                .is_some_and(|hir_binding| {
+                    hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                        && matches!(hir_binding.name.as_str(), "fields" | "variants" | "schema")
+                }),
+            _ => false,
         });
         if uses_reflection {
             Some(
@@ -877,5 +924,61 @@ parse
                 );
             }
         }
+    }
+
+    #[test]
+    fn witness_reflection_is_aot_only_not_run_routing() {
+        // `witness C @T` reflection must trigger the compile-time AOT-fold gate
+        // but NOT the run-time THIR-routing gate: the TLC evaluator handles it,
+        // and routing it to the THIR oracle would regress witness dispatch.
+        let analysis = analyze(
+            "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\nwitness Eq @Int",
+        );
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.aot_reflection_program().is_some(),
+            "witness reflection must be detected for AOT folding"
+        );
+        assert!(
+            analysis.reflection_builtin_program().is_none(),
+            "witness reflection must NOT trigger THIR run routing"
+        );
+    }
+
+    #[test]
+    fn variants_reflection_is_aot_only_not_run_routing() {
+        // `variants` folds/evaluates on the TLC path, so it belongs to the AOT
+        // gate but not the THIR-routing gate.
+        let analysis = analyze("Color :: type { #red: {}; #green: {}; }\nvariants (Color)");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.aot_reflection_program().is_some(),
+            "variants reflection must be detected for AOT folding"
+        );
+        assert!(
+            analysis.reflection_builtin_program().is_none(),
+            "variants reflection must NOT trigger THIR run routing"
+        );
+    }
+
+    #[test]
+    fn schema_reflection_triggers_both_gates() {
+        // `schema`/`fields` need the THIR oracle, so they trigger both gates.
+        let analysis = analyze("Server :: type { host : Text; }\nschema Server");
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.reflection_builtin_program().is_some());
+        assert!(analysis.aot_reflection_program().is_some());
+    }
+
+    #[test]
+    fn implicit_witness_dispatch_is_not_reflection() {
+        // Implicit method dispatch (`lt 1 2`) is not the `witness` reflection
+        // expression and must lower natively — neither gate fires.
+        let analysis = analyze(
+            "Ord :: <A> @A { lt :: A -> A -> Bool; }\nOrd @Int :: { lt = \\a b. a < b; }\nlt 1 2",
+        );
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.aot_reflection_program().is_none());
+        assert!(analysis.reflection_builtin_program().is_none());
     }
 }
