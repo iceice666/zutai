@@ -119,8 +119,15 @@ beyond `io.print`.
 
 Host capabilities are dispatched by the runtime effect driver, and so depend on
 the v1 effect runtime — the CPS effect lowering and runtime dispatch that
-replace compile-time effect folding. Each capability adds one runtime ABI entry
-and one driver dispatch arm, plus its standard-library declaration.
-Implementation is tracked as a v2 milestone in [`TBD.md`](../TBD.md). Until it
-lands, `io.print` is the only host operation serviced by the boundary, and other
-residual host operations are rejected before code generation.
+replace compile-time effect folding. The standard set has **landed**
+(`docs/ARCHIVED.md` Phase 27): the capability type names `FsRead`, `FsWrite`,
+`Env`, `Clock`, `Rng`, and explicit `IoPrint` are seeded in the root scope
+(with `Path`/`Instant` as text-shaped boundary types), THIR effect rows
+recognize `fs.read`, `fs.write`, `env.get`, `clock.now`, and `rng.next` with
+advisory authority, and TLC keeps residual host effects explicit, rejecting
+ungranted operations before TLC→DC. The CLI `run`, `dataflow`, and native/LLVM
+compile boundaries grant the standard set and lower granted residual effects to
+a Dataflow Core `HostOp` node that ANF/SSA/codegen preserve and the
+runtime/evaluator dispatch. Ambient `io.print` stays source-compatible, and
+`handle` can still intercept any host operation before the boundary. A residual
+host operation the host does not grant is still rejected before code generation.

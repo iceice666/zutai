@@ -1,13 +1,15 @@
 # Zutai Language Specification v2 — Deferred Features
 
-These features build on the v0 core and the v1 deferred-feature layer. They are
-planned beyond v1.
+These features build on the v0 core and the v1 deferred-feature layer. They have
+landed at check-plus-reference-interpreter level (`docs/ARCHIVED.md` Phases
+24–28); native-backend parity varies per feature, and remaining backend gaps are
+tracked in [`TBD.md`](../TBD.md).
 
 v2 inherits all v0 and v1 surface syntax. It introduces user-defined recursive
 data types, host capabilities beyond `io.print`, user-defined `derive` recipes
 with witness reflection, internal universe levels, and higher-rank polymorphism.
-This directory is the language-design source of truth for these features;
-implementation milestones are tracked in [`TBD.md`](../TBD.md).
+This directory is the language-design source of truth for these features; each
+chapter's Support Level section records its current implementation status.
 
 ## Recursive Types
 

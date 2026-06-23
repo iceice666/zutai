@@ -79,10 +79,14 @@ call.
 
 ## Support Level
 
-Higher-rank polymorphism has reference-interpreter support for explicitly
-annotated nested quantifiers in direct function argument positions. The parser,
-HIR, THIR, and TLC preserve `ForAll`; THIR checks written higher-rank
-annotations bidirectionally while inference remains predicative and rank-1; TLC
-elaborates applications with `TyApp` plus dictionary `App` nodes for constrained
-arguments. Impredicative instantiation, such as `List (<A> A -> A)`, remains
-unsupported and rejects with a dedicated diagnostic.
+Higher-rank polymorphism has **landed** with reference-interpreter support
+(`docs/ARCHIVED.md` Phase 26) for explicitly annotated nested quantifiers in
+direct function argument positions. The parser, HIR, THIR, and TLC preserve
+`ForAll`; THIR checks written higher-rank annotations bidirectionally while
+inference remains predicative and rank-1; TLC elaborates applications with
+`TyApp` plus dictionary `App` nodes for constrained arguments, so `applyId` and
+constrained `showBoth` type-check and run through THIR and TLC. A `ForAll` in a
+structural non-argument position (record field, union variant, list element, or
+tuple item) rejects with an `UnsupportedFeature("impredicative type")`
+diagnostic, and impredicative instantiation such as `List (<A> A -> A)` likewise
+rejects with a dedicated diagnostic.

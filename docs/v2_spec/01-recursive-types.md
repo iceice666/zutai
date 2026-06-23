@@ -23,10 +23,11 @@ Tree :: type {
 
 ```zt
 example :: Tree =
-  (#node,
-    value = 1,
-    left  = #leaf,
-    right = (#node, value = 2, left = #leaf, right = #leaf));
+  #node {
+    value = 1;
+    left  = #leaf;
+    right = #node { value = 2; left = #leaf; right = #leaf; };
+  }
 ```
 
 Construction and pattern matching are unchanged from v1; the recursion lives in
@@ -132,6 +133,12 @@ TLC carry recursive type references by identity rather than by expansion (see
 Finite recursive *values* — ordinary trees and lists — render and compare in
 finite time. The pure core does not construct cyclic values.
 
-Recursive type support is structural (equirecursive). Implementation is tracked
-as a v2 milestone in [`TBD.md`](../TBD.md); until it lands, the front end
-continues to reject recursive and mutually recursive aliases with a diagnostic.
+Recursive type support is structural (equirecursive) and has **landed**
+(`docs/ARCHIVED.md` Phase 25): guarded recursive and mutually recursive aliases
+check through THIR/TLC, generic recursive aliases such as `Tree A` preserve
+universe levels and compare via scoped equirecursive matching, and Dataflow Core
+instantiates them into finite cyclic `DfTyId` graphs that reach
+`compile --emit llvm`. Bare, non-productive alias cycles still reject with an
+alias-cycle or fuel diagnostic. `check`, `run`, `dataflow`, and
+`compile --emit llvm` cover recursive `Tree`, mutual `Expr`/`Args`, and generic
+`Tree A`.

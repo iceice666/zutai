@@ -106,9 +106,17 @@ default surface.
 
 ## Support Level
 
-The TLC core kind already carries a level slot (`Type(level)`); v2 wires level
-inference, cumulativity, and level-polymorphic defaulting through the front end
-and the kind lowering, which currently pin every kind to level 0. Cumulativity
-and defaulting are required parts of the feature, not optional refinements:
-without them, introducing levels would reject currently-accepted higher-kinded
-programs. Implementation is tracked as a v2 milestone in [`TBD.md`](../TBD.md).
+Internal universe levels have **landed** (`docs/ARCHIVED.md` Phase 24): the TLC
+core kind carries a level slot (`Type(level)`), and level inference,
+cumulativity, and level-polymorphic defaulting now flow through THIR kind
+checking and TLC kind lowering rather than pinning every kind to level 0. Type
+constructors and higher-kinded constraints are level-polymorphic and default to
+the lowest consistent universe, so ordinary programs stay accepted while
+`Pair Int Type` checks at a higher inferred universe; universe-circular
+definitions produce a dedicated kind diagnostic. Cumulativity and defaulting are
+required parts of the feature, not optional refinements: without them,
+introducing levels would reject currently-accepted higher-kinded programs.
+Type-level fuel still bounds normalization only, and runtime erasure and backend
+output for ordinary value programs are unchanged. Explicit surface level syntax
+remains reserved and unimplemented (`docs/TBD.md` "Explicit universe-level
+syntax").

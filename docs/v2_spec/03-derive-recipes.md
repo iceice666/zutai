@@ -140,8 +140,17 @@ record and union whose components are themselves `Ord`.
 Derive recipes require a witness-reflection primitive (`witness C @T`),
 reflection over unions (`variants`) and recursive types, and a compile-time
 staging boundary that runs a recipe during witness elaboration and reifies its
-result into a dictionary. In the current implementation, reflection runs in the
-type-value evaluator while derive synthesis runs during TLC dictionary lowering;
-unifying these two paths is the substance of the v2 milestone tracked in
-[`TBD.md`](../TBD.md). Until it lands, `derive` provides only the built-in
-structural equality recipe.
+result into a dictionary. These have **landed** (`docs/ARCHIVED.md` Phase 28):
+constraint declarations carry `derive = <T> => ...` recipe bodies through
+Syntax/HIR/THIR — the recipe is type-checked before TLC consumes the marker —
+and drive specialized TLC Show/Ord dictionary synthesis for records and unions,
+including same-variant payload ordering. `witness C @T` is parsed, typed as a
+method-record dictionary, and resolved through the same concrete/conditional
+lookup as implicit dispatch (accepting conditional witnesses such as
+`Eq @(List A)` and reporting `WitnessReflectNotInScope` otherwise); type-value
+reflection now exposes `variants` alongside `fields` and `schema`, preserving
+recursive `Type` back-references. The built-in structural equality recipe
+remains the default when a constraint attaches no recipe. At the backend,
+`compile`/`dataflow` fold serializable reflection to constants and reject
+residual reflection (a raw `witness` dictionary or a `Type`-valued result)
+before lowering — the intended fold-or-reject model, not a gap.
