@@ -66,6 +66,10 @@ pub struct WitnessExport {
     pub constraint: String,
     pub target_key: String,
     pub target_display: String,
+    /// HIR BindingId.0 of this witness instance's own binding.
+    /// Used by the native backend to compute the dep-namespaced DC global name
+    /// (`$dep{idx}${constraint}$w{binding_id}`) for cross-module witness dispatch.
+    pub binding_id: u32,
     pub span: Span,
 }
 
@@ -442,6 +446,7 @@ pub(crate) fn local_witness_exports(
             constraint,
             target_display: target_key.clone(),
             target_key,
+            binding_id: decl.binding.0,
             span: decl.span,
         });
     }

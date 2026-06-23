@@ -1095,6 +1095,7 @@ fn module_import_is_rejected_before_dataflow_core() {
         dict_field_slots: FxHashMap::default(),
         spans: FxHashMap::default(),
         final_expr: Some(import_expr),
+        extern_global_bindings: rustc_hash::FxHashMap::default(),
     };
 
     let reason = try_lower_tlc(&module, &[]).expect_err("module import must be gated before DC");

@@ -156,6 +156,7 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         dict_field_slots: FxHashMap::default(),
         spans: FxHashMap::default(),
         final_expr: None,
+        extern_global_bindings: FxHashMap::default(),
     };
 
     // With small fuel (5 steps) this must return FuelExhausted, never panic.

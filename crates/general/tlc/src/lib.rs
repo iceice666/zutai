@@ -13,7 +13,7 @@ pub use ir::{
     TlcExpr, TlcExprId, TlcHandleClause, TlcModule, TlcPat, TlcPatItem, TlcTupleField,
     TlcTupleItem, TlcType, TlcTypeId, TlcTypeVar,
 };
-pub use lower::lower_thir;
+pub use lower::{lower_thir, lower_thir_with_extern_witnesses};
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
 
 /// Return why a TLC module still cannot enter Dataflow Core.

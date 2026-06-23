@@ -45,6 +45,7 @@ pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
         dict_field_slots: FxHashMap::default(),
         spans: FxHashMap::default(),
         final_expr: None,
+        extern_global_bindings: FxHashMap::default(),
     }
 }
 
@@ -74,6 +75,7 @@ fn tlc_module_is_constructible() {
         dict_field_slots: FxHashMap::default(),
         spans: FxHashMap::default(),
         final_expr: None,
+        extern_global_bindings: FxHashMap::default(),
     };
 }
 

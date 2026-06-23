@@ -438,4 +438,11 @@ pub struct TlcModule {
     pub spans: FxHashMap<TlcExprId, Span>,
     /// The module's final expression — evaluated to produce the module's value.
     pub final_expr: Option<TlcExprId>,
+    /// Virtual BindingIds → DC global names for cross-module witness dispatch.
+    ///
+    /// When `get_dict_expr` resolves a concrete witness from an imported dep module,
+    /// it allocates a fresh virtual `BindingId` (above the THIR binding range) and
+    /// stores the mapping here.  The DC lowerer's `Var` arm checks this map before
+    /// emitting an `Error` node, turning the virtual var into a `GlobalRef`.
+    pub extern_global_bindings: FxHashMap<BindingId, String>,
 }

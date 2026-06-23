@@ -2405,3 +2405,89 @@ fn compile_zt_diamond_import_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
     assert!(native.trim().contains("23"), "expected 23, got {native:?}");
 }
+#[test]
+fn compile_zt_imported_concrete_witness_matches_oracle() {
+    // Cross-module concrete witness dispatch: dep declares the constraint + witness,
+    // root re-declares the same constraint (making `eq` in scope), but provides
+    // NO local witness for Int. Previously gated by IMPORT_WITNESS_REASON; now
+    // dispatches natively via the extern witness table (GlobalRef to dep's global).
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_concrete",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. a == b; }\n1\n",
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "eq 3 3\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.trim().contains("true"),
+        "expected true, got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_bool_witness_matches_oracle() {
+    // Concrete `Eq @Bool` witness imported from a dep; root re-declares the constraint.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_bool",
+        "main.zt",
+        &[
+            (
+                "bool_eq.zt",
+                "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Bool :: { eq = \\a b. a == b; }\ntrue\n",
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"bool_eq.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "eq false false\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.trim().contains("true"),
+        "expected true, got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_ord_witness_matches_oracle() {
+    // Concrete `Ord @Int` witness imported from dep; root re-declares Ord.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_ord",
+        "main.zt",
+        &[
+            (
+                "cmp_lib.zt",
+                "Ord :: <A> @A { lt :: A -> A -> Bool; }\nOrd @Int :: { lt = \\a b. a < b; }\n0\n",
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"cmp_lib.zt\"\n",
+                    "Ord :: <A> @A { lt :: A -> A -> Bool; }\n",
+                    "lt 1 2\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.trim().contains("true"),
+        "expected true, got {native:?}"
+    );
+}

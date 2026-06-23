@@ -29,6 +29,24 @@ pub fn lower_thir(file: &ThirFile) -> TlcModule {
     }
     module
 }
+/// Lower a THIR file to TLC with extern witness information from imported dep modules.
+///
+/// `extern_witnesses` is a list of `(constraint_name, target_key_str, dc_global_name)` triples.
+/// When `get_dict_expr` fails to resolve a witness locally, it checks this list; a matching
+/// entry is replaced with a virtual `Var` that the DC lowerer maps to `GlobalRef(dc_global_name)`.
+pub fn lower_thir_with_extern_witnesses(
+    file: &ThirFile,
+    extern_witnesses: Vec<(String, String, String)>,
+) -> TlcModule {
+    let mut lowerer = Lowerer::new(file);
+    lowerer.extern_witnesses = extern_witnesses;
+    let mut module = lowerer.lower_file();
+    module.elaborate_effects();
+    if crate::residual_effect_reason(&module).is_none() {
+        module.erase_effects();
+    }
+    module
+}
 
 struct Lowerer<'thir> {
     thir: &'thir ThirFile,
@@ -75,10 +93,22 @@ struct Lowerer<'thir> {
     /// to the builtin instead of re-dispatching — otherwise `(==) = \a b. a == b`
     /// would call itself forever. Cleared once the body is lowered.
     defining_op_witness: Option<(BindingId, String)>,
+    /// Extern witness entries from imported dep modules.
+    /// Each entry is `(constraint_name, target_key_str, dc_global_name)`.
+    /// Checked by `get_dict_expr` after local lookup fails.
+    extern_witnesses: Vec<(String, String, String)>,
+    /// Virtual bindings allocated for extern witness globals.
+    /// Keys are synthetic `BindingId`s above the THIR binding range; values are
+    /// the DC global names they resolve to.  Collected into `TlcModule::extern_global_bindings`.
+    extern_global_bindings: FxHashMap<BindingId, String>,
+    /// Counter for virtual BindingId allocation; starts just above the THIR
+    /// binding-names array length so it never collides with a real BindingId.
+    next_virtual_binding: u32,
 }
 
 impl<'thir> Lowerer<'thir> {
     fn new(thir: &'thir ThirFile) -> Self {
+        let next_virtual_binding = thir.binding_names.len() as u32 + 1;
         Self {
             thir,
             decl_arena: Arena::new(),
@@ -102,7 +132,20 @@ impl<'thir> Lowerer<'thir> {
             conditional_witnesses: Vec::new(),
             resolving_dicts: FxHashSet::default(),
             defining_op_witness: None,
+            extern_witnesses: Vec::new(),
+            extern_global_bindings: FxHashMap::default(),
+            next_virtual_binding,
         }
+    }
+
+    /// Allocate a fresh virtual `BindingId` for an extern witness global and
+    /// record the mapping `virtual_id → dc_global_name`.
+    fn alloc_virtual_binding(&mut self, dc_global: String) -> BindingId {
+        let id = self.next_virtual_binding;
+        self.next_virtual_binding -= 1; // count downward to avoid collision
+        let bid = BindingId(id);
+        self.extern_global_bindings.insert(bid, dc_global);
+        bid
     }
 
     fn lower_file(&mut self) -> TlcModule {
@@ -132,6 +175,7 @@ impl<'thir> Lowerer<'thir> {
             expr_types: std::mem::take(&mut self.expr_types),
             dict_field_slots: std::mem::take(&mut self.dict_field_slots),
             spans: std::mem::take(&mut self.spans),
+            extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
         }
     }
 

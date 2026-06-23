@@ -517,10 +517,44 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
 
+    // Collect deps early (needed to build extern witness list for TLC lowering).
+    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
+    // Gate on conditional witnesses (target_key contains '?') — those require
+    // dynamic dispatch the one-arena merge cannot recover at compile time.
+    // Concrete witnesses (Int, Bool, Text, etc.) are handled natively via the extern table.
+    if dep_analyses.iter().any(|dep| {
+        dep.witness_exports
+            .iter()
+            .any(|w| w.target_key.contains('?'))
+    }) {
+        eprintln!("compile error: {IMPORT_WITNESS_REASON}");
+        std::process::exit(1);
+    }
+
+    // Build the extern witness list for the root's TLC lowering: each dep's concrete
+    // witness exports map to a dep-namespaced DC global name.
+    let extern_witnesses: Vec<(String, String, String)> = dep_analyses
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, dep)| {
+            dep.witness_exports.iter().map(move |w| {
+                (
+                    w.constraint.clone(),
+                    w.target_key.clone(),
+                    format!("$dep{idx}${}$w{}", w.constraint, w.binding_id),
+                )
+            })
+        })
+        .collect();
+
     // TLC lowering. Effectful programs enter DC only when TLC lowering has
     // eliminated effect markers or mapped ambient `io.print` to the runtime
     // HostPrint path.
-    let mut module = zutai_tlc::lower_thir(thir);
+    let mut module = if extern_witnesses.is_empty() {
+        zutai_tlc::lower_thir(thir)
+    } else {
+        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses)
+    };
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
@@ -557,18 +591,6 @@ pub(crate) fn run_compile(
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-
-    // DC → ANF → SSA → LLVM IR pipeline. Imported `.zti` data lowers inline; `.zt`
-    // modules are merged into one Dataflow Core graph (transitive deps in dep
-    // order). Witness-exporting imports are gated to the interpreter.
-    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    if dep_analyses
-        .iter()
-        .any(|dep| !dep.witness_exports.is_empty())
-    {
-        eprintln!("compile error: {IMPORT_WITNESS_REASON}");
-        std::process::exit(1);
-    }
     let program = zutai_dataflow::ProgramInput {
         root: zutai_dataflow::ModuleInput {
             module: &module,
@@ -671,7 +693,34 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    let mut module = zutai_tlc::lower_thir(thir);
+    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
+    if dep_analyses.iter().any(|dep| {
+        dep.witness_exports
+            .iter()
+            .any(|w| w.target_key.contains('?'))
+    }) {
+        eprintln!("error: {IMPORT_WITNESS_REASON}");
+        std::process::exit(1);
+    }
+    let extern_witnesses_df: Vec<(String, String, String)> = dep_analyses
+        .iter()
+        .enumerate()
+        .flat_map(|(idx, dep)| {
+            dep.witness_exports.iter().map(move |w| {
+                (
+                    w.constraint.clone(),
+                    w.target_key.clone(),
+                    format!("$dep{idx}${}$w{}", w.constraint, w.binding_id),
+                )
+            })
+        })
+        .collect();
+
+    let mut module = if extern_witnesses_df.is_empty() {
+        zutai_tlc::lower_thir(thir)
+    } else {
+        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses_df)
+    };
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
@@ -706,14 +755,6 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    if dep_analyses
-        .iter()
-        .any(|dep| !dep.witness_exports.is_empty())
-    {
-        eprintln!("error: {IMPORT_WITNESS_REASON}");
-        std::process::exit(1);
-    }
     let program = zutai_dataflow::ProgramInput {
         root: zutai_dataflow::ModuleInput {
             module: &module,

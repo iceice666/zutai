@@ -130,21 +130,74 @@ impl<'thir> Lowerer<'thir> {
 
     /// Build a TLC expression for passing the witness dict at a call site.
     ///
-    /// Returns a `Lit(Nothing)` placeholder on failure (undefined witness) to
-    /// preserve existing named-method and bounded-call lowering behavior.
+    /// On local-lookup failure, tries the extern witness table (imported dep modules).
+    /// Falls back to `Lit(Nothing)` only when no witness can be resolved at all.
     pub(crate) fn get_dict_expr(
         &mut self,
         cst_binding: BindingId,
         inst_type_id: TypeId,
         span: Span,
     ) -> TlcExprId {
-        self.try_get_dict_expr(cst_binding, inst_type_id, span)
-            .unwrap_or_else(|| {
-                use crate::ir::{Literal, PrimTy};
+        if let Some(expr) = self.try_get_dict_expr(cst_binding, inst_type_id, span) {
+            return expr;
+        }
+        // Extern witness fallback: check imported dep modules.
+        if let Some(expr) = self.try_extern_witness_expr(cst_binding, inst_type_id, span) {
+            return expr;
+        }
+        use crate::ir::{Literal, PrimTy};
+        let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
+        self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
+    }
 
-                let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
-                self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
-            })
+    /// Try to build a TLC expression for a witness dict from an imported dep module.
+    ///
+    /// Computes a string key for `inst_type_id` compatible with `WitnessExport::target_key`
+    /// (the same strings `imported_type_key` produces) and looks it up in `extern_witnesses`.
+    /// On a match, allocates a virtual `BindingId` and returns `Var(virtual_id)`, which the
+    /// DC lowerer maps to `GlobalRef(dc_global_name)`.
+    ///
+    /// Returns `None` for conditional/parametric witnesses (target_key contains `?`) or when
+    /// no extern entry matches.
+    fn try_extern_witness_expr(
+        &mut self,
+        cst_binding: BindingId,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        let target_key = self.thir_type_to_extern_key(inst_type_id)?;
+        // Look up the constraint name from the THIR binding table.
+        let cst_name = self
+            .thir
+            .binding_names
+            .get(cst_binding.0 as usize)
+            .map(String::as_str)
+            .unwrap_or("");
+        let dc_global = self
+            .extern_witnesses
+            .iter()
+            .find(|(c, k, _)| c == cst_name && k == &target_key)
+            .map(|(_, _, g)| g.clone())?;
+        let virtual_id = self.alloc_virtual_binding(dc_global);
+        let ty = self.alloc_type(TlcType::Record(crate::ir::Row::REmpty));
+        Some(self.alloc_expr(TlcExpr::Var(virtual_id), ty, span))
+    }
+
+    /// Map a THIR `TypeId` to a string key compatible with `WitnessExport::target_key`
+    /// (produced by `imported_type_key` in the semantic crate).
+    ///
+    /// Uses `structural_witness_key` which generates the same format as `imported_type_key`:
+    /// `"Int"`, `"Bool"`, `"[Int]"`, `"{field:Int}"`, `"#foo"`, etc.
+    /// Returns `None` for types containing free TypeVars/InferVars — those have `?` in
+    /// their key string and require conditional dispatch, not the extern table.
+    fn thir_type_to_extern_key(&self, ty: TypeId) -> Option<String> {
+        let key = self.structural_witness_key(ty, &mut rustc_hash::FxHashSet::default())?;
+        // A key containing '?' came from a free TypeVar/InferVar substitution — it is a
+        // parametric/conditional target and cannot be looked up in the extern table.
+        if key.contains('?') {
+            return None;
+        }
+        Some(key)
     }
 
     /// The concrete witness decl binding a `(constraint, type)` dispatch resolves

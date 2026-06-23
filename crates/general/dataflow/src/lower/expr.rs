@@ -27,6 +27,10 @@ impl<'m> Lowerer<'m> {
                 if let Some(name) = self.global_names.get(&binding).cloned() {
                     return self.alloc_node(DfNodeKind::GlobalRef(name), df_ty, span);
                 }
+                // Extern witness global (virtual BindingId allocated by the TLC lowerer).
+                if let Some(name) = self.module.extern_global_bindings.get(&binding).cloned() {
+                    return self.alloc_node(DfNodeKind::GlobalRef(name), df_ty, span);
+                }
                 self.alloc_node(DfNodeKind::Error, self.error_ty, span)
             }
 
