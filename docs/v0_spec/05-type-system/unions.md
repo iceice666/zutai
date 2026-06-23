@@ -132,4 +132,28 @@ Optional :: <T> type {
 
 ---
 
+### JSON serialization
+
+When a tagged union value is serialized to JSON via `eval_path_to_json`, the shape depends on whether the variant carries a payload:
+
+| Zutai value | JSON |
+| --- | --- |
+| bare atom `#tag` | `"#tag"` — a JSON string with the `#` prefix preserved |
+| `#tag { field = v; }` | `{"tag": "tag", "payload": {"field": v}}` — the tag name has **no** `#` prefix in the object |
+| `#tag (a, b)` | `{"tag": "tag", "payload": [a, b]}` |
+
+A consumer therefore sees two distinct shapes and must branch on whether the value is a string or an object. Example in Rust with `serde_json`:
+
+```rust
+#[serde(untagged)]
+enum RawAction {
+    Atom(String),                                      // "#quit", "#toggle_pin", …
+    Tagged { tag: String, payload: serde_json::Value }, // tag = "spawn" (no #)
+}
+```
+
+Tagged union values have no `.zti` representation; only JSON rendering is supported.
+
+---
+
 Open union types and union extension are v1 features. See [Row polymorphism](../../v1_spec/01-row-polymorphism.md).

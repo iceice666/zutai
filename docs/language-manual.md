@@ -48,6 +48,8 @@ In `.zt`, whitespace separates tokens. Top-level declarations are separated by l
 - Block comments begin with `--[` and end with `]--`; block comments may nest.
 - Doc comments begin with `--|` and continue to the end of the line. In v0 they are lexically distinct but have no required semantic effect.
 
+**Known limitation:** multi-byte Unicode characters (box-drawing glyphs, en-dashes, em-dashes, etc.) inside line or block comments can cause the current parser to emit a misleading "parser stopped here" diagnostic that points to the next non-comment token rather than the comment itself. Restrict comment content to ASCII until this is resolved.
+
 Canonical `.zti` v0 has no comments.
 
 Strings are double-quoted and JSON-like. Immediate mode numbers use JSON-style syntax; general mode numbers use the same base syntax plus optional numeric postfixes such as `i8`, `u16`, `f32`, `f64`, `p32`, and `p64eN`. Without a postfix, integer-looking literals infer as `Int`, and literals with a decimal point or exponent infer as `Float`.
@@ -184,7 +186,8 @@ Brace syntax is disambiguated by the first item after `{`:
 | `{ field =; ... }` | record value with field-pun shorthand (`field = field;`) |
 | `{ name := expr; final_expr }` | block with inferred local binding |
 | `{ name : TypeExpr = expr; final_expr }` | block with typed local binding |
-| `type { field : TypeExpr; ... }` | record type |
+| `type { field : TypeExpr; ... }` | record type (fields, not tags) |
+| `type { #tag; #tag: TypeExpr; ... }` | tagged union type (members start with `#`) |
 
 Examples:
 
@@ -260,7 +263,23 @@ port
 
 Type aliases use `Name :: type TypeExpr`. Generic aliases use `<...>`, for example `Pair :: <A, B> type { first : A; second : B; }`. Type functions may also be ordinary functions returning `Type`.
 
-Record types are closed in v0. A value of a closed record type must provide the declared fields and must not provide undeclared fields. List types use `List T`. Tagged union types use `type { ... }` with semicolon-terminated `#tag` members, optionally carrying record or tuple payloads. Every tagged union value exposes `.tag`, which returns the atom tag.
+Record types are closed in v0. A value of a closed record type must provide the declared fields and must not provide undeclared fields. List types use `List T`.
+
+Tagged union types use `type { ... }` with semicolon-terminated `#tag` members. The `:` colon after a tag name introduces a payload type; bare `#tag;` means no payload. Payload types may be record types or tuple types:
+
+```zt
+Action :: type {
+  #quit;                             -- no payload
+  #spawn: { command : Text; };       -- record payload
+  #move: (Int, Int);                 -- tuple payload
+}
+```
+
+The colon in the type declaration (`#tag: PayloadType`) is distinct from value construction, which uses no colon (`#spawn { command = "ghostty"; }`).
+
+Every tagged union value exposes `.tag`, which returns the atom tag.
+
+An empty list literal `[]` cannot infer its element type; always provide an annotation: `items :: List T = []`.
 
 Optional value and optional field syntax are distinct:
 
@@ -270,7 +289,7 @@ Optional value and optional field syntax are distinct:
 
 Nested wrappers are not flattened. `?.` works on `Optional` and `Maybe`, preserving the receiver wrapper. `??` unwraps exactly one `Optional` or `Maybe` layer.
 
-Structural equality is defined for first-order comparable data: booleans, numbers, text, atoms, lists, records, tuples, and tagged union values whose payloads are comparable. Functions are not comparable. `Type` values are not comparable in user code. Tagged union values are comparable in `.zt` when their payloads are comparable, but they have no direct `.zti` or JSON representation in v0.
+Structural equality is defined for first-order comparable data: booleans, numbers, text, atoms, lists, records, tuples, and tagged union values whose payloads are comparable. Functions are not comparable. `Type` values are not comparable in user code. Tagged union values with record payloads that are comparable are structurally equal when their tags and payloads are equal.
 
 ## Polymorphism and pattern matching
 
@@ -311,7 +330,27 @@ name :: TypeSignature
 
 A `.zt` module can return a record containing values, functions, and types. Imported `.zt` modules may contain non-serializable values such as functions and types; only rendering requires serializability.
 
-Rendered `.zti` or JSON outputs must be serializable. Functions, `Type` values, function types, and tagged union values have no direct `.zti` or JSON representation in v0. Atoms keep their `#` spelling when rendered as `.zti`.
+Rendered `.zti` outputs must be serializable. Functions and `Type` values have no `.zti` representation. Atoms keep their `#` spelling in `.zti`.
+
+### JSON rendering
+
+`eval_path_to_json` (the Rust evaluator API) serializes tagged union values as follows:
+
+- A bare atom `#tag` with no payload renders as the JSON string `"#tag"` (the `#` prefix is preserved).
+- A tagged value with a record payload `#tag { field = value; ... }` renders as a JSON object `{"tag": "tag", "payload": {...}}`. Note: the `tag` key holds the bare name without `#`.
+
+```zt
+Action :: type { #quit; #spawn: { command : Text; }; }
+
+-- #quit renders as: "#quit"
+-- #spawn { command = "ghostty"; } renders as: {"tag": "spawn", "payload": {"command": "ghostty"}}
+```
+
+Consumers of the JSON API must handle both shapes. Tagged union values do not have a direct `.zti` representation.
+
+### Import paths
+
+Import paths are relative to the importing file's directory. Absolute paths and `..`-traversals that escape the importing file's directory are rejected as a security boundary. This means a user config file cannot `import "/etc/app/defaults.zt"`; layering must be managed at the host application level, not by importing absolute paths.
 
 ## Implemented extensions beyond v0
 
