@@ -1147,6 +1147,54 @@ fn compile_reflection_fields_raw_type_result_is_rejected() {
 }
 
 #[test]
+fn compiled_variants_reflection_matches_oracle() {
+    // `variants` reflection used to bypass AOT folding (only `fields`/`schema`
+    // were detected) and reach Dataflow Core, where it silently miscompiled to an
+    // empty result. It must now fold to the same serialized list the interpreter
+    // produces.
+    let src = "Color :: type { #red: {}; #green: {}; }\nvariants (Color)\n";
+    let run_output = run_stdout("cli_test_variants_reflect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_variants_reflect_compiled", src);
+    assert_eq!(compiled_output, run_output);
+}
+
+#[test]
+fn compiled_witness_reflection_dispatch_matches_oracle() {
+    // `(witness C @T).method arg` is the `WitnessReflect` expression form, not a
+    // builtin binding, so it escaped reflection detection and ICE'd the backend
+    // (Dataflow structural validator: a witness dict typed where a Fun/Record was
+    // expected). It must now AOT-fold through the TLC evaluator to the same value
+    // the interpreter computes.
+    let src = r#"
+Point :: type { x : Int; y : Int; }
+p :: Point = { x = 1; y = 2; }
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Point :: derive
+(witness Show @Point).show p
+"#;
+    let run_output = run_stdout("cli_test_witness_reflect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_witness_reflect_compiled", src);
+    assert_eq!(compiled_output, run_output);
+}
+
+#[test]
+fn compile_bare_witness_dict_is_rejected_not_iced() {
+    // A bare `witness C @T` entry evaluates to a witness dictionary (holds
+    // functions), which cannot be serialized to a backend value. The AOT-fold
+    // gate must reject it cleanly rather than crash the compiler.
+    let path = write_tmp(
+        "cli_test_compile_bare_witness.zt",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\nwitness Eq @Int\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("did not fold to a backend value"));
+}
+
+#[test]
 fn compile_type_entry_is_rejected_before_backend_lowering() {
     let path = write_tmp("cli_test_compile_type_entry.zt", "type Int\n");
     cli()
