@@ -638,6 +638,29 @@ const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     ("float_value", "x :: Float = 5.0\nx\n"),
     ("coalesce_some", "x :: Int? = #some (7)\nx ?? 0\n"),
     ("coalesce_none", "y :: Int? = #none\ny ?? 99\n"),
+    // ── value-rendering divergence guards (docs/TBD.md) ──────────────────────
+    // The backend sorts record fields by name for slot layout; the interpreter
+    // must render the same order. These exercise the shapes a backend/interp
+    // rendering divergence would hide: non-alphabetical records (flat + nested),
+    // user-union variants, nested tuples, text escaping, and negative integers.
+    ("nonalpha_record", "{ zebra = 1; apple = 2; mango = 3; }\n"),
+    (
+        "nested_nonalpha_record",
+        "{ outer_z = { inner_z = 1; inner_a = 2; }; outer_a = 3; }\n",
+    ),
+    (
+        "variant_record_payload",
+        "Shape :: type { #square : { side : Int; }; #circle : { radius : Int; }; }\ns :: Shape = #circle { radius = 5; }\ns\n",
+    ),
+    (
+        "variant_in_record",
+        "Status :: type { #ok; #err; }\nr :: { tag : Status; n : Int; } = { tag = #err; n = 3; }\nr\n",
+    ),
+    ("nested_tuple", "(1, (2, (3, 4)))\n"),
+    ("tuple_in_record", "{ pos = (1, 2); name = \"x\"; }\n"),
+    ("text_escapes", "\"x\\ty\\nz\\\"w\\\\v\"\n"),
+    ("negative_in_record", "{ b = 0 - 3; a = 7; }\n"),
+    ("negatives_in_list", "[0 - 1; 0 - 2; 3;]\n"),
 ];
 
 #[test]
