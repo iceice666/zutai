@@ -100,6 +100,7 @@ pub(super) fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: 
         AnfExpr::Apply { func, arg } => SsaOp::ApplyClosure {
             closure: lower_atom_value(func, fb, ctx),
             arg: lower_atom_value(arg, fb, ctx),
+            tail: false,
         },
         AnfExpr::HostPrint { value } => SsaOp::HostPrint {
             value: lower_atom_value(value, fb, ctx),

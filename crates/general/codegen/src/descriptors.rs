@@ -149,7 +149,7 @@ pub(crate) fn collect_from_func(func: &SsaFunc, constants: &mut Vec<Constant>) {
 
 pub(crate) fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
     match op {
-        SsaOp::ApplyClosure { closure, arg } => {
+        SsaOp::ApplyClosure { closure, arg, .. } => {
             collect_from_value(closure, constants);
             collect_from_value(arg, constants);
         }

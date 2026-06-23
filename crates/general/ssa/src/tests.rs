@@ -365,7 +365,9 @@ s";
 
 #[test]
 fn if_desugars_to_branching_match_in_ssa() {
-    let m = ssa_of("f x = if x then 1 else 2\nf true");
+    // A non-tail `if` (its result feeds `+ 3`) keeps its join, so tail-call
+    // optimization does not sink the phi — both branch and phi lowering survive.
+    let m = ssa_of("f x = (if x then 1 else 2) + 3\nf true");
     let all_ops = all_op_names(&m);
     let terms = all_terminator_kinds(&m);
     assert!(
@@ -437,12 +439,27 @@ fn module_is_well_formed() {
 
 #[test]
 fn phi_instruction_exists_in_if() {
-    // "if" desugars to a match, which creates phi nodes at join points.
-    let m = ssa_of("f x = if x then 1 else 2\nf true");
+    // A non-tail `if` keeps its join phi; a tail `if` is sunk to direct returns
+    // by tail-call optimization, so the `+ 3` use keeps this `if` out of tail
+    // position.
+    let m = ssa_of("f x = (if x then 1 else 2) + 3\nf true");
     let has_phi = all_instructions(&m)
         .iter()
         .any(|i| matches!(i.op, SsaOp::Phi { .. }));
     assert!(has_phi, "if should produce at least one Phi instruction");
+}
+
+// ── Tail `if` is sunk by tail-call optimization ───────────────────────────────
+
+#[test]
+fn tail_if_has_phi_sunk_by_tco() {
+    // When an `if` is the function's tail, return sinking collapses the join so
+    // each arm returns directly and no phi remains.
+    let m = ssa_of("f x = if x then 1 else 2\nf true");
+    let has_phi = all_instructions(&m)
+        .iter()
+        .any(|i| matches!(i.op, SsaOp::Phi { .. }));
+    assert!(!has_phi, "a tail `if` should have its join phi sunk away");
 }
 
 // ── Coalesce operator ─────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ pub use zutai_anf::{
 };
 
 mod lower;
+mod tco;
 
 #[cfg(test)]
 mod tests;
@@ -45,7 +46,14 @@ pub struct SsaInstr {
 pub enum SsaOp {
     /// Function application through a D-0003 closure object: loads the code
     /// slot from `closure` and calls it as `i64 fn(i64 self, i64 arg)`.
-    ApplyClosure { closure: SsaValue, arg: SsaValue },
+    /// `tail` marks a verified tail call (last instruction whose result the
+    /// block returns), which codegen emits as an LLVM `musttail call` so deep
+    /// tail recursion runs in constant stack space.
+    ApplyClosure {
+        closure: SsaValue,
+        arg: SsaValue,
+        tail: bool,
+    },
     /// Runtime host `io.print`: print Text, append newline, return the same Text.
     HostPrint { value: SsaValue },
     /// Runtime host operation authorized by an explicit v2 capability.
@@ -186,7 +194,10 @@ pub struct SsaModule {
 
 // ── Public entry point ──────────────────────────────────────────────────────────
 
-/// Lower an ANF module into SSA form.
+/// Lower an ANF module into SSA form, then run tail-call optimization so deep
+/// tail recursion compiles to `musttail` calls instead of stack-growing frames.
 pub fn lower_anf(module: &zutai_anf::AnfModule) -> SsaModule {
-    lower::lower_anf(module)
+    let mut module = lower::lower_anf(module);
+    tco::optimize_tail_calls(&mut module);
+    module
 }

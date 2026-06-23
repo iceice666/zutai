@@ -93,7 +93,7 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
 
     match &instr.op {
         // ── ApplyClosure (D-0003 uniform closure application) ───────────────
-        SsaOp::ApplyClosure { closure, arg } => {
+        SsaOp::ApplyClosure { closure, arg, tail } => {
             let closure = emit_value_operand(out, tmp, closure);
             let cptr = alloc_tmp(tmp);
             out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", cptr, closure));
@@ -107,9 +107,10 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             let fnptr = alloc_tmp(tmp);
             out.push_str(&format!("  {} = inttoptr i64 {} to ptr\n", fnptr, code));
             let arg = emit_value_operand(out, tmp, arg);
+            let call = if *tail { "musttail call" } else { "call" };
             out.push_str(&format!(
-                "  %{} = call i64 {}(i64 {}, i64 {})\n",
-                dest, fnptr, closure, arg
+                "  %{} = {} i64 {}(i64 {}, i64 {})\n",
+                dest, call, fnptr, closure, arg
             ));
         }
 

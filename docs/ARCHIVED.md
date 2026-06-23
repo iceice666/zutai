@@ -35,7 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after closing Phase 29 stream-backed generators._
+_Last updated: 2026-06-22 after Phase 31 backend tail-call optimization
+(`musttail`) over the Phase 30 capped thread-local heap._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -138,6 +139,53 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 31: Backend tail-call optimization (`musttail`) ✅
+
+- New SSA pass `crates/general/ssa/src/tco.rs`, run by `lower_anf`. **Return
+  sinking** collapses tail-position `phi`-then-`return` join blocks into direct
+  returns from each predecessor — an always-safe CFG cleanup applied to a
+  fixpoint so nested tail matches peel from the outside in. **Tail marking**
+  then flags any return-position `ApplyClosure` (last instruction whose result
+  the block returns).
+- Codegen emits marked calls as LLVM `musttail call`, which guarantees
+  constant-stack tail recursion regardless of `llc` opt level. Added
+  `tail: bool` to `SsaOp::ApplyClosure`.
+- Marking is gated to two-parameter closure-code functions (`i64(i64, i64)`,
+  matching the indirect callee type). The zero-parameter entry/thunks keep a
+  plain `call`, because `musttail` requires matching caller/callee parameter
+  lists — one extra stack frame, not unbounded depth.
+- Effect: deep tail recursion that previously overflowed the native stack
+  (`loop 5000000`, curried `sum 1000000 0`) now runs in O(1) stack, so the
+  binding constraint flips from the native stack to the heap ceiling. This is
+  the decision-(A) commitment: strict backend plus TCO, GC deferred (see
+  `docs/runtime-abi.md` and `TBD.md`).
+- The THIR reference interpreter still recurses on the host stack (no TCO), so
+  the compiled backend now reaches greater depth than `run`; differential
+  fixtures stay at modest depth (e.g. `sum 4000`).
+- Verification: `cargo fmt --check`; `cargo test --workspace` (1502 passed);
+  `cargo clippy --workspace --all-targets`; manual e2e — `loop 5000000` and
+  `sum 1000000 0` exit 0 with correct values; a tight `ZUTAI_HEAP_MAX` now
+  yields `heap limit exceeded` instead of SIGSEGV.
+
+### Phase 30: Runtime heap ceiling and allocation telemetry ✅
+
+- Replaced the global `LazyLock`/`Mutex` bump arena with a `thread_local`
+  `Arena` of 1 MiB, 16-byte-aligned `Box<[u128]>` chunks: no hot-path lock, and
+  per-thread arenas keep the `rlib` sound under a multi-threaded host.
+- Heap ceiling (default 2 GiB; `ZUTAI_HEAP_MAX` accepts `k`/`m`/`g`/`0`/
+  `unlimited`/`none`): allocating past the cap prints `zutai runtime error:
+  heap limit exceeded …` and exits 1 instead of leaking until the OS OOM-kills
+  the process. `nil` is now a process-static 16-byte-aligned object.
+- `ZUTAI_HEAP_STATS=1` registers an `atexit` dump reporting total bytes and
+  objects, average size, peak committed, the cap, and per-kind counts
+  (record/tuple/cons/variant/text/closure-or-raw) from always-on
+  relaxed-atomic counters.
+- Documented in `docs/runtime-abi.md` (D-0008, "Memory model: thread-local
+  bump arena, capped leak-by-default").
+- Verification: arena unit tests; subprocess tests
+  `crates/general/runtime/tests/heap_cap.rs` and `heap_stats.rs`; CLI e2e
+  `compile_emit_bin_heap_stats_dump_reports_allocations`.
 
 ### Phase 29: Stream-backed generator syntax ✅
 

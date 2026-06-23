@@ -216,6 +216,7 @@ fn closure_apply_loads_code_and_passes_self() {
                     op: SsaOp::ApplyClosure {
                         closure: SsaValue::GlobalClosure("inc".to_string()),
                         arg: SsaValue::Lit(DfLit::Int(41)),
+                        tail: false,
                     },
                 }],
                 terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
@@ -241,6 +242,39 @@ fn closure_apply_loads_code_and_passes_self() {
     assert!(!llvm.contains("call i64 @inc(i64 41)"), "{llvm}");
     assert!(!llvm.contains("to i64 (i64)*"), "{llvm}");
     assert!(!llvm.contains("ptrtoint (ptr @"), "{llvm}");
+}
+
+#[test]
+fn tail_apply_emits_musttail() {
+    // A return-position `ApplyClosure { tail: true }` must compile to an LLVM
+    // `musttail call`, which guarantees constant-stack tail recursion.
+    let module = test_module(
+        Vec::new(),
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![SsaInstr {
+                    dest: "result".to_string(),
+                    op: SsaOp::ApplyClosure {
+                        closure: SsaValue::GlobalClosure("inc".to_string()),
+                        arg: SsaValue::Lit(DfLit::Int(41)),
+                        tail: true,
+                    },
+                }],
+                terminator: SsaTerminator::Return(SsaValue::Reg("result".to_string())),
+            }],
+        },
+        DfTy::Int,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm(&module);
+    assert!(
+        llvm.contains("musttail call i64 %"),
+        "tail apply should emit musttail: {llvm}"
+    );
 }
 
 #[test]
