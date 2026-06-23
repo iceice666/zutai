@@ -692,7 +692,13 @@ impl fmt::Display for Value {
             }
             Value::Record(fields) => {
                 write!(f, "{{")?;
-                for (i, (name, t)) in fields.iter().enumerate() {
+                // Display fields in canonical name-sorted order so interpreter
+                // output matches the compiled backend, which lays records out in
+                // sorted slot order. The stored Value keeps source order, which
+                // diagnostics and `basic.rs` rely on.
+                let mut ordered: Vec<_> = fields.iter().collect();
+                ordered.sort_by(|a, b| a.0.cmp(&b.0));
+                for (i, (name, t)) in ordered.into_iter().enumerate() {
                     if i > 0 {
                         write!(f, "; ")?;
                     }

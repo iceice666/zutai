@@ -774,6 +774,29 @@ fn compiled_show_fixtures_match_eval_tlc_oracle() {
         );
     }
 }
+
+#[test]
+fn compiled_polymorphic_and_nested_match_fixtures_match_oracle() {
+    // Guards two backend regressions. `nested_match` destructures record fields at
+    // the same slot across several match arms in one function; the SSA lowerer used
+    // to name those temporaries by slot, colliding on `%__rec_0` and failing `llc`.
+    // `large_program`'s polymorphic `constFn`/`compose`/`flip` curry over distinct
+    // type variables; TLC used to type every curried lambda layer with the full
+    // signature, handing an inner lambda a param type from the wrong position and
+    // tripping the Dataflow structural validator. Both produced invalid output
+    // before the fixes; here the compiled output must match the interpreter oracle.
+    for name in ["nested_match.zt", "large_program.zt"] {
+        let source = std::fs::read_to_string(general_fixture(name))
+            .unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let run_output = run_stdout(&format!("cli_test_fixture_oracle_{name}"), &source);
+        let compiled_output =
+            compile_bin_stdout(&format!("cli_test_fixture_compiled_{name}"), &source);
+        assert_eq!(
+            compiled_output, run_output,
+            "compiled output must match eval_tlc oracle for {name}"
+        );
+    }
+}
 #[test]
 fn rsa_fixture_runs_and_emits_llvm_pipeline() {
     let source =
