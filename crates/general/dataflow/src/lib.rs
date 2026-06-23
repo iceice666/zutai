@@ -387,8 +387,9 @@ fn open_row_select_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str>
         }
     }
 
-    for (id, expr) in module.expr_arena.iter() {
-        let TlcExpr::GetField(base, _) = expr else {
+    let reachable = zutai_tlc::reachable_exprs(module);
+    for id in reachable {
+        let TlcExpr::GetField(base, _) = &module.expr_arena[id] else {
             continue;
         };
         // Dict-method GetField slots are pre-computed by the TLC witness pass and

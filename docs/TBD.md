@@ -10,35 +10,21 @@ Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
 Phase 30–32 performance series. Per-feature support-level status for each gap is
 detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
 
-Recommended start: **Phase C** — the largest Track 1 item; it gates Phase D.
-(Phase B landed 2026-06-25 and Phase 33 landed 2026-06-25 — see
-`docs/ARCHIVED.md`.)
-
-### Phase C — Open-row select lowering (Track 1)
-
-- **Gap.** Open-row field reads (`getHost :: <Rest> { host : Text; ...Rest; } ->
-  Text`) rejected — the slot computed from the view type differs from the
-  concrete runtime-layout slot.
-- **Touch.** `open_row_select_reason` (`crates/general/dataflow/src/lib.rs:379`,
-  fired at `:448`).
-- **Approach.** Pick one: (a) row-erased monomorphization at concrete call sites,
-  or (b) runtime field-offset descriptors (the row carries a hidden offset/shape
-  vector). (a) is simpler and matches strict-AOT; (b) generalizes to genuinely
-  polymorphic boundaries. Recommend (a).
-- **Acceptance.** Open-row select corpus compiles and matches the oracle; the
-  rejection tests `dataflow/src/tests.rs:1003,1048` flip to parity tests.
-- **Largest item; gates Phase D.**
+Recommended start: **Phase D** — the last open Track 1 item (open-union match
+lowering), unblocked now that Phase C landed. (Phases B, 33, and C landed
+2026-06-25 — see `docs/ARCHIVED.md`.)
 
 ### Phase D — Open-union match lowering (Track 1)
 
 - **Gap.** A polymorphic match over a `...Rest`-tailed union is
   check-plus-interpreter only; the type-checker rejects it on both paths, so
   there is no silent miscompile today.
-- **Approach.** The union analog of Phase C — reuse C's row-representation
-  decision, then lift the type-checker rejection and lower.
+- **Approach.** The union analog of Phase C — reuse C's row-erased
+  monomorphization (inline concrete-argument matches, substituting the union row
+  variable), then lift the type-checker rejection and lower.
 - **Acceptance.** Open-union differential corpus; pairs with the landed
   `compiled_union_extension_matches_oracle`.
-- **Depends on Phase C.**
+- **Phase C landed 2026-06-25**, so this is unblocked.
 
 ### Phase 34 — Conservative mark-sweep GC (Track 2)
 
@@ -115,17 +101,17 @@ Ranked by remaining work:
    reading a field by slot); **union extension** (`...Shape` spreading an
    existing union into a new type — both spread-member and new-member tag
    dispatch compile with full parity, per `compiled_union_extension_matches_oracle`).
-   Named row-tail *selects* — open-row field reads (`getHost :: <Rest> { host :
-   Text; ...Rest; } -> Text = x => x.host`) — are **rejected** before Dataflow
-   Core (`open_row_select_reason`, commit `b9012d6`) because the field's runtime
-   slot depends on hidden tail fields the slot-based ABI cannot recover; that
-   previously miscompiled silently. Open unions (a polymorphic match over a
-   `...Rest`-tailed union type) remain check-plus-interpreter only: the
-   type-checker rejects the open-union match expression on both `run` and
-   `compile` paths so there is no backend parity gap. Completing this item means
-   a sound open-row select lowering (row-erased specialization or runtime
-   field-offset descriptors) plus a backend compile-test corpus for row-typed
-   programs; until then the gate keeps the backend honest.
+   Named row-tail *selects* — open-row field reads (`getN :: { n : Int; ...; } ->
+   Int = x => x.n`) — **landed 2026-06-25** (Phase C): row-erased
+   monomorphization inlines a concrete-argument call as `let x = arg in body`,
+   substituting the row variable by the argument's extra fields so the field's
+   slot is recomputed for the concrete record (`monomorphize_open_row_selects`).
+   The `open_row_select_reason` gate is now reachability-scoped and still rejects
+   genuinely-polymorphic open-row selects (a function applied to a still-open
+   argument). Open unions (a polymorphic match over a `...Rest`-tailed union type)
+   remain check-plus-interpreter only: the type-checker rejects the open-union
+   match expression on both `run` and `compile` paths so there is no backend
+   parity gap — Phase D lifts that with the same monomorphization technique.
 
 3. **Residual-effect runtime (medium; partly a non-goal).** Effects a `handle`
    fully discharges are CPS-elaborated to ordinary functions/matches before

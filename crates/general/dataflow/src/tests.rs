@@ -1000,22 +1000,18 @@ fn tlc_of(src: &str) -> (zutai_tlc::TlcModule, Vec<zutai_hir::Binding>) {
 }
 
 #[test]
-fn open_row_select_is_rejected_before_dataflow_core() {
-    // A polymorphic function that selects a field from an open record type would
-    // silently miscompile: the slot computed from the view type does not match the
-    // slot in the concrete runtime layout. try_lower_tlc must intercept this.
-    let (tlc, bindings) = tlc_of(
+fn open_row_select_lowers_after_monomorphization() {
+    // Phase C: a polymorphic open-row select is monomorphized at the concrete call
+    // site (the field slot is recomputed for the concrete record), so it lowers to
+    // Dataflow Core instead of being gated.
+    let (mut tlc, bindings) = tlc_of(
         r#"
 getN :: { n : Int; ...; } -> Int = x => x.n;
 getN { extra = 7; n = 5; }
 "#,
     );
-    let reason =
-        try_lower_tlc(&tlc, &bindings).expect_err("open-row select must be gated before DC");
-    assert!(
-        reason.contains("open record row"),
-        "reason should mention open record row, got: {reason}"
-    );
+    zutai_tlc::monomorphize_open_row_selects(&mut tlc);
+    try_lower_tlc(&tlc, &bindings).expect("monomorphized open-row select must lower to DC");
 }
 
 #[test]
@@ -1045,21 +1041,18 @@ idRec { extra = 7; n = 5; }
 }
 
 #[test]
-fn open_row_select_is_gated_under_host_grants_too() {
-    // The host-grant lowering path must apply the same open-row gate, so an
-    // effectful-capable compile cannot smuggle an open-row select into the backend.
-    let (tlc, bindings) = tlc_of(
+fn open_row_select_lowers_under_host_grants_after_monomorphization() {
+    // The host-grant lowering path runs the same gate; after monomorphization a
+    // concrete open-row select lowers there too.
+    let (mut tlc, bindings) = tlc_of(
         r#"
 getN :: { n : Int; ...; } -> Int = x => x.n;
 getN { extra = 7; n = 5; }
 "#,
     );
-    let reason = try_lower_tlc_with_host_grants(&tlc, &bindings, zutai_tlc::HostEffectSet::ALL)
-        .expect_err("open-row select must be gated under host grants");
-    assert!(
-        reason.contains("open record row"),
-        "reason should mention open record row, got: {reason}"
-    );
+    zutai_tlc::monomorphize_open_row_selects(&mut tlc);
+    try_lower_tlc_with_host_grants(&tlc, &bindings, zutai_tlc::HostEffectSet::ALL)
+        .expect("monomorphized open-row select must lower under host grants");
 }
 
 // ── Module-import backend gate ────────────────────────────────────────────────

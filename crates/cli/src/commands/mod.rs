@@ -610,6 +610,9 @@ pub(crate) fn run_compile(
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
+    // Row-erased monomorphization: inline open-row field selects at concrete call
+    // sites so the slot-based backend can lower them (Phase C).
+    zutai_tlc::monomorphize_open_row_selects(&mut module);
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
@@ -764,6 +767,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         eprintln!("error: {reason}");
         std::process::exit(1);
     }
+    zutai_tlc::monomorphize_open_row_selects(&mut module);
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());

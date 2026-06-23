@@ -146,6 +146,42 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase C: Open-row select lowering ✅
+
+_Completed 2026-06-25. Closes the Track 1 Phase C item in `TBD.md` and the
+open-row-select half of the v1 row-polymorphism gap. Open-row field reads
+(`getN :: { n : Int; ...; } -> Int = x => x.n`) now compile natively with
+parity; the field's runtime slot is recomputed for each concrete record._
+
+- **The bug.** A record field's slot is its name-sorted rank, so it depends on
+  the sibling fields. An open-row parameter `{ n; ... }` views `n` at slot 0, but
+  a concrete `{ extra; n }` puts `n` at slot 1 — the slot-based backend would read
+  the wrong field. Previously gated before Dataflow Core.
+- **Row-erased monomorphization** (`crates/general/tlc/src/monomorphize.rs`,
+  `monomorphize_open_row_selects`, run from the CLI on the backend module before
+  Dataflow Core): a concrete-argument call to an open-row-selecting function is
+  inlined to `let param = arg in clone(body)`, substituting the parameter's row
+  variable by the argument's *extra* fields throughout the cloned body's types.
+  The inlined field selects then see the concrete record type and DC computes the
+  correct slot. The concrete field set is read from the argument expression (a
+  record literal names its fields; the call-site *type* is the open parameter
+  view and cannot be used). The cloned body's top type is overridden with the
+  call's result type (a clause `Case` body is recorded with the surrounding
+  function type — tolerated in lambda-body position, but it would otherwise become
+  the entry type). Fully-inlined declarations are dropped (reachability fixpoint).
+- **Gate** (`open_row_select_reason`, `crates/general/dataflow/src/lib.rs`) is now
+  reachability-scoped (`reachable_exprs`) — the arena retains inlined-away exprs,
+  so an arena-wide scan would falsely reject. Genuinely-polymorphic open-row
+  selects (a function applied to a still-open argument) stay gated by design; the
+  interpreter, which resolves fields by name, runs them and is the oracle.
+- Tests (`crates/cli/tests/cli.rs`): `compile_open_row_select_lowers_to_llvm`,
+  `compile_bin_open_row_select_matches_oracle`,
+  `compile_open_row_select_discriminates_slot_per_concrete_record`,
+  `compile_unspecializable_open_row_select_stays_gated`; flipped
+  `open_row_select_lowers_after_monomorphization` and the host-grant variant in
+  `crates/general/dataflow/src/tests.rs`. Gate stack: 1556 workspace tests pass;
+  `cargo fmt` and `cargo clippy` clean.
+
 ### Phase 33: Uncurrying / known-call optimization ✅
 
 _Completed 2026-06-25. Closes the Track 2 Phase 33 item in `TBD.md` and the

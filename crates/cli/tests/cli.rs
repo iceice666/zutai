@@ -872,29 +872,26 @@ fn compile_effect_bin_is_rejected_before_toolchain() {
 }
 
 #[test]
-fn compile_open_row_select_is_rejected_with_diagnostic() {
-    // Open-row record field access would silently miscompile in the slot-based
-    // native backend (wrong slot → wrong value). The gate must reject it before
-    // emitting LLVM IR, with a diagnostic mentioning "open record row".
-    let path = write_tmp("cli_test_compile_open_row.zt", OPEN_ROW_SELECT_SRC);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("open record row"));
+fn compile_open_row_select_lowers_to_llvm() {
+    // Phase C: an open-row field select is monomorphized at the concrete call site
+    // (the field's slot is recomputed for the concrete record layout), so it now
+    // lowers to LLVM instead of being gated.
+    let llvm = compile_stdout("cli_test_compile_open_row.zt", OPEN_ROW_SELECT_SRC);
+    assert!(llvm.contains("define i64 @__entry"), "{llvm}");
 }
 
 #[test]
-fn compile_bin_open_row_select_is_rejected_with_diagnostic() {
-    let path = write_tmp("cli_test_compile_bin_open_row.zt", OPEN_ROW_SELECT_SRC);
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("open record row"));
+fn compile_bin_open_row_select_matches_oracle() {
+    // Phase C parity: the native binary reads the correct field (slot recomputed
+    // for the concrete `{ extra; n }` layout) and matches the interpreter oracle.
+    let native = compile_bin_stdout("cli_test_compile_bin_open_row", OPEN_ROW_SELECT_SRC);
+    let interp = run_stdout("cli_test_run_open_row_oracle.zt", OPEN_ROW_SELECT_SRC);
+    assert_eq!(native.trim(), "5");
+    assert_eq!(
+        native.trim(),
+        interp.trim(),
+        "native must match the interpreter oracle"
+    );
 }
 
 #[test]
@@ -902,6 +899,59 @@ fn run_open_row_select_evaluates_correctly() {
     // The interpreter resolves fields by name and handles open records soundly.
     let output = run_stdout("cli_test_run_open_row.zt", OPEN_ROW_SELECT_SRC);
     assert_eq!(output.trim(), "5");
+}
+
+#[test]
+fn compile_open_row_select_discriminates_slot_per_concrete_record() {
+    // Phase C: each concrete call site recomputes the field's slot for its own
+    // record. `getN` reads `n` from two records with different sibling fields
+    // (`{a;n}` → n at slot 1, `{m;n;z}` → n at slot 1, never the slot-0 sibling).
+    // A wrong (view-derived slot 0) read would return `a`/`m` instead of `n`.
+    let src = "getN :: { n : Int; ...; } -> Int = x => x.n;\n\
+               (getN { a = 1; n = 2; }, getN { m = 3; z = 4; n = 9; })\n";
+    let native = compile_bin_stdout("cli_test_open_row_disc", src);
+    let interp = run_stdout("cli_test_open_row_disc_oracle.zt", src);
+    assert_eq!(native.trim(), interp.trim(), "native must match the oracle");
+    assert!(
+        native.contains('2') && native.contains('9'),
+        "expected (2, 9), got {native:?}"
+    );
+}
+
+#[test]
+fn compile_unspecializable_open_row_select_stays_gated() {
+    // Soundness: an open-row select that cannot be monomorphized to a concrete
+    // record (here `mid` is applied to `top`'s still-open parameter) is left
+    // gated rather than miscompiled. The interpreter still runs it.
+    let src = "mid :: { n : Int; ...; } -> Int = x => x.n;\n\
+               top :: { n : Int; ...; } -> Int = y => mid y;\n\
+               top { extra = 7; n = 5; }\n";
+    let path = write_tmp("cli_test_open_row_gated.zt", src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("open record row"));
+    assert_eq!(
+        run_stdout("cli_test_open_row_gated_run.zt", src).trim(),
+        "5"
+    );
+}
+
+#[test]
+fn compile_recursive_open_row_param_function_matches_oracle() {
+    // Regression: a recursive function with an open-row PARAMETER that does not
+    // select a field from it must not be monomorphized (clone_expr reuses binder
+    // ids; inlining a concrete self-call would nest a clone that removes a
+    // still-live binding). It compiles unchanged and matches the oracle.
+    let src = "f :: { n : Int; ...; } -> Int -> Int \
+               = r k => if k < 1 then 0 else (f { n = 0; } (k - 1)) + k;\n\
+               f { n = 7; } 3\n";
+    let native = compile_bin_stdout("cli_test_rec_open_row_param", src);
+    let interp = run_stdout("cli_test_rec_open_row_param_oracle.zt", src);
+    assert_eq!(native.trim(), "6");
+    assert_eq!(native.trim(), interp.trim(), "native must match the oracle");
 }
 
 #[test]

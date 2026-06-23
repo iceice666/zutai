@@ -3,6 +3,7 @@ use rustc_hash::FxHashSet;
 mod erase;
 mod ir;
 mod lower;
+mod monomorphize;
 mod normalize;
 
 #[cfg(test)]
@@ -14,6 +15,7 @@ pub use ir::{
     TlcTupleItem, TlcType, TlcTypeId, TlcTypeVar,
 };
 pub use lower::{ExternConditionalWitness, lower_thir, lower_thir_with_extern_witnesses};
+pub use monomorphize::{monomorphize_open_row_selects, reachable_exprs};
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
 
 /// Return why a TLC module still cannot enter Dataflow Core.
