@@ -114,6 +114,22 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             ));
         }
 
+        // ── CallKnown (direct multi-arg call to a known worker) ──────────────
+        SsaOp::CallKnown { func, args, tail } => {
+            let operands: Vec<String> = args
+                .iter()
+                .map(|a| format!("i64 {}", emit_value_operand(out, tmp, a)))
+                .collect();
+            let call = if *tail { "musttail call" } else { "call" };
+            out.push_str(&format!(
+                "  %{} = {} i64 @{}({})\n",
+                dest,
+                call,
+                mangle(func),
+                operands.join(", ")
+            ));
+        }
+
         // ── HostPrint (runtime io.print driver) ─────────────────────────────
         SsaOp::HostPrint { value } => {
             let value = emit_value_operand(out, tmp, value);

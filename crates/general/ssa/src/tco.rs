@@ -93,29 +93,33 @@ fn find_sinkable_join(func: &SsaFunc) -> Option<(String, Vec<(String, SsaValue)>
     None
 }
 
-/// Mark every return-position `ApplyClosure` as a tail call. A call qualifies
-/// when it is the last instruction of its block and the block returns exactly
-/// that instruction's result.
+/// Mark every return-position call as a tail call. A call qualifies when it is
+/// the last instruction of its block and the block returns exactly that
+/// instruction's result.
 ///
-/// LLVM `musttail` requires the caller and callee parameter lists to match.
-/// Every closure-code function is `i64(i64, i64)` (`__self`, arg), matching the
-/// indirect callee type, but zero-parameter thunks and the entry point do not —
-/// so only two-parameter functions may carry tail calls. The single
-/// entry-to-function call this skips costs one stack frame, not unbounded depth.
+/// LLVM `musttail` requires the caller and callee signatures to match. Every
+/// closure-code function is `i64(i64, i64)` (`__self`, arg), so only
+/// two-parameter functions may carry a tail `ApplyClosure`. A direct
+/// [`SsaOp::CallKnown`] to a worker is `i64(i64…)`; it may `musttail` only when
+/// the callee's argument count equals the caller's parameter count (all `i64`,
+/// so equal arity is a matching signature) — true for a worker's self-recursion.
 fn mark_tail_calls(func: &mut SsaFunc) {
-    if func.params.len() != 2 {
-        return;
-    }
+    let arity = func.params.len();
     for block in &mut func.blocks {
         let SsaTerminator::Return(SsaValue::Reg(ret)) = &block.terminator else {
             continue;
         };
         let ret = ret.clone();
-        if let Some(last) = block.instructions.last_mut()
-            && last.dest == ret
-            && let SsaOp::ApplyClosure { tail, .. } = &mut last.op
-        {
-            *tail = true;
+        let Some(last) = block.instructions.last_mut() else {
+            continue;
+        };
+        if last.dest != ret {
+            continue;
+        }
+        match &mut last.op {
+            SsaOp::ApplyClosure { tail, .. } if arity == 2 => *tail = true,
+            SsaOp::CallKnown { args, tail, .. } if args.len() == arity => *tail = true,
+            _ => {}
         }
     }
 }

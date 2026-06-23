@@ -146,6 +146,43 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase 33: Uncurrying / known-call optimization ✅
+
+_Completed 2026-06-25. Closes the Track 2 Phase 33 item in `TBD.md` and the
+uncurrying prerequisite of the deferred GC trajectory. On accumulator loops the
+calling-convention churn — one closure + one arg-tuple per curried call — is
+eliminated entirely; values are unchanged._
+
+- **New SSA op `CallKnown { func, args, tail }`** (`crates/general/ssa/src/lib.rs`):
+  a direct multi-argument call to a named worker, emitted by codegen as
+  `[musttail] call i64 @func(args…)` (`crates/general/codegen/src/instr.rs`).
+- **Uncurrying pass** (`crates/general/ssa/src/uncurry.rs`, run from `lower_anf`
+  after lowering, before TCO): from the ANF module it recovers each top-level
+  curried function's arity and fully-applied body (peeling nested lambdas, past
+  erased `TyLam`s), generates a multi-parameter worker (`$uncurried`) by
+  re-lowering that body with every argument as a direct SSA parameter, and
+  rewrites every *saturated known-call chain* — a root `ApplyClosure` whose
+  closure resolves to a known function (directly or through a materialized
+  `Alias { GlobalClosure }`), followed by single-use result→closure links
+  totalling `arity` (links need not be consecutive — ANF computes the next
+  argument between applications) — into one `CallKnown` of the worker, deleting
+  the now-dead intermediate applications. The original curried function is kept
+  for value-use and partial application.
+- **Tuple scalar-replacement** (`scalar_replace_tuples`): the multi-parameter
+  clause `n acc => …` desugars to `match (n, acc) { … }`, building an arg-tuple
+  each call; a tuple used only as the base of constant-slot `Select`s is replaced
+  by direct aliases to its elements and dropped, removing the surviving
+  per-call arg-tuple inside the worker.
+- **TCO** (`crates/general/ssa/src/tco.rs`): a return-position `CallKnown` is
+  marked `musttail` when its argument count equals the caller's parameter count
+  (matching all-`i64` signature), so a self-recursive worker loops in O(1) stack.
+- Measured on `HEAP_STRESS_SRC` (`sum 4000 0`): `tuple 4001 → 0`,
+  `closure/raw 4001 → 0` (12003 → 4001 heap objects, ~2/3 reduction); result
+  unchanged (`8002000`). Regressions:
+  `compile_emit_bin_uncurried_accumulator_drops_call_churn` (cli),
+  `uncurrying_collapses_saturated_recursive_call` (ssa). Gate stack: 1554
+  workspace tests pass; `cargo fmt` and `cargo clippy` clean.
+
 ### Phase B: Conditional cross-module witnesses ✅
 
 _Completed 2026-06-25. Closes the "Conditional cross-module witnesses" gap of the

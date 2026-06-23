@@ -11,6 +11,7 @@ pub use zutai_anf::{
 
 mod lower;
 mod tco;
+mod uncurry;
 
 #[cfg(test)]
 mod tests;
@@ -52,6 +53,16 @@ pub enum SsaOp {
     ApplyClosure {
         closure: SsaValue,
         arg: SsaValue,
+        tail: bool,
+    },
+    /// Direct call to a known top-level worker by name with all arguments at
+    /// once: `[musttail] call i64 @func(args…)`. Emitted by the uncurrying pass
+    /// when a saturated curried call to a known function collapses to one direct
+    /// multi-argument call, eliminating the per-application closure and arg-tuple
+    /// allocations. `tail` marks a verified tail call for `musttail`.
+    CallKnown {
+        func: String,
+        args: Vec<SsaValue>,
         tail: bool,
     },
     /// Runtime host `io.print`: print Text, append newline, return the same Text.
@@ -194,10 +205,14 @@ pub struct SsaModule {
 
 // ── Public entry point ──────────────────────────────────────────────────────────
 
-/// Lower an ANF module into SSA form, then run tail-call optimization so deep
-/// tail recursion compiles to `musttail` calls instead of stack-growing frames.
-pub fn lower_anf(module: &zutai_anf::AnfModule) -> SsaModule {
-    let mut module = lower::lower_anf(module);
+/// Lower an ANF module into SSA form, collapse saturated known calls into direct
+/// multi-argument worker calls (uncurrying), then run tail-call optimization so
+/// deep tail recursion compiles to `musttail` calls in constant stack space with
+/// no per-call closure/arg-tuple churn.
+pub fn lower_anf(anf: &zutai_anf::AnfModule) -> SsaModule {
+    let (mut module, fresh) = lower::lower_anf(anf);
+    uncurry::uncurry(&mut module, anf, fresh);
+    uncurry::scalar_replace_tuples(&mut module);
     tco::optimize_tail_calls(&mut module);
     module
 }

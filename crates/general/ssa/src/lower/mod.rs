@@ -126,8 +126,10 @@ impl Ctx {
 
 // ── Module-level lowering ──────────────────────────────────────────────────────
 
-/// Lower a complete ANF module into SSA form.
-pub fn lower_anf(module: &AnfModule) -> SsaModule {
+/// Lower a complete ANF module into SSA form. Also returns the lowering's fresh
+/// name counter so the uncurrying pass can lower worker functions without
+/// colliding with already-emitted lambda names.
+pub fn lower_anf(module: &AnfModule) -> (SsaModule, usize) {
     let closure_exports = collect_closure_exports(module);
     let global_closures: FxHashSet<String> = closure_exports.iter().cloned().collect();
     let mut ctx = Ctx::new(global_closures);
@@ -166,21 +168,22 @@ pub fn lower_anf(module: &AnfModule) -> SsaModule {
         decls.push(SsaDecl::Func(lf));
     }
 
-    SsaModule {
+    let module = SsaModule {
         decls,
         entry,
         entry_ty: module.root_ty.clone(),
         entry_ty_id: module.root_ty_id,
         types: module.types.clone(),
         closure_exports,
-    }
+    };
+    (module, ctx.fresh.counter)
 }
 
 /// Recognize a top-level binding whose value is a single lambda. Returns the
 /// lambda's `(param, body)` when `body` consists of exactly one binding `v = λ`
 /// (optionally wrapped in erased type lambdas) and `body.result` names `v`.
 /// Any sibling binding yields `None`, so such a declaration lowers as a thunk.
-fn top_level_lambda(body: &AnfBody) -> Option<(&String, &AnfBody)> {
+pub(crate) fn top_level_lambda(body: &AnfBody) -> Option<(&String, &AnfBody)> {
     if body.bindings.len() != 1 {
         return None;
     }
@@ -194,6 +197,12 @@ fn top_level_lambda(body: &AnfBody) -> Option<(&String, &AnfBody)> {
         AnfExpr::TyLam { body, .. } => top_level_lambda(body),
         _ => None,
     }
+}
+
+/// Free local variables of an ANF body (excludes globals and literals). Used by
+/// the uncurrying pass to confirm a worker body references only its parameters.
+pub(crate) fn body_free_vars(body: &AnfBody) -> FxHashSet<String> {
+    freevars::free_vars_body(body)
 }
 
 /// Collect the names of top-level functions that become static empty-capture
@@ -257,4 +266,30 @@ fn lower_entry(body: &AnfBody, ctx: &mut Ctx) -> SsaFunc {
         params: vec![],
         blocks,
     }
+}
+
+/// Lower an uncurried worker function: the fully-applied body of a curried
+/// top-level function, with every original parameter as a direct SSA parameter
+/// (no `__self`, no captures). `fresh_start` seeds the name counter so lambdas
+/// lifted from the worker body never collide with names already emitted by the
+/// main lowering. Returns the worker, the lambdas lifted from its body, and the
+/// advanced counter.
+pub(crate) fn lower_worker(
+    name: String,
+    params: &[String],
+    body: &AnfBody,
+    global_closures: &FxHashSet<String>,
+    fresh_start: usize,
+) -> (SsaFunc, Vec<SsaFunc>, usize) {
+    let mut ctx = Ctx::new(global_closures.clone());
+    ctx.fresh.counter = fresh_start;
+    let mut fb = FuncBuilder::new(format!("{name}_entry"));
+    let result = lower_body(body, &mut fb, &mut ctx);
+    let blocks = fb.finish(SsaTerminator::Return(result));
+    let func = SsaFunc {
+        name,
+        params: params.to_vec(),
+        blocks,
+    };
+    (func, ctx.lambdas, ctx.fresh.counter)
 }

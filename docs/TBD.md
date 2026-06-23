@@ -10,21 +10,9 @@ Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
 Phase 30–32 performance series. Per-feature support-level status for each gap is
 detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
 
-Recommended start: **Phase 33** and **Phase C** — 33 is independent and the
-highest performance ROI; C is the largest Track 1 item and gates Phase D.
-(Phase B landed 2026-06-25 — see `docs/ARCHIVED.md`.)
-
-### Phase 33 — Uncurrying / known-call optimization (Track 2)
-
-- **Gap.** ~2/3 of accumulator allocation is calling-convention churn (one
-  arg-tuple + one closure per curried call), not user data — higher ROI than GC.
-- **Touch.** New ANF/SSA pass, sibling to `crates/general/ssa/src/tco.rs`, driven
-  by `lower_anf`.
-- **Approach.** Collapse saturated curried calls to direct multi-arg calls;
-  detect known-callee saturation and skip the per-call closure/arg-tuple alloc.
-- **Acceptance.** `ZUTAI_HEAP_STATS` shows the arg-tuple/closure allocation drop
-  on accumulator loops; existing differential corpus unchanged. Independent of
-  Track 1.
+Recommended start: **Phase C** — the largest Track 1 item; it gates Phase D.
+(Phase B landed 2026-06-25 and Phase 33 landed 2026-06-25 — see
+`docs/ARCHIVED.md`.)
 
 ### Phase C — Open-row select lowering (Track 1)
 
@@ -61,7 +49,9 @@ highest performance ROI; C is the largest Track 1 item and gates Phase D.
   (D-0002) — a shadow stack or stack maps, an ABI change beyond D-0008/D-0009 —
   so it is out of scope here. The lazy-backend path stays rejected
   (strict-plus-TCO is committed).
-- **Depends on Phase 33** and a demonstrated workload.
+- **Depends on a demonstrated workload.** Phase 33 (the prerequisite uncurrying
+  pass) landed 2026-06-25, so calling-convention churn no longer dominates;
+  schedule a collector only once genuine user-data garbage (not call churn) does.
 
 ## Near-term hardening
 
@@ -194,8 +184,10 @@ Empirical basis (measured with `ZUTAI_HEAP_STATS`):
 
 Reordered trajectory (was: leak → mark-sweep → generational copying):
 
-1. **Uncurrying / known-call optimization** (Phase 33) — collapse saturated
-   curried calls to direct multi-arg calls, removing the per-call closure+tuple churn.
+1. **Uncurrying / known-call optimization** (Phase 33) — **landed 2026-06-25**:
+   saturated curried calls to a known function collapse to a direct multi-arg
+   worker call and the clause arg-tuple is scalar-replaced, removing the per-call
+   closure+tuple churn (`docs/ARCHIVED.md`).
 2. **Collector** (Phase 34), only once a real GC workload exists (unbounded streams reach
    the backend, or accumulator garbage dominates). Root-finding, not the
    algorithm, is the open gap: untagged `i64` values (D-0002) make conservative

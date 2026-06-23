@@ -33,6 +33,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
         .flat_map(|b| b.instructions.iter())
         .map(|i| match &i.op {
             SsaOp::ApplyClosure { .. } => "ApplyClosure".to_string(),
+            SsaOp::CallKnown { .. } => "CallKnown".to_string(),
             SsaOp::HostPrint { .. } => "HostPrint".to_string(),
             SsaOp::HostOp { .. } => "HostOp".to_string(),
             SsaOp::MakeClosure { .. } => "MakeClosure".to_string(),
@@ -511,4 +512,33 @@ area :: Shape -> Int
             }
         }
     }
+}
+
+#[test]
+fn uncurrying_collapses_saturated_recursive_call() {
+    let module = ssa_of(
+        "sum :: Int -> Int -> Int = n acc => if n < 1 then acc else sum (n - 1) (acc + n);\nsum 3 0\n",
+    );
+    // A direct multi-argument worker is generated for the 2-arg `sum`.
+    let worker = all_funcs(&module)
+        .into_iter()
+        .find(|f| f.name == "sum$uncurried")
+        .expect("expected sum$uncurried worker");
+    assert_eq!(worker.params.len(), 2, "worker takes both args directly");
+    let ops = op_names(worker);
+    // The recursive call is a direct CallKnown (no per-call closure), and the
+    // multi-parameter clause's arg-tuple is scalar-replaced away.
+    assert!(
+        ops.contains(&"CallKnown".to_string()),
+        "worker should self-recurse via a direct call: {ops:?}"
+    );
+    assert!(
+        !ops.contains(&"Tuple".to_string()),
+        "worker arg-tuple should be scalar-replaced: {ops:?}"
+    );
+    // The entry's saturated call also collapses to a direct worker call.
+    assert!(
+        op_names(&module.entry).contains(&"CallKnown".to_string()),
+        "entry saturated call should collapse to a direct worker call"
+    );
 }

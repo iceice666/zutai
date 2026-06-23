@@ -1639,6 +1639,41 @@ fn compile_emit_bin_heap_stats_dump_reports_allocations() {
 }
 
 #[test]
+fn compile_emit_bin_uncurried_accumulator_drops_call_churn() {
+    // Phase 33: the saturated recursive call `sum (n - 1) (…)` collapses to a
+    // direct call to an uncurried 2-arg worker, and the multi-parameter clause's
+    // arg-tuple is scalar-replaced. The per-iteration closure and arg-tuple
+    // allocations vanish (`tuple 0`, `closure/raw 0`); only the explicit `box`
+    // records remain, and the result is unchanged.
+    let path = write_tmp("cli_test_uncurry_churn.zt", HEAP_STRESS_SRC);
+    let out = write_tmp("cli_test_uncurry_churn", "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out)
+        .env("ZUTAI_HEAP_STATS", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "program should run: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "8002000\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Calling-convention churn is gone; the explicit `box` records remain.
+    assert!(
+        stderr.contains("tuple 0") && stderr.contains("closure/raw 0"),
+        "uncurrying should remove per-call arg-tuple + closure allocations; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("record 4000"),
+        "explicit box records are user data and must remain; stderr: {stderr}"
+    );
+}
+
+#[test]
 fn compile_derive_witness_program_passes() {
     let src = r#"
 Point :: type { x : Int; y : Int; }

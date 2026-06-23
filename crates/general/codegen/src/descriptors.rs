@@ -153,6 +153,11 @@ pub(crate) fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             collect_from_value(closure, constants);
             collect_from_value(arg, constants);
         }
+        SsaOp::CallKnown { args, .. } => {
+            for a in args {
+                collect_from_value(a, constants);
+            }
+        }
         SsaOp::HostPrint { value } => collect_from_value(value, constants),
         SsaOp::HostOp { value, .. } => collect_from_value(value, constants),
         SsaOp::MakeClosure { code: _, captures } => {
