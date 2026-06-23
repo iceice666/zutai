@@ -2,7 +2,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use indexmap::IndexMap;
 use la_arena::Arena;
-use zutai_hir::{Binding, BindingId, HirImportSource};
+use zutai_hir::{Binding, BindingId, BindingKind, HirImportSource};
 use zutai_syntax::Span;
 use zutai_tlc::{
     BuiltinOp, Literal as TlcLit, Row, TlcDecl, TlcExprId, TlcModule, TlcPat, TlcPatItem, TlcType,
@@ -347,8 +347,18 @@ impl<'m> Lowerer<'m> {
             match &self.module.decl_arena[decl_id] {
                 TlcDecl::Value { binding, ty, .. } => {
                     if let Some(b) = self.hir_bindings.get(binding.0 as usize) {
+                        // Witness instance bindings share the constraint's name in HIR
+                        // (e.g. `Eq @Int` and `Eq @(Pair A)` are both named `"Eq"`), which
+                        // means they would overwrite each other in `globals`, making the
+                        // dispatch at concrete call sites use the wrong dict. Suffix each
+                        // witness instance with its BindingId so all instances coexist.
+                        let base = if b.kind == BindingKind::TopWitness {
+                            format!("{}$w{}", b.name, binding.0)
+                        } else {
+                            b.name.clone()
+                        };
                         self.global_names
-                            .insert(*binding, format!("{}{}", self.module_prefix, b.name));
+                            .insert(*binding, format!("{}{}", self.module_prefix, base));
                         self.global_types.insert(*binding, *ty);
                     }
                 }

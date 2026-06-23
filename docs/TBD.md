@@ -29,7 +29,13 @@ Ranked by remaining work:
    corpus (`COMPILED_WITNESS_FIXTURES`) confirms native parity for two-method
    sorted-slot dispatch, derived record equality, a conditional `List` witness,
    and a method-level type parameter (the dict field-slot was being dropped
-   during effect rewriting — fixed in commit `69e6758`). Probing since confirmed
+   during effect rewriting — fixed in commit `69e6758`). As of 2026-06-25
+   **conditional witnesses with inner field access** also compile and run
+   correctly: `Eq @(Pair A) :: { eq = \p q. eq p.fst q.fst; }` was segfaulting
+   because all instances of a constraint got the same HIR global name (the
+   constraint name), so later instances overwrote earlier ones in
+   `globals`; the fix appends `$w{id}` to each witness instance global name
+   so every instance coexists. Probing confirmed
    native parity for operator-method witnesses (`==`/`<` direct and bounded),
    structural Show/Ord `derive` rendering, and union `derive` equality too, so
    the prior "zero native support" claim was broadly stale. Genuinely open

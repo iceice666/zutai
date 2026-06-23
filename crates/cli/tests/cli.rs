@@ -691,8 +691,19 @@ useConv :: <A: Conv> A -> A = x => conv x 0;
 useConv 5
 "#,
     ),
+    (
+        "conditional_pair_witness",
+        r#"
+Pair :: <A> type { fst : A; snd : A; }
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
+p1 :: Pair Int = { fst = 1; snd = 2; }
+p2 :: Pair Int = { fst = 1; snd = 2; }
+eq p1 p2
+"#,
+    ),
 ];
-
 const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     (
         "nullary_union",
