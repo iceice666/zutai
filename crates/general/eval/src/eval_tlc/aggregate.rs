@@ -245,7 +245,12 @@ impl<'a> TlcEvaluator<'a> {
         if let Some(guard_id) = alt.guard {
             let guard_control = self.eval_control(guard_id, &match_env, resume.clone())?;
             return self.bind_control(guard_control, move |guard, this| match guard {
-                Value::Bool(true) => this.eval_control(alt.body, &match_env, resume.clone()),
+                Value::Bool(true) => Ok(EvalControl::Tail {
+                    ev: this,
+                    id: alt.body,
+                    env: match_env.clone(),
+                    resume: resume.clone(),
+                }),
                 _ => this.eval_case(
                     scrutinee.clone(),
                     Rc::clone(&alts),
@@ -255,6 +260,11 @@ impl<'a> TlcEvaluator<'a> {
                 ),
             });
         }
-        self.eval_control(alt.body, &match_env, resume)
+        Ok(EvalControl::Tail {
+            ev: self,
+            id: alt.body,
+            env: match_env,
+            resume,
+        })
     }
 }

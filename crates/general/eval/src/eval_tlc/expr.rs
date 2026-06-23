@@ -1,7 +1,23 @@
 use super::*;
 
 impl<'a> TlcEvaluator<'a> {
+    /// Drive `eval_step` to a settled control (`Value`/`Perform`), bouncing
+    /// every `EvalControl::Tail` so a tail-recursive call chain runs in constant
+    /// host-stack space. Sub-expression evaluation and `eval_expr` go through
+    /// here; only the tail positions inside `eval_step` emit a raw `Tail`.
     pub(super) fn eval_control<'eval>(
+        self,
+        id: TlcExprId,
+        env: &Env,
+        resume: Option<EvalCont<'eval>>,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        settle(self.eval_step(id, env, resume)?)
+    }
+
+    pub(super) fn eval_step<'eval>(
         self,
         id: TlcExprId,
         env: &Env,
@@ -34,8 +50,18 @@ impl<'a> TlcEvaluator<'a> {
             }
 
             // Type erasure: TyLam and TyApp are semantic no-ops at runtime.
-            TlcExpr::TyLam(_, _, body) => self.eval_control(body, env, resume),
-            TlcExpr::TyApp(func, _) => self.eval_control(func, env, resume),
+            TlcExpr::TyLam(_, _, body) => Ok(EvalControl::Tail {
+                ev: self,
+                id: body,
+                env: env.clone(),
+                resume,
+            }),
+            TlcExpr::TyApp(func, _) => Ok(EvalControl::Tail {
+                ev: self,
+                id: func,
+                env: env.clone(),
+                resume,
+            }),
 
             TlcExpr::Lam(param, _, body) => {
                 Ok(EvalControl::Value(Value::TlcClosure(Rc::new(TlcClosure {
@@ -73,7 +99,12 @@ impl<'a> TlcEvaluator<'a> {
                         binding,
                         Thunk::tlc_deferred(value, env.clone(), self.active_module),
                     );
-                    return self.eval_control(body, &child, resume);
+                    return Ok(EvalControl::Tail {
+                        ev: self,
+                        id: body,
+                        env: child,
+                        resume,
+                    });
                 }
 
                 let env_for_body = env.clone();
@@ -82,7 +113,12 @@ impl<'a> TlcEvaluator<'a> {
                 self.bind_control(value_control, move |v, this| {
                     let child = env_for_body.push_frame();
                     child.insert(binding, Thunk::ready(v));
-                    this.eval_control(body, &child, resume_for_body.clone())
+                    Ok(EvalControl::Tail {
+                        ev: this,
+                        id: body,
+                        env: child,
+                        resume: resume_for_body.clone(),
+                    })
                 })
             }
 
@@ -96,7 +132,12 @@ impl<'a> TlcEvaluator<'a> {
                     let placeholder = child.lookup(binding)?;
                     placeholder.replace_forced(v);
                 }
-                self.eval_control(body, &child, resume)
+                Ok(EvalControl::Tail {
+                    ev: self,
+                    id: body,
+                    env: child,
+                    resume,
+                })
             }
 
             TlcExpr::Record(fields) => self.eval_record(fields, env.clone(), resume),

@@ -17,7 +17,12 @@ impl<'a> TlcEvaluator<'a> {
                 let child = c.env.push_frame();
                 child.insert(c.param, Thunk::ready(arg));
                 let home_ev = self.for_module(c.home)?;
-                home_ev.eval_control(c.body, &child, resume)
+                Ok(EvalControl::Tail {
+                    ev: home_ev,
+                    id: c.body,
+                    env: child,
+                    resume,
+                })
             }
             Value::Builtin(func) => self.apply_builtin(func, SmallVec::new(), arg),
             Value::BuiltinPartial { func, args } => self.apply_builtin(func, args, arg),
@@ -92,7 +97,7 @@ impl<'a> TlcEvaluator<'a> {
     where
         'a: 'eval,
     {
-        match control {
+        match settle(control)? {
             EvalControl::Value(value) => {
                 self.apply_value_clause(value, value_clause, env, outer_resume)
             }
@@ -136,6 +141,7 @@ impl<'a> TlcEvaluator<'a> {
                     })
                 }
             }
+            EvalControl::Tail { .. } => unreachable!("settle drains tail bounces"),
         }
     }
 
@@ -177,7 +183,7 @@ impl<'a> TlcEvaluator<'a> {
     where
         'a: 'eval,
     {
-        match control {
+        match settle(control)? {
             EvalControl::Value(value) => f(value, self),
             EvalControl::Perform { op, arg, cont } => {
                 let this = self;
@@ -190,6 +196,7 @@ impl<'a> TlcEvaluator<'a> {
                     }),
                 })
             }
+            EvalControl::Tail { .. } => unreachable!("settle drains tail bounces"),
         }
     }
 
@@ -197,13 +204,14 @@ impl<'a> TlcEvaluator<'a> {
     where
         'a: 'eval,
     {
-        match control {
+        match settle(control)? {
             EvalControl::Value(value) => Ok(value),
             EvalControl::Perform { op, arg, cont } => {
                 let value = eval_host_op(&op, arg, self)?;
                 let next = cont(value)?;
                 self.finish_top(next)
             }
+            EvalControl::Tail { .. } => unreachable!("settle drains tail bounces"),
         }
     }
 }

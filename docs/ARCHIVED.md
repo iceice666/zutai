@@ -35,8 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-22 after Phase 31 backend tail-call optimization
-(`musttail`) over the Phase 30 capped thread-local heap._
+_Last updated: 2026-06-22 after Phase 32 TLC evaluator tail-call trampoline,
+matching the Phase 31 backend `musttail` depth._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -139,6 +139,38 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Phase 32: TLC evaluator tail-call trampoline ✅
+
+- The reference TLC evaluator (`crates/general/eval/src/eval_tlc`) is the
+  default semantics oracle for executable value programs. It walks expressions
+  in continuation-passing style and previously recursed on the host stack for
+  every tail call, so deep tail recursion overflowed even the CLI's 256 MiB
+  worker stack near depth ~6000 — far short of the backend, which now compiles
+  the same recursion to constant-stack `musttail` calls (Phase 31).
+- Added an `EvalControl::Tail { ev, id, env, resume }` variant and a `settle`
+  driver loop that bounces tail positions instead of recursing, reusing the
+  same trampoline shape the evaluator already used for algebraic-effect
+  `Perform`/`resume`. `eval_control` is now a thin driver over a renamed
+  `eval_step`; the eight tail positions (`TyLam`/`TyApp` bodies, `Let`/`Letrec`
+  bodies, closure application, and both `eval_case` branch bodies) emit a `Tail`
+  rather than a recursive `eval_control` call. Sub-expression evaluation (call
+  arguments, scrutinees, operands) still recurses, bounded by expression nesting
+  not recursion depth.
+- Every site that matches on an `EvalControl` (`bind_rc`, `finish_top`,
+  `handle_control`) settles it first, so a `Tail` never escapes into a matcher;
+  effect semantics are unchanged.
+- Effect: the default evaluator runs tail-recursive programs in constant
+  host-stack space (`sum 1000000` now evaluates to `500000500000`, matching the
+  compiled binary), so the differential oracle keeps pace with the backend at
+  depth. Non-tail recursion is still O(depth) by nature, as in the backend. The
+  secondary THIR walker (`eval`, used only for runtime `Type`/reflection
+  programs) is a direct recursive tree-walker and retains the host-stack limit;
+  it is exercised only at modest depth.
+- Verification: `cargo fmt --check`; `cargo test --workspace` (1504 passed,
+  including two new constant-stack regression tests at depth 100_000 on the
+  default test-thread stack); `cargo clippy --workspace --all-targets`; manual
+  differential check — interpreter and compiled `sum 1000000` agree.
 
 ### Phase 31: Backend tail-call optimization (`musttail`) ✅
 

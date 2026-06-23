@@ -49,6 +49,34 @@ enum EvalControl<'eval> {
         arg: Value,
         cont: EvalCont<'eval>,
     },
+    /// A pending tail call: evaluate `id` under `ev`/`env` in tail position.
+    /// Returned by `eval_step` for every tail position and bounced by the
+    /// `eval_control` driver loop, so a chain of tail calls runs in constant
+    /// host-stack space instead of one Rust frame per call.
+    Tail {
+        ev: TlcEvaluator<'eval>,
+        id: TlcExprId,
+        env: Env,
+        resume: Option<EvalCont<'eval>>,
+    },
+}
+
+/// Bounce every `EvalControl::Tail` to a fixpoint, returning a settled control
+/// (`Value` or `Perform`). This is the tail-call trampoline: each loop turn runs
+/// exactly one `eval_step`, so a tail-recursive call chain costs one heap-light
+/// `Tail` per step instead of one Rust stack frame. Every site that matches on
+/// an `EvalControl` settles it first, so a `Tail` never escapes into a matcher.
+fn settle<'eval>(mut ctrl: EvalControl<'eval>) -> Result<EvalControl<'eval>, EvalError> {
+    while let EvalControl::Tail {
+        ev,
+        id,
+        env,
+        resume,
+    } = ctrl
+    {
+        ctrl = ev.eval_step(id, &env, resume)?;
+    }
+    Ok(ctrl)
 }
 
 #[derive(Clone, Copy)]

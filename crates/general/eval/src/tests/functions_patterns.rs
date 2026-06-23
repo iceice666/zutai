@@ -589,3 +589,34 @@ safe_div 10 0
 ";
     assert_eq!(run(src), Value::Int(0));
 }
+
+#[test]
+fn deep_tail_recursion_runs_in_constant_host_stack() {
+    // The TLC evaluator trampolines tail calls through `EvalControl::Tail`, so a
+    // tail-recursive accumulator evaluates in constant host-stack space. Before
+    // the trampoline this overflowed even a 256 MiB worker stack near depth
+    // ~6000; this runs on the default (small) test-thread stack at depth
+    // 100_000, matching the backend's `musttail` tail-call behavior.
+    let src = "
+sum :: Int -> Int -> Int
+  = n acc => if n < 1 then acc else sum (n - 1) (acc + n);
+sum 100000 0
+";
+    assert_eq!(run(src), Value::Int(5000050000));
+}
+
+#[test]
+fn deep_tail_recursion_through_match_runs_in_constant_host_stack() {
+    // Exercises the `eval_case` branch-body tail position (the `match`/`if`
+    // join), which also bounces through `EvalControl::Tail` rather than
+    // recursing per iteration.
+    let src = "
+countdown :: Int -> Int -> Int
+  = n acc => match n < 1 {
+      | true => acc;
+      | false => countdown (n - 1) (acc + 1);
+    };
+countdown 100000 0
+";
+    assert_eq!(run(src), Value::Int(100000));
+}
