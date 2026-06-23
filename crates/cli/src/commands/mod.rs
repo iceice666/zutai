@@ -458,8 +458,17 @@ pub(crate) fn run_compile(
         .unwrap_or(original_hir_bindings.as_slice());
 
     // DC → ANF → SSA → LLVM IR pipeline.
-    let graph =
-        zutai_dataflow::lower_tlc_with_host_grants(&module, hir_bindings, boundary_host_grants);
+    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants(
+        &module,
+        hir_bindings,
+        boundary_host_grants,
+    ) {
+        Ok(g) => g,
+        Err(reason) => {
+            eprintln!("compile error: {reason}");
+            std::process::exit(1);
+        }
+    };
     let anf = zutai_anf::lower_dc(&graph);
     let ssa = zutai_ssa::lower_anf(&anf);
     if let Some(reason) = zutai_codegen::unsupported_entry_type_reason(&ssa) {
@@ -581,8 +590,17 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let hir_bindings = folded_bindings
         .as_deref()
         .unwrap_or(original_hir_bindings.as_slice());
-    let graph =
-        zutai_dataflow::lower_tlc_with_host_grants(&module, hir_bindings, boundary_host_grants);
+    let graph = match zutai_dataflow::try_lower_tlc_with_host_grants(
+        &module,
+        hir_bindings,
+        boundary_host_grants,
+    ) {
+        Ok(g) => g,
+        Err(reason) => {
+            eprintln!("error: {reason}");
+            std::process::exit(1);
+        }
+    };
     println!("{graph:#?}");
     Ok(())
 }

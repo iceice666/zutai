@@ -313,12 +313,62 @@ pub fn lower_tlc_with_host_grants(
         .expect("ungranted residual TLC effects must not enter Dataflow Core")
 }
 
+/// Returns a static reason string when `module` contains a value-record
+/// `GetField` on an open-row type — a case the slot-based Dataflow backend
+/// cannot lower soundly.
+///
+/// An open record type `{ f : T; …rest }` used as a function parameter hides
+/// the tail fields from the compiled body. The runtime slot of `f` depends on
+/// ALL the concrete record's fields, but the compiled code sees only the view
+/// type. The interpreter resolves fields by name; the native backend cannot.
+///
+/// Returns `None` when the module is safe to lower to Dataflow Core.
+fn open_row_select_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str> {
+    use zutai_tlc::{Row, TlcExpr, TlcType};
+
+    fn row_is_open(row: &Row) -> bool {
+        match row {
+            Row::REmpty => false,
+            Row::RVar(_) => true,
+            Row::RExtend { tail, .. } => row_is_open(tail),
+        }
+    }
+
+    for (id, expr) in module.expr_arena.iter() {
+        let TlcExpr::GetField(base, _) = expr else {
+            continue;
+        };
+        // Dict-method GetField slots are pre-computed by the TLC witness pass and
+        // remain correct at runtime — only value-record selects can miscompile.
+        if module.dict_field_slots.contains_key(&id) {
+            continue;
+        }
+        let Some(&ty_id) = module.expr_types.get(base) else {
+            continue;
+        };
+        if let TlcType::Record(row) = &module.type_arena[ty_id]
+            && row_is_open(row)
+        {
+            return Some(
+                "native backend cannot select a field from an open record row: \
+                    the field's runtime slot depends on hidden tail fields that are unknown \
+                    inside the compiled function. Use `zutai run` (interpreter) or restrict \
+                    the parameter to a closed record type",
+            );
+        }
+    }
+    None
+}
+
 /// Fallible form of [`lower_tlc`] that preserves the Phase 19 no-erasure gate.
 pub fn try_lower_tlc(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],
 ) -> Result<DataflowGraph, &'static str> {
     if let Some(reason) = zutai_tlc::residual_effect_reason(module) {
+        return Err(reason);
+    }
+    if let Some(reason) = open_row_select_reason(module) {
         return Err(reason);
     }
     Ok(lower::lower_tlc(module, hir_bindings))
@@ -331,6 +381,9 @@ pub fn try_lower_tlc_with_host_grants(
     grants: zutai_tlc::HostEffectSet,
 ) -> Result<DataflowGraph, &'static str> {
     if let Some(reason) = zutai_tlc::residual_effect_reason_with_grants(module, grants) {
+        return Err(reason);
+    }
+    if let Some(reason) = open_row_select_reason(module) {
         return Err(reason);
     }
     Ok(lower::lower_tlc(module, hir_bindings))
