@@ -189,6 +189,20 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   and the CLI surfaces it as a clean compile error. Dict-method selects and
   closed records are unaffected; the interpreter still evaluates open rows.
   Commits `b9012d6`, `347d82d`.
+- **`variants`/`witness` reflection fold-or-reject** (`crates/general/semantic/src/lib.rs`,
+  `crates/cli/src/commands/mod.rs`). The compile-time reflection gate only
+  detected `fields`/`schema`, so `variants` reflection silently miscompiled to
+  an empty result and the `witness C @T` reflection expression (a dedicated
+  `WitnessReflect` THIR node) panicked the Dataflow Core structural validator
+  with a `TypeMismatch` ICE. `reflection_builtin_program` also routes the
+  run-time evaluator to the THIR oracle, which cannot dispatch through a witness
+  dict, so widening it would have regressed `witness`/`variants` evaluation.
+  Added `aot_reflection_program` (a superset covering `fields`/`schema`/`variants`/`witness`)
+  used only by the `compile`/`dataflow` fold-or-reject gate; the routing detector
+  stays at `fields`/`schema`, keeping `witness`/`variants` fold evaluation on the
+  TLC path. Now `variants (Color)` and `(witness Show @Point).show p` fold to the
+  interpreter's value, and a bare non-serializable `witness` dictionary is
+  rejected cleanly instead of crashing the compiler. Commits `3033284`, `14aff1b`.
 - Verification: `cargo fmt`; `cargo clippy --workspace --all-targets` (clean);
   `cargo test --workspace` (all pass). Touched-code coverage exceeds 85%; the
   only unhit added line is a defensive `else continue` guard in

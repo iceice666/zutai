@@ -72,9 +72,14 @@ Ranked by remaining work:
 **By design, not gaps** — do not file these as missing native work:
 
 - **Reflection** (`fields`/`variants`/`schema`/`witness`) is compile-time:
-  `compile`/`dataflow` fold serializable reflection such as `schema` to backend
-  constants and reject residual reflection before lowering. Fold-or-reject is
-  the intended model, so reflection is already as native as it should be.
+  `compile`/`dataflow` fold serializable reflection (`schema`, `fields`,
+  `variants`, and `witness`-dispatch whose result is a data value) to backend
+  constants and reject residual reflection (a raw `witness` dictionary, a
+  `Type`-valued result) before lowering. Fold-or-reject is the intended model.
+  As of 2026-06-23 this is enforced for all four forms — `variants` (was a
+  silent empty-result miscompile) and the `witness C @T` expression (was a
+  Dataflow Core ICE) now fold-or-reject through `aot_reflection_program`, so
+  reflection is as native as it should be in fact, not just in intent.
 - **Rejecting unhandled non-`io.print` effects** at the backend is the
   committed strict-AOT behavior, not an unfinished feature.
 - **Annotation-required inference** where row/constraint inference is not
