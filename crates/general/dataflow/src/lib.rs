@@ -360,6 +360,26 @@ fn open_row_select_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str>
     None
 }
 
+/// Returns a static reason when `module` contains a module `import`. TLC→DC
+/// lowers `TlcExpr::Import` to `DfNodeKind::Import`, which ANF lowering treats
+/// as an `AnfExpr::Error` leaf — the imported module is never lowered or linked
+/// into the compiled binary, so a compiled program that imports crashes at
+/// runtime. Cross-module backend linking is unimplemented, so reject before
+/// Dataflow Core; the interpreter resolves imports.
+///
+/// Returns `None` when the module is import-free and safe to lower.
+fn import_reason(module: &zutai_tlc::TlcModule) -> Option<&'static str> {
+    use zutai_tlc::TlcExpr;
+    module
+        .expr_arena
+        .iter()
+        .any(|(_, expr)| matches!(expr, TlcExpr::Import(_)))
+        .then_some(
+            "native backend does not support module imports yet: imported modules are not \
+            linked into the compiled binary. Use `zutai run` (interpreter)",
+        )
+}
+
 /// Fallible form of [`lower_tlc`] that preserves the Phase 19 no-erasure gate.
 pub fn try_lower_tlc(
     module: &zutai_tlc::TlcModule,
@@ -369,6 +389,9 @@ pub fn try_lower_tlc(
         return Err(reason);
     }
     if let Some(reason) = open_row_select_reason(module) {
+        return Err(reason);
+    }
+    if let Some(reason) = import_reason(module) {
         return Err(reason);
     }
     Ok(lower::lower_tlc(module, hir_bindings))
@@ -384,6 +407,9 @@ pub fn try_lower_tlc_with_host_grants(
         return Err(reason);
     }
     if let Some(reason) = open_row_select_reason(module) {
+        return Err(reason);
+    }
+    if let Some(reason) = import_reason(module) {
         return Err(reason);
     }
     Ok(lower::lower_tlc(module, hir_bindings))
