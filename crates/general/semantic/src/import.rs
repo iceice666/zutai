@@ -22,7 +22,8 @@ use std::rc::Rc;
 use zutai_hir::{BindingId, HirExprKind, HirFile, HirImportSource};
 use zutai_syntax::Span;
 use zutai_thir::{
-    ImportKey, ImportedField, ImportedTupleItem, ImportedType, ThirDeclKind, ThirExprKind, ThirFile,
+    ImportKey, ImportedField, ImportedTupleItem, ImportedType, ThirDeclKind, ThirExprKind,
+    ThirFile, WitnessPattern, export_witness_pattern,
 };
 
 use crate::{Analysis, AnalysisOptions};
@@ -71,6 +72,19 @@ pub struct WitnessExport {
     /// (`$dep{idx}${constraint}$w{binding_id}`) for cross-module witness dispatch.
     pub binding_id: u32,
     pub span: Span,
+    /// For a parametric (conditional) witness such as `Eq @(List A) :: <A: Eq>`,
+    /// the structural matcher plus per-parameter component-constraint names. `None`
+    /// for a concrete witness (its `target_key` is `?`-free and matches directly).
+    pub conditional: Option<ConditionalWitnessShape>,
+}
+
+/// Cross-module dispatch data for a conditional witness: the target shape with
+/// parameter holes and, parallel to the holes, the component constraints each
+/// hole's type must satisfy (`<A: Eq>` → `[["Eq"]]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalWitnessShape {
+    pub pattern: WitnessPattern,
+    pub param_bounds: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,16 +445,41 @@ pub(crate) fn local_witness_exports(
         let ThirDeclKind::Witness {
             constraint: Some(constraint),
             target,
+            params,
+            param_bounds,
             ..
         } = &decl.kind
         else {
             continue;
         };
-        let Ok(target) = zutai_thir::export_type(file, *target) else {
+        let Ok(exported_target) = zutai_thir::export_type(file, *target) else {
             continue;
         };
         let constraint = binding_name(hir, *constraint).to_string();
-        let target_key = imported_type_key(&target);
+        let target_key = imported_type_key(&exported_target);
+        // A parametric witness carries its type params as holes; record the
+        // structural matcher and per-param component constraints so an importer
+        // can dispatch it at a concrete call site (Phase B). A concrete witness
+        // (`params` empty) needs none — its `target_key` matches directly.
+        let conditional = if params.is_empty() {
+            None
+        } else {
+            export_witness_pattern(file, *target, params).map(|pattern| {
+                let param_bounds = param_bounds
+                    .iter()
+                    .map(|bounds| {
+                        bounds
+                            .iter()
+                            .map(|b| binding_name(hir, *b).to_string())
+                            .collect()
+                    })
+                    .collect();
+                ConditionalWitnessShape {
+                    pattern,
+                    param_bounds,
+                }
+            })
+        };
         out.push(WitnessExport {
             origin: origin.to_path_buf(),
             constraint,
@@ -448,6 +487,7 @@ pub(crate) fn local_witness_exports(
             target_key,
             binding_id: decl.binding.0,
             span: decl.span,
+            conditional,
         });
     }
     out

@@ -18,6 +18,7 @@ mod types;
 mod witness;
 mod witness_resolve;
 
+pub use witness::ExternConditionalWitness;
 use witness::{ConditionalWitness, ConstraintMethodInfo, WitnessTargetKey};
 
 pub fn lower_thir(file: &ThirFile) -> TlcModule {
@@ -31,15 +32,22 @@ pub fn lower_thir(file: &ThirFile) -> TlcModule {
 }
 /// Lower a THIR file to TLC with extern witness information from imported dep modules.
 ///
-/// `extern_witnesses` is a list of `(constraint_name, target_key_str, dc_global_name)` triples.
-/// When `get_dict_expr` fails to resolve a witness locally, it checks this list; a matching
-/// entry is replaced with a virtual `Var` that the DC lowerer maps to `GlobalRef(dc_global_name)`.
+/// `extern_witnesses` is a list of `(constraint_name, target_key_str, dc_global_name)` triples
+/// for concrete imported witnesses. `extern_conditionals` carries imported *parametric*
+/// witnesses (`Eq @(List A)`), matched structurally at a concrete call site.
+///
+/// When `get_dict_expr` fails to resolve a witness locally, it checks these; a matching
+/// concrete entry is replaced with a virtual `Var` that the DC lowerer maps to
+/// `GlobalRef(dc_global_name)`, and a matching conditional entry emits that virtual `Var`
+/// applied (`TyApp`/`App`) to the recursively-resolved component dicts.
 pub fn lower_thir_with_extern_witnesses(
     file: &ThirFile,
     extern_witnesses: Vec<(String, String, String)>,
+    extern_conditionals: Vec<ExternConditionalWitness>,
 ) -> TlcModule {
     let mut lowerer = Lowerer::new(file);
     lowerer.extern_witnesses = extern_witnesses;
+    lowerer.extern_conditionals = extern_conditionals;
     let mut module = lowerer.lower_file();
     module.elaborate_effects();
     if crate::residual_effect_reason(&module).is_none() {
@@ -91,6 +99,10 @@ struct Lowerer<'thir> {
     /// concrete TypeId.0)` pairs currently being resolved. Re-entry signals a
     /// non-terminating witness search; resolution bails to avoid a stack overflow.
     resolving_dicts: FxHashSet<(u32, u32)>,
+    /// Recursion guard for imported conditional-witness resolution, keyed by
+    /// `(constraint name, concrete TypeId.0)`. Name-keyed (not binding-keyed)
+    /// because a component constraint may not be declared in this module.
+    resolving_extern: FxHashSet<(String, u32)>,
     /// Operator-method witness body currently being lowered, as `(witness decl
     /// binding, operator name)`. While set, an operator call inside the body
     /// whose dispatch would resolve back to *this same* witness method falls back
@@ -101,12 +113,16 @@ struct Lowerer<'thir> {
     /// Each entry is `(constraint_name, target_key_str, dc_global_name)`.
     /// Checked by `get_dict_expr` after local lookup fails.
     extern_witnesses: Vec<(String, String, String)>,
+    /// Imported parametric (conditional) witnesses, matched structurally at a
+    /// concrete call site after concrete local/extern lookup fails.
+    extern_conditionals: Vec<ExternConditionalWitness>,
     /// Virtual bindings allocated for extern witness globals.
     /// Keys are synthetic `BindingId`s above the THIR binding range; values are
     /// the DC global names they resolve to.  Collected into `TlcModule::extern_global_bindings`.
     extern_global_bindings: FxHashMap<BindingId, String>,
     /// Counter for virtual BindingId allocation; starts just above the THIR
-    /// binding-names array length so it never collides with a real BindingId.
+    /// binding-names array length and counts upward so it never collides with a
+    /// real BindingId (`0..len`), no matter how many virtual globals are needed.
     next_virtual_binding: u32,
 }
 
@@ -136,8 +152,10 @@ impl<'thir> Lowerer<'thir> {
             next_row_var: u32::MAX,
             conditional_witnesses: Vec::new(),
             resolving_dicts: FxHashSet::default(),
+            resolving_extern: FxHashSet::default(),
             defining_op_witness: None,
             extern_witnesses: Vec::new(),
+            extern_conditionals: Vec::new(),
             extern_global_bindings: FxHashMap::default(),
             next_virtual_binding,
         }
@@ -147,7 +165,7 @@ impl<'thir> Lowerer<'thir> {
     /// record the mapping `virtual_id → dc_global_name`.
     fn alloc_virtual_binding(&mut self, dc_global: String) -> BindingId {
         let id = self.next_virtual_binding;
-        self.next_virtual_binding -= 1; // count downward to avoid collision
+        self.next_virtual_binding += 1; // count upward, staying above the real range
         let bid = BindingId(id);
         self.extern_global_bindings.insert(bid, dc_global);
         bid

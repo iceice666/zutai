@@ -57,23 +57,66 @@ fn completed_tlc_inputs(
     Ok((thir_file, module))
 }
 
+/// Witness tables threaded through dependency evaluation: concrete operator
+/// methods (`(method, key) -> value`), concrete dictionaries
+/// (`(constraint, key) -> Record`, for component resolution), and imported
+/// conditional witnesses (instantiated on demand at the root's call sites).
+#[derive(Default)]
+struct WitnessTables {
+    operators: FxHashMap<(String, String), Value>,
+    concrete_dicts: FxHashMap<(String, String), Value>,
+    conditionals: Vec<ConditionalRuntimeWitness>,
+}
+
 pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
     let mut registry = Vec::new();
     let mut imports = FxHashMap::default();
-    let mut operator_witnesses = FxHashMap::default();
-    let root_id = eval_tlc_analysis_into(
-        analysis,
-        &mut registry,
-        &mut imports,
-        &mut operator_witnesses,
-    )?;
+    let mut tables = WitnessTables::default();
+    let root_id = eval_tlc_analysis_into(analysis, &mut registry, &mut imports, &mut tables)?;
 
     let (thir_file, root_module) = completed_tlc_inputs(analysis)?;
+
+    // Instantiate imported conditional witnesses for the root's concrete call
+    // sites: every dispatch key the root needs that a parametric witness covers
+    // becomes a concrete dictionary whose methods join `operators`, so the
+    // unchanged `imported_method` dispatch finds them by `(method, key)`.
+    if !tables.conditionals.is_empty() {
+        let mat_ev =
+            eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), root_id, &imports)?;
+        let needed: Vec<String> = root_module.dict_dispatch_keys.values().cloned().collect();
+        let WitnessTables {
+            operators,
+            concrete_dicts,
+            conditionals,
+        } = &mut tables;
+        let conds: &[ConditionalRuntimeWitness] = conditionals;
+        for cw in conds {
+            for key in &needed {
+                let Some(Value::Record(fields)) = materialize_conditional_dict(
+                    &mat_ev,
+                    &cw.constraint,
+                    key,
+                    conds,
+                    concrete_dicts,
+                    0,
+                ) else {
+                    continue;
+                };
+                for (name, thunk) in fields.iter() {
+                    let value = thunk.force_tlc(&mat_ev)?;
+                    operators
+                        .entry((name.to_string(), key.clone()))
+                        .or_insert(value);
+                }
+            }
+        }
+    }
+
     let ev = eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
         registry.as_slice(),
         root_id,
         &imports,
-        &operator_witnesses,
+        &tables.operators,
     )?;
     let top = seed_tlc_prelude(thir_file, env::Env::empty());
     let top = ev.build_top_env_from(top)?;
@@ -88,7 +131,7 @@ fn eval_tlc_analysis_into<'a>(
     analysis: &'a zutai_semantic::Analysis,
     registry: &mut eval_tlc::TlcModuleRegistry<'a>,
     imports: &mut FxHashMap<ImportKey, Value>,
-    operator_witnesses: &mut FxHashMap<(String, String), Value>,
+    tables: &mut WitnessTables,
 ) -> Result<ModuleId, EvalError> {
     let (_thir_file, module) = completed_tlc_inputs(analysis)?;
 
@@ -102,12 +145,7 @@ fn eval_tlc_analysis_into<'a>(
         if imports.contains_key(key) {
             continue;
         }
-        let dep_id = eval_tlc_analysis_into(
-            imported_analysis.as_ref(),
-            registry,
-            imports,
-            operator_witnesses,
-        )?;
+        let dep_id = eval_tlc_analysis_into(imported_analysis.as_ref(), registry, imports, tables)?;
         let (dep_thir_file, dep_module) = completed_tlc_inputs(imported_analysis.as_ref())?;
         let dep_ev = eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), dep_id, imports)?;
         let dep_top = seed_tlc_prelude(dep_thir_file, env::Env::empty());
@@ -116,7 +154,14 @@ fn eval_tlc_analysis_into<'a>(
             .final_expr
             .ok_or(EvalError::Internal("TLC module has no final expression"))?;
         let dep_result = dep_ev.eval_expr(final_id, &dep_top)?;
-        collect_tlc_operator_witnesses(dep_thir_file, &dep_ev, &dep_top, operator_witnesses)?;
+        collect_tlc_operator_witnesses(
+            dep_thir_file,
+            &dep_ev,
+            &dep_top,
+            &mut tables.operators,
+            &mut tables.concrete_dicts,
+            &mut tables.conditionals,
+        )?;
         let dep_value = eval_tlc::tlc_force_deep(dep_result, &dep_ev)?;
         imports.insert(key.clone(), dep_value);
     }
@@ -126,17 +171,69 @@ fn eval_tlc_analysis_into<'a>(
     Ok(id)
 }
 
+/// An imported parametric (conditional) witness, captured for on-demand
+/// instantiation at the importer's concrete call sites.
+struct ConditionalRuntimeWitness {
+    constraint: String,
+    pattern: zutai_thir::WitnessPattern,
+    /// Per-parameter component-constraint names, parallel to the pattern's holes.
+    param_bounds: Vec<Vec<String>>,
+    /// The witness's dictionary function value (`\d0. \d1. Record` after type
+    /// erasure), applied to recursively-resolved component dicts at a call site.
+    func: Value,
+}
+
 fn collect_tlc_operator_witnesses(
     thir_file: &ThirFile,
     ev: &eval_tlc::TlcEvaluator<'_>,
     top: &env::Env,
     out: &mut FxHashMap<(String, String), Value>,
+    concrete_dicts: &mut FxHashMap<(String, String), Value>,
+    conditionals: &mut Vec<ConditionalRuntimeWitness>,
 ) -> Result<(), EvalError> {
     for &decl_id in &thir_file.decls {
         let decl = &thir_file.decl_arena[decl_id];
-        let ThirDeclKind::Witness { target, fields, .. } = &decl.kind else {
+        let ThirDeclKind::Witness {
+            constraint,
+            target,
+            params,
+            param_bounds,
+            fields,
+            ..
+        } = &decl.kind
+        else {
             continue;
         };
+        let constraint_name = constraint
+            .and_then(|b| thir_file.binding_names.get(b.0 as usize))
+            .cloned();
+        // A parametric witness (`Eq @(List A)`): capture its structural matcher,
+        // component bounds, and dictionary function for on-demand instantiation.
+        if !params.is_empty() {
+            let (Some(constraint_name), Some(pattern)) = (
+                constraint_name,
+                zutai_thir::export_witness_pattern(thir_file, *target, params),
+            ) else {
+                continue;
+            };
+            let bound_names = param_bounds
+                .iter()
+                .map(|bounds| {
+                    bounds
+                        .iter()
+                        .filter_map(|b| thir_file.binding_names.get(b.0 as usize).cloned())
+                        .collect()
+                })
+                .collect();
+            let func = top.lookup(decl.binding)?.force_tlc(ev)?;
+            conditionals.push(ConditionalRuntimeWitness {
+                constraint: constraint_name,
+                pattern,
+                param_bounds: bound_names,
+                func,
+            });
+            continue;
+        }
         let Some(target_key) = thir_runtime_target_key(thir_file, *target) else {
             continue;
         };
@@ -147,6 +244,12 @@ fn collect_tlc_operator_witnesses(
                 found: "non-record witness dictionary",
             });
         };
+        if let Some(constraint_name) = &constraint_name {
+            concrete_dicts.insert(
+                (constraint_name.clone(), target_key.clone()),
+                Value::Record(dict_fields.clone()),
+            );
+        }
         for field in fields {
             let Some((_, thunk)) = dict_fields
                 .iter()
@@ -161,6 +264,208 @@ fn collect_tlc_operator_witnesses(
         }
     }
     Ok(())
+}
+
+/// Instantiate an imported conditional witness dictionary for a concrete type
+/// `key` under `constraint`, memoizing into `concrete_dicts`. Matches the
+/// witness pattern against `key`, recursively materializes each component dict,
+/// and applies the witness function to them. Returns `None` when no conditional
+/// witness matches or a required component cannot be resolved.
+fn materialize_conditional_dict(
+    ev: &eval_tlc::TlcEvaluator<'_>,
+    constraint: &str,
+    key: &str,
+    conditionals: &[ConditionalRuntimeWitness],
+    concrete_dicts: &mut FxHashMap<(String, String), Value>,
+    depth: u32,
+) -> Option<Value> {
+    if depth > 64 {
+        return None;
+    }
+    if let Some(dict) = concrete_dicts.get(&(constraint.to_string(), key.to_string())) {
+        return Some(dict.clone());
+    }
+    for cw in conditionals {
+        if cw.constraint != constraint {
+            continue;
+        }
+        let Some(sub_keys) = match_pattern_key(&cw.pattern, key, cw.param_bounds.len()) else {
+            continue;
+        };
+        let mut cur = cw.func.clone();
+        let mut ok = true;
+        'param: for (i, bounds) in cw.param_bounds.iter().enumerate() {
+            for bound in bounds {
+                let Some(component) = materialize_conditional_dict(
+                    ev,
+                    bound,
+                    &sub_keys[i],
+                    conditionals,
+                    concrete_dicts,
+                    depth + 1,
+                ) else {
+                    ok = false;
+                    break 'param;
+                };
+                let Ok(applied) = ev.apply_to_value(cur.clone(), component) else {
+                    ok = false;
+                    break 'param;
+                };
+                cur = applied;
+            }
+        }
+        if !ok {
+            continue;
+        }
+        concrete_dicts.insert((constraint.to_string(), key.to_string()), cur.clone());
+        return Some(cur);
+    }
+    None
+}
+
+/// Match a conditional witness `pattern` against a concrete dispatch `key`
+/// string (the `structural_witness_key` format the lowerer records in
+/// `dict_dispatch_keys`), recovering the sub-key bound to each of `num_holes`
+/// parameter holes. Returns `None` unless the whole key is consumed and every
+/// hole is bound consistently.
+fn match_pattern_key(
+    pattern: &zutai_thir::WitnessPattern,
+    key: &str,
+    num_holes: usize,
+) -> Option<Vec<String>> {
+    let mut holes: Vec<Option<String>> = vec![None; num_holes];
+    let rest = pattern_match_at(pattern, key, &mut holes)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    holes.into_iter().collect()
+}
+
+fn pattern_match_at<'k>(
+    pattern: &zutai_thir::WitnessPattern,
+    s: &'k str,
+    holes: &mut [Option<String>],
+) -> Option<&'k str> {
+    use zutai_thir::{WitnessPattern as P, WitnessPatternTupleItem as TI};
+    match pattern {
+        P::Hole(i) => {
+            let (token, rest) = split_balanced(s)?;
+            match holes.get_mut(*i)? {
+                slot @ None => *slot = Some(token.to_string()),
+                Some(prev) if prev == token => {}
+                Some(_) => return None,
+            }
+            Some(rest)
+        }
+        P::Leaf(k) => s.strip_prefix(k.as_str()),
+        P::List(inner) => {
+            let s = s.strip_prefix('[')?;
+            let s = pattern_match_at(inner, s, holes)?;
+            s.strip_prefix(']')
+        }
+        P::Optional(inner) => {
+            // The `?` marker is a postfix at this level (`<inner>?`), so reserve it
+            // before matching the inner — otherwise a bare `Hole` inner greedily
+            // consumes the `?` and the strip below fails.
+            let (token, rest) = split_balanced(s)?;
+            let inner_key = token.strip_suffix('?')?;
+            if !pattern_match_at(inner, inner_key, holes)?.is_empty() {
+                return None;
+            }
+            Some(rest)
+        }
+        P::Maybe(inner) => {
+            let s = s.strip_prefix("Maybe[")?;
+            let s = pattern_match_at(inner, s, holes)?;
+            s.strip_prefix(']')
+        }
+        P::Record(fields) => {
+            let mut s = s.strip_prefix('{')?;
+            for (i, f) in fields.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix(',')?;
+                }
+                s = s.strip_prefix(f.name.as_str())?;
+                s = s.strip_prefix(if f.optional { "?:" } else { ":" })?;
+                s = pattern_match_at(&f.ty, s, holes)?;
+            }
+            s.strip_prefix('}')
+        }
+        P::Tuple(items) => {
+            let mut s = s.strip_prefix('(')?;
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix(',')?;
+                }
+                s = match item {
+                    TI::Positional(p) => pattern_match_at(p, s, holes)?,
+                    TI::Named { name, ty } => {
+                        let s = s.strip_prefix(name.as_str())?.strip_prefix(':')?;
+                        pattern_match_at(ty, s, holes)?
+                    }
+                };
+            }
+            s.strip_prefix(')')
+        }
+        P::Union(variants) => {
+            let mut s = s.strip_prefix('<')?;
+            for (i, v) in variants.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix('|')?;
+                }
+                s = s.strip_prefix(v.name.as_str())?;
+                if let Some(payload) = &v.payload {
+                    s = s.strip_prefix('(')?;
+                    s = pattern_match_at(payload, s, holes)?;
+                    s = s.strip_prefix(')')?;
+                }
+            }
+            s.strip_prefix('>')
+        }
+        P::Function(from, to) => {
+            let s = s.strip_prefix('(')?;
+            let s = pattern_match_at(from, s, holes)?;
+            let s = s.strip_prefix("->")?;
+            let s = pattern_match_at(to, s, holes)?;
+            s.strip_prefix(')')
+        }
+    }
+}
+
+/// Split off the leading balanced type-key token from `s`, returning it and the
+/// remainder. Stops at a top-level separator (`,` `|` `->`) or a closing
+/// bracket, tracking `[] {} () <>` nesting so nested keys stay intact.
+fn split_balanced(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        // `->` is an atomic arrow: a top-level one ends the token, and a nested
+        // one must not let its `>` decrement bracket depth.
+        if bytes[i] == b'-' && bytes.get(i + 1) == Some(&b'>') {
+            if depth == 0 {
+                break;
+            }
+            i += 2;
+            continue;
+        }
+        match bytes[i] {
+            b'[' | b'{' | b'(' | b'<' => depth += 1,
+            b']' | b'}' | b')' | b'>' => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            }
+            b',' | b'|' if depth == 0 => break,
+            _ => {}
+        }
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    Some((&s[..i], &s[i..]))
 }
 
 fn thir_runtime_target_key(thir_file: &ThirFile, target: zutai_thir::TypeId) -> Option<String> {

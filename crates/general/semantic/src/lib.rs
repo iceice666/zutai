@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 mod import;
 
-pub use import::{ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
+pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 
 #[derive(Debug)]
 pub struct Analysis {

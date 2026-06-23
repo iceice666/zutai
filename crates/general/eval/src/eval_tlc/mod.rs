@@ -199,4 +199,12 @@ impl<'a> TlcEvaluator<'a> {
         let control = (*self).eval_control(id, env, None)?;
         (*self).finish_top(control)
     }
+
+    /// Apply a function value to one argument and drive it to a settled value.
+    /// Used to instantiate an imported conditional witness by applying its
+    /// curried dictionary function to recursively-resolved component dicts.
+    pub fn apply_to_value(&self, fv: Value, arg: Value) -> Result<Value, EvalError> {
+        let control = (*self).apply(fv, arg, None)?;
+        (*self).finish_top(control)
+    }
 }

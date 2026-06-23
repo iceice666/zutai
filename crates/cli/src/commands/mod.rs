@@ -458,6 +458,45 @@ fn dep_module_inputs<'a>(
         .collect()
 }
 
+/// Concrete extern-witness triple: `(constraint_name, target_key, dc_global_name)`.
+type ConcreteExternWitness = (String, String, String);
+
+/// Build the concrete and conditional extern-witness tables for the root's TLC
+/// lowering from the transitive dependency analyses. Each dep's witness export
+/// maps to a dep-namespaced DC global name (`$dep{idx}${constraint}$w{binding_id}`).
+///
+/// Returns `Err` when a dependency exports a parametric witness whose target
+/// cannot be matched structurally (no conditional shape) — e.g. a higher-kinded
+/// instance — so the caller falls back to the interpreter rather than miscompile.
+fn extern_witness_tables(
+    dep_analyses: &[std::rc::Rc<zutai_semantic::Analysis>],
+) -> Result<
+    (
+        Vec<ConcreteExternWitness>,
+        Vec<zutai_tlc::ExternConditionalWitness>,
+    ),
+    (),
+> {
+    let mut concrete = Vec::new();
+    let mut conditional = Vec::new();
+    for (idx, dep) in dep_analyses.iter().enumerate() {
+        for w in &dep.witness_exports {
+            let global = format!("$dep{idx}${}$w{}", w.constraint, w.binding_id);
+            match &w.conditional {
+                Some(shape) => conditional.push(zutai_tlc::ExternConditionalWitness {
+                    constraint: w.constraint.clone(),
+                    pattern: shape.pattern.clone(),
+                    param_bounds: shape.param_bounds.clone(),
+                    global,
+                }),
+                None if w.target_key.contains('?') => return Err(()),
+                None => concrete.push((w.constraint.clone(), w.target_key.clone(), global)),
+            }
+        }
+    }
+    Ok((concrete, conditional))
+}
+
 /// Compile a `.zt` file. LLVM emits text; object/binary modes invoke the host LLVM toolchain.
 pub(crate) fn run_compile(
     path: &str,
@@ -519,41 +558,24 @@ pub(crate) fn run_compile(
 
     // Collect deps early (needed to build extern witness list for TLC lowering).
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    // Gate on conditional witnesses (target_key contains '?') — those require
-    // dynamic dispatch the one-arena merge cannot recover at compile time.
-    // Concrete witnesses (Int, Bool, Text, etc.) are handled natively via the extern table.
-    if dep_analyses.iter().any(|dep| {
-        dep.witness_exports
-            .iter()
-            .any(|w| w.target_key.contains('?'))
-    }) {
-        eprintln!("compile error: {IMPORT_WITNESS_REASON}");
-        std::process::exit(1);
-    }
-
-    // Build the extern witness list for the root's TLC lowering: each dep's concrete
-    // witness exports map to a dep-namespaced DC global name.
-    let extern_witnesses: Vec<(String, String, String)> = dep_analyses
-        .iter()
-        .enumerate()
-        .flat_map(|(idx, dep)| {
-            dep.witness_exports.iter().map(move |w| {
-                (
-                    w.constraint.clone(),
-                    w.target_key.clone(),
-                    format!("$dep{idx}${}$w{}", w.constraint, w.binding_id),
-                )
-            })
-        })
-        .collect();
+    // Build the concrete + conditional extern-witness tables. A parametric
+    // witness with no dispatchable shape (e.g. higher-kinded) still gates to the
+    // interpreter; concrete and matchable-conditional witnesses lower natively.
+    let (extern_witnesses, extern_conditionals) = match extern_witness_tables(&dep_analyses) {
+        Ok(tables) => tables,
+        Err(()) => {
+            eprintln!("compile error: {IMPORT_WITNESS_REASON}");
+            std::process::exit(1);
+        }
+    };
 
     // TLC lowering. Effectful programs enter DC only when TLC lowering has
     // eliminated effect markers or mapped ambient `io.print` to the runtime
     // HostPrint path.
-    let mut module = if extern_witnesses.is_empty() {
+    let mut module = if extern_witnesses.is_empty() && extern_conditionals.is_empty() {
         zutai_tlc::lower_thir(thir)
     } else {
-        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses)
+        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses, extern_conditionals)
     };
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
@@ -694,32 +716,22 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     }
 
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    if dep_analyses.iter().any(|dep| {
-        dep.witness_exports
-            .iter()
-            .any(|w| w.target_key.contains('?'))
-    }) {
-        eprintln!("error: {IMPORT_WITNESS_REASON}");
-        std::process::exit(1);
-    }
-    let extern_witnesses_df: Vec<(String, String, String)> = dep_analyses
-        .iter()
-        .enumerate()
-        .flat_map(|(idx, dep)| {
-            dep.witness_exports.iter().map(move |w| {
-                (
-                    w.constraint.clone(),
-                    w.target_key.clone(),
-                    format!("$dep{idx}${}$w{}", w.constraint, w.binding_id),
-                )
-            })
-        })
-        .collect();
+    let (extern_witnesses_df, extern_conditionals_df) = match extern_witness_tables(&dep_analyses) {
+        Ok(tables) => tables,
+        Err(()) => {
+            eprintln!("error: {IMPORT_WITNESS_REASON}");
+            std::process::exit(1);
+        }
+    };
 
-    let mut module = if extern_witnesses_df.is_empty() {
+    let mut module = if extern_witnesses_df.is_empty() && extern_conditionals_df.is_empty() {
         zutai_tlc::lower_thir(thir)
     } else {
-        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses_df)
+        zutai_tlc::lower_thir_with_extern_witnesses(
+            thir,
+            extern_witnesses_df,
+            extern_conditionals_df,
+        )
     };
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;

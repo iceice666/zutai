@@ -2526,3 +2526,243 @@ fn compile_zt_imported_multi_instance_witness_matches_oracle() {
         "expected both true (Int) and false (Bool), got {native:?}"
     );
 }
+
+#[test]
+fn compile_zt_imported_conditional_pair_witness_matches_oracle() {
+    // Phase B: cross-module CONDITIONAL witness dispatch. The dep exports a
+    // parametric `Eq @(Pair A) :: <A: Eq>`; the root applies `eq` to `Pair Int`
+    // values. Both paths must structurally match `Pair Int` against the imported
+    // witness's `{fst:?,snd:?}` shape and dispatch through the recursively
+    // resolved `Eq @Int` component dict. Mirrors the in-module conditional test.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_pair",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "Eq @(Pair A) :: <A: Eq> { eq = \\p q. eq p.fst q.fst; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "p1 :: Pair Int = { fst = 1; snd = 2; }\n",
+                    "p2 :: Pair Int = { fst = 1; snd = 9; }\n",
+                    "p3 :: Pair Int = { fst = 7; snd = 2; }\n",
+                    "(eq p1 p2, eq p1 p3)\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq p1 p2 -> true (same fst), eq p1 p3 -> false (different fst).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected (true, false), got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_conditional_list_witness_matches_oracle() {
+    // Phase B: cross-module conditional witness over a builtin constructor. The
+    // dep exports `Eq @(List A) :: <A: Eq>` returning a `false` sentinel; the
+    // root dispatches `eq` on both `Int` (imported concrete, structural ==) and
+    // `List Int` (imported conditional, sentinel). The discriminating result
+    // proves each call resolves to the instance whose target matches the operand.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_list",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Eq @(List A) :: <A: Eq> { eq = \\xs ys. false; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "(eq 1 1, eq [1;] [1;])\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq 1 1 -> true (Int ==), eq [1;] [1;] -> false (List sentinel).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected both true (Int) and false (List), got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_nested_conditional_witness_matches_oracle() {
+    // Phase B: a conditional witness whose component is itself conditional
+    // (`Eq @(List (Pair Int))` resolves `Eq @(List A)` over `Eq @(Pair A)` over
+    // `Eq @Int`). Exercises (a) recursive component-dict resolution on both
+    // paths, (b) the nested-alias key fix (`Pair Int` keys as `{fst:Int,snd:Int}`,
+    // not `{fst:@N,...}`), and (c) distinct virtual globals for several imported
+    // witnesses used at one site (the upward-counting virtual-binding allocator).
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_nested",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "Eq @(Pair A) :: <A: Eq> { eq = \\p q. eq p.fst q.fst; }\n",
+                    "Eq @(List A) :: <A: Eq> { eq = \\xs ys. false; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "a :: Pair Int = { fst = 1; snd = 2; }\n",
+                    "b :: Pair Int = { fst = 1; snd = 2; }\n",
+                    "xs :: List (Pair Int) = [a;]\n",
+                    "ys :: List (Pair Int) = [b;]\n",
+                    "(eq a b, eq xs ys)\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq a b -> true (Pair via Int ==), eq xs ys -> false (List sentinel).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected (true, false), got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_conditional_optional_witness_matches_oracle() {
+    // Phase B parity guard (reviewer finding 1): the `Optional A` target keys as
+    // the postfix `Int?`; the interpreter's balanced-token matcher must reserve
+    // the trailing `?` for the Optional marker rather than letting the hole eat it.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_opt",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Eq @(Optional A) :: <A: Eq> { eq = \\a b. false; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "x :: Int? = #some (1)\n",
+                    "y :: Int? = #some (1)\n",
+                    "(eq 1 1, eq x y)\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq 1 1 -> true (Int ==), eq x y -> false (Optional sentinel).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected (true, false), got {native:?}"
+    );
+}
+
+#[test]
+fn compile_zt_imported_conditional_cross_constraint_component_matches_oracle() {
+    // Phase B parity guard (reviewer finding 3): a conditional witness whose
+    // parameter bound names a DIFFERENT constraint (`Show`) than its head (`Eq`),
+    // which the importer never declares. The component dict must resolve from the
+    // imported extern tables by name, with no local constraint declaration.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_xc",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Show :: <A> @A { show :: A -> Text; }\n",
+                    "Show @Int :: { show = \\a. \"n\"; }\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @(List A) :: <A: Show> { eq = \\xs ys. false; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "eq [1;] [1;]\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(native.contains("false"), "expected false, got {native:?}");
+}
+
+#[test]
+fn compile_zt_imported_conditional_digit_suffix_record_matches_oracle() {
+    // Phase B parity guard (reviewer finding 2): record field names where one is a
+    // prefix of another with a digit suffix (`x`, `x2`) sort differently by name
+    // vs by the rendered `name:type` part. The pattern's field order must match
+    // `structural_witness_key`'s part-sorted dispatch key order.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_cond_digit",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Rec :: <A> type { x : A; x2 : A; }\n",
+                    "Eq @(Rec A) :: <A: Eq> { eq = \\p q. eq p.x q.x; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ :: import \"eq_lib.zt\"\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Rec :: <A> type { x : A; x2 : A; }\n",
+                    "r1 :: Rec Int = { x = 1; x2 = 2; }\n",
+                    "r2 :: Rec Int = { x = 9; x2 = 2; }\n",
+                    "(eq r1 r1, eq r1 r2)\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    // eq r1 r1 -> true (same x), eq r1 r2 -> false (different x).
+    assert!(
+        native.contains("true") && native.contains("false"),
+        "expected (true, false), got {native:?}"
+    );
+}

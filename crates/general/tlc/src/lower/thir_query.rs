@@ -117,6 +117,23 @@ impl<'thir> Lowerer<'thir> {
         ty: TypeId,
         seen: &mut FxHashSet<BindingId>,
     ) -> Option<String> {
+        self.structural_witness_key_env(ty, &FxHashMap::default(), seen)
+    }
+
+    /// `structural_witness_key` with an active type-variable substitution `env`
+    /// (alias parameter → argument). The env is threaded through every recursive
+    /// position and extended at each alias application, so a type variable nested
+    /// inside an applied alias body (`Pair Int` → `{fst:Int,snd:Int}`) resolves to
+    /// its argument rather than leaking as `@<binding>`.
+    pub(super) fn structural_witness_key_env(
+        &self,
+        ty: TypeId,
+        env: &FxHashMap<BindingId, TypeId>,
+        seen: &mut FxHashSet<BindingId>,
+    ) -> Option<String> {
+        let key = |this: &Self, t, seen: &mut FxHashSet<BindingId>| {
+            this.structural_witness_key_env(t, env, seen)
+        };
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Int => Some("Int".to_string()),
             TypeKind::Float => Some("Float".to_string()),
@@ -126,30 +143,20 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Text => Some("Text".to_string()),
             TypeKind::Opaque(name) => Some(name),
             TypeKind::Atom(name) => Some(format!("#{name}")),
-            TypeKind::List(inner) => {
-                Some(format!("[{}]", self.structural_witness_key(inner, seen)?))
-            }
-            TypeKind::Optional(inner) => {
-                Some(format!("{}?", self.structural_witness_key(inner, seen)?))
-            }
-            TypeKind::Maybe(inner) => Some(format!(
-                "Maybe[{}]",
-                self.structural_witness_key(inner, seen)?
-            )),
+            TypeKind::List(inner) => Some(format!("[{}]", key(self, inner, seen)?)),
+            TypeKind::Optional(inner) => Some(format!("{}?", key(self, inner, seen)?)),
+            TypeKind::Maybe(inner) => Some(format!("Maybe[{}]", key(self, inner, seen)?)),
             TypeKind::Patch { target, deep } => {
                 let head = if deep { "DeepPatch" } else { "Patch" };
-                Some(format!(
-                    "{head}[{}]",
-                    self.structural_witness_key(target, seen)?
-                ))
+                Some(format!("{head}[{}]", key(self, target, seen)?))
             }
             TypeKind::Record(fields, tail) => {
                 let mut parts: Vec<String> = fields
                     .into_iter()
                     .map(|field| {
-                        let key = self.structural_witness_key(field.ty, seen)?;
+                        let k = key(self, field.ty, seen)?;
                         let marker = if field.optional { "?:" } else { ":" };
-                        Some(format!("{}{}{}", field.name, marker, key))
+                        Some(format!("{}{}{}", field.name, marker, k))
                     })
                     .collect::<Option<_>>()?;
                 parts.sort();
@@ -159,11 +166,9 @@ impl<'thir> Lowerer<'thir> {
                 let parts: Vec<String> = variants
                     .into_iter()
                     .map(|variant| match variant.payload {
-                        Some(payload) => Some(format!(
-                            "{}({})",
-                            variant.name,
-                            self.structural_witness_key(payload, seen)?
-                        )),
+                        Some(payload) => {
+                            Some(format!("{}({})", variant.name, key(self, payload, seen)?))
+                        }
                         None => Some(variant.name),
                     })
                     .collect::<Option<_>>()?;
@@ -173,38 +178,40 @@ impl<'thir> Lowerer<'thir> {
                 let parts: Vec<String> = items
                     .into_iter()
                     .map(|item| match item {
-                        TypeTupleItem::Named { name, ty, .. } => Some(format!(
-                            "{}:{}",
-                            name,
-                            self.structural_witness_key(ty, seen)?
-                        )),
-                        TypeTupleItem::Positional(ty) => self.structural_witness_key(ty, seen),
+                        TypeTupleItem::Named { name, ty, .. } => {
+                            Some(format!("{}:{}", name, key(self, ty, seen)?))
+                        }
+                        TypeTupleItem::Positional(ty) => key(self, ty, seen),
                     })
                     .collect::<Option<_>>()?;
                 Some(format!("({})", parts.join(",")))
             }
             TypeKind::Function { from, to } => Some(format!(
                 "({}->{})",
-                self.structural_witness_key(from, seen)?,
-                self.structural_witness_key(to, seen)?
+                key(self, from, seen)?,
+                key(self, to, seen)?
             )),
             TypeKind::Alias(binding) => {
                 if !seen.insert(binding) {
                     return None;
                 }
                 let body = self.type_alias_body(binding)?;
-                self.structural_witness_key(body, seen)
+                let result = self.structural_witness_key_env(body, env, seen);
+                seen.remove(&binding);
+                result
             }
             TypeKind::AliasApply { binding, args } => {
                 if !seen.insert(binding) {
                     return None;
                 }
                 let (params, body) = self.type_alias_params_body(binding)?;
-                self.structural_witness_key_subst(
-                    body,
-                    &params.into_iter().zip(args).collect(),
-                    seen,
-                )
+                let mut next = env.clone();
+                for (p, a) in params.into_iter().zip(args) {
+                    next.insert(p, a);
+                }
+                let result = self.structural_witness_key_env(body, &next, seen);
+                seen.remove(&binding);
+                result
             }
             TypeKind::Con(binding) => Some(format!("@{}", binding.0)),
             TypeKind::Apply { .. } => {
@@ -217,42 +224,32 @@ impl<'thir> Lowerer<'thir> {
                     if let Some((params, body)) = self.type_alias_params_body(binding)
                         && params.len() == args.len()
                     {
-                        return self.structural_witness_key_subst(
-                            body,
-                            &params.into_iter().zip(args).collect(),
-                            seen,
-                        );
+                        let mut next = env.clone();
+                        for (p, a) in params.into_iter().zip(args) {
+                            next.insert(p, a);
+                        }
+                        let result = self.structural_witness_key_env(body, &next, seen);
+                        seen.remove(&binding);
+                        return result;
                     }
+                    seen.remove(&binding);
                 }
-                let head_key = self.structural_witness_key(head, seen)?;
+                let head_key = key(self, head, seen)?;
                 let arg_keys: Vec<String> = args
                     .iter()
-                    .map(|&a| self.structural_witness_key(a, seen))
+                    .map(|&a| key(self, a, seen))
                     .collect::<Option<_>>()?;
                 Some(format!("{}[{}]", head_key, arg_keys.join(",")))
             }
-            TypeKind::Effect { base, .. } => self.structural_witness_key(base, seen),
+            TypeKind::Effect { base, .. } => key(self, base, seen),
             TypeKind::Never => Some("Never".to_string()),
-            TypeKind::TypeVar(binding) => Some(format!("@{}", binding.0)),
+            TypeKind::TypeVar(binding) => match env.get(&binding) {
+                Some(&replacement) => self.structural_witness_key_env(replacement, env, seen),
+                None => Some(format!("@{}", binding.0)),
+            },
             TypeKind::InferVar(v) => Some(format!("?{v}")),
             TypeKind::ForAll { .. } => None,
             TypeKind::Type | TypeKind::Error => None,
-        }
-    }
-
-    pub(super) fn structural_witness_key_subst(
-        &self,
-        ty: TypeId,
-        subst: &FxHashMap<BindingId, TypeId>,
-        seen: &mut FxHashSet<BindingId>,
-    ) -> Option<String> {
-        match self.thir.type_arena[ty.0 as usize].kind {
-            TypeKind::TypeVar(binding) => subst
-                .get(&binding)
-                .copied()
-                .map(|replacement| self.structural_witness_key(replacement, seen))
-                .unwrap_or_else(|| Some(format!("@{}", binding.0))),
-            _ => self.structural_witness_key(ty, seen),
         }
     }
 

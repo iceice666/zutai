@@ -146,6 +146,51 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase B: Conditional cross-module witnesses ✅
+
+_Completed 2026-06-25. Closes the "Conditional cross-module witnesses" gap of the
+v1 native-backend constraints/witnesses item in `TBD.md`. Imported parametric
+witnesses (`Eq @(List A)`, `Eq @(Pair A)`, `Eq @(Optional A)`) now dispatch on
+both the native backend and the `eval_tlc` interpreter, with differential parity._
+
+- **Structural witness pattern.** A new arena-independent
+  `zutai_thir::WitnessPattern` (`crates/general/thir/src/witness_pattern.rs`,
+  `export_witness_pattern`) captures a conditional witness target with parameter
+  holes. `WitnessExport.conditional` (`crates/general/semantic/src/import.rs`)
+  carries the pattern plus per-parameter component-constraint names across the
+  import boundary.
+- **Native backend.** The CLI gate is narrowed: a parametric witness export with
+  a buildable pattern is allowed; only a non-matchable target (e.g. higher-kinded)
+  still routes to the interpreter (`extern_witness_tables`,
+  `crates/cli/src/commands/mod.rs`). The TLC root lowerer matches the pattern
+  against the concrete call-site THIR type (`match_witness_pattern`, mirroring
+  `unify_env`), recovers each parameter, and emits the dep-namespaced witness
+  global (`$dep{idx}${constraint}$w{binding_id}`) applied via `TyApp`/`App` to the
+  recursively-resolved component dicts (`try_extern_conditional_witness`,
+  `crates/general/tlc/src/lower/witness_resolve.rs`). Component dicts resolve by
+  constraint *name* against the extern tables, so a component constraint the
+  importer never declares (`Eq @(List A) :: <A: Show>`) still resolves.
+- **Interpreter.** `eval_tlc` collects each dep's conditional witness function
+  values and concrete dicts, then instantiates an imported conditional witness on
+  demand for every concrete dispatch key the root needs (string-template match of
+  the pattern against the `structural_witness_key` dispatch key, then applies the
+  witness function to recursively-materialized component dicts), registering the
+  result into `operator_witnesses` so the existing `imported_method` dispatch finds
+  it (`crates/general/eval/src/tlc_entry.rs`).
+- **Two latent bugs fixed.** (1) `alloc_virtual_binding` counted *downward* from
+  `len+1`, so the third-plus virtual extern-witness global collided with a real
+  `BindingId` (a `GlobalRef("ys")` got the placeholder empty-record type) — now
+  counts upward, above the real range; also hardens the concrete-witness path for
+  3+ imported witnesses at one site. (2) `structural_witness_key_subst` substituted
+  only a top-level type variable, so a nested applied alias (`List (Pair Int)`)
+  keyed as `[{fst:@N,...}]`; the key walk now threads the substitution env through
+  every position (`structural_witness_key_env`), keying it `[{fst:Int,snd:Int}]`.
+- Differential parity tests (`crates/cli/tests/cli.rs`):
+  `compile_zt_imported_conditional_pair_witness_matches_oracle`,
+  `…_list_…`, `…_nested_…`, `…_optional_…`, `…_cross_constraint_component_…`,
+  `…_digit_suffix_record_…`. Gate stack: 1552 workspace tests pass; `cargo fmt`
+  and `cargo clippy` clean.
+
 ### Interpreter oracle consistency: record equality + imported-method dispatch ✅
 
 _Completed 2026-06-25. Two latent interpreter (TLC-evaluator) correctness bugs found

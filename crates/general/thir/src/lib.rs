@@ -10,6 +10,7 @@ pub mod import;
 pub mod ir;
 pub mod lower;
 pub mod pass;
+pub mod witness_pattern;
 
 #[cfg(test)]
 mod tests;
@@ -26,3 +27,7 @@ pub use ir::{
 };
 pub use lower::{LoweredThir, ThirLowerOptions, lower_hir, lower_hir_with_options};
 pub use pass::{ThirPass, ThirPassReport, run_default_passes, run_passes};
+pub use witness_pattern::{
+    WitnessPattern, WitnessPatternField, WitnessPatternTupleItem, WitnessPatternVariant,
+    export_witness_pattern,
+};

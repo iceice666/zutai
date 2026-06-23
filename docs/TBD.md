@@ -10,34 +10,9 @@ Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
 Phase 30–32 performance series. Per-feature support-level status for each gap is
 detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
 
-Recommended start: **Phase B** and **Phase 33** in parallel — B is small and
-self-contained, 33 is independent and the highest performance ROI.
-
-### Phase B — Conditional cross-module witnesses (Track 1)
-
-- **Gap.** Witness exports with a parametric target (`Eq @(List A)`,
-  `target_key` contains `?`) are rejected at import; concrete instances already
-  dispatch natively (commit `d28bc5d`). As of the oracle-consistency fix, the
-  interpreter (`run`) now *refuses* imported conditional witnesses cleanly (no
-  silent wrong value), so Phase B must teach BOTH the native backend and the
-  interpreter (`eval_tlc`/`dict_dispatch_keys`) to dispatch them — making the
-  oracle return a value where it currently refuses.
-- **Touch.** CLI gate `IMPORT_WITNESS_REASON`
-  (`crates/cli/src/commands/mod.rs:367`), fired at `mod.rs:522-532` (compile) and
-  `:697-704` (dataflow) on `w.target_key.contains('?')`; TLC fallback
-  `try_extern_witness_expr` early-returns on `key.contains('?')`
-  (`crates/general/tlc/src/lower/witness.rs:194-200`).
-- **Approach.** Extend the in-module conditional-witness structural search
-  (`tlc/src/lower/witness.rs`) to the imported dep's witness graph, then emit the
-  dep-namespaced applied-witness expression
-  (`$dep{idx}${constraint}$w{binding_id}` applied to recursively-resolved
-  component dicts).
-- **Scope boundary.** Concrete call sites only (e.g. imported `eq` used on
-  `List Int`). The polymorphic-passing case needs HKT dispatch and stays
-  check-only by design — do not chase it.
-- **Acceptance.** Differential parity for `Eq @(List A)` / `Eq @(Pair A)`
-  imports; mirror the in-module conditional test (`crates/cli/tests/cli.rs:1661`)
-  and the concrete-import test (`:2411`).
+Recommended start: **Phase 33** and **Phase C** — 33 is independent and the
+highest performance ROI; C is the largest Track 1 item and gates Phase D.
+(Phase B landed 2026-06-25 — see `docs/ARCHIVED.md`.)
 
 ### Phase 33 — Uncurrying / known-call optimization (Track 2)
 
@@ -134,11 +109,14 @@ Ranked by remaining work:
    (`$dep{idx}${constraint}$w{binding_id}`); the TLC lowerer's extern witness table
    maps `(constraint_name, target_key_str)` to that global; the DC `Var` arm
    emits a `GlobalRef`. Differential tests confirm parity for `Eq @Int`, `Eq @Bool`,
-   `Ord @Int` imports. **Remaining gap**: modules whose witness exports have a
-   parametric target (target_key contains `?` — conditional instances like `Eq @(List A)`)
-   are still rejected before DC by the narrowed gate, so there is no silent miscompile.
-   Completing conditional cross-module witnesses means extending the conditional-witness
-   search to the imported dep's graph, plus a backend HKT-dispatch story.
+   `Ord @Int` imports. **Conditional cross-module witnesses landed 2026-06-25**
+   (Phase B): parametric instances like `Eq @(List A)` / `Eq @(Pair A)` /
+   `Eq @(Optional A)` now dispatch natively and in the interpreter — the importer
+   structurally matches the dep's exported `WitnessPattern` against the concrete
+   call-site type, recovers each parameter, and applies the dep-namespaced witness
+   global to recursively-resolved component dicts (see `docs/ARCHIVED.md`). The
+   remaining check-only shape is **higher-kinded instantiation** (polymorphic
+   passing), rejected at the type-check stage by design.
 
 2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
    the interpreter runs row-typed code as ordinary records/unions. Confirmed

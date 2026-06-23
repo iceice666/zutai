@@ -37,6 +37,25 @@ pub(crate) struct ConditionalWitness {
     /// `App` of the recursively resolved component dict.
     pub(crate) param_bounds: Vec<Vec<BindingId>>,
 }
+
+/// An imported parametric (conditional) witness from a dependency module.
+///
+/// Unlike a local [`ConditionalWitness`] (whose target lives in this module's
+/// THIR arena), an imported one is matched via an arena-independent
+/// [`zutai_thir::WitnessPattern`] against the call site's concrete type. On a
+/// match it emits the dep-namespaced witness global (`global`) applied to the
+/// recursively-resolved component dicts named by `param_bounds`.
+#[derive(Clone)]
+pub struct ExternConditionalWitness {
+    /// Constraint name this witness satisfies (e.g. `"Eq"`).
+    pub constraint: String,
+    /// Structural matcher for the witness target, with parameter holes.
+    pub pattern: zutai_thir::WitnessPattern,
+    /// Per-parameter component-constraint names, parallel to the pattern's holes.
+    pub param_bounds: Vec<Vec<String>>,
+    /// Dep-namespaced DC global name (`$dep{idx}${constraint}$w{binding_id}`).
+    pub global: String,
+}
 /// Per-constraint-method dispatch info, keyed by the method's `BindingId`.
 /// Lets the Apply arm split a call site's `instantiation` vector into the
 /// constraint-param entry (selects the dict) and the method-level params
@@ -138,11 +157,7 @@ impl<'thir> Lowerer<'thir> {
         inst_type_id: TypeId,
         span: Span,
     ) -> TlcExprId {
-        if let Some(expr) = self.try_get_dict_expr(cst_binding, inst_type_id, span) {
-            return expr;
-        }
-        // Extern witness fallback: check imported dep modules.
-        if let Some(expr) = self.try_extern_witness_expr(cst_binding, inst_type_id, span) {
+        if let Some(expr) = self.try_resolve_dict(cst_binding, inst_type_id, span) {
             return expr;
         }
         use crate::ir::{Literal, PrimTy};
@@ -159,20 +174,13 @@ impl<'thir> Lowerer<'thir> {
     ///
     /// Returns `None` for conditional/parametric witnesses (target_key contains `?`) or when
     /// no extern entry matches.
-    fn try_extern_witness_expr(
+    pub(super) fn try_extern_witness_expr(
         &mut self,
-        cst_binding: BindingId,
+        cst_name: &str,
         inst_type_id: TypeId,
         span: Span,
     ) -> Option<TlcExprId> {
         let target_key = self.thir_type_to_extern_key(inst_type_id)?;
-        // Look up the constraint name from the THIR binding table.
-        let cst_name = self
-            .thir
-            .binding_names
-            .get(cst_binding.0 as usize)
-            .map(String::as_str)
-            .unwrap_or("");
         let dc_global = self
             .extern_witnesses
             .iter()

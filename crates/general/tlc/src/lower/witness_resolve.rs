@@ -2,11 +2,13 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 use zutai_syntax::Span;
-use zutai_thir::{TypeId, TypeKind, TypeTupleItem};
+use zutai_thir::{
+    RowTail, TypeId, TypeKind, TypeTupleItem, WitnessPattern, WitnessPatternTupleItem,
+};
 
 use crate::ir::{TlcExpr, TlcExprId};
 
-use super::witness::ConditionalWitness;
+use super::witness::{ConditionalWitness, ExternConditionalWitness};
 use super::*;
 
 impl<'thir> Lowerer<'thir> {
@@ -280,6 +282,248 @@ impl<'thir> Lowerer<'thir> {
             self.structural_witness_key(b, &mut FxHashSet::default()),
         ) {
             (Some(ka), Some(kb)) => ka == kb,
+            _ => false,
+        }
+    }
+
+    /// Chain every dict-resolution strategy, returning `None` (rather than
+    /// `Lit(Nothing)`) when none applies. Used for component-dict resolution
+    /// inside conditional witnesses, where a missing component must fail the
+    /// match instead of silently passing `Nothing`.
+    pub(super) fn try_resolve_dict(
+        &mut self,
+        cst_binding: BindingId,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if let Some(e) = self.try_get_dict_expr(cst_binding, inst_type_id, span) {
+            return Some(e);
+        }
+        let cst_name = self
+            .thir
+            .binding_names
+            .get(cst_binding.0 as usize)
+            .cloned()
+            .unwrap_or_default();
+        self.try_extern_dict_by_name(&cst_name, inst_type_id, span)
+    }
+
+    /// Resolve a component dict by constraint *name* (the form imported witness
+    /// bounds carry). Prefers this module's own constraint declaration when it
+    /// exists (so local witnesses / active dict params apply); otherwise resolves
+    /// purely against the imported extern tables — a component constraint a dep's
+    /// witness bound names need not be declared by the importer.
+    fn get_dict_expr_by_constraint_name(
+        &mut self,
+        name: &str,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if let Some(cst_binding) = self.constraint_binding_by_name(name)
+            && let Some(e) = self.try_get_dict_expr(cst_binding, inst_type_id, span)
+        {
+            return Some(e);
+        }
+        self.try_extern_dict_by_name(name, inst_type_id, span)
+    }
+
+    /// Resolve a dict from the imported extern tables (concrete then conditional)
+    /// by constraint name alone.
+    fn try_extern_dict_by_name(
+        &mut self,
+        cst_name: &str,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if let Some(e) = self.try_extern_witness_expr(cst_name, inst_type_id, span) {
+            return Some(e);
+        }
+        self.try_extern_conditional_witness(cst_name, inst_type_id, span)
+    }
+
+    /// Find a constraint declaration's binding by name in this module's THIR.
+    fn constraint_binding_by_name(&self, name: &str) -> Option<BindingId> {
+        self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if matches!(decl.kind, zutai_thir::ThirDeclKind::Constraint { .. })
+                && self
+                    .thir
+                    .binding_names
+                    .get(decl.binding.0 as usize)
+                    .map(String::as_str)
+                    == Some(name)
+            {
+                Some(decl.binding)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Try to build a dict expression from an imported conditional witness.
+    ///
+    /// Matches each registered imported conditional witness for constraint
+    /// `cst_name`, recovering the type bound to each parameter hole, then emits the
+    /// dep-namespaced witness global applied (`TyApp` per param, `App` per
+    /// component bound) to the recursively-resolved component dicts.
+    pub(super) fn try_extern_conditional_witness(
+        &mut self,
+        cst_name: &str,
+        inst_type_id: TypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        use crate::ir::{Row, TlcType};
+        let guard = (cst_name.to_string(), inst_type_id.0);
+        if !self.resolving_extern.insert(guard.clone()) {
+            return None;
+        }
+        let candidates: Vec<ExternConditionalWitness> = self
+            .extern_conditionals
+            .iter()
+            .filter(|cw| cw.constraint == cst_name)
+            .cloned()
+            .collect();
+        let mut result = None;
+        for cw in candidates {
+            let mut holes: Vec<Option<TypeId>> = vec![None; cw.param_bounds.len()];
+            if !self.match_witness_pattern(
+                &cw.pattern,
+                inst_type_id,
+                &FxHashMap::default(),
+                &mut holes,
+                0,
+            ) {
+                continue;
+            }
+            if holes.iter().any(Option::is_none) {
+                continue;
+            }
+            let placeholder = self.alloc_type(TlcType::Record(Row::REmpty));
+            let virtual_id = self.alloc_virtual_binding(cw.global.clone());
+            let mut cur = self.alloc_expr(TlcExpr::Var(virtual_id), placeholder, span);
+            let mut ok = true;
+            for (i, bounds) in cw.param_bounds.iter().enumerate() {
+                let arg_ty_id = holes[i].expect("pinned above");
+                let arg_ty = self.lower_type(arg_ty_id);
+                cur = self.alloc_expr(TlcExpr::TyApp(cur, arg_ty), placeholder, span);
+                for bound_name in bounds {
+                    let Some(dict) =
+                        self.get_dict_expr_by_constraint_name(bound_name, arg_ty_id, span)
+                    else {
+                        ok = false;
+                        break;
+                    };
+                    cur = self.alloc_expr(TlcExpr::App(cur, dict), placeholder, span);
+                }
+                if !ok {
+                    break;
+                }
+            }
+            if ok {
+                result = Some(cur);
+                break;
+            }
+        }
+        self.resolving_extern.remove(&guard);
+        result
+    }
+
+    /// Structurally match an imported witness `pattern` (parameter holes) against
+    /// a `concrete` THIR type, binding each hole's recovered type into `holes`.
+    /// Mirrors [`Self::unify_env`] with a [`WitnessPattern`] on the target side.
+    fn match_witness_pattern(
+        &self,
+        pat: &WitnessPattern,
+        concrete: TypeId,
+        cenv: &FxHashMap<BindingId, TypeId>,
+        holes: &mut Vec<Option<TypeId>>,
+        depth: u32,
+    ) -> bool {
+        if depth > 64 {
+            return false;
+        }
+        if let WitnessPattern::Hole(i) = pat {
+            let resolved = self.resolve_env_var(concrete, cenv);
+            return match holes.get_mut(*i) {
+                Some(slot @ None) => {
+                    *slot = Some(resolved);
+                    true
+                }
+                Some(Some(prev)) => self.thir_types_equal(*prev, resolved),
+                None => false,
+            };
+        }
+        let no_holes = FxHashSet::default();
+        let (concrete, cenv) = self.norm_ty(concrete, cenv, &no_holes);
+        let c_kind = self.thir.type_arena[concrete.0 as usize].kind.clone();
+        match (pat, c_kind) {
+            (WitnessPattern::Leaf(key), _) => {
+                self.structural_witness_key(concrete, &mut FxHashSet::default())
+                    .as_deref()
+                    == Some(key.as_str())
+            }
+            (WitnessPattern::List(p), TypeKind::List(c)) => {
+                self.match_witness_pattern(p, c, &cenv, holes, depth + 1)
+            }
+            (WitnessPattern::Optional(p), TypeKind::Optional(c)) => {
+                self.match_witness_pattern(p, c, &cenv, holes, depth + 1)
+            }
+            (WitnessPattern::Maybe(p), TypeKind::Maybe(c)) => {
+                self.match_witness_pattern(p, c, &cenv, holes, depth + 1)
+            }
+            (WitnessPattern::Record(pf), TypeKind::Record(cf, RowTail::Closed)) => {
+                pf.len() == cf.len()
+                    && pf.iter().all(|pfield| {
+                        cf.iter().any(|cfield| {
+                            cfield.name == pfield.name
+                                && cfield.optional == pfield.optional
+                                && self.match_witness_pattern(
+                                    &pfield.ty,
+                                    cfield.ty,
+                                    &cenv,
+                                    holes,
+                                    depth + 1,
+                                )
+                        })
+                    })
+            }
+            (WitnessPattern::Tuple(pi), TypeKind::Tuple(ci)) => {
+                pi.len() == ci.len()
+                    && pi.iter().zip(ci.iter()).all(|(p, c)| match (p, c) {
+                        (
+                            WitnessPatternTupleItem::Positional(pt),
+                            TypeTupleItem::Positional(ct),
+                        ) => self.match_witness_pattern(pt, *ct, &cenv, holes, depth + 1),
+                        (
+                            WitnessPatternTupleItem::Named { name: pn, ty: pt },
+                            TypeTupleItem::Named {
+                                name: cn, ty: ct, ..
+                            },
+                        ) => {
+                            pn == cn && self.match_witness_pattern(pt, *ct, &cenv, holes, depth + 1)
+                        }
+                        _ => false,
+                    })
+            }
+            (WitnessPattern::Union(pv), TypeKind::Union(cv, RowTail::Closed)) => {
+                pv.len() == cv.len()
+                    && pv.iter().all(|pvar| {
+                        cv.iter().any(|cvar| {
+                            cvar.name == pvar.name
+                                && match (&pvar.payload, cvar.payload) {
+                                    (Some(pp), Some(cp)) => {
+                                        self.match_witness_pattern(pp, cp, &cenv, holes, depth + 1)
+                                    }
+                                    (None, None) => true,
+                                    _ => false,
+                                }
+                        })
+                    })
+            }
+            (WitnessPattern::Function(pf, pt), TypeKind::Function { from, to }) => {
+                self.match_witness_pattern(pf, from, &cenv, holes, depth + 1)
+                    && self.match_witness_pattern(pt, to, &cenv, holes, depth + 1)
+            }
             _ => false,
         }
     }
