@@ -146,6 +146,44 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Phase A: Cross-function effect handler-passing ✅
+
+_Completed 2026-06-25. Closes a run-vs-compile parity gap in algebraic-effect
+lowering: a `perform` reached only through a call to a separate effectful
+function — handled at the call site — previously ran in the interpreter but was
+refused by the native backend ("algebraic effects remain after TLC lowering")._
+
+- **Mechanism (inline-specialization).** A pre-pass in `lower_thir`
+  (`crates/general/tlc/src/lower/effects/inline.rs`) beta-reduces fully-saturated
+  direct calls to monomorphic, non-recursive, effectful top-level functions into
+  their call sites (`f a` → `let p = a in body`, capture-avoiding via binder
+  freshening; arguments `let`-bound, never substituted, in left-to-right order).
+  The relocated `perform` becomes lexically enclosed by the call site's handler,
+  and the existing trusted lexical CPS elaborator discharges it. Sound because
+  the interpreter resolves handlers dynamically at perform time (closures carry
+  no handler stack), so a directly-applied static lambda inlined at its call
+  site reproduces the exact call-time handler stack.
+- **CPS over `Case`.** `cps` now handles `Case` by reifying the post-case
+  continuation as a join lambda each arm invokes once — needed because pattern
+  and curried lambdas lower to `Lam(scrut, Case(…))` / tuple-pattern `Case`s, and
+  it also repairs a pre-existing eligibility/`cps` mismatch (eligibility accepted
+  a `Case`-bodied handle expression but `cps` left its `perform` residual).
+- **Gate + DCE.** Inlined-away effectful callees are dead-code-eliminated from
+  `module.decls` (fixpoint), and the residual-effect gate's effectful-function-
+  type clause is scoped to types reachable from `reachable_exprs` so an
+  inlined-away callee's orphaned `Fun(…!{e})` type (la_arena never frees nodes)
+  no longer falsely rejects. This also closed a latent parity bug: an *unused*
+  effectful top-level declaration now compiles (matching the interpreter) instead
+  of being rejected for merely existing.
+- **Stays gated (refused, never miscompiled).** Recursive/mutually-recursive
+  effectful callees (SCC guard), polymorphic (`TyLam`) and higher-order effectful
+  values, partial applications, and effects escaping the entry boundary.
+- **Validation.** Differential `COMPILED_EFFECT_FIXTURES` (single-arg, curried,
+  resuming, arg-effect ordering, chained, two-call-site, unused-decl) confirm
+  run==compile parity; gate-rejection tests confirm recursion and higher-order
+  refuse. Gate stack: 1562 workspace tests pass; `cargo fmt` and `cargo clippy`
+  clean.
+
 ### Phase D: Open-union match lowering ✅
 
 _Completed 2026-06-25. Closes the Track 1 Phase D item in `TBD.md` and the

@@ -54,11 +54,16 @@ pub fn residual_effect_reason_with_grants(
         );
     }
 
-    if module.type_arena.iter().any(|(_, ty)| {
-        matches!(
-            ty,
-            TlcType::Fun(_, _, row) if row_has_unsupported_effect(row, grants)
-        )
+    // Clause 2 is scoped to types actually reachable from live code. Effect
+    // inlining can leave an inlined-away callee's effectful function type orphaned
+    // in the arena (la_arena never removes nodes); such dead types must not reject
+    // a program whose live code is effect-free, matching the interpreter.
+    let reachable = crate::monomorphize::reachable_exprs(module);
+    if reachable.iter().any(|id| {
+        module.expr_types.get(id).is_some_and(|&ty| {
+            let mut seen = FxHashSet::default();
+            type_has_unsupported_effect(module, ty, grants, &mut seen)
+        })
     }) {
         return Some(
             "unsupported effectful function types remain after TLC lowering; compile/dataflow effect lowering is not implemented yet or the host capability was not granted",
@@ -76,6 +81,67 @@ fn row_has_unsupported_effect(row: &Row, grants: HostEffectSet) -> bool {
                 || row_has_unsupported_effect(tail, grants)
         }
         Row::RVar(_) => true,
+    }
+}
+
+/// Whether `ty`, walked structurally, contains a function arrow carrying an
+/// effect row unsupported under `grants`. Used to scope the residual-effect gate
+/// to types reachable from live code.
+fn type_has_unsupported_effect(
+    module: &TlcModule,
+    ty: TlcTypeId,
+    grants: HostEffectSet,
+    seen: &mut FxHashSet<TlcTypeId>,
+) -> bool {
+    if !seen.insert(ty) {
+        return false;
+    }
+    match &module.type_arena[ty] {
+        TlcType::Fun(arg, ret, row) => {
+            row_has_unsupported_effect(row, grants)
+                || type_has_unsupported_effect(module, *arg, grants, seen)
+                || type_has_unsupported_effect(module, *ret, grants, seen)
+        }
+        TlcType::ForAll(_, _, body) | TlcType::TyLamK(_, _, body) => {
+            type_has_unsupported_effect(module, *body, grants, seen)
+        }
+        TlcType::TyApp(func, arg) => {
+            type_has_unsupported_effect(module, *func, grants, seen)
+                || type_has_unsupported_effect(module, *arg, grants, seen)
+        }
+        TlcType::Record(row) | TlcType::VariantT(row) => {
+            row_field_has_unsupported_effect(module, row, grants, seen)
+        }
+        TlcType::Tuple(fields) => fields.iter().any(|field| {
+            let inner = match field {
+                TlcTupleField::Named { ty, .. } | TlcTupleField::Positional(ty) => *ty,
+            };
+            type_has_unsupported_effect(module, inner, grants, seen)
+        }),
+        TlcType::List(inner) | TlcType::Optional(inner) | TlcType::Maybe(inner) => {
+            type_has_unsupported_effect(module, *inner, grants, seen)
+        }
+        TlcType::Prim(_) | TlcType::Opaque(_) | TlcType::Singleton(_) | TlcType::TyVar(_, _) => {
+            false
+        }
+    }
+}
+
+/// Walk a record/variant row's field types for unsupported effectful arrows. A
+/// bare row variable here is record-row polymorphism, not an effect, so it is
+/// not itself unsupported.
+fn row_field_has_unsupported_effect(
+    module: &TlcModule,
+    row: &Row,
+    grants: HostEffectSet,
+    seen: &mut FxHashSet<TlcTypeId>,
+) -> bool {
+    match row {
+        Row::REmpty | Row::RVar(_) => false,
+        Row::RExtend { ty, tail, .. } => {
+            type_has_unsupported_effect(module, *ty, grants, seen)
+                || row_field_has_unsupported_effect(module, tail, grants, seen)
+        }
     }
 }
 

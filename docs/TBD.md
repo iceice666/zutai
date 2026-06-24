@@ -105,15 +105,23 @@ Ranked by remaining work:
    lowered the tag dispatch. With this, the whole row-polymorphism item is
    native-complete.
 
-3. **Residual-effect runtime (medium; partly a non-goal).** Effects a `handle`
-   fully discharges are CPS-elaborated to ordinary functions/matches before
-   TLC->DC and lower natively today; ambient `io.print` lowers to the runtime
-   `HostPrint` path. Effects that escape to the entry boundary other than
-   `io.print`, open effect rows, and effectful entry shapes the runtime ABI
-   cannot display are **rejected** before Dataflow Core
+3. **Residual-effect runtime (medium; partly a non-goal).** Handled effects
+   CPS-elaborate to ordinary functions/matches before TLC->DC and lower
+   natively. As of 2026-06-25 (Phase A) this includes effects reached *through a
+   call* to a monomorphic, non-recursive, effectful top-level function: the
+   call is inlined at its (handled) call site so the `perform` becomes lexically
+   enclosed by the handler and the existing CPS discharges it
+   (`crates/general/tlc/src/lower/effects/inline.rs`); a differential corpus
+   confirms run==compile parity for the single-arg, curried, resuming, chained,
+   and multi-site shapes. Ambient `io.print` lowers to the runtime `HostPrint`
+   path. Still **rejected** (refused, never miscompiled) before Dataflow Core:
+   recursive/mutually-recursive effectful callees, polymorphic and higher-order
+   effectful values, partial applications, effects that escape the entry
+   boundary other than `io.print`, and open effect rows
    (`docs/spec/v1/05-effects.md` "Laziness and Ordering"). A general
-   residual-effect ABI is the gap; whether it is in scope is itself a design
-   decision — the strict AOT backend may keep rejecting unhandled effects.
+   residual-effect ABI for genuinely-escaping effects is the remaining gap;
+   whether it is in scope is itself a design decision — the strict AOT backend
+   may keep rejecting unhandled effects.
 
 4. **Explicit universe-level syntax (small; mostly v2).** THIR/TLC carry
    internal universe levels, but surface level syntax is unimplemented;

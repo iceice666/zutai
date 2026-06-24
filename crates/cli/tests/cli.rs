@@ -651,8 +651,62 @@ apply :: (Text -> Text ! { io.print : Text -> Text }) -> Text ! { io.print : Tex
 apply print
 "#,
     ),
+    (
+        "cross_fn_fail_handled",
+        r#"
+boom :: Int -> Int ! { fail Text; } = n => perform fail "no";
+handle boom 1 with { value = \v. v; fail = \m. 0; }
+"#,
+    ),
+    (
+        "cross_fn_curried_handled",
+        r#"
+addperf :: Int -> Int -> Int ! { fail Text; }
+  = a b => { perform fail "x"; a + b };
+handle addperf 3 4 with { value = \v. v; fail = \m. 99; }
+"#,
+    ),
+    (
+        "cross_fn_resume",
+        r#"
+g :: Int -> Int ! { op : Int -> Int; } = n => perform op n;
+handle g 1 with { value = \v. v; op = \v. resume (v + 1); }
+"#,
+    ),
+    (
+        "cross_fn_arg_effect_order",
+        r#"
+g :: Int -> Int ! { fail Text; } = n => perform fail "x";
+handle g (perform ask ()) with {
+  value = \v. v;
+  ask = \m. resume 0;
+  fail = \m. 7;
+}
+"#,
+    ),
+    (
+        "cross_fn_chain",
+        r#"
+inner :: Int -> Int ! { fail Text; } = n => perform fail "z";
+outer :: Int -> Int ! { fail Text; } = n => inner (n + 1);
+handle outer 5 with { value = \v. v; fail = \m. 42; }
+"#,
+    ),
+    (
+        "cross_fn_two_call_sites",
+        r#"
+g :: Int -> Int ! { op : Int -> Int; } = n => perform op n;
+handle (g 1) + (g 2) with { value = \v. v; op = \v. resume v; }
+"#,
+    ),
+    (
+        "unused_effectful_decl",
+        r#"
+boom :: Int -> Int ! { fail Text; } = n => perform fail "no";
+42
+"#,
+    ),
 ];
-
 const COMPILED_WITNESS_FIXTURES: &[(&str, &str)] = &[
     (
         "two_method_sorted_slot",
@@ -862,6 +916,44 @@ fn compile_effect_program_is_rejected_by_residual_effect_gate() {
 #[test]
 fn compile_effect_bin_is_rejected_before_toolchain() {
     let path = write_tmp("cli_test_compile_effect_bin.zt", EFFECT_SRC);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn compile_recursive_effectful_fn_stays_gated() {
+    // A self-recursive effectful function cannot be inlined (no finite
+    // unfolding); the residual-effect gate must refuse rather than miscompile.
+    let src = r#"
+loop :: Int -> Int ! { fail Text; }
+  = n => if n < 1 then perform fail "z" else loop (n - 1);
+handle loop 3 with { value = \v. v; fail = \m. 0; }
+"#;
+    let path = write_tmp("cli_test_compile_rec_effect.zt", src);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn compile_higher_order_effectful_value_stays_gated() {
+    // An effectful function passed as a value (not a statically-known callee)
+    // cannot be inlined; it must stay gated.
+    let src = r#"
+g :: Int -> Int ! { fail Text; } = n => perform fail "x";
+apply :: (Int -> Int ! { fail Text; }) -> Int ! { fail Text; } = f => f 1;
+handle apply g with { value = \v. v; fail = \m. 0; }
+"#;
+    let path = write_tmp("cli_test_compile_ho_effect.zt", src);
     cli()
         .arg("compile")
         .arg("--emit=bin")

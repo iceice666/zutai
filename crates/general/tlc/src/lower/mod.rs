@@ -24,6 +24,7 @@ use witness::{ConditionalWitness, ConstraintMethodInfo, WitnessTargetKey};
 pub fn lower_thir(file: &ThirFile) -> TlcModule {
     let mut lowerer = Lowerer::new(file);
     let mut module = lowerer.lower_file();
+    module.inline_effectful_calls();
     module.elaborate_effects();
     if crate::residual_effect_reason(&module).is_none() {
         module.erase_effects();
@@ -49,6 +50,7 @@ pub fn lower_thir_with_extern_witnesses(
     lowerer.extern_witnesses = extern_witnesses;
     lowerer.extern_conditionals = extern_conditionals;
     let mut module = lowerer.lower_file();
+    module.inline_effectful_calls();
     module.elaborate_effects();
     if crate::residual_effect_reason(&module).is_none() {
         module.erase_effects();

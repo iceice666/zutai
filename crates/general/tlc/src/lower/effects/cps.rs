@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::ir::{Row, TlcExpr, TlcExprId, TlcHandleClause, TlcType, TlcTypeId};
+use crate::ir::{Row, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcType, TlcTypeId};
 
 use super::{EffectElaborator, Kont};
 
@@ -146,6 +146,62 @@ impl<'module> EffectElaborator<'module> {
                             );
                             k(this, builtin)
                         }),
+                    )
+                }),
+            ),
+            TlcExpr::Case(scrutinee, alts) => self.cps(
+                scrutinee,
+                current_handlers,
+                parent_handlers,
+                result_ty,
+                Box::new(move |this, scrut_id| {
+                    // Reify the post-`case` continuation as a join lambda so each
+                    // arm — each its own CPS sub-tree — can invoke it exactly once
+                    // instead of duplicating `k` (a `FnOnce`).
+                    let case_ty = this.expr_ty(id);
+                    let join_param = this.fresh_binding();
+                    let join_param_var = this.alloc_like(id, TlcExpr::Var(join_param), case_ty);
+                    let join_body = k(this, join_param_var);
+                    let join_ty =
+                        this.module
+                            .type_arena
+                            .alloc(TlcType::Fun(case_ty, result_ty, Row::REmpty));
+                    let join_lam =
+                        this.alloc_like(id, TlcExpr::Lam(join_param, case_ty, join_body), join_ty);
+                    let join_binding = this.fresh_binding();
+                    let new_alts: Vec<TlcAlt> = alts
+                        .into_iter()
+                        .map(|alt| {
+                            let guard = alt.guard.map(|guard| this.elaborate_expr(guard));
+                            let body = this.cps(
+                                alt.body,
+                                current_handlers,
+                                parent_handlers,
+                                result_ty,
+                                Box::new(move |this, arm_val| {
+                                    let join_var =
+                                        this.alloc_like(id, TlcExpr::Var(join_binding), join_ty);
+                                    this.alloc_like(id, TlcExpr::App(join_var, arm_val), result_ty)
+                                }),
+                            );
+                            TlcAlt {
+                                pat: alt.pat,
+                                guard,
+                                body,
+                            }
+                        })
+                        .collect();
+                    let new_case =
+                        this.alloc_like(id, TlcExpr::Case(scrut_id, new_alts), result_ty);
+                    this.alloc_like(
+                        id,
+                        TlcExpr::Let {
+                            binding: join_binding,
+                            ty: join_ty,
+                            value: join_lam,
+                            body: new_case,
+                        },
+                        result_ty,
                     )
                 }),
             ),
