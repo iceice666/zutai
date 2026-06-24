@@ -114,6 +114,17 @@ impl Lowerer {
         let span = ty.span();
         let kind = match ty {
             ast::TypeExpr::Ident { name, span } => match self.resolve(name) {
+                Some(binding)
+                    if self.bindings[binding.0 as usize].kind == BindingKind::LevelParam =>
+                {
+                    // A level variable used in type position (bare `l` where a
+                    // type is expected).
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::LevelVarAsType { name: name.clone() },
+                        span: *span,
+                    });
+                    HirTypeKind::UnresolvedIdent(name.clone())
+                }
                 Some(binding) => HirTypeKind::BindingRef(binding),
                 None => {
                     self.diagnostics.push(HirDiagnostic {
@@ -190,6 +201,7 @@ impl Lowerer {
                 self.push_scope();
                 let hir_params = self.lower_type_params(params);
                 let hir_body = self.lower_type(body);
+                self.report_unused_level_params(&hir_params);
                 self.pop_scope();
                 HirTypeKind::ForAll {
                     params: hir_params,
@@ -205,9 +217,51 @@ impl Lowerer {
             ast::TypeExpr::Atom { name, .. } => HirTypeKind::Atom(name.clone()),
             ast::TypeExpr::True(_) => HirTypeKind::True,
             ast::TypeExpr::False(_) => HirTypeKind::False,
+            ast::TypeExpr::UniverseType { level, .. } => {
+                HirTypeKind::UniverseLevel(self.lower_level(level))
+            }
             ast::TypeExpr::ExprEscape(expr) => HirTypeKind::ExprEscape(self.lower_expr(expr)),
         };
         self.alloc_type(HirTypeExpr { kind, span })
+    }
+
+    /// Resolve a surface `Level` to a `HirLevel`, resolving `$…` variable uses to
+    /// their declared level binders. Emits `NonLevelAsLevel` / `UnknownLevelVar`
+    /// for a `$`-name that is not a level binder or is undeclared.
+    fn lower_level(&mut self, level: &ast::Level) -> HirLevel {
+        match level {
+            ast::Level::Known { value, .. } => HirLevel::Known(*value),
+            ast::Level::Var { name, span } => match self.resolve(name) {
+                Some(binding)
+                    if self.bindings[binding.0 as usize].kind == BindingKind::LevelParam =>
+                {
+                    self.used_level_params.insert(binding);
+                    HirLevel::Var(binding)
+                }
+                Some(_) => {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::NonLevelAsLevel { name: name.clone() },
+                        span: *span,
+                    });
+                    HirLevel::Unresolved(name.clone())
+                }
+                None => {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::UnknownLevelVar { name: name.clone() },
+                        span: *span,
+                    });
+                    HirLevel::Unresolved(name.clone())
+                }
+            },
+            ast::Level::Succ { base, by, .. } => HirLevel::Succ {
+                base: Box::new(self.lower_level(base)),
+                by: *by,
+            },
+            ast::Level::Max { left, right, .. } => HirLevel::Max {
+                left: Box::new(self.lower_level(left)),
+                right: Box::new(self.lower_level(right)),
+            },
+        }
     }
 }
 

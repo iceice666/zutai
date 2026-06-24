@@ -82,6 +82,16 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
         '(' => parse_tuple_or_group(input, options),
         '[' => parse_list_value(input, options),
         '{' => parse_record_or_block(input, options),
+        '$' => {
+            // `$ℓ` in value position is the universe-as-a-value, desugared to the
+            // same node `type $ℓ` would produce (no `type` keyword needed).
+            let ty = parse_type_expr(input)?;
+            let span = ty.span();
+            Ok(Expr::TypeForm {
+                ty: Box::new(ty),
+                span,
+            })
+        }
         '0'..='9' => {
             let (expr, span) = spanned(parse_number_value).parse_next(input)?;
             Ok(fix_number_span(expr, span))

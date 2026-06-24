@@ -509,7 +509,7 @@ fn type_form_as_expression_lowers_to_type_value() {
     // `type Int` is an expression whose value is the type `Int`.
     // THIR lowers it to ThirExprKind::TypeValue.
     let file = completed_file("type Int");
-    assert!(matches!(final_type_kind(&file), TypeKind::Type));
+    assert!(matches!(final_type_kind(&file), TypeKind::Type(_)));
 }
 
 // ── thir/lower/expr.rs: HirTupleItem::Named infer-mode (lines 504–511) ───────

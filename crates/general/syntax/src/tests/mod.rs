@@ -194,4 +194,5 @@ mod display;
 mod expr;
 mod fixtures_and_diagnostics;
 mod types_and_decls;
+mod universe_levels;
 mod v1_and_lexer;

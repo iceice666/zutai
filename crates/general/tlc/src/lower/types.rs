@@ -171,7 +171,7 @@ impl<'thir> Lowerer<'thir> {
             ),
             // Type-valued expressions are erased to Lit(Nothing) in the expr lowerer;
             // their type is mapped to a Nothing placeholder here.
-            TypeKind::Type => self.alloc_type(TlcType::Prim(PrimTy::Nothing)),
+            TypeKind::Type(_) => self.alloc_type(TlcType::Prim(PrimTy::Nothing)),
         };
         self.type_cache.insert(resolved.0, tlc_ty);
         tlc_ty
@@ -577,7 +577,7 @@ impl<'thir> Lowerer<'thir> {
         alias_seen: &mut FxHashSet<BindingId>,
     ) -> u32 {
         match self.thir.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::Type => 1,
+            TypeKind::Type(_) => 1,
             TypeKind::Bool
             | TypeKind::Text
             | TypeKind::Int

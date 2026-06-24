@@ -110,6 +110,9 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         UniverseLevelCycle { name } => {
             format!("universe level cycle in `{name}`: definition would require Type ℓ : Type ℓ")
         }
+        ExplicitLevelTooLow { required, found } => {
+            format!("explicit universe level ${required} is too low: value inhabits ${found}")
+        }
         WitnessFieldTypeMismatch {
             name,
             expected,
@@ -237,6 +240,14 @@ pub fn describe_hir_diagnostic(d: &zutai_hir::HirDiagnostic) -> String {
             format!("row tail `...{name}` is neither a row variable nor a spreadable type")
         }
         ResumeOutsideHandler => "resume outside an operation handler clause".to_string(),
+        LevelVarAsType { name } => {
+            format!("level variable `{name}` used where a type is expected")
+        }
+        NonLevelAsLevel { name } => {
+            format!("`{name}` is not a level variable but is used in level position")
+        }
+        UnknownLevelVar { name } => format!("unknown level variable `${name}`"),
+        UnusedLevelParam { name } => format!("unused level parameter `${name}`"),
     }
 }
 

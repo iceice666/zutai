@@ -448,7 +448,10 @@ impl FixedWidth {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
-    Type,
+    /// The universe of types, carrying its internal universe level. Bare surface
+    /// `Type` lowers to `Type(Meta(_))` (inferred); explicit `$ℓ` lowers to the
+    /// corresponding level. The level erases before TLC.
+    Type(UniverseLevel),
     Bool,
     Text,
     Int,

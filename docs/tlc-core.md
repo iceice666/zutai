@@ -297,7 +297,7 @@ The full table of THIR `TypeKind` → `TlcType` mappings, incorporating the Phas
 | `Type` | `Record(vec![])` **BUG** | erased — must not reach TLC type arena as a reified node |
 | `Error` | `Record(vec![])` | unreachable — TLC only produced when THIR complete |
 
-**Phase line for `Type` values.** THIR bindings with `TypeKind::Type` in their annotation (type-valued declarations like `Server :: type { ... }`) lower as follows:
+**Phase line for `Type` values.** THIR bindings with `TypeKind::Type(ℓ)` in their annotation (type-valued declarations like `Server :: type { ... }`) lower as follows. As of milestone V2-A the kind carries an internal `UniverseLevel` (surface `$ℓ`), but the level is purely a front-end hygiene marker — it erases here and Dataflow Core sees no level:
 - The *type* of the binding in `expr_types` is recorded as `TyVar` of a fresh universe-level variable (kind `Type 1`).
 - The *body* of the binding, being a type expression, is consumed by the normalizer and not emitted as a runtime `TlcExpr`. This is the erasure gate.
 - Downstream Dataflow Core never sees a `Type`-kinded expression.

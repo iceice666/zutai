@@ -23,72 +23,25 @@ Both backend-closing tracks have landed (see `docs/ARCHIVED.md`):
   natively — recursive types (cyclic type descriptors), host capabilities
   (`HostOp` lowering + the Track B entry boundary), derive recipes
   (fold-or-reject reflection), and higher-rank polymorphism (rank-2 lambda-arg
-  compile parity, `compiled_rank2_lambda_arg_matches_oracle`). Only **explicit
-  universe-level syntax** is unimplemented.
-- 1567 workspace tests pass.
+  compile parity, `compiled_rank2_lambda_arg_matches_oracle`). The fifth feature,
+  universe levels, gained its **explicit surface syntax** in milestone V2-A
+  (`$ℓ` / `<$l>`, front-end-only, erases before TLC); levels still erase before
+  the backend, so no new native lowering is required.
+- 1600 workspace tests pass.
 
 **Can we move to v2?** We already have — Phases 24–28 and Track B are v2 work,
 and four of the five v2 features lower natively. There is no v1 native-backend
-blocker left. Two phases are now **active**: the small **v2 tail** (V2-A,
-explicit universe syntax) and the **escaping-effect residual-ABI spike**
-(Phase 35), runnable independently. Phase 34 (GC) stays gated and the v3 items
-below stay deferred.
+blocker left. The small **v2 tail** (V2-A, explicit universe syntax) **landed
+2026-06-24** (`docs/ARCHIVED.md` "V2-A"), so all five v2 features now have
+surface syntax. One phase remains **active**: the **escaping-effect residual-ABI
+spike** (Phase 35). Phase 34 (GC) stays gated and the v3 items below stay
+deferred.
 
 ## V2 milestone — remaining work
 
-The forward milestone. Top-to-bottom is implementation priority.
-
-### V2-A — Explicit universe-level syntax (small)
-
-THIR/TLC carry internal universe levels (Phase 24): the core kind has a level
-slot, with level inference, cumulativity, and level-polymorphic defaulting.
-Surface level syntax is **specified, not yet implemented**
-(`docs/v2_spec/04-universe-levels.md` "Explicit Level Syntax").
-
-Decided design (2026-06-24): levels are a syntactic sub-grammar over the existing
-`UniverseLevel` algebra (`Known | Meta | Succ | Max`), not a first-class `Level`
-type.
-
-- `$ℓ` is a universe at an explicit level: `$0`, `$l`, `$(l + 1)`,
-  `$(max a b)`. Bare atoms need no parens; `+`/`max` compounds are
-  parenthesized. `+` takes an integer literal (nested successor); `max` is
-  binary. Bare `Type` is unchanged (`$<inferred>`). There is no `Type$ℓ` form —
-  `$ℓ` *is* the leveled universe. `$` is a dedicated universe-level sigil,
-  otherwise unused, so it overloads nothing (distinct from `@` explicit type
-  argument and `#` tags).
-- `<$l>` (and `<$a, $b>`) binds level variables in a binder list before the
-  signature, using the same `$` sigil as the use site — no `Level` sort keyword.
-  A binder *links* its `$l` occurrences and defaults per use — no prenex level
-  polymorphism, nothing new in TLC.
-
-Implementation is front-end-only (levels still erase before Dataflow Core). One
-phase, three crate touchpoints, executed in dependency order:
-
-- [ ] `general/syntax`: parse `UniverseType` + the `Level` sub-grammar and the
-  `<$…>` binder list. Parse/round-trip coverage only; no semantics.
-- [ ] `general/hir`: resolve `$…` idents to level binders; reject level↔type
-  cross-use; report an unused declared level variable.
-- [ ] `general/thir`: feed parsed levels into `UniverseLevel` instead of
-  always-fresh metas; add the four diagnostics (explicit level too low, level
-  var used as type, non-level used as level, unknown level var). Solver,
-  cumulativity, and defaulting already exist (Phase 24).
-- `tlc`/backend: untouched (levels erase before Dataflow Core).
-
-**Verification gate:** explicit levels reject nothing that bare `Type` already
-accepts (no well-founded program newly rejected — same solver/defaulting); the
-four new diagnostics each fire on a targeted case; `$0`/`$l`/`$(l + n)`/
-`$(max a b)` and `<$l>`/`<$a, $b>` parse and check per the spec examples
-(`docs/v2_spec/04-universe-levels.md` "Explicit Level Syntax"). Full workspace
-suite stays green.
-
-**Doc-sync follow-up (once V2-A lands):**
-
-- [ ] `docs/spec/v0/02-lexical/grammar-reference.md` — add `UniverseType` /
-  `Level` / `LevelBinders` to the implemented-grammar reference (only after the
-  parser lands).
-- [ ] `docs/v2_spec/04-universe-levels.md` "Support Level" — flip explicit level
-  syntax from "specified but not yet implemented" to its landed status.
-- [ ] Move the V2-A summary into `docs/ARCHIVED.md` and retire this entry.
+V2-A (explicit universe-level syntax) **landed 2026-06-24** — see
+`docs/ARCHIVED.md` "V2-A". The remaining active V2-adjacent work is the
+escaping-effect residual-ABI spike (Phase 35, below). Phase 34 (GC) stays gated.
 
 ### Phase 34 — Conservative mark-sweep GC (runtime; Track 2, gated)
 

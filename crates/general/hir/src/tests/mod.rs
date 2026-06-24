@@ -54,4 +54,5 @@ fn type_kind(file: &HirFile, id: HirTypeId) -> &HirTypeKind {
 
 mod constraints;
 mod lowering;
+mod universe_levels;
 mod v1_lowering;

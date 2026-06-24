@@ -209,8 +209,48 @@ impl<'hir> Lowerer<'hir> {
                 }
                 record_field.ty
             }
+            HirTypeKind::UniverseLevel(level) => {
+                let ul = self.lower_level(level);
+                self.alloc_type(Type {
+                    kind: TypeKind::Type(ul),
+                    span: ty.span,
+                })
+            }
             HirTypeKind::ExprEscape(_) => {
                 self.invalid_type("type expression escapes are not supported yet", ty.span)
+            }
+        }
+    }
+
+    /// Map a resolved `HirLevel` to the internal `UniverseLevel`. Level binders
+    /// (`$l`) share one fresh meta per binding (per-use linking), minted lazily
+    /// so every occurrence of the same `$l` unifies to a single level.
+    fn lower_level(&mut self, level: &HirLevel) -> UniverseLevel {
+        match level {
+            HirLevel::Known(n) => UniverseLevel::Known(*n),
+            HirLevel::Var(binding) => {
+                if let Some(existing) = self.level_param_metas.get(binding) {
+                    existing.clone()
+                } else {
+                    let meta = self.fresh_level_meta();
+                    self.level_param_metas.insert(*binding, meta.clone());
+                    meta
+                }
+            }
+            // Already diagnosed in HIR (`UnknownLevelVar` / `NonLevelAsLevel`);
+            // keep going with a fresh meta so checking doesn't cascade.
+            HirLevel::Unresolved(_) => self.fresh_level_meta(),
+            HirLevel::Succ { base, by } => {
+                let mut current = self.lower_level(base);
+                for _ in 0..*by {
+                    current = UniverseLevel::succ(current);
+                }
+                current
+            }
+            HirLevel::Max { left, right } => {
+                let left = self.lower_level(left);
+                let right = self.lower_level(right);
+                UniverseLevel::max([left, right])
             }
         }
     }

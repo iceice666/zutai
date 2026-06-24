@@ -3,7 +3,7 @@ use winnow::Result;
 use winnow::combinator::fail;
 
 use crate::ast::{
-    EffectOp, EffectRow, RowTail, SelectField, TypeExpr, TypeRecordField, TypeTupleItem,
+    EffectOp, EffectRow, Level, RowTail, SelectField, TypeExpr, TypeRecordField, TypeTupleItem,
     UnionVariant,
 };
 use crate::span::Span;
@@ -173,6 +173,9 @@ pub(super) fn parse_type_atom(input: &mut &str) -> Result<TypeExpr> {
     if input.starts_with('(') {
         return parse_type_tuple(input);
     }
+    if input.starts_with('$') {
+        return parse_universe_type(input);
+    }
     if input.starts_with('#') {
         let (name, span) = spanned(parse_atom_name).parse_next(input)?;
         return Ok(TypeExpr::Atom { name, span });
@@ -212,10 +215,89 @@ fn parse_forall_type(input: &mut &str) -> Result<TypeExpr> {
     })
 }
 
+/// `$ℓ` — a universe at an explicit level. `$` then a `LevelArg`
+/// (`$0`, `$l`, or `$( Level )`). Bare atoms need no parens; `+`/`max`
+/// compounds are parenthesized.
+fn parse_universe_type(input: &mut &str) -> Result<TypeExpr> {
+    let (level, span) = spanned(|input: &mut &str| {
+        '$'.parse_next(input)?;
+        parse_level_arg(input)
+    })
+    .parse_next(input)?;
+    Ok(TypeExpr::UniverseType { level, span })
+}
+
+/// `LevelArg ::= IntLit | Ident | "(" Level ")"`. Also serves as `LevelAtom`.
+fn parse_level_arg(input: &mut &str) -> Result<Level> {
+    if input.starts_with('(') {
+        '('.parse_next(input)?;
+        let _guard = enter_delimiter();
+        ws(input)?;
+        let level = parse_level(input)?;
+        ws(input)?;
+        ')'.parse_next(input)?;
+        return Ok(level);
+    }
+    if input.starts_with(|c: char| c.is_ascii_digit()) {
+        let (value, span) = spanned(parse_level_int).parse_next(input)?;
+        return Ok(Level::Known { value, span });
+    }
+    let (name, span) = spanned(parse_ident).parse_next(input)?;
+    Ok(Level::Var { name, span })
+}
+
+/// `Level ::= "max" LevelArg LevelArg | LevelAtom ("+" IntLit)?`. Parsed only
+/// inside `$( … )`. `max` is a contextual keyword here; `+` takes an integer
+/// literal only (a non-literal addend, e.g. `l + m`, is a parse error).
+fn parse_level(input: &mut &str) -> Result<Level> {
+    ws(input)?;
+    let checkpoint = *input;
+    if kw("max").parse_next(input).is_ok() {
+        ws(input)?;
+        let left = parse_level_arg(input)?;
+        ws(input)?;
+        let right = parse_level_arg(input)?;
+        let span = left.span().merge(right.span());
+        return Ok(Level::Max {
+            left: Box::new(left),
+            right: Box::new(right),
+            span,
+        });
+    }
+    *input = checkpoint;
+
+    let base = parse_level_arg(input)?;
+    let after_base = *input;
+    ws(input)?;
+    if input.starts_with('+') {
+        '+'.parse_next(input)?;
+        ws(input)?;
+        let (by, by_span) = spanned(parse_level_int).parse_next(input)?;
+        let span = base.span().merge(by_span);
+        return Ok(Level::Succ {
+            base: Box::new(base),
+            by,
+            span,
+        });
+    }
+    *input = after_base;
+    Ok(base)
+}
+
+/// A non-negative integer literal used in level position (`$0`, `+ 2`).
+fn parse_level_int(input: &mut &str) -> Result<u32> {
+    let digits = winnow::token::take_while(1.., |c: char| c.is_ascii_digit()).parse_next(input)?;
+    match digits.parse::<u32>() {
+        Ok(value) => Ok(value),
+        Err(_) => fail.parse_next(input),
+    }
+}
+
 fn starts_type_atom(input: &str) -> bool {
     starts_braced_type_atom(input)
         || input.starts_with('(')
         || input.starts_with('#')
+        || input.starts_with('$')
         || input
             .chars()
             .next()

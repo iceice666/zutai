@@ -29,6 +29,7 @@ impl<'hir> Lowerer<'hir> {
             next_level_meta: 0,
             level_lower_bounds: FxHashMap::default(),
             level_equalities: FxHashMap::default(),
+            level_param_metas: FxHashMap::default(),
             type_universe_cache: FxHashMap::default(),
             alias_universe_in_progress: FxHashSet::default(),
             type_match_in_progress: FxHashSet::default(),
@@ -43,8 +44,12 @@ impl<'hir> Lowerer<'hir> {
             kind: TypeKind::Error,
             span: Span::default(),
         });
+        // Convenience placeholder `Type` TypeId for sites that only need "this is
+        // the Type sort" (builtins, imports, display). The level here is a ground
+        // placeholder; type-valued expressions allocate their own leveled `Type`
+        // (see `TypeForm` lowering in `expr/mod.rs`).
         lowerer.type_type = lowerer.alloc_type(Type {
-            kind: TypeKind::Type,
+            kind: TypeKind::Type(UniverseLevel::Known(0)),
             span: hir.span,
         });
         lowerer.seed_builtin_value_types();

@@ -72,6 +72,10 @@ pub enum BindingKind {
     /// Named methods are registered in scope; operator methods use unscoped bindings.
     ConstraintMethod,
     TypeParam,
+    /// A universe-level variable declared with `<$l>`. Distinct from `TypeParam`:
+    /// using it in type position, or a type/value name in level position, is an
+    /// error.
+    LevelParam,
     Local,
     Param,
 }
@@ -367,7 +371,27 @@ pub enum HirTypeKind {
     Atom(String),
     True,
     False,
+    /// A universe at an explicit level (`$ℓ`). Bare `Type` stays a
+    /// `BindingRef` to the builtin; this variant only carries explicit levels.
+    UniverseLevel(HirLevel),
     ExprEscape(HirExprId),
+}
+
+/// A resolved universe level — the AST `Level` after name resolution. A `Var`
+/// resolves to a `LevelParam` binding (or `Unresolved` after diagnosis).
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirLevel {
+    Known(u32),
+    Var(BindingId),
+    Unresolved(String),
+    Succ {
+        base: Box<HirLevel>,
+        by: u32,
+    },
+    Max {
+        left: Box<HirLevel>,
+        right: Box<HirLevel>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

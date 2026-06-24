@@ -249,7 +249,7 @@ impl<'thir> Lowerer<'thir> {
             },
             TypeKind::InferVar(v) => Some(format!("?{v}")),
             TypeKind::ForAll { .. } => None,
-            TypeKind::Type | TypeKind::Error => None,
+            TypeKind::Type(_) | TypeKind::Error => None,
         }
     }
 

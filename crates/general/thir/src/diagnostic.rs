@@ -82,6 +82,12 @@ pub enum ThirDiagnosticKind {
     UniverseLevelCycle {
         name: String,
     },
+    /// An explicit universe level (`$ℓ`) is lower than the universe the annotated
+    /// definition inhabits (e.g. `Bad :: $0 = $0`, where `$0 : $1`).
+    ExplicitLevelTooLow {
+        required: u32,
+        found: u32,
+    },
     ValueTypeUnavailable {
         name: String,
     },

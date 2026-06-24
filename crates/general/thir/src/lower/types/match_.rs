@@ -306,6 +306,15 @@ impl<'hir> Lowerer<'hir> {
             (TypeKind::Apply { func: ef, arg: ea }, TypeKind::Apply { func: ff, arg: fa }) => {
                 self.type_matches(ef, ff) && self.type_matches(ea, fa)
             }
+            // Two universes match up to cumulativity on their levels. The found
+            // type-value's universe must fit within the expected (annotated) one;
+            // `check_universe_fits` emits `ExplicitLevelTooLow` on a concrete
+            // violation and registers the constraint either way, so we treat the
+            // universes as matching here and let that diagnostic stand alone.
+            (TypeKind::Type(expected_level), TypeKind::Type(found_level)) => {
+                self.check_universe_fits(found_level, expected_level, f_span);
+                true
+            }
             (left, right) => left == right,
         };
         if let Some(key) = guard_key {

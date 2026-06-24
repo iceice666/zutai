@@ -12,6 +12,9 @@ pub struct File {
 #[derive(Debug, PartialEq)]
 pub struct TypeParam {
     pub name: String,
+    /// Set when the binder was written `$l` — a universe-level variable rather
+    /// than a type parameter. Level binders carry no bounds or kind annotation.
+    pub is_level: bool,
     pub bounds: Vec<TypeParamBound>,
     pub kind: Option<Box<TypeExpr>>,
     pub span: Span,
@@ -592,7 +595,47 @@ pub enum TypeExpr {
         body: Box<TypeExpr>,
         span: Span,
     },
+    /// A universe at an explicit level: `$0`, `$l`, `$(l + 1)`, `$(max a b)`.
+    /// Bare `Type` stays `TypeExpr::Ident` (inferred level); this node only
+    /// appears for the `$`-sigil form.
+    UniverseType {
+        level: Level,
+        span: Span,
+    },
     ExprEscape(Box<Expr>),
+}
+
+/// A universe level expression — surface sugar over the internal `UniverseLevel`
+/// algebra (`Known | Meta | Succ | Max`). Levels erase before Dataflow Core.
+#[derive(Debug, PartialEq)]
+pub enum Level {
+    /// `$0` — a concrete universe level.
+    Known { value: u32, span: Span },
+    /// `$l` — a level variable, bound by a `<$l>` binder.
+    Var { name: String, span: Span },
+    /// `$(l + n)` — `n` nested successors over a level atom.
+    Succ {
+        base: Box<Level>,
+        by: u32,
+        span: Span,
+    },
+    /// `$(max a b)` — the least upper bound of two levels (binary).
+    Max {
+        left: Box<Level>,
+        right: Box<Level>,
+        span: Span,
+    },
+}
+
+impl Level {
+    pub fn span(&self) -> Span {
+        match self {
+            Level::Known { span, .. }
+            | Level::Var { span, .. }
+            | Level::Succ { span, .. }
+            | Level::Max { span, .. } => *span,
+        }
+    }
 }
 
 impl TypeExpr {
@@ -610,7 +653,8 @@ impl TypeExpr {
             | TypeExpr::Apply { span, .. }
             | TypeExpr::Access { span, .. }
             | TypeExpr::Atom { span, .. }
-            | TypeExpr::ForAll { span, .. } => *span,
+            | TypeExpr::ForAll { span, .. }
+            | TypeExpr::UniverseType { span, .. } => *span,
             TypeExpr::ExprEscape(e) => e.span(),
         }
     }

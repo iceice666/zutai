@@ -114,6 +114,7 @@ impl Lowerer {
                 self.push_scope();
                 let hir_params = self.lower_type_params(params);
                 let ty = self.lower_type(ty);
+                self.report_unused_level_params(&hir_params);
                 self.pop_scope();
                 (
                     HirDeclKind::TypeAlias {
@@ -137,6 +138,7 @@ impl Lowerer {
                     .iter()
                     .map(|clause| self.lower_clause(clause))
                     .collect();
+                self.report_unused_level_params(&params);
                 self.pop_scope();
                 (
                     HirDeclKind::Function {
@@ -330,41 +332,23 @@ impl Lowerer {
     pub(super) fn lower_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<HirTypeParam> {
         // First pass: allocate all BindingIds so that forward-references within
         // the param list are handled correctly (mirrors lower_hir_type_params).
+        // Level binders (`$l`) get a `LevelParam` binding instead of `TypeParam`.
         let bindings: Vec<BindingId> = params
             .iter()
             .map(|param| {
-                self.define_current(param.name.clone(), BindingKind::TypeParam, param.span)
+                let kind = if param.is_level {
+                    BindingKind::LevelParam
+                } else {
+                    BindingKind::TypeParam
+                };
+                self.define_current(param.name.clone(), kind, param.span)
             })
             .collect();
         // Second pass: resolve bounds, storing them (was D1 resolve-but-don't-store).
         bindings
             .into_iter()
             .zip(params)
-            .map(|(binding, param)| {
-                let bounds: Vec<BindingId> = param
-                    .bounds
-                    .iter()
-                    .filter_map(|bound| match self.resolve(&bound.name) {
-                        Some(bid) => Some(bid),
-                        None => {
-                            self.diagnostics.push(HirDiagnostic {
-                                kind: HirDiagnosticKind::UnknownIdentifier {
-                                    name: bound.name.clone(),
-                                },
-                                span: bound.span,
-                            });
-                            None
-                        }
-                    })
-                    .collect();
-                let kind = param.kind.as_ref().map(|k| self.lower_type(k));
-                HirTypeParam {
-                    binding,
-                    bounds,
-                    kind,
-                    span: param.span,
-                }
-            })
+            .map(|(binding, param)| self.finish_type_param(binding, param))
             .collect()
     }
 
@@ -374,33 +358,68 @@ impl Lowerer {
         params
             .iter()
             .map(|param| {
-                let binding =
-                    self.define_current(param.name.clone(), BindingKind::TypeParam, param.span);
-                let bounds: Vec<BindingId> = param
-                    .bounds
-                    .iter()
-                    .filter_map(|bound| match self.resolve(&bound.name) {
-                        Some(bid) => Some(bid),
-                        None => {
-                            self.diagnostics.push(HirDiagnostic {
-                                kind: HirDiagnosticKind::UnknownIdentifier {
-                                    name: bound.name.clone(),
-                                },
-                                span: bound.span,
-                            });
-                            None
-                        }
-                    })
-                    .collect();
-                let kind = param.kind.as_ref().map(|k| self.lower_type(k));
-                HirTypeParam {
-                    binding,
-                    bounds,
-                    kind,
-                    span: param.span,
-                }
+                let kind = if param.is_level {
+                    BindingKind::LevelParam
+                } else {
+                    BindingKind::TypeParam
+                };
+                let binding = self.define_current(param.name.clone(), kind, param.span);
+                self.finish_type_param(binding, param)
             })
             .collect()
+    }
+
+    /// Resolve a single type/level param's bounds and kind annotation. Level
+    /// binders (`$l`) carry neither.
+    fn finish_type_param(&mut self, binding: BindingId, param: &ast::TypeParam) -> HirTypeParam {
+        if param.is_level {
+            return HirTypeParam {
+                binding,
+                bounds: vec![],
+                kind: None,
+                span: param.span,
+            };
+        }
+        let bounds: Vec<BindingId> = param
+            .bounds
+            .iter()
+            .filter_map(|bound| match self.resolve(&bound.name) {
+                Some(bid) => Some(bid),
+                None => {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::UnknownIdentifier {
+                            name: bound.name.clone(),
+                        },
+                        span: bound.span,
+                    });
+                    None
+                }
+            })
+            .collect();
+        let kind = param.kind.as_ref().map(|k| self.lower_type(k));
+        HirTypeParam {
+            binding,
+            bounds,
+            kind,
+            span: param.span,
+        }
+    }
+
+    /// Report any declared level binder (`<$l>`) that was never referenced by a
+    /// `$…` level use. Call after the signature/body of a scope is lowered.
+    pub(super) fn report_unused_level_params(&mut self, params: &[HirTypeParam]) {
+        for param in params {
+            let binding = &self.bindings[param.binding.0 as usize];
+            if binding.kind == BindingKind::LevelParam
+                && !self.used_level_params.contains(&param.binding)
+            {
+                let name = binding.name.clone();
+                self.diagnostics.push(HirDiagnostic {
+                    kind: HirDiagnosticKind::UnusedLevelParam { name },
+                    span: param.span,
+                });
+            }
+        }
     }
 
     pub(super) fn lower_clause(&mut self, clause: &ast::FuncClause) -> HirClause {

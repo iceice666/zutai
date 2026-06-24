@@ -62,4 +62,23 @@ pub enum HirDiagnosticKind {
     },
     /// `resume` appears outside an operation handler clause body.
     ResumeOutsideHandler,
+    /// A level variable (declared `<$l>`) is used in type position, e.g. a bare
+    /// `l` where a type is expected.
+    LevelVarAsType {
+        name: String,
+    },
+    /// A `$`-prefixed name in level position resolves to a binding that is not a
+    /// level variable (e.g. `$A` where `A` is a type parameter).
+    NonLevelAsLevel {
+        name: String,
+    },
+    /// A `$`-prefixed level reference does not resolve to any declared level
+    /// variable.
+    UnknownLevelVar {
+        name: String,
+    },
+    /// A declared level variable `<$l>` is never used in the signature.
+    UnusedLevelParam {
+        name: String,
+    },
 }

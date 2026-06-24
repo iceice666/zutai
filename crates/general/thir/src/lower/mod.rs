@@ -134,6 +134,10 @@ struct Lowerer<'hir> {
     next_level_meta: u32,
     level_lower_bounds: FxHashMap<u32, u32>,
     level_equalities: FxHashMap<u32, UniverseLevel>,
+    /// Per-decl scope mapping each in-scope `<$l>` level binder to the single
+    /// fresh meta shared by all its occurrences (per-use linking, not prenex
+    /// polymorphism). Populated before a signature is lowered, cleared after.
+    level_param_metas: FxHashMap<BindingId, UniverseLevel>,
     type_universe_cache: FxHashMap<TypeId, UniverseLevel>,
     /// Alias bindings whose universe level is currently being computed. Guards
     /// `alias_apply_universe` against equirecursive generic aliases (e.g.

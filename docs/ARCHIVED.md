@@ -146,6 +146,34 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V2-A: Explicit universe-level syntax ✅
+
+_Completed 2026-06-24. Implements the v2 spec §"Explicit Level Syntax"
+(`docs/v2_spec/04-universe-levels.md`): the opt-in surface forms `$ℓ` (`$0`,
+`$l`, `$(l + n)`, `$(max a b)`) and the `<$l>` level binder now parse, resolve,
+and check. Phase 24 had already landed the internal level algebra; only the
+surface syntax was missing._
+
+- **Front-end only.** Parser → HIR → THIR; levels erase before TLC / Dataflow
+  Core (TLC still maps `TypeKind::Type` to `PrimTy::Nothing`), so backend,
+  runtime, and value semantics are unchanged.
+- **`TypeKind::Type` carries a `UniverseLevel`.** Previously a flat unit variant
+  hardcoded to universe 1; it now holds its level so `type_universe(Type(ℓ)) =
+  ℓ+1`, distinguishing `$0 : $1` from `$1 : $2`. Bare `Type` lowers to a fresh
+  level meta (unchanged inference); explicit `$ℓ` lowers to the named level.
+- **Per-use linking, not prenex polymorphism.** Each `<$l>` binder mints one
+  shared meta for every `$l` occurrence in a signature, solved from the use site
+  and defaulted to the lowest consistent universe exactly like bare `Type`. The
+  verification gate holds: explicit levels reject nothing a well-founded
+  bare-`Type` program already accepts.
+- **Four diagnostics.** Explicit level too low (`Bad :: $0 = $0`, THIR
+  `ExplicitLevelTooLow` via cumulativity over `constrain_level_leq`), level
+  variable used as a type, non-level name used as a level, and unknown level
+  variable (the latter three in HIR resolution, reusing the row-tail-target
+  cross-kind pattern). A declared-but-unused `<$l>` is reported.
+- Parser/HIR/THIR test modules cover round-trip, resolution, the six spec
+  examples, per-use linking, the four diagnostics, and the bare-`Type` corpus.
+
 ### Track B: Host-capability entry boundary ✅
 
 _Completed 2026-06-24. Implements the v2 spec §"Entry Boundary"
@@ -694,8 +722,8 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
 ### Phase 24: Universe-level foundation ✅
 
 - Internal universe levels now flow through THIR kind checking and TLC kind
-  lowering. Surface syntax still exposes only `Type`; explicit level annotations
-  remain unsupported.
+  lowering. Surface syntax exposed only `Type` at the time; explicit level
+  annotations (`$ℓ`, `<$l>`) landed later in milestone V2-A.
 - Type constructors and higher-kinded constraints are level-polymorphic with
   cumulativity and lowest-consistent defaulting, so ordinary v1 type-level/HKT
   programs remain accepted while `Pair Int Type` checks at a higher inferred

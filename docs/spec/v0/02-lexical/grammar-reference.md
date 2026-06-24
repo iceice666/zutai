@@ -51,6 +51,10 @@ TypeParam
   ::= Ident
    | Ident ":" Ident ("+" Ident)*
    | Ident "::" TypeExpr
+   | LevelBinder
+
+LevelBinder
+  ::= "$" Ident
 ```
 
 ### Expressions
@@ -222,7 +226,26 @@ TypeAtom
    | TypeUnion
    | TypeTupleOrGroup
    | TypeSelect
+   | UniverseType
    | ExprEscape
+
+UniverseType
+  ::= "$" LevelArg
+
+LevelArg
+  ::= IntLit
+   | Ident
+   | "(" Level ")"
+
+Level
+  ::= LevelAtom ("+" IntLit)?
+   | "max" LevelArg LevelArg
+   | LevelAtom
+
+LevelAtom
+  ::= IntLit
+   | Ident
+   | "(" Level ")"
 
 TypeRecord
   ::= "{" TypeRecordField* RowTail? "}"

@@ -29,7 +29,7 @@ const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
 fn unsupported_thir_entry_type_reason(thir: &zutai_thir::ThirFile) -> Option<&'static str> {
     let final_ty = thir.expr_arena[thir.final_expr].ty;
     let kind = &thir.type_arena.get(final_ty.0 as usize)?.kind;
-    matches!(kind, zutai_thir::TypeKind::Type).then_some(UNSUPPORTED_TYPE_ENTRY_REASON)
+    matches!(kind, zutai_thir::TypeKind::Type(_)).then_some(UNSUPPORTED_TYPE_ENTRY_REASON)
 }
 
 pub(crate) fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {

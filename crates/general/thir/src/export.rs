@@ -150,7 +150,7 @@ fn export(
         // `ImportedType::Type(Unknown)` as a placeholder; `resolve_zt` in the
         // semantic crate overwrites it with the real denotation after walking
         // the final expression.
-        TypeKind::Type => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
+        TypeKind::Type(_) => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
         TypeKind::Effect { .. } | TypeKind::Never => Err(ExportUnsupported {
             reason: "effect types cannot cross a module boundary in this phase",
         }),

@@ -113,7 +113,7 @@ impl<'hir> Lowerer<'hir> {
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::Type => "Type".to_string(),
+            TypeKind::Type(_) => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),
             TypeKind::Text => "Text".to_string(),
             TypeKind::Int => "Int".to_string(),
@@ -239,7 +239,7 @@ impl<'hir> Lowerer<'hir> {
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::Type => "Type".to_string(),
+            TypeKind::Type(_) => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),
             TypeKind::Text => "Text".to_string(),
             TypeKind::Int => "Int".to_string(),

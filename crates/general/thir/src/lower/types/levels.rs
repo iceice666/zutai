@@ -134,7 +134,7 @@ impl<'hir> Lowerer<'hir> {
         }
         self.type_universe_cache.insert(ty, UniverseLevel::Known(0));
         let level = match self.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::Type => UniverseLevel::Known(1),
+            TypeKind::Type(level) => UniverseLevel::succ(level),
             TypeKind::Bool
             | TypeKind::Text
             | TypeKind::Int
@@ -354,6 +354,64 @@ impl<'hir> Lowerer<'hir> {
                 Box::new(self.finalized_kind(*from)),
                 Box::new(self.finalized_kind(*to)),
             ),
+        }
+    }
+
+    /// Enforce that a type-value's universe (`found`) fits within an annotated
+    /// universe (`expected`), with cumulativity. Registers the level constraint
+    /// (so inferred bare `Type` levels default correctly and nothing well-founded
+    /// is newly rejected) and, when both sides are fully concrete, emits
+    /// `ExplicitLevelTooLow` on a definitive violation (`$0 = $0`: `1 ≤ 0`).
+    pub(in crate::lower) fn check_universe_fits(
+        &mut self,
+        found: UniverseLevel,
+        expected: UniverseLevel,
+        span: Span,
+    ) {
+        // Skip the solver when the bound is provably satisfied (notably the same
+        // shared meta from a `<$l>` binder used as `$l`/`$(l + n)`/`$(max …)`).
+        // `constrain_level_leq`'s occurs-check would otherwise mis-flag `L ≤ L`
+        // and `L ≤ Succ(L)` as cycles — both are trivially true by monotonicity.
+        if self.level_le_trivial(&found, &expected) {
+            return;
+        }
+        self.constrain_level_leq(found.clone(), expected.clone(), span);
+        // The solver's Succ/Max arms are deliberately permissive on ground levels;
+        // a concrete too-low universe must be caught by comparing solved values.
+        if self.level_is_ground(&found) && self.level_is_ground(&expected) {
+            let found_level = self.default_level(found);
+            let required = self.default_level(expected);
+            if found_level > required {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExplicitLevelTooLow {
+                        required,
+                        found: found_level,
+                    },
+                    span,
+                });
+            }
+        }
+    }
+
+    /// `found ≤ expected` is provable without solving: either the levels are
+    /// equal, or `found` is a metavariable that appears inside `expected` (which
+    /// can only make it larger via `Succ`/`Max`).
+    fn level_le_trivial(&self, found: &UniverseLevel, expected: &UniverseLevel) -> bool {
+        let found = self.normalize_level(found.clone());
+        let expected = self.normalize_level(expected.clone());
+        if found == expected {
+            return true;
+        }
+        matches!(found, UniverseLevel::Meta(id) if self.level_occurs_in(id, &expected))
+    }
+
+    /// A level is ground when, after normalization, it contains no metavariable.
+    fn level_is_ground(&self, level: &UniverseLevel) -> bool {
+        match self.normalize_level(level.clone()) {
+            UniverseLevel::Known(_) => true,
+            UniverseLevel::Meta(_) => false,
+            UniverseLevel::Succ(inner) => self.level_is_ground(&inner),
+            UniverseLevel::Max(levels) => levels.iter().all(|l| self.level_is_ground(l)),
         }
     }
 

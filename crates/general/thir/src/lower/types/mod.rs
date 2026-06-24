@@ -1,8 +1,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::{
-    BindingId, BindingKind, HirEffectRow, HirRowTail, HirRowTailKind, HirTypeId, HirTypeKind,
-    HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
+    BindingId, BindingKind, HirEffectRow, HirLevel, HirRowTail, HirRowTailKind, HirTypeId,
+    HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
 };
 use zutai_syntax::Span;
 

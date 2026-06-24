@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::ast::{
-    Decl, Expr, File, FuncClause, ImportSource, Pattern, PipelineDir, RowTail, TupleItem,
+    Decl, Expr, File, FuncClause, ImportSource, Level, Pattern, PipelineDir, RowTail, TupleItem,
     TuplePatternItem, TypeExpr, TypeParam, TypeTupleItem,
 };
 
@@ -685,6 +685,9 @@ fn write_type_expr(
                 &format!("{indent}   "),
             )
         }
+        TypeExpr::UniverseType { level, .. } => {
+            writeln!(f, "{prefix}TyUniverse {}", format_level(level))
+        }
         TypeExpr::ExprEscape(e) => {
             writeln!(f, "{prefix}TyExprEscape")?;
             write_expr(f, e, &format!("{indent}└─ "), &format!("{indent}   "))
@@ -692,11 +695,30 @@ fn write_type_expr(
     }
 }
 
+/// Render a `Level` in surface form (`$0`, `$l`, `$(l + n)`, `$(max a b)`).
+fn format_level(level: &Level) -> String {
+    fn body(level: &Level) -> String {
+        match level {
+            Level::Known { value, .. } => value.to_string(),
+            Level::Var { name, .. } => name.clone(),
+            Level::Succ { base, by, .. } => format!("{} + {by}", body(base)),
+            Level::Max { left, right, .. } => format!("max {} {}", body(left), body(right)),
+        }
+    }
+    match level {
+        Level::Known { value, .. } => format!("${value}"),
+        Level::Var { name, .. } => format!("${name}"),
+        compound => format!("$({})", body(compound)),
+    }
+}
+
 fn format_type_params(params: &[TypeParam]) -> String {
     params
         .iter()
         .map(|param| {
-            if !param.bounds.is_empty() {
+            if param.is_level {
+                format!("${}", param.name)
+            } else if !param.bounds.is_empty() {
                 let bounds = param
                     .bounds
                     .iter()

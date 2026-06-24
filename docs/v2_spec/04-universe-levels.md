@@ -228,8 +228,14 @@ required parts of the feature, not optional refinements: without them,
 introducing levels would reject currently-accepted higher-kinded programs.
 Type-level fuel still bounds normalization only, and runtime erasure and backend
 output for ordinary value programs are unchanged. Explicit surface level syntax
-is now **specified** ([Explicit Level Syntax](#explicit-level-syntax)) but
-**not yet implemented** — `$ℓ` and `<$l>` do not yet parse. The
-design is front-end-only: it desugars to the internal level algebra and leaves
-TLC, Dataflow Core, and the runtime untouched. Implementation order and the
-crate map live in `docs/TBD.md` "V2-A".
+has now **landed** ([Explicit Level Syntax](#explicit-level-syntax)): `$ℓ`
+(`$0`, `$l`, `$(l + n)`, `$(max a b)`) and the `<$l>` binder parse, resolve, and
+check. The implementation is front-end-only — the surface forms desugar to the
+internal level algebra (`TypeKind::Type` carries a `UniverseLevel`) and erase
+before TLC, Dataflow Core, and the runtime. Level binders link per use (not
+prenex polymorphism): every `$l` in a signature shares one inferred level,
+defaulted to the lowest consistent universe exactly like bare `Type`, so explicit
+levels reject nothing a well-founded bare-`Type` program already accepts. Four
+diagnostics guard misuse: an explicit level below the required universe, a level
+variable used as a type, a non-level name used as a level, and an unknown level
+variable. See `docs/ARCHIVED.md` "V2-A" for the landed milestone.

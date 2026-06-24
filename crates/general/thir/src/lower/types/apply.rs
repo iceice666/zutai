@@ -186,7 +186,7 @@ impl<'hir> Lowerer<'hir> {
         }
 
         let kind = match name {
-            "Type" => TypeKind::Type,
+            "Type" => TypeKind::Type(self.fresh_level_meta()),
             "Text" | "Path" | "Instant" => TypeKind::Text,
             "Unit" => TypeKind::Tuple(Vec::new()),
             "Bool" => TypeKind::Bool,

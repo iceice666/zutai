@@ -169,9 +169,17 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::List(items) => self.infer_list_expr(id, items, expr.span),
             HirExprKind::TypeForm(ty) => {
                 let value = self.lower_type(*ty);
+                // The type value `value` inhabits the universe `type_universe(value)`
+                // (`Int : Type-0`, `$0 : Type-1`, …). The successor lives entirely in
+                // `type_universe(Type(ℓ)) = succ(ℓ)`, so no extra successor here.
+                let level = self.type_universe(value, expr.span);
+                let ty_id = self.alloc_type(Type {
+                    kind: TypeKind::Type(level),
+                    span: expr.span,
+                });
                 self.alloc_expr(ThirExpr {
                     source: id,
-                    ty: self.type_type,
+                    ty: ty_id,
                     kind: ThirExprKind::TypeValue(value),
                     span: expr.span,
                 })

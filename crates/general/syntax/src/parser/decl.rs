@@ -221,6 +221,17 @@ pub(super) fn parse_type_param_list(input: &mut &str) -> Result<Vec<TypeParam>> 
 }
 
 fn parse_type_param(input: &mut &str) -> Result<TypeParam> {
+    // Universe-level binder: `$l`. Carries no bounds or kind annotation.
+    if input.starts_with('$') {
+        let (name, span) = spanned(parse_level_binder).parse_next(input)?;
+        return Ok(TypeParam {
+            name,
+            is_level: true,
+            bounds: vec![],
+            kind: None,
+            span,
+        });
+    }
     let (name, span) = spanned(parse_ident).parse_next(input)?;
     ws(input)?;
     // Check `::` before `:` (longer match first)
@@ -231,6 +242,7 @@ fn parse_type_param(input: &mut &str) -> Result<TypeParam> {
         let end_span = kind.span();
         return Ok(TypeParam {
             name,
+            is_level: false,
             bounds: vec![],
             kind: Some(Box::new(kind)),
             span: span.merge(end_span),
@@ -261,6 +273,7 @@ fn parse_type_param(input: &mut &str) -> Result<TypeParam> {
         }
         return Ok(TypeParam {
             name,
+            is_level: false,
             bounds,
             kind: None,
             span: span.merge(last_span),
@@ -268,10 +281,18 @@ fn parse_type_param(input: &mut &str) -> Result<TypeParam> {
     }
     Ok(TypeParam {
         name,
+        is_level: false,
         bounds: vec![],
         kind: None,
         span,
     })
+}
+
+/// Parse a level binder name `$l` (sigil stripped). A `$`-prefixed binder may
+/// not carry `:` bounds or `::` kind annotations.
+fn parse_level_binder(input: &mut &str) -> Result<String> {
+    '$'.parse_next(input)?;
+    parse_ident(input)
 }
 fn parse_function_clauses(input: &mut &str) -> Result<Vec<FuncClause>> {
     let mut clauses = vec![];

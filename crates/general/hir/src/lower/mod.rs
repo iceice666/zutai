@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use la_arena::Arena;
 use zutai_syntax::Span;
@@ -8,10 +8,10 @@ use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
     Binding, BindingId, BindingKind, HirClause, HirConstraintMethod, HirDecl, HirDeclId,
     HirDeclKind, HirDeriveRecipe, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind,
-    HirFile, HirHandleClause, HirHandleOp, HirImportSource, HirLocalBinding, HirPat, HirPatId,
-    HirPatKind, HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField,
-    HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam,
-    HirTypeRecordField, HirTypeTupleItem, HirUnionVariant, HirWitnessField,
+    HirFile, HirHandleClause, HirHandleOp, HirImportSource, HirLevel, HirLocalBinding, HirPat,
+    HirPatId, HirPatKind, HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind,
+    HirSelectField, HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind,
+    HirTypeParam, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant, HirWitnessField,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 
@@ -73,6 +73,9 @@ struct Lowerer {
     /// The lexically-nearest enclosing `handle` clause body, if any. `resume`
     /// is only valid when this is `Some(HandlerClauseKind::Operation)`.
     handler_clause: Option<HandlerClauseKind>,
+    /// Level-parameter bindings (`<$l>`) referenced by a `$…` level use, used to
+    /// report declared-but-unused level variables.
+    used_level_params: FxHashSet<BindingId>,
 }
 
 mod decl;
@@ -91,6 +94,7 @@ impl Lowerer {
             diagnostics: Vec::new(),
             constraint_method_bindings: FxHashMap::default(),
             handler_clause: None,
+            used_level_params: FxHashSet::default(),
         };
         for name in [
             "Type",

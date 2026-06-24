@@ -218,7 +218,7 @@ impl<'a> Evaluator<'a> {
             ));
         };
         match type_node.kind.clone() {
-            TypeKind::Type => Ok(RuntimeTypeView::Type),
+            TypeKind::Type(_) => Ok(RuntimeTypeView::Type),
             TypeKind::Bool => Ok(RuntimeTypeView::Bool),
             TypeKind::Text => Ok(RuntimeTypeView::Text),
             TypeKind::Int => Ok(RuntimeTypeView::Int),
