@@ -98,9 +98,119 @@ conflate types at incompatible universes (see [`tlc-core.md`](../tlc-core.md)
 ## Surface Impact
 
 None by default: programs continue to write `Type` with no level syntax, and
-cumulativity plus defaulting preserve every well-founded v1 typing. An explicit
-level annotation for advanced type-level code is reserved and is not part of the
-default surface.
+cumulativity plus defaulting preserve every well-founded v1 typing. Explicit
+level syntax — `$ℓ` leveled universes and `<$l>` binders — is an opt-in
+layer for advanced type-level code, specified in
+[Explicit Level Syntax](#explicit-level-syntax); it is never required to type a
+well-founded program.
+
+---
+
+## Explicit Level Syntax
+
+The default surface stays level-free; the forms below are an opt-in layer for
+type-level code that needs to name or relate universes. They are surface sugar
+over the internal level algebra (`UniverseLevel`: `Known | Meta | Succ | Max`)
+and add nothing to TLC, Dataflow Core, or the runtime — levels still erase
+before lowering.
+
+### A leveled universe: `$ℓ`
+
+A universe at an explicit level is written `$` followed by a level. Bare `Type`
+is unchanged and means `$<inferred>` — the same universe with its level left to
+inference. There is no `Type$ℓ` form: `$ℓ` *is* the leveled universe, so the
+common case stays short (`$0`, `$l`).
+
+```ebnf
+UniverseType ::= "Type"           // universe at an inferred level
+              |  "$" LevelArg     // universe at an explicit level
+
+LevelArg ::= IntLit              // $0
+          |  Ident               // $l
+          |  "(" Level ")"       // $(l + 1), $(max a b)
+
+Level    ::= LevelAtom ("+" IntLit)?    // successor (n applications)
+          |  "max" LevelArg LevelArg    // least upper bound
+          |  LevelAtom
+
+LevelAtom ::= IntLit | Ident | "(" Level ")"
+```
+
+A bare atom (`$0`, `$l`) needs no parentheses; compound level expressions are
+parenthesized (`$(l + 1)`, `$(max a b)`). The `$` spelling is a dedicated
+universe-level sigil that is otherwise unused in the surface language, so it
+overloads nothing: in particular it is distinct from `@` (explicit type-level
+argument, `Functor @List`) and from `#` (tags and labels, `#tag`,
+`{ #left : X; }`). A `$` only ever introduces a leveled universe.
+
+The level sub-grammar maps one-to-one onto the internal algebra:
+
+| Surface | Internal `UniverseLevel` |
+| --- | --- |
+| `$0` | `Known(0)` |
+| `$l` | the level bound to `l` (a shared meta per use) |
+| `$(l + n)` | `Succ` applied `n` times |
+| `$(max a b)` | `Max([a, b])` |
+
+`max` is binary at the surface; nest with parentheses (`max a (max b c)`). `+`
+takes an integer literal only — `l + 2` is two successors, while `l + m` (adding
+two levels) is not a level operation and is rejected. The pure-inference level
+(`Meta`) has no surface spelling; it is what bare `Type` elaborates to.
+
+### Naming a level: the `<$l>` binder
+
+A level variable is declared with the same `$` sigil it is used with, in a binder
+list before the signature. `<$l>` declares one level; `<$a, $b>` declares two.
+
+```ebnf
+LevelBinders ::= "<" "$" Ident ("," "$" Ident)* ">"
+```
+
+```zt
+Pair :: <$l> $l -> $l -> $l
+  = A B => type { first : A; second : B; };
+```
+
+A `$`-prefixed name in binder position always denotes a level variable, so the
+form is self-describing and needs no sort keyword — there is no separate `Level`
+sort to name. Using a level variable where a type is expected, or a type or value
+name where a level is expected, is a static error. A declared level variable that
+is never used is reported as an unused parameter.
+
+### Meaning: per-use level linking
+
+A `<$l>` binder does not introduce prenex level polymorphism. Each use
+of the declaration binds one shared level for every occurrence of `l` in that
+signature; the shared level is solved from the use site and defaulted to the
+lowest consistent universe, exactly like an inferred `Type`. The binder *links*
+occurrences (they must agree) and documents intent — it does not generalize. A
+signature may mix linked `$l` and independent bare `Type` freely.
+
+Because solving and defaulting are unchanged, explicit levels reject nothing
+that bare `Type` accepts; they add the ability to *pin* and *relate* universes:
+
+```zt
+Small       :: $0 = Int
+TypeOfTypes :: $1 = $0          // $0 : $1
+
+Pair Int Text   // l defaults to 0                     : $0
+Pair Int Type   // Type : $1, cumulativity lifts Int   : $1
+
+Sum :: <$a, $b> $a -> $b -> $(max a b)
+  = X Y => type { #left : X; #right : Y; };
+```
+
+An explicit level that is *too low* for the annotated definition is rejected;
+cumulativity makes the reverse harmless:
+
+```zt
+Bad :: $0 = $0   // reject: $0 : $1, not $0
+Ok  :: $5 = Int  // accept: Int : $0 within $5 (cumulativity)
+```
+
+The new forms introduce four diagnostics: an explicit level below the required
+universe, a level variable used as a type, a non-level name used as a level, and
+an unknown level variable.
 
 ---
 
@@ -118,5 +228,8 @@ required parts of the feature, not optional refinements: without them,
 introducing levels would reject currently-accepted higher-kinded programs.
 Type-level fuel still bounds normalization only, and runtime erasure and backend
 output for ordinary value programs are unchanged. Explicit surface level syntax
-remains reserved and unimplemented (`docs/TBD.md` "Explicit universe-level
-syntax").
+is now **specified** ([Explicit Level Syntax](#explicit-level-syntax)) but
+**not yet implemented** — `$ℓ` and `<$l>` do not yet parse. The
+design is front-end-only: it desugars to the internal level algebra and leaves
+TLC, Dataflow Core, and the runtime untouched. Implementation order and the
+crate map live in `docs/TBD.md` "V2-A".

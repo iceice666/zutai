@@ -442,13 +442,18 @@ containing only `io.print`; Dataflow lowers that to `HostPrint` and erases the
 row from the function type. Erasure is therefore a proof obligation, not a way
 to hide unimplemented effects.
 
-**Deferred free-monad form.** A reified free-monad data encoding remains a v2+
-option, not the implemented v1 backend path. The literal type
-`Free Op A = { pure: A } | { impure: Op }` with `resume: R -> Free Op A`
-requires recursive/nominal Dataflow Core types (`Mu` or equivalent knot-tying)
-to represent an unbounded runtime perform spine. Current DC types are finite
-structural trees, so the handler-passing CPS form is the implemented zero-new-TLC
-node representation.
+**Deferred free-monad form — now unblocked, under investigation.** A reified
+free-monad data encoding remains a v2+ option, not the implemented v1 backend
+path; handler-passing CPS stays the implemented zero-new-TLC node representation.
+The literal type `Free Op A = { pure: A } | { impure: Op }` with
+`resume: R -> Free Op A` requires recursive Dataflow Core types (`Mu` or
+equivalent knot-tying) to represent an unbounded runtime perform spine. This was
+deferred because DC types were finite structural trees — but **Phase 25 lifted
+that prerequisite**: recursive types now lower to cyclic `DfTyId` graphs, so the
+mechanism a free-monad spine needs exists. Whether that mechanism actually
+carries a residual-effect ABI for genuinely-escaping effects is now a scoped
+investigation rather than a hard representational blocker (see `docs/TBD.md`
+"Escaping-effect residual ABI").
 
 ---
 
@@ -494,7 +499,7 @@ The following are explicitly out of scope for TLC-the-core and must not be added
 - **Dependent types at runtime.** Types may not depend on runtime values (Decision 0002). Types are erased before Dataflow Core. "Unified universe core" means types-as-terms in the *type layer*; it does not mean runtime type dispatch.
 - **Coercion/cast nodes (`Coerce(e, T, U)`).** Equality is normalization. No coercions until GADTs arrive.
 - **Impredicative / higher-rank polymorphism beyond F-ω.** `ForAll` is predicative. `TyLam` at the term level handles rank-2 naturally via dictionaries.
-- **`perform`/`handle`/`resume` as core nodes.** Effects elaborate to handler-passing CPS (§9); the deferred free-monad data form needs recursive DC types.
+- **`perform`/`handle`/`resume` as core nodes.** Effects elaborate to handler-passing CPS (§9); the deferred free-monad data form needs recursive DC types, which Phase 25 now supplies (cyclic `DfTyId`), so its residual ABI is under scoped investigation (§9, `docs/TBD.md`) rather than blocked on representation.
 - **Record-update node.** Overlay stays stdlib (consistent with Decision 0001).
 - **Thunk/strictness annotations.** Laziness is represented structurally in Dataflow Core (reachability), not in TLC.
 - **`Type` or `Error` surviving to TLC as runtime expressions.** First-class `Type`-valued bindings live in the type layer and are erased. `TypeKind::Error` means type-checking failed — TLC is never produced when `is_thir_complete()` is false.

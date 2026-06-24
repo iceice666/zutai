@@ -90,3 +90,9 @@ structural non-argument position (record field, union variant, list element, or
 tuple item) rejects with an `UnsupportedFeature("impredicative type")`
 diagnostic, and impredicative instantiation such as `List (<A> A -> A)` likewise
 rejects with a dedicated diagnostic.
+
+A rank-2 lambda argument also lowers to **native** code with differential
+parity: `apply :: (<A> A -> A) -> Int = \g. g 1` compiles and matches the
+`eval_tlc` oracle (`compiled_rank2_lambda_arg_matches_oracle`); `ForAll` lowers
+to a Dataflow Core `TyFun`, and the value layer under the `TyLam` carries its
+peeled `param -> rest` type so the structural validator accepts it.

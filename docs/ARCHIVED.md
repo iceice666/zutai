@@ -36,7 +36,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 ## Current baseline
 
 _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening) and
-2026-06-25 (Phase A: `.zt`/`.zti` native module-import lowering)._
+2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering)._
 
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
@@ -148,7 +148,7 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ### Track B: Host-capability entry boundary ✅
 
-_Completed 2026-06-25. Implements the v2 spec §"Entry Boundary"
+_Completed 2026-06-24. Implements the v2 spec §"Entry Boundary"
 (`docs/v2_spec/02-host-capabilities.md`): a program may declare the host
 capabilities it needs as its entry parameter and the host supplies them. The six
 standard host ops already ran end-to-end via direct `perform` (the CLI grants
@@ -183,7 +183,7 @@ value._
 
 ### Phase A: Cross-function effect handler-passing ✅
 
-_Completed 2026-06-25. Closes a run-vs-compile parity gap in algebraic-effect
+_Completed 2026-06-24. Closes a run-vs-compile parity gap in algebraic-effect
 lowering: a `perform` reached only through a call to a separate effectful
 function — handled at the call site — previously ran in the interpreter but was
 refused by the native backend ("algebraic effects remain after TLC lowering")._
@@ -221,7 +221,7 @@ refused by the native backend ("algebraic effects remain after TLC lowering")._
 
 ### Phase D: Open-union match lowering ✅
 
-_Completed 2026-06-25. Closes the Track 1 Phase D item in `TBD.md` and the
+_Completed 2026-06-24. Closes the Track 1 Phase D item in `TBD.md` and the
 open-union half of the v1 row-polymorphism gap. A polymorphic match over a
 `<Rest>`-tailed open union now type-checks and compiles with parity, completing
 native row polymorphism._
@@ -249,7 +249,7 @@ native row polymorphism._
 
 ### Phase C: Open-row select lowering ✅
 
-_Completed 2026-06-25. Closes the Track 1 Phase C item in `TBD.md` and the
+_Completed 2026-06-24. Closes the Track 1 Phase C item in `TBD.md` and the
 open-row-select half of the v1 row-polymorphism gap. Open-row field reads
 (`getN :: { n : Int; ...; } -> Int = x => x.n`) now compile natively with
 parity; the field's runtime slot is recomputed for each concrete record._
@@ -285,7 +285,7 @@ parity; the field's runtime slot is recomputed for each concrete record._
 
 ### Phase 33: Uncurrying / known-call optimization ✅
 
-_Completed 2026-06-25. Closes the Track 2 Phase 33 item in `TBD.md` and the
+_Completed 2026-06-24. Closes the Track 2 Phase 33 item in `TBD.md` and the
 uncurrying prerequisite of the deferred GC trajectory. On accumulator loops the
 calling-convention churn — one closure + one arg-tuple per curried call — is
 eliminated entirely; values are unchanged._
@@ -322,7 +322,7 @@ eliminated entirely; values are unchanged._
 
 ### Phase B: Conditional cross-module witnesses ✅
 
-_Completed 2026-06-25. Closes the "Conditional cross-module witnesses" gap of the
+_Completed 2026-06-24. Closes the "Conditional cross-module witnesses" gap of the
 v1 native-backend constraints/witnesses item in `TBD.md`. Imported parametric
 witnesses (`Eq @(List A)`, `Eq @(Pair A)`, `Eq @(Optional A)`) now dispatch on
 both the native backend and the `eval_tlc` interpreter, with differential parity._
@@ -367,7 +367,7 @@ both the native backend and the `eval_tlc` interpreter, with differential parity
 
 ### Interpreter oracle consistency: record equality + imported-method dispatch ✅
 
-_Completed 2026-06-25. Two latent interpreter (TLC-evaluator) correctness bugs found
+_Completed 2026-06-24. Two latent interpreter (TLC-evaluator) correctness bugs found
 while probing cross-module conditional witnesses; both fixed independently of the
 still-open Phase B native conditional dispatch._
 
@@ -395,7 +395,7 @@ still-open Phase B native conditional dispatch._
 
 ### Phase A: Module-import native lowering (.zti + .zt) + witness naming fix ✅
 
-_Completed 2026-06-25. Closes the "Module imports" sub-item of the v1 native-backend
+_Completed 2026-06-24. Closes the "Module imports" sub-item of the v1 native-backend
 constraints/witnesses item in `TBD.md`; also fixes a conditional-witness dispatch segfault._
 
 - **Phase A.a** (`05fa320`): `.zti` data imports lower inline to Dataflow Core

@@ -1,154 +1,96 @@
 # Zutai Open Work
 
-Open work is now grouped by deferral horizon. Completed milestones live in
-`docs/ARCHIVED.md`; new implementation phases should be added here when scoped.
+Open work is grouped by deferral horizon. Completed milestones and their
+implementation detail live in `docs/ARCHIVED.md`; language design lives in
+`docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
+New implementation phases should be added here when scoped.
 
-## Scheduled phases
+## Status (2026-06-24)
 
-Top-to-bottom is implementation priority. **Track 1** (lettered) continues the
-Phase A v1-native-backend-closing series; **Track 2** (numbered) continues the
-Phase 30–32 performance series. Per-feature support-level status for each gap is
-detailed under "v1 native-backend lowering" and "Deferred to v2/v3" below.
+Both backend-closing tracks have landed (see `docs/ARCHIVED.md`):
 
-All Track 1 (v1-native-backend) phases — A, B, C, D — have landed (2026-06-25;
-see `docs/ARCHIVED.md`), as have Track 2 performance Phases 30–33. The only
-remaining scheduled item is **Phase 34** (the GC collector), which stays gated on
-a demonstrated GC workload.
+- **Track 1** — v1 native-backend, Phases A–D — complete. **Track 2** —
+  performance, Phases 30–33 — complete.
+- **v1 is semantically and natively complete.** Every feature parses,
+  type-checks through THIR, elaborates to TLC, runs in the `zutai-eval`
+  differential oracle, and lowers to native code. Row polymorphism is
+  native-complete (open-row selects, Phase C; open-union matches, Phase D); the
+  constraints/witnesses item dispatches natively including conditional
+  cross-module witnesses (Phase B). Residual v1 items are by-design non-goals
+  ("v1 residual" below), not unfinished work.
+- **v2 is largely native.** The five v2 features landed at
+  check-plus-reference-interpreter level (Phases 24–28); four also lower
+  natively — recursive types (cyclic type descriptors), host capabilities
+  (`HostOp` lowering + the Track B entry boundary), derive recipes
+  (fold-or-reject reflection), and higher-rank polymorphism (rank-2 lambda-arg
+  compile parity, `compiled_rank2_lambda_arg_matches_oracle`). Only **explicit
+  universe-level syntax** is unimplemented.
+- 1567 workspace tests pass.
 
-### Phase 34 — Conservative mark-sweep GC (Track 2)
+**Can we move to v2?** We already have — Phases 24–28 and Track B are v2 work,
+and four of the five v2 features lower natively. There is no v1 native-backend
+blocker left. Two phases are now **active**: the small **v2 tail** (V2-A,
+explicit universe syntax) and the **escaping-effect residual-ABI spike**
+(Phase 35), runnable independently. Phase 34 (GC) stays gated and the v3 items
+below stay deferred.
 
-- **Gate.** Schedule only once a real GC workload exists (unbounded streams reach
-  the backend, or accumulator garbage dominates after Phase 33).
-- **Approach.** Zero-ABI **non-moving** mark-sweep as the bridge. A precise
-  moving collector (Cheney endgame) needs root-finding over untagged `i64`
-  (D-0002) — a shadow stack or stack maps, an ABI change beyond D-0008/D-0009 —
-  so it is out of scope here. The lazy-backend path stays rejected
-  (strict-plus-TCO is committed).
-- **Depends on a demonstrated workload.** Phase 33 (the prerequisite uncurrying
-  pass) landed 2026-06-25, so calling-convention churn no longer dominates;
-  schedule a collector only once genuine user-data garbage (not call churn) does.
+## V2 milestone — remaining work
 
-## Near-term hardening
+The forward milestone. Top-to-bottom is implementation priority.
 
-_Both prior near-term items (per-layer forall-lambda typing; differential
-value-rendering corpus) landed 2026-06-23 — see `docs/ARCHIVED.md` "Near-term
-backend hardening: witness dispatch, open-row gate, corpus". No near-term
-hardening items are currently open._
+### V2-A — Explicit universe-level syntax (small)
 
-## v1 native-backend lowering
+THIR/TLC carry internal universe levels (Phase 24): the core kind has a level
+slot, with level inference, cumulativity, and level-polymorphic defaulting.
+Surface level syntax is **specified, not yet implemented**
+(`docs/v2_spec/04-universe-levels.md` "Explicit Level Syntax").
 
-v1 is **semantically complete**: every feature parses, type-checks through
-THIR, elaborates to TLC, and runs in the `zutai-eval` reference interpreter
-that serves as the differential oracle (`docs/ARCHIVED.md` "Current
-baseline"). What is missing for "complete" by the v0 bar — full LLVM/native
-lowering plus runtime — is the **backend half of the pipeline** for most v1
-features. Track 1 native parity is now **scheduled** as Phases B/C/D under
-"Scheduled phases" above — the project no longer defers v1 native parity
-wholesale. The ranked detail below is the per-feature support-level reference,
-citing the manual's "Implemented extensions beyond v0" table
-(`docs/language-manual.md`).
+Decided design (2026-06-24): levels are a syntactic sub-grammar over the existing
+`UniverseLevel` algebra (`Known | Meta | Succ | Max`), not a first-class `Level`
+type.
 
-Ranked by remaining work:
+- `$ℓ` is a universe at an explicit level: `$0`, `$l`, `$(l + 1)`,
+  `$(max a b)`. Bare atoms need no parens; `+`/`max` compounds are
+  parenthesized. `+` takes an integer literal (nested successor); `max` is
+  binary. Bare `Type` is unchanged (`$<inferred>`). There is no `Type$ℓ` form —
+  `$ℓ` *is* the leveled universe. `$` is a dedicated universe-level sigil,
+  otherwise unused, so it overloads nothing (distinct from `@` explicit type
+  argument and `#` tags).
+- `<$l>` (and `<$a, $b>`) binds level variables in a binder list before the
+  signature, using the same `$` sigil as the use site — no `Level` sort keyword.
+  A binder *links* its `$l` occurrences and defaults per use — no prenex level
+  polymorphism, nothing new in TLC.
 
-1. **Constraints / witnesses / derive (largest).** Dictionary passing already
-   reaches the native backend: as of 2026-06-23 a compiled-vs-interpreter
-   corpus (`COMPILED_WITNESS_FIXTURES`) confirms native parity for two-method
-   sorted-slot dispatch, derived record equality, a conditional `List` witness,
-   and a method-level type parameter (the dict field-slot was being dropped
-   during effect rewriting — fixed in commit `69e6758`). As of 2026-06-25
-   **conditional witnesses with inner field access** also compile and run
-   correctly: `Eq @(Pair A) :: { eq = \p q. eq p.fst q.fst; }` was segfaulting
-   because all instances of a constraint got the same HIR global name (the
-   constraint name), so later instances overwrote earlier ones in
-   `globals`; the fix appends `$w{id}` to each witness instance global name
-   so every instance coexists. Probing confirmed
-   native parity for operator-method witnesses (`==`/`<` direct and bounded),
-   structural Show/Ord `derive` rendering, and union `derive` equality too, so
-   the prior "zero native support" claim was broadly stale. Genuinely open
-   shapes: **higher-kinded instantiation** stays check-only by design — eval and
-   compile both refuse HKT execution (`unify.rs` "a refused check is the safe
-   direction"), and a type-checking `mapTwice (\x. x) [1; 2;]` is consistently
-   rejected at the type-check stage on both paths. **Imported witnesses — concrete
-   instances only** — now dispatch natively as of 2026-06-25 (commit `d28bc5d`):
-   `WitnessExport::binding_id` lets the CLI compute each dep's DC global name
-   (`$dep{idx}${constraint}$w{binding_id}`); the TLC lowerer's extern witness table
-   maps `(constraint_name, target_key_str)` to that global; the DC `Var` arm
-   emits a `GlobalRef`. Differential tests confirm parity for `Eq @Int`, `Eq @Bool`,
-   `Ord @Int` imports. **Conditional cross-module witnesses landed 2026-06-25**
-   (Phase B): parametric instances like `Eq @(List A)` / `Eq @(Pair A)` /
-   `Eq @(Optional A)` now dispatch natively and in the interpreter — the importer
-   structurally matches the dep's exported `WitnessPattern` against the concrete
-   call-site type, recovers each parameter, and applies the dep-namespaced witness
-   global to recursively-resolved component dicts (see `docs/ARCHIVED.md`). The
-   remaining check-only shape is **higher-kinded instantiation** (polymorphic
-   passing), rejected at the type-check stage by design.
+Implementation is front-end-only (levels still erase before Dataflow Core). One
+phase, three crate touchpoints, executed in dependency order:
 
-2. **Row polymorphism (large).** Parser/HIR/THIR/TLC carry row variables and
-   the interpreter runs row-typed code as ordinary records/unions. Confirmed
-   native today: concrete/closed value-level `select` and field access; open-row
-   *passthrough* (a polymorphic function that returns its record argument without
-   reading a field by slot); **union extension** (`...Shape` spreading an
-   existing union into a new type — both spread-member and new-member tag
-   dispatch compile with full parity, per `compiled_union_extension_matches_oracle`).
-   Named row-tail *selects* — open-row field reads (`getN :: { n : Int; ...; } ->
-   Int = x => x.n`) — **landed 2026-06-25** (Phase C): row-erased
-   monomorphization inlines a concrete-argument call as `let x = arg in body`,
-   substituting the row variable by the argument's extra fields so the field's
-   slot is recomputed for the concrete record (`monomorphize_open_row_selects`).
-   The `open_row_select_reason` gate is now reachability-scoped and still rejects
-   genuinely-polymorphic open-row selects (a function applied to a still-open
-   argument). Open-union matches (a polymorphic match over a `...Rest`-tailed
-   union type) **landed 2026-06-25** (Phase D): unlike record selects they are
-   tag-dispatched (no slot hazard, no monomorphization needed), so lifting the
-   over-restrictive `union_rows_match` rigid-tail check — a closed member pattern
-   is a valid case of a rigid open union — is the whole fix; the backend already
-   lowered the tag dispatch. With this, the whole row-polymorphism item is
-   native-complete.
+- [ ] `general/syntax`: parse `UniverseType` + the `Level` sub-grammar and the
+  `<$…>` binder list. Parse/round-trip coverage only; no semantics.
+- [ ] `general/hir`: resolve `$…` idents to level binders; reject level↔type
+  cross-use; report an unused declared level variable.
+- [ ] `general/thir`: feed parsed levels into `UniverseLevel` instead of
+  always-fresh metas; add the four diagnostics (explicit level too low, level
+  var used as type, non-level used as level, unknown level var). Solver,
+  cumulativity, and defaulting already exist (Phase 24).
+- `tlc`/backend: untouched (levels erase before Dataflow Core).
 
-3. **Residual-effect runtime (medium; partly a non-goal).** Handled effects
-   CPS-elaborate to ordinary functions/matches before TLC->DC and lower
-   natively. As of 2026-06-25 (Phase A) this includes effects reached *through a
-   call* to a monomorphic, non-recursive, effectful top-level function: the
-   call is inlined at its (handled) call site so the `perform` becomes lexically
-   enclosed by the handler and the existing CPS discharges it
-   (`crates/general/tlc/src/lower/effects/inline.rs`); a differential corpus
-   confirms run==compile parity for the single-arg, curried, resuming, chained,
-   and multi-site shapes. Ambient `io.print` lowers to the runtime `HostPrint`
-   path. Still **rejected** (refused, never miscompiled) before Dataflow Core:
-   recursive/mutually-recursive effectful callees, polymorphic and higher-order
-   effectful values, partial applications, effects that escape the entry
-   boundary other than `io.print`, and open effect rows
-   (`docs/spec/v1/05-effects.md` "Laziness and Ordering"). A general
-   residual-effect ABI for genuinely-escaping effects is the remaining gap;
-   whether it is in scope is itself a design decision — the strict AOT backend
-   may keep rejecting unhandled effects.
+**Verification gate:** explicit levels reject nothing that bare `Type` already
+accepts (no well-founded program newly rejected — same solver/defaulting); the
+four new diagnostics each fire on a targeted case; `$0`/`$l`/`$(l + n)`/
+`$(max a b)` and `<$l>`/`<$a, $b>` parse and check per the spec examples
+(`docs/v2_spec/04-universe-levels.md` "Explicit Level Syntax"). Full workspace
+suite stays green.
 
-4. **Explicit universe-level syntax (small; mostly v2).** THIR/TLC carry
-   internal universe levels, but surface level syntax is unimplemented;
-   level-polymorphic constructors default to the lowest consistent universe
-   and erase before backend lowering (`docs/ARCHIVED.md` "Current baseline").
-   Full stratification is the deferred v2 universe-levels design.
+**Doc-sync follow-up (once V2-A lands):**
 
-**By design, not gaps** — do not file these as missing native work:
+- [ ] `docs/spec/v0/02-lexical/grammar-reference.md` — add `UniverseType` /
+  `Level` / `LevelBinders` to the implemented-grammar reference (only after the
+  parser lands).
+- [ ] `docs/v2_spec/04-universe-levels.md` "Support Level" — flip explicit level
+  syntax from "specified but not yet implemented" to its landed status.
+- [ ] Move the V2-A summary into `docs/ARCHIVED.md` and retire this entry.
 
-- **Reflection** (`fields`/`variants`/`schema`/`witness`) is compile-time:
-  `compile`/`dataflow` fold serializable reflection (`schema`, `fields`,
-  `variants`, and `witness`-dispatch whose result is a data value) to backend
-  constants and reject residual reflection (a raw `witness` dictionary, a
-  `Type`-valued result) before lowering. Fold-or-reject is the intended model.
-  As of 2026-06-23 this is enforced for all four forms — `variants` (was a
-  silent empty-result miscompile) and the `witness C @T` expression (was a
-  Dataflow Core ICE) now fold-or-reject through `aot_reflection_program`, so
-  reflection is as native as it should be in fact, not just in intent.
-- **Rejecting unhandled non-`io.print` effects** at the backend is the
-  committed strict-AOT behavior, not an unfinished feature.
-- **Annotation-required inference** where row/constraint inference is not
-  principal is specified behavior (`docs/spec/v1/01-row-polymorphism.md`
-  "Extended Inference"), not a backend gap.
-
-## Deferred to v2/v3
-
-### Garbage collection — deferred behind tail-call optimization
+### Phase 34 — Conservative mark-sweep GC (runtime; Track 2, gated)
 
 Decision (A), 2026-06-22: the native backend commits to **strict semantics plus
 tail-call optimization** (Phase 31), with garbage collection **deferred**. The
@@ -156,37 +98,116 @@ compiled heap stays leak-by-default inside the capped thread-local arena
 (Phase 30); the cap bounds the blast radius, and finite strict programs
 terminate within it.
 
-Empirical basis (measured with `ZUTAI_HEAP_STATS`):
+- **Gate — schedule only once a real GC workload exists**: unbounded streams
+  reach the backend, or accumulator garbage dominates after Phase 33. The
+  uncurrying prerequisite (Phase 33) landed, so calling-convention churn no
+  longer dominates allocation (~2/3 of accumulator allocation was one arg-tuple
+  + one closure per curried call, now removed); schedule a collector only once
+  genuine user-data garbage — not call churn — does.
+- **Approach — committed: zero-ABI conservative non-moving mark-sweep as the
+  bridge.** Root-finding, not the algorithm, was the open gap: untagged `i64`
+  values (D-0002) make conservative scanning ambiguous, and a precise moving
+  (Cheney) collector would need a shadow stack or stack maps — an ABI change
+  beyond D-0008/D-0009. Decision (2026-06-24): the bridge collector accepts
+  conservative scanning (and the false retention it implies) precisely to avoid
+  that calling-convention change; D-0002 is not reopened here. This feeds the
+  `runtime-abi.md` D-0008 endgame (precise non-moving mark-sweep → generational
+  Cheney copying), which stays write-barrier-free only while the heap is
+  write-once.
+- **Lazy backend not taken.** A lazy backend (thunk update = mutation =
+  old→young pointers) would force a write barrier; strict-plus-TCO is committed.
 
-- Before TCO the native stack was the binding constraint — recursion overflowed
-  around 10^5–10^6 frames, far below the heap cap (~10^7–10^8 objects). GC could
-  not help those programs; TCO could, and now does.
-- After TCO, deep tail recursion runs in O(1) stack and the heap becomes the
-  binding constraint, so GC is now a meaningful space optimization for
-  bounded-live / unbounded-allocation programs (accumulator loops).
-- ~2/3 of accumulator allocation is calling-convention overhead (one arg-tuple
-  and one closure per curried call), not user data — so **uncurrying** would cut
-  more allocation than GC for typical code.
+Empirical basis (measured with `ZUTAI_HEAP_STATS`): before TCO the native stack
+bound recursion (~10^5–10^6 frames, far below the ~10^7–10^8-object heap cap), so
+GC could not help; after TCO deep tail recursion runs in O(1) stack and the heap
+becomes the binding constraint, making GC a meaningful space optimization for
+bounded-live / unbounded-allocation programs (accumulator loops).
 
-Reordered trajectory (was: leak → mark-sweep → generational copying):
+### Phase 35 — Escaping-effect residual ABI (active spike, time-boxed)
 
-1. **Uncurrying / known-call optimization** (Phase 33) — **landed 2026-06-25**:
-   saturated curried calls to a known function collapse to a direct multi-arg
-   worker call and the clause arg-tuple is scalar-replaced, removing the per-call
-   closure+tuple churn (`docs/ARCHIVED.md`).
-2. **Collector** (Phase 34), only once a real GC workload exists (unbounded streams reach
-   the backend, or accumulator garbage dominates). Root-finding, not the
-   algorithm, is the open gap: untagged `i64` values (D-0002) make conservative
-   scanning ambiguous, so a precise moving collector needs a shadow stack or
-   stack maps — an ABI change beyond D-0008/D-0009. A conservative non-moving
-   mark-sweep is the zero-ABI bridge; Cheney copying is the endgame and stays
-   write-barrier-free only while the heap is write-once.
-3. A lazy backend (thunk update = mutation = old→young pointers) would force a
-   write barrier; that path is **not** taken — strict-plus-TCO is committed.
+Handled effects CPS-elaborate to ordinary functions/matches and lower natively,
+including effects reached *through a call* to a monomorphic, non-recursive
+effectful function (Phase A inline-specialization), plus ambient `io.print`
+(runtime `HostPrint`). Still **rejected** (refused, never miscompiled) before
+Dataflow Core: recursive/mutually-recursive effectful callees, polymorphic and
+higher-order effectful values, partial applications, effects escaping the entry
+boundary other than `io.print`, and open effect rows
+(`docs/spec/v1/05-effects.md`).
 
-## Deferred beyond planned v3 work
+A general residual-effect ABI for these genuinely-escaping effects is the open
+gap. The framing has shifted: `tlc-core.md` §9 deferred the reified `Free Op A`
+free-monad form because it needs recursive Dataflow Core types to represent an
+unbounded perform spine, and DC types were finite structural trees. **Phase 25
+lifted that prerequisite** — recursive types now lower to cyclic `DfTyId` graphs
+— so the specific blocker §9 named no longer holds.
 
-GADT-style local type equalities and the coercion/cast core node (an explicit
-non-goal, `tlc-core.md` §10), impredicative instantiation, unforgeable
-capability tokens, and nominal recursive types remain unassigned to the active
-v2/v3 roadmap.
+Decision (2026-06-24): this is no longer a binary in-scope question but a
+**scoped spike** — evaluate whether a reified `Free Op A` encoding can lower over
+the now-available cyclic DC types, taking the rejected list above as its target
+scope. The spike is exploratory; it does not promise delivery, and the
+strict-AOT-rejects path (see "v1 residual" below) remains the fallback if the
+encoding proves too costly.
+
+Promoted to an active phase (2026-06-24) because the representational blocker is
+gone (Phase 25) and the design questions are settled (`tlc-core.md` §9) — what is
+left is investigation, not more design. Run it independently of V2-A (no shared
+crates). Time-box and gate on a written go/no-go:
+
+- [ ] **Encode.** Express `Free Op A = { pure: A } | { impure: Op }` with
+  `resume: R -> Free Op A` over a cyclic `DfTyId`; confirm the perform spine
+  represents as a real DC value (no new TLC node).
+- [ ] **Lower one case.** Take the simplest rejected case — a single
+  recursive/self-tail effectful callee — through DC → ANF → SSA → native and run
+  it against the `zutai-eval` oracle.
+- [ ] **Cost it.** Measure allocation/dispatch overhead of the reified spine
+  versus the handler-passing CPS path that already lowers, and note which
+  rejected cases (polymorphic/higher-order effectful values, partial
+  applications, open rows) the encoding does *not* reach.
+- [ ] **Go/no-go.** Write the decision: either scope a delivery phase for the
+  cases the encoding covers, or record that strict-AOT-rejects stays the
+  committed behavior and close the spike. Either outcome lands in
+  `docs/ARCHIVED.md`.
+
+## v1 residual — by design, not gaps
+
+Do not file these as missing native work:
+
+- **Higher-kinded instantiation** (polymorphic dictionary passing) stays
+  check-only by design — eval and compile both refuse HKT execution
+  (`unify.rs` "a refused check is the safe direction"); a type-checking
+  `mapTwice (\x. x) [1; 2;]` is rejected at the type-check stage on both paths.
+- **Reflection** (`fields`/`variants`/`schema`/`witness`) is compile-time:
+  `compile`/`dataflow` fold serializable reflection to backend constants and
+  reject residual reflection (a raw `witness` dictionary or a `Type`-valued
+  result) before lowering (`aot_reflection_program`). Fold-or-reject is the
+  intended model.
+- **Rejecting unhandled non-`io.print` effects** at the backend is the committed
+  strict-AOT behavior.
+- **Annotation-required inference** where row/constraint inference is not
+  principal is specified behavior (`docs/spec/v1/01-row-polymorphism.md`
+  "Extended Inference").
+
+## Deferred beyond v2 (v3+)
+
+- **Richer generators.** The finite `stream { yield …; }` shell landed
+  (Phase 29); the richer-generator design is open
+  (`docs/v3_spec/01-generators.md`).
+- **Reserved design boundaries** past v2 (`docs/v2_spec/00-index.md` "Deferred
+  beyond v2"): GADT-style local type equalities and the coercion/cast core node
+  (an explicit non-goal, `tlc-core.md` §10), impredicative instantiation
+  (v2 higher-rank polymorphism stays predicative), unforgeable capability tokens
+  (v2 capabilities carry advisory authority), and nominal recursive types
+  (v2 recursive types are equirecursive).
+
+## Doc reconciliation (2026-06-24 audit)
+
+Surfaced by the V1→V2 readiness audit; both resolved 2026-06-24:
+
+- **Forward-dated ARCHIVED stamps.** Nine `2026-06-25` stamps in
+  `docs/ARCHIVED.md` (the "Current baseline" Last-updated note plus eight
+  completed-milestone entries) were one day ahead of the authoritative date;
+  corrected to 2026-06-24.
+- **Higher-rank support level.** `docs/v2_spec/05-higher-rank-polymorphism.md`
+  "Support Level" understated support as reference-interpreter only; native
+  rank-2 lambda-arg parity is in fact tested
+  (`compiled_rank2_lambda_arg_matches_oracle`). Corrected.
