@@ -2391,6 +2391,89 @@ next ()
 }
 
 #[test]
+fn capability_record_entry_supplies_advisory_tokens() {
+    // Spec §"Entry Boundary": a `{ caps } -> Result` entry has its capability
+    // record supplied by the host. Run and compile must agree.
+    let data_path = write_tmp("cli_test_cap_entry_data.txt", "capdata");
+    let source = format!(
+        r#"
+readConfig :: FsRead -> Text ! {{ fs.read : Path -> Text }}
+  = fs => perform fs.read "{}";
+main :: {{ fs : FsRead; }} -> Text ! {{ fs.read : Path -> Text }}
+  = caps => readConfig caps.fs;
+main
+"#,
+        zt_string_literal(&data_path)
+    );
+    let run = run_stdout("cli_test_cap_entry_run.zt", &source);
+    let compiled = compile_bin_stdout("cli_test_cap_entry_compile", &source);
+    assert_eq!(run, "\"capdata\"\n");
+    assert_eq!(compiled, run, "capability-entry run vs compile mismatch");
+}
+
+#[test]
+fn capability_single_entry_supplies_token() {
+    let data_path = write_tmp("cli_test_cap_single_data.txt", "single");
+    let source = format!(
+        r#"
+main :: FsRead -> Text ! {{ fs.read : Path -> Text }}
+  = fs => perform fs.read "{}";
+main
+"#,
+        zt_string_literal(&data_path)
+    );
+    assert_eq!(
+        compile_bin_stdout("cli_test_cap_single", &source),
+        "\"single\"\n"
+    );
+}
+
+#[test]
+fn capability_curried_entry_supplies_all_tokens() {
+    // Curried capability parameters are each supplied a token.
+    let data_path = write_tmp("cli_test_cap_curried_data.txt", "curried");
+    let source = format!(
+        r#"
+main :: FsRead -> Env -> Text ! {{ fs.read : Path -> Text; env.get : Text -> Text? }}
+  = fs e => perform fs.read "{}";
+main
+"#,
+        zt_string_literal(&data_path)
+    );
+    assert_eq!(
+        compile_bin_stdout("cli_test_cap_curried", &source),
+        "\"curried\"\n"
+    );
+}
+
+#[test]
+fn compile_user_function_named_main_does_not_collide_with_c_entry() {
+    // A user binding named `main` must not redefine the C entry symbol.
+    let out = compile_bin_stdout(
+        "cli_test_user_main",
+        "main :: Int -> Int = x => x;\nmain 5\n",
+    );
+    assert_eq!(out, "5\n");
+}
+
+#[test]
+fn compile_non_capability_function_entry_is_rejected() {
+    // Only capability-shaped entry functions are supplied tokens; a plain
+    // function entry still cannot be rendered by the runtime ABI.
+    let path = write_tmp(
+        "cli_test_noncap_fn_entry.zt",
+        "f :: Int -> Int = x => x;\nf\n",
+    );
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("function"));
+}
+
+#[test]
 fn dataflow_print_program_lowers_with_runtime_host_print() {
     let path = write_tmp("cli_test_print_dataflow.zt", "print \"x\"\n");
     cli()

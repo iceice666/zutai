@@ -26,6 +26,7 @@ pub fn lower_thir(file: &ThirFile) -> TlcModule {
     let mut module = lowerer.lower_file();
     module.inline_effectful_calls();
     module.elaborate_effects();
+    module.apply_entry_capabilities();
     if crate::residual_effect_reason(&module).is_none() {
         module.erase_effects();
     }
@@ -52,6 +53,7 @@ pub fn lower_thir_with_extern_witnesses(
     let mut module = lowerer.lower_file();
     module.inline_effectful_calls();
     module.elaborate_effects();
+    module.apply_entry_capabilities();
     if crate::residual_effect_reason(&module).is_none() {
         module.erase_effects();
     }

@@ -3,10 +3,20 @@ use zutai_ssa::*;
 
 /// Sanitise a Zutai identifier into a valid LLVM IR name.
 pub(crate) fn mangle(name: &str) -> String {
-    name.replace(['-', '.', '='], "_")
+    let sanitized = name
+        .replace(['-', '.', '='], "_")
         .replace('?', "_Q")
         .replace('!', "_B")
-        .replace('@', "_at_")
+        .replace('@', "_at_");
+    // `main` is the C entry symbol `emit_main` emits verbatim (`define i32
+    // @main`); a user binding named `main` would redefine it. `$` cannot occur
+    // in a source identifier (UAX #31 — only synthesized names like witness
+    // globals use it), so a `$`-marked rename is collision-free with both source
+    // names and the `$dep…` witness scheme.
+    if sanitized == "main" {
+        return "main$user".to_string();
+    }
+    sanitized
 }
 
 /// D-0003 closure object tag (matches `TAG_CLOSURE` in `zutai-rt`).

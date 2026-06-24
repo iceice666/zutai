@@ -131,3 +131,13 @@ a Dataflow Core `HostOp` node that ANF/SSA/codegen preserve and the
 runtime/evaluator dispatch. Ambient `io.print` stays source-compatible, and
 `handle` can still intercept any host operation before the boundary. A residual
 host operation the host does not grant is still rejected before code generation.
+
+The **entry boundary** (above) also landed: an entry function whose leading
+parameters are host capabilities — an `Opaque` capability type, or a closed
+record of them — is supplied advisory tokens by the `run`/`compile` boundary
+(`crates/general/tlc/src/entry.rs`), so `main :: { fs : FsRead; } -> Result`
+applies and runs rather than being rejected as a function-valued entry. Tokens
+are never inspected (authority is the effect row, not the value), so the host
+synthesizes a placeholder per requested capability. Curried capability
+parameters (`FsRead -> Env -> R`) are each supplied; a non-capability parameter
+stops the supply, leaving a genuinely function-valued entry rejected as before.

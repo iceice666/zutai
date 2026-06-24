@@ -1,5 +1,6 @@
 use rustc_hash::FxHashSet;
 
+mod entry;
 mod erase;
 mod ir;
 mod lower;

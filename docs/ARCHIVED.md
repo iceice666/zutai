@@ -146,6 +146,41 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Track B: Host-capability entry boundary ✅
+
+_Completed 2026-06-25. Implements the v2 spec §"Entry Boundary"
+(`docs/v2_spec/02-host-capabilities.md`): a program may declare the host
+capabilities it needs as its entry parameter and the host supplies them. The six
+standard host ops already ran end-to-end via direct `perform` (the CLI grants
+`HostEffectSet::ALL`); the only gap was the idiomatic `main :: { caps } -> Result`
+shape, rejected as "entry returns a function" with no way to obtain a capability
+value._
+
+- **Mechanism.** A TLC pass `apply_entry_capabilities`
+  (`crates/general/tlc/src/entry.rs`), run in `lower_thir` so the interpreter
+  (`run`) and native (`compile`) paths share it, applies the entry to synthesized
+  advisory capability tokens while its leading parameter is capability-shaped (an
+  `Opaque` capability type, or a closed record of them), iterating so curried
+  `FsRead -> Env -> R` parameters are all supplied. The entry then has the
+  `Result` type the backend renders, and its granted host effects lower to the
+  existing `HostOp`/`HostPrint` path.
+- **Advisory tokens.** Capability values are never inspected (authority is the
+  effect row, not the value), so each token is a `0` literal stamped with the
+  capability's opaque type. DC `Lit` validation is a no-op, so the literal kind
+  need not match the opaque type; codegen emits an `i64 0` the program never
+  reads. A non-capability parameter stops the supply, leaving a genuinely
+  function-valued entry rejected as before.
+- **`main` symbol fix.** Escaped the reserved C entry symbol in codegen `mangle`:
+  a user binding named `main` mangled verbatim to `@main`, redefining
+  `define i32 @main`. `$` cannot occur in a source identifier (UAX #31), so the
+  rename `main` → `main$user` is collision-free with both source names and the
+  `$dep…` witness scheme. A pre-existing latent bug, surfaced because
+  function-named entries used to be rejected before code generation.
+- **Validation.** Run-vs-compile parity tests for single, record, and curried
+  capability entries (reading a temp file through the boundary); plus a
+  user-function-named-`main` regression and a non-capability-entry rejection
+  test. 1567 workspace tests pass; `cargo fmt` and `cargo clippy` clean.
+
 ### Phase A: Cross-function effect handler-passing ✅
 
 _Completed 2026-06-25. Closes a run-vs-compile parity gap in algebraic-effect
