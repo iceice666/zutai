@@ -3,7 +3,7 @@ use winnow::Result;
 use winnow::combinator::{fail, peek};
 
 use crate::ast::{
-    Expr, FuncClause, HandleClause, LocalBinding, RecordField, SelectField, TupleItem,
+    Expr, FuncClause, GenStmt, HandleClause, LocalBinding, RecordField, SelectField, TupleItem,
 };
 use crate::span::Span;
 
@@ -499,41 +499,105 @@ fn starts_generator(input: &str) -> bool {
         return false;
     }
     let mut body = &tmp[1..];
-    if ws(&mut body).is_err() || kw("yield").parse_next(&mut body).is_err() {
+    if ws(&mut body).is_err() {
         return false;
     }
-    ws(&mut body).is_ok() && !matches!(body.chars().next(), Some('=' | ';' | '}') | None)
+    // `stream` stays contextual: a generator block begins with a `yield`
+    // statement (the classic shell) or a guarded `if` (a conditional/recursive
+    // generator, V3-G3). Anything else keeps `stream` an ordinary identifier so
+    // `stream { field = value; }` remains plain function application; to force
+    // application of a conditional, parenthesise: `stream ({ if … })`.
+    let mut yield_probe = body;
+    if kw("yield").parse_next(&mut yield_probe).is_ok() {
+        return ws(&mut yield_probe).is_ok()
+            && !matches!(yield_probe.chars().next(), Some('=' | ';' | '}') | None);
+    }
+    let mut if_probe = body;
+    kw("if").parse_next(&mut if_probe).is_ok()
 }
 
 fn parse_generator(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let (_, start_span) = spanned(kw("stream")).parse_next(input)?;
     ws(input)?;
-    let (yields, end_span) = parse_generator_block(input, options)?;
+    let (body, end_span) = parse_gen_brace_block(input, options)?;
     Ok(Expr::Generator {
-        yields,
+        body,
         span: start_span.merge(end_span),
     })
 }
 
-fn parse_generator_block(input: &mut &str, options: ExprOptions) -> Result<(Vec<Expr>, Span)> {
+/// Parse a `{`-delimited generator statement block, returning its statements and
+/// the span of the closing brace.
+fn parse_gen_brace_block(input: &mut &str, options: ExprOptions) -> Result<(Vec<GenStmt>, Span)> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
-    let mut yields = Vec::new();
+    let mut stmts = Vec::new();
     loop {
         ws(input)?;
         if input.starts_with('}') {
             break;
         }
-        kw("yield").parse_next(input)?;
-        ws(input)?;
-        let value = super::parse_expr_with_options(input, options)?;
-        ws(input)?;
-        ';'.parse_next(input)?;
-        yields.push(value);
+        stmts.push(parse_gen_stmt(input, options)?);
     }
     ws(input)?;
     let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
-    Ok((yields, end_span))
+    Ok((stmts, end_span))
+}
+
+fn parse_gen_stmt(input: &mut &str, options: ExprOptions) -> Result<GenStmt> {
+    // Conditional yield: `if cond then { … } [else { … }]`. The branches are
+    // themselves generator-statement blocks (not expressions).
+    let mut if_probe = *input;
+    if kw("if").parse_next(&mut if_probe).is_ok() {
+        let (_, start_span) = spanned(kw("if")).parse_next(input)?;
+        ws(input)?;
+        let cond = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        kw("then").parse_next(input)?;
+        ws(input)?;
+        let (then_body, then_end) = parse_gen_brace_block(input, options)?;
+        let mut else_body = Vec::new();
+        let mut end_span = then_end;
+        let mut else_probe = *input;
+        let _ = ws(&mut else_probe);
+        if kw("else").parse_next(&mut else_probe).is_ok() {
+            ws(input)?;
+            kw("else").parse_next(input)?;
+            ws(input)?;
+            let (eb, ee) = parse_gen_brace_block(input, options)?;
+            else_body = eb;
+            end_span = ee;
+        }
+        return Ok(GenStmt::If {
+            cond,
+            then_body,
+            else_body,
+            span: start_span.merge(end_span),
+        });
+    }
+
+    // `yield e;` or the delegating `yield from e;`.
+    let (_, start_span) = spanned(kw("yield")).parse_next(input)?;
+    ws(input)?;
+    let mut from_probe = *input;
+    if kw("from").parse_next(&mut from_probe).is_ok() {
+        kw("from").parse_next(input)?;
+        ws(input)?;
+        let stream = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        let (_, semi) = spanned(|i: &mut &str| ';'.parse_next(i)).parse_next(input)?;
+        return Ok(GenStmt::YieldFrom {
+            stream,
+            span: start_span.merge(semi),
+        });
+    }
+    let value = super::parse_expr_with_options(input, options)?;
+    ws(input)?;
+    let (_, semi) = spanned(|i: &mut &str| ';'.parse_next(i)).parse_next(input)?;
+    Ok(GenStmt::Yield {
+        value,
+        span: start_span.merge(semi),
+    })
 }
 
 // ---------------------------------------------------------------------------

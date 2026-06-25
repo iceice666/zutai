@@ -1020,6 +1020,40 @@ bad :: Int -> Int
 }
 
 #[test]
+fn non_uniform_clause_arity_is_reported() {
+    // A clause may bind a prefix of the parameters (currying) — but the bound
+    // arity must be uniform across clauses, since every later stage keys on the
+    // first clause's arity. A mixed-arity definition must be refused, never
+    // completed (a wrong value is worse than a refused program).
+    let lowered = lower(
+        r#"
+k :: Bool -> Int
+  = b => 7;
+f :: Bool -> Bool -> Int
+  = true y => 1;
+  = x => k;
+
+f false true
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind,
+                ThirDiagnosticKind::FunctionClauseArityMismatch {
+                    expected: 2,
+                    found: 1
+                }
+            )
+        }),
+        "expected a non-uniform arity diagnostic, got {:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
 fn atom_literal_pattern_accepts_union_member() {
     let file = completed_file(
         r#"

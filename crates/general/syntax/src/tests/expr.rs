@@ -187,12 +187,56 @@ fn parse_list_value() {
 #[test]
 fn parse_stream_generator_yields_values() {
     let e = parse_expr_str("stream { yield 1; yield 2; }");
-    let Expr::Generator { yields, .. } = e else {
+    let Expr::Generator { body, .. } = e else {
         panic!("expected generator, got {e:?}");
     };
-    assert_eq!(yields.len(), 2);
-    assert_eq!(as_int(&yields[0]), 1);
-    assert_eq!(as_int(&yields[1]), 2);
+    assert_eq!(body.len(), 2);
+    let GenStmt::Yield { value: v0, .. } = &body[0] else {
+        panic!("expected yield, got {:?}", body[0]);
+    };
+    let GenStmt::Yield { value: v1, .. } = &body[1] else {
+        panic!("expected yield, got {:?}", body[1]);
+    };
+    assert_eq!(as_int(v0), 1);
+    assert_eq!(as_int(v1), 2);
+}
+
+#[test]
+fn parse_stream_generator_conditional_and_delegating_yield() {
+    // V3-G3: a guarded/recursive generator — leading `if`, nested conditional
+    // yield, and a tail `yield from`.
+    let e = parse_expr_str(
+        "stream { if lo < hi then { yield lo; yield from rest; } else { yield 0; } }",
+    );
+    let Expr::Generator { body, .. } = e else {
+        panic!("expected generator, got {e:?}");
+    };
+    assert_eq!(body.len(), 1);
+    let GenStmt::If {
+        then_body,
+        else_body,
+        ..
+    } = &body[0]
+    else {
+        panic!("expected if-statement, got {:?}", body[0]);
+    };
+    assert_eq!(then_body.len(), 2);
+    assert!(matches!(then_body[0], GenStmt::Yield { .. }));
+    assert!(matches!(then_body[1], GenStmt::YieldFrom { .. }));
+    assert_eq!(else_body.len(), 1);
+    assert!(matches!(else_body[0], GenStmt::Yield { .. }));
+}
+
+#[test]
+fn parse_stream_generator_if_without_else() {
+    let e = parse_expr_str("stream { if c then { yield 1; } }");
+    let Expr::Generator { body, .. } = e else {
+        panic!("expected generator, got {e:?}");
+    };
+    let GenStmt::If { else_body, .. } = &body[0] else {
+        panic!("expected if-statement, got {:?}", body[0]);
+    };
+    assert!(else_body.is_empty());
 }
 
 #[test]

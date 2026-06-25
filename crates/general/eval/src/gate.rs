@@ -240,6 +240,9 @@ pub fn describe_hir_diagnostic(d: &zutai_hir::HirDiagnostic) -> String {
             format!("row tail `...{name}` is neither a row variable nor a spreadable type")
         }
         ResumeOutsideHandler => "resume outside an operation handler clause".to_string(),
+        NonTailYieldFrom => {
+            "`yield from` is only supported in tail position of a generator block".to_string()
+        }
         LevelVarAsType { name } => {
             format!("level variable `{name}` used where a type is expected")
         }

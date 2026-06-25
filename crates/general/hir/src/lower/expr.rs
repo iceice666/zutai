@@ -17,6 +17,162 @@ impl Lowerer {
         })
     }
 
+    /// Desugar `stream { … }` into demand-driven codata (V3-G1, with richer
+    /// `yield` from V3-G3). A `Stream A` is `Unit -> StreamCell A`, so the block
+    /// lowers by continuation-passing onto the `#nil`/`#cons` cell: `yield` conses
+    /// one element, a conditional yields per branch, and `yield from` splices a
+    /// sub-stream in tail position (the canonical recursive/loop generator). No
+    /// second iterator abstraction is introduced; the result steps identically to
+    /// the equivalent `unfold`.
+    fn lower_generator(&mut self, body: &[ast::GenStmt], span: Span) -> HirExprId {
+        self.lower_gen_stmts(body, None, span)
+    }
+
+    /// Lower a generator statement list against its continuation — the stream
+    /// that follows this block. `None` is the terminal `\_. #nil`; `Some(b)` is a
+    /// `Stream`-valued local that later statements continue onto.
+    fn lower_gen_stmts(
+        &mut self,
+        stmts: &[ast::GenStmt],
+        cont: Option<BindingId>,
+        span: Span,
+    ) -> HirExprId {
+        let Some((stmt, rest)) = stmts.split_first() else {
+            return self.cont_stream(cont, span);
+        };
+        match stmt {
+            ast::GenStmt::Yield { value, span: ys } => {
+                let head = self.lower_expr(value);
+                let tail = self.lower_gen_stmts(rest, cont, span);
+                self.gen_cons(head, tail, *ys)
+            }
+            ast::GenStmt::YieldFrom { stream, span: ys } => {
+                // `yield from s` is "every element of s, then the continuation".
+                // The codata cell has no shared append, so this is sound only in
+                // tail position (nothing follows and the continuation is the
+                // terminal `#nil`) — exactly the canonical recursive/loop
+                // generator. A non-tail splice is reported, never miscompiled.
+                if !rest.is_empty() || cont.is_some() {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::NonTailYieldFrom,
+                        span: *ys,
+                    });
+                }
+                self.lower_expr(stream)
+            }
+            ast::GenStmt::If {
+                cond,
+                then_body,
+                else_body,
+                span: ifs,
+            } => {
+                if rest.is_empty() {
+                    // Tail conditional: both branches inherit the parent
+                    // continuation directly, so a tail `yield from` inside a
+                    // branch stays in tail position.
+                    let cond_id = self.lower_expr(cond);
+                    let then_id = self.lower_gen_stmts(then_body, cont, span);
+                    let else_id = self.lower_gen_stmts(else_body, cont, span);
+                    self.alloc_expr(HirExpr {
+                        kind: HirExprKind::If {
+                            cond: cond_id,
+                            then_branch: then_id,
+                            else_branch: else_id,
+                        },
+                        span: *ifs,
+                    })
+                } else {
+                    // Non-tail conditional: bind the shared continuation to a
+                    // fresh local so both branches reference it once (no aliased
+                    // node) and it is built at most once per chosen branch.
+                    let rest_id = self.lower_gen_stmts(rest, cont, span);
+                    let bind = self.alloc_synthetic_local("gen-cont", span);
+                    let cond_id = self.lower_expr(cond);
+                    let then_id = self.lower_gen_stmts(then_body, Some(bind), span);
+                    let else_id = self.lower_gen_stmts(else_body, Some(bind), span);
+                    let if_id = self.alloc_expr(HirExpr {
+                        kind: HirExprKind::If {
+                            cond: cond_id,
+                            then_branch: then_id,
+                            else_branch: else_id,
+                        },
+                        span: *ifs,
+                    });
+                    self.alloc_expr(HirExpr {
+                        kind: HirExprKind::Block {
+                            bindings: vec![HirLocalBinding {
+                                binding: bind,
+                                annotation: None,
+                                value: rest_id,
+                                span,
+                            }],
+                            result: if_id,
+                        },
+                        span: *ifs,
+                    })
+                }
+            }
+        }
+    }
+
+    /// The continuation stream as an expression: a fresh reference to the bound
+    /// local, or the terminal `\_. #nil` thunk when there is none.
+    fn cont_stream(&mut self, cont: Option<BindingId>, span: Span) -> HirExprId {
+        match cont {
+            Some(b) => self.alloc_expr(HirExpr {
+                kind: HirExprKind::BindingRef(b),
+                span,
+            }),
+            None => {
+                let nil = self.alloc_expr(HirExpr {
+                    kind: HirExprKind::Atom("nil".to_string()),
+                    span,
+                });
+                self.thunk(nil, span)
+            }
+        }
+    }
+
+    /// Build a codata cons cell `\_. #cons { head; tail }` — a `Stream` value.
+    fn gen_cons(&mut self, head: HirExprId, tail: HirExprId, span: Span) -> HirExprId {
+        let payload = self.alloc_expr(HirExpr {
+            kind: HirExprKind::Record(vec![
+                HirRecordField {
+                    name: "head".to_string(),
+                    value: head,
+                    span,
+                },
+                HirRecordField {
+                    name: "tail".to_string(),
+                    value: tail,
+                    span,
+                },
+            ]),
+            span,
+        });
+        let cell = self.alloc_expr(HirExpr {
+            kind: HirExprKind::TaggedValue {
+                tag: "cons".to_string(),
+                payload,
+            },
+            span,
+        });
+        self.thunk(cell, span)
+    }
+
+    /// Allocate a fresh, unscoped `Local` binding for a desugaring-internal value.
+    /// It is referenced only by `BindingId` (never by name), so it cannot collide
+    /// with or shadow user names.
+    fn alloc_synthetic_local(&mut self, hint: &str, span: Span) -> BindingId {
+        let id = BindingId(self.bindings.len() as u32);
+        self.bindings.push(Binding {
+            name: format!("${hint}#{}", id.0),
+            kind: BindingKind::Local,
+            span,
+        });
+        id
+    }
+
     pub(super) fn lower_expr(&mut self, expr: &ast::Expr) -> HirExprId {
         let span = expr.span();
         let kind = match expr {
@@ -74,45 +230,8 @@ impl Lowerer {
             ast::Expr::List { items, .. } => {
                 HirExprKind::List(items.iter().map(|item| self.lower_expr(item)).collect())
             }
-            ast::Expr::Generator { yields, span } => {
-                // Desugar to demand-driven codata. A `Stream A` is
-                // `Unit -> StreamCell A`, so `stream { yield e1; yield e2; }`
-                // becomes nested unit-thunks ending in `#nil`:
-                //   \_. #cons { head = e1; tail = \_. #cons { head = e2; tail = \_. #nil } }
-                let span = *span;
-                let heads: Vec<HirExprId> =
-                    yields.iter().map(|item| self.lower_expr(item)).collect();
-                let nil = self.alloc_expr(HirExpr {
-                    kind: HirExprKind::Atom("nil".to_string()),
-                    span,
-                });
-                let mut acc = self.thunk(nil, span);
-                for head in heads.into_iter().rev() {
-                    let payload = self.alloc_expr(HirExpr {
-                        kind: HirExprKind::Record(vec![
-                            HirRecordField {
-                                name: "head".to_string(),
-                                value: head,
-                                span,
-                            },
-                            HirRecordField {
-                                name: "tail".to_string(),
-                                value: acc,
-                                span,
-                            },
-                        ]),
-                        span,
-                    });
-                    let cell = self.alloc_expr(HirExpr {
-                        kind: HirExprKind::TaggedValue {
-                            tag: "cons".to_string(),
-                            payload,
-                        },
-                        span,
-                    });
-                    acc = self.thunk(cell, span);
-                }
-                return acc;
+            ast::Expr::Generator { body, span } => {
+                return self.lower_generator(body, *span);
             }
             ast::Expr::Block {
                 bindings, result, ..

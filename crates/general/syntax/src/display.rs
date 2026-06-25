@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::ast::{
-    Decl, Expr, File, FuncClause, ImportSource, Level, Pattern, PipelineDir, RowTail, TupleItem,
-    TuplePatternItem, TypeExpr, TypeParam, TypeTupleItem,
+    Decl, Expr, File, FuncClause, GenStmt, ImportSource, Level, Pattern, PipelineDir, RowTail,
+    TupleItem, TuplePatternItem, TypeExpr, TypeParam, TypeTupleItem,
 };
 
 impl fmt::Display for File {
@@ -227,15 +227,10 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             }
             Ok(())
         }
-        Expr::Generator { yields, .. } => {
+        Expr::Generator { body, .. } => {
             writeln!(f, "{prefix}Generator")?;
-            for item in yields {
-                write_expr(
-                    f,
-                    item,
-                    &format!("{indent}├─ yield "),
-                    &format!("{indent}│  "),
-                )?;
+            for stmt in body {
+                write_gen_stmt(f, stmt, &format!("{indent}├─ "), &format!("{indent}│  "))?;
             }
             Ok(())
         }
@@ -440,6 +435,43 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             writeln!(f, "{prefix}Pipeline({sym})")?;
             write_expr(f, lhs, &format!("{indent}├─ "), &format!("{indent}│  "))?;
             write_expr(f, rhs, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
+    }
+}
+
+fn write_gen_stmt(
+    f: &mut fmt::Formatter<'_>,
+    stmt: &GenStmt,
+    prefix: &str,
+    indent: &str,
+) -> fmt::Result {
+    match stmt {
+        GenStmt::Yield { value, .. } => write_expr(f, value, &format!("{prefix}yield "), indent),
+        GenStmt::YieldFrom { stream, .. } => {
+            write_expr(f, stream, &format!("{prefix}yield from "), indent)
+        }
+        GenStmt::If {
+            cond,
+            then_body,
+            else_body,
+            ..
+        } => {
+            writeln!(f, "{prefix}If")?;
+            write_expr(
+                f,
+                cond,
+                &format!("{indent}├─ cond: "),
+                &format!("{indent}│  "),
+            )?;
+            writeln!(f, "{indent}├─ then")?;
+            for s in then_body {
+                write_gen_stmt(f, s, &format!("{indent}│  ├─ "), &format!("{indent}│  │  "))?;
+            }
+            writeln!(f, "{indent}└─ else")?;
+            for s in else_body {
+                write_gen_stmt(f, s, &format!("{indent}   ├─ "), &format!("{indent}   │  "))?;
+            }
+            Ok(())
         }
     }
 }

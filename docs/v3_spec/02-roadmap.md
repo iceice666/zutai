@@ -11,10 +11,11 @@ not a backlog to burn down.
 
 The generator *shell* (Phase 29) and the opt-in conservative collector
 (Phase 34) have landed; both are prerequisites that make the Track 1 spine below
-implementable. **V3-G1 (codata `Stream` representation) landed 2026-06-25**
-(`docs/ARCHIVED.md` "V3-G1"): `Stream A` is now demand-driven codata, with the
-builtin source-prelude mechanism (G1-P) in place. The next phase is **V3-G2**
-(stdlib `Stream` API).
+implementable. **V3-G1/G2/G3 have all landed 2026-06-25** (`docs/ARCHIVED.md`):
+`Stream A` is demand-driven codata with a builtin source prelude (G1), the core
+combinator API ships as ambient prelude functions (G2), and richer `yield`
+(conditionals + tail recursion) desugars onto the codata cell (G3). The next
+phase is **V3-G4** (resource-backed / effectful generators).
 
 ## Backend-compatibility invariants
 
@@ -87,12 +88,15 @@ oracle parity (a wrong value is worse than a refused one).
   edge cases); the `List`-interop subset `take -> List`/`toList`/`fromList` (needs
   source-level list construction); and the **importable `.zt` module** packaging
   (blocked natively by cross-module polymorphism — `docs/TBD.md`).
-- **V3-G3 — Richer `yield`.** `yield` inside loops/recursion and conditional
-  `yield`; settle the open question of whether richer `yield` is expression
-  syntax or handler sugar (`01-generators.md` "Future work"). Desugar onto the
-  V3-G1 codata cell, no second iterator abstraction.
-  *Acceptance:* loop/recursive/conditional generators type-check and evaluate
-  through the same `Stream` semantics as the equivalent `unfold`.
+- **V3-G3 — Richer `yield`. ✅ Landed 2026-06-25.** `yield` now appears under
+  conditionals (`if cond then { … } [else { … }]`) and recursion (tail
+  `yield from`), settling the open question: richer `yield` is **statement syntax
+  desugared by continuation-passing** onto the V3-G1 codata cell, not handler
+  sugar — no second iterator abstraction. A non-tail `yield from` is refused
+  (`NonTailYieldFrom`). The clause-arity check was relaxed to allow a body to
+  bind a *prefix* of the parameters (uniform across clauses), so a generator
+  function supplies the codata `Unit` from its desugared thunk. See
+  `docs/ARCHIVED.md` "V3-G3". (Acceptance met on interpreter and native backend.)
 - **V3-G4 — Resource-backed generators.** Capability-typed producers that read a
   host resource / observe time / sample randomness, via ordinary capability
   parameters and effect rows (ties to Phase 27 host capabilities). Residual
@@ -136,10 +140,10 @@ change — never as an additive convenience.
 
 ## Sequencing and entry point
 
-Start Track 1 at **V3-G1** — the codata `Stream` representation is the keystone
-the rest of the track hangs off, it resolves the laziness/backend tension in the
-direction that preserves every committed decision, and it is a contained,
-oracle-gated phase with no ABI change. Track 2 stays demand-gated.
+Track 1 ran from **V3-G1** — the codata `Stream` representation, the keystone the
+rest of the track hangs off — through G2 (stdlib API) and G3 (richer `yield`),
+each a contained, oracle-gated phase with no ABI change. **Resume at V3-G4**
+(resource-backed generators). Track 2 stays demand-gated.
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

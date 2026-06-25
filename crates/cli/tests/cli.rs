@@ -187,6 +187,32 @@ fn compile_prelude_stream_cons_uncons_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+// V3-G3: richer `yield` — a recursive generator (guard `if` + `yield` + tail
+// `yield from`) folds to the same value as the equivalent `unfold`. `range 1 6`
+// yields 1..5; sum = 15.
+const G3_RECURSIVE_GEN_SRC: &str = "range :: Int -> Int -> Stream Int\n  = lo hi => stream {\n    if lo < hi then {\n      yield lo;\n      yield from range (lo + 1) hi;\n    }\n  };\nsumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (range 1 6)\n";
+
+#[test]
+fn compile_g3_recursive_generator_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_g3_recursive", G3_RECURSIVE_GEN_SRC);
+    let interp = run_stdout("cli_test_g3_recursive_oracle.zt", G3_RECURSIVE_GEN_SRC);
+    assert_eq!(native.trim(), "15");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// V3-G3: conditional yield (emit-or-skip) composed with prelude `take`/`fold`
+// over an *infinite* recursive generator — proves demand drives the conditional
+// on the native backend. `evensFrom 0` yields 0,2,4,…; take 4 → 0,2,4,6; sum 12.
+const G3_CONDITIONAL_GEN_SRC: &str = "evensFrom :: Int -> Stream Int\n  = n => stream {\n    if n - (n / 2) * 2 == 0 then { yield n; }\n    yield from evensFrom (n + 1);\n  };\nfold (\\a b. a + b) 0 (take 4 (evensFrom 0))\n";
+
+#[test]
+fn compile_g3_conditional_infinite_generator_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_g3_conditional", G3_CONDITIONAL_GEN_SRC);
+    let interp = run_stdout("cli_test_g3_conditional_oracle.zt", G3_CONDITIONAL_GEN_SRC);
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 #[test]
 fn prelude_stream_name_yields_to_user_definition() {
     // The prelude is a fallback: a user/constraint binding named like a prelude

@@ -11,15 +11,19 @@ v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
 underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
-(Phase 34, opt-in), V2-A, V3-G1/G2, and cross-module polymorphism (single- and
-multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1609 workspace
+(Phase 34, opt-in), V2-A, V3-G1/G2/G3, and cross-module polymorphism (single- and
+multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1625 workspace
 tests pass.
 
 ## Active milestone — none
 
-The next V3 phase is **G3 (richer `yield`)**; G4 (resource-backed / effectful
-generators — currently rejected) and G5 (GC default-on for unbounded streams)
-follow. See `docs/v3_spec/02-roadmap.md`.
+V3-G3 (richer `yield`) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G3".
+`yield` now appears under conditionals and tail recursion, desugared by
+continuation-passing onto the V3-G1 codata cell; recursive/loop generators
+type-check and evaluate (interpreter + native) to the same `Stream` as the
+equivalent `unfold`. The next V3 phase is **G4** (resource-backed / effectful
+generators — currently rejected); G5 (GC default-on for unbounded streams)
+follows. See `docs/v3_spec/02-roadmap.md`.
 
 **G2 residuals** (do not block G3): `empty`/`unfold` (type-inference edge cases);
 the `List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level
@@ -75,7 +79,7 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   memoizing lazy list, so it stays inside strict+TCO and the write-barrier-free
   GC — and sequences it as V3-G1 (codata `Stream` representation) → G2 (stdlib
   `Stream` API) → G3 (richer `yield`) → G4 (resource-backed generators) → G5
-  (GC default-on for unbounded streams). G1/G2 landed; resume at **G3**.
+  (GC default-on for unbounded streams). G1/G2/G3 landed; resume at **G4**.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

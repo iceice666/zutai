@@ -62,6 +62,10 @@ pub enum HirDiagnosticKind {
     },
     /// `resume` appears outside an operation handler clause body.
     ResumeOutsideHandler,
+    /// `yield from` appears outside tail position in a `stream { … }` generator.
+    /// The codata `Stream` cell has no shared append, so a delegating yield is
+    /// only sound when it is the block's final statement and nothing follows.
+    NonTailYieldFrom,
     /// A level variable (declared `<$l>`) is used in type position, e.g. a bare
     /// `l` where a type is expected.
     LevelVarAsType {

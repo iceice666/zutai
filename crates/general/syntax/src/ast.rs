@@ -168,6 +168,27 @@ pub struct RecordField {
     pub span: Span,
 }
 
+/// A statement inside a `stream { … }` generator block. Richer-`yield` (V3-G3)
+/// lets `yield` appear under conditionals and recursion; each statement desugars
+/// onto the codata `Stream` cell with no second iterator abstraction.
+#[derive(Debug, PartialEq)]
+pub enum GenStmt {
+    /// `yield e;` — emit one element.
+    Yield { value: Expr, span: Span },
+    /// `yield from e;` — splice every element of the sub-`Stream` `e`. Supported
+    /// in tail position (the canonical recursive/loop generator); a non-tail use
+    /// is reported by HIR lowering.
+    YieldFrom { stream: Expr, span: Span },
+    /// `if cond then { … } [else { … }]` — conditional yield. Branches are
+    /// themselves generator-statement blocks; a missing `else` yields nothing.
+    If {
+        cond: Expr,
+        then_body: Vec<GenStmt>,
+        else_body: Vec<GenStmt>,
+        span: Span,
+    },
+}
+
 #[derive(Debug, PartialEq)]
 pub enum TupleItem {
     Named {
@@ -295,7 +316,7 @@ pub enum Expr {
         span: Span,
     },
     Generator {
-        yields: Vec<Expr>,
+        body: Vec<GenStmt>,
         span: Span,
     },
     Block {

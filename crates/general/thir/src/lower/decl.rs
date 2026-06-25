@@ -395,14 +395,45 @@ impl<'hir> Lowerer<'hir> {
         let sig_span = self.ty(sig).span;
         let (param_types, return_type) = self.function_parts(sig, sig_span);
         let (body_type, saved_effect_ambient) = self.enter_effectful_result(return_type);
+
+        // A clause may bind a *prefix* of the flattened parameters and return the
+        // residual function as its body (ordinary currying) — e.g. a generator
+        // `range lo hi = stream { … }` whose body is the `Stream` value
+        // `Unit -> StreamCell`. The bound arity must be *uniform* across clauses
+        // (every later stage keys on `clauses[0]`'s arity) and must not exceed the
+        // signature's parameter count. The residual is then a single shared body
+        // type built from the unbound parameter suffix.
+        let clause_arity = clauses.first().map_or(0, |c| c.patterns.len());
+        let bound_arity = clause_arity.min(param_types.len());
+        let expected_body = param_types[bound_arity..]
+            .iter()
+            .rev()
+            .fold(body_type, |to, &from| {
+                self.alloc_type(Type {
+                    kind: TypeKind::Function { from, to },
+                    span: sig_span,
+                })
+            });
+
         let lowered: Vec<ThirClause> = clauses
             .iter()
             .map(|clause| {
-                if clause.patterns.len() != param_types.len() {
+                let arity = clause.patterns.len();
+                if arity != clause_arity {
+                    // Clauses disagree on how many parameters they bind.
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::FunctionClauseArityMismatch {
+                            expected: clause_arity,
+                            found: arity,
+                        },
+                        span: clause.span,
+                    });
+                } else if clause_arity > param_types.len() {
+                    // Uniform, but more parameters than the signature allows.
                     self.diagnostics.push(ThirDiagnostic {
                         kind: ThirDiagnosticKind::FunctionClauseArityMismatch {
                             expected: param_types.len(),
-                            found: clause.patterns.len(),
+                            found: arity,
                         },
                         span: clause.span,
                     });
@@ -422,7 +453,7 @@ impl<'hir> Lowerer<'hir> {
                     let bool_ty = self.bool_type(clause.span);
                     self.check_expr(guard, bool_ty)
                 });
-                let body = self.check_expr(clause.body, body_type);
+                let body = self.check_expr(clause.body, expected_body);
                 self.clear_scoped_value_types(&scoped_bindings);
 
                 ThirClause {
@@ -436,13 +467,16 @@ impl<'hir> Lowerer<'hir> {
 
         self.exit_effectful_result(saved_effect_ambient);
 
-        // Only check coverage when every clause matches the function arity; a
-        // clause-arity mismatch already produced a diagnostic.
-        if lowered
-            .iter()
-            .all(|clause| clause.patterns.len() == param_types.len())
+        // Check coverage over the *bound* parameters when every clause shares the
+        // bound arity and none over-applies; a clause-arity mismatch already
+        // produced a diagnostic. For a curried definition the residual suffix is
+        // returned as a value and is not matched here.
+        if clause_arity <= param_types.len()
+            && lowered
+                .iter()
+                .all(|clause| clause.patterns.len() == bound_arity)
         {
-            self.check_match_exhaustiveness(&lowered, &param_types, sig_span);
+            self.check_match_exhaustiveness(&lowered, &param_types[..bound_arity], sig_span);
         }
 
         lowered

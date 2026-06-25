@@ -146,6 +146,42 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G3: Richer `yield` ✅
+
+_Completed 2026-06-25. `yield` may now appear under conditionals and recursion
+inside a `stream { … }` generator, settling the open question: richer `yield` is
+**statement syntax desugared by continuation-passing** onto the V3-G1 codata
+cell, not handler sugar. A recursive/loop generator type-checks and evaluates —
+interpreter and native — to the same `Stream` the equivalent `unfold` produces._
+
+- **Surface (parser + AST).** A generator block is now a statement list
+  (`ast::GenStmt`): `yield e;`, `yield from e;` (delegating yield), and
+  `if cond then { … } [else { … }]` (conditional yield, branches are
+  statement blocks). `stream` stays contextual — a generator now starts on a
+  leading `yield` *or* a guarding `if`; parenthesise (`stream ({ if … })`) to
+  force application of a block whose head is `if`.
+- **Desugar (HIR).** `lower_gen_stmts` lowers a block against its *continuation*
+  (the stream that follows): `yield e` conses a `\_. #cons { head = e; tail = … }`
+  thunk; a conditional yields per branch, sharing the continuation (bound to a
+  fresh synthetic local when non-tail so both branches reference it without
+  aliasing a node); a **tail** `yield from s` is the stream `s` itself. The
+  codata cell has no shared append, so a **non-tail** `yield from` is refused with
+  a new `NonTailYieldFrom` HIR diagnostic — never miscompiled.
+- **Arity (THIR).** The clause-arity check was relaxed: a clause may bind a
+  *prefix* of the flattened parameters and return the residual function as its
+  body (ordinary currying), so a generator function (`range lo hi = stream { … }`)
+  supplies the codata `Unit` from its desugared thunk rather than spelling it.
+  The bound arity must be **uniform** across clauses (every later stage keys on
+  `clauses[0]`'s arity) and may not exceed the signature; a mixed-arity
+  definition is refused. Exhaustiveness is still checked over the bound prefix.
+- **Tests.** Parser tests (conditional + delegating yield, else-less `if`); eval
+  tests (`recursive_generator_matches_unfold_semantics`,
+  `conditional_yield_emits_only_on_the_true_branch`,
+  `non_tail_yield_from_is_refused`); CLI oracle-parity tests
+  (`compile_g3_recursive_generator_matches_oracle`,
+  `compile_g3_conditional_infinite_generator_matches_oracle`); and a THIR
+  regression for non-uniform arity (`non_uniform_clause_arity_is_reported`).
+
 ### Cross-module polymorphism — multi-type (XM-1…3) ✅
 
 _Completed 2026-06-25. An imported polymorphic value (a module exporting
