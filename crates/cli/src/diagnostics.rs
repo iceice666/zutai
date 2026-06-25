@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn renders_zt_parse_error_with_source_context() {
         let path = "bad.zt";
-        let contents = "[1; 2]";
+        let contents = "{1; 2}";
         let parsed = zutai_syntax::parse(contents);
         let err = parsed
             .diagnostics()
@@ -343,7 +343,7 @@ mod tests {
     fn zt_parse_diagnostic_clamps_span_end_to_content_length() {
         // Produce a real parse diagnostic with a span that might exceed the
         // content length when rendered.
-        let contents = "[1; 2]";
+        let contents = "{1; 2}";
         let parsed = zutai_syntax::parse(contents);
         let err = parsed
             .diagnostics()

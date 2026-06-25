@@ -2,7 +2,7 @@
 
 Shape :: type {
   #circle: { radius: Int; };
-}
+};
 
 area :: Shape -> Int
   = #circle { radius = r } => r;

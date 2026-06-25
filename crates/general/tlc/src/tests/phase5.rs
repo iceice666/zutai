@@ -93,7 +93,7 @@ fn operator_witness_binary_lowers_to_get_field() {
         r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-result :: Bool = 1 == 1
+result :: Bool = 1 == 1;
 result
 "#,
     );
@@ -141,7 +141,7 @@ Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
 same :: <A: Eq> A -> A -> Bool
   = x y => eq x y;
-result :: Bool = same 1 1
+result :: Bool = same 1 1;
 result
 "#,
     );
@@ -207,9 +207,9 @@ Ord @Int :: { lt = \a b. a < b; gt = \a b. a > b; }
 fn derive_witness_synthesizes_method_field() {
     let m = tlc_of(
         r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 2; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 2; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Point :: derive
 eq p1 p2
@@ -298,7 +298,7 @@ mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A
 fn hkt_partial_application_witness_elaborates() {
     let m = tlc_of(
         r#"
-Result :: <E, A> type { ok : A; err : E; }
+Result :: <E, A> type { ok : A; err : E; };
 Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
 Functor @(Result E) :: <E> { map = \f r. r; }
 1
@@ -380,9 +380,9 @@ fn has_nested_eq_application(m: &TlcModule) -> bool {
 fn derive_named_tuple_eq_uses_tuple_case_with_named_patterns() {
     let m = tlc_of(
         r#"
-Pair :: type (x : Int, y : Text)
-p1 :: Pair = (x = 1, y = "a")
-p2 :: Pair = (x = 1, y = "a")
+Pair :: type (x : Int, y : Text);
+p1 :: Pair = (x = 1, y = "a");
+p2 :: Pair = (x = 1, y = "a");
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Pair :: derive
 eq p1 p2
@@ -407,10 +407,10 @@ eq p1 p2
 fn derive_record_component_uses_existing_witness_call() {
     let m = tlc_of(
         r#"
-Name :: type Text
-Person :: type { name : Name; age : Int; }
-p1 :: Person = { name = "a"; age = 1; }
-p2 :: Person = { name = "a"; age = 1; }
+Name :: type Text;
+Person :: type { name : Name; age : Int; };
+p1 :: Person = { name = "a"; age = 1; };
+p2 :: Person = { name = "a"; age = 1; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Name :: { eq = \a b. a == b; }
 Eq @Person :: derive
@@ -425,9 +425,9 @@ eq p1 p2
 fn derive_operator_neq_synthesizes_bang_equal_field() {
     let m = tlc_of(
         r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 3; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 3; };
 Eq :: <A> @A { (==) :: A -> A -> Bool; (!=) :: A -> A -> Bool; } derive
 Eq @Point :: derive
 p1 != p2

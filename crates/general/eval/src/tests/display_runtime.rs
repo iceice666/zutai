@@ -89,8 +89,8 @@ fn display_atom_value() {
 fn display_absent_optional_field_as_absent() {
     // Absent optional field access displays as #absent.
     let src = "
-S :: type { port? : Int; }
-s :: S = {}
+S :: type { port? : Int; };
+s :: S = {};
 s.port
 ";
     assert_eq!(run(src).to_string(), "#absent");
@@ -99,7 +99,7 @@ s.port
 #[test]
 fn display_list_empty() {
     let src = "
-x :: List Int = []
+x :: List Int = {;};
 x
 ";
     assert_eq!(run(src).to_string(), "[]");
@@ -107,12 +107,12 @@ x
 
 #[test]
 fn display_list_singleton() {
-    assert_eq!(run("[42;]").to_string(), "[42]");
+    assert_eq!(run("{42;}").to_string(), "[42]");
 }
 
 #[test]
 fn display_list_multiple() {
-    assert_eq!(run("[1; 2; 3;]").to_string(), "[1; 2; 3]");
+    assert_eq!(run("{1; 2; 3;}").to_string(), "[1; 2; 3]");
 }
 
 #[test]
@@ -143,8 +143,8 @@ fn display_tagged_value_with_payload() {
 Status :: type {
   #ok: { code : Int; };
   #err: { msg : Text; };
-}
-s :: Status = #ok { code = 200; }
+};
+s :: Status = #ok { code = 200; };
 s
 ";
     assert_eq!(run(src).to_string(), "#ok { code = 200 }");
@@ -258,7 +258,7 @@ fn text_ge() {
 fn type_alias_reference_produces_type_value() {
     // Referencing a type alias by name evaluates to a TypeValue.
     let src = "
-MyInt :: type Int
+MyInt :: type Int;
 MyInt
 ";
     // TypeValue just needs to evaluate without error.
@@ -271,7 +271,7 @@ MyInt
 #[test]
 fn strict_tlc_rejects_runtime_type_values() {
     let src = "
-MyInt :: type Int
+MyInt :: type Int;
 MyInt
 ";
     match eval_tlc_file(src).unwrap_err() {
@@ -285,7 +285,7 @@ MyInt
 #[test]
 fn default_eval_keeps_type_values_on_thir_boundary() {
     let src = "
-MyInt :: type Int
+MyInt :: type Int;
 MyInt
 ";
     match eval_file(src).unwrap() {
@@ -298,7 +298,7 @@ MyInt
 fn display_type_value() {
     // Value::TypeValue displays as "<type>".
     let src = "
-MyInt :: type Int
+MyInt :: type Int;
 MyInt
 ";
     assert_eq!(eval_file(src).unwrap().to_string(), "<type>");
@@ -307,7 +307,7 @@ MyInt
 #[test]
 fn fields_record_returns_field_metadata_with_type_values() {
     let value = run(r#"
-Server :: type { host : Text; port? : Int; }
+Server :: type { host : Text; port? : Int; };
 fields Server
 "#);
 
@@ -337,7 +337,7 @@ fields Server
 #[test]
 fn schema_record_returns_serializable_shape() {
     let value = run(r#"
-Server :: type { host : Text; port? : Int; }
+Server :: type { host : Text; port? : Int; };
 schema Server
 "#);
 
@@ -369,7 +369,7 @@ schema Server
 #[test]
 fn schema_generic_alias_substitutes_type_arguments() {
     let value = run(r#"
-Box :: <A> type { value : A; }
+Box :: <A> type { value : A; };
 schema (type Box Text)
 "#);
 
@@ -388,7 +388,7 @@ Result :: type {
   #ok: { value : Text; };
   #err: { code : Int; };
   #done;
-}
+};
 schema Result
 "#);
 
@@ -422,7 +422,7 @@ schema Result
 fn fields_rejects_union_type() {
     let err = run_err(
         r#"
-Result :: type { #ok: { value : Int; }; #err; }
+Result :: type { #ok: { value : Int; }; #err; };
 fields Result
 "#,
     );
@@ -454,7 +454,7 @@ fn schema_rejects_non_record_or_union_type() {
 fn schema_rejects_union_variant_non_record_payload() {
     let err = run_err(
         r#"
-Boxed :: type { #boxed: Int; }
+Boxed :: type { #boxed: Int; };
 schema Boxed
 "#,
     );
@@ -475,7 +475,7 @@ Shape :: type {
   maybe : Maybe Text;
   pair : (x : Int, Text);
   mapper : Int -> Text;
-}
+};
 schema Shape
 "#);
 
@@ -508,7 +508,7 @@ schema Shape
 fn schema_rejects_patch_type_reflection() {
     let err = run_err(
         r#"
-Config :: type { port : Int; }
+Config :: type { port : Int; };
 schema (type Patch Config)
 "#,
     );
@@ -522,7 +522,7 @@ schema (type Patch Config)
 fn reflection_rejects_open_rows() {
     let err = run_err(
         r#"
-OpenServer :: type { host : Text; ...; }
+OpenServer :: type { host : Text; ...; };
 schema OpenServer
 "#,
     );

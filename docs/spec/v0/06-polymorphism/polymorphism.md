@@ -68,7 +68,7 @@ Implementations may generalize let-bound expressions when all free type variable
 For example, an implementation may infer:
 
 ```zt
-id x = x
+id x = x;
 ```
 
 as `<A> A -> A`.

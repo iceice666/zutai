@@ -32,16 +32,16 @@ classify :: Int -> Text
   = _          => "zero";
 ```
 
-When a clause body requires local bindings, use a block expression `{ stmts; expr }` as the clause value:
+When a clause body requires local bindings, use a `[ stmts; expr ]` do-block as the clause value:
 
 ```zt
 normalizeServer :: RawServer -> Server
-  = s => {
+  = s => [
     host := s.host ?? "127.0.0.1";
     port := s.port ?? 8080;
     tls  := s.tls  ?? false;
     { host = host; port = port; tls = tls; }
-  };
+  ];
 ```
 
 ### No-sig single definitions
@@ -49,8 +49,8 @@ normalizeServer :: RawServer -> Server
 When the type is fully inferable and only one clause is needed, write a definition without a signature or `|`:
 
 ```zt
-add a b = a + b
-double x = x * 2
+add a b = a + b;
+double x = x * 2;
 ```
 
 This form does not support multiple clauses or guards. For those, write a `::` signature and use `=` clauses.
@@ -60,14 +60,14 @@ This form does not support multiple clauses or guards. For those, write a `::` s
 Constants (zero-argument bindings) use `::` for the type annotation:
 
 ```zt
-port :: Int = 8080
-host :: Text = "localhost"
+port :: Int = 8080;
+host :: Text = "localhost";
 ```
 
 For inferred constants, use `::=`:
 
 ```zt
-port ::= 8080
+port ::= 8080;
 ```
 
 ### Curried functions
@@ -82,7 +82,7 @@ add :: Int -> Int -> Int
 `add` takes one `Int` and returns a function `Int -> Int`. Partial application:
 
 ```zt
-add5 ::= add 5
+add5 ::= add 5;
 ```
 
 ### Function application
@@ -126,13 +126,13 @@ Anonymous functions use `\` followed by space-separated patterns and `.` for the
 \x y. x + y
 ```
 
-When the body needs local bindings, use a block expression:
+When the body needs local bindings, use a `[ … ]` do-block:
 
 ```zt
-\acc x. {
+\acc x. [
   doubled := acc * 2;
   doubled + x
-}
+]
 ```
 
 Examples:

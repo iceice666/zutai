@@ -202,13 +202,13 @@ Type variables in `TyVar` are named (carrying the `BindingId` from THIR) rather 
 
 `TyFun` is the Dataflow Core representation of a generic type alias:
 ```zt
-Pair :: <A, B> type { first: A; second: B; }
+Pair :: <A, B> type { first: A; second: B; };
 ```
 becomes `TyFun([A, B], Record([("first", TyVar(A)), ("second", TyVar(B))]))`.
 
 `TyApp` is how a generic type is used at a concrete instantiation:
 ```zt
-pair : Pair Text Int = { first = "hello"; second = 42; }
+pair :: Pair Text Int = { first = "hello"; second = 42; };
 ```
 The type of `pair` is `TyApp(TyFun([A, B], ...), [Text, Int])`, which the type normalizer reduces to `Record([("first", Text), ("second", Int)])`.
 

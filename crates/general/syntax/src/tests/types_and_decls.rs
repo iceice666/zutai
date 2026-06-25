@@ -67,7 +67,7 @@ fn reject_hyphenated_record_field() {
 fn parse_type_union_in_file() {
     parse_str(
         r#"
-Foo :: type {#a; #b; #c;}
+Foo :: type {#a; #b; #c;};
 Foo
 "#,
     );
@@ -80,7 +80,7 @@ fn parse_recursive_union_alias_keeps_recursive_fields() {
 Tree :: type {
   #leaf;
   #node : { value : Int; left : Tree; right : Tree; };
-}
+};
 Tree
 "#,
     );
@@ -173,7 +173,7 @@ fn parse_match_with_underscore_field() {
 
 #[test]
 fn parse_inferred_decl() {
-    let f = parse_str("x ::= 42\n42");
+    let f = parse_str("x ::= 42;\n42");
     assert_eq!(f.decls.len(), 1);
     let (name, val) = as_inferred(decl_by(&f, "x"));
     assert_eq!(name, "x");
@@ -187,7 +187,7 @@ fn parse_top_level_colon_equal_rejected() {
 
 #[test]
 fn parse_typed_decl() {
-    let f = parse_str("port :: Int = 8080\n8080");
+    let f = parse_str("port :: Int = 8080;\n8080");
     let (name, _ty, val) = as_typed(decl_by(&f, "port"));
     assert_eq!(name, "port");
     assert_eq!(as_int(val), 8080);
@@ -195,7 +195,7 @@ fn parse_typed_decl() {
 
 #[test]
 fn parse_import_decl_string() {
-    let f = parse_str("lib :: import \"lib.zt\"\nlib");
+    let f = parse_str("lib :: import \"lib.zt\";\nlib");
     assert_eq!(f.decls.len(), 1);
     match decl_by(&f, "lib") {
         Decl::Import { name, source, .. } => {
@@ -208,7 +208,7 @@ fn parse_import_decl_string() {
 
 #[test]
 fn parse_import_decl_path() {
-    let f = parse_str("lib :: import lib.zt\nlib");
+    let f = parse_str("lib :: import lib.zt;\nlib");
     assert_eq!(f.decls.len(), 1);
     match decl_by(&f, "lib") {
         Decl::Import { source, .. } => match source {
@@ -230,7 +230,7 @@ fn expression_import_is_rejected() {
 
 #[test]
 fn parse_typed_decl_lambda_value() {
-    let src = "\ndouble :: Int -> Int = \\x. x * 2\n\ndouble 5\n";
+    let src = "\ndouble :: Int -> Int = \\x. x * 2;\n\ndouble 5\n";
     let parsed = parse(src);
     assert!(
         !parsed.has_errors(),
@@ -243,14 +243,14 @@ fn parse_typed_decl_lambda_value() {
 
 #[test]
 fn parse_type_application_in_typed_decl() {
-    let f = parse_str("items :: List Int = []\nitems");
+    let f = parse_str("items :: List Int = {;};\nitems");
     let (_name, ty, _val) = as_typed(decl_by(&f, "items"));
     assert!(matches!(ty, TypeExpr::Apply { .. }));
 }
 
 #[test]
 fn parse_type_alias() {
-    let f = parse_str("Server :: type { host : Text; }\n#unit");
+    let f = parse_str("Server :: type { host : Text; };\n#unit");
     let (name, params, _ty) = as_alias(decl_by(&f, "Server"));
     assert_eq!(name, "Server");
     assert!(params.is_empty());
@@ -314,7 +314,7 @@ fn single_positional_type_paren_is_arrow_not_tuple() {
 #[test]
 fn optional_of_grouped_arrow_type_is_optional_arrow() {
     // `(Int -> Int)?` — the inner type should be Arrow, not a 1-element Tuple.
-    let file = parse_str("T :: type { fn? : (Int -> Int)?; }\nT");
+    let file = parse_str("T :: type { fn? : (Int -> Int)?; };\nT");
     let decl = decl_by(&file, "T");
     let (_, _, ty) = as_alias(decl);
     // Find the field type inside the record.

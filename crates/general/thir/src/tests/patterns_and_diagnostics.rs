@@ -174,7 +174,7 @@ fn tagged_value_pattern_unknown_union_variant_reports_type_mismatch() {
     // TypeMismatch (None branch in Union match).
     let lowered = lower(
         r#"
-Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; }
+Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; };
 f :: Status -> Int
   = #unknown { code = _; } => 1;
   = _ => 0;
@@ -219,7 +219,7 @@ fn union_no_payload_variant_tagged_pattern_with_fields_reports_unexpected_field(
     // UnexpectedRecordField (None-payload branch with non-empty payload pattern).
     let lowered = lower(
         r#"
-Status :: type { #ok; #err; }
+Status :: type { #ok; #err; };
 f :: Status -> Int
   = #ok { x = _; } => 1;
   = _ => 0;
@@ -280,8 +280,8 @@ f :: Int? -> Int
 fn maybe_absent_and_present_patterns_lower_correctly() {
     let file = completed_file(
         r#"
-S :: type { p? : Int; }
-s :: S = { p = 42; }
+S :: type { p? : Int; };
+s :: S = { p = 42; };
 unwrap :: Maybe Int -> Int
   = #present (n) => n;
   = #absent => 0;
@@ -324,7 +324,7 @@ fn alias_cycle_reports_diagnostic() {
     // signature forces resolve_alias to detect the cycle.
     let lowered = lower(
         r#"
-A :: type A
+A :: type A;
 f :: A -> A
   = n => n;
 1
@@ -348,8 +348,8 @@ fn value_binding_used_as_type_reports_invalid_type_expression() {
     // (`y :: x = 5`) hits the `_` fallthrough arm → InvalidTypeExpression.
     let lowered = lower(
         r#"
-x ::= 5
-y :: x = 5
+x ::= 5;
+y :: x = 5;
 y
 "#,
     );
@@ -371,7 +371,7 @@ fn named_tuple_expr_wrong_field_name_against_named_type_reports_mismatch() {
     // TupleFieldNameMismatch (expr site 1: Named expr vs Named type, different name).
     let lowered = lower(
         r#"
-x :: (a : Int, b : Int) = (c = 1, d = 2)
+x :: (a : Int, b : Int) = (c = 1, d = 2);
 x
 "#,
     );
@@ -391,7 +391,7 @@ fn named_tuple_expr_on_positional_type_reports_mismatch() {
     // TupleFieldNameMismatch (expr site 2: Named expr vs Positional type).
     let lowered = lower(
         r#"
-x :: (Int, Int) = (a = 1, b = 2)
+x :: (Int, Int) = (a = 1, b = 2);
 x
 "#,
     );
@@ -414,7 +414,7 @@ fn positional_tuple_expr_on_named_type_reports_mismatch() {
     // TupleFieldNameMismatch (expr site 3: Positional expr vs Named type).
     let lowered = lower(
         r#"
-x :: (a : Int, b : Int) = (1, 2)
+x :: (a : Int, b : Int) = (1, 2);
 x
 "#,
     );
@@ -436,7 +436,7 @@ fn tuple_literal_in_non_tuple_context_reports_expected_tuple() {
     // `(1, 2)` where `Int` is expected → ExpectedTuple in check_tuple_expr.
     let lowered = lower(
         r#"
-x :: Int = (1, 2)
+x :: Int = (1, 2);
 x
 "#,
     );
@@ -457,8 +457,8 @@ fn generic_alias_with_union_payload_instantiates_correctly() {
     // Exercises instantiate_type_vars for Union arm.
     let file = completed_file(
         r#"
-Result :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; }
-r :: Result Int Text = #ok { value = 42; }
+Result :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; };
+r :: Result Int Text = #ok { value = 42; };
 r
 "#,
     );
@@ -474,8 +474,8 @@ fn generic_alias_with_optional_list_payload_instantiates_correctly() {
     // Exercises instantiate_type_vars for Optional and List arms.
     let file = completed_file(
         r#"
-MaybeList :: <A> type (List A)?
-x :: MaybeList Int = #none
+MaybeList :: <A> type (List A)?;
+x :: MaybeList Int = #none;
 x
 "#,
     );
@@ -491,8 +491,8 @@ fn generic_alias_with_function_type_payload_instantiates_correctly() {
     // Exercises instantiate_type_vars for Function arm.
     let file = completed_file(
         r#"
-Fn :: <A, B> type A -> B
-add1 :: Fn Int Int = \n. n + 1
+Fn :: <A, B> type A -> B;
+add1 :: Fn Int Int = \n. n + 1;
 add1 5
 "#,
     );
@@ -510,7 +510,7 @@ fn type_mismatch_with_list_type_covers_type_name_list() {
     // `5` has type `Int` but `List Int` expected → type_name("List Int") called.
     let lowered = lower(
         r#"
-x :: List Int = 5
+x :: List Int = 5;
 x
 "#,
     );
@@ -529,7 +529,7 @@ fn type_mismatch_with_optional_type_covers_type_name_optional() {
     // `5` has type `Int` but `Int?` expected → type_name("Int?") called.
     let lowered = lower(
         r#"
-x :: Int? = 5
+x :: Int? = 5;
 x
 "#,
     );
@@ -548,7 +548,7 @@ fn type_mismatch_with_tuple_type_covers_type_name_tuple() {
     // `5` has type `Int` but `(Int, Int)` expected → type_name("tuple") called.
     let lowered = lower(
         r#"
-x :: (Int, Int) = 5
+x :: (Int, Int) = 5;
 x
 "#,
     );
@@ -567,8 +567,8 @@ fn type_mismatch_with_union_type_covers_type_name_union() {
     // `5` has type `Int` but `Status` (a union) expected → type_name("union") called.
     let lowered = lower(
         r#"
-Status :: type { #ok; #err; }
-x :: Status = 5
+Status :: type { #ok; #err; };
+x :: Status = 5;
 x
 "#,
     );
@@ -587,7 +587,7 @@ fn type_mismatch_with_function_type_covers_type_name_function() {
     // `5` has type `Int` but `Int -> Int` expected → type_name("function") called.
     let lowered = lower(
         r#"
-x :: Int -> Int = 5
+x :: Int -> Int = 5;
 x
 "#,
     );
@@ -607,8 +607,8 @@ fn type_mismatch_with_alias_apply_type_covers_type_name_alias_apply() {
     // type_name("Pair Int Text") called.
     let lowered = lower(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Int Text = 5
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Int Text = 5;
 x
 "#,
     );
@@ -673,7 +673,7 @@ fn witness_target_key_with_atom_type() {
 #[test]
 fn witness_target_key_alias_resolving_to_list() {
     let file = completed_file(
-        "IL :: type List Int\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @IL :: { eq = \\a b. true; }\n1",
+        "IL :: type List Int;\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @IL :: { eq = \\a b. true; }\n1",
     );
     let _ = file;
 }
@@ -682,7 +682,7 @@ fn witness_target_key_alias_resolving_to_list() {
 #[test]
 fn witness_target_key_alias_resolving_to_optional() {
     let file = completed_file(
-        "MI :: type Int?\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @MI :: { eq = \\a b. true; }\n1",
+        "MI :: type Int?;\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @MI :: { eq = \\a b. true; }\n1",
     );
     let _ = file;
 }
@@ -691,7 +691,7 @@ fn witness_target_key_alias_resolving_to_optional() {
 #[test]
 fn witness_target_key_alias_resolving_to_function() {
     let file = completed_file(
-        "F :: type Int -> Int\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @F :: { eq = \\a b. true; }\n1",
+        "F :: type Int -> Int;\nEq :: <A> @A { eq :: A -> A -> Bool; }\nEq @F :: { eq = \\a b. true; }\n1",
     );
     let _ = file;
 }
@@ -701,14 +701,14 @@ fn witness_target_key_alias_resolving_to_function() {
 /// Generic alias with List body covers instantiate_type_vars List arm.
 #[test]
 fn instantiate_type_vars_list_body() {
-    let file = completed_file("ListOf :: <A> type List A\nxs :: ListOf Int = [1; 2; 3;]\nxs");
+    let file = completed_file("ListOf :: <A> type List A;\nxs :: ListOf Int = {1; 2; 3;};\nxs");
     let _ = file;
 }
 
 /// Generic alias with Optional body covers instantiate_type_vars Optional arm.
 #[test]
 fn instantiate_type_vars_optional_body() {
-    let file = completed_file("MaybeOf :: <A> type A?\nx :: MaybeOf Int = #none\nx");
+    let file = completed_file("MaybeOf :: <A> type A?;\nx :: MaybeOf Int = #none;\nx");
     let _ = file;
 }
 
@@ -716,7 +716,7 @@ fn instantiate_type_vars_optional_body() {
 #[test]
 fn instantiate_type_vars_function_body() {
     let file =
-        completed_file("FnOf :: <A, B> type A -> B\nf :: FnOf Int Text = \\x. \"hello\"\nf 1");
+        completed_file("FnOf :: <A, B> type A -> B;\nf :: FnOf Int Text = \\x. \"hello\";\nf 1");
     let _ = file;
 }
 
@@ -724,7 +724,7 @@ fn instantiate_type_vars_function_body() {
 #[test]
 fn instantiate_type_vars_tuple_body() {
     let file =
-        completed_file("PairOf :: <A, B> type (A, B)\np :: PairOf Int Text = (1, \"hi\")\np");
+        completed_file("PairOf :: <A, B> type (A, B);\np :: PairOf Int Text = (1, \"hi\");\np");
     let _ = file;
 }
 
@@ -732,7 +732,7 @@ fn instantiate_type_vars_tuple_body() {
 #[test]
 fn instantiate_type_vars_union_body() {
     let file = completed_file(
-        "ResultOf :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; }\nr :: ResultOf Int Text = #ok { value = 42; }\nr",
+        "ResultOf :: <A, E> type { #ok: { value : A; }; #err: { error : E; }; };\nr :: ResultOf Int Text = #ok { value = 42; };\nr",
     );
     let _ = file;
 }
@@ -743,7 +743,7 @@ fn instantiate_type_vars_union_body() {
 #[test]
 fn optional_access_lowers_correctly_to_thir() {
     let file = completed_file(
-        "Config :: type { port : Int; }\ncfg :: Config? = #none\nn :: Int? = cfg?.port\nn",
+        "Config :: type { port : Int; };\ncfg :: Config? = #none;\nn :: Int? = cfg?.port;\nn",
     );
     // The file must complete without errors.
     let _ = file;

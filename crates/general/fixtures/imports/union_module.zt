@@ -1,5 +1,5 @@
 -- A .zt module whose final expression has a union type.
 -- Used to exercise ImportedType::Union in thir/lower/import.rs and export.rs.
-Color :: type { #red; #green; #blue; }
-x :: Color = #red
+Color :: type { #red; #green; #blue; };
+x :: Color = #red;
 x

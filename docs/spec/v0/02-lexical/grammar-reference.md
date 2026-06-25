@@ -9,11 +9,12 @@ File
   ::= TopDecl* Expr EOF
 
 TopDecl
-  ::= Ident ":=" Expr
-   | Ident "::" TypeExpr "=" Expr
-   | Ident "::" TypeParamList? "type" TypeExpr
+  ::= Ident "::=" Expr ";"
+   | Ident "::" TypeExpr "=" Expr ";"
+   | Ident "::" TypeParamList? "type" TypeExpr ";"
+   | Ident "::" "import" String ";"
    | Ident "::" TypeParamList? TypeExpr FunctionClause+
-   | Ident Pattern+ "=" Expr
+   | Ident Pattern+ "=" Expr ";"
    | Ident "::" TypeParamList? "@" TypeAtom "{" ConstraintMethod* "}" "derive"?
    | Ident "@" TypeAtom "::" TypeParamList? WitnessBody
 
@@ -130,17 +131,23 @@ Group
 
 Record
   ::= "{}"
-   | "{" ValueField* "}"
+   | "{" ValueField+ "}"
 
 ValueField
   ::= FieldName "=" Expr ";"
    | FieldName "=" ";"
 
+List
+  ::= "{;}"
+   | "{" (Expr ";")+ "}"
+
 Block
-  ::= "{" LocalBinding* Expr (";" Expr)* ";"? "}"
+  ::= "[]"
+   | "[" LocalBinding* Expr (";" Expr)* ";"? "]"
 
 LocalBinding
   ::= Ident ":=" Expr ";"
+   | Ident ":" TypeExpr "=" Expr ";"
 
 Tuple
   ::= "()"
@@ -152,9 +159,6 @@ TaggedTuplePayload
 TupleItem
   ::= FieldName "=" Expr
    | Expr
-
-List
-  ::= "[" (Expr ";")* "]"
 
 Lambda
   ::= "\\" Pattern+ "." whitespace Expr
@@ -364,10 +368,13 @@ Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `impo
 
 ### Interpretation rules
 
-- A file contains zero or more top-level declarations followed by one final expression.
+- A file contains zero or more top-level declarations followed by one optional final expression. Each value-like top-level declaration ends in `;`; the trailing expression has no `;`. A trailing `;` (or no tail at all) yields `()`.
 - Top-level function declarations and constraint-method defaults use `= pat => body` clauses after the signature. `match` arms use `{ | pat => body; }` clause blocks.
+- `;` is the universal terminator/separator. An expression written with a trailing `;` is a statement of type `()` (Unit), Rust-style.
+- The container glyph picks the shape: `{ … }` is a parallel container — a record (`name = value;` entries) or a list (bare `value;` entries) — while `[ … ]` is a serial do-block (local bindings followed by a tail expression that is the block's value).
+- The scope picks the binding operator: top-level (the parallel/letrec scope) uses `::=` (inferred) and `:: T =` (typed); a local binding inside a `[ … ]` do-block uses `:=` (inferred) and `: T =` (typed). Mnemonic: `::` is top-level, `:` is local.
 - `:` is type binding; `=` is value or pattern binding. Type record fields, type tuple fields, and union payload annotations use `:`. Value records, tuples, witness fields, and patterns use `=`.
-- In expression position, `{}` is an empty value record. A non-empty `{ ... }` is a value record only when its first item starts as `FieldName =`; otherwise it is a block expression.
+- In expression position, `{}` is the empty value record and `{;}` is the empty list. A non-empty `{ ... }` is a value record when its first item starts as `FieldName =`; otherwise it is a list of `;`-terminated expressions. A `[ ... ]` is a do-block; an empty `[]` is the empty do-block.
 - A value-record field written `name =;` is field-pun shorthand for `name = name;`: the omitted value is the identifier `name`. It applies to record literals and record-update (`with`) fields.
 - In type position, `{ field : Type; }` is a record type and `{ #tag; }` is a union type.
 - Record row tails (`...;` or `...Rest;`) are last and unique. Union row tails/spreads are also unique and may appear among variants.

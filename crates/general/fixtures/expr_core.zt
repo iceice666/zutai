@@ -1,21 +1,21 @@
 -- expr_core.zt: M1 expression smoke fixture.
 -- Exercises every atom-level form and operator precedence layer.
 
-AtomTag :: type {#dev; #x86_64-linux;}
-BuildEnv :: type {#dev; #prod; #stage;}
-Sign :: type {#pos; #nonpos;}
+AtomTag :: type {#dev; #x86_64-linux;};
+BuildEnv :: type {#dev; #prod; #stage;};
+Sign :: type {#pos; #nonpos;};
 
-{
+[
   nested_rec := { host_name = "localhost"; port = 8080; };
-  empty_list : List Int = [];
-  atom_tags : List AtomTag = [#dev; #x86_64-linux;];
+  empty_list : List Int = {;};
+  atom_tags : List AtomTag = {#dev; #x86_64-linux;};
   missing_int : Int? = #none;
   present_int : Int? = #some (5);
   env : BuildEnv = #prod;
   {
     -- Scalars
-    bool_vals      = [true; false;];
-    numbers        = [0.0; 123.0; -10.0; 3.14; 1e9; -2.5e-3;];
+    bool_vals      = {true; false;};
+    numbers        = {0.0; 123.0; -10.0; 3.14; 1e9; -2.5e-3;};
     atoms          = atom_tags;
     str_val        = "hello\nworld";
 
@@ -49,10 +49,10 @@ Sign :: type {#pos; #nonpos;}
     -- Lambda forms
     lam1           = \x. x + 1;
     lam2           = \x y. x + y;
-    lam_block      = \x. { tmp := x * 2; tmp + 1 };
+    lam_block      = \x. [ tmp := x * 2; tmp + 1 ];
 
     -- Block expression
-    block_expr     = { a := 10; b := 20; a + b };
+    block_expr     = [ a := 10; b := 20; a + b ];
 
     -- If / match
     if_expr        = if true then 1 else 2;
@@ -63,10 +63,10 @@ Sign :: type {#pos; #nonpos;}
     };
 
     -- Match with guard
-    match_guard    = { sign : Sign = match 5 {
+    match_guard    = [ sign : Sign = match 5 {
       | n if n > 0 => #pos;
       | _          => #nonpos;
-    }; sign };
+    }; sign ];
 
     -- Imports are top-level declarations; expression imports are rejected.
 
@@ -80,4 +80,4 @@ Sign :: type {#pos; #nonpos;}
     -- Function application (curried)
     applied        = (\f. \x. f x) (\n. n + 1) 41;
   }
-}
+]

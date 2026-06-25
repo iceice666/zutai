@@ -83,7 +83,7 @@ fn tlc_module_is_constructible() {
 
 #[test]
 fn monomorphic_int_binding_translates_type() {
-    let m = tlc_of("x ::= 42\nx");
+    let m = tlc_of("x ::= 42;\nx");
     assert_eq!(m.decls.len(), 1);
     let decl = &m.decl_arena[m.decls[0]];
     let crate::TlcDecl::Value { ty, .. } = decl else {
@@ -100,7 +100,7 @@ fn int_literal_final_expr_no_decls() {
 
 #[test]
 fn annotated_value_decl_lowers_correctly() {
-    let m = tlc_of("x :: Int = 42\nx");
+    let m = tlc_of("x :: Int = 42;\nx");
     assert_eq!(m.decls.len(), 1);
     let decl = &m.decl_arena[m.decls[0]];
     let crate::TlcDecl::Value { ty, body, .. } = decl else {
@@ -116,7 +116,7 @@ fn annotated_value_decl_lowers_correctly() {
 #[test]
 fn type_alias_decl_lowers_correctly() {
     // Non-generic alias: 0 params → body is the record directly, no TyLamK wrapping.
-    let m = tlc_of("Point :: type { x : Int; y : Int; }\nPoint");
+    let m = tlc_of("Point :: type { x : Int; y : Int; };\nPoint");
     assert_eq!(m.decls.len(), 1);
     let crate::TlcDecl::TypeAlias { body, .. } = m.decl_arena[m.decls[0]] else {
         panic!("expected TypeAlias decl")
@@ -143,7 +143,7 @@ fn bool_literal_no_crash() {
 #[test]
 fn monomorphic_identity_function_lowers_to_lam() {
     // Explicitly typed: no generalization
-    let m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    let m = tlc_of("id :: Int -> Int = \\x. x;\nid 1");
     assert_eq!(m.decls.len(), 1);
     let crate::TlcDecl::Value { body, ty, .. } = &m.decl_arena[m.decls[0]] else {
         panic!("expected Value decl")
@@ -171,7 +171,7 @@ fn monomorphic_identity_function_lowers_to_lam() {
 #[test]
 fn polymorphic_identity_gets_tylam_and_forall() {
     // No annotation → HM generalizes to ∀a. a → a
-    let m = tlc_of("id x = x\nid 42");
+    let m = tlc_of("id x = x;\nid 42");
     assert_eq!(m.decls.len(), 1);
     let crate::TlcDecl::Value { body, ty, .. } = &m.decl_arena[m.decls[0]] else {
         panic!("expected Value decl")
@@ -197,7 +197,7 @@ fn rank2_lambda_arg_value_layer_typed_as_fun_not_forall() {
     // shared `ForAll` outer type. Sharing it gave the value lambda a ∀-type
     // where the Dataflow structural validator expects `Fun`, aborting backend
     // compilation with an ICE for rank-2 arguments.
-    let m = tlc_of("apply :: (<A> A -> A) -> Int = \\g. g 1\napply (\\x. x)");
+    let m = tlc_of("apply :: (<A> A -> A) -> Int = \\g. g 1;\napply (\\x. x)");
     let mut found = false;
     for (id, e) in m.expr_arena.iter() {
         let crate::TlcExpr::TyLam(_, _, body) = e else {
@@ -230,7 +230,7 @@ fn rank2_lambda_arg_value_layer_typed_as_fun_not_forall() {
 
 #[test]
 fn if_desugars_to_case() {
-    let m = tlc_of("f x = if x then 1 else 2\nf true");
+    let m = tlc_of("f x = if x then 1 else 2;\nf true");
     let has_case = m
         .expr_arena
         .iter()
@@ -240,7 +240,7 @@ fn if_desugars_to_case() {
 
 #[test]
 fn block_desugars_to_let() {
-    let m = tlc_of("f x = { n := 42; n }\nf 0");
+    let m = tlc_of("f x = [ n := 42; n ];\nf 0");
     let has_let = m
         .expr_arena
         .iter()
@@ -250,7 +250,7 @@ fn block_desugars_to_let() {
 
 #[test]
 fn binary_op_lowers_to_builtin() {
-    let m = tlc_of("f x y = x + y\nf 1 2");
+    let m = tlc_of("f x y = x + y;\nf 1 2");
     let has_builtin = m
         .expr_arena
         .iter()
@@ -260,7 +260,7 @@ fn binary_op_lowers_to_builtin() {
 
 #[test]
 fn invariant_every_expr_has_type_entry() {
-    let m = tlc_of("add x y = x + y\nadd 1 2");
+    let m = tlc_of("add x y = x + y;\nadd 1 2");
     for (id, _) in m.expr_arena.iter() {
         assert!(
             m.expr_types.contains_key(&id),

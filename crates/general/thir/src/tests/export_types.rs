@@ -47,14 +47,14 @@ fn export_type_atom() {
 #[test]
 fn export_type_list() {
     assert!(matches!(
-        export_final("xs :: List Int = [1; 2;]\nxs"),
+        export_final("xs :: List Int = {1; 2;};\nxs"),
         ImportedType::List(_)
     ));
 }
 
 #[test]
 fn export_type_optional() {
-    let file = completed_file("x :: Int? = #none\nx");
+    let file = completed_file("x :: Int? = #none;\nx");
     let ty = file.expr_arena[file.final_expr].ty;
     assert!(matches!(
         export_type(&file, ty),
@@ -64,7 +64,7 @@ fn export_type_optional() {
 
 #[test]
 fn export_type_maybe() {
-    let file = completed_file("S :: type { v? : Int; }\ns :: S = {}\ns.v");
+    let file = completed_file("S :: type { v? : Int; };\ns :: S = {};\ns.v");
     let ty = file.expr_arena[file.final_expr].ty;
     assert!(matches!(export_type(&file, ty), Ok(ImportedType::Maybe(_))));
 }
@@ -86,7 +86,7 @@ fn export_type_tuple_positional() {
 #[test]
 fn export_type_tuple_named() {
     // Named tuple items exercise the TypeTupleItem::Named arm in export.
-    let file = completed_file("x :: (a : Int, b : Text) = (a = 1, b = \"hi\")\nx");
+    let file = completed_file("x :: (a : Int, b : Text) = (a = 1, b = \"hi\");\nx");
     let ty = file.expr_arena[file.final_expr].ty;
     assert!(matches!(export_type(&file, ty), Ok(ImportedType::Tuple(_))));
 }
@@ -94,7 +94,7 @@ fn export_type_tuple_named() {
 #[test]
 fn export_type_union_no_payload() {
     assert!(matches!(
-        export_final("R :: type { #ok; #err; }\nx :: R = #ok\nx"),
+        export_final("R :: type { #ok; #err; };\nx :: R = #ok;\nx"),
         ImportedType::Union(_)
     ));
 }
@@ -103,7 +103,7 @@ fn export_type_union_no_payload() {
 fn export_type_union_with_payload() {
     // Union variant with record payload exercises the Some(ty) branch in export.
     assert!(matches!(
-        export_final("R :: type { #ok: { v : Int; }; #err; }\nx :: R = #ok { v = 42; }\nx"),
+        export_final("R :: type { #ok: { v : Int; }; #err; };\nx :: R = #ok { v = 42; };\nx"),
         ImportedType::Union(_)
     ));
 }
@@ -111,7 +111,7 @@ fn export_type_union_with_payload() {
 #[test]
 fn export_type_function() {
     assert!(matches!(
-        export_final("f :: Int -> Int = \\x. x\nf"),
+        export_final("f :: Int -> Int = \\x. x;\nf"),
         ImportedType::Function { .. }
     ));
 }
@@ -120,7 +120,7 @@ fn export_type_function() {
 fn export_type_alias_resolves_to_inner_type() {
     // TypeKind::Alias → follows alias map → resolves to Int.
     assert!(matches!(
-        export_final("MyInt :: type Int\nx :: MyInt = 42\nx"),
+        export_final("MyInt :: type Int;\nx :: MyInt = 42;\nx"),
         ImportedType::Int
     ));
 }
@@ -129,7 +129,7 @@ fn export_type_alias_resolves_to_inner_type() {
 fn export_type_type_value() {
     // TypeKind::Type (a type-value binding) → ImportedType::Type.
     assert!(matches!(
-        export_final("MyInt :: type Int\nMyInt"),
+        export_final("MyInt :: type Int;\nMyInt"),
         ImportedType::Type(_)
     ));
 }
@@ -140,14 +140,14 @@ fn export_type_type_value() {
 fn type_matches_record_to_record_exercises_record_types_match() {
     // `f :: { x : Int; } -> { x : Int; } = \\r. r` forces type_matches on two
     // distinct Record TypeIds with the same structure.
-    let file = completed_file("f :: { x : Int; } -> { x : Int; } = \\r. r\nf { x = 1; }");
+    let file = completed_file("f :: { x : Int; } -> { x : Int; } = \\r. r;\nf { x = 1; }");
     assert!(matches!(final_type_kind(&file), TypeKind::Record(_, _)));
 }
 
 #[test]
 fn type_matches_tuple_to_tuple_exercises_tuple_types_match() {
     // Function returning its argument of tuple type — distinct tuple TypeIds, same structure.
-    let file = completed_file("f :: (Int, Text) -> (Int, Text) = \\p. p\nf (1, \"a\")");
+    let file = completed_file("f :: (Int, Text) -> (Int, Text) = \\p. p;\nf (1, \"a\")");
     assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
 }
 
@@ -156,7 +156,7 @@ fn type_matches_union_to_union() {
     // Union-to-union: `f :: R -> R = \\x. x`.
     // type_matches is called with two Union TypeIds during function body check.
     // The result type is `R` which is Alias(R_binding).
-    let file = completed_file("R :: type { #ok; #err; }\nf :: R -> R = \\x. x\nf #ok");
+    let file = completed_file("R :: type { #ok; #err; };\nf :: R -> R = \\x. x;\nf #ok");
     // The file must complete without errors — the union-to-union type check passes.
     let _ = file;
 }

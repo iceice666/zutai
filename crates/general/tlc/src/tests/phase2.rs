@@ -7,8 +7,8 @@ fn generic_alias_decl_lowers_to_tylamk_chain() {
     // A 2-param alias should produce: TyLamK(A, _, TyLamK(B, _, Record(...)))
     let m = tlc_of(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Int Int = { first = 1; second = 2; }
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Int Int = { first = 1; second = 2; };
 x
 "#,
     );
@@ -42,8 +42,8 @@ fn generic_alias_head_var_carries_arrow_kind() {
     // The head TyVar must carry an Arrow kind, not ground.
     let m = tlc_of(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Int Int = { first = 1; second = 2; }
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Int Int = { first = 1; second = 2; };
 x
 "#,
     );
@@ -63,8 +63,8 @@ fn nbe_reduces_alias_application_to_record() {
     // `Pair Text Int` should normalize to `{ first : Text; second : Int }`.
     let mut m = tlc_of(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Text Int = { first = "hello"; second = 1; }
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Text Int = { first = "hello"; second = 1; };
 x
 "#,
     );

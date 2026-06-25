@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn h13_anonymous_row_tail_type_lowers_to_open_record() {
-    let lowered = lower("T :: type { host : Text; ...; }\nT");
+    let lowered = lower("T :: type { host : Text; ...; };\nT");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
     let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {
@@ -51,7 +51,8 @@ fn named_row_tail_resolves_to_type_param_as_var() {
 
 #[test]
 fn named_union_row_tail_resolves_to_type_alias_as_spread() {
-    let lowered = lower("Shape :: type { #dev; #test; }\nOpen :: type { ...Shape; #prod; }\nOpen");
+    let lowered =
+        lower("Shape :: type { #dev; #test; };\nOpen :: type { ...Shape; #prod; };\nOpen");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
     let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {
@@ -75,7 +76,7 @@ fn named_union_row_tail_resolves_to_type_alias_as_spread() {
 
 #[test]
 fn row_tail_naming_a_value_is_an_invalid_target() {
-    let lowered = lower("x ::= 1\nT :: type { a : Int; ...x; }\nT");
+    let lowered = lower("x ::= 1;\nT :: type { a : Int; ...x; };\nT");
     assert!(
         lowered.diagnostics.iter().any(
             |d| matches!(&d.kind, HirDiagnosticKind::InvalidRowTailTarget { name } if name == "x")
@@ -87,7 +88,7 @@ fn row_tail_naming_a_value_is_an_invalid_target() {
 
 #[test]
 fn unknown_row_tail_name_is_an_unknown_identifier() {
-    let lowered = lower("T :: type { a : Int; ...Unknown; }\nT");
+    let lowered = lower("T :: type { a : Int; ...Unknown; };\nT");
     assert!(
         lowered
             .diagnostics
@@ -100,7 +101,7 @@ fn unknown_row_tail_name_is_an_unknown_identifier() {
 
 #[test]
 fn value_select_preserves_field_order() {
-    let lowered = lower("s ::= { a = 1; b = 2; c = 3; }\nselect s { c; a; }");
+    let lowered = lower("s ::= { a = 1; b = 2; c = 3; };\nselect s { c; a; }");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let expr = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::Select { fields, .. } = &expr.kind else {
@@ -112,7 +113,7 @@ fn value_select_preserves_field_order() {
 
 #[test]
 fn record_update_preserves_receiver_and_field_order() {
-    let lowered = lower("s ::= { a = 1; b = 2; c = 3; }\ns with { c = 30; a = 10; }");
+    let lowered = lower("s ::= { a = 1; b = 2; c = 3; };\ns with { c = 30; a = 10; }");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let expr = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::RecordUpdate { receiver, fields } = &expr.kind else {
@@ -128,7 +129,7 @@ fn record_update_preserves_receiver_and_field_order() {
 
 #[test]
 fn duplicate_record_update_field_is_reported() {
-    let lowered = lower("s ::= { a = 1; }\ns with { a = 2; a = 3; }");
+    let lowered = lower("s ::= { a = 1; };\ns with { a = 2; a = 3; }");
     assert!(
         lowered
             .diagnostics
@@ -141,7 +142,7 @@ fn duplicate_record_update_field_is_reported() {
 
 #[test]
 fn duplicate_select_field_is_reported() {
-    let lowered = lower("s ::= { a = 1; }\nselect s { a; a; }");
+    let lowered = lower("s ::= { a = 1; };\nselect s { a; a; }");
     assert!(
         lowered
             .diagnostics
@@ -155,7 +156,7 @@ fn duplicate_select_field_is_reported() {
 #[test]
 fn type_level_select_lowers_with_field_order() {
     let lowered = lower(
-        "Server :: type { host : Text; port : Int; }\nT :: type select Server { port; host; }\nT",
+        "Server :: type { host : Text; port : Int; };\nT :: type select Server { port; host; };\nT",
     );
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
@@ -171,7 +172,7 @@ fn type_level_select_lowers_with_field_order() {
 
 #[test]
 fn handle_distinguishes_value_and_operation_clauses() {
-    let lowered = lower("d ::= 1\nhandle d with {\n  value = \\v. v;\n  fail = \\e. e;\n}");
+    let lowered = lower("d ::= 1;\nhandle d with {\n  value = \\v. v;\n  fail = \\e. e;\n}");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let expr = &lowered.file.expr_arena[lowered.file.final_expr];
     let HirExprKind::Handle { clauses, .. } = &expr.kind else {
@@ -186,7 +187,7 @@ fn handle_distinguishes_value_and_operation_clauses() {
 
 #[test]
 fn resume_inside_operation_clause_is_allowed() {
-    let lowered = lower("d ::= 1\nhandle d with {\n  warn = \\x. resume x;\n}");
+    let lowered = lower("d ::= 1;\nhandle d with {\n  warn = \\x. resume x;\n}");
     assert!(
         !lowered
             .diagnostics
@@ -199,7 +200,7 @@ fn resume_inside_operation_clause_is_allowed() {
 
 #[test]
 fn resume_inside_value_clause_is_rejected() {
-    let lowered = lower("d ::= 1\nhandle d with {\n  value = \\v. resume v;\n}");
+    let lowered = lower("d ::= 1;\nhandle d with {\n  value = \\v. resume v;\n}");
     assert!(
         lowered
             .diagnostics
@@ -226,7 +227,7 @@ fn resume_at_top_level_is_rejected() {
 #[test]
 fn effect_row_lowers_to_effect_type() {
     let lowered = lower(
-        "Config :: type Text\nParseError :: type Text\nparse :: Text -> Config ! { fail ParseError }\n  = text => text;\nparse",
+        "Config :: type Text;\nParseError :: type Text;\nparse :: Text -> Config ! { fail ParseError; }\n  = text => text;\nparse",
     );
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[2]];
@@ -246,7 +247,7 @@ fn effect_row_lowers_to_effect_type() {
 
 #[test]
 fn duplicate_explicit_field_in_open_record_is_reported() {
-    let lowered = lower("T :: type { a : Int; a : Text; ...; }\nT");
+    let lowered = lower("T :: type { a : Int; a : Text; ...; };\nT");
     assert!(
         lowered
             .diagnostics

@@ -10,7 +10,7 @@ false
 "hello"
 #prod
 #circle { radius = 5.0; }
-[1; 2; 3;]
+{ 1; 2; 3; }
 {
   host = "localhost";
   port = 8080;
@@ -130,20 +130,20 @@ The empty tuple `()` is the **unit value**. Its type is the empty tuple type, al
 
 ### Lists
 
-Lists use semicolon-terminated elements:
+Lists use a `{ … }` parallel container with semicolon-terminated bare elements (no `=`, which distinguishes a list from a record):
 
 ```zt
-[
+{
   "alpha";
   "beta";
   "gamma";
-]
+}
 ```
 
 Inline form is also valid:
 
 ```zt
-["alpha"; "beta"; "gamma";]
+{ "alpha"; "beta"; "gamma"; }
 ```
 
 ---

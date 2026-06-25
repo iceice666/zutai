@@ -1,4 +1,4 @@
 -- zt_importer.zt: imports a .zt module and returns m.doubled.
 
-m :: import "data_module.zt"
+m :: import "data_module.zt";
 m.doubled

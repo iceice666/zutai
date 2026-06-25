@@ -79,15 +79,15 @@ pub(super) fn reflection_value_to_source(value: &zutai_eval::Value) -> Option<St
         return Some(expr);
     }
 
-    let mut source = String::from("{");
+    let mut source = String::from("[");
     for empty in empty_lists {
         source.push_str(&empty.name);
         source.push_str(" : ");
         source.push_str(empty.ty);
-        source.push_str(" = [];\n");
+        source.push_str(" = {;};\n");
     }
     source.push_str(&expr);
-    source.push('}');
+    source.push(']');
     Some(source)
 }
 
@@ -114,10 +114,10 @@ pub(super) fn reflection_value_to_source_in(
                 });
                 Some(name)
             }
-            None => Some("[]".to_string()),
+            None => Some("{;}".to_string()),
         },
         zutai_eval::Value::List(items) => {
-            let mut out = String::from("[");
+            let mut out = String::from("{");
             for item in items.iter() {
                 out.push_str(&reflection_value_to_source_in(
                     &item.peek()?,
@@ -126,7 +126,7 @@ pub(super) fn reflection_value_to_source_in(
                 )?);
                 out.push_str("; ");
             }
-            out.push(']');
+            out.push('}');
             Some(out)
         }
         zutai_eval::Value::Tuple(items) => {
@@ -218,12 +218,15 @@ pub(super) fn value_to_source(value: &zutai_eval::Value) -> Option<String> {
         zutai_eval::Value::Text(value) => Some(text_source(value)),
         zutai_eval::Value::Atom(value) => Some(format!("#{value}")),
         zutai_eval::Value::List(items) => {
-            let mut out = String::from("[");
+            if items.is_empty() {
+                return Some("{;}".to_string());
+            }
+            let mut out = String::from("{");
             for item in items.iter() {
                 out.push_str(&value_to_source(&item.peek()?)?);
                 out.push_str("; ");
             }
-            out.push(']');
+            out.push('}');
             Some(out)
         }
         zutai_eval::Value::Tuple(items) => {

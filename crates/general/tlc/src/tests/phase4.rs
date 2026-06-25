@@ -7,7 +7,7 @@ use crate::*;
 /// no v0 path produces a non-empty effect row, so "erase before DC" is a no-op.
 #[test]
 fn v0_function_lowers_with_empty_effect_row() {
-    let m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    let m = tlc_of("id :: Int -> Int = \\x. x;\nid 1");
     let TlcDecl::Value { ty, .. } = &m.decl_arena[m.decls[0]] else {
         panic!("expected Value decl")
     };
@@ -137,7 +137,7 @@ fn effect_row_permutation_equality_holds() {
 /// This is the invariant that holds for all v0 programs.
 #[test]
 fn effect_eraser_is_noop_for_pure_functions() {
-    let mut m = tlc_of("id :: Int -> Int = \\x. x\nid 1");
+    let mut m = tlc_of("id :: Int -> Int = \\x. x;\nid 1");
     // Precondition: v0 lowering sets every Fun eff to REmpty already.
     let before: Vec<Row> = m
         .type_arena

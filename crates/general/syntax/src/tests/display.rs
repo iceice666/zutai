@@ -17,14 +17,14 @@ fn display_file_starts_with_file_header() {
 
 #[test]
 fn display_decl_inferred() {
-    let s = parse_str("x ::= 42\nx").to_string();
+    let s = parse_str("x ::= 42;\nx").to_string();
     assert!(s.contains("Inferred \"x\""), "inferred decl name");
     assert!(s.contains("Int(42)"), "inferred decl value");
 }
 
 #[test]
 fn display_decl_typed() {
-    let s = parse_str("x :: Int = 99\nx").to_string();
+    let s = parse_str("x :: Int = 99;\nx").to_string();
     assert!(s.contains("Typed \"x\""), "typed decl name");
     assert!(s.contains("TyIdent(Int)"), "typed decl type annotation");
     assert!(s.contains("Int(99)"), "typed decl value");
@@ -32,7 +32,7 @@ fn display_decl_typed() {
 
 #[test]
 fn display_decl_type_alias_no_params() {
-    let s = parse_str("MyInt :: type Int\nMyInt").to_string();
+    let s = parse_str("MyInt :: type Int;\nMyInt").to_string();
     assert!(
         s.contains("TypeAlias \"MyInt\" <>"),
         "alias name and empty params"
@@ -42,7 +42,7 @@ fn display_decl_type_alias_no_params() {
 
 #[test]
 fn display_decl_type_alias_with_params() {
-    let s = parse_str("Pair :: <A, B> type (A, B)\n1").to_string();
+    let s = parse_str("Pair :: <A, B> type (A, B);\n1").to_string();
     assert!(
         s.contains("TypeAlias \"Pair\" <A, B>"),
         "alias with type params"
@@ -66,7 +66,7 @@ fn display_decl_function_clause_with_guard() {
 
 #[test]
 fn display_decl_nosig_fn() {
-    let s = parse_str("f x = x\nf 1").to_string();
+    let s = parse_str("f x = x;\nf 1").to_string();
     assert!(s.contains("NoSigFn \"f\""), "no-sig fn name");
     assert!(s.contains("pat: Ident(x)"), "no-sig fn pattern");
     assert!(s.contains("body: Ident(x)"), "no-sig fn body");
@@ -149,7 +149,7 @@ fn display_expr_tagged_tuple_payload() {
 
 #[test]
 fn display_expr_ident() {
-    let s = parse_str("x ::= 1\nx").to_string();
+    let s = parse_str("x ::= 1;\nx").to_string();
     assert!(s.contains("Ident(x)"), "identifier expression");
 }
 
@@ -187,14 +187,14 @@ fn display_expr_tuple_named() {
 
 #[test]
 fn display_expr_list() {
-    let s = parse_str("[1; 2; 3;]").to_string();
+    let s = parse_str("{1; 2; 3;}").to_string();
     assert!(s.contains("List"), "list expression");
     assert!(s.contains("Int(1)"), "first list element");
 }
 
 #[test]
 fn display_expr_block() {
-    let s = parse_str("{ x := 1; x }").to_string();
+    let s = parse_str("[ x := 1; x ]").to_string();
     assert!(s.contains("Block"), "block expression");
     assert!(s.contains("x:"), "block binding");
     assert!(s.contains("result:"), "block result");
@@ -227,14 +227,14 @@ fn display_expr_match() {
 
 #[test]
 fn display_decl_import_string() {
-    let s = parse_str("cfg :: import \"data.zti\"\ncfg").to_string();
+    let s = parse_str("cfg :: import \"data.zti\";\ncfg").to_string();
     assert!(s.contains("Import \"cfg\""), "string import decl");
     assert!(s.contains("source: \"data.zti\""), "string import source");
 }
 
 #[test]
 fn display_decl_import_path() {
-    let s = parse_str("cfg :: import foo.bar\ncfg").to_string();
+    let s = parse_str("cfg :: import foo.bar;\ncfg").to_string();
     assert!(s.contains("Import \"cfg\""), "path import decl");
     assert!(s.contains("source: foo.bar"), "path import source");
 }
@@ -256,7 +256,7 @@ fn display_expr_apply() {
 
 #[test]
 fn display_expr_access() {
-    let s = parse_str("r ::= { a = 1; }\nr.a").to_string();
+    let s = parse_str("r ::= { a = 1; };\nr.a").to_string();
     assert!(s.contains("Access .a"), "field access");
 }
 
@@ -380,31 +380,31 @@ fn display_pattern_record() {
 
 #[test]
 fn display_type_expr_ident() {
-    let s = parse_str("x :: Int = 1\nx").to_string();
+    let s = parse_str("x :: Int = 1;\nx").to_string();
     assert!(s.contains("TyIdent(Int)"), "type ident");
 }
 
 #[test]
 fn display_type_expr_atom() {
-    let s = parse_str("x :: #ok = #ok\nx").to_string();
+    let s = parse_str("x :: #ok = #ok;\nx").to_string();
     assert!(s.contains("TyAtom(#ok)"), "type atom");
 }
 
 #[test]
 fn display_type_expr_true() {
-    let s = parse_str("x :: true = true\nx").to_string();
+    let s = parse_str("x :: true = true;\nx").to_string();
     assert!(s.contains("TyTrue"), "type literal true");
 }
 
 #[test]
 fn display_type_expr_false() {
-    let s = parse_str("x :: false = false\nx").to_string();
+    let s = parse_str("x :: false = false;\nx").to_string();
     assert!(s.contains("TyFalse"), "type literal false");
 }
 
 #[test]
 fn display_type_expr_record_with_optional_field() {
-    let s = parse_str("Point :: type { x : Int; y? : Text; }\n1").to_string();
+    let s = parse_str("Point :: type { x : Int; y? : Text; };\n1").to_string();
     assert!(s.contains("TyRecord"), "type record");
     assert!(s.contains("x:"), "required field");
     assert!(s.contains("y?:"), "optional field");
@@ -412,7 +412,7 @@ fn display_type_expr_record_with_optional_field() {
 
 #[test]
 fn display_type_expr_union_with_and_without_payload() {
-    let s = parse_str("Shape :: type {#circle; #rect: { w : Int; h : Int; };}\n1").to_string();
+    let s = parse_str("Shape :: type {#circle; #rect: { w : Int; h : Int; };};\n1").to_string();
     assert!(s.contains("TyUnion"), "type union");
     assert!(s.contains("circle"), "bare union variant");
     assert!(s.contains("rect:"), "payload union variant");
@@ -426,14 +426,14 @@ fn display_type_expr_tuple_positional() {
 
 #[test]
 fn display_type_expr_tuple_named() {
-    let s = parse_str("T :: type (x : Int, y : Text)\n1").to_string();
+    let s = parse_str("T :: type (x : Int, y : Text);\n1").to_string();
     assert!(s.contains("TyTuple"), "named type tuple");
     assert!(s.contains("x:"), "named tuple type field x");
 }
 
 #[test]
 fn display_type_expr_optional() {
-    let s = parse_str("x :: Int? = #none\nx").to_string();
+    let s = parse_str("x :: Int? = #none;\nx").to_string();
     assert!(s.contains("TyOptional"), "optional type");
     assert!(s.contains("TyIdent(Int)"), "optional inner type");
 }
@@ -448,20 +448,20 @@ fn display_type_expr_arrow() {
 
 #[test]
 fn display_type_expr_apply() {
-    let s = parse_str("xs :: List Int = [1;]\nxs").to_string();
+    let s = parse_str("xs :: List Int = {1;};\nxs").to_string();
     assert!(s.contains("TyApply"), "type application");
 }
 
 #[test]
 fn display_type_expr_access() {
-    let s = parse_str("x :: Foo.Bar = x\nx").to_string();
+    let s = parse_str("x :: Foo.Bar = x;\nx").to_string();
     assert!(s.contains("TyAccess .Bar"), "type field access");
 }
 
 #[test]
 fn display_type_expr_expr_escape() {
     // A numeric literal in type position falls through to ExprEscape.
-    let s = parse_str("x :: 1 = 1\nx").to_string();
+    let s = parse_str("x :: 1 = 1;\nx").to_string();
     assert!(s.contains("TyExprEscape"), "type expr escape");
     assert!(s.contains("Int(1)"), "escaped expression value");
 }
@@ -502,7 +502,7 @@ fn display_type_expr_select() {
 
 #[test]
 fn display_type_expr_effect_variants() {
-    let s = parse_str("Eff :: type Unit ! { io.print : Text -> Unit, fail Error, tick }\n1")
+    let s = parse_str("Eff :: type Unit ! { io.print : Text -> Unit, fail Error, tick };\n1")
         .to_string();
     assert!(s.contains("TyEffect"));
     assert!(s.contains("effect io.print: TyArrow"));
@@ -512,8 +512,8 @@ fn display_type_expr_effect_variants() {
 
 #[test]
 fn display_type_expr_row_tails() {
-    let record = parse_str("T :: type { host : Text; ...; }\n1").to_string();
-    let union = parse_str("U :: type { #a; ...Rest; }\n1").to_string();
+    let record = parse_str("T :: type { host : Text; ...; };\n1").to_string();
+    let union = parse_str("U :: type { #a; ...Rest; };\n1").to_string();
     assert!(record.contains("..."));
     assert!(union.contains("...Rest"));
 }

@@ -12,8 +12,8 @@ Color :: type {
   #red;
   #green;
   #blue;
-}
-x :: Color = #red
+};
+x :: Color = #red;
 x
 "#,
     );
@@ -28,8 +28,8 @@ x
 fn union_type_row_has_correct_arm_count() {
     let m = tlc_of(
         r#"
-Dir :: type { #north; #south; #east; #west; }
-x :: Dir = #north
+Dir :: type { #north; #south; #east; #west; };
+x :: Dir = #north;
 x
 "#,
     );
@@ -53,8 +53,8 @@ fn true_singleton_type_not_flattened_to_prim_bool() {
     // Union atom arms must produce Singleton types, not Prim(Bool).
     let m = tlc_of(
         r#"
-YesNo :: type { #yes; #no; }
-x :: YesNo = #yes
+YesNo :: type { #yes; #no; };
+x :: YesNo = #yes;
 x
 "#,
     );
@@ -74,8 +74,8 @@ x
 fn atom_type_in_union_is_singleton_not_prim_atom() {
     let m = tlc_of(
         r#"
-Status :: type { #dev; #test; #prod; }
-x :: Status = #dev
+Status :: type { #dev; #test; #prod; };
+x :: Status = #dev;
 x
 "#,
     );
@@ -109,8 +109,8 @@ fn tagged_value_expression_lowers_to_variant() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
-x :: Shape = #circle { radius = 5; }
+};
+x :: Shape = #circle { radius = 5; };
 x
 "#,
     );
@@ -132,7 +132,7 @@ fn tagged_value_pattern_lowers_to_variant_pat() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
+};
 area :: Shape -> Int
   = #circle { radius = r; } => r;
   = #square { side = s; } => s;
@@ -156,7 +156,7 @@ area
 fn module_walk_invariant_no_forbidden_residuals() {
     let m = tlc_of(
         r#"
-Color :: type { #red; #green; #blue; }
+Color :: type { #red; #green; #blue; };
 is_red :: Color -> Bool
   = #red => true;
   = _ => false;

@@ -25,7 +25,7 @@ The combinators live in one canonical file,
 - **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects its
   declarations as a fallback, so `map`/`filter`/`fold`/… resolve directly. This is
   the original V3-G2 behavior, unchanged.
-- **Importable** (explicit). `s :: import "stream.zt"` binds the module's exported
+- **Importable** (explicit). `s :: import "stream.zt";` binds the module's exported
   record, so the combinators are used qualified — `s.map`, `s.fold`, … The file's
   final expression is that record. Resolution is **path-relative** (the file must
   sit in the importing file's directory subtree); there is no stdlib-root install
@@ -34,7 +34,7 @@ The combinators live in one canonical file,
   structurally inside the combinator signatures), so there is no `s.Stream` yet.
 
 ```zt
-s :: import "stream.zt"
+s :: import "stream.zt";
 double :: Int -> Int = x => x * 2;
 add :: Int -> Int -> Int = a b => a + b;
 s.fold add 0 (s.map double (s.cons 1 (s.cons 2 (s.singleton 3))))   -- 12
@@ -66,7 +66,7 @@ toList    :: <A> Stream A -> List A
 
 ## Edge behavior
 
-- `take n xs` returns `[]` for `n <= 0` and otherwise demands at most `n`
+- `take n xs` returns `{;}` for `n <= 0` and otherwise demands at most `n`
   stream cells.
 - `drop n xs` returns `xs` for `n <= 0` and otherwise demands at most `n`
   stream cells before returning the remaining stream.

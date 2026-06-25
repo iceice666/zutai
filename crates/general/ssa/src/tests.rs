@@ -151,7 +151,7 @@ fn int_literal_produces_return() {
 
 #[test]
 fn block_let_binding_produces_instructions() {
-    let m = ssa_of("{ n := 42; n + n }");
+    let m = ssa_of("[ n := 42; n + n ]");
     let ops = op_names(&m.entry);
     assert!(
         ops.contains(&"Builtin".to_string()),
@@ -164,7 +164,7 @@ fn block_let_binding_produces_instructions() {
 
 #[test]
 fn function_call_produces_apply_closure_op() {
-    let m = ssa_of("id x = x\nid 42");
+    let m = ssa_of("id x = x;\nid 42");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"ApplyClosure".to_string()),
@@ -177,7 +177,7 @@ fn function_call_produces_apply_closure_op() {
 
 #[test]
 fn lambda_creates_separate_function() {
-    let m = ssa_of("inc x = x + 1\ninc 3");
+    let m = ssa_of("inc x = x + 1;\ninc 3");
     let inc = m.decls.iter().find_map(|d| match d {
         SsaDecl::Func(f) if f.name == "inc" => Some(f),
         _ => None,
@@ -219,7 +219,7 @@ fn top_level_function_exports_closure_value() {
 fn capturing_lambda_uses_make_closure_and_load_capture() {
     // `adder n x = x + n` curries to `\n. \x. x + n`; the inner lambda captures
     // the outer parameter `n` (a genuine local that survives constant folding).
-    let m = ssa_of("adder n x = x + n\nadder 10 5");
+    let m = ssa_of("adder n x = x + n;\nadder 10 5");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"MakeClosure".to_string()),
@@ -241,7 +241,7 @@ fn capturing_lambda_uses_make_closure_and_load_capture() {
 
 #[test]
 fn top_level_let_produces_func_decl() {
-    let m = ssa_of("x ::= 42\nx");
+    let m = ssa_of("x ::= 42;\nx");
     let has_x_func = m
         .decls
         .iter()
@@ -257,7 +257,7 @@ fn top_level_let_produces_func_decl() {
 
 #[test]
 fn recursive_let_produces_rec_group() {
-    let m = ssa_of("factorial n = if n < 1 then 1 else n * factorial (n - 1)\nfactorial 5");
+    let m = ssa_of("factorial n = if n < 1 then 1 else n * factorial (n - 1);\nfactorial 5");
     let has_rec_group = m.decls.iter().any(|d| matches!(d, SsaDecl::RecGroup(_)));
     assert!(
         has_rec_group,
@@ -281,7 +281,7 @@ fn record_literal_produces_record_op() {
 
 #[test]
 fn record_update_produces_record_update_op() {
-    let m = ssa_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
+    let m = ssa_of("r ::= { x = 1; y = 2; };\nr with { x = 3; }");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"RecordUpdate".to_string()),
@@ -307,7 +307,7 @@ fn tuple_literal_produces_tuple_op() {
 
 #[test]
 fn list_literal_produces_list_op() {
-    let m = ssa_of("[1; 2; 3;]");
+    let m = ssa_of("{1; 2; 3;}");
     let ops = op_names(&m.entry);
     assert!(
         ops.contains(&"List".to_string()),
@@ -320,7 +320,7 @@ fn list_literal_produces_list_op() {
 
 #[test]
 fn field_selection_produces_select_op() {
-    let m = ssa_of("r ::= { x = 1; }\nr.x");
+    let m = ssa_of("r ::= { x = 1; };\nr.x");
     let ops = all_op_names(&m);
     assert!(
         ops.contains(&"Select".to_string()),
@@ -350,8 +350,8 @@ fn variant_produces_variant_op() {
 Status :: type {
   #ok: { code : Int; };
   #err: { msg : Text; };
-}
-s :: Status = #ok { code = 200; }
+};
+s :: Status = #ok { code = 200; };
 s";
     let m = ssa_of(src);
     let ops = all_op_names(&m);
@@ -368,7 +368,7 @@ s";
 fn if_desugars_to_branching_match_in_ssa() {
     // A non-tail `if` (its result feeds `+ 3`) keeps its join, so tail-call
     // optimization does not sink the phi — both branch and phi lowering survive.
-    let m = ssa_of("f x = (if x then 1 else 2) + 3\nf true");
+    let m = ssa_of("f x = (if x then 1 else 2) + 3;\nf true");
     let all_ops = all_op_names(&m);
     let terms = all_terminator_kinds(&m);
     assert!(
@@ -387,7 +387,7 @@ fn if_desugars_to_branching_match_in_ssa() {
 
 #[test]
 fn match_expression_produces_multiple_blocks() {
-    let m = ssa_of("f x = match x { | 1 => true; | _ => false; }\nf 1");
+    let m = ssa_of("f x = match x { | 1 => true; | _ => false; };\nf 1");
     let funcs = all_funcs(&m);
     let match_func = funcs.iter().find(|f| f.blocks.len() >= 3);
     assert!(
@@ -417,7 +417,7 @@ fn entry_blocks_end_with_return() {
 
 #[test]
 fn match_creates_jump_terminators() {
-    let m = ssa_of("f x = if x then 1 else 2\nf true");
+    let m = ssa_of("f x = if x then 1 else 2;\nf true");
     let terms = all_terminator_kinds(&m);
     assert!(
         terms.contains(&"Jump".to_string()),
@@ -430,7 +430,7 @@ fn match_creates_jump_terminators() {
 
 #[test]
 fn module_is_well_formed() {
-    let m = ssa_of("id x = x\nid 1");
+    let m = ssa_of("id x = x;\nid 1");
     assert!(!m.entry.blocks.is_empty());
     let last = m.entry.blocks.last().unwrap();
     assert!(matches!(last.terminator, SsaTerminator::Return(_)));
@@ -443,7 +443,7 @@ fn phi_instruction_exists_in_if() {
     // A non-tail `if` keeps its join phi; a tail `if` is sunk to direct returns
     // by tail-call optimization, so the `+ 3` use keeps this `if` out of tail
     // position.
-    let m = ssa_of("f x = (if x then 1 else 2) + 3\nf true");
+    let m = ssa_of("f x = (if x then 1 else 2) + 3;\nf true");
     let has_phi = all_instructions(&m)
         .iter()
         .any(|i| matches!(i.op, SsaOp::Phi { .. }));
@@ -456,7 +456,7 @@ fn phi_instruction_exists_in_if() {
 fn tail_if_has_phi_sunk_by_tco() {
     // When an `if` is the function's tail, return sinking collapses the join so
     // each arm returns directly and no phi remains.
-    let m = ssa_of("f x = if x then 1 else 2\nf true");
+    let m = ssa_of("f x = if x then 1 else 2;\nf true");
     let has_phi = all_instructions(&m)
         .iter()
         .any(|i| matches!(i.op, SsaOp::Phi { .. }));
@@ -470,8 +470,8 @@ fn coalesce_produces_coalesce_op() {
     let src = "\
 RawServer :: type {
   port? : Int;
-}
-server :: RawServer = {}
+};
+server :: RawServer = {};
 server.port ?? 8080";
     let m = ssa_of(src);
     let ops = all_op_names(&m);
@@ -493,7 +493,7 @@ fn match_arms_reusing_record_slots_get_unique_ssa_names() {
 Shape :: type {
   #circle : { radius : Int; };
   #rect : { width : Int; height : Int; };
-}
+};
 area :: Shape -> Int
   = #circle { radius = r; } => r;
   = #rect { width = w; height = h; } => w;

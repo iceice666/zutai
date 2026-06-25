@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn polymorphic_identity_runs_at_two_types() {
-    let v = eval_file("id x = x\n(id 42, id \"hello\")").unwrap();
+    let v = eval_file("id x = x;\n(id 42, id \"hello\")").unwrap();
     let expected = Value::Tuple(
         vec![
             value::TupleField {
@@ -23,7 +23,7 @@ fn polymorphic_identity_runs_at_two_types() {
 
 #[test]
 fn monomorphic_value_binding_still_runs() {
-    assert_eq!(eval_file("answer ::= 42\nanswer").unwrap(), Value::Int(42));
+    assert_eq!(eval_file("answer ::= 42;\nanswer").unwrap(), Value::Int(42));
 }
 
 // ─── generic type aliases ─────────────────────────────────────────────────────
@@ -33,8 +33,8 @@ fn generic_alias_value_evaluates() {
     // A value typed with a generic alias must evaluate to the underlying record,
     // and field access must return the correctly typed value.
     let decl = r#"
-Pair :: <A, B> type { first : A; second : B; }
-p :: Pair Text Int = { first = "x"; second = 1; }
+Pair :: <A, B> type { first : A; second : B; };
+p :: Pair Text Int = { first = "x"; second = 1; };
 "#;
     assert_eq!(run(&format!("{decl}\np.first")), Value::Text("x".into()));
     assert_eq!(run(&format!("{decl}\np.second")), Value::Int(1));
@@ -48,7 +48,7 @@ p :: Pair Text Int = { first = "x"; second = 1; }
 /// emit zero HIR+THIR diagnostics so they don't null out LoweredThir.file.
 #[test]
 fn t_inv_constraint_witness_does_not_break_eval() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true;\n42";
     assert_eq!(run(src), Value::Int(42));
 }
 
@@ -69,9 +69,9 @@ fn tlc_derive_int_eq_dispatches() {
 #[test]
 fn tlc_derive_record_eq_compares_fields() {
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 3; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 3; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Point :: derive
 eq p1 p2
@@ -82,9 +82,9 @@ eq p1 p2
 #[test]
 fn tlc_derive_neq_is_true_negation() {
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 3; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 3; };
 Eq :: <A> @A { eq :: A -> A -> Bool; neq :: A -> A -> Bool; } derive
 Eq @Point :: derive
 neq p1 p2
@@ -95,9 +95,9 @@ neq p1 p2
 #[test]
 fn tlc_derive_union_eq_compares_shape_and_payload() {
     let src = r#"
-Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; }
-ok :: Status = #ok { code = 200; }
-err :: Status = #err { msg = "no"; }
+Status :: type { #ok: { code : Int; }; #err: { msg : Text; }; };
+ok :: Status = #ok { code = 200; };
+err :: Status = #err { msg = "no"; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Status :: derive
 eq ok err
@@ -121,7 +121,7 @@ fn witness_reflection_accepts_conditional_dictionary_resolution() {
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
-(witness Eq @(List Int)).eq [1;] [2;]
+(witness Eq @(List Int)).eq {1;} {2;}
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
 }
@@ -130,7 +130,7 @@ Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
 fn variants_builtin_reflects_union_payload_types() {
     let value = eval_file(
         r#"
-Result :: type { #ok: { value : Int; }; #err; }
+Result :: type { #ok: { value : Int; }; #err; };
 variants (type Result)
 "#,
     )
@@ -145,8 +145,8 @@ variants (type Result)
 #[test]
 fn recipe_show_derives_record_witness() {
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p :: Point = { x = 1; y = 2; }
+Point :: type { x : Int; y : Int; };
+p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
 Show @Point :: derive
 show p
@@ -157,8 +157,8 @@ show p
 #[test]
 fn recipe_witness_reflection_dispatches_derived_dictionary() {
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p :: Point = { x = 1; y = 2; }
+Point :: type { x : Int; y : Int; };
+p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
 Show @Point :: derive
 (witness Show @Point).show p
@@ -169,10 +169,10 @@ Show @Point :: derive
 #[test]
 fn recipe_ord_derives_lexicographic_record_witness() {
     let src = r#"
-Ordering :: type { #lt; #eq; #gt; }
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 3; }
+Ordering :: type { #lt; #eq; #gt; };
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 3; };
 Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
 Ord @Point :: derive
 compare p1 p2
@@ -183,8 +183,8 @@ compare p1 p2
 #[test]
 fn recipe_show_and_ord_derive_union_witnesses() {
     let show_src = r#"
-Status :: type { #ok; #err; }
-s :: Status = #err
+Status :: type { #ok; #err; };
+s :: Status = #err;
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
 Show @Status :: derive
 show s
@@ -192,10 +192,10 @@ show s
     assert_eq!(eval_tlc_file(show_src).unwrap(), Value::Text("#err".into()));
 
     let ord_src = r#"
-Ordering :: type { #lt; #eq; #gt; }
-Status :: type { #ok; #err; }
-ok :: Status = #ok
-err :: Status = #err
+Ordering :: type { #lt; #eq; #gt; };
+Status :: type { #ok; #err; };
+ok :: Status = #ok;
+err :: Status = #err;
 Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
 Ord @Status :: derive
 compare ok err
@@ -203,10 +203,10 @@ compare ok err
     assert_eq!(eval_tlc_file(ord_src).unwrap(), Value::Atom("lt".into()));
 
     let payload_ord_src = r#"
-Ordering :: type { #lt; #eq; #gt; }
-Result :: type { #ok: { value : Int; }; #err; }
-lhs :: Result = #ok { value = 1; }
-rhs :: Result = #ok { value = 2; }
+Ordering :: type { #lt; #eq; #gt; };
+Result :: type { #ok: { value : Int; }; #err; };
+lhs :: Result = #ok { value = 1; };
+rhs :: Result = #ok { value = 2; };
 Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
 Ord @Result :: derive
 compare lhs rhs
@@ -228,7 +228,7 @@ fn tlc_conditional_list_witness_direct() {
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
-eq [1; 2;] [1; 2;]
+eq {1; 2;} {1; 2;}
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
 }
@@ -245,7 +245,7 @@ Eq @Int :: { eq = \a b. a == b; }
 Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
 useEq :: <A: Eq> List A -> List A -> Bool
   = xs ys => eq xs ys;
-useEq [1;] [1;]
+useEq {1;} {1;}
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
 }
@@ -260,12 +260,12 @@ fn tlc_conditional_record_alias_witness_uses_component() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
 samePair :: <A: Eq> Pair A -> Pair A -> Bool
   = p q => eq p q;
-p1 :: Pair Int = { fst = 1; snd = 2; }
-p2 :: Pair Int = { fst = 1; snd = 9; }
+p1 :: Pair Int = { fst = 1; snd = 2; };
+p2 :: Pair Int = { fst = 1; snd = 9; };
 samePair p1 p2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
@@ -278,12 +278,12 @@ fn tlc_conditional_record_alias_witness_component_false() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
 samePair :: <A: Eq> Pair A -> Pair A -> Bool
   = p q => eq p q;
-p1 :: Pair Int = { fst = 1; snd = 2; }
-p2 :: Pair Int = { fst = 7; snd = 2; }
+p1 :: Pair Int = { fst = 1; snd = 2; };
+p2 :: Pair Int = { fst = 7; snd = 2; };
 samePair p1 p2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
@@ -296,10 +296,10 @@ samePair p1 p2
 fn run_operator_dispatch_on_alias_apply_operand() {
     let src = r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair Int) :: { (==) = \a b. false; }
-p1 :: Pair Int = { fst = 1; snd = 2; }
-p2 :: Pair Int = { fst = 1; snd = 2; }
+p1 :: Pair Int = { fst = 1; snd = 2; };
+p2 :: Pair Int = { fst = 1; snd = 2; };
 p1 == p2
 "#;
     assert_eq!(run(src), Value::Bool(false));
@@ -316,10 +316,10 @@ fn tlc_conditional_nested_alias_witness_threads_inner_component() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; }
-p2 :: Pair (Pair Int) = { fst = { fst = 1; snd = 8; }; snd = { fst = 9; snd = 4; }; }
+p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; };
+p2 :: Pair (Pair Int) = { fst = { fst = 1; snd = 8; }; snd = { fst = 9; snd = 4; }; };
 eq p1 p2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
@@ -334,10 +334,10 @@ fn tlc_conditional_nested_alias_witness_component_false() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; }
-p2 :: Pair (Pair Int) = { fst = { fst = 7; snd = 8; }; snd = { fst = 9; snd = 4; }; }
+p1 :: Pair (Pair Int) = { fst = { fst = 1; snd = 2; }; snd = { fst = 3; snd = 4; }; };
+p2 :: Pair (Pair Int) = { fst = { fst = 7; snd = 8; }; snd = { fst = 9; snd = 4; }; };
 eq p1 p2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
@@ -354,10 +354,10 @@ fn tlc_conditional_union_alias_witness_threads_component() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Box :: <A> type { #box: { value: A; }; }
+Box :: <A> type { #box: { value: A; }; };
 Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
-b1 :: Box Int = #box { value = 1; }
-b2 :: Box Int = #box { value = 1; }
+b1 :: Box Int = #box { value = 1; };
+b2 :: Box Int = #box { value = 1; };
 eq b1 b2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(true));
@@ -370,10 +370,10 @@ fn tlc_conditional_union_alias_witness_component_false() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Box :: <A> type { #box: { value: A; }; }
+Box :: <A> type { #box: { value: A; }; };
 Eq @(Box A) :: <A: Eq> { eq = \x y. match x { | #box { value = a; } => match y { | #box { value = b; } => eq a b; }; }; }
-b1 :: Box Int = #box { value = 1; }
-b2 :: Box Int = #box { value = 2; }
+b1 :: Box Int = #box { value = 1; };
+b2 :: Box Int = #box { value = 2; };
 eq b1 b2
 "#;
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Bool(false));
@@ -411,7 +411,7 @@ eq 1 2
 #[test]
 fn dispatch_imported_named_witness() {
     let src = r#"
-w :: import "witness_eq_int_a.zt"
+w :: import "witness_eq_int_a.zt";
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 eq 1 2
 "#;
@@ -428,7 +428,7 @@ eq 1 2
 #[test]
 fn dispatch_imported_type_directed_witness_selection() {
     let src = r#"
-w :: import "witness_eq_int_bool.zt"
+w :: import "witness_eq_int_bool.zt";
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 (eq 1 1, eq true true)
 "#;
@@ -494,7 +494,7 @@ Eq @Int :: { (==) = \\a b. false; }
 #[test]
 fn op_dispatch_imported_witness_overrides_builtin() {
     let src = r#"
-w :: import "witness_eq_int_operator.zt"
+w :: import "witness_eq_int_operator.zt";
 1 == 1
 "#;
     assert_eq!(run_in_imports(src), Value::Bool(false));
@@ -503,7 +503,7 @@ w :: import "witness_eq_int_operator.zt"
 #[test]
 fn op_dispatch_imported_bounded_operator_uses_witness() {
     let src = r#"
-w :: import "witness_eq_int_operator_bounded.zt"
+w :: import "witness_eq_int_operator_bounded.zt";
 w
 "#;
     assert_eq!(run_in_imports(src), Value::Bool(false));
@@ -573,7 +573,7 @@ Cmp @Int :: {
 #[test]
 fn op_dispatch_alias_resolved_key() {
     let src = "
-Point :: type { x : Int; y : Int; }
+Point :: type { x : Int; y : Int; };
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Point :: { (==) = \\a b. false; }
 { x = 1; y = 2; } == { x = 1; y = 2; }
@@ -611,7 +611,7 @@ Ord :: <A> @A { (<) :: A -> A -> Bool; }
 #[test]
 fn op_dispatch_ordering_non_scalar_with_witness() {
     let src = "
-Point :: type { x : Int; y : Int; }
+Point :: type { x : Int; y : Int; };
 Ord :: <A> @A { (<) :: A -> A -> Bool; }
 Ord @Point :: { (<) = \\a b. true; }
 { x = 2; y = 0; } < { x = 1; y = 0; }
@@ -784,8 +784,8 @@ fn type_key_fixed_width_witness_overrides_builtin() {
     let src = r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @u8 :: { (==) = \a b. false; }
-x :: u8 = 1u8
-y :: u8 = 1u8
+x :: u8 = 1u8;
+y :: u8 = 1u8;
 x == y
 "#;
     assert_eq!(eval_thir_file(src).unwrap(), Value::Bool(false));
@@ -796,8 +796,8 @@ fn type_key_optional_method_dispatch() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @(Int?) :: { eq = \a b. false; }
-x :: Int? = #some (1)
-y :: Int? = #some (1)
+x :: Int? = #some (1);
+y :: Int? = #some (1);
 eq x y
 "#;
     assert_eq!(run(src), Value::Bool(false));
@@ -806,11 +806,11 @@ eq x y
 #[test]
 fn type_key_maybe_method_dispatch() {
     let src = r#"
-S :: type { p? : Int; }
+S :: type { p? : Int; };
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @(Maybe Int) :: { eq = \a b. false; }
-a :: S = { p = 1; }
-b :: S = { p = 1; }
+a :: S = { p = 1; };
+b :: S = { p = 1; };
 eq a.p b.p
 "#;
     assert_eq!(run(src), Value::Bool(false));
@@ -819,11 +819,11 @@ eq a.p b.p
 #[test]
 fn type_key_patch_witness_dispatches_for_patch_values() {
     let src = r#"
-Config :: type { port : Int; host : Text; }
+Config :: type { port : Int; host : Text; };
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @(Patch Config) :: { (==) = \a b. false; }
-p1 :: Patch Config = { port = 8080; }
-p2 :: Patch Config = { port = 8080; }
+p1 :: Patch Config = { port = 8080; };
+p2 :: Patch Config = { port = 8080; };
 p1 == p2
 "#;
     assert_eq!(eval_thir_file(src).unwrap(), Value::Bool(false));
@@ -834,7 +834,7 @@ fn type_key_function_method_dispatch() {
     let src = r#"
 Show :: <A> @A { show :: A -> Text; }
 Show @(Int -> Int) :: { show = \f. "function"; }
-inc ::= \n. n + 1
+inc ::= \n. n + 1;
 show inc
 "#;
     assert_eq!(run(src), Value::Text("function".into()));
@@ -872,11 +872,11 @@ Eq @Int :: {
   (==) = \a b. a == b;
   (!=) = \a b. a != b;
 }
-Point :: type { x : Int; y : Int; }
+Point :: type { x : Int; y : Int; };
 Eq @Point :: derive
-p1 :: Point = { x = 5; y = 5; }
-p2 :: Point = { x = 5; y = 5; }
-p3 :: Point = { x = 1; y = 2; }
+p1 :: Point = { x = 5; y = 5; };
+p2 :: Point = { x = 5; y = 5; };
+p3 :: Point = { x = 1; y = 2; };
 (p1 == p2, p1 != p3)
 "#;
     match run(src) {
@@ -920,9 +920,9 @@ checkNeq :: <A: MyEq> A -> A -> Bool
 #[test]
 fn tlc_derive_nullary_union_eq_same_and_different_variants() {
     let same = r#"
-Color :: type { #red; #blue; }
-r1 :: Color = #red
-r2 :: Color = #red
+Color :: type { #red; #blue; };
+r1 :: Color = #red;
+r2 :: Color = #red;
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Color :: derive
 eq r1 r2
@@ -930,9 +930,9 @@ eq r1 r2
     assert_eq!(eval_tlc_file(same).unwrap(), Value::Bool(true));
 
     let different = r#"
-Color :: type { #red; #blue; }
-r1 :: Color = #red
-r2 :: Color = #blue
+Color :: type { #red; #blue; };
+r1 :: Color = #red;
+r2 :: Color = #blue;
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Color :: derive
 eq r1 r2
@@ -962,7 +962,7 @@ Show :: <A> @A { show :: A -> Text; }
 Show @Int :: { show = \n. "int"; }
 Show @Bool :: { show = \b. "bool"; }
 showBoth :: (<A: Show> A -> Text) -> { left : Text; right : Text; } =
-  \render. { left = render 1; right = render true; }
+  \render. { left = render 1; right = render true; };
 showBoth (\x. show x)
 "#;
     assert_eq!(

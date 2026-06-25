@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn type_matches_list_to_list() {
     // List-to-List: `f :: List Int -> List Int = \\x. x`.
-    let file = completed_file("f :: List Int -> List Int = \\x. x\nf [1; 2;]");
+    let file = completed_file("f :: List Int -> List Int = \\x. x;\nf {1; 2;}");
     assert!(matches!(final_type_kind(&file), TypeKind::List(_)));
 }
 
@@ -12,7 +12,7 @@ fn record_types_match_optional_field_may_be_absent() {
     // A record with an optional field assigned with the field absent — record_types_match
     // hits the `if expected.optional { continue }` branch.
     // The final expression type is `S` (Alias), not bare Record.
-    let file = completed_file("S :: type { x : Int; y? : Int; }\ns :: S = { x = 1; }\ns");
+    let file = completed_file("S :: type { x : Int; y? : Int; };\ns :: S = { x = 1; };\ns");
     // Must complete without errors — the optional field absence is accepted.
     let _ = file;
 }
@@ -24,7 +24,7 @@ fn instantiate_infer_vars_monomorphic_use() {
     // Polymorphic identity applied to an Int value:
     // `id :: ?0 -> ?0` is instantiated as `?0 = Int`.
     // Exercises the Function arm in instantiate_infer_vars.
-    let file = completed_file("id x = x\nid 42");
+    let file = completed_file("id x = x;\nid 42");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
@@ -32,7 +32,7 @@ fn instantiate_infer_vars_monomorphic_use() {
 fn instantiate_infer_vars_multi_param_function() {
     // `const :: ?0 -> ?1 -> ?0` applied twice.
     // Exercises multi-binding generalization — each apply site gets fresh vars.
-    let file = completed_file("const a b = a\nconst 1 true");
+    let file = completed_file("const a b = a;\nconst 1 true");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
@@ -40,7 +40,7 @@ fn instantiate_infer_vars_multi_param_function() {
 fn instantiate_infer_vars_text_binding() {
     // Polymorphic identity used twice with different types — exercises fresh InferVar
     // creation on each call site (instantiation is independent per reference).
-    let file = completed_file("id x = x\nx ::= id 42\ny ::= id \"hello\"\ny");
+    let file = completed_file("id x = x;\nx ::= id 42;\ny ::= id \"hello\";\ny");
     assert!(matches!(final_type_kind(&file), TypeKind::Text));
 }
 
@@ -48,7 +48,8 @@ fn instantiate_infer_vars_text_binding() {
 fn instantiate_infer_vars_maybe_return() {
     // A function with an annotated Maybe return type that requires optional field access.
     // The Maybe inner type flows through the type system when the function is called.
-    let file = completed_file("S :: type { v? : Int; }\nget :: S -> Maybe Int = \\s. s.v\nget {}");
+    let file =
+        completed_file("S :: type { v? : Int; };\nget :: S -> Maybe Int = \\s. s.v;\nget {}");
     assert!(matches!(final_type_kind(&file), TypeKind::Maybe(_)));
 }
 
@@ -58,7 +59,7 @@ fn instantiate_infer_vars_maybe_return() {
 fn type_name_float_appears_in_mismatch_message() {
     // A Float mismatch produces a diagnostic message containing "Float".
     // This exercises TypeKind::Float in type_name.
-    let lowered = lower("x :: Int = 1.5\nx");
+    let lowered = lower("x :: Int = 1.5;\nx");
     assert!(lowered.diagnostics.iter().any(|d| {
         matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { found, .. } if found == "Float")
     }));
@@ -66,7 +67,7 @@ fn type_name_float_appears_in_mismatch_message() {
 
 #[test]
 fn type_name_fixed_width_appears_in_mismatch_message() {
-    let lowered = lower("x :: u8 = 255\nx");
+    let lowered = lower("x :: u8 = 255;\nx");
     assert!(lowered.diagnostics.iter().any(|d| {
         matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { expected, found }
             if expected == "u8" && found == "Int")
@@ -76,7 +77,7 @@ fn type_name_fixed_width_appears_in_mismatch_message() {
 #[test]
 fn type_name_maybe_appears_in_mismatch_message() {
     // Passing field presence where an Int is needed → type_name calls Maybe arm.
-    let lowered = lower("S :: type { v? : Int; }\ns :: S = {}\nresult :: Int = s.v\nresult");
+    let lowered = lower("S :: type { v? : Int; };\ns :: S = {};\nresult :: Int = s.v;\nresult");
     assert!(lowered.diagnostics.iter().any(|d| {
         matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { found, .. }
             if found.contains("Maybe"))
@@ -92,7 +93,7 @@ fn lower_type_true_arm() {
     // `true` in type position → HirTypeKind::True → TypeKind::True in THIR.
     // The type check will fail (TypeKind::True does not unify with Bool),
     // but lower_type hits the True arm regardless.
-    let lowered = lower("x :: true = true\nx");
+    let lowered = lower("x :: true = true;\nx");
     // THIR produces a type error — the arm was reached.
     assert!(!lowered.diagnostics.is_empty());
 }
@@ -100,7 +101,7 @@ fn lower_type_true_arm() {
 /// `false` in type position exercises the HirTypeKind::False arm in lower_type.
 #[test]
 fn lower_type_false_arm() {
-    let lowered = lower("x :: false = false\nx");
+    let lowered = lower("x :: false = false;\nx");
     assert!(!lowered.diagnostics.is_empty());
 }
 
@@ -112,7 +113,7 @@ fn lower_type_false_arm() {
 fn lower_type_unresolved_ident_arm() {
     // `NonExistentType` is not in scope → HIR produces UnresolvedIdent + diagnostic.
     // THIR lower_type hits the UnresolvedIdent arm → produces InvalidTypeExpression.
-    let lowered = lower_allowing_hir_errors("x :: NonExistentType = 42\nx");
+    let lowered = lower_allowing_hir_errors("x :: NonExistentType = 42;\nx");
     // Expect at least one ThirDiagnostic (InvalidTypeExpression from UnresolvedIdent)
     assert!(
         lowered
@@ -131,7 +132,7 @@ fn lower_type_unresolved_ident_arm() {
 #[test]
 fn instantiate_infer_vars_maybe_arm_via_annotation() {
     let file =
-        completed_file("S :: type { x? : Int; }\nf :: S -> Maybe Int = \\s. s.x\nf { x = 5; }");
+        completed_file("S :: type { x? : Int; };\nf :: S -> Maybe Int = \\s. s.x;\nf { x = 5; }");
     assert!(matches!(final_type_kind(&file), TypeKind::Maybe(_)));
 }
 
@@ -143,7 +144,7 @@ fn instantiate_type_vars_tuple_alias_reference() {
     // When THIR expands `Pair Int Text`, it calls instantiate_type_vars on
     // the alias body (A, B) with {A→Int, B→Text}, hitting the Tuple arm.
     // The final type is AliasApply, not bare Tuple, so we just verify completion.
-    let file = completed_file("Pair :: <A, B> type (A, B)\np :: Pair Int Text = (1, \"hi\")\np");
+    let file = completed_file("Pair :: <A, B> type (A, B);\np :: Pair Int Text = (1, \"hi\");\np");
     let _ = file;
 }
 
@@ -152,8 +153,9 @@ fn instantiate_type_vars_tuple_alias_reference() {
 fn instantiate_type_vars_union_alias_applied() {
     // ResultOf :: <A, E> type {#ok: {v:A;}; #err: {e:E;};}  applied to Int, Text.
     // Exercises instantiate_type_vars Union arm when expanding the alias.
-    let file =
-        completed_file("R :: <A> type { #ok: { v : A; }; #fail; }\nx :: R Int = #ok { v = 1; }\nx");
+    let file = completed_file(
+        "R :: <A> type { #ok: { v : A; }; #fail; };\nx :: R Int = #ok { v = 1; };\nx",
+    );
     let _ = file;
 }
 
@@ -164,7 +166,7 @@ fn instantiate_type_vars_union_alias_applied() {
 /// `instantiate_type_vars(A -> A, {A → Int})` which hits the `Function` arm.
 #[test]
 fn instantiate_type_vars_function_alias() {
-    let file = completed_file("F :: <A> type A -> A\nf :: F Int = \\x. x\nf 42");
+    let file = completed_file("F :: <A> type A -> A;\nf :: F Int = \\x. x;\nf 42");
     let _ = file;
 }
 
@@ -173,7 +175,7 @@ fn instantiate_type_vars_function_alias() {
 /// `L :: <A> type List A` applied to `Int` triggers the `List(inner)` arm.
 #[test]
 fn instantiate_type_vars_list_alias() {
-    let file = completed_file("L :: <A> type List A\nxs :: L Int = [1; 2; 3;]\nxs");
+    let file = completed_file("L :: <A> type List A;\nxs :: L Int = {1; 2; 3;};\nxs");
     let _ = file;
 }
 
@@ -182,7 +184,7 @@ fn instantiate_type_vars_list_alias() {
 /// `O :: <A> type A?` applied to `Int` triggers the `Optional(inner)` arm.
 #[test]
 fn instantiate_type_vars_optional_alias() {
-    let file = completed_file("O :: <A> type A?\nx :: O Int = #none\nx");
+    let file = completed_file("O :: <A> type A?;\nx :: O Int = #none;\nx");
     let _ = file;
 }
 
@@ -193,7 +195,7 @@ fn instantiate_type_vars_optional_alias() {
 #[test]
 fn type_name_list_arm_via_mismatch() {
     // `5` is Int; annotation is List Int → TypeMismatch(List Int, Int).
-    let lowered = lower("xs :: List Int = 5\nxs");
+    let lowered = lower("xs :: List Int = 5;\nxs");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -210,7 +212,7 @@ fn type_name_list_arm_via_mismatch() {
 #[test]
 fn type_name_optional_arm_via_mismatch() {
     // `42` is Int; annotation is Int? → TypeMismatch(Optional(Int), Int).
-    let lowered = lower("x :: Int? = 42\nx");
+    let lowered = lower("x :: Int? = 42;\nx");
     assert!(
         lowered
             .diagnostics
@@ -226,7 +228,7 @@ fn type_name_optional_arm_via_mismatch() {
 #[test]
 fn type_name_atom_arm_via_mismatch() {
     // `42` is Int; annotation is #foo → TypeMismatch(Atom("foo"), Int).
-    let lowered = lower("x :: #foo = 42\nx");
+    let lowered = lower("x :: #foo = 42;\nx");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -243,7 +245,7 @@ fn type_name_atom_arm_via_mismatch() {
 #[test]
 fn type_name_function_arm_via_mismatch() {
     // `42` is Int; annotation is `Int -> Text` → TypeMismatch(Function{Int,Text}, Int).
-    let lowered = lower("f :: Int -> Text = 42\nf");
+    let lowered = lower("f :: Int -> Text = 42;\nf");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -260,7 +262,7 @@ fn type_name_function_arm_via_mismatch() {
 #[test]
 fn type_name_union_arm_via_mismatch() {
     // `42` is Int; annotation is union C → TypeMismatch(Union, Int).
-    let lowered = lower("C :: type { #r; #g; #b; }\nx :: C = 42\nx");
+    let lowered = lower("C :: type { #r; #g; #b; };\nx :: C = 42;\nx");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -277,7 +279,7 @@ fn type_name_union_arm_via_mismatch() {
 #[test]
 fn type_name_tuple_arm_via_mismatch() {
     // `42` is Int; annotation is (Int, Text) → TypeMismatch(Tuple, Int).
-    let lowered = lower("x :: (Int, Text) = 42\nx");
+    let lowered = lower("x :: (Int, Text) = 42;\nx");
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -295,7 +297,7 @@ fn type_name_tuple_arm_via_mismatch() {
 fn type_name_alias_apply_arm_via_mismatch() {
     // `42` is Int; annotation is `Pair Int Text` → TypeMismatch(AliasApply, Int).
     let lowered =
-        lower("Pair :: <A, B> type { first : A; second : B; }\nx :: Pair Int Text = 42\nx");
+        lower("Pair :: <A, B> type { first : A; second : B; };\nx :: Pair Int Text = 42;\nx");
     assert!(
         lowered
             .diagnostics
@@ -313,7 +315,7 @@ fn type_name_alias_apply_arm_via_mismatch() {
 #[test]
 fn check_list_expr_expected_list_diagnostic() {
     // `[1; 2;]` is List Int; annotation is Int → ExpectedList { found: "Int" }.
-    let lowered = lower("x :: Int = [1; 2;]\nx");
+    let lowered = lower("x :: Int = {1; 2;};\nx");
     assert!(
         lowered
             .diagnostics
@@ -337,7 +339,7 @@ fn instantiate_infer_vars_list_arm_via_wrap() {
     let file = completed_file(
         r#"
 wrap :: <A> A -> List A
-  = x => [x;];
+  = x => {x;};
 wrap 42
 "#,
     );
@@ -350,7 +352,7 @@ wrap 42
 fn instantiate_infer_vars_record_arm_via_polymorphic_record() {
     let file = completed_file(
         r#"
-Wrapper :: <A> type { value : A; }
+Wrapper :: <A> type { value : A; };
 make :: <A> A -> Wrapper A
   = x => { value = x; };
 make 42
@@ -367,7 +369,8 @@ make 42
 #[test]
 fn type_matches_union_vs_union_structural() {
     // A and B have the same structure; assigning x::A to y::B triggers Union-Union match.
-    let lowered = lower("A :: type { #r; #g; }\nB :: type { #r; #g; }\nx :: A = #r\ny :: B = x\ny");
+    let lowered =
+        lower("A :: type { #r; #g; };\nB :: type { #r; #g; };\nx :: A = #r;\ny :: B = x;\ny");
     // type_matches(B, A) → Union(r,g) vs Union(r,g) — structurally equal so no error
     let _ = lowered;
 }
@@ -381,7 +384,7 @@ fn type_matches_union_vs_union_structural() {
 #[test]
 fn instantiate_infer_vars_tuple_arm_via_inferred_fn() {
     // `fst (x, _) = x` and `fst (1, "hi")` exercise the tuple path in THIR lowering.
-    let lowered = lower("fst (x, _) = x\nfst (1, \"hi\")");
+    let lowered = lower("fst (x, _) = x;\nfst (1, \"hi\")");
     let _ = lowered;
 }
 
@@ -394,11 +397,11 @@ fn instantiate_infer_vars_tuple_arm_via_inferred_fn() {
 fn record_types_match_missing_required_field_returns_false() {
     let lowered = lower(
         r#"
-S :: type { x : Int; y : Text; }
-T :: type { x : Int; }
+S :: type { x : Int; y : Text; };
+T :: type { x : Int; };
 f :: S -> Int
   = _ => 0;
-t :: T = { x = 1; }
+t :: T = { x = 1; };
 f t
 "#,
     );
@@ -421,11 +424,11 @@ f t
 fn record_types_match_field_type_mismatch_returns_false() {
     let lowered = lower(
         r#"
-S :: type { x : Int; }
-T :: type { x : Text; }
+S :: type { x : Int; };
+T :: type { x : Text; };
 f :: S -> Int
   = _ => 0;
-t :: T = { x = "bad"; }
+t :: T = { x = "bad"; };
 f t
 "#,
     );
@@ -448,8 +451,8 @@ fn diagnostic_polish_record_mismatch_shows_open_tail() {
         r#"
 getHost :: { host : Text; ...; } -> Text
   = x => x.host;
-PortOnly :: type { port : Int; }
-p :: PortOnly = { port = 8080; }
+PortOnly :: type { port : Int; };
+p :: PortOnly = { port = 8080; };
 getHost p
 "#,
     );
@@ -477,8 +480,8 @@ fn tagged_value_infer_mode_no_expected_type() {
     // emits a synthetic Union with one variant carrying the payload type.
     let file = completed_file(
         r#"
-Result :: type { #ok: { value : Int; }; #err; }
-x :: Result = #ok { value = 42; }
+Result :: type { #ok: { value : Int; }; #err; };
+x :: Result = #ok { value = 42; };
 x
 "#,
     );
@@ -492,8 +495,8 @@ fn tagged_value_without_annotation_infer_path() {
     // `x := #red 99` — no type annotation, THIR must infer via infer_tagged_value.
     let lowered = lower(
         r#"
-Color :: type { #red: { n : Int; }; #blue; }
-x ::= #red { n = 99; }
+Color :: type { #red: { n : Int; }; #blue; };
+x ::= #red { n = 99; };
 x
 "#,
     );
@@ -522,7 +525,7 @@ fn named_tuple_infer_mode_no_expected_type() {
     // No annotation → THIR calls infer_tuple_expr with None expected type.
     // This exercises the Named branch of infer_tuple_items.
     let file = completed_file(
-        r#"x ::= (a = 1, b = "hi")
+        r#"x ::= (a = 1, b = "hi");
 x"#,
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
@@ -612,7 +615,7 @@ fn bin_op_coalesce_type_mismatch() {
 #[test]
 fn expected_function_diagnostic_from_lambda_against_int() {
     // `f :: Int = \x. x` — expected Int but got a lambda → ExpectedFunction.
-    let lowered = lower("f :: Int = \\x. x\nf");
+    let lowered = lower("f :: Int = \\x. x;\nf");
     assert!(
         lowered
             .diagnostics
@@ -630,7 +633,7 @@ fn expected_function_diagnostic_from_lambda_against_int() {
 #[test]
 fn function_clause_arity_mismatch_diagnostic() {
     // `f :: Int -> Int = \x y. x` — expected `Int -> Int` (1 param) but got 2.
-    let lowered = lower("f :: Int -> Int = \\x y. x\nf 1");
+    let lowered = lower("f :: Int -> Int = \\x y. x;\nf 1");
     assert!(
         lowered.diagnostics.iter().any(|d| {
             matches!(
@@ -686,7 +689,7 @@ fn expected_record_diagnostic_from_field_access_on_int() {
 #[test]
 fn expected_record_diagnostic_from_record_literal_against_int() {
     // `z :: Int = { x = 1; }` — record literal against non-record expected type.
-    let lowered = lower("z :: Int = { x = 1; }\nz");
+    let lowered = lower("z :: Int = { x = 1; };\nz");
     assert!(
         lowered
             .diagnostics
@@ -779,7 +782,7 @@ fn instantiate_type_vars_union_body_with_payload_substitution() {
     // traverses the Union body, covering the Union arm.
     let file = completed_file(
         r#"
-Result :: <A, E> type { #ok: { v : A; }; #err: { e : E; }; }
+Result :: <A, E> type { #ok: { v : A; }; #err: { e : E; }; };
 is_ok :: <A, E> Result A E -> Bool
   = #ok { v = _; } => true;
   = #err { e = _; } => false;
@@ -813,7 +816,7 @@ fn ordering_op_on_bool_type_reports_invalid_operands() {
 fn opt_access_on_non_record_optional_inner_reports_expected_record() {
     let lowered = lower(
         r#"
-x :: Int? = #none
+x :: Int? = #none;
 x?.foo
 "#,
     );
@@ -833,8 +836,8 @@ x?.foo
 fn opt_access_unknown_field_emits_unknown_field_diagnostic() {
     let lowered = lower(
         r#"
-Server :: type { port : Int; }
-s :: Server? = #none
+Server :: type { port : Int; };
+s :: Server? = #none;
 s?.hostname
 "#,
     );
@@ -851,7 +854,7 @@ s?.hostname
 /// exercises `(HirTupleItem::Named, None)` arm at L504-511 of expr.rs.
 #[test]
 fn named_tuple_in_infer_mode_covers_named_none_arm() {
-    let file = completed_file("t ::= (x = 1, y = 2)\nt");
+    let file = completed_file("t ::= (x = 1, y = 2);\nt");
     let _ = file;
 }
 
@@ -864,8 +867,8 @@ fn tagged_value_no_payload_variant_in_check_mode_covers_l1191() {
     // v.payload == None → hits L1191: `self.infer_expr(payload="{}")`.
     let lowered = lower(
         r#"
-Color :: type {#red; #blue;}
-x :: Color = #red {}
+Color :: type {#red; #blue;};
+x :: Color = #red {};
 x
 "#,
     );
@@ -880,8 +883,8 @@ x
 fn tagged_value_unknown_variant_in_check_mode_falls_through() {
     let lowered = lower(
         r#"
-Color :: type {#red; #blue;}
-x :: Color = #green {}
+Color :: type {#red; #blue;};
+x :: Color = #green {};
 x
 "#,
     );
@@ -902,7 +905,7 @@ x
 fn tagged_value_with_non_union_expected_type_hits_fallthrough() {
     let lowered = lower(
         r#"
-x :: Int = #tag {}
+x :: Int = #tag {};
 x
 "#,
     );
@@ -925,8 +928,8 @@ fn builtin_type_in_expression_position_yields_type_value() {
 #[test]
 fn instantiate_type_vars_patch_alias_body() {
     let src = r#"
-PatchOf :: <A> type Patch { value : A; note : Text; }
-p :: PatchOf Int = { value = 1; }
+PatchOf :: <A> type Patch { value : A; note : Text; };
+p :: PatchOf Int = { value = 1; };
 p
 "#;
     let file = completed_file(src);
@@ -940,7 +943,7 @@ p
 fn maybe_rejects_optional_none_atom() {
     let lowered = lower(
         r#"
-x :: Maybe Int = #none
+x :: Maybe Int = #none;
 x
 "#,
     );

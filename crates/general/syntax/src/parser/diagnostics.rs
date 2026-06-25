@@ -16,7 +16,6 @@ struct DelimFrame {
     delim: Delim,
     offset: usize,
     type_context: bool,
-    saw_local_binding: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -141,7 +140,6 @@ impl<'a> Scanner<'a> {
             delim,
             offset: self.pos,
             type_context,
-            saw_local_binding: false,
         });
         self.segments.push(Segment::default());
         self.pos += 1;
@@ -149,9 +147,11 @@ impl<'a> Scanner<'a> {
 
     fn close(&mut self, delim: Delim) {
         match delim {
-            Delim::Bracket => self.check_missing_list_semicolon(),
-            Delim::Brace => self.check_missing_block_result(),
-            Delim::Paren => {}
+            // `{ ... }` value braces (record or list) require every item to be
+            // `;`-terminated. `[ ... ]` do-blocks do not (the tail result has no
+            // trailing `;`), so they get no item-semicolon check.
+            Delim::Brace => self.check_missing_value_item_semicolon(),
+            Delim::Bracket | Delim::Paren => {}
         }
         if let Some(frame) = self.stack.pop()
             && frame.delim != delim
@@ -170,18 +170,15 @@ impl<'a> Scanner<'a> {
     }
 
     fn scan_colon(&mut self) {
+        // `::` (top-level sig/alias) and `:=` (local do-block binding) are not
+        // stray colons.
         if self.starts_with("::") || self.starts_with(":=") {
-            if self.starts_with(":=") {
-                self.mark_local_binding();
-            }
             self.pos += 2;
             return;
         }
 
         if self.stack.is_empty() && self.looks_like_top_level_single_colon(self.pos) {
             self.push(self.pos, self.pos + 1, ParseErrorKind::TopLevelSingleColon);
-        } else if self.in_value_brace() && self.looks_like_local_typed_binding_colon(self.pos) {
-            self.mark_local_binding();
         } else if self.in_value_brace() && self.looks_like_value_record_colon(self.pos) {
             self.push(
                 self.pos,
@@ -370,15 +367,23 @@ impl<'a> Scanner<'a> {
         None
     }
 
-    fn check_missing_list_semicolon(&mut self) {
-        if !matches!(self.stack.last().map(|f| f.delim), Some(Delim::Bracket)) {
+    /// Every item in a value `{ ... }` (record field or list element) must end
+    /// in `;`. If the last non-whitespace byte before `}` is neither the opening
+    /// `{` (empty record) nor a `;`, an item terminator is missing.
+    fn check_missing_value_item_semicolon(&mut self) {
+        if !self.in_value_brace() {
             return;
         }
         let open = self.stack.last().map(|f| f.offset).unwrap_or(0);
         let Some(prev) = self.prev_non_ws(self.pos) else {
             return;
         };
-        if prev <= open || self.bytes[prev] == b'[' || self.bytes[prev] == b';' {
+        // Fine: empty brace (`{`), a properly terminated item (`;`), or a last
+        // item that ends in a closing delimiter — `}`/`]`/`)`. The closer case
+        // covers brace groups that are not bare record/list items (generator
+        // `stream { … then { … } }`, a trailing do-block, a nested list/tuple);
+        // any genuine missing `;` there is reported by the real parser instead.
+        if prev <= open || matches!(self.bytes[prev], b'{' | b';' | b'}' | b']' | b')') {
             return;
         }
         self.push(
@@ -386,23 +391,6 @@ impl<'a> Scanner<'a> {
             self.pos + 1,
             ParseErrorKind::MissingListItemSemicolon,
         );
-    }
-
-    fn check_missing_block_result(&mut self) {
-        if !self.in_value_brace() {
-            return;
-        }
-        let frame = self.stack.last().copied();
-        let open = frame.map(|f| f.offset).unwrap_or(0);
-        let Some(prev) = self.prev_non_ws(self.pos) else {
-            return;
-        };
-        if prev <= open || self.bytes[prev] != b';' {
-            return;
-        }
-        if frame.is_some_and(|f| f.saw_local_binding) {
-            self.push(self.pos, self.pos + 1, ParseErrorKind::MissingBlockResult);
-        }
     }
 
     fn reset_segment(&mut self) {
@@ -535,15 +523,6 @@ impl<'a> Scanner<'a> {
         )
     }
 
-    fn mark_local_binding(&mut self) {
-        if let Some(frame) = self.stack.last_mut()
-            && frame.delim == Delim::Brace
-            && !frame.type_context
-        {
-            frame.saw_local_binding = true;
-        }
-    }
-
     fn looks_like_top_level_single_colon(&self, offset: usize) -> bool {
         let line_start = self.src[..offset].rfind('\n').map_or(0, |idx| idx + 1);
         let prefix = self.src[line_start..offset].trim();
@@ -575,31 +554,6 @@ impl<'a> Scanner<'a> {
             }
         }
         true
-    }
-
-    fn looks_like_local_typed_binding_colon(&self, offset: usize) -> bool {
-        let segment_start = self.src[..offset]
-            .rfind(['\n', ';', '{'])
-            .map_or(0, |idx| idx + 1);
-        let prefix = self.src[segment_start..offset].trim();
-        if prefix.is_empty()
-            || !prefix.chars().all(crate::ident::is_ident_continue)
-            || !prefix
-                .chars()
-                .next()
-                .is_some_and(crate::ident::is_ident_start)
-        {
-            return false;
-        }
-
-        let after = &self.src[offset + 1..];
-        let segment_end = after.find([';', '}']).unwrap_or(after.len());
-        let type_and_value_start = &after[..segment_end];
-        type_and_value_start.char_indices().any(|(idx, ch)| {
-            ch == '='
-                && !type_and_value_start[idx..].starts_with("==")
-                && !type_and_value_start[idx..].starts_with("=>")
-        })
     }
 
     fn looks_like_value_record_colon(&self, offset: usize) -> bool {

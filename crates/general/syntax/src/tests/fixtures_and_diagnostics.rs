@@ -22,8 +22,6 @@ const INVALID_LAMBDA_TIGHT_DOT: &str =
     include_str!("../../../fixtures/invalid/lambda_tight_dot.zt");
 const INVALID_LIST_MISSING_SEMICOLON: &str =
     include_str!("../../../fixtures/invalid/list_missing_semicolon.zt");
-const INVALID_LOCAL_BINDING_MISSING_RESULT: &str =
-    include_str!("../../../fixtures/invalid/local_binding_missing_result.zt");
 const INVALID_MIXED_PIPELINE: &str = include_str!("../../../fixtures/invalid/mixed_pipeline.zt");
 const INVALID_RECORD_FIELD_COLON: &str =
     include_str!("../../../fixtures/invalid/record_field_colon.zt");
@@ -84,10 +82,6 @@ fn reject_invalid_fixture_variants() {
             "invalid/list_missing_semicolon.zt",
             INVALID_LIST_MISSING_SEMICOLON,
         ),
-        (
-            "invalid/local_binding_missing_result.zt",
-            INVALID_LOCAL_BINDING_MISSING_RESULT,
-        ),
         ("invalid/mixed_pipeline.zt", INVALID_MIXED_PIPELINE),
         ("invalid/record_field_colon.zt", INVALID_RECORD_FIELD_COLON),
         (
@@ -131,11 +125,6 @@ fn invalid_fixtures_report_specific_error_kinds() {
             ParseErrorKind::MissingListItemSemicolon,
         ),
         (
-            "invalid/local_binding_missing_result.zt",
-            INVALID_LOCAL_BINDING_MISSING_RESULT,
-            ParseErrorKind::MissingBlockResult,
-        ),
-        (
             "invalid/mixed_pipeline.zt",
             INVALID_MIXED_PIPELINE,
             ParseErrorKind::MixedPipeline,
@@ -163,7 +152,7 @@ fn invalid_fixtures_report_specific_error_kinds() {
         (
             "invalid/unclosed_list.zt",
             INVALID_UNCLOSED_LIST,
-            ParseErrorKind::UnclosedDelimiter('['),
+            ParseErrorKind::UnclosedDelimiter('{'),
         ),
     ] {
         let kinds = parse_kinds(src);
@@ -173,7 +162,7 @@ fn invalid_fixtures_report_specific_error_kinds() {
 
 #[test]
 fn ast_only_parse_matches_parse_diagnostics() {
-    assert!(parse_ast_only("x ::= 1\nx").ast().is_some());
+    assert!(parse_ast_only("x ::= 1;\nx").ast().is_some());
     assert_eq!(
         parse_ast_only_kinds(INVALID_MIXED_PIPELINE),
         parse_kinds(INVALID_MIXED_PIPELINE)
@@ -184,11 +173,11 @@ fn ast_only_parse_matches_parse_diagnostics() {
 fn reports_multiple_common_diagnostics_in_source_order() {
     let parsed = parse(
         r#"
-{
-  a = 1 < 2 < 3;
-  b = \x => x;
-  c = [1; 2]
-}
+[
+  a := 1 < 2 < 3;
+  b := \x => x;
+  c := { 1; 2 }
+]
 "#,
     );
     assert!(parsed.has_errors(), "source should fail");

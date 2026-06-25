@@ -43,7 +43,7 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             let checkpoint = *input;
             take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
             if input.starts_with('{') {
-                match parse_record_or_block(input, options) {
+                match parse_record_or_list(input, options) {
                     Ok(payload) => {
                         let span = atom_span.merge(payload.span());
                         return Ok(Expr::TaggedValue {
@@ -80,8 +80,8 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
         }
         '\\' => parse_lambda(input, options),
         '(' => parse_tuple_or_group(input, options),
-        '[' => parse_list_value(input, options),
-        '{' => parse_record_or_block(input, options),
+        '[' => parse_block_value(input, options),
+        '{' => parse_record_or_list(input, options),
         '$' => {
             // `$ℓ` in value position is the universe-as-a-value, desugared to the
             // same node `type $ℓ` would produce (no `type` keyword needed).
@@ -199,21 +199,31 @@ fn parse_lambda(input: &mut &str, options: ExprOptions) -> Result<Expr> {
 // Record or block: `{ ... }`
 // ---------------------------------------------------------------------------
 
-fn parse_record_or_block(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let start = *input;
+/// `{ ... }` is parallel: either a record (`name = e;` entries) or a list
+/// (bare `e;` entries). `{}` is the empty record; `{;}` is the empty list.
+fn parse_record_or_list(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let (mut expr, span) =
+        spanned(|i: &mut &str| parse_record_or_list_inner(i, options)).parse_next(input)?;
+    match &mut expr {
+        Expr::Record { span: s, .. } | Expr::List { span: s, .. } => *s = span,
+        _ => {}
+    }
+    Ok(expr)
+}
+
+fn parse_record_or_list_inner(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     '{'.parse_next(input)?;
     ws(input)?;
 
+    // Bare `{}` is the empty record (the empty list is written `{;}`).
     if input.starts_with('}') {
-        let (_, span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
-        let full_span = Span::new(start.len() - input.len(), span.end as usize);
+        '}'.parse_next(input)?;
         return Ok(Expr::Record {
             fields: vec![],
-            span: full_span,
+            span: Span::new(0, 0),
         });
     }
 
-    let checkpoint = *input;
     let is_record = {
         let mut tmp = *input;
         if let Ok(_name) = parse_field_name(&mut tmp) {
@@ -225,11 +235,9 @@ fn parse_record_or_block(input: &mut &str, options: ExprOptions) -> Result<Expr>
     };
 
     if is_record {
-        *input = checkpoint;
-        parse_record_value_tail(input, start, options)
+        parse_record_value_tail(input, "", options)
     } else {
-        *input = checkpoint;
-        parse_block_expr_tail(input, start, options)
+        parse_brace_list_tail(input, options)
     }
 }
 
@@ -269,15 +277,55 @@ fn parse_record_value_tail(input: &mut &str, _start: &str, options: ExprOptions)
     Ok(Expr::Record { fields, span })
 }
 
-fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -> Result<Expr> {
+/// List tail of `{ ... }` (the opening `{` is already consumed): zero or more
+/// `;`-terminated bare expressions. A lone `;` (`{;}`) yields the empty list.
+fn parse_brace_list_tail(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     let _guard = enter_delimiter();
-    let mut bindings = vec![];
+    let mut items = vec![];
     loop {
         ws(input)?;
         if input.starts_with('}') {
             break;
         }
-        let checkpoint = *input;
+        // A bare `;` is a separator with no element — this is what distinguishes
+        // the empty list `{;}` from the empty record `{}`.
+        if input.starts_with(';') {
+            ';'.parse_next(input)?;
+            continue;
+        }
+        let e = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        items.push(e);
+    }
+    let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
+    Ok(Expr::List {
+        items,
+        span: Span::new(0, end_span.end as usize),
+    })
+}
+
+/// `[ ... ]` is a serial do-block: local bindings (`name := e;` /
+/// `name : T = e;`) followed by an optional tail expression that is the block's
+/// value. An absent tail, or a trailing `;` after the tail, yields `()` (Unit).
+fn parse_block_value(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let (mut expr, span) =
+        spanned(|i: &mut &str| parse_block_inner(i, options)).parse_next(input)?;
+    if let Expr::Block { span: s, .. } = &mut expr {
+        *s = span;
+    }
+    Ok(expr)
+}
+
+fn parse_block_inner(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    '['.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut bindings = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with(']') {
+            break;
+        }
         let binding_kind = {
             let mut tmp = *input;
             if let Ok(_name) = parse_ident(&mut tmp) {
@@ -294,68 +342,92 @@ fn parse_block_expr_tail(input: &mut &str, _start: &str, options: ExprOptions) -
             }
         };
 
-        if let Some(has_annotation) = binding_kind {
-            let (name, name_span) = spanned(parse_ident).parse_next(input)?;
+        let Some(has_annotation) = binding_kind else {
+            break;
+        };
+        let (name, name_span) = spanned(parse_ident).parse_next(input)?;
+        ws(input)?;
+        let annotation = if has_annotation {
+            ':'.parse_next(input)?;
             ws(input)?;
-            let annotation = if has_annotation {
-                ':'.parse_next(input)?;
-                ws(input)?;
-                let ty = parse_type_expr(input)?;
-                ws(input)?;
-                '='.parse_next(input)?;
-                Some(ty)
-            } else {
-                ":=".parse_next(input)?;
-                None
-            };
+            let ty = parse_type_expr(input)?;
             ws(input)?;
-            let value = super::parse_expr_with_options(input, options)?;
-            ws(input)?;
-            ';'.parse_next(input)?;
-            let span = name_span.merge(value.span());
-            bindings.push(LocalBinding {
-                name,
-                annotation,
-                value,
-                span,
-            });
+            '='.parse_next(input)?;
+            Some(ty)
         } else {
-            *input = checkpoint;
-            break;
-        }
-    }
-    ws(input)?;
-    let first = super::parse_expr_with_options(input, options)?;
-    let mut items = vec![first];
-    loop {
+            ":=".parse_next(input)?;
+            None
+        };
         ws(input)?;
-        if !input.starts_with(';') {
-            break;
-        }
+        let value = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
         ';'.parse_next(input)?;
-        ws(input)?;
-        if input.starts_with('}') {
-            break;
-        }
-        items.push(super::parse_expr_with_options(input, options)?);
+        let span = name_span.merge(value.span());
+        bindings.push(LocalBinding {
+            name,
+            annotation,
+            value,
+            span,
+        });
     }
+
+    // Optional result: a `;`-separated tail. A trailing `;` (or no tail at all)
+    // discards the value to `()`.
+    let mut items = vec![];
+    let mut trailing_semi = false;
     ws(input)?;
-    let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
-    let result = if items.len() == 1 {
-        items.pop().expect("one item checked above")
-    } else {
-        let start_span = items.first().map(Expr::span).unwrap_or(end_span);
-        Expr::Sequence {
-            items,
-            span: start_span.merge(end_span),
+    if !input.starts_with(']') {
+        items.push(super::parse_expr_with_options(input, options)?);
+        loop {
+            ws(input)?;
+            if !input.starts_with(';') {
+                break;
+            }
+            ';'.parse_next(input)?;
+            trailing_semi = true;
+            ws(input)?;
+            if input.starts_with(']') {
+                break;
+            }
+            items.push(super::parse_expr_with_options(input, options)?);
+            trailing_semi = false;
         }
-    };
-    let span = result.span().merge(end_span);
+    }
+    let (_, end_span) = spanned(|i: &mut &str| ']'.parse_next(i)).parse_next(input)?;
+    let result = build_block_result(items, trailing_semi, end_span.end as usize);
     Ok(Expr::Block {
         bindings,
         result: Box::new(result),
-        span,
+        span: Span::new(0, end_span.end as usize),
     })
+}
+
+/// `()` — the empty tuple, which is Unit.
+fn unit_expr(end: usize) -> Expr {
+    Expr::Tuple {
+        items: vec![],
+        span: Span::new(end, end),
+    }
+}
+
+/// Build the value of a do-block from its tail expressions. A trailing `;`
+/// forces the tail for its effects but yields `()`; an empty tail is `()`.
+fn build_block_result(mut items: Vec<Expr>, trailing_semi: bool, end: usize) -> Expr {
+    if trailing_semi {
+        items.push(unit_expr(end));
+    }
+    match items.len() {
+        0 => unit_expr(end),
+        1 => items.pop().expect("len checked == 1"),
+        _ => {
+            let start = items
+                .first()
+                .map(Expr::span)
+                .unwrap_or_else(|| Span::new(end, end));
+            let span = start.merge(Span::new(end, end));
+            Expr::Sequence { items, span }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -456,34 +528,6 @@ fn parse_tuple_item(input: &mut &str, options: ExprOptions) -> Result<TupleItem>
     *input = checkpoint;
     let e = super::parse_expr_with_options(input, options)?;
     Ok(TupleItem::Positional(e))
-}
-
-// ---------------------------------------------------------------------------
-// List
-// ---------------------------------------------------------------------------
-
-fn parse_list_value(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let (items, span) = spanned(|i: &mut &str| parse_list_inner(i, options)).parse_next(input)?;
-    Ok(Expr::List { items, span })
-}
-
-fn parse_list_inner(input: &mut &str, options: ExprOptions) -> Result<Vec<Expr>> {
-    '['.parse_next(input)?;
-    let _guard = enter_delimiter();
-    let mut items = vec![];
-    loop {
-        ws(input)?;
-        if input.starts_with(']') {
-            break;
-        }
-        let e = super::parse_expr_with_options(input, options)?;
-        ws(input)?;
-        ';'.parse_next(input)?;
-        items.push(e);
-    }
-    ws(input)?;
-    ']'.parse_next(input)?;
-    Ok(items)
 }
 
 // ---------------------------------------------------------------------------

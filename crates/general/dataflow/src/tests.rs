@@ -29,7 +29,7 @@ fn dc_of(src: &str) -> DataflowGraph {
 fn residual_non_host_effects_do_not_enter_dataflow_core() {
     let parsed = zutai_syntax::parse(
         r#"
-parse :: Text -> Text ! { fail Text }
+parse :: Text -> Text ! { fail Text; }
   = text => perform fail text;
 parse
 "#,
@@ -56,7 +56,7 @@ parse
 fn granted_standard_host_effect_lowers_to_host_op() {
     let parsed = zutai_syntax::parse(
         r#"
-readFile :: Path -> Text ! { fs.read : Path -> Text }
+readFile :: Path -> Text ! { fs.read : Path -> Text; }
   = path => perform fs.read path;
 readFile "Cargo.toml"
 "#,
@@ -113,7 +113,7 @@ fn ambient_io_print_lowers_to_runtime_host_print() {
 fn handled_single_op_effect_lowers_to_dataflow_core() {
     let parsed = zutai_syntax::parse(
         r#"
-result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result ::= handle [ perform warn "diag"; "ok" ] with { warn = \d. resume (); };
 result
 "#,
     );
@@ -138,7 +138,7 @@ result
 fn repeated_handled_performs_do_not_emit_error_nodes() {
     let graph = dc_of(
         r#"
-result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; }
+result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; };
 result
 "#,
     );
@@ -155,7 +155,7 @@ result
 fn handler_param_inside_tuple_does_not_emit_error_nodes() {
     let graph = dc_of(
         r#"
-result ::= handle perform query 1 with { query = \n. resume (n, n); }
+result ::= handle perform query 1 with { query = \n. resume (n, n); };
 result
 "#,
     );
@@ -259,13 +259,13 @@ fn decimal_posit_add_lowers_to_posit_builtin() {
 
 #[test]
 fn global_value_appears_in_globals_map() {
-    let g = dc_of("x ::= 42\nx");
+    let g = dc_of("x ::= 42;\nx");
     assert!(g.globals.contains_key("x"), "expected 'x' in globals map");
 }
 
 #[test]
 fn function_decl_appears_in_globals_map() {
-    let g = dc_of("add a b = a + b\nadd 1 2");
+    let g = dc_of("add a b = a + b;\nadd 1 2");
     assert!(
         g.globals.contains_key("add"),
         "expected 'add' in globals map"
@@ -277,7 +277,7 @@ fn function_decl_appears_in_globals_map() {
 #[test]
 fn shared_binding_produces_single_node() {
     // `x` is used twice in `f`; both uses should resolve to the same NodeId.
-    let g = dc_of("x ::= 42\nf a = a + x\nx");
+    let g = dc_of("x ::= 42;\nf a = a + x;\nx");
     // Verify x is in globals exactly once.
     assert_eq!(
         g.globals.values().filter(|&&n| n == g.globals["x"]).count(),
@@ -297,7 +297,7 @@ fn shared_binding_produces_single_node() {
 
 #[test]
 fn lambda_and_bind_nodes_present_for_function() {
-    let g = dc_of("id x = x\nid 42");
+    let g = dc_of("id x = x;\nid 42");
     let has_lambda = g
         .nodes
         .iter()
@@ -313,7 +313,7 @@ fn lambda_and_bind_nodes_present_for_function() {
 
 #[test]
 fn apply_node_present_for_function_call() {
-    let g = dc_of("id x = x\nid 42");
+    let g = dc_of("id x = x;\nid 42");
     let has_apply = g
         .nodes
         .iter()
@@ -325,7 +325,7 @@ fn apply_node_present_for_function_call() {
 
 #[test]
 fn polymorphic_function_has_tylam_node() {
-    let g = dc_of("id x = x\nid 42");
+    let g = dc_of("id x = x;\nid 42");
     let has_tylam = g
         .nodes
         .iter()
@@ -335,7 +335,7 @@ fn polymorphic_function_has_tylam_node() {
 
 #[test]
 fn call_to_polymorphic_function_has_tyapp_node() {
-    let g = dc_of("id x = x\nresult :: Int = id 42\nresult");
+    let g = dc_of("id x = x;\nresult :: Int = id 42;\nresult");
     let has_tyapp = g
         .nodes
         .iter()
@@ -347,7 +347,7 @@ fn call_to_polymorphic_function_has_tyapp_node() {
 
 #[test]
 fn binary_add_produces_builtin_node() {
-    let g = dc_of("f a b = a + b\nf 1 2");
+    let g = dc_of("f a b = a + b;\nf 1 2");
     let has_add = g
         .nodes
         .iter()
@@ -361,7 +361,7 @@ fn operator_witness_equality_lowers_to_select_apply_not_builtin() {
         r#"
 Eq :: <A> @A { (==) :: A -> A -> Bool; }
 Eq @Int :: { (==) = \a b. false; }
-result :: Bool = 1 == 1
+result :: Bool = 1 == 1;
 result
 "#,
     );
@@ -403,7 +403,7 @@ fn record_literal_produces_record_node() {
 
 #[test]
 fn record_update_produces_record_update_node() {
-    let g = dc_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
+    let g = dc_of("r ::= { x = 1; y = 2; };\nr with { x = 3; }");
     let has_update = g.nodes.iter().any(|(_, n)| {
         matches!(
             &n.kind,
@@ -416,7 +416,7 @@ fn record_update_produces_record_update_node() {
 
 #[test]
 fn record_field_access_produces_select_node() {
-    let g = dc_of("r ::= { x = 1; }\nr.x");
+    let g = dc_of("r ::= { x = 1; };\nr.x");
     let has_select = g
         .nodes
         .iter()
@@ -426,7 +426,7 @@ fn record_field_access_produces_select_node() {
 
 #[test]
 fn optional_field_access_lowers_to_maybe_type() {
-    let g = dc_of("S :: type { p? : Int; }\ns :: S = {}\ns.p");
+    let g = dc_of("S :: type { p? : Int; };\ns :: S = {};\ns.p");
     assert!(
         matches!(g.types[g.nodes[g.root].ty], DfTy::Maybe(_)),
         "expected optional field access to lower to DfTy::Maybe"
@@ -435,7 +435,7 @@ fn optional_field_access_lowers_to_maybe_type() {
 
 #[test]
 fn optional_value_lowers_to_optional_type() {
-    let g = dc_of("x :: Int? = #none\nx");
+    let g = dc_of("x :: Int? = #none;\nx");
     assert!(
         matches!(g.types[g.nodes[g.root].ty], DfTy::Optional(_)),
         "expected Int? to lower to DfTy::Optional"
@@ -449,13 +449,13 @@ fn recursive_union_alias_value_lowers_and_validates() {
 Tree :: type {
   #leaf;
   #node : { value : Int; left : Tree; right : Tree; };
-}
+};
 example :: Tree =
   #node {
     value = 1;
     left = #leaf;
     right = #node { value = 2; left = #leaf; right = #leaf; };
-  }
+  };
 example == example
 "#,
     );
@@ -469,9 +469,9 @@ fn generic_recursive_union_alias_value_lowers_and_validates() {
 Tree :: <A> type {
   #leaf;
   #node : { value : A; left : Tree A; right : Tree A; };
-}
+};
 example :: Tree Int =
-  #node { value = 1; left = #leaf; right = #leaf; }
+  #node { value = 1; left = #leaf; right = #leaf; };
 example == example
 "#,
     );
@@ -485,9 +485,9 @@ fn generic_recursive_union_alias_instantiates_entry_type() {
 Tree :: <A> type {
   #leaf;
   #node : { value : A; left : Tree A; right : Tree A; };
-}
+};
 example :: Tree Int =
-  #node { value = 1; left = #leaf; right = #leaf; }
+  #node { value = 1; left = #leaf; right = #leaf; };
 example
 "#,
     );
@@ -530,9 +530,9 @@ fn generic_alias_instantiation_preserves_nested_recursive_alias() {
 List_ :: type {
   #nil;
   #cons : { head : Int; tail : List_; };
-}
-Wrap :: <A> type { item : A; rest : List_; }
-x :: Wrap Int = { item = 1; rest = #nil; }
+};
+Wrap :: <A> type { item : A; rest : List_; };
+x :: Wrap Int = { item = 1; rest = #nil; };
 x
 "#,
     );
@@ -576,9 +576,9 @@ fn mutual_recursive_aliases_lower_without_hang() {
     // Nullary `#lit` construction mirrors the proven `#leaf` pattern.
     let g = dc_of(
         r#"
-Expr :: type { #lit; #call : { args : Args; }; }
-Args :: type { #none; #cons : { head : Expr; tail : Args; }; }
-example :: Expr = #lit
+Expr :: type { #lit; #call : { args : Args; }; };
+Args :: type { #none; #cons : { head : Expr; tail : Args; }; };
+example :: Expr = #lit;
 example
 "#,
     );
@@ -594,8 +594,8 @@ example
 fn instantiate_df_type_covers_container_arms() {
     let g = dc_of(
         r#"
-Holder :: <A> type { items : List A; opt : A?; pair : (A, Int); }
-h :: Holder Int = { items = [1; 2;]; opt = #none; pair = (1, 2); }
+Holder :: <A> type { items : List A; opt : A?; pair : (A, Int); };
+h :: Holder Int = { items = {1; 2;}; opt = #none; pair = (1, 2); };
 h
 "#,
     );
@@ -643,7 +643,7 @@ fn tuple_literal_produces_tuple_node() {
 
 #[test]
 fn list_literal_produces_list_node() {
-    let g = dc_of("[1; 2; 3;]");
+    let g = dc_of("{1; 2; 3;}");
     let has_list = g
         .nodes
         .iter()
@@ -655,7 +655,7 @@ fn list_literal_produces_list_node() {
 
 #[test]
 fn match_expression_produces_match_node() {
-    let g = dc_of("f x = match x { | 1 => true; | _ => false; }\nf 1");
+    let g = dc_of("f x = match x { | 1 => true; | _ => false; };\nf 1");
     let has_match = g
         .nodes
         .iter()
@@ -665,7 +665,7 @@ fn match_expression_produces_match_node() {
 
 #[test]
 fn if_expression_produces_match_node() {
-    let g = dc_of("f x = if x then 1 else 2\nf true");
+    let g = dc_of("f x = if x then 1 else 2;\nf true");
     let has_match = g
         .nodes
         .iter()
@@ -677,7 +677,7 @@ fn if_expression_produces_match_node() {
 
 #[test]
 fn recursive_function_has_global_ref_back_edge() {
-    let g = dc_of("factorial n = if n < 1 then 1 else n * factorial (n - 1)\nfactorial 5");
+    let g = dc_of("factorial n = if n < 1 then 1 else n * factorial (n - 1);\nfactorial 5");
     // factorial should be in globals.
     assert!(
         g.globals.contains_key("factorial"),
@@ -776,7 +776,7 @@ fn validation_rejects_builtin_result_type_mismatch() {
 
 #[test]
 fn validation_rejects_lambda_bind_used_outside_owner() {
-    let mut g = dc_of("id x = x\nid 1");
+    let mut g = dc_of("id x = x;\nid 1");
     let bind = first_bind(&g);
     g.root = bind;
 
@@ -816,19 +816,19 @@ fn validation_allows_nested_lambda_to_capture_outer_bind() {
 
 #[test]
 fn no_stray_global_refs() {
-    let g = dc_of("f x = x + 1\nf 10");
+    let g = dc_of("f x = x + 1;\nf 10");
     validate(&g).expect("DataflowGraph should pass validation");
 }
 
 #[test]
 fn validation_passes_for_polymorphic_program() {
-    let g = dc_of("id x = x\nid 42");
+    let g = dc_of("id x = x;\nid 42");
     validate(&g).expect("DataflowGraph should pass validation");
 }
 
 #[test]
 fn validation_passes_for_recursive_program() {
-    let g = dc_of("factorial n = if n < 1 then 1 else n * factorial (n - 1)\nfactorial 5");
+    let g = dc_of("factorial n = if n < 1 then 1 else n * factorial (n - 1);\nfactorial 5");
     validate(&g).expect("DataflowGraph should pass validation");
 }
 
@@ -846,7 +846,7 @@ fn root_node_is_valid_arena_index() {
 #[test]
 fn block_local_sharing_no_duplicate_value_nodes() {
     // `n` is used twice in the block; the value node (Lit(42)) should appear once.
-    let g = dc_of("{ n := 42; n + n }");
+    let g = dc_of("[ n := 42; n + n ]");
     let lit_count = g
         .nodes
         .iter()
@@ -935,7 +935,7 @@ fn validate_structural_skips_scope_walk() {
     // A lambda-bind exposed as the root violates the capture-walk invariants (3, 4)
     // but is structurally valid: the Bind node exists, has a valid type, etc.
     // validate_structural must pass; validate must still fail.
-    let mut g = dc_of("id x = x\nid 1");
+    let mut g = dc_of("id x = x;\nid 1");
     let bind = first_bind(&g);
     g.root = bind;
 
@@ -1019,7 +1019,7 @@ fn closed_record_select_lowers_without_error() {
     // Concrete/closed record field access must still work.
     let (tlc, bindings) = tlc_of(
         r#"
-r :: { a : Int; b : Int; } = { a = 3; b = 9; }
+r :: { a : Int; b : Int; } = { a = 3; b = 9; };
 r.b
 "#,
     );

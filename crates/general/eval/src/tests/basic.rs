@@ -156,17 +156,17 @@ fn if_else_branch() {
 
 #[test]
 fn block_single_binding() {
-    assert_eq!(run("{ a := 42; a }"), Value::Int(42));
+    assert_eq!(run("[ a := 42; a ]"), Value::Int(42));
 }
 
 #[test]
 fn block_typed_binding() {
-    assert_eq!(run("{ a : Int = 42; a }"), Value::Int(42));
+    assert_eq!(run("[ a : Int = 42; a ]"), Value::Int(42));
 }
 
 #[test]
 fn block_sequential_bindings() {
-    assert_eq!(run("{ a := 1; b := a + 1; b }"), Value::Int(2));
+    assert_eq!(run("[ a := 1; b := a + 1; b ]"), Value::Int(2));
 }
 
 // ─── records and field access ─────────────────────────────────────────────────
@@ -214,7 +214,7 @@ fn record_update_replaces_only_named_field() {
 #[test]
 fn record_update_does_not_force_unchanged_fields() {
     let src = r#"
-bad :: Int = bad
+bad :: Int = bad;
 ({ host = "h"; port = bad; } with { host = "new"; }).host
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Text("new".into()));
@@ -225,8 +225,8 @@ bad :: Int = bad
 #[test]
 fn record_update_preserves_present_optional_field_in_both_evaluators() {
     let src = r#"
-S :: type { x : Int; y? : Int; }
-s :: S = { x = 1; y = 2; }
+S :: type { x : Int; y? : Int; };
+s :: S = { x = 1; y = 2; };
 (s with { x = 3; }).y
 "#;
     assert_eq!(eval_file(src).unwrap().to_string(), "#present (2)");
@@ -237,8 +237,8 @@ s :: S = { x = 1; y = 2; }
 #[test]
 fn record_update_preserves_absent_optional_field_in_both_evaluators() {
     let src = r#"
-S :: type { x : Int; y? : Int; }
-s :: S = { x = 1; }
+S :: type { x : Int; y? : Int; };
+s :: S = { x = 1; };
 (s with { x = 3; }).y
 "#;
     assert_eq!(eval_file(src).unwrap().to_string(), "#absent");
@@ -252,9 +252,9 @@ fn overlay_replaces_patch_fields_in_both_evaluators() {
 Config :: type {
   host : Text;
   port : Int;
-}
-base :: Config = { host = "localhost"; port = 80; }
-patch :: Patch Config = { port = 8080; }
+};
+base :: Config = { host = "localhost"; port = 80; };
+patch :: Patch Config = { port = 8080; };
 (overlay patch base).port
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
@@ -268,10 +268,10 @@ fn overlay_does_not_force_unchanged_fields() {
 Config :: type {
   host : Text;
   port : Int;
-}
-bad :: Int = bad
-base :: Config = { host = "localhost"; port = bad; }
-patch :: Patch Config = { host = "patched"; }
+};
+bad :: Int = bad;
+base :: Config = { host = "localhost"; port = bad; };
+patch :: Patch Config = { host = "patched"; };
 (overlay patch base).host
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Text("patched".into()));
@@ -285,19 +285,19 @@ fn overlay_deep_merges_nested_records_in_both_evaluators() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 Config :: type {
   server : Server;
   name : Text;
-}
+};
 base :: Config = {
   server = { host = "localhost"; port = 80; };
   name = "dev";
-}
+};
 
 patch :: DeepPatch Config = {
   server = { port = 8080; };
-}
+};
 (overlayDeep patch base).server.host
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Text("localhost".into()));
@@ -314,10 +314,10 @@ fn overlay_partial_application_runs_in_both_evaluators() {
 Config :: type {
   host : Text;
   port : Int;
-}
-base :: Config = { host = "localhost"; port = 80; }
-patch :: Patch Config = { port = 8080; }
-applyPatch ::= overlay patch
+};
+base :: Config = { host = "localhost"; port = 80; };
+patch :: Patch Config = { port = 8080; };
+applyPatch ::= overlay patch;
 (applyPatch base).port
 "#;
     assert_eq!(eval_file(src).unwrap(), Value::Int(8080));
@@ -330,8 +330,8 @@ applyPatch ::= overlay patch
 #[test]
 fn record_field_pun_desugars_to_same_value() {
     // `{ port =; }` is sugar for `{ port = port; }`.
-    let punned = run("port ::= 8080\n({ port =; }).port");
-    let explicit = run("port ::= 8080\n({ port = port; }).port");
+    let punned = run("port ::= 8080;\n({ port =; }).port");
+    let explicit = run("port ::= 8080;\n({ port = port; }).port");
     assert_eq!(punned, Value::Int(8080));
     assert_eq!(punned, explicit);
 }
@@ -340,7 +340,8 @@ fn record_field_pun_desugars_to_same_value() {
 fn record_update_field_pun_uses_binding_in_scope() {
     // `cfg with { port =; }` is sugar for `cfg with { port = port; }`, so the
     // updated field takes the in-scope `port`, not the receiver's old value.
-    let v = run("cfg ::= { host = \"h\"; port = 1; }\nport ::= 8080\n(cfg with { port =; }).port");
+    let v =
+        run("cfg ::= { host = \"h\"; port = 1; };\nport ::= 8080;\n(cfg with { port =; }).port");
     assert_eq!(v, Value::Int(8080));
 }
 
@@ -350,7 +351,7 @@ fn record_update_field_pun_uses_binding_in_scope() {
 fn select_projects_fields_in_requested_order() {
     // `select` projects exactly the named fields, in the requested order,
     // dropping the unselected `name`.
-    let v = run("s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    let v = run("s ::= { host = \"h\"; port = 8080; name = \"n\"; };\nselect s { port; host; }");
     match v {
         Value::Record(fields) => {
             let names: Vec<&str> = fields.iter().map(|(n, _)| n.as_ref()).collect();
@@ -363,7 +364,7 @@ fn select_projects_fields_in_requested_order() {
 #[test]
 fn select_preserves_field_values() {
     assert_eq!(
-        run("s ::= { host = \"h\"; port = 8080; }\n(select s { port; }).port"),
+        run("s ::= { host = \"h\"; port = 8080; };\n(select s { port; }).port"),
         Value::Int(8080)
     );
 }
@@ -372,7 +373,7 @@ fn select_preserves_field_values() {
 fn select_unknown_field_is_type_check_failure() {
     // An unknown selected field is a type error, so the interpreter refuses to
     // evaluate (evaluation is gated on complete typed IR).
-    let err = run_err("s ::= { host = \"h\"; }\nselect s { missing; }");
+    let err = run_err("s ::= { host = \"h\"; };\nselect s { missing; }");
     let EvalError::TypeCheckFailed(msgs) = err else {
         panic!("expected TypeCheckFailed, got {err:?}");
     };
@@ -387,8 +388,8 @@ fn select_unknown_field_is_type_check_failure() {
 #[test]
 fn list_equality() {
     // Lists require trailing `;` in Zutai syntax.
-    assert_eq!(run("[1; 2; 3;] == [1; 2; 3;]"), Value::Bool(true));
-    assert_eq!(run("[1; 2; 3;] == [1; 2; 4;]"), Value::Bool(false));
+    assert_eq!(run("{1; 2; 3;} == {1; 2; 3;}"), Value::Bool(true));
+    assert_eq!(run("{1; 2; 3;} == {1; 2; 4;}"), Value::Bool(false));
 }
 
 #[test]
@@ -402,7 +403,7 @@ fn stream_generator_evaluates_as_codata_stream() {
 
 #[test]
 fn bare_stream_constructor_is_rejected_as_value_type() {
-    let err = run_err("bad :: Stream = []\nbad");
+    let err = run_err("bad :: Stream = {;};\nbad");
     let EvalError::TypeCheckFailed(messages) = err else {
         panic!("expected TypeCheckFailed, got {err:?}");
     };
@@ -443,7 +444,7 @@ fn atom_equality() {
 fn top_level_value_binding() {
     // Type-annotated value binding: `name :: Type = value`
     let src = "
-answer :: Int = 42
+answer :: Int = 42;
 answer
 ";
     assert_eq!(run(src), Value::Int(42));
@@ -477,7 +478,7 @@ fn partial_application_returns_closure() {
     let src = "
 add :: Int -> Int -> Int
   = x y => x + y;
-add_two ::= add 2
+add_two ::= add 2;
 add_two 3
 ";
     assert_eq!(run(src), Value::Int(5));
@@ -502,9 +503,9 @@ fac 5
 #[test]
 fn handler_clause_may_return_directly_without_resuming() {
     let src = r#"
-result ::= handle { perform fail "bad"; "unreachable" } with {
+result ::= handle [ perform fail "bad"; "unreachable" ] with {
   fail = \e. "fallback";
-}
+};
 result
 "#;
     assert_eq!(run(src), Value::Text("fallback".into()));
@@ -515,7 +516,7 @@ result
 fn black_hole_detected() {
     // `x :: Int = x` type-checks (both sides are Int) but diverges at runtime.
     let src = "
-x :: Int = x
+x :: Int = x;
 x
 ";
     assert_eq!(run_err(src), EvalError::BlackHole);
@@ -524,7 +525,7 @@ x
 #[test]
 fn strict_tlc_black_hole_detected() {
     let src = "
-x :: Int = x
+x :: Int = x;
 x
 ";
     assert_eq!(eval_tlc_file(src), Err(EvalError::BlackHole));
@@ -532,7 +533,7 @@ x
 
 #[test]
 fn tlc_lazy_record_projection_skips_unselected_black_hole() {
-    let src = "bad :: Int = bad\n{ ok = 1; bad = bad; }.ok";
+    let src = "bad :: Int = bad;\n{ ok = 1; bad = bad; }.ok";
     assert_eq!(eval_file(src).unwrap(), Value::Int(1));
     assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(1));
     assert_eq!(eval_thir_file(src).unwrap(), Value::Int(1));
@@ -543,7 +544,7 @@ fn tlc_lazy_record_projection_skips_unselected_black_hole() {
 #[test]
 fn gate_refuses_type_error() {
     let src = "
-x :: Int = \"bad\"
+x :: Int = \"bad\";
 x
 ";
     let err = run_err(src);
@@ -556,7 +557,7 @@ x
 #[test]
 fn gate_refuses_parse_error() {
     // Lists without trailing `;` fail to parse in general mode.
-    let src = "[1; 2]";
+    let src = "{1; 2}";
     let err = run_err(src);
     assert!(
         matches!(err, EvalError::NotRunnable(_)),
@@ -572,8 +573,8 @@ fn coalesce_absent_optional_field() {
     let src = "
 RawServer :: type {
   port? : Int;
-}
-server :: RawServer = {}
+};
+server :: RawServer = {};
 server.port ?? 8080
 ";
     assert_eq!(run(src), Value::Int(8080));
@@ -585,10 +586,10 @@ fn coalesce_present_optional_field() {
     let src = "
 RawServer :: type {
   port? : Int;
-}
+};
 server :: RawServer = {
   port = 9000;
-}
+};
 server.port ?? 8080
 ";
     assert_eq!(run(src), Value::Int(9000));
@@ -598,28 +599,28 @@ server.port ?? 8080
 fn coalesce_explicit_none_takes_default() {
     // Regression: an explicit `#none` optional value must default, not pass
     // through. `??` unwraps one Optional or Maybe wrapper.
-    let src = "x :: Int? = #none\nx ?? 5";
+    let src = "x :: Int? = #none;\nx ?? 5";
     assert_eq!(run(src), Value::Int(5));
 }
 
 #[test]
 fn coalesce_explicit_some_unwraps_value() {
     // Regression: an explicit `#some (x)` must unwrap to `x`.
-    let src = "x :: Int? = #some (9)\nx ?? 5";
+    let src = "x :: Int? = #some (9);\nx ?? 5";
     assert_eq!(run(src), Value::Int(9));
 }
 
 #[test]
 fn coalesce_explicit_some_text_unwraps() {
-    let src = "x :: Text? = #some (\"hi\")\nx ?? \"def\"";
+    let src = "x :: Text? = #some (\"hi\");\nx ?? \"def\"";
     assert_eq!(run(src), Value::Text("hi".into()));
 }
 
 #[test]
 fn coalesce_maybe_absent_takes_default() {
     let src = "
-S :: type { p? : Int; }
-s :: S = {}
+S :: type { p? : Int; };
+s :: S = {};
 s.p ?? 5
 ";
     assert_eq!(run(src), Value::Int(5));
@@ -628,8 +629,8 @@ s.p ?? 5
 #[test]
 fn coalesce_maybe_present_unwraps_value() {
     let src = "
-S :: type { p? : Int; }
-s :: S = { p = 9; }
+S :: type { p? : Int; };
+s :: S = { p = 9; };
 s.p ?? 5
 ";
     assert_eq!(run(src), Value::Int(9));
@@ -643,7 +644,7 @@ fn atom_literal_pattern_in_clause() {
 Profile :: type {
   #dev;
   #prod;
-}
+};
 isProd :: Profile -> Bool
   = #prod => true;
   = #dev => false;

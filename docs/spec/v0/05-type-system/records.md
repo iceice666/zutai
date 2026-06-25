@@ -15,7 +15,7 @@ Server :: type {
   host : Text;
   port : Int;
   tls : Bool;
-}
+};
 ```
 
 Value:
@@ -25,7 +25,7 @@ server :: Server = {
   host = "localhost";
   port = 8080;
   tls = true;
-}
+};
 ```
 
 This is the core symmetry:
@@ -75,7 +75,7 @@ Given:
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 ```
 
 This is valid:
@@ -84,7 +84,7 @@ This is valid:
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 ```
 
 This is invalid:
@@ -94,7 +94,7 @@ server :: Server = {
   host = "localhost";
   port = 8080;
   tls = true;
-}
+};
 ```
 
 because `tls` is not declared in `Server`.

@@ -2,6 +2,6 @@
 
 Bad :: type {
   field = Int;
-}
+};
 
 #unit

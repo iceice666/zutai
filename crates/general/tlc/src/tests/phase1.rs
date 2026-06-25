@@ -6,9 +6,9 @@ use crate::{Kind, TlcExpr, TlcType};
 #[test]
 fn ordinary_polymorphism_defaults_to_lowest_universe() {
     let programs = [
-        "id x = x\nid 42",
-        "const a b = a\nconst 1 2",
-        "add x y = x + y\nadd 1 2",
+        "id x = x;\nid 42",
+        "const a b = a;\nconst 1 2",
+        "add x y = x + y;\nadd 1 2",
     ];
 
     for src in programs {
@@ -47,8 +47,8 @@ fn ordinary_polymorphism_defaults_to_lowest_universe() {
 fn higher_universe_alias_application_reaches_tlc_kind() {
     let m = tlc_of(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-MetaPair :: type Pair Int Type
+Pair :: <A, B> type { first : A; second : B; };
+MetaPair :: type Pair Int Type;
 MetaPair
 "#,
     );
@@ -69,8 +69,8 @@ MetaPair
 fn unused_higher_universe_alias_arg_keeps_tlc_result_ground() {
     let m = tlc_of(
         r#"
-Const :: <A, B> type A
-ConstIntType :: type Const Int Type
+Const :: <A, B> type A;
+ConstIntType :: type Const Int Type;
 ConstIntType
 "#,
     );
@@ -91,9 +91,9 @@ ConstIntType
 fn nested_alias_application_preserves_outer_substitution_level() {
     let m = tlc_of(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-Wrap :: <X> type Pair X Text
-Use :: type Wrap Type
+Pair :: <A, B> type { first : A; second : B; };
+Wrap :: <X> type Pair X Text;
+Use :: type Wrap Type;
 Use
 "#,
     );

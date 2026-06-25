@@ -204,7 +204,7 @@ fn p14_plain_fn_bound_no_diagnostic() {
 /// P15: `derive := 1` is still a normal inferred binding (D4 guard)
 #[test]
 fn p15_derive_as_normal_binding() {
-    let f = parse_str("derive ::= 1\n1");
+    let f = parse_str("derive ::= 1;\n1");
     let d = decl_by(&f, "derive");
     assert!(matches!(d, Decl::Inferred { .. }));
 }

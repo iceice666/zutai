@@ -10,7 +10,7 @@ Example:
 
 ```zt
 port ::=
-  if profile == #prod then 443 else 8080
+  if profile == #prod then 443 else 8080;
 ```
 
 The condition must have type `Bool`.

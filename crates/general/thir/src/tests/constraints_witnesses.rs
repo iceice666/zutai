@@ -6,7 +6,7 @@ use super::*;
 /// with the expected structural presence.
 #[test]
 fn constraint_and_witness_produce_thir_decls() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true\n42";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= \\a b. true;\n42";
     let file = completed_file(src);
 
     // Constraint decl is present.
@@ -97,7 +97,7 @@ fn witness_with_lambda_field_completes_thir() {
 #[test]
 fn witness_forward_reference_completes_thir() {
     // `laterFn` is defined *after* the witness — tests the two-phase ordering.
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn ::= \\a b. true\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = laterFn; }\nlaterFn ::= \\a b. true;\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_some(),
@@ -143,7 +143,7 @@ fn derive_witness_lowers_with_derive_flag() {
 /// passes only if `{A → Int}` rewrites the method sig to `Int -> Int -> Bool`.
 #[test]
 fn witness_concrete_field_type_matches_passes() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = realEq; }\nrealEq :: Int -> Int -> Bool = \\a b. true\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = realEq; }\nrealEq :: Int -> Int -> Bool = \\a b. true;\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_some(),
@@ -155,7 +155,7 @@ fn witness_concrete_field_type_matches_passes() {
 /// Negative: field type does not match the expected method signature.
 #[test]
 fn witness_field_type_mismatch_emits_diagnostic() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= 1\n1";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = intEq; }\nintEq ::= 1;\n1";
     let lowered = lower(src);
     assert!(
         lowered.file.is_none(),
@@ -261,7 +261,7 @@ fn derive_witness_rejects_non_derivable_constraint() {
 #[test]
 fn derive_witness_requires_component_witness() {
     let lowered = lower(
-        "Box :: type { value : Text; }\nPair :: type { box : Box; }\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Pair :: derive\n1",
+        "Box :: type { value : Text; };\nPair :: type { box : Box; };\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Pair :: derive\n1",
     );
     assert!(
         lowered.file.is_none(),
@@ -280,7 +280,7 @@ fn derive_witness_requires_component_witness() {
 #[test]
 fn derive_witness_accepts_component_witness() {
     let file = completed_file(
-        "Box :: type { value : Text; }\nPair :: type { box : Box; }\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Box :: derive\nEq @Pair :: derive\n1",
+        "Box :: type { value : Text; };\nPair :: type { box : Box; };\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Box :: derive\nEq @Pair :: derive\n1",
     );
     let _ = file;
 }
@@ -449,7 +449,7 @@ fn functor_witness_and_polymorphic_use_checks() {
 fn partial_application_witness_target_checks() {
     // `Functor @(Result E)` — partial application of a 2-arg constructor yields a
     // `Type -> Type` witness target.
-    let src = "Result :: <E, A> type { ok : A; err : E; }\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @(Result E) :: <E> { map = \\f r. r; }\n1";
+    let src = "Result :: <E, A> type { ok : A; err : E; };\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @(Result E) :: <E> { map = \\f r. r; }\n1";
     let lowered = lower(src);
     assert!(
         lowered.diagnostics.is_empty(),

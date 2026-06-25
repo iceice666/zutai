@@ -11,8 +11,8 @@ file ::= top_decl* expr
 Example:
 
 ```zt
-cfg :: import "app.zti"
-name ::= cfg.name
+cfg :: import "app.zti";
+name ::= cfg.name;
 
 {
   name = name;
@@ -22,7 +22,7 @@ name ::= cfg.name
 
 The final expression is the file output.
 
-Top-level declarations are separated by line boundaries at delimiter depth zero. They do not use trailing semicolons.
+`;` is the universal terminator/separator: every value-like top-level declaration ends in `;`. The trailing file-output expression takes no `;`; a trailing `;` (or no tail at all) makes the file's value `()`. (Clause-functions, constraint definitions, and witness definitions are the exceptions: they end at the final clause `;` or the closing `}`/`derive`.)
 
 ### Declaration forms
 
@@ -31,19 +31,19 @@ There are five core declaration forms.
 **Inferred value binding** — type is inferred:
 
 ```zt
-name ::= expr
+name ::= expr;
 ```
 
 **Typed value binding** — explicit type annotation:
 
 ```zt
-name :: TypeExpr = expr
+name :: TypeExpr = expr;
 ```
 
 **Import binding** — static top-level module/data import:
 
 ```zt
-name :: import "path.zti"
+name :: import "path.zti";
 ```
 
 The declaration creates one prefixed binding. Imported fields are accessed through that binding, for example `name.field` or `name.Type`.
@@ -59,22 +59,22 @@ name :: TypeSignature
 Type aliases use `:: type` and do not have implementation clauses:
 
 ```zt
-Name :: type TypeExpr
+Name :: type TypeExpr;
 ```
 
 Examples:
 
 ```zt
-x ::= 42
+x ::= 42;
 
-port :: Int = 8080
+port :: Int = 8080;
 
-cfg :: import "app.zti"
+cfg :: import "app.zti";
 
 add :: Int -> Int -> Int
   = a b => a + b;
 
-Server :: type { host : Text; port : Int; }
+Server :: type { host : Text; port : Int; };
 ```
 
 There is no separate syntax for:
@@ -127,13 +127,13 @@ map (\x. x * 2) items
 fold (\acc x. acc + x) 0 items
 ```
 
-Block form uses a block expression `{ stmts; expr }` when the body needs local bindings:
+Do-block form uses a `[ stmts; expr ]` block when the body needs local bindings:
 
 ```zt
-\acc x. {
+\acc x. [
   doubled := acc * 2;
   doubled + x
-}
+]
 ```
 
 ### One namespace
@@ -143,9 +143,9 @@ Zutai has one namespace.
 The following is invalid:
 
 ```zt
-Server :: type { host : Text; }
+Server :: type { host : Text; };
 
-Server ::= 123
+Server ::= 123;
 ```
 
 The name `Server` is already bound.
@@ -175,15 +175,15 @@ binding, and `name : TypeExpr = expr;` introduces a typed local immutable bindin
 
 ```zt
 normalize :: RawServer -> Server
-  = raw => {
+  = raw => [
     host : Text = raw.host ?? "127.0.0.1";
     port : Int = raw.port ?? 8080;
     tls  := raw.tls ?? false;
     { host = host; port = port; tls = tls; }
-  };
+  ];
 ```
 
-A local binding is scoped to the remainder of the block.
+A local binding is scoped to the remainder of the do-block.
 
 ### Immutability
 

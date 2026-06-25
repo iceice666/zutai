@@ -8,15 +8,15 @@ optional payloads.
 When all members are bare tag names with no payload:
 
 ```zt
-Profile :: type {#dev; #test; #prod;}
+Profile :: type {#dev; #test; #prod;};
 
-Dir :: type {#north; #east; #west; #south;}
+Dir :: type {#north; #east; #west; #south;};
 ```
 
 Union member tags are written with `#` inside the definition. At use sites, values use the same atom spelling:
 
 ```zt
-profile :: Profile = #prod
+profile :: Profile = #prod;
 ```
 
 ### Tagged union
@@ -29,7 +29,7 @@ Shape :: type {
   #circle: { radius: Float; };
   #square: { length: Float; };
   #rect: { width: Float; height: Float; };
-}
+};
 ```
 
 Positional payload variants use `#tag: (...)`:
@@ -39,7 +39,7 @@ Message :: type {
   #quit;
   #move: (Int, Int);
   #write: (Text);
-}
+};
 ```
 
 Members may be mixed:
@@ -49,7 +49,7 @@ Result :: type {
   #ok: { value: Int; };
   #err: (Text);
   #none;
-}
+};
 ```
 
 ### Construction
@@ -57,22 +57,22 @@ Result :: type {
 Singleton tags are bare atoms:
 
 ```zt
-d ::= #north
+d ::= #north;
 ```
 
 Record payload values are an atom followed by a record:
 
 ```zt
-c ::= #circle { radius = 5.0; }
-s ::= #square { length = 10.0; }
-r ::= #rect   { width = 4.0; height = 3.0; }
+c ::= #circle { radius = 5.0; };
+s ::= #square { length = 10.0; };
+r ::= #rect   { width = 4.0; height = 3.0; };
 ```
 
 Positional payload values are an atom followed by a tuple payload:
 
 ```zt
-m ::= #move (10, 20)
-w ::= #write ("hello")
+m ::= #move (10, 20);
+w ::= #write ("hello");
 ```
 
 ### The `.tag` accessor
@@ -125,7 +125,7 @@ Union types may be generic:
 Optional :: <T> type {
   #none;
   #some (T);
-}
+};
 ```
 
 `T?` is shorthand for `Optional T`. See [Optional values](optional-values.md).

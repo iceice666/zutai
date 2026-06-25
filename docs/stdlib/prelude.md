@@ -72,7 +72,7 @@ Compiler internals remain justified for two non-cosmetic reasons:
   `seq`/`force` strictness primitive exists, the strict `fold` *cannot* be written in
   source, so its intrinsic is mandatory.
 - **Spine access.** The runtime list value is a flat array (`Value::List(Rc<[Thunk]>)` in
-  `crates/general/eval/src/value.rs`), making naive `[h; ...t]` tail O(n). Internals can
+  `crates/general/eval/src/value.rs`), making naive `{h; ...t}` tail O(n). Internals can
   lower to spine destructuring / backend loops.
 
 Equivalence between the source form and any optimized lowering is enforced by differential
@@ -85,8 +85,8 @@ list iteration is unwritable in source today. The prelude work adds:
 
 ```zt
 match xs {
-  | []        => empty-case;
-  | [h; ...t] => cons-case using h and t;
+  | {;}       => empty-case;
+  | {h; ...t} => cons-case using h and t;
 }
 ```
 

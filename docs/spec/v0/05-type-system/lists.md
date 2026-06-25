@@ -8,10 +8,10 @@ List Int
 List Server
 ```
 
-List values use `[` `;` `]`:
+List values use a `{ … }` parallel container with bare `;`-terminated items:
 
 ```zt
-items :: List Int = [1; 2; 3;]
+items :: List Int = { 1; 2; 3; };
 ```
 
 When `.zti` arrays are imported into `.zt`, they are list values.

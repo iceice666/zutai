@@ -11,12 +11,12 @@ fn count_decls_in_returns_zero_for_unparseable() {
 
 #[test]
 fn count_decls_in_returns_one_for_single_decl() {
-    assert_eq!(count_decls_in("x ::= 1\nx\n"), 1);
+    assert_eq!(count_decls_in("x ::= 1;\nx\n"), 1);
 }
 
 #[test]
 fn count_decls_in_returns_two_for_two_decls() {
-    assert_eq!(count_decls_in("x ::= 1\ny ::= 2\nx\n"), 2);
+    assert_eq!(count_decls_in("x ::= 1;\ny ::= 2;\nx\n"), 2);
 }
 
 #[test]

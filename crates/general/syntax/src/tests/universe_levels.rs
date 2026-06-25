@@ -9,21 +9,21 @@ fn universe_level(ty: &TypeExpr) -> &Level {
 
 #[test]
 fn known_level_annotation() {
-    let f = parse_str("Small :: $0 = Int\n1");
+    let f = parse_str("Small :: $0 = Int;\n1");
     let (_, ty, _) = as_typed(decl_by(&f, "Small"));
     assert!(matches!(universe_level(ty), Level::Known { value: 0, .. }));
 }
 
 #[test]
 fn level_variable_annotation() {
-    let f = parse_str("F :: $l = Int\n1");
+    let f = parse_str("F :: $l = Int;\n1");
     let (_, ty, _) = as_typed(decl_by(&f, "F"));
     assert!(matches!(universe_level(ty), Level::Var { name, .. } if name == "l"));
 }
 
 #[test]
 fn successor_level() {
-    let f = parse_str("F :: $(l + 2) = Int\n1");
+    let f = parse_str("F :: $(l + 2) = Int;\n1");
     let (_, ty, _) = as_typed(decl_by(&f, "F"));
     match universe_level(ty) {
         Level::Succ { base, by, .. } => {
@@ -36,7 +36,7 @@ fn successor_level() {
 
 #[test]
 fn max_level() {
-    let f = parse_str("F :: $(max a b) = Int\n1");
+    let f = parse_str("F :: $(max a b) = Int;\n1");
     let (_, ty, _) = as_typed(decl_by(&f, "F"));
     match universe_level(ty) {
         Level::Max { left, right, .. } => {
@@ -49,7 +49,7 @@ fn max_level() {
 
 #[test]
 fn nested_max_level() {
-    let f = parse_str("F :: $(max a (max b c)) = Int\n1");
+    let f = parse_str("F :: $(max a (max b c)) = Int;\n1");
     let (_, ty, _) = as_typed(decl_by(&f, "F"));
     match universe_level(ty) {
         Level::Max { right, .. } => {
@@ -62,7 +62,7 @@ fn nested_max_level() {
 #[test]
 fn value_position_universe() {
     // `$0` on the RHS (value position) parses as a TypeForm of the universe.
-    let f = parse_str("TypeOfTypes :: $1 = $0\n1");
+    let f = parse_str("TypeOfTypes :: $1 = $0;\n1");
     let (_, _, value) = as_typed(decl_by(&f, "TypeOfTypes"));
     match value {
         Expr::TypeForm { ty, .. } => {
@@ -115,8 +115,8 @@ fn level_binder_rejects_bound() {
 
 #[test]
 fn universe_round_trips_through_display() {
-    let s = parse_str("Small :: $0 = Int\n1").to_string();
+    let s = parse_str("Small :: $0 = Int;\n1").to_string();
     assert!(s.contains("TyUniverse $0"), "got:\n{s}");
-    let s = parse_str("F :: $(max a b) = Int\n1").to_string();
+    let s = parse_str("F :: $(max a b) = Int;\n1").to_string();
     assert!(s.contains("TyUniverse $(max a b)"), "got:\n{s}");
 }

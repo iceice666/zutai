@@ -11,8 +11,8 @@ fn generic_alias_application_resolves_to_record() {
     // must match — so we assert the whole program completes with no diagnostics.
     let file = completed_file(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-p :: Pair Text Int = { first = "x"; second = 1; }
+Pair :: <A, B> type { first : A; second : B; };
+p :: Pair Text Int = { first = "x"; second = 1; };
 p
 "#,
     );
@@ -26,8 +26,8 @@ p
 fn pair_int_type_kind_checks_at_higher_level() {
     let file = completed_file(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-MetaPair :: type Pair Int Type
+Pair :: <A, B> type { first : A; second : B; };
+MetaPair :: type Pair Int Type;
 MetaPair
 "#,
     );
@@ -48,8 +48,8 @@ MetaPair
 fn pair_int_text_defaults_to_ground_level() {
     let file = completed_file(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-TextIntPair :: type Pair Text Int
+Pair :: <A, B> type { first : A; second : B; };
+TextIntPair :: type Pair Text Int;
 TextIntPair
 "#,
     );
@@ -70,8 +70,8 @@ TextIntPair
 fn unused_higher_universe_alias_arg_does_not_raise_result_level() {
     let file = completed_file(
         r#"
-Const :: <A, B> type A
-ConstIntType :: type Const Int Type
+Const :: <A, B> type A;
+ConstIntType :: type Const Int Type;
 ConstIntType
 "#,
     );
@@ -96,14 +96,14 @@ fn recursive_union_alias_elaborates_without_expanding() {
 Tree :: type {
   #leaf;
   #node : { value : Int; left : Tree; right : Tree; };
-}
+};
 
 example :: Tree =
   #node {
     value = 1;
     left  = #leaf;
     right = #node { value = 2; left = #leaf; right = #leaf; };
-  }
+  };
 
 example
 "#,
@@ -174,7 +174,7 @@ fn generic_alias_used_in_function_signature() {
     // A function that takes a `Pair Int Int` and returns the first field.
     let file = completed_file(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
+Pair :: <A, B> type { first : A; second : B; };
 fst :: Pair Int Int -> Int
   = p => p.first;
 fst { first = 1; second = 2; }
@@ -188,8 +188,8 @@ fn generic_alias_wrong_arity_reports_error() {
     // `Pair` needs 2 args; giving 1 must emit TypeConstructorArityMismatch.
     let lowered = lower(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Text = x
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Text = x;
 x
 "#,
     );
@@ -205,8 +205,8 @@ fn generic_alias_bare_reference_reports_error() {
     // A bare `Pair` (zero args) in type position must emit TypeConstructorArityMismatch.
     let lowered = lower(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair = x
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair = x;
 x
 "#,
     );
@@ -223,8 +223,8 @@ fn partial_application_in_alias_body_reports_error() {
     // application is only legal in witness targets.
     let lowered = lower(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
-Bad :: type { x : Pair Int; }
+Pair :: <A, B> type { first : A; second : B; };
+Bad :: type { x : Pair Int; };
 1
 "#,
     );
@@ -241,7 +241,7 @@ fn partial_application_in_method_signature_reports_error() {
     // TypeConstructorArityMismatch.
     let lowered = lower(
         r#"
-Pair :: <A, B> type { first : A; second : B; }
+Pair :: <A, B> type { first : A; second : B; };
 C :: <T> @T { bad :: T -> Pair Int; }
 1
 "#,
@@ -260,11 +260,11 @@ fn type_level_expansion_exceeding_fuel_reports_limit() {
     // D1 → D2 = Pair D1 D1 → D3 = Pair D2 D2: resolving D3 requires multiple
     // Pair expansions. With a budget of 1 the second expansion is denied.
     let src = r#"
-Pair :: <A, B> type { first : A; second : B; }
-D1 :: type Int
-D2 :: type Pair D1 D1
-D3 :: type Pair D2 D2
-x :: D3 = x
+Pair :: <A, B> type { first : A; second : B; };
+D1 :: type Int;
+D2 :: type Pair D1 D1;
+D3 :: type Pair D2 D2;
+x :: D3 = x;
 x
 "#;
     let lowered = lower_with_type_eval_fuel(src, 1);
@@ -281,7 +281,7 @@ x
 #[test]
 fn poly_schemes_populated_for_inferred_identity() {
     // `id x = x` is polymorphic — poly_schemes[id] should be non-empty.
-    let file = completed_file("id x = x\nid 42");
+    let file = completed_file("id x = x;\nid 42");
     assert!(
         !file.poly_schemes.is_empty(),
         "expected poly_schemes to be non-empty for polymorphic `id`"
@@ -296,7 +296,7 @@ fn function_field_in_record_called_correctly() {
     // is called on an argument.  Tests that field access yields a callable type.
     let file = completed_file(
         r#"
-Callback :: type { fn : Int -> Int; }
+Callback :: type { fn : Int -> Int; };
 
 runCallback :: Callback -> Int -> Int
   = cb x => cb.fn x;
@@ -312,7 +312,7 @@ fn two_function_fields_composed_via_pipeline() {
     // Two `Int -> Int` fields stored in records; pipeline chains them.
     let file = completed_file(
         r#"
-Fns :: type { first : Int -> Int; second : Int -> Int; }
+Fns :: type { first : Int -> Int; second : Int -> Int; };
 
 applyBoth :: Fns -> Int -> Int
   = fns x => x |> fns.first |> fns.second;
@@ -330,10 +330,10 @@ fn function_stored_in_let_binding_is_callable() {
 inc :: Int -> Int
   = n => n + 1;
 
-{
+[
   fn := inc;
   fn 10
-}
+]
 "#,
     );
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
@@ -344,7 +344,7 @@ fn calling_non_function_field_reports_error() {
     // `x.val 5` where `val : Int` should raise ExpectedFunction.
     let lowered = lower(
         r#"
-Rec :: type { val : Int; }
+Rec :: type { val : Int; };
 
 apply :: Rec -> Int -> Int
   = r x => r.val x;
@@ -417,11 +417,11 @@ fn block_with_local_bindings_in_function_body() {
     let file = completed_file(
         r#"
 compute :: Int -> Int
-  = n => {
+  = n => [
     doubled := n * 2;
     incremented := doubled + 1;
     incremented
-  };
+  ];
 
 compute 5
 "#,
@@ -434,11 +434,11 @@ fn block_result_type_propagates_to_caller() {
     let file = completed_file(
         r#"
 makeLabel :: Int -> Text
-  = n => {
+  = n => [
     prefix := "value-";
     _ := n;
     prefix
-  };
+  ];
 
 makeLabel 42
 "#,
@@ -501,10 +501,10 @@ fn mixed_type_arithmetic_reports_error() {
 fn nested_record_field_access_yields_correct_type() {
     let file = completed_file(
         r#"
-Inner :: type { value : Int; }
-Outer :: type { inner : Inner; }
+Inner :: type { value : Int; };
+Outer :: type { inner : Inner; };
 
-o :: Outer = { inner = { value = 42; }; }
+o :: Outer = { inner = { value = 42; }; };
 
 o.inner.value
 "#,
@@ -516,13 +516,13 @@ o.inner.value
 fn access_text_field_on_nested_record() {
     let file = completed_file(
         r#"
-Meta :: type { label : Text; count : Int; }
-Config :: type { meta : Meta; enabled : Bool; }
+Meta :: type { label : Text; count : Int; };
+Config :: type { meta : Meta; enabled : Bool; };
 
 cfg :: Config = {
   meta = { label = "prod"; count = 3; };
   enabled = true;
-}
+};
 
 cfg.meta.label
 "#,
@@ -555,7 +555,7 @@ fn hof_apply_signatureless_returns_int() {
     // for `f` and confirm the result is Int from the concrete call.
     let file = completed_file(
         r#"
-apply f x = f x
+apply f x = f x;
 
 apply (\n. n + 1) 7
 "#,
@@ -624,7 +624,7 @@ apply "not-a-function" 5
 fn null_coalescing_on_optional_yields_unwrapped_type() {
     let file = completed_file(
         r#"
-x :: Int? = #none
+x :: Int? = #none;
 
 x ?? 0
 "#,
@@ -636,7 +636,7 @@ x ?? 0
 fn opt_access_chained_with_coalesce() {
     let file = completed_file(
         r#"
-Server :: type { port : Int; }
+Server :: type { port : Int; };
 
 get_port :: Server? -> Int
   = s => s?.port ?? 80;
@@ -654,9 +654,9 @@ fn generic_recursive_union_alias_checks_values() {
 Tree :: <A> type {
   #leaf;
   #node : { value : A; left : Tree A; right : Tree A; };
-}
+};
 example :: Tree Int =
-  #node { value = 1; left = #leaf; right = #leaf; }
+  #node { value = 1; left = #leaf; right = #leaf; };
 example == example
 "#,
     );
@@ -670,11 +670,11 @@ fn repeated_recursive_alias_mismatch_does_not_reuse_stale_fixpoint() {
 Tree :: <A> type {
   #leaf;
   #node : { value : A; left : Tree A; right : Tree A; };
-}
+};
 f :: Tree Bool -> Int = t => 0;
-y :: Tree Int = #leaf
-a :: Int = f y
-b :: Int = f y
+y :: Tree Int = #leaf;
+a :: Int = f y;
+b :: Int = f y;
 b
 "#,
     );
@@ -694,9 +694,9 @@ b
 fn alias_application_fast_path_does_not_ignore_variance() {
     let lowered = lower(
         r#"
-Fn :: <A> type A -> Int
+Fn :: <A> type A -> Int;
 g :: Fn true = x => 0;
-h :: Fn Bool = g
+h :: Fn Bool = g;
 h
 "#,
     );
@@ -716,10 +716,10 @@ fn covariant_alias_arg_accepted_at_expected_type() {
     // Pair true Int should be assignable to Pair Bool Int (true is a subtype of Bool).
     let lowered = lower(
         r#"
-TrueT :: type true
-Pair :: <A, B> type { first : A; second : B; }
+TrueT :: type true;
+Pair :: <A, B> type { first : A; second : B; };
 f :: Pair Bool Int -> Int = x => 0;
-g :: Pair TrueT Int -> Int = f
+g :: Pair TrueT Int -> Int = f;
 g
 "#,
     );
@@ -737,11 +737,11 @@ g
 fn deep_mismatch_behind_recursion_not_masked_by_coinductive_guard() {
     let lowered = lower(
         r#"
-TreeA :: type { #leaf; #node : { value : Int; child : TreeA; }; }
-TreeB :: type { #leaf; #node : { value : Text; child : TreeB; }; }
+TreeA :: type { #leaf; #node : { value : Int; child : TreeA; }; };
+TreeB :: type { #leaf; #node : { value : Text; child : TreeB; }; };
 f :: TreeA -> Int = t => 0;
-y :: TreeB = #leaf
-z :: Int = f y
+y :: TreeB = #leaf;
+z :: Int = f y;
 z
 "#,
     );
@@ -759,9 +759,9 @@ z
 fn mutual_generic_aliases_elaborate_cleanly_in_thir() {
     let file = completed_file(
         r#"
-Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; }
-Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; }
-x :: Odd Int = #nil
+Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; };
+Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; };
+x :: Odd Int = #nil;
 x
 "#,
     );
@@ -789,7 +789,7 @@ Show :: <A> @A { show :: A -> Text; }
 Show @Int :: { show = \n. "int"; }
 Show @Bool :: { show = \b. "bool"; }
 showBoth :: (<A: Show> A -> Text) -> { left : Text; right : Text; } =
-  \render. { left = render 1; right = render true; }
+  \render. { left = render 1; right = render true; };
 showBoth
 "#;
     let lowered = lower(src);
@@ -819,7 +819,7 @@ bad
 fn impredicative_list_rejected() {
     let lowered = lower(
         r#"
-xs :: List (<A> A -> A) = []
+xs :: List (<A> A -> A) = {;};
 xs
 "#,
     );

@@ -177,7 +177,7 @@ fn parse_access_over_grouped_record_update() {
 
 #[test]
 fn parse_list_value() {
-    let e = parse_expr_str("[1; 2; 3;]");
+    let e = parse_expr_str("{1; 2; 3;}");
     let items = as_list(&e);
     assert_eq!(items.len(), 3);
     assert_eq!(as_int(&items[0]), 1);
@@ -262,7 +262,7 @@ fn stream_record_with_yield_field_is_not_generator() {
 
 #[test]
 fn parse_empty_list() {
-    let e = parse_expr_str("[]");
+    let e = parse_expr_str("{;}");
     let items = as_list(&e);
     assert!(items.is_empty());
 }
@@ -591,7 +591,7 @@ fn parse_match_with_guard() {
 
 #[test]
 fn parse_block_expr() {
-    let e = parse_expr_str("{ x := 1; x }");
+    let e = parse_expr_str("[ x := 1; x ]");
     match &e {
         Expr::Block {
             bindings, result, ..
@@ -606,7 +606,7 @@ fn parse_block_expr() {
 
 #[test]
 fn parse_block_typed_local_binding() {
-    let e = parse_expr_str("{ x : Int = 1; x }");
+    let e = parse_expr_str("[ x : Int = 1; x ]");
     match &e {
         Expr::Block { bindings, .. } => {
             assert_eq!(bindings.len(), 1);

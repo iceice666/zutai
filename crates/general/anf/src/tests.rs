@@ -73,7 +73,7 @@ fn int_literal_root_has_lit_atom() {
 
 #[test]
 fn non_recursive_global_emits_let() {
-    let m = anf_of("x ::= 42\nx");
+    let m = anf_of("x ::= 42;\nx");
     assert_eq!(count_letrec(&m), 0, "x is not recursive → no letrec");
     assert!(count_let(&m) >= 1, "x should emit a let decl");
     let has_x = m
@@ -87,7 +87,7 @@ fn non_recursive_global_emits_let() {
 
 #[test]
 fn self_recursive_global_emits_letrec() {
-    let m = anf_of("factorial n = if n < 1 then 1 else n * factorial (n - 1)\nfactorial 5");
+    let m = anf_of("factorial n = if n < 1 then 1 else n * factorial (n - 1);\nfactorial 5");
     assert_eq!(
         count_letrec(&m),
         1,
@@ -104,7 +104,7 @@ fn self_recursive_global_emits_letrec() {
 #[test]
 fn mutually_recursive_globals_emit_single_letrec() {
     let m = anf_of(
-        "even n = if n == 0 then true else odd (n - 1)\nodd n = if n == 0 then false else even (n - 1)\neven 4",
+        "even n = if n == 0 then true else odd (n - 1);\nodd n = if n == 0 then false else even (n - 1);\neven 4",
     );
     assert_eq!(
         count_letrec(&m),
@@ -127,7 +127,7 @@ fn mutually_recursive_globals_emit_single_letrec() {
 #[test]
 fn function_call_root_has_apply_binding() {
     // `id 42` — root is not a plain atom; should have at least one binding.
-    let m = anf_of("id x = x\nid 42");
+    let m = anf_of("id x = x;\nid 42");
     // The root body should have some bindings (for the Apply and/or TyApp nodes).
     assert!(
         !m.root.bindings.is_empty() || !m.decls.is_empty(),
@@ -157,7 +157,7 @@ fn binary_op_root_has_builtin_binding() {
 
 #[test]
 fn function_decl_emits_lambda_expr() {
-    let m = anf_of("inc x = x + 1\ninc 3");
+    let m = anf_of("inc x = x + 1;\ninc 3");
     // The 'inc' decl's body should ultimately resolve to a Lambda.
     let inc_decl = m
         .decls
@@ -192,7 +192,7 @@ fn record_literal_root_has_record_binding() {
 
 #[test]
 fn record_update_root_has_record_update_binding() {
-    let m = anf_of("r ::= { x = 1; y = 2; }\nr with { x = 3; }");
+    let m = anf_of("r ::= { x = 1; y = 2; };\nr with { x = 3; }");
     let has_update = m.root.bindings.iter().any(|(_, e)| {
         matches!(
             e,
@@ -220,7 +220,7 @@ fn tuple_literal_root_has_tuple_binding() {
 
 #[test]
 fn list_literal_root_has_list_binding() {
-    let m = anf_of("[1; 2; 3;]");
+    let m = anf_of("{1; 2; 3;}");
     let has_list = m
         .root
         .bindings
@@ -233,7 +233,7 @@ fn list_literal_root_has_list_binding() {
 
 #[test]
 fn field_access_root_has_select_binding() {
-    let m = anf_of("r ::= { x = 1; }\nr.x");
+    let m = anf_of("r ::= { x = 1; };\nr.x");
     let has_select = m
         .root
         .bindings
@@ -246,7 +246,7 @@ fn field_access_root_has_select_binding() {
 
 #[test]
 fn match_expression_emits_match_expr() {
-    let m = anf_of("f x = match x { | 1 => true; | _ => false; }\nf 1");
+    let m = anf_of("f x = match x { | 1 => true; | _ => false; };\nf 1");
     // The body of 'f' (a let decl) should contain a Match expr.
     let f_decl = m
         .decls
@@ -270,7 +270,7 @@ fn match_expression_emits_match_expr() {
 
 #[test]
 fn if_expression_becomes_match_in_anf() {
-    let m = anf_of("f x = if x then 1 else 2\nf true");
+    let m = anf_of("f x = if x then 1 else 2;\nf true");
     let f_decl = m
         .decls
         .iter()
@@ -293,7 +293,7 @@ fn if_expression_becomes_match_in_anf() {
 #[test]
 fn block_local_shared_not_duplicated() {
     // `n` is used twice; ANF should introduce one binding for it and reuse the var.
-    let m = anf_of("{ n := 42; n + n }");
+    let m = anf_of("[ n := 42; n + n ]");
     // Root body has bindings. The two +_operands should be the same Var.
     let add_binding = m.root.bindings.iter().find(|(_, e)| {
         matches!(
@@ -319,7 +319,7 @@ fn block_local_shared_not_duplicated() {
 #[test]
 fn dependency_decl_precedes_dependent_decl() {
     // `b` depends on `a`; `a` should appear before `b` in decls.
-    let m = anf_of("a ::= 1\nb ::= a + 1\nb");
+    let m = anf_of("a ::= 1;\nb ::= a + 1;\nb");
     let a_pos = m
         .decls
         .iter()
@@ -342,7 +342,7 @@ fn dependency_decl_precedes_dependent_decl() {
 
 #[test]
 fn apply_arguments_are_atoms() {
-    let m = anf_of("f a b = a + b\nf 1 2");
+    let m = anf_of("f a b = a + b;\nf 1 2");
     fn check_body(body: &AnfBody) {
         for (_, expr) in &body.bindings {
             if let AnfExpr::Apply { func, arg } = expr {

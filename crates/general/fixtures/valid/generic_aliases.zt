@@ -3,16 +3,16 @@
 Pair :: <A, B> type {
   first : A;
   second : B;
-}
+};
 
 Box :: <A> type {
   value : A;
-}
+};
 
 Either :: <A, B> type {
   #left: { value: A; };
   #right: { value: B; };
-}
+};
 
 fst :: <A, B> Pair A B -> A
   = p => p.first;
@@ -33,13 +33,13 @@ isLeft :: <A, B> Either A B -> Bool
   = #left { value = _; } => true;
   = #right { value = _; } => false;
 
-intPair :: Pair Int Int = { first = 1; second = 2; }
-strPair :: Pair Text Text = { first = "hello"; second = "world"; }
-mixedPair :: Pair Int Bool = { first = 42; second = true; }
-boxedInt :: Box Int = { value = 100; }
-boxedText :: Box Text = { value = "wrapped"; }
-leftVal :: Either Int Text = #left { value = 1; }
-rightVal :: Either Int Text = #right { value = "ok"; }
+intPair :: Pair Int Int = { first = 1; second = 2; };
+strPair :: Pair Text Text = { first = "hello"; second = "world"; };
+mixedPair :: Pair Int Bool = { first = 42; second = true; };
+boxedInt :: Box Int = { value = 100; };
+boxedText :: Box Text = { value = "wrapped"; };
+leftVal :: Either Int Text = #left { value = 1; };
+rightVal :: Either Int Text = #right { value = "ok"; };
 
 {
   x           = fst intPair;

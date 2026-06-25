@@ -9,7 +9,7 @@ false
 3.14
 "hello"
 #prod
-[1; 2;]
+{ 1; 2; }
 { host = "localhost"; }
 ```
 
@@ -70,7 +70,7 @@ Rendered `.zti`:
 Example:
 
 ```zt
-Action :: type { #quit; #spawn: { command : Text; }; }
+Action :: type { #quit; #spawn: { command : Text; }; };
 
 {
   a = #quit;

@@ -11,12 +11,12 @@
 --
 -- `Stream A` is demand-driven codata (`Unit -> StreamCell A`), not a memoizing
 -- lazy list: it stays inside strict+TCO and the write-barrier-free GC.
-Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }
+Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; };
 empty :: <A> Stream A
   = _ => #nil;
 cons :: <A> A -> Stream A -> Stream A
   = h t _ => #cons { head = h; tail = t; };
-Step :: <S, A> type { #done; #yield : { item : A; next : S; }; }
+Step :: <S, A> type { #done; #yield : { item : A; next : S; }; };
 unfold :: <S, A> (S -> Step S A) -> S -> Stream A
   = f s _ => match f s { | #done => #nil; | #yield { item = a; next = s2; } => #cons { head = a; tail = unfold f s2; }; };
 singleton :: <A> A -> Stream A

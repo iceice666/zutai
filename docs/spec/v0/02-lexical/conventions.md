@@ -4,7 +4,7 @@
 
 Whitespace separates tokens but is otherwise insignificant outside strings.
 
-In `.zt`, top-level declarations are separated by line boundaries at delimiter depth zero. A top-level declaration does not use a trailing semicolon.
+In `.zt`, `;` is the universal terminator/separator. Every top-level declaration ends in `;` (clause-functions, constraint definitions, and witness definitions are the exceptions: they end at the final clause `;` or the closing `}`/`derive`). Whitespace, including line boundaries, is otherwise insignificant outside strings.
 
 ### General-mode comments
 
@@ -14,7 +14,7 @@ Line comments begin with `--` and continue to the end of the line:
 
 ```zt
 -- this is a comment
-answer ::= 42
+answer ::= 42;
 ```
 
 Block comments begin with `--[` and end with `]--`. Block comments may nest:
@@ -24,14 +24,14 @@ Block comments begin with `--[` and end with `]--`. Block comments may nest:
   outer comment
   --[ nested comment ]--
 ]--
-answer ::= 42
+answer ::= 42;
 ```
 
 Doc comments begin with `--|` and continue to the end of the line:
 
 ```zt
 --| Documentation for answer.
-answer ::= 42
+answer ::= 42;
 ```
 
 In v0, doc comments are lexically distinct from ordinary line comments, but they have no required semantic effect.
@@ -258,7 +258,7 @@ Type-valued bindings should be capitalized:
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 ```
 
 Runtime value bindings should be lowercase:
@@ -267,7 +267,7 @@ Runtime value bindings should be lowercase:
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 ```
 
 This capitalization rule is enforced statically for scripts with case. Parsers and elaborators must error when a cased type-valued binding starts with a lowercase letter, or when a cased runtime value binding starts with an uppercase letter; identifiers whose first scalar is caseless are unaffected.
@@ -316,10 +316,10 @@ or pattern**. They never overlap.
 
 | Symbol           | Meaning                                                                    |
 | ---------------- | -------------------------------------------------------------------------- |
-| `:=`             | inferred local binding (`name := expr;`)                                  |
-| `::=`            | inferred top-level value binding (`name ::= expr`)                        |
-| `:`              | type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
-| `::`             | typed binding, function signature, import declaration, and type definition |
+| `:=`             | inferred local binding inside a `[ … ]` do-block (`name := expr;`)         |
+| `::=`            | inferred top-level value binding (`name ::= expr;`)                       |
+| `:`              | typed local binding (`name : T = expr;`) and type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
+| `::`             | typed top-level binding, function signature, import declaration, and type definition |
 | `\|`             | match arm introducer inside `match` bodies                                |
 | `=`              | value/pattern field binding and top-level function clause introducer       |
 | `->`             | function type arrow                                                        |
@@ -335,10 +335,10 @@ or pattern**. They never overlap.
 | `==` `!=` `<` `<=` `>` `>=` | comparison operators                                            |
 | `&&` `\|\|`      | logical AND / OR (short-circuit); operands and result are `Bool`           |
 | `...`            | row tail / union spread in record or union types — v1 feature, reserved |
-| `;`              | terminator for fields, list items, local bindings, and match arms          |
+| `;`              | universal terminator/separator: top-level declarations, record/list items, local bindings, match arms, effect-row ops; a trailing `;` turns an expression into a `()` statement |
 | `,`              | separator between tuple fields                                             |
-| `{` `}`          | value record, record type, tagged union type, or block body                |
-| `[` `]`          | list value                                                                 |
+| `{` `}`          | parallel container: value record (`name = value;`), record type, tagged union type, or list value (bare `value;` items); empty `{}` is the empty record, `{;}` is the empty list |
+| `[` `]`          | serial do-block: local bindings followed by a tail expression; empty `[]` |
 | `(` `)`          | tuple, grouping, and the empty tuple                                       |
 | `_`              | wildcard pattern                                                           |
 

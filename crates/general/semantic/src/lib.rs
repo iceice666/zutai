@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn parse_error_stops_before_hir() {
-        let analysis = analyze("[1; 2]");
+        let analysis = analyze("{1; 2}");
 
         assert!(analysis.has_parse_errors());
         assert!(analysis.hir.is_none());
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn valid_parse_and_hir_reaches_thir_stage() {
-        let analysis = analyze("x ::= 1\nx");
+        let analysis = analyze("x ::= 1;\nx");
 
         assert!(!analysis.has_parse_errors());
         assert!(!analysis.has_hir_errors());
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn thir_type_error_is_reported_by_semantic_analysis() {
-        let analysis = analyze("x :: Int = \"bad\"\nx");
+        let analysis = analyze("x :: Int = \"bad\";\nx");
 
         assert!(!analysis.has_parse_errors());
         assert!(!analysis.has_hir_errors());
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn import_with_base_completes() {
-        let analysis = analyze_in_imports("cfg :: import \"config.zti\"\ncfg.port");
+        let analysis = analyze_in_imports("cfg :: import \"config.zti\";\ncfg.port");
         assert!(!analysis.has_parse_errors());
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn import_without_base_reports_no_base_directory() {
-        let analysis = analyze("cfg :: import \"config.zti\"\ncfg.port");
+        let analysis = analyze("cfg :: import \"config.zti\";\ncfg.port");
         assert!(!analysis.is_thir_complete());
         assert!(has_import_diagnostic(
             &analysis,
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn import_missing_file_reports_file_not_found() {
-        let analysis = analyze_in_imports("cfg :: import \"nope.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"nope.zti\";\ncfg");
         assert!(!analysis.is_thir_complete());
         assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
             &diagnostic.kind,
@@ -599,7 +599,7 @@ mod tests {
 
     #[test]
     fn zt_import_data_module_completes() {
-        let analysis = analyze_in_imports("m :: import \"data_module.zt\"\nm.doubled");
+        let analysis = analyze_in_imports("m :: import \"data_module.zt\";\nm.doubled");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
             analysis.diagnostics.is_empty(),
@@ -620,7 +620,7 @@ mod tests {
     fn zt_import_function_module_completes() {
         // func_module.zt exports a function; the import must now succeed and
         // produce a complete THIR (no UnsupportedExport diagnostic).
-        let analysis = analyze_in_imports("f :: import \"func_module.zt\"\nf");
+        let analysis = analyze_in_imports("f :: import \"func_module.zt\";\nf");
         assert!(
             analysis.is_thir_complete(),
             "expected complete THIR, got diagnostics: {:?}",
@@ -632,8 +632,8 @@ mod tests {
     fn cross_module_conflicting_witnesses_report_import_error() {
         let analysis = analyze_in_imports(
             r#"
-a :: import "witness_eq_int_a.zt"
-b :: import "witness_eq_int_b.zt"
+a :: import "witness_eq_int_a.zt";
+b :: import "witness_eq_int_b.zt";
 (a, b)
 "#,
         );
@@ -654,7 +654,7 @@ b :: import "witness_eq_int_b.zt"
     fn imported_witness_conflicts_with_local_witness() {
         let analysis = analyze_in_imports(
             r#"
-a :: import "witness_eq_int_a.zt"
+a :: import "witness_eq_int_a.zt";
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. true; }
 a
@@ -677,8 +677,8 @@ a
     fn cross_module_distinct_witness_targets_complete() {
         let analysis = analyze_in_imports(
             r#"
-a :: import "witness_eq_int_a.zt"
-b :: import "witness_eq_bool.zt"
+a :: import "witness_eq_int_a.zt";
+b :: import "witness_eq_bool.zt";
 (a, b)
 "#,
         );
@@ -695,8 +695,8 @@ b :: import "witness_eq_bool.zt"
     fn cross_module_same_witness_reexport_is_deduped() {
         let analysis = analyze_in_imports(
             r#"
-a :: import "witness_reexport_a.zt"
-b :: import "witness_reexport_b.zt"
+a :: import "witness_reexport_a.zt";
+b :: import "witness_reexport_b.zt";
 (a, b)
 "#,
         );
@@ -723,7 +723,7 @@ b :: import "witness_reexport_b.zt"
 
     #[test]
     fn bad_zti_reports_parse_error() {
-        let analysis = analyze_in_imports("cfg :: import \"bad.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"bad.zti\";\ncfg");
         assert!(!analysis.is_thir_complete());
         assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
             &diagnostic.kind,
@@ -736,14 +736,14 @@ b :: import "witness_reexport_b.zt"
     fn empty_imported_list_still_completes() {
         // Empty `.zti` array → `List(InferVar)`; a free inference variable is
         // allowed in completed THIR.
-        let analysis = analyze_in_imports("cfg :: import \"empty_list.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"empty_list.zti\";\ncfg");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
     }
 
     #[test]
     fn mixed_imported_list_still_completes() {
         // Heterogeneous `.zti` array → `List(Union(...))`.
-        let analysis = analyze_in_imports("cfg :: import \"mixed_list.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"mixed_list.zti\";\ncfg");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
     }
 
@@ -751,7 +751,7 @@ b :: import "witness_reexport_b.zt"
     fn import_absolute_path_is_rejected() {
         // Absolute paths are rejected before any filesystem access, so no fixture
         // file is needed; the guard fires in `relative_path`.
-        let analysis = analyze_in_imports("cfg :: import \"/etc/hosts.zti\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"/etc/hosts.zti\";\ncfg");
         assert!(
             !analysis.is_thir_complete(),
             "expected incomplete THIR for absolute import"
@@ -772,7 +772,7 @@ b :: import "witness_reexport_b.zt"
     fn import_parent_traversal_is_rejected() {
         // `../expr_core.zt` exists one directory above imports/, but resolving it
         // would escape the imports/ base directory and must be rejected.
-        let analysis = analyze_in_imports("cfg :: import \"../expr_core.zt\"\ncfg");
+        let analysis = analyze_in_imports("cfg :: import \"../expr_core.zt\";\ncfg");
         assert!(
             !analysis.is_thir_complete(),
             "expected incomplete THIR for parent-traversal import"
@@ -793,7 +793,7 @@ b :: import "witness_reexport_b.zt"
     fn import_dotdot_within_base_is_allowed() {
         // `../imports/config.zti` canonicalizes back to the imports/ directory
         // itself, so it stays within the base and must succeed.
-        let analysis = analyze_in_imports("cfg :: import \"../imports/config.zti\"\ncfg.port");
+        let analysis = analyze_in_imports("cfg :: import \"../imports/config.zti\";\ncfg.port");
         assert!(
             analysis.is_thir_complete(),
             "expected complete THIR for in-base dotdot import, got: {:?}",
@@ -808,7 +808,7 @@ b :: import "witness_reexport_b.zt"
 
     #[test]
     fn tlc_is_some_for_complete_thir() {
-        let analysis = analyze("x ::= 42\nx");
+        let analysis = analyze("x ::= 42;\nx");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
             analysis.tlc.is_some(),
@@ -818,7 +818,7 @@ b :: import "witness_reexport_b.zt"
 
     #[test]
     fn tlc_is_none_for_type_error() {
-        let analysis = analyze("x :: Int = \"bad\"\nx");
+        let analysis = analyze("x :: Int = \"bad\";\nx");
         assert!(!analysis.is_thir_complete());
         assert!(
             analysis.tlc.is_none(),
@@ -830,9 +830,9 @@ b :: import "witness_reexport_b.zt"
     fn effectful_program_predicate_detects_phase15_effects() {
         let analysis = analyze(
             r#"
-Config :: type { value : Text; }
-ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError }
+Config :: type { value : Text; };
+ParseError :: type Text;
+parse :: Text -> Config ! { fail ParseError; }
   = text => perform fail text;
 parse
 "#,
@@ -844,7 +844,7 @@ parse
 
     #[test]
     fn effectful_program_predicate_ignores_pure_programs() {
-        let analysis = analyze("x ::= 1\nx");
+        let analysis = analyze("x ::= 1;\nx");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert_eq!(analysis.effectful_program(), None);
     }
@@ -853,8 +853,8 @@ parse
     fn tlc_function_row_keeps_parametric_effect_alias() {
         let analysis = analyze(
             r#"
-Config :: type { value : Text; }
-Eff :: <A> type A ! { fail Text }
+Config :: type { value : Text; };
+Eff :: <A> type A ! { fail Text; };
 parse :: Text -> Eff Config
   = text => perform fail text;
 parse
@@ -913,7 +913,7 @@ parse
     #[test]
     fn tlc_closed_record_has_no_free_row_variable() {
         let analysis =
-            analyze("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; }\ns");
+            analyze("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; };\ns");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         let tlc = analysis.tlc.expect("expected TLC module");
         for (_, t) in tlc.type_arena.iter() {
@@ -949,7 +949,7 @@ parse
     fn variants_reflection_is_aot_only_not_run_routing() {
         // `variants` folds/evaluates on the TLC path, so it belongs to the AOT
         // gate but not the THIR-routing gate.
-        let analysis = analyze("Color :: type { #red: {}; #green: {}; }\nvariants (Color)");
+        let analysis = analyze("Color :: type { #red: {}; #green: {}; };\nvariants (Color)");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(
             analysis.aot_reflection_program().is_some(),
@@ -964,7 +964,7 @@ parse
     #[test]
     fn schema_reflection_triggers_both_gates() {
         // `schema`/`fields` need the THIR oracle, so they trigger both gates.
-        let analysis = analyze("Server :: type { host : Text; }\nschema Server");
+        let analysis = analyze("Server :: type { host : Text; };\nschema Server");
         assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
         assert!(analysis.reflection_builtin_program().is_some());
         assert!(analysis.aot_reflection_program().is_some());

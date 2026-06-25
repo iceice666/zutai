@@ -4,17 +4,21 @@ use winnow::combinator::fail;
 use winnow::token::take_till;
 
 use crate::ast::{
-    ConstraintMethod, Decl, DeriveRecipe, File, FuncClause, MethodName, TypeParam, TypeParamBound,
-    WitnessBody, WitnessField,
+    ConstraintMethod, Decl, DeriveRecipe, Expr, File, FuncClause, MethodName, TypeParam,
+    TypeParamBound, WitnessBody, WitnessField,
 };
 use crate::span::Span;
 
 use super::expr::parse_expr;
-use super::lex::{kw, parse_ident, parse_import_source, spanned, ws};
+use super::lex::{enter_delimiter, kw, parse_ident, parse_import_source, spanned, ws};
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
 
-/// Top-level parse entry: `decl* final_expr`.
+/// Top-level parse entry: `decl* final_expr?`.
+///
+/// Top-level declarations are parallel (letrec) and each ends in `;`. The file's
+/// value is an optional trailing expression; an absent tail, or a tail followed
+/// by `;`, yields `()` (Unit).
 pub fn parse_file(input: &mut &str) -> Result<File> {
     ws(input)?;
 
@@ -38,7 +42,26 @@ pub fn parse_file(input: &mut &str) -> Result<File> {
     }
 
     ws(input)?;
-    let final_expr = parse_expr(input)?;
+    let unit_at = decls.last().map(|d| d.span().end).unwrap_or(0) as usize;
+    let final_expr = if input.is_empty() {
+        // No trailing expression — the file's value is `()`.
+        unit_expr(unit_at)
+    } else {
+        let expr = parse_expr(input)?;
+        ws(input)?;
+        if input.starts_with(';') {
+            // `expr;` discards the value to `()`, forcing `expr` for its effects.
+            ';'.parse_next(input)?;
+            ws(input)?;
+            let span = expr.span();
+            Expr::Sequence {
+                items: vec![expr, unit_expr(span.end as usize)],
+                span,
+            }
+        } else {
+            expr
+        }
+    };
     ws(input)?;
 
     let span = decls
@@ -52,6 +75,28 @@ pub fn parse_file(input: &mut &str) -> Result<File> {
         final_expr,
         span,
     })
+}
+
+/// `()` — the empty tuple, which is Unit.
+fn unit_expr(at: usize) -> Expr {
+    Expr::Tuple {
+        items: vec![],
+        span: Span::new(at, at),
+    }
+}
+
+/// Consume the mandatory `;` that terminates a value-like top-level declaration.
+fn require_term(input: &mut &str) -> Result<()> {
+    ws(input)?;
+    ';'.parse_next(input)?;
+    Ok(())
+}
+
+/// Parse a declaration's right-hand-side expression at delimiter depth, so the
+/// value may span multiple lines and is terminated by the declaration's `;`.
+fn parse_decl_value(input: &mut &str) -> Result<Expr> {
+    let _guard = enter_delimiter();
+    parse_expr(input)
 }
 
 /// Cheap peek: does the current position look like the start of a top-level decl?
@@ -101,8 +146,9 @@ pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
         // Inferred top-level binding
         "::=".parse_next(input)?;
         ws(input)?;
-        let value = parse_expr(input)?;
+        let value = parse_decl_value(input)?;
         let span = name_span.merge(value.span());
+        require_term(input)?;
         return Ok(Decl::Inferred { name, value, span });
     }
 
@@ -134,6 +180,7 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
         ws(input)?;
         let (source, source_span) = spanned(parse_import_source).parse_next(input)?;
         let span = name_span.merge(source_span);
+        require_term(input)?;
         return Ok(Decl::Import { name, source, span });
     }
 
@@ -147,6 +194,7 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
         ws(input)?;
         let ty = parse_type_expr(input)?;
         let span = name_span.merge(ty.span());
+        require_term(input)?;
         return Ok(Decl::TypeAlias {
             name,
             params,
@@ -188,8 +236,9 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
         }
         '='.parse_next(input)?;
         ws(input)?;
-        let value = parse_expr(input)?;
+        let value = parse_decl_value(input)?;
         let span = name_span.merge(value.span());
+        require_term(input)?;
         return Ok(Decl::Typed {
             name,
             ty: sig,
@@ -378,8 +427,9 @@ fn parse_no_sig_fn(input: &mut &str, name: String, name_span: Span) -> Result<De
     }
     '='.parse_next(input)?;
     ws(input)?;
-    let body = parse_expr(input)?;
+    let body = parse_decl_value(input)?;
     let span = name_span.merge(body.span());
+    require_term(input)?;
     Ok(Decl::NoSigFn {
         name,
         patterns,

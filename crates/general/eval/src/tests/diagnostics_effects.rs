@@ -20,11 +20,11 @@ fn assert_type_check_failed(src: &str) {
 #[test]
 fn diagnostic_polish_eval_record_mismatch_message() {
     let src = r#"
-S :: type { x : Int; y : Text; }
-T :: type { x : Int; }
+S :: type { x : Int; y : Text; };
+T :: type { x : Int; };
 f :: S -> Int
   = _ => 0;
-t :: T = { x = 1; }
+t :: T = { x = 1; };
 f t
 "#;
     let msgs = type_check_messages(src);
@@ -37,8 +37,8 @@ f t
 #[test]
 fn diagnostic_polish_eval_row_tail_overlap_message() {
     let src = r#"
-Base :: type { host : Text; port : Int; }
-Bad :: type { host : Int; ...Base; }
+Base :: type { host : Text; port : Int; };
+Bad :: type { host : Int; ...Base; };
 Bad
 "#;
     let msgs = type_check_messages(src);
@@ -55,8 +55,8 @@ fn thir_diag_invalid_binary_operands() {
 
 #[test]
 fn thir_diag_empty_list_needs_type() {
-    // `[]` with no type context
-    assert_type_check_failed("[]");
+    // `{;}` with no type context
+    assert_type_check_failed("{;}");
 }
 
 #[test]
@@ -99,16 +99,16 @@ fn thir_diag_function_clause_arity_mismatch() {
 #[test]
 fn thir_diag_tuple_arity_mismatch() {
     // Type says (Int, Int) but value has 3 elements
-    assert_type_check_failed("x :: (Int, Int) = (1, 2, 3)\nx");
+    assert_type_check_failed("x :: (Int, Int) = (1, 2, 3);\nx");
 }
 
 #[test]
 fn thir_diag_alias_cycle() {
     // Mutually cyclic type aliases
     let src = "
-A :: type B
-B :: type A
-x :: A = 1
+A :: type B;
+B :: type A;
+x :: A = 1;
 x
 ";
     assert_type_check_failed(src);
@@ -118,8 +118,8 @@ x
 fn thir_diag_type_constructor_arity_mismatch() {
     // Pair needs 2 type args but only 1 given
     let src = "
-Pair :: <A, B> type { first : A; second : B; }
-x :: Pair Text = x
+Pair :: <A, B> type { first : A; second : B; };
+x :: Pair Text = x;
 x
 ";
     assert_type_check_failed(src);
@@ -128,7 +128,7 @@ x
 #[test]
 fn thir_diag_invalid_type_expression() {
     // Number literal `1` in type annotation position → ExprEscape → InvalidTypeExpression
-    assert_type_check_failed("x :: 1 = 1\nx");
+    assert_type_check_failed("x :: 1 = 1;\nx");
 }
 
 #[test]
@@ -140,8 +140,8 @@ fn thir_diag_unknown_field() {
 #[test]
 fn thir_diag_missing_record_field() {
     let src = "
-Server :: type { host : Text; port : Int; }
-s :: Server = { host = \"localhost\"; }
+Server :: type { host : Text; port : Int; };
+s :: Server = { host = \"localhost\"; };
 s
 ";
     assert_type_check_failed(src);
@@ -150,8 +150,8 @@ s
 #[test]
 fn thir_diag_unexpected_record_field() {
     let src = "
-Server :: type { host : Text; }
-s :: Server = { host = \"localhost\"; port = 8080; }
+Server :: type { host : Text; };
+s :: Server = { host = \"localhost\"; port = 8080; };
 s
 ";
     assert_type_check_failed(src);
@@ -207,7 +207,7 @@ Eq @Int :: { (==) = \\a b. false; }
 fn handled_warn_resume_runs_rest_of_computation() {
     assert_eq!(
         run(r#"
-result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result ::= handle [ perform warn "diag"; "ok" ] with { warn = \d. resume (); };
 result
 "#,),
         Value::Text("ok".into())
@@ -218,8 +218,8 @@ result
 fn handled_effect_in_block_local_initializer_resumes() {
     assert_eq!(
         run(r#"
-compute :: Text -> Int ! { query : Text -> Int }
-  = _ => { x := perform query "q"; x + 1 };
+compute :: Text -> Int ! { query : Text -> Int; }
+  = _ => [ x := perform query "q"; x + 1 ];
 handle compute "go" with { query = \u. resume 41; }
 "#,),
         Value::Int(42)
@@ -230,7 +230,7 @@ handle compute "go" with { query = \u. resume 41; }
 fn repeated_handled_effects_resume_with_distinct_handler_bindings() {
     assert_eq!(
         run(r#"
-result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; }
+result ::= handle (perform query 1) + (perform query 2) with { query = \n. resume n; };
 result
 "#,),
         Value::Int(3)
@@ -241,7 +241,7 @@ result
 fn handled_effect_resume_value_can_reference_param_inside_tuple() {
     assert_eq!(
         run(r#"
-result ::= handle perform query 1 with { query = \n. resume (n, n); }
+result ::= handle perform query 1 with { query = \n. resume (n, n); };
 result
 "#,)
         .to_string(),
@@ -252,7 +252,7 @@ result
 fn handled_fail_can_return_without_resuming() {
     assert_eq!(
         run(r#"
-result ::= handle { perform fail "bad"; "unreachable" } with { fail = \e. "fallback"; }
+result ::= handle [ perform fail "bad"; "unreachable" ] with { fail = \e. "fallback"; };
 result
 "#,),
         Value::Text("fallback".into())
@@ -278,7 +278,7 @@ fn top_level_standard_host_effect_is_handled_by_host_boundary() {
         .replace('"', "\\\"");
     let src = format!(
         r#"
-readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+readFile :: Path -> Text ! {{ fs.read : Path -> Text; }}
   = path => perform fs.read path;
 readFile "{path}"
 "#
@@ -290,7 +290,7 @@ readFile "{path}"
 fn source_handler_can_make_standard_host_effect_pure() {
     assert_eq!(
         run(r#"
-result ::= handle { perform fs.read "ignored"; } with { fs.read = \path. "mock"; }
+result ::= handle [ perform fs.read "ignored" ] with { fs.read = \path. "mock"; };
 result
 "#),
         Value::Text("mock".into())
@@ -301,7 +301,7 @@ result
 fn source_handler_intercepts_repointed_print_builtin() {
     assert_eq!(
         run(r#"
-result ::= handle print "x" with { io.print = \text. "handled"; }
+result ::= handle print "x" with { io.print = \text. "handled"; };
 result
 "#,),
         Value::Text("handled".into())
@@ -312,9 +312,9 @@ result
 fn non_tail_resume_reenters_suspended_expression() {
     assert_eq!(
         run(r#"
-compute :: Text -> Int ! { query : Text -> Int }
+compute :: Text -> Int ! { query : Text -> Int; }
   = _ => (perform query "question") + 1;
-result ::= handle compute "go" with { query = \u. resume 41; }
+result ::= handle compute "go" with { query = \u. resume 41; };
 result
 "#,),
         Value::Int(42)
@@ -325,7 +325,7 @@ result
 fn forwarded_effect_reaches_outer_handler() {
     assert_eq!(
         run(r#"
-result ::= handle (handle { perform fail "bad"; "unreachable" } with { fail = \e. { perform log e; "fallback" }; }) with { log = \msg. resume (); }
+result ::= handle (handle [ perform fail "bad"; "unreachable" ] with { fail = \e. [ perform log e; "fallback" ]; }) with { log = \msg. resume (); };
 result
 "#,),
         Value::Text("fallback".into())
@@ -336,14 +336,14 @@ result
 fn value_clause_runs_only_on_normal_completion() {
     assert_eq!(
         run(r#"
-normal ::= handle "ok" with { value = \v. "done"; }
+normal ::= handle "ok" with { value = \v. "done"; };
 normal
 "#,),
         Value::Text("done".into())
     );
     assert_eq!(
         run(r#"
-abort ::= handle perform fail "bad" with { value = \v. "done"; fail = \e. "fallback"; }
+abort ::= handle perform fail "bad" with { value = \v. "done"; fail = \e. "fallback"; };
 abort
 "#,),
         Value::Text("fallback".into())
@@ -360,7 +360,7 @@ fn effectful_stream_generator_against_pure_stream_alias_is_rejected() {
     // consumer's row and consumes the generator under a handler — see
     // `effectful_generator_runs_under_granted_handler`.)
     let err = run_err(
-        "load :: FsRead -> Stream Text ! { fs.read : Path -> Text }\n  = fs => stream { yield perform fs.read \"Cargo.toml\"; };\n1\n",
+        "load :: FsRead -> Stream Text ! { fs.read : Path -> Text; }\n  = fs => stream { yield perform fs.read \"Cargo.toml\"; };\n1\n",
     );
     let EvalError::TypeCheckFailed(messages) = err else {
         panic!("expected TypeCheckFailed, got {err:?}");
@@ -379,7 +379,7 @@ fn effectful_generator_runs_under_granted_handler() {
     // whoever forces it), so `sumEff` — which forces each head with `h + …` inside
     // the `handle` — fires `tick` in the handler's dynamic extent. Two `perform
     // tick`s, each resumed with 5, sum to 10.
-    let src = "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }\nsumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int }\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumEff t;\n  };\nhandle (sumEff (stream { yield perform tick (); yield perform tick (); })) with {\n  tick = \\_. resume 5;\n}\n";
+    let src = "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };\nsumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumEff t;\n  };\nhandle (sumEff (stream { yield perform tick (); yield perform tick (); })) with {\n  tick = \\_. resume 5;\n}\n";
     assert_eq!(run(src), Value::Int(10));
 }
 
@@ -389,7 +389,7 @@ fn effectful_generator_without_a_handler_is_rejected() {
     // pure consumer) is refused — `tick` escapes the (empty) ambient effect row.
     // A refused program is the safe direction; the effect is never silently lost.
     let err = run_err(
-        "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }\nsumEff :: (Unit -> Cell) -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };\nsumEff (stream { yield perform tick (); })\n",
+        "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };\nsumEff :: (Unit -> Cell) -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };\nsumEff (stream { yield perform tick (); })\n",
     );
     let EvalError::TypeCheckFailed(messages) = err else {
         panic!("expected TypeCheckFailed, got {err:?}");
@@ -416,7 +416,7 @@ fn stream_generator_rejects_unsupported_residual_host_effects() {
 
 #[test]
 fn print_returns_its_argument() {
-    // `print :: Text -> Text ! { io.print : Text -> Text }`; the host run
+    // `print :: Text -> Text ! { io.print : Text -> Text; }`; the host run
     // boundary handles `io.print` and resumes with the printed text.
     assert_eq!(run(r#"print "hello""#), Value::Text("hello".into()));
 }
@@ -431,7 +431,7 @@ fn print_via_forward_pipeline() {
 fn print_in_list_returns_all_elements() {
     // force_deep forces every element, so each `print` fires and the list value
     // is the list of returned texts.
-    match run(r#"[print "a"; print "b"; print "c";]"#) {
+    match run(r#"{print "a"; print "b"; print "c";}"#) {
         Value::List(items) => {
             let texts: Vec<_> = items.iter().filter_map(|t| t.peek()).collect();
             assert_eq!(
@@ -472,7 +472,7 @@ fn print_unapplied_is_a_function_value() {
 fn redefining_print_at_top_level_is_rejected() {
     // `print` is reserved in the root scope, so a top-level redefinition is a
     // DuplicateBinding error and the program refuses to run.
-    let err = run_err("print ::= 5\nprint");
+    let err = run_err("print ::= 5;\nprint");
     assert!(matches!(err, EvalError::NotRunnable(_)), "got {err:?}");
 }
 

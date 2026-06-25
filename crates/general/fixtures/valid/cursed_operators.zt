@@ -16,12 +16,12 @@ Server :: type {
   host_name : Text;
   port : Int;
   tls : Bool?;
-}
+};
 
 Config :: type {
   server : Server;
   limits : List Int;
-}
+};
 
 cfg :: Config = {
   server = {
@@ -29,8 +29,8 @@ cfg :: Config = {
     port = 8080;
     tls = #some (false);
   };
-  limits = [0; -1; 2 * 3 + 4 / 2;];
-}
+  limits = {0; -1; 2 * 3 + 4 / 2;};
+};
 
 {
   arithmetic = ((1 + 2) * (3 + 4)) / (5 - 2);
@@ -46,9 +46,9 @@ cfg :: Config = {
     applyTwice double
     <| inc 5;
   lambda_application = (\f x. f (x + 1)) (\n. n * n) 4;
-  nested_block = {
+  nested_block = [
     first := inc (double 2);
     second := unwrapOr #some (first) 0;
     first + second
-  };
+  ];
 }

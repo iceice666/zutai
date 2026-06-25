@@ -7,7 +7,7 @@ RawServer :: type {
   host? : Text;
   port? : Int;
   tls? : Bool;
-}
+};
 ```
 
 This means the field may be absent.
@@ -17,7 +17,7 @@ Valid:
 ```zt
 raw :: RawServer = {
   host = "localhost";
-}
+};
 ```
 
 When accessed directly, an optional field evaluates to `Maybe T`, preserving physical field presence:
@@ -26,7 +26,7 @@ When accessed directly, an optional field evaluates to `Maybe T`, preserving phy
 Maybe :: <T> type {
   #absent;
   #present (T);
-}
+};
 ```
 
 If the field is absent, access returns `#absent`; if the field is present, access returns `#present (field_value)`.

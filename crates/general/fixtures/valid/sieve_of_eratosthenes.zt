@@ -16,6 +16,6 @@ countFrom :: Int -> Int -> Int
       else (if isPrime n then 1 else 0) + countFrom (n + 1) hi;
 
 {
-  compact_primes = [2; 3; 5; 7; 11; 13; 17; 19; 23; 29;];
+  compact_primes = {2; 3; 5; 7; 11; 13; 17; 19; 23; 29;};
   prime_count = countFrom 2 30;
 }

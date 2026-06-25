@@ -5,13 +5,13 @@ Color :: type {
   #green;
   #blue;
   #custom: { r: Int; g: Int; b: Int; };
-}
+};
 
 Shape :: type {
   #circle: { radius: Int; };
   #rect: { width: Int; height: Int; };
   #triangle: { base: Int; height: Int; };
-}
+};
 
 colorName :: Color -> Text
   = #red   => "red";

@@ -5,7 +5,7 @@ LogLevel :: type {
   #info;
   #warn;
   #error;
-}
+};
 
 ServiceConfig :: type {
   host : Text;
@@ -13,7 +13,7 @@ ServiceConfig :: type {
   tls : Bool?;
   max_connections : Int?;
   timeout_ms : Int?;
-}
+};
 
 AppConfig :: type {
   name : Text;
@@ -22,7 +22,7 @@ AppConfig :: type {
   primary_service : ServiceConfig;
   fallback_service : ServiceConfig?;
   debug_mode : Bool?;
-}
+};
 
 identity :: <A> A -> A
   = x => x;
@@ -91,7 +91,7 @@ primary :: ServiceConfig = {
   tls = #none;
   max_connections = #none;
   timeout_ms = #none;
-}
+};
 
 appCfg :: AppConfig = {
   name = "my-service";
@@ -100,7 +100,7 @@ appCfg :: AppConfig = {
   primary_service = primary;
   fallback_service = #none;
   debug_mode = #none;
-}
+};
 
 {
   lvl_debug  = logLevelValue #debug;

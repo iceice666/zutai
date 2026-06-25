@@ -46,7 +46,7 @@ raw ::=
   defaults
     |> overlay project
     |> overlay local
-    |> overlay cli
+    |> overlay cli;
 ```
 
 This is equivalent to applying `project`, then `local`, then `cli` over `defaults`.
@@ -80,7 +80,7 @@ raw ::=
   defaults
     |> overlayDeep project
     |> overlayDeep local
-    |> overlayDeep cli
+    |> overlayDeep cli;
 ```
 
 ### Semantics
@@ -106,7 +106,7 @@ Server :: type {
   host : Text;
   port : Int;
   tls : Bool;
-}
+};
 ```
 
 A shallow patch type:
@@ -156,30 +156,28 @@ RawServer :: type {
   host? : Text;
   port? : Int;
   tls? : Bool;
-}
+};
 
 Server :: type {
   host : Text;
   port : Int;
   tls : Bool;
-}
+};
 
 normalizeServer :: RawServer -> Server
-               :: raw {
-                 {
-                   host = raw.host ?? "127.0.0.1";
-                   port = raw.port ?? 8080;
-                   tls = raw.tls ?? false;
-                 }
-               }
+  = raw => {
+    host = raw.host ?? "127.0.0.1";
+    port = raw.port ?? 8080;
+    tls = raw.tls ?? false;
+  };
 
 raw ::=
   defaults
     |> overlay project
     |> overlay local
-    |> overlay cli
+    |> overlay cli;
 
-server :: Server = normalizeServer raw
+server :: Server = normalizeServer raw;
 ```
 
 This keeps defaulting, validation, and cross-field logic centralized in normalization functions.

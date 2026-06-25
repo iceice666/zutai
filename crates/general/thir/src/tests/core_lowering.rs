@@ -3,7 +3,7 @@ use zutai_syntax::posit::PositSpec;
 
 #[test]
 fn inferred_integer_binding_completes_thir() {
-    let file = completed_file("x ::= 1\nx");
+    let file = completed_file("x ::= 1;\nx");
 
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
@@ -37,13 +37,13 @@ fn numeric_postfix_literals_have_fixed_types() {
 
 #[test]
 fn posit_literals_have_posit_types() {
-    let file = completed_file("x :: Posit32 = 1.5p32\nx");
+    let file = completed_file("x :: Posit32 = 1.5p32;\nx");
     assert!(matches!(
         final_type_kind(&file),
         TypeKind::Posit(spec) if *spec == (PositSpec { nbits: 32, es: 2 })
     ));
 
-    let file = completed_file("x :: Posit64e5 = 1.5p64e5\nx");
+    let file = completed_file("x :: Posit64e5 = 1.5p64e5;\nx");
     assert!(matches!(
         final_type_kind(&file),
         TypeKind::Posit(spec) if *spec == (PositSpec { nbits: 64, es: 5 })
@@ -52,7 +52,7 @@ fn posit_literals_have_posit_types() {
 
 #[test]
 fn posit_annotations_require_matching_literals() {
-    let lowered = lower("x :: Float = 1p32\nx");
+    let lowered = lower("x :: Float = 1p32;\nx");
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
         matches!(
@@ -104,13 +104,13 @@ fn fixed_width_integer_literals_are_range_checked() {
 
 #[test]
 fn fixed_width_annotations_require_matching_literals() {
-    let file = completed_file("x :: u8 = 255u8\nx");
+    let file = completed_file("x :: u8 = 255u8;\nx");
     assert!(matches!(
         final_type_kind(&file),
         TypeKind::FixedNum(FixedWidth::U8)
     ));
 
-    let lowered = lower("x :: u8 = 255\nx");
+    let lowered = lower("x :: u8 = 255;\nx");
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
         matches!(
@@ -135,7 +135,7 @@ classify 255u8
 
 #[test]
 fn typed_integer_mismatch_reports_type_error() {
-    let lowered = lower("x :: Int = \"bad\"\nx");
+    let lowered = lower("x :: Int = \"bad\";\nx");
 
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
@@ -154,12 +154,12 @@ fn non_generic_record_alias_accepts_matching_record() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 
 server
 "#,
@@ -175,11 +175,11 @@ fn record_literal_reports_missing_required_field() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 server :: Server = {
   host = "localhost";
-}
+};
 
 server
 "#,
@@ -200,12 +200,12 @@ fn record_literal_reports_unexpected_field() {
         r#"
 Server :: type {
   host : Text;
-}
+};
 
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 
 server
 "#,
@@ -227,11 +227,11 @@ fn optional_record_field_may_be_omitted() {
 RawServer :: type {
   host? : Text;
   port : Int;
-}
+};
 
 server :: RawServer = {
   port = 8080;
-}
+};
 
 server
 "#,
@@ -247,12 +247,12 @@ fn record_update_required_field_type_checks() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 
 server with { port = 9090; }
 "#,
@@ -273,11 +273,11 @@ fn record_update_field_type_mismatch_is_reported() {
         r#"
 Server :: type {
   port : Int;
-}
+};
 
 server :: Server = {
   port = 8080;
-}
+};
 
 server with { port = "bad"; }
 "#,
@@ -298,11 +298,11 @@ fn record_update_unknown_field_is_reported() {
         r#"
 Server :: type {
   port : Int;
-}
+};
 
 server :: Server = {
   port = 8080;
-}
+};
 
 server with { missing = 1; }
 "#,
@@ -319,7 +319,7 @@ server with { missing = 1; }
 
 #[test]
 fn record_update_uninferred_receiver_requires_row_annotation() {
-    let lowered = lower("f x = x with { host = \"localhost\"; }\nf");
+    let lowered = lower("f x = x with { host = \"localhost\"; };\nf");
     assert!(
         lowered
             .diagnostics
@@ -330,7 +330,7 @@ fn record_update_uninferred_receiver_requires_row_annotation() {
 
 #[test]
 fn record_update_duplicate_field_is_hir_diagnostic() {
-    let parsed = zutai_syntax::parse("s ::= { a = 1; }\ns with { a = 2; a = 3; }");
+    let parsed = zutai_syntax::parse("s ::= { a = 1; };\ns with { a = 2; a = 3; }");
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
     let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.iter().any(|diagnostic| {
@@ -348,11 +348,11 @@ fn record_update_optional_field_accepts_payload_type() {
 Server :: type {
   host : Text;
   port? : Int;
-}
+};
 
 server :: Server = {
   host = "localhost";
-}
+};
 
 server with { port = 8080; }
 "#,
@@ -375,11 +375,11 @@ fn record_update_empty_block_is_rejected() {
         r#"
 Server :: type {
   port : Int;
-}
+};
 
 server :: Server = {
   port = 8080;
-}
+};
 
 server with {}
 "#,
@@ -401,11 +401,11 @@ fn patch_record_accepts_subset_fields() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 patch :: Patch Server = {
   port = 8080;
-}
+};
 
 patch
 "#,
@@ -423,11 +423,11 @@ fn patch_record_rejects_unknown_closed_field() {
         r#"
 Server :: type {
   port : Int;
-}
+};
 
 patch :: Patch Server = {
   missing = 1;
-}
+};
 
 patch
 "#,
@@ -449,18 +449,18 @@ fn deep_patch_record_accepts_nested_record_patch() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 Config :: type {
   server : Server;
   name : Text;
-}
+};
 
 patch :: DeepPatch Config = {
   server = {
     port = 8080;
   };
-}
+};
 
 patch
 "#,
@@ -476,7 +476,7 @@ patch
 fn patch_requires_record_target() {
     let lowered = lower(
         r#"
-patch :: Patch Int = {}
+patch :: Patch Int = {};
 patch
 "#,
     );
@@ -495,7 +495,7 @@ patch
 fn deep_patch_requires_record_target() {
     let lowered = lower(
         r#"
-patch :: DeepPatch Int = {}
+patch :: DeepPatch Int = {};
 patch
 "#,
     );
@@ -599,12 +599,12 @@ fn required_field_access_yields_field_type() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 
 server.host
 "#,
@@ -620,9 +620,9 @@ fn atom_union_alias_accepts_matching_atom() {
 Profile :: type {
   #dev;
   #prod;
-}
+};
 
-profile :: Profile = #prod
+profile :: Profile = #prod;
 profile
 "#,
     );
@@ -633,40 +633,40 @@ profile
 #[test]
 fn no_signature_identity_function_completes_thir() {
     // `id x = x` — polymorphic identity; no annotation needed.
-    let file = completed_file("id x = x\nid 42");
+    let file = completed_file("id x = x;\nid 42");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
 fn no_signature_identity_used_at_two_types_completes() {
     // `id x = x` generalizes; each use instantiates fresh InferVars.
-    let file = completed_file("id x = x\n(id 42, id \"hello\")");
+    let file = completed_file("id x = x;\n(id 42, id \"hello\")");
     assert!(matches!(final_type_kind(&file), TypeKind::Tuple(_)));
 }
 
 #[test]
 fn no_signature_identity_single_type_still_int() {
     // Single-type use is unaffected by generalization.
-    let file = completed_file("id x = x\nid 42");
+    let file = completed_file("id x = x;\nid 42");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
 fn recursive_function_stays_monomorphic() {
     // Self-references read the un-generalized signature so recursion stays monomorphic.
-    let file = completed_file("count n = count n\ncount 5");
+    let file = completed_file("count n = count n;\ncount 5");
     let _ = file;
 }
 
 #[test]
 fn no_signature_arithmetic_function_infers_int_type() {
-    let file = completed_file("double x = x + x\ndouble 5");
+    let file = completed_file("double x = x + x;\ndouble 5");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
 fn no_signature_multi_param_function_completes_thir() {
-    let file = completed_file("add x y = x + y\nadd 3 4");
+    let file = completed_file("add x y = x + y;\nadd 3 4");
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
@@ -800,7 +800,7 @@ id "bad"
 
 #[test]
 fn applying_non_function_reports_expected_function() {
-    let lowered = lower("x ::= 1\nx 2");
+    let lowered = lower("x ::= 1;\nx 2");
 
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
@@ -813,21 +813,21 @@ fn applying_non_function_reports_expected_function() {
 
 #[test]
 fn block_local_binding_yields_result_type() {
-    let file = completed_file("{ x := 1; x }");
+    let file = completed_file("[ x := 1; x ]");
 
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
 fn typed_block_local_binding_checks_annotation() {
-    let file = completed_file("{ x : Int = 1; x }");
+    let file = completed_file("[ x : Int = 1; x ]");
 
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
 #[test]
 fn typed_block_local_binding_reports_type_error() {
-    let lowered = lower("{ x : Int = \"bad\"; x }");
+    let lowered = lower("[ x : Int = \"bad\"; x ]");
 
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
@@ -844,10 +844,10 @@ fn typed_block_local_binding_allows_type_params() {
     let file = completed_file(
         r#"
 id :: <A> A -> A
-  = x => {
+  = x => [
     y : A = x;
     y
-  };
+  ];
 id 42
 "#,
     );
@@ -857,7 +857,7 @@ id 42
 
 #[test]
 fn list_literal_infers_homogeneous_list_type() {
-    let file = completed_file("[1; 2; 3;]");
+    let file = completed_file("{1; 2; 3;}");
 
     assert!(matches!(final_type_kind(&file), TypeKind::List(_)));
 }
@@ -866,7 +866,7 @@ fn list_literal_infers_homogeneous_list_type() {
 fn typed_empty_list_completes_thir() {
     let file = completed_file(
         r#"
-items :: List Int = []
+items :: List Int = {;};
 items
 "#,
     );
@@ -876,7 +876,7 @@ items
 
 #[test]
 fn untyped_empty_list_reports_inference_error() {
-    let lowered = lower("[]");
+    let lowered = lower("{;}");
 
     assert!(lowered.file.is_none());
     assert!(
@@ -888,7 +888,7 @@ fn untyped_empty_list_reports_inference_error() {
 
 #[test]
 fn list_literal_reports_item_type_mismatch() {
-    let lowered = lower("[1; \"bad\";]");
+    let lowered = lower("{1; \"bad\";}");
 
     assert!(lowered.file.is_none());
     assert!(lowered.diagnostics.iter().any(|diagnostic| {
@@ -955,9 +955,9 @@ fn defaulting_operator_requires_optional_lhs() {
         r#"
 RawServer :: type {
   port? : Int;
-}
+};
 
-server :: RawServer = {}
+server :: RawServer = {};
 server.port ?? 8080
 "#,
     );
@@ -981,7 +981,7 @@ fn function_body_can_return_checked_record_literal() {
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 
 make :: Text -> Server
   = host => {
@@ -1060,7 +1060,7 @@ fn atom_literal_pattern_accepts_union_member() {
 Profile :: type {
   #dev;
   #prod;
-}
+};
 
 isProd :: Profile -> Bool
   = #prod => true;
@@ -1158,7 +1158,7 @@ fst (1, 2)
 fn record_pattern_in_function_clause() {
     let file = completed_file(
         r#"
-Point :: type { x : Int; y : Int; }
+Point :: type { x : Int; y : Int; };
 
 get_x :: Point -> Int
   = { x = v; y = _; } => v;
@@ -1173,7 +1173,7 @@ get_x { x = 10; y = 20; }
 fn record_pattern_unknown_field_reports_error() {
     let lowered = lower(
         r#"
-Point :: type { x : Int; y : Int; }
+Point :: type { x : Int; y : Int; };
 
 get_x :: Point -> Int
   = { x = v; z = _; } => v;
@@ -1193,7 +1193,7 @@ get_x { x = 1; y = 2; }
 fn lambda_in_checked_position_lowers_correctly() {
     let file = completed_file(
         r#"
-double :: Int -> Int = \n. n * 2
+double :: Int -> Int = \n. n * 2;
 
 double 5
 "#,
@@ -1205,7 +1205,7 @@ double 5
 fn lambda_multi_param_in_checked_position() {
     let file = completed_file(
         r#"
-add :: Int -> Int -> Int = \a b. a + b
+add :: Int -> Int -> Int = \a b. a + b;
 
 add 3 4
 "#,
@@ -1233,7 +1233,7 @@ fn lambda_without_annotation_applied_to_text_yields_text_type() {
 fn match_on_atom_union_lowers_correctly() {
     let file = completed_file(
         r#"
-Status :: type {#ok; #err;}
+Status :: type {#ok; #err;};
 
 describe :: Status -> Text
   = s => match s {

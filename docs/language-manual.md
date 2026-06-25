@@ -23,7 +23,7 @@ Create `app.zti`:
 Create `app.zt` in the same directory:
 
 ```zt
-cfg :: import "app.zti"
+cfg :: import "app.zti";
 cfg.server.port
 ```
 
@@ -40,7 +40,7 @@ When `.zti` data is imported into `.zt`, `.zti` blocks become `.zt` records and 
 
 ## Lexical basics
 
-In `.zt`, whitespace separates tokens. Top-level declarations are separated by line boundaries at delimiter depth zero. A top-level declaration does not use a trailing semicolon.
+In `.zt`, whitespace separates tokens. `;` is the universal terminator/separator: every value-like top-level declaration ends in `;`, and a trailing `;` on an expression makes it a `()` statement. (Clause-functions, constraint definitions, and witness definitions instead end at the final clause `;` or the closing `}`/`derive`.)
 
 `.zt` comments:
 
@@ -58,7 +58,7 @@ Atoms use `#` in both modes, for example `#prod` and `#x86_64-linux`. The reserv
 
 Binding identifiers and field names use Unicode UAX #31 XID letters/digits plus `_`, starting with an XID start scalar or `_`. Atoms use the same Unicode body shape and also allow `-`, for example `#x86_64-linux`; fields do not, so `cfg.target-triple` is subtraction, not one field access.
 
-Type-valued bindings are uppercase, and runtime value bindings are lowercase. This is statically enforced: `Server :: type { ... }` is a type binding, while `server := ...` is a runtime value binding.
+Type-valued bindings are uppercase, and runtime value bindings are lowercase. This is statically enforced: `Server :: type { ... };` is a type binding, while `server ::= ...;` is a runtime value binding.
 
 Lambda-dot spacing is required: write `\x. y`, not `\x.y`.
 
@@ -167,25 +167,29 @@ Top-level declaration forms:
 
 | Form | Meaning |
 | --- | --- |
-| `name ::= expr` | Inferred top-level value binding. |
-| `name :: TypeExpr = expr` | Typed top-level value binding. |
+| `name ::= expr;` | Inferred top-level value binding. |
+| `name :: TypeExpr = expr;` | Typed top-level value binding. |
 | `name :: TypeSignature`<br>`= pattern => body;` | Function signature followed by one or more clauses. |
-| `Name :: type TypeExpr` | Type alias or named type expression. |
+| `Name :: type TypeExpr;` | Type alias or named type expression. |
 
-Top-level declarations are newline-separated at delimiter depth zero and do not use trailing semicolons. Function clauses use semicolons because they are clauses inside a declaration.
+`;` is the universal terminator/separator, so each value-like top-level declaration ends in `;`; the trailing file-output expression takes no `;`. Clause-functions end at the final clause `;`.
 
 Zutai has one namespace. Types, functions, modules, and runtime values cannot reuse a name.
 
-Top-level declarations are in one recursive scope, so functions may refer to themselves and mutually recursive top-level bindings are allowed subject to type checking and evaluation limits. Local block bindings use `name := expr;` for inferred immutable bindings and `name : TypeExpr = expr;` for typed immutable bindings; all bindings are immutable.
+Top-level declarations are in one recursive scope, so functions may refer to themselves and mutually recursive top-level bindings are allowed subject to type checking and evaluation limits. Local bindings appear inside a `[ … ]` do-block: `name := expr;` introduces an inferred immutable binding and `name : TypeExpr = expr;` a typed immutable binding; all bindings are immutable.
 
-Brace syntax is disambiguated by the first item after `{`:
+The container glyph picks the shape, and the scope picks the binding operator. A `{ … }` is a parallel container — a record when its first item is `field =`, otherwise a list of bare `;`-terminated expressions — while a `[ … ]` is a serial do-block:
 
 | Shape | Parses as |
 | --- | --- |
+| `{}` | empty record value |
 | `{ field = value; ... }` | record value |
 | `{ field =; ... }` | record value with field-pun shorthand (`field = field;`) |
-| `{ name := expr; final_expr }` | block with inferred local binding |
-| `{ name : TypeExpr = expr; final_expr }` | block with typed local binding |
+| `{ value; ... }` | list value (bare `;`-terminated items) |
+| `{;}` | empty list value |
+| `[ name := expr; final_expr ]` | do-block with inferred local binding |
+| `[ name : TypeExpr = expr; final_expr ]` | do-block with typed local binding |
+| `[]` | empty do-block |
 | `type { field : TypeExpr; ... }` | record type (fields, not tags) |
 | `type { #tag; #tag: TypeExpr; ... }` | tagged union type (members start with `#`) |
 
@@ -198,34 +202,34 @@ Examples:
 is a record with field `x`.
 
 ```zt
-{ x := 42; x }
+[ x := 42; x ]
 ```
 
-is a block that binds local `x` and returns `x`.
+is a do-block that binds local `x` and returns `x`.
 
 ```zt
-{ x : Int = 42; x }
+[ x : Int = 42; x ]
 ```
 
-is a block that binds typed local `x` and returns `x`.
+is a do-block that binds typed local `x` and returns `x`.
 
 ## Values and expressions
 
 Core value forms include booleans, text, numbers, atoms, records, tagged union values, tuples, and lists.
 
 ```zt
-profile ::= #prod
+profile ::= #prod;
 
 {
   ok = true;
   name = "demo";
   port = 8080;
   profile = profile;
-  tags = [#logging; #metrics;];
+  tags = { #logging; #metrics; };
 }
 ```
 
-Records use semicolon-terminated fields. A field whose value is the identifier with the same name may omit the value: `{ host =; port =; }` is shorthand for `{ host = host; port = port; }`, and the same form works in record updates such as `cfg with { port =; }`. Lists use semicolon-terminated elements. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
+Records use semicolon-terminated `field = value;` items. A field whose value is the identifier with the same name may omit the value: `{ host =; port =; }` is shorthand for `{ host = host; port = port; }`, and the same form works in record updates such as `cfg with { port =; }`. Lists are a `{ … }` parallel container of bare `;`-terminated items, distinguished from a record because the items have no `=`. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
 
 Tagged union values are atoms with optional payloads. A no-payload tag is a bare atom such as `#prod`. A record payload is written as an atom followed by a record, such as `#circle { radius = 5.0; }`.
 
@@ -256,12 +260,12 @@ Built-in type values include `Type`, `Unit`, `Text`, `Bool`, `Int`, `Float`, fix
 Annotations use `::`:
 
 ```zt
-port :: Int = 8080
+port :: Int = 8080;
 
 port
 ```
 
-Type aliases use `Name :: type TypeExpr`. Generic aliases use `<...>`, for example `Pair :: <A, B> type { first : A; second : B; }`. Type functions may also be ordinary functions returning `Type`.
+Type aliases use `Name :: type TypeExpr;`. Generic aliases use `<...>`, for example `Pair :: <A, B> type { first : A; second : B; };`. Type functions may also be ordinary functions returning `Type`.
 
 Record types are closed in v0. A value of a closed record type must provide the declared fields and must not provide undeclared fields. List types use `List T`.
 
@@ -272,14 +276,14 @@ Action :: type {
   #quit;                             -- no payload
   #spawn: { command : Text; };       -- record payload
   #move: (Int, Int);                 -- tuple payload
-}
+};
 ```
 
 The colon in the type declaration (`#tag: PayloadType`) is distinct from value construction, which uses no colon (`#spawn { command = "ghostty"; }`).
 
 Every tagged union value exposes `.tag`, which returns the atom tag.
 
-An empty list literal `[]` cannot infer its element type; always provide an annotation: `items :: List T = []`.
+An empty list literal `{;}` cannot infer its element type; always provide an annotation: `items :: List T = {;};`.
 
 Optional value and optional field syntax are distinct:
 
@@ -307,9 +311,9 @@ Multiple type parameters are comma-separated, as in `<A, B>`. Polymorphic functi
 Pattern matching uses `match`; each arm is introduced by `|` and uses `=>` for the body. For finite union types, `match` must be exhaustive. `_` is a wildcard pattern, and guards use `if` between the pattern and `=>`.
 
 ```zt
-Profile :: type {#dev; #test; #prod;}
+Profile :: type {#dev; #test; #prod;};
 
-profile ::= #prod
+profile ::= #prod;
 
 match profile {
   | #dev  => false;
@@ -340,7 +344,7 @@ Rendered `.zti` outputs must be serializable. Functions and `Type` values have n
 - A tagged value with a record payload `#tag { field = value; ... }` renders as a JSON object `{"tag": "tag", "payload": {...}}`. Note: the `tag` key holds the bare name without `#`.
 
 ```zt
-Action :: type { #quit; #spawn: { command : Text; }; }
+Action :: type { #quit; #spawn: { command : Text; }; };
 
 -- #quit renders as: "#quit"
 -- #spawn { command = "ghostty"; } renders as: {"tag": "spawn", "payload": {"command": "ghostty"}}

@@ -50,7 +50,7 @@ A value of type `Type` describes a type. Type values may be bound, passed to typ
 Type annotations appear after `::` in declarations:
 
 ```zt
-port :: Int = 8080
+port :: Int = 8080;
 ```
 
 The grammar is:
@@ -73,13 +73,13 @@ getPort :: { port : Int } -> Int
 A named type alias binds a name to a type expression. The canonical spelling uses `:: type`:
 
 ```zt
-Host :: type Text
-Port :: type Int
+Host :: type Text;
+Port :: type Int;
 
 Server :: type {
   host : Text;
   port : Int;
-}
+};
 ```
 
 The equivalent annotated type-valued binding is valid, but less idiomatic for named types:
@@ -88,7 +88,7 @@ The equivalent annotated type-valued binding is valid, but less idiomatic for na
 Server :: Type = type {
   host : Text;
   port : Int;
-}
+};
 ```
 
 Generic type aliases use a type parameter list `<...>`:
@@ -97,12 +97,12 @@ Generic type aliases use a type parameter list `<...>`:
 Pair :: <A, B> type {
   first : A;
   second : B;
-}
+};
 
 Response :: <Body> type {
   status : Int;
   body : Body?;
-}
+};
 ```
 
 Usage:
@@ -111,12 +111,12 @@ Usage:
 pair :: Pair Text Int = {
   first = "hello";
   second = 42;
-}
+};
 
 response :: Response Text = {
   status = 200;
   body = "ok";
-}
+};
 ```
 
 Type parameters are uppercase. A generic type alias is instantiated at use sites with concrete types.

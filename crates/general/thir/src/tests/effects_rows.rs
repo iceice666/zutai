@@ -10,8 +10,8 @@ fn free_infer_vars_union_arm_via_inferred_fn() {
     // During generalization, free_infer_vars_into traverses the Union body.
     let lowered = lower(
         r#"
-Color :: type { #red; #blue; }
-choose b = if b then #red else #blue
+Color :: type { #red; #blue; };
+choose b = if b then #red else #blue;
 choose true
 "#,
     );
@@ -28,7 +28,7 @@ choose true
 fn free_infer_vars_record_arm_via_inferred_fn() {
     let file = completed_file(
         r#"
-make_pair ::= \x. { first = x; second = 0; }
+make_pair ::= \x. { first = x; second = 0; };
 make_pair 42
 "#,
     );
@@ -218,9 +218,9 @@ fn rejects_with(src: &str, pred: impl Fn(&ThirDiagnosticKind) -> bool) {
 fn effectful_function_perform_fail_checks() {
     let file = completed_file(
         r#"
-Config :: type { value : Text; }
-ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError }
+Config :: type { value : Text; };
+ParseError :: type Text;
+parse :: Text -> Config ! { fail ParseError; }
   = text => perform fail text;
 parse
 "#,
@@ -245,8 +245,8 @@ parse
 fn effect_alias_return_is_discharged_at_call_site() {
     rejects_with(
         r#"
-Config :: type { value : Text; }
-EffConfig :: type Config ! { fail Text }
+Config :: type { value : Text; };
+EffConfig :: type Config ! { fail Text; };
 parse :: Text -> EffConfig
   = text => perform fail text;
 parse "bad"
@@ -259,11 +259,11 @@ parse "bad"
 fn if_inference_uses_else_type_when_then_branch_is_never() {
     completed_file(
         r#"
-choose :: Bool -> Text ! { fail Text }
-  = b => {
+choose :: Bool -> Text ! { fail Text; }
+  = b => [
     x := if b then perform fail "bad" else "ok";
     x
-  };
+  ];
 choose
 "#,
     );
@@ -273,15 +273,15 @@ choose
 fn match_inference_uses_later_type_when_first_arm_is_never() {
     completed_file(
         r#"
-Status :: type { #bad; #good; }
-choose :: Status -> Text ! { fail Text }
-  = s => {
+Status :: type { #bad; #good; };
+choose :: Status -> Text ! { fail Text; }
+  = s => [
     x := match s {
       | #bad => perform fail "bad";
       | #good => "ok";
     };
     x
-  };
+  ];
 choose
 "#,
     );
@@ -291,12 +291,12 @@ choose
 fn handler_forwards_unhandled_effects_and_resumes() {
     completed_file(
         r#"
-Diagnostic :: type Text
-Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic }
-  = cfg => { perform warn cfg.value; cfg };
-handleWarn :: Config -> Config ! { log Diagnostic }
-  = cfg => handle check cfg with { warn = \d. { perform log d; resume (); }; };
+Diagnostic :: type Text;
+Config :: type { value : Text; };
+check :: Config -> Config ! { warn Diagnostic; }
+  = cfg => [ perform warn cfg.value; cfg ];
+handleWarn :: Config -> Config ! { log Diagnostic; }
+  = cfg => handle check cfg with { warn = \d. [ perform log d; resume () ]; };
 handleWarn
 "#,
     );
@@ -306,12 +306,12 @@ handleWarn
 fn nested_handler_resume_does_not_count_against_outer_handler() {
     completed_file(
         r#"
-Diagnostic :: type Text
-Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic }
-  = cfg => { perform warn cfg.value; cfg };
+Diagnostic :: type Text;
+Config :: type { value : Text; };
+check :: Config -> Config ! { warn Diagnostic; }
+  = cfg => [ perform warn cfg.value; cfg ];
 nested :: Config -> Config
-  = cfg => handle check cfg with { warn = \d. { handle check cfg with { warn = \x. resume (); }; resume (); }; };
+  = cfg => handle check cfg with { warn = \d. [ handle check cfg with { warn = \x. resume (); }; resume () ]; };
 nested
 "#,
     );
@@ -321,7 +321,7 @@ nested
 fn explicit_standard_named_effect_signature_drives_resume_type() {
     completed_file(
         r#"
-f :: Text -> Int ! { fail : Text -> Int }
+f :: Text -> Int ! { fail : Text -> Int; }
   = text => perform fail text;
 handled :: Text -> Int
   = text => handle f text with { fail = \e. resume 1; };
@@ -335,7 +335,7 @@ fn direct_standard_warn_handler_uses_unit_resume_type() {
     rejects_with(
         r#"
 bad :: Text -> Text
-  = d => handle { perform warn d; "ok" } with { warn = \x. resume 42; };
+  = d => handle [ perform warn d; "ok" ] with { warn = \x. resume 42; };
 bad
 "#,
         |kind| {
@@ -349,8 +349,8 @@ bad
 fn dotted_capability_effect_checks() {
     completed_file(
         r#"
-IOError :: type Text
-load :: FsRead -> Path -> Text ! { fs.read : Path -> Text, fail IOError }
+IOError :: type Text;
+load :: FsRead -> Path -> Text ! { fs.read : Path -> Text; fail IOError; }
   = fs path => perform fs.read path;
 load
 "#,
@@ -361,16 +361,16 @@ load
 fn standard_host_capability_types_and_ops_typecheck() {
     completed_file(
         r#"
-WriteRequest :: type { path : Path; contents : Text; }
-readConfig :: FsRead -> Path -> Text ! { fs.read : Path -> Text }
+WriteRequest :: type { path : Path; contents : Text; };
+readConfig :: FsRead -> Path -> Text ! { fs.read : Path -> Text; }
   = fs path => perform fs.read path;
-lookup :: Env -> Text -> Text? ! { env.get : Text -> Text? }
+lookup :: Env -> Text -> Text? ! { env.get : Text -> Text?; }
   = env name => perform env.get name;
-timestamp :: Clock -> Unit -> Instant ! { clock.now : Unit -> Instant }
+timestamp :: Clock -> Unit -> Instant ! { clock.now : Unit -> Instant; }
   = clock tick => perform clock.now tick;
-randomInt :: Rng -> Unit -> Int ! { rng.next : Unit -> Int }
+randomInt :: Rng -> Unit -> Int ! { rng.next : Unit -> Int; }
   = rng tick => perform rng.next tick;
-save :: FsWrite -> WriteRequest -> Unit ! { fs.write : WriteRequest -> Unit }
+save :: FsWrite -> WriteRequest -> Unit ! { fs.write : WriteRequest -> Unit; }
   = fs req => perform fs.write req;
 readConfig
 "#,
@@ -398,7 +398,7 @@ fn top_level_io_print_effect_is_allowed_at_host_boundary() {
 fn effectful_non_function_top_level_value_is_rejected() {
     rejects_with(
         r#"
-x :: Text ! { io.print : Text -> Text } = print "hi"
+x :: Text ! { io.print : Text -> Text; } = print "hi";
 1
 "#,
         |kind| {
@@ -412,7 +412,7 @@ x :: Text ! { io.print : Text -> Text } = print "hi"
 fn effectful_function_value_binding_remains_inert_until_called() {
     completed_file(
         r#"
-f :: Text -> Text ! { io.print : Text -> Text } = \text. print text
+f :: Text -> Text ! { io.print : Text -> Text; } = \text. print text;
 f
 "#,
     );
@@ -434,8 +434,8 @@ f
 fn perform_argument_mismatch_reports_type_mismatch() {
     rejects_with(
         r#"
-Config :: type { value : Text; }
-parse :: Text -> Config ! { fail Text }
+Config :: type { value : Text; };
+parse :: Text -> Config ! { fail Text; }
   = text => perform fail 1;
 parse
 "#,
@@ -450,10 +450,10 @@ parse
 fn resume_argument_mismatch_reports_resume_type_mismatch() {
     rejects_with(
         r#"
-Diagnostic :: type Text
-Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic }
-  = cfg => { perform warn cfg.value; cfg };
+Diagnostic :: type Text;
+Config :: type { value : Text; };
+check :: Config -> Config ! { warn Diagnostic; }
+  = cfg => [ perform warn cfg.value; cfg ];
 bad :: Config -> Config
   = cfg => handle check cfg with { warn = \d. resume 42; };
 bad
@@ -466,10 +466,10 @@ bad
 fn handler_clause_wrong_arity_reports_diagnostic() {
     rejects_with(
         r#"
-Diagnostic :: type Text
-Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic }
-  = cfg => { perform warn cfg.value; cfg };
+Diagnostic :: type Text;
+Config :: type { value : Text; };
+check :: Config -> Config ! { warn Diagnostic; }
+  = cfg => [ perform warn cfg.value; cfg ];
 bad :: Config -> Config
   = cfg => handle check cfg with { warn = \a b. resume (); };
 bad
@@ -485,12 +485,12 @@ bad
 fn handler_clause_multiple_resume_reports_diagnostic() {
     rejects_with(
         r#"
-Diagnostic :: type Text
-Config :: type { value : Text; }
-check :: Config -> Config ! { warn Diagnostic }
-  = cfg => { perform warn cfg.value; cfg };
+Diagnostic :: type Text;
+Config :: type { value : Text; };
+check :: Config -> Config ! { warn Diagnostic; }
+  = cfg => [ perform warn cfg.value; cfg ];
 bad :: Config -> Config
-  = cfg => handle check cfg with { warn = \d. { resume (); resume (); }; };
+  = cfg => handle check cfg with { warn = \d. [ resume (); resume () ]; };
 bad
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::MultipleResume { op } if op == "warn"),
@@ -501,7 +501,7 @@ bad
 fn malformed_effect_op_reports_diagnostic() {
     rejects_with(
         r#"
-bad :: Text -> Text ! { foo Text }
+bad :: Text -> Text ! { foo Text; }
   = x => x;
 bad
 "#,
@@ -525,8 +525,8 @@ fn resume_outside_handler_remains_a_hir_error() {
 fn resume_in_nested_value_clause_remains_a_hir_error() {
     let parsed = zutai_syntax::parse(
         r#"
-outer :: Text -> Text ! { warn Text }
-  = d => handle { perform warn d; "ok" } with { warn = \x. { handle "ok" with { value = \v. resume (); }; resume (); }; };
+outer :: Text -> Text ! { warn Text; }
+  = d => handle [ perform warn d; "ok" ] with { warn = \x. [ handle "ok" with { value = \v. resume (); }; resume () ]; };
 outer
 "#,
     );
@@ -593,7 +593,7 @@ fn named_row_tail_application_preserves_extra_fields() {
 #[test]
 fn value_select_builds_ordered_closed_record() {
     let file = completed_file(
-        "s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }",
+        "s ::= { host = \"h\"; port = 8080; name = \"n\"; };\nselect s { port; host; }",
     );
     let TypeKind::Record(fields, tail) = final_type_kind(&file) else {
         panic!("expected record, got {:?}", final_type_kind(&file));
@@ -605,7 +605,7 @@ fn value_select_builds_ordered_closed_record() {
 
 #[test]
 fn value_select_unknown_field_is_rejected() {
-    let lowered = lower("s ::= { host = \"h\"; }\nselect s { missing; }");
+    let lowered = lower("s ::= { host = \"h\"; };\nselect s { missing; }");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind, ThirDiagnosticKind::UnknownField { name } if name == "missing"
     )));
@@ -614,13 +614,14 @@ fn value_select_unknown_field_is_rejected() {
 #[test]
 fn type_select_projects_usable_closed_record_type() {
     completed_file(
-        "Server :: type { host : Text; port : Int; }\nT :: type select Server { host; }\nx :: T = { host = \"h\"; }\nx",
+        "Server :: type { host : Text; port : Int; };\nT :: type select Server { host; };\nx :: T = { host = \"h\"; };\nx",
     );
 }
 
 #[test]
 fn type_select_unknown_field_is_rejected() {
-    let lowered = lower("Server :: type { host : Text; }\nT :: type select Server { missing; }\nT");
+    let lowered =
+        lower("Server :: type { host : Text; };\nT :: type select Server { missing; };\nT");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind, ThirDiagnosticKind::UnknownField { name } if name == "missing"
     )));
@@ -630,8 +631,8 @@ fn type_select_unknown_field_is_rejected() {
 fn diagnostic_polish_record_spread_overlap_shows_existing_and_incoming() {
     let lowered = lower(
         r#"
-Base :: type { host : Text; port : Int; }
-Bad :: type { host : Int; ...Base; }
+Base :: type { host : Text; port : Int; };
+Bad :: type { host : Int; ...Base; };
 Bad
 "#,
     );
@@ -685,13 +686,13 @@ fn union_spread_merges_members_into_new_union() {
     // `Shape3D` spreads `Shape`; `#a` only type-checks against it if the spread
     // merged `Shape`'s members.
     completed_file(
-        "Shape :: type { #a; #b; }\nShape3D :: type { ...Shape; #c; }\nx :: Shape3D = #a\nx",
+        "Shape :: type { #a; #b; };\nShape3D :: type { ...Shape; #c; };\nx :: Shape3D = #a;\nx",
     );
 }
 
 #[test]
 fn diagnostic_polish_union_spread_overlap_shows_existing_and_incoming() {
-    let lowered = lower("Shape :: type { #a; #b; }\nBad :: type { #a; ...Shape; }\nBad");
+    let lowered = lower("Shape :: type { #a; #b; };\nBad :: type { #a; ...Shape; };\nBad");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind,
         ThirDiagnosticKind::OverlappingRowField {
@@ -709,7 +710,7 @@ fn diagnostic_polish_union_spread_overlap_shows_existing_and_incoming() {
 
 #[test]
 fn field_access_on_uninferred_value_requires_annotation() {
-    let lowered = lower("f x = x.host\nf");
+    let lowered = lower("f x = x.host;\nf");
     assert!(
         lowered
             .diagnostics
@@ -766,7 +767,7 @@ fn function_param_is_contravariant_for_open_records() {
 fn generic_effect_alias_substitutes_base_and_op_type() {
     let file = completed_file(
         r#"
-Failing :: <A> type A ! { fail A }
+Failing :: <A> type A ! { fail A; };
 f :: Text -> Failing Int
   = _ => perform fail 1;
 f
@@ -799,8 +800,8 @@ f
 fn union_payload_type_mismatch_reports_component_type() {
     let lowered = lower(
         r#"
-Result :: type { #ok : { v : Int; }; ...; }
-x :: Result = #ok { v = "bad"; }
+Result :: type { #ok : { v : Int; }; ...; };
+x :: Result = #ok { v = "bad"; };
 x
 "#,
     );

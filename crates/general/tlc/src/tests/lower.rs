@@ -7,7 +7,7 @@ use zutai_thir::FixedWidth;
 
 #[test]
 fn float_literal_lowers_to_prim_float_type() {
-    let m = tlc_of("f :: Float = 1.5\nf");
+    let m = tlc_of("f :: Float = 1.5;\nf");
     // lower_types.rs: TypeKind::Float → TlcType::Prim(PrimTy::Float)
     let has_float = m
         .type_arena
@@ -40,7 +40,7 @@ fn fixed_width_literal_lowers_to_prim_fixed_num_type() {
 
 #[test]
 fn posit_literal_lowers_to_prim_posit_type() {
-    let m = tlc_of("p :: Posit32e3 = 1.5p32e3\np");
+    let m = tlc_of("p :: Posit32e3 = 1.5p32e3;\np");
     let has_posit_ty = m.type_arena.iter().any(|(_, ty)| {
         matches!(
             ty,
@@ -63,7 +63,7 @@ fn posit_literal_lowers_to_prim_posit_type() {
 #[test]
 fn string_literal_lowers_to_prim_str_type() {
     let m = tlc_of(
-        r#"s :: Text = "hello"
+        r#"s :: Text = "hello";
 s"#,
     );
     // lower_types.rs: TypeKind::Text → TlcType::Prim(PrimTy::Str)
@@ -82,7 +82,7 @@ s"#,
 
 #[test]
 fn bool_type_annotation_lowers_to_prim_bool() {
-    let m = tlc_of("b :: Bool = true\nb");
+    let m = tlc_of("b :: Bool = true;\nb");
     // lower_types.rs: TypeKind::Bool → TlcType::Prim(PrimTy::Bool)
     let has_bool = m
         .type_arena
@@ -93,7 +93,7 @@ fn bool_type_annotation_lowers_to_prim_bool() {
 
 #[test]
 fn list_type_lowers_to_tlc_list() {
-    let m = tlc_of("xs :: List Int = [1; 2; 3;]\nxs");
+    let m = tlc_of("xs :: List Int = {1; 2; 3;};\nxs");
     // lower_types.rs: TypeKind::List(inner) → TlcType::List(inner_tlc)
     let has_list = m
         .type_arena
@@ -104,7 +104,7 @@ fn list_type_lowers_to_tlc_list() {
 
 #[test]
 fn optional_type_lowers_to_tlc_optional() {
-    let m = tlc_of("x :: Int? = #none\nx");
+    let m = tlc_of("x :: Int? = #none;\nx");
     // lower_types.rs: TypeKind::Optional(inner) → TlcType::Optional(inner_tlc)
     let has_opt = m
         .type_arena
@@ -116,7 +116,7 @@ fn optional_type_lowers_to_tlc_optional() {
 #[test]
 fn positional_tuple_type_lowers_to_tlc_tuple() {
     let m = tlc_of(
-        r#"p :: (Int, Text) = (1, "hi")
+        r#"p :: (Int, Text) = (1, "hi");
 p"#,
     );
     // lower_types.rs: TypeKind::Tuple with Positional → TlcType::Tuple with TlcTupleField::Positional
@@ -145,7 +145,7 @@ p"#,
 
 #[test]
 fn named_tuple_type_lowers_to_tlc_tuple_with_named_fields() {
-    let m = tlc_of("p :: (x : Int, y : Int) = (x = 1, y = 2)\np");
+    let m = tlc_of("p :: (x : Int, y : Int) = (x = 1, y = 2);\np");
     // lower_types.rs: TypeKind::Tuple with Named → TlcType::Tuple with TlcTupleField::Named
     let has_named_field = m.type_arena.iter().any(|(_, ty)| {
         if let TlcType::Tuple(items) = ty {
@@ -233,7 +233,7 @@ greet "hi""#,
 fn atom_pattern_bare_union_lowers_to_atom_pat() {
     // Bare union arm `#dev` / `#prod` (no payload) → ThirPatKind::Atom → TlcPat::Atom
     let m = tlc_of(
-        r#"Profile :: type { #dev; #prod; }
+        r#"Profile :: type { #dev; #prod; };
 isProd :: Profile -> Bool
   = #prod => true;
   = #dev => false;
@@ -257,7 +257,7 @@ isProd #prod"#,
 fn wildcard_lambda_param_uses_fresh_synthetic_binding() {
     // `\\ _ . body` — the `_` wildcard is ThirPatKind::Wildcard (non-Bind)
     // lower_lambda's else branch creates a fresh synthetic binding.
-    let m = tlc_of("const42 :: Int -> Int = \\_ . 42\nconst42 1");
+    let m = tlc_of("const42 :: Int -> Int = \\_ . 42;\nconst42 1");
     let has_lam = m
         .expr_arena
         .iter()
@@ -269,9 +269,9 @@ fn wildcard_lambda_param_uses_fresh_synthetic_binding() {
 fn optional_access_lowers_to_get_field() {
     // `cfg?.port` where cfg :: Config? → ThirExprKind::OptionalAccess → TlcExpr::GetField
     let m = tlc_of(
-        "Config :: type { port : Int; }
-cfg :: Config? = #none
-n :: Int? = cfg?.port
+        "Config :: type { port : Int; };
+cfg :: Config? = #none;
+n :: Int? = cfg?.port;
 n",
     );
     let has_get_field = m
@@ -286,21 +286,21 @@ n",
 
 #[test]
 fn sub_mul_div_binops_lower_to_builtin() {
-    let m = tlc_of("f x y = x - y\nf 5 3");
+    let m = tlc_of("f x y = x - y;\nf 5 3");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Sub, _, _))),
         "expected Builtin(Sub)"
     );
-    let m = tlc_of("f x y = x * y\nf 2 3");
+    let m = tlc_of("f x y = x * y;\nf 2 3");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Mul, _, _))),
         "expected Builtin(Mul)"
     );
-    let m = tlc_of("f x y = x / y\nf 6 2");
+    let m = tlc_of("f x y = x / y;\nf 6 2");
     assert!(
         m.expr_arena
             .iter()
@@ -311,42 +311,42 @@ fn sub_mul_div_binops_lower_to_builtin() {
 
 #[test]
 fn comparison_binops_lower_to_builtin() {
-    let m = tlc_of("f x y = x == y\nf 1 1");
+    let m = tlc_of("f x y = x == y;\nf 1 1");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Eq, _, _))),
         "expected Builtin(Eq)"
     );
-    let m = tlc_of("f x y = x != y\nf 1 2");
+    let m = tlc_of("f x y = x != y;\nf 1 2");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Ne, _, _))),
         "expected Builtin(Ne)"
     );
-    let m = tlc_of("f x y = x < y\nf 1 2");
+    let m = tlc_of("f x y = x < y;\nf 1 2");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Lt, _, _))),
         "expected Builtin(Lt)"
     );
-    let m = tlc_of("f x y = x <= y\nf 1 2");
+    let m = tlc_of("f x y = x <= y;\nf 1 2");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Le, _, _))),
         "expected Builtin(Le)"
     );
-    let m = tlc_of("f x y = x > y\nf 2 1");
+    let m = tlc_of("f x y = x > y;\nf 2 1");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Gt, _, _))),
         "expected Builtin(Gt)"
     );
-    let m = tlc_of("f x y = x >= y\nf 2 1");
+    let m = tlc_of("f x y = x >= y;\nf 2 1");
     assert!(
         m.expr_arena
             .iter()
@@ -357,14 +357,14 @@ fn comparison_binops_lower_to_builtin() {
 
 #[test]
 fn logical_and_or_coalesce_lower_to_builtin() {
-    let m = tlc_of("f x y = x && y\nf true false");
+    let m = tlc_of("f x y = x && y;\nf true false");
     assert!(
         m.expr_arena
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::And, _, _))),
         "expected Builtin(And)"
     );
-    let m = tlc_of("f x y = x || y\nf true false");
+    let m = tlc_of("f x y = x || y;\nf true false");
     assert!(
         m.expr_arena
             .iter()
@@ -374,7 +374,7 @@ fn logical_and_or_coalesce_lower_to_builtin() {
     // Coalesce (??) on an Optional record field — placed in a declaration body so
     // TLC lowers it (the `final_expr` slot is not visited by the TLC lowerer).
     let m = tlc_of(
-        "Server :: type { port? : Int; }\nget :: Server -> Int = \\s. s.port ?? 8080\nget {}",
+        "Server :: type { port? : Int; };\nget :: Server -> Int = \\s. s.port ?? 8080;\nget {}",
     );
     assert!(
         m.expr_arena
@@ -439,7 +439,7 @@ fn anonymous_open_record_emits_rvar_tail() {
 
 #[test]
 fn closed_records_have_no_row_variable() {
-    let m = tlc_of("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; }\ns");
+    let m = tlc_of("s :: { host : Text; port : Int; } = { host = \"h\"; port = 1; };\ns");
     for (_, t) in m.type_arena.iter() {
         if let TlcType::Record(row) = t {
             assert!(
@@ -452,7 +452,7 @@ fn closed_records_have_no_row_variable() {
 
 #[test]
 fn value_select_preserves_field_order_in_tlc() {
-    let m = tlc_of("s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }");
+    let m = tlc_of("s ::= { host = \"h\"; port = 8080; name = \"n\"; };\nselect s { port; host; }");
     let has_ordered = m.expr_arena.iter().any(|(_, e)| {
         if let TlcExpr::Record(fields) = e {
             fields.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>() == ["port", "host"]
@@ -486,14 +486,14 @@ fn recursive_union_alias_lowers_recursive_fields_to_alias_tyvars() {
 Tree :: type {
   #leaf;
   #node : { value : Int; left : Tree; right : Tree; };
-}
+};
 
 example :: Tree =
   #node {
     value = 1;
     left  = #leaf;
     right = #node { value = 2; left = #leaf; right = #leaf; };
-  }
+  };
 
 example
 "#,
@@ -552,7 +552,7 @@ example
 fn unsupported_effect_alias_application_keeps_row_for_dataflow_gate() {
     let m = tlc_of(
         r#"
-Failing :: <A> type A ! { fail A }
+Failing :: <A> type A ! { fail A; };
 f :: Text -> Failing Int
   = _ => perform fail 1;
 f
@@ -583,7 +583,7 @@ f
 fn single_op_handle_resume_elaborates_to_effect_free_tlc() {
     let m = tlc_of(
         r#"
-result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result ::= handle [ perform warn "diag"; "ok" ] with { warn = \d. resume (); };
 result
 "#,
     );
@@ -597,10 +597,10 @@ result
 fn multi_op_handle_elaborates_to_effect_free_tlc() {
     let m = tlc_of(
         r#"
-result ::= handle { perform warn "diag"; perform note "seen"; "ok" } with {
+result ::= handle [ perform warn "diag"; perform note "seen"; "ok" ] with {
   warn = \d. resume ();
   note = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -614,13 +614,13 @@ result
 fn nested_handlers_forward_to_outer_scope() {
     let m = tlc_of(
         r#"
-result ::= handle {
-  handle { perform inner "x"; perform outer "y"; "ok" } with {
+result ::= handle [
+  handle [ perform inner "x"; perform outer "y"; "ok" ] with {
     inner = \d. resume ();
   }
-} with {
+] with {
   outer = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -634,13 +634,13 @@ result
 fn deeply_nested_handlers_keep_all_enclosing_scopes() {
     let m = tlc_of(
         r#"
-result ::= handle {
-  handle {
-    handle { perform outer "y"; "ok" } with {}
-  } with {}
-} with {
+result ::= handle [
+  handle [
+    handle [ perform outer "y"; "ok" ] with {}
+  ] with {}
+] with {
   outer = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -654,9 +654,9 @@ result
 fn handler_clause_may_return_without_resume() {
     let m = tlc_of(
         r#"
-result ::= handle { perform fail "bad"; "unreachable" } with {
+result ::= handle [ perform fail "bad"; "unreachable" ] with {
   fail = \e. "fallback";
-}
+};
 result
 "#,
     );
@@ -670,13 +670,13 @@ result
 fn handler_clause_perform_forwards_to_outer_scope() {
     let m = tlc_of(
         r#"
-result ::= handle {
-  handle { perform fail "bad"; "unreachable" } with {
-    fail = \e. { perform log e; "fallback" };
+result ::= handle [
+  handle [ perform fail "bad"; "unreachable" ] with {
+    fail = \e. [ perform log e; "fallback" ];
   }
-} with {
+] with {
   log = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -690,8 +690,8 @@ result
 fn deep_patch_lowers_nested_record_fields_as_optional() {
     let m = tlc_of(
         r#"
-Config :: type { server : { host : Text; port : Int; }; enabled : Bool; }
-patch :: DeepPatch Config = { server = { port = 8080; }; }
+Config :: type { server : { host : Text; port : Int; }; enabled : Bool; };
+patch :: DeepPatch Config = { server = { port = 8080; }; };
 patch
 "#,
     );
@@ -724,9 +724,9 @@ fn generic_recursive_union_alias_lowers_with_value() {
 Tree :: <A> type {
   #leaf;
   #node : { value : A; left : Tree A; right : Tree A; };
-}
+};
 example :: Tree Int =
-  #node { value = 1; left = #leaf; right = #leaf; }
+  #node { value = 1; left = #leaf; right = #leaf; };
 example == example
 "#,
     );
@@ -763,9 +763,9 @@ example == example
 fn mutual_generic_aliases_do_not_overflow_universe() {
     let m = tlc_of(
         r#"
-Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; }
-Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; }
-x :: Odd Int = #nil
+Odd :: <A> type { #nil; #node : { v : A; e : Even A; }; };
+Even :: <A> type { #nil; #node : { v : A; e : Odd A; }; };
+x :: Odd Int = #nil;
 x
 "#,
     );

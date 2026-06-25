@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn reports_duplicate_top_level_binding_in_one_namespace() {
-    let lowered = lower("Server :: type Text\nServer ::= 1\nServer");
+    let lowered = lower("Server :: type Text;\nServer ::= 1;\nServer");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
@@ -12,7 +12,7 @@ fn reports_duplicate_top_level_binding_in_one_namespace() {
 
 #[test]
 fn normalizes_no_signature_function_to_function_decl() {
-    let lowered = lower("double x = x * 2\ndouble 2");
+    let lowered = lower("double x = x * 2;\ndouble 2");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
@@ -33,7 +33,7 @@ fn normalizes_no_signature_function_to_function_decl() {
 
 #[test]
 fn import_decl_lowers_to_top_import_binding() {
-    let lowered = lower("lib :: import \"lib.zt\"\nlib");
+    let lowered = lower("lib :: import \"lib.zt\";\nlib");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let binding = find_binding_by_name(&lowered.file, "lib").expect("lib binding");
@@ -58,7 +58,7 @@ fn import_decl_lowers_to_top_import_binding() {
 
 #[test]
 fn desugars_forward_pipeline_to_application() {
-    let lowered = lower("f x = x\n1 |> f");
+    let lowered = lower("f x = x;\n1 |> f");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let expr = &lowered.file.expr_arena[lowered.file.final_expr];
@@ -73,7 +73,7 @@ fn desugars_forward_pipeline_to_application() {
 
 #[test]
 fn desugars_backward_pipeline_to_application() {
-    let lowered = lower("f x = x\nf <| 1");
+    let lowered = lower("f x = x;\nf <| 1");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let expr = &lowered.file.expr_arena[lowered.file.final_expr];
@@ -88,7 +88,7 @@ fn desugars_backward_pipeline_to_application() {
 
 #[test]
 fn resolves_local_binding_only_after_its_value() {
-    let lowered = lower("x ::= 1\n{ x := x; x }");
+    let lowered = lower("x ::= 1;\n[ x := x; x ]");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let block = &lowered.file.expr_arena[lowered.file.final_expr];
@@ -112,7 +112,7 @@ fn resolves_local_binding_only_after_its_value() {
 
 #[test]
 fn lowers_typed_local_binding_annotation() {
-    let lowered = lower("{ x : Int = 1; x }");
+    let lowered = lower("[ x : Int = 1; x ]");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let block = &lowered.file.expr_arena[lowered.file.final_expr];
@@ -166,7 +166,7 @@ fn reports_duplicate_value_record_fields() {
 
 #[test]
 fn reports_duplicate_type_record_fields() {
-    let lowered = lower("T :: type { a : Int; a : Text; }\nT");
+    let lowered = lower("T :: type { a : Int; a : Text; };\nT");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
@@ -176,7 +176,7 @@ fn reports_duplicate_type_record_fields() {
 
 #[test]
 fn reports_duplicate_record_pattern_fields() {
-    let lowered = lower("f x = match x { | { a = one; a = two; } => one; }\nf");
+    let lowered = lower("f x = match x { | { a = one; a = two; } => one; };\nf");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
@@ -196,7 +196,7 @@ fn reports_duplicate_named_tuple_fields() {
 
 #[test]
 fn reports_duplicate_named_type_tuple_fields() {
-    let lowered = lower("T :: type (#point, x : Int, x : Float)\nT");
+    let lowered = lower("T :: type (#point, x : Int, x : Float);\nT");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
@@ -206,7 +206,7 @@ fn reports_duplicate_named_type_tuple_fields() {
 
 #[test]
 fn reports_duplicate_named_tuple_pattern_fields() {
-    let lowered = lower("f (#point, x = one, x = two) = one\nf");
+    let lowered = lower("f (#point, x = one, x = two) = one;\nf");
 
     assert!(matches!(
         lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),

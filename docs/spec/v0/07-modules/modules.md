@@ -9,13 +9,13 @@ RawServer :: type {
   host? : Text;
   port? : Int;
   tls? : Bool;
-}
+};
 
 Server :: type {
   host : Text;
   port : Int;
   tls : Bool;
-}
+};
 
 normalize :: RawServer -> Server
   = raw => {
@@ -34,10 +34,10 @@ normalize :: RawServer -> Server
 Another file:
 
 ```zt
-serverLib :: import "server.zt"
-raw :: import "server.zti"
+serverLib :: import "server.zt";
+raw :: import "server.zti";
 
-server :: serverLib.Server = serverLib.normalize raw
+server :: serverLib.Server = serverLib.normalize raw;
 
 server
 ```

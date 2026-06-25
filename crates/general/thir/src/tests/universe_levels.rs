@@ -17,25 +17,25 @@ fn count_too_low(src: &str) -> usize {
 #[test]
 fn small_accepts_known_level() {
     // `Small :: $0 = Int` — Int : Type-0, fits in $0.
-    completed_file("Small :: $0 = Int\n1");
+    completed_file("Small :: $0 = Int;\n1");
 }
 
 #[test]
 fn type_of_types_accepts() {
     // `TypeOfTypes :: $1 = $0` — $0 : $1.
-    completed_file("TypeOfTypes :: $1 = $0\n1");
+    completed_file("TypeOfTypes :: $1 = $0;\n1");
 }
 
 #[test]
 fn explicit_level_too_low_rejected() {
     // `Bad :: $0 = $0` — $0 : $1, not $0.
-    assert_eq!(count_too_low("Bad :: $0 = $0\n1"), 1);
+    assert_eq!(count_too_low("Bad :: $0 = $0;\n1"), 1);
 }
 
 #[test]
 fn cumulativity_accepts_higher_annotation() {
     // `Ok :: $5 = Int` — Int : Type-0 within $5.
-    completed_file("Ok :: $5 = Int\n1");
+    completed_file("Ok :: $5 = Int;\n1");
 }
 
 #[test]
@@ -102,13 +102,13 @@ fn level_binder_links_all_occurrences() {
 
 #[test]
 fn bare_type_higher_kinded_still_accepts() {
-    completed_file("Pair :: <A, B> type { first : A; second : B; }\ntype (Pair Int Text)");
+    completed_file("Pair :: <A, B> type { first : A; second : B; };\ntype (Pair Int Text)");
 }
 
 #[test]
 fn pair_int_type_still_accepts() {
     // `Pair Int Type` was accepted before explicit levels; it still is.
-    completed_file("Pair :: <A, B> type { first : A; second : B; }\ntype (Pair Int Type)");
+    completed_file("Pair :: <A, B> type { first : A; second : B; };\ntype (Pair Int Type)");
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn recursive_type_valued_alias_universe_terminates() {
     // A self-referential generic alias must still compute a universe (no infinite
     // expansion, no spurious universe-level cycle) now that `Type` carries a level.
     completed_file(
-        "Tree :: <A> type { #leaf : A; #node : { left : Tree A; right : Tree A; }; }\n\
+        "Tree :: <A> type { #leaf : A; #node : { left : Tree A; right : Tree A; }; };\n\
          type (Tree Int)",
     );
 }

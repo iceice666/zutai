@@ -20,7 +20,7 @@ fn has_unreachable(lowered: &LoweredThir) -> bool {
 fn exhaustive_atom_union_passes() {
     completed_file(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 isProd :: Profile -> Bool
   = #dev => false;
   = #prod => true;
@@ -33,7 +33,7 @@ isProd #dev
 fn non_exhaustive_atom_union_reports_witness() {
     let lowered = lower(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 isProd :: Profile -> Bool
   = #prod => true;
 isProd #prod
@@ -47,7 +47,7 @@ isProd #prod
 fn wildcard_catch_all_is_exhaustive() {
     let lowered = lower(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 isProd :: Profile -> Bool
   = #prod => true;
   = _ => false;
@@ -61,7 +61,7 @@ isProd #dev
 fn redundant_arm_after_catch_all_is_unreachable() {
     let lowered = lower(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 classify :: Profile -> Bool
   = _ => false;
   = #prod => true;
@@ -124,7 +124,7 @@ f 1
 fn guarded_arm_does_not_cover() {
     let lowered = lower(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 f :: Profile -> Bool
   = #dev => false;
   = #prod if true => true;
@@ -138,7 +138,7 @@ f #dev
 fn plain_arm_after_guarded_same_pattern_is_reachable() {
     let lowered = lower(
         r#"
-Profile :: type {#dev; #prod;}
+Profile :: type {#dev; #prod;};
 f :: Profile -> Bool
   = #dev => false;
   = #prod if true => true;
@@ -182,7 +182,7 @@ fn tagged_tuple_union_exhaustive_passes() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
+};
 area :: Shape -> Int
   = #circle { radius = r; } => r;
   = #square { side = s; } => s;
@@ -198,7 +198,7 @@ fn tagged_tuple_union_non_exhaustive_reports_witness() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
+};
 area :: Shape -> Int
   = #circle { radius = r; } => r;
 area
@@ -217,7 +217,7 @@ fn positional_payload_union_exhaustive_passes() {
 Pair :: type {
   #pair: (Int, Int);
   #empty;
-}
+};
 sum :: Pair -> Int
   = #pair (x, y) => x + y;
   = #empty => 0;
@@ -233,7 +233,7 @@ fn positional_payload_union_non_exhaustive_reports_tuple_witness() {
 Pair :: type {
   #pair: (Int, Int);
   #empty;
-}
+};
 sum :: Pair -> Int
   = #empty => 0;
 sum
@@ -317,7 +317,7 @@ unwrap #absent
 fn opt_access_on_optional_record() {
     let file = completed_file(
         r#"
-Server :: type { port : Int; }
+Server :: type { port : Int; };
 
 get_port :: Server? -> Int?
   = s => s?.port;
@@ -332,7 +332,7 @@ get_port #none
 fn opt_access_optional_field_preserves_presence() {
     let file = completed_file(
         r#"
-Server :: type { port? : Int; }
+Server :: type { port? : Int; };
 
 get_port :: Server? -> Optional (Maybe Int)
   = s => s?.port;
@@ -347,7 +347,7 @@ get_port #none
 fn opt_access_on_non_optional_reports_error() {
     let lowered = lower(
         r#"
-Server :: type { port : Int; }
+Server :: type { port : Int; };
 
 get_port :: Server -> Int?
   = s => s?.port;

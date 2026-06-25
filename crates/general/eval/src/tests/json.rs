@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn to_json_record_list_atom() {
-    let value = run("{ host = \"localhost\"; port = 8080; mode = #prod; flags = [true; false;]; }");
+    let value = run("{ host = \"localhost\"; port = 8080; mode = #prod; flags = {true; false;}; }");
     assert_eq!(
         value.to_json().unwrap(),
         serde_json::json!({
@@ -29,8 +29,8 @@ fn to_json_tagged_union_named_payload() {
     let src = "Status :: type {
   #ok: { code : Int; };
   #err: { msg : Text; };
-}
-s :: Status = #ok { code = 200; }
+};
+s :: Status = #ok { code = 200; };
 s";
     assert_eq!(
         run(src).to_json().unwrap(),

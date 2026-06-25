@@ -17,34 +17,34 @@
 ### `app.zt`
 
 ```zt
-Profile :: type {#dev; #test; #prod;}
+Profile :: type {#dev; #test; #prod;};
 
 RawServer :: type {
   host? : Text;
   port? : Int;
   tls?  : Bool;
-}
+};
 
 Server :: type {
   host : Text;
   port : Int;
   tls  : Bool;
-}
+};
 
 RawConfig :: type {
   name    : Text;
   profile : Profile;
   server  : RawServer;
-}
+};
 
 Config :: type {
   name    : Text;
   profile : Profile;
   server  : Server;
-}
+};
 
-raw :: import "app.zti"
-rawConfig :: RawConfig = raw
+raw :: import "app.zti";
+rawConfig :: RawConfig = raw;
 
 normalizeServer :: RawServer -> Server
   = s => {
@@ -57,7 +57,7 @@ config :: Config = {
   name    = rawConfig.name;
   profile = rawConfig.profile;
   server  = normalizeServer rawConfig.server;
-}
+};
 
 config
 ```
@@ -84,10 +84,10 @@ RawConfig :: type {
     host? : Text;
     port? : Int;
   };
-}
+};
 
-raw :: import "nested.zti"
-rawConfig :: RawConfig = raw
+raw :: import "nested.zti";
+rawConfig :: RawConfig = raw;
 
 {
   host = rawConfig.server?.host ?? "127.0.0.1";
@@ -102,20 +102,20 @@ Shape :: type {
   #circle: { radius: Float; };
   #square: { length: Float; };
   #rect: { width: Float; height: Float; };
-}
+};
 
 area :: Shape -> Float
   = #circle { radius = r; }             => r * r * 3.14159;
   = #square { length = l; }             => l * l;
   = #rect   { width = w; height = h; }  => w * h;
 
-shapes :: List Shape = [
+shapes :: List Shape = {
   #circle { radius = 1.0; };
   #square { length = 2.0; };
   #rect   { width = 3.0; height = 4.0; };
-]
+};
 
-total_area ::= fold (\acc s. acc + area s) 0.0 shapes
+total_area ::= fold (\acc s. acc + area s) 0.0 shapes;
 ```
 
 ---

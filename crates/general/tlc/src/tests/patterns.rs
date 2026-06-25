@@ -45,7 +45,7 @@ toInt true"#,
 fn record_pattern_lowers_to_tlc_record_pat() {
     // Record pattern in a match arm exercises ThirPatKind::Record → TlcPat::Record.
     let m = tlc_of(
-        r#"Point :: type { x : Int; y : Int; }
+        r#"Point :: type { x : Int; y : Int; };
 getX :: Point -> Int
   = { x = v; y = _; } => v;
 getX { x = 42; y = 0; }"#,
@@ -72,7 +72,7 @@ fn polymorphic_identity_lowers_with_ty_app() {
     // `result := id 42` is a declaration whose value TLC lowers. When TLC
     // processes the BindingRef to `id`, lower_binding_ref sees the poly scheme
     // and calls extract_instantiation(scheme=[?0], stored=?0->?0, ref=Int->Int).
-    let m = tlc_of("id x = x\nresult ::= id 42\nresult");
+    let m = tlc_of("id x = x;\nresult ::= id 42;\nresult");
     // id + result = 2 declarations
     assert_eq!(m.decls.len(), 2, "expected id and result decls");
     // The module should contain a TyApp expression (type application for id)
@@ -94,7 +94,7 @@ fn polymorphic_identity_lowers_with_ty_app() {
 /// Note: TLC only lowers declarations; the call must be inside a decl.
 #[test]
 fn polymorphic_list_wrapper_covers_match_types_list_arm() {
-    let m = tlc_of("wrap ::= \\x. [x;]\nresult ::= wrap 42\nresult");
+    let m = tlc_of("wrap ::= \\x. {x;};\nresult ::= wrap 42;\nresult");
     assert_eq!(m.decls.len(), 2, "expected wrap and result decls");
     let has_ty_app = m
         .expr_arena
@@ -112,7 +112,7 @@ fn polymorphic_list_wrapper_covers_match_types_list_arm() {
 /// Note: TLC only lowers declarations; the call must be inside a decl.
 #[test]
 fn polymorphic_identity_with_optional_covers_match_types_optional_arm() {
-    let m = tlc_of("pass x = x\nv :: Int? = #none\nresult ::= pass v\nresult");
+    let m = tlc_of("pass x = x;\nv :: Int? = #none;\nresult ::= pass v;\nresult");
     // The poly scheme for `pass` is instantiated with `Int?` → match_types Optional arm hit.
     let _ = m;
 }

@@ -22,7 +22,7 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ("if_expr", "if 3 > 2 then 10 else 20"),
         ("record", "{ a = 1; b = 2; }.b"),
         ("tuple", "(1, 2)"),
-        ("list_eq", "[1; 2; 3;] == [1; 2; 3;]"),
+        ("list_eq", "{1; 2; 3;} == {1; 2; 3;}"),
         (
             "factorial",
             "f :: Int -> Int\n  = 0 => 1;\n  = n => n * f (n - 1);\nf 5",
@@ -34,41 +34,41 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "coalesce_absent",
-            "S :: type { p? : Int; }\ns :: S = {}\ns.p ?? 8080",
+            "S :: type { p? : Int; };\ns :: S = {};\ns.p ?? 8080",
         ),
-        ("coalesce_explicit_none", "x :: Int? = #none\nx ?? 5"),
-        ("coalesce_explicit_some", "x :: Int? = #some (9)\nx ?? 5"),
+        ("coalesce_explicit_none", "x :: Int? = #none;\nx ?? 5"),
+        ("coalesce_explicit_some", "x :: Int? = #some (9);\nx ?? 5"),
         (
             "maybe_field_absent_direct",
-            "S :: type { p? : Int; }\ns :: S = {}\ns.p",
+            "S :: type { p? : Int; };\ns :: S = {};\ns.p",
         ),
         (
             "maybe_field_present_direct",
-            "S :: type { p? : Int; }\ns :: S = { p = 7; }\ns.p",
+            "S :: type { p? : Int; };\ns :: S = { p = 7; };\ns.p",
         ),
         (
             "maybe_optional_field_present_none",
-            "S :: type { p? : Int?; }\ns :: S = { p = #none; }\ns.p",
+            "S :: type { p? : Int?; };\ns :: S = { p = #none; };\ns.p",
         ),
         (
             "maybe_optional_field_present_some",
-            "S :: type { p? : Int?; }\ns :: S = { p = #some (7); }\ns.p",
+            "S :: type { p? : Int?; };\ns :: S = { p = #some (7); };\ns.p",
         ),
         (
             "optional_access_chain_some",
-            "Inner :: type { val : Int; }\nOuter :: type { inner? : Inner; }\no :: Outer = { inner = { val = 5; }; }\no.inner?.val ?? 0",
+            "Inner :: type { val : Int; };\nOuter :: type { inner? : Inner; };\no :: Outer = { inner = { val = 5; }; };\no.inner?.val ?? 0",
         ),
         (
             "optional_access_chain_none",
-            "Inner :: type { val : Int; }\nOuter :: type { inner? : Inner; }\no :: Outer = {}\no.inner?.val ?? 0",
+            "Inner :: type { val : Int; };\nOuter :: type { inner? : Inner; };\no :: Outer = {};\no.inner?.val ?? 0",
         ),
         (
             "optional_explicit_some_access",
-            "Inner :: type { val : Int; }\ncfg :: Inner? = #some ({ val = 9; })\ncfg?.val ?? 0",
+            "Inner :: type { val : Int; };\ncfg :: Inner? = #some ({ val = 9; });\ncfg?.val ?? 0",
         ),
         (
             "match_union",
-            "Shape :: type { #c: { r: Int; }; #s: { v: Int; }; }\nf :: Shape -> Int\n  = #c { r = r; } => r;\n  = #s { v = v; } => v;\nf (#c { r = 7; })",
+            "Shape :: type { #c: { r: Int; }; #s: { v: Int; }; };\nf :: Shape -> Int\n  = #c { r = r; } => r;\n  = #s { v = v; } => v;\nf (#c { r = 7; })",
         ),
         (
             "guard",
@@ -76,11 +76,11 @@ fn battery() -> Vec<(&'static str, &'static str)> {
         ),
         (
             "lazy_record_projection",
-            "bad :: Int = bad\n{ ok = 1; bad = bad; }.ok",
+            "bad :: Int = bad;\n{ ok = 1; bad = bad; }.ok",
         ),
         (
             "lazy_block_local",
-            "{ y := 10 / 0; if 1 > 2 then y else 99 }",
+            "[ y := 10 / 0; if 1 > 2 then y else 99 ]",
         ),
         (
             "operator_witness_direct_eq",
@@ -132,7 +132,7 @@ less 2 1"#,
         // ── aggregate construction + Display ─────────────────────────────────
         ("named_tuple", "(x = 1, y = 2)"),
         ("record_three_fields", "{ a = 1; b = 2; c = 3; }"),
-        ("nested_list", "[[1; 2;]; [3;];]"),
+        ("nested_list", "{{1; 2;}; {3;};}"),
         ("string_literal", "\"hi\""),
         // ── literal-pattern clauses (exercises THIR-oracle match_pattern) ────
         (
@@ -145,7 +145,7 @@ less 2 1"#,
         ),
         (
             "match_record_clause",
-            "P :: type { a : Int; b : Int; }\nf :: P -> Int\n  = { a = a; b = b; } => a + b;\nf { a = 2; b = 3; }",
+            "P :: type { a : Int; b : Int; };\nf :: P -> Int\n  = { a = a; b = b; } => a + b;\nf { a = 2; b = 3; }",
         ),
     ]
 }
@@ -186,28 +186,28 @@ fn thir_and_tlc_imports_agree() {
     let cases = [
         (
             "zti_import",
-            "cfg :: import \"config.zti\"\ncfg.port",
+            "cfg :: import \"config.zti\";\ncfg.port",
             "8080",
         ),
-        ("zt_import", "n :: import \"other.zt\"\nn", "42"),
+        ("zt_import", "n :: import \"other.zt\";\nn", "42"),
         (
             "imported_function",
-            "f :: import \"func_module.zt\"\nf 2 3",
+            "f :: import \"func_module.zt\";\nf 2 3",
             "5",
         ),
         (
             "optional_import",
-            "m :: import \"optional_module.zt\"\nm",
+            "m :: import \"optional_module.zt\";\nm",
             "#none",
         ),
         (
             "imported_operator_witness",
-            "w :: import \"witness_eq_int_operator.zt\"\n1 == 1",
+            "w :: import \"witness_eq_int_operator.zt\";\n1 == 1",
             "false",
         ),
         (
             "imported_bounded_operator_witness",
-            "w :: import \"witness_eq_int_operator_bounded.zt\"\nw",
+            "w :: import \"witness_eq_int_operator_bounded.zt\";\nw",
             "false",
         ),
     ];
@@ -288,7 +288,7 @@ fn thir_and_tlc_runtime_errors_agree() {
     let cases = [
         ("int_div_by_zero", "1 / 0"),
         ("int_overflow_add", "9223372036854775807 + 1"),
-        ("black_hole", "x :: Int = x\nx"),
+        ("black_hole", "x :: Int = x;\nx"),
     ];
     let mut divergences = Vec::new();
     for (label, src) in cases {

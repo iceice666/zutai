@@ -16,7 +16,7 @@ Bool?
 Optional :: <T> type {
   #none;
   #some (T);
-}
+};
 ```
 
 The compiler recognizes `Optional` as the meaning of postfix `T?`; matching and construction use the tuple-payload constructors above.
@@ -42,7 +42,7 @@ Server :: type {
   host : Text;
   port : Int;
   tls  : Bool?;
-}
+};
 ```
 
 The `tls` field is required, but its value must be either `#none` or `#some (true)`.
@@ -54,7 +54,7 @@ server :: Server = {
   host = "localhost";
   port = 8080;
   tls  = #some (true);
-}
+};
 ```
 
 Also valid:
@@ -64,7 +64,7 @@ server :: Server = {
   host = "localhost";
   port = 8080;
   tls  = #none;
-}
+};
 ```
 
 Invalid:
@@ -73,7 +73,7 @@ Invalid:
 server :: Server = {
   host = "localhost";
   port = 8080;
-}
+};
 ```
 
 because `tls` is required.

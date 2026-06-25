@@ -35,9 +35,21 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening) and
-2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering)._
+_Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
+2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), and
+2026-06-26 (general-mode `;`-terminator / container-glyph grammar; docs migrated)._
 
+- General-mode (`.zt`) surface grammar now uses `;` as the universal
+  terminator/separator: every value-like top-level declaration ends in `;`, and a
+  trailing `;` makes an expression a `()` statement. The container glyph picks the
+  shape — `{ … }` is a parallel record (`name = value;`) or list (bare `value;`),
+  and `[ … ]` is a serial do-block (local bindings + tail). The scope picks the
+  binding operator — top-level `::=` / `:: T =`, local (inside `[ … ]`) `:=` / `: T =`.
+  Empty record `{}`, empty list `{;}`, empty do-block `[]`. Immediate mode `.zti`
+  is unchanged (arrays stay `[ … ]`). v0 spec docs, the language manual, and stdlib
+  notes were migrated to this grammar; the `v0_spec` doc-fence acceptance test was
+  updated to the new accepting set (decl-only `.zt` snippets now form complete
+  programs that evaluate to `()`).
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and

@@ -110,7 +110,7 @@ fn run_valid_zt_file_prints_result() {
 #[test]
 fn run_unicode_identifier_prints_result() {
     assert_eq!(
-        run_stdout("cli_test_unicode_ident.zt", "café ::= 42\ncafé\n"),
+        run_stdout("cli_test_unicode_ident.zt", "café ::= 42;\ncafé\n"),
         "42\n"
     );
 }
@@ -302,15 +302,15 @@ fn run_deep_recursion_does_not_overflow_stack() {
 
 #[test]
 fn run_zt_parse_error_exits_nonzero() {
-    // `[1; 2]` is an invalid Zutai expression (list items need semicolons
-    // but the outer `[` is parsed as union type syntax).
-    let path = write_tmp("cli_test_parse_err.zt", "[1; 2]\n");
+    // `{1; 2}` is an invalid Zutai expression (list items must each end with
+    // `;`, so the missing trailing `;` after `2` is a parse error).
+    let path = write_tmp("cli_test_parse_err.zt", "{1; 2}\n");
     cli().arg("run").arg(&path).assert().failure();
 }
 
 #[test]
 fn run_zt_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_type_err.zt", "x :: Int = \"bad\";\nx\n");
     cli()
         .arg("run")
         .arg(&path)
@@ -383,7 +383,7 @@ fn json_zti_file_prints_natural_json() {
 fn json_zt_file_evaluates_final_result() {
     let path = write_tmp(
         "cli_test_json_eval.zt",
-        "cfg ::= { host = \"localhost\"; port = 8000 + 80; }\ncfg\n",
+        "cfg ::= { host = \"localhost\"; port = 8000 + 80; };\ncfg\n",
     );
     cli()
         .arg("json")
@@ -396,7 +396,7 @@ fn json_zt_file_evaluates_final_result() {
 
 #[test]
 fn json_zt_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_json_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_json_type_err.zt", "x :: Int = \"bad\";\nx\n");
     cli()
         .arg("json")
         .arg(&path)
@@ -442,8 +442,8 @@ fn parse_valid_zti_file_prints_ast() {
 
 #[test]
 fn parse_zt_with_parse_errors_exits_nonzero() {
-    // `[1; 2]` produces a parse error in .zt files.
-    let path = write_tmp("cli_test_parse_parse_err.zt", "[1; 2]\n");
+    // `{1; 2}` produces a parse error in .zt files.
+    let path = write_tmp("cli_test_parse_parse_err.zt", "{1; 2}\n");
     cli().arg("parse").arg(&path).assert().failure();
 }
 
@@ -531,7 +531,7 @@ fn repl_evaluates_posit_expression() {
 fn repl_accepts_declaration_then_expression() {
     let mut cmd = cli();
     cmd.arg("repl")
-        .write_stdin("x ::= 42\nx\n:quit\n")
+        .write_stdin("x ::= 42;\nx\n:quit\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("42"));
@@ -541,7 +541,7 @@ fn repl_accepts_declaration_then_expression() {
 fn repl_reset_clears_bindings() {
     let mut cmd = cli();
     cmd.arg("repl")
-        .write_stdin("x ::= 10\n:reset\n:quit\n")
+        .write_stdin("x ::= 10;\n:reset\n:quit\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("bindings cleared"));
@@ -554,7 +554,7 @@ fn run_zt_with_import_error_exits_nonzero() {
     // Import a file that does not exist → import error.
     let path = write_tmp(
         "cli_test_import_err.zt",
-        "lib :: import \"./does_not_exist.zti\"\n1\n",
+        "lib :: import \"./does_not_exist.zti\";\n1\n",
     );
     cli()
         .arg("run")
@@ -569,7 +569,7 @@ fn run_imported_value_can_flow_through_print_effect() {
     write_tmp("cli_test_print_import.zti", "{ host = \"127.0.0.1\"; }\n");
     let path = write_tmp(
         "cli_test_print_import.zt",
-        "cfg :: import \"./cli_test_print_import.zti\"\nprint cfg.host\n",
+        "cfg :: import \"./cli_test_print_import.zti\";\nprint cfg.host\n",
     );
     cli()
         .arg("run")
@@ -590,7 +590,7 @@ fn compile_zt_imported_generic_fn_matches_oracle() {
         "main.zt",
         &[
             ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
-            ("main.zt", "dep :: import \"dep.zt\"\ndep 42\n"),
+            ("main.zt", "dep :: import \"dep.zt\";\ndep 42\n"),
         ],
     );
     assert_eq!(native.trim(), "42");
@@ -611,7 +611,7 @@ fn compile_zt_imported_generic_record_matches_oracle() {
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\"\ndep.apply (\\x. x + 1) 41\n",
+                "dep :: import \"dep.zt\";\ndep.apply (\\x. x + 1) 41\n",
             ),
         ],
     );
@@ -632,7 +632,7 @@ fn compile_zt_imported_generic_multitype_matches_oracle() {
             ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\"\nif dep true then dep 1 else 0\n",
+                "dep :: import \"dep.zt\";\nif dep true then dep 1 else 0\n",
             ),
         ],
     );
@@ -654,7 +654,7 @@ fn compile_zt_imported_generic_record_multitype_matches_oracle() {
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\"\nfirst :: Int -> Bool -> Int = i _ => i;\nfirst (dep.apply (\\x. x + 1) 41) (dep.apply (\\b. b) true)\n",
+                "dep :: import \"dep.zt\";\nfirst :: Int -> Bool -> Int = i _ => i;\nfirst (dep.apply (\\x. x + 1) 41) (dep.apply (\\b. b) true)\n",
             ),
         ],
     );
@@ -679,7 +679,7 @@ fn compile_zt_imported_stream_module_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\"\n\
+                "s :: import \"stream.zt\";\n\
                  isEven :: Int -> Bool = n => (n / 2) * 2 == n;\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
                  double :: Int -> Int = x => x * 2;\n\
@@ -707,8 +707,8 @@ fn compile_zt_imported_stream_unfold_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\"\n\
-                 Step :: <S, A> type { #done; #yield : { item : A; next : S; }; }\n\
+                "s :: import \"stream.zt\";\n\
+                 Step :: <S, A> type { #done; #yield : { item : A; next : S; }; };\n\
                  step :: Int -> Step Int Int = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
                  s.fold add 0 (s.take 4 (s.unfold step 1))\n",
@@ -731,7 +731,7 @@ fn compile_zt_imported_stream_empty_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\"\n\
+                "s :: import \"stream.zt\";\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
                  s.fold add 0 (s.cons 5 (s.cons 7 s.empty))\n",
             ),
@@ -776,12 +776,12 @@ fn compile_zt_imported_unexportable_value_stays_monomorphic() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("dep.zt"),
-        "Box :: <A> type { #box : { val : A; }; }\nb :: Box Int = #box { val = 7; }\nb\n",
+        "Box :: <A> type { #box : { val : A; }; };\nb :: Box Int = #box { val = 7; };\nb\n",
     )
     .unwrap();
     std::fs::write(
         dir.join("main.zt"),
-        "dep :: import \"dep.zt\"\ng :: Int -> Bool -> Int = i _ => i;\ng dep dep\n",
+        "dep :: import \"dep.zt\";\ng :: Int -> Bool -> Int = i _ => i;\ng dep dep\n",
     )
     .unwrap();
     let stderr = cli()
@@ -814,11 +814,11 @@ fn compile_zt_imported_unexportable_value_through_generic_matches_oracle() {
         &[
             (
                 "dep.zt",
-                "Box :: <A> type { #box : { val : A; }; }\nb :: Box Int = #box { val = 7; }\nb\n",
+                "Box :: <A> type { #box : { val : A; }; };\nb :: Box Int = #box { val = 7; };\nb\n",
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\"\nign :: <A> A -> Int = _ => 0;\nign dep\n",
+                "dep :: import \"dep.zt\";\nign :: <A> A -> Int = _ => 0;\nign dep\n",
             ),
         ],
     );
@@ -834,7 +834,7 @@ fn run_bare_filename_import_parent_escape_is_rejected() {
     std::fs::write(root.join("zutai_cli_bare_escape.zti"), "{ secret = 1; }\n").unwrap();
     std::fs::write(
         dir.join("main.zt"),
-        "cfg :: import \"../zutai_cli_bare_escape.zti\"\ncfg.secret\n",
+        "cfg :: import \"../zutai_cli_bare_escape.zti\";\ncfg.secret\n",
     )
     .unwrap();
 
@@ -855,7 +855,7 @@ fn run_imported_function_can_flow_through_print_effect() {
     );
     let path = write_tmp(
         "cli_test_func_print_import.zt",
-        "add :: import \"./cli_test_func_import.zt\"\n{ print \"using import\"; add 2 3 }\n",
+        "add :: import \"./cli_test_func_import.zt\";\n[ print \"using import\"; add 2 3 ]\n",
     );
     cli()
         .arg("run")
@@ -875,9 +875,9 @@ fn compile_zt_value_import_matches_oracle() {
         &[
             (
                 "dep.zt",
-                "base ::= 21\n{ doubled = base; name = \"svc\"; }\n",
+                "base ::= 21;\n{ doubled = base; name = \"svc\"; }\n",
             ),
-            ("main.zt", "dep :: import \"dep.zt\"\ndep\n"),
+            ("main.zt", "dep :: import \"dep.zt\";\ndep\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -891,8 +891,8 @@ fn compile_zt_int_import_matches_oracle() {
         "zt_int",
         "main.zt",
         &[
-            ("lib.zt", "x ::= 7\ny ::= 6\nx * y\n"),
-            ("main.zt", "n :: import \"lib.zt\"\nn + 1\n"),
+            ("lib.zt", "x ::= 7;\ny ::= 6;\nx * y\n"),
+            ("main.zt", "n :: import \"lib.zt\";\nn + 1\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -903,7 +903,7 @@ fn compile_zt_int_import_matches_oracle() {
 
 #[test]
 fn parse_zt_with_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_parse_type_err.zt", "x :: Int = \"oops\"\nx\n");
+    let path = write_tmp("cli_test_parse_type_err.zt", "x :: Int = \"oops\";\nx\n");
     cli()
         .arg("parse")
         .arg(&path)
@@ -925,7 +925,7 @@ fn parse_zt_with_valid_import_prints_ast() {
     );
     let path = write_tmp(
         "cli_test_parse_import_cfg.zt",
-        "cfg :: import \"./cli_test_parse_import_cfg.zti\"\ncfg.host\n",
+        "cfg :: import \"./cli_test_parse_import_cfg.zti\";\ncfg.host\n",
     );
     cli()
         .arg("parse")
@@ -942,7 +942,7 @@ fn parse_zt_with_import_error_surfaces_root_cause() {
     // After fix: the FileNotFound import diagnostic is included in the filter.
     let path = write_tmp(
         "cli_test_parse_import_err.zt",
-        "cfg :: import \"./does_not_exist_parse.zti\"\ncfg\n",
+        "cfg :: import \"./does_not_exist_parse.zti\";\ncfg\n",
     );
     cli()
         .arg("parse")
@@ -955,9 +955,9 @@ fn parse_zt_with_import_error_surfaces_root_cause() {
 
 // ─── `check` subcommand ────────────────────────────────────────────────────────
 const EFFECT_SRC: &str = r#"
-Config :: type { value : Text; }
-ParseError :: type Text
-parse :: Text -> Config ! { fail ParseError }
+Config :: type { value : Text; };
+ParseError :: type Text;
+parse :: Text -> Config ! { fail ParseError; }
   = text => perform fail text;
 parse
 "#;
@@ -968,7 +968,7 @@ getN { extra = 7; n = 5; }
 "#;
 
 const HANDLED_EFFECT_SRC: &str = r#"
-result ::= handle { perform warn "diag"; "ok" } with { warn = \d. resume (); }
+result ::= handle [ perform warn "diag"; "ok" ] with { warn = \d. resume (); };
 result
 "#;
 
@@ -977,48 +977,48 @@ const COMPILED_EFFECT_FIXTURES: &[(&str, &str)] = &[
     (
         "handler_direct_return",
         r#"
-result ::= handle { perform fail "bad"; "unreachable" } with { fail = \e. "fallback"; }
+result ::= handle [ perform fail "bad"; "unreachable" ] with { fail = \e. "fallback"; };
 result
 "#,
     ),
     (
         "forwarded_handler",
         r#"
-result ::= handle {
-  handle { perform fail "bad"; "unreachable" } with {
-    fail = \e. { perform log e; "fallback" };
+result ::= handle [
+  handle [ perform fail "bad"; "unreachable" ] with {
+    fail = \e. [ perform log e; "fallback" ];
   }
-} with {
+] with {
   log = \d. resume ();
-}
+};
 result
 "#,
     ),
     (
         "multi_op_nested_handlers",
         r#"
-result ::= handle {
-  handle { perform inner "x"; perform outer "y"; perform note "z"; "ok" } with {
+result ::= handle [
+  handle [ perform inner "x"; perform outer "y"; perform note "z"; "ok" ] with {
     inner = \d. resume ();
     note = \d. resume ();
   }
-} with {
+] with {
   outer = \d. resume ();
-}
+};
 result
 "#,
     ),
     (
         "source_handler_intercepts_print",
         r#"
-result ::= handle print "x" with { io.print = \text. "handled"; }
+result ::= handle print "x" with { io.print = \text. "handled"; };
 result
 "#,
     ),
     ("ambient_print", "print \"hello\"\n"),
     (
         "print_sequence",
-        r#"{ perform io.print "a"; perform io.print "b"; 7 }
+        r#"[ perform io.print "a"; perform io.print "b"; 7 ]
 "#,
     ),
     (
@@ -1026,11 +1026,11 @@ result
         r#"if 1 < 2 then print "then" else print "else"
 "#,
     ),
-    ("print_list", r#"[print "a"; print "b";]"#),
+    ("print_list", r#"{ print "a"; print "b"; }"#),
     (
         "print_function",
         r#"
-printer :: Text -> Text ! { io.print : Text -> Text }
+printer :: Text -> Text ! { io.print : Text -> Text; }
   = t => print t;
 printer "fn"
 "#,
@@ -1038,7 +1038,7 @@ printer "fn"
     (
         "higher_order_print",
         r#"
-apply :: (Text -> Text ! { io.print : Text -> Text }) -> Text ! { io.print : Text -> Text }
+apply :: (Text -> Text ! { io.print : Text -> Text; }) -> Text ! { io.print : Text -> Text; }
   = f => f "ho";
 apply print
 "#,
@@ -1054,7 +1054,7 @@ handle boom 1 with { value = \v. v; fail = \m. 0; }
         "cross_fn_curried_handled",
         r#"
 addperf :: Int -> Int -> Int ! { fail Text; }
-  = a b => { perform fail "x"; a + b };
+  = a b => [ perform fail "x"; a + b ];
 handle addperf 3 4 with { value = \v. v; fail = \m. 99; }
 "#,
     ),
@@ -1111,9 +1111,9 @@ lt 1 2
     (
         "derive_eq_record",
         r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 9; y = 2; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 9; y = 2; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Point :: derive
 eq p1 p2
@@ -1125,7 +1125,7 @@ eq p1 p2
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Int :: { eq = \a b. a == b; }
 Eq @(List A) :: <A: Eq> { eq = \xs ys. true; }
-eq [1; 2;] [3; 4;]
+eq { 1; 2; } { 3; 4; }
 "#,
     ),
     (
@@ -1140,12 +1140,12 @@ useConv 5
     (
         "conditional_pair_witness",
         r#"
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-p1 :: Pair Int = { fst = 1; snd = 2; }
-p2 :: Pair Int = { fst = 1; snd = 2; }
+p1 :: Pair Int = { fst = 1; snd = 2; };
+p2 :: Pair Int = { fst = 1; snd = 2; };
 eq p1 p2
 "#,
     ),
@@ -1153,27 +1153,27 @@ eq p1 p2
 const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     (
         "nullary_union",
-        "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; }\n#leaf\n",
+        "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; };\n#leaf\n",
     ),
     (
         "enum_member",
-        "Color :: type { #red; #green; #blue; }\n#green\n",
+        "Color :: type { #red; #green; #blue; };\n#green\n",
     ),
-    ("maybe_present", "x :: Maybe Int = #present (42)\nx\n"),
-    ("maybe_absent", "x :: Maybe Int = #absent\nx\n"),
-    ("optional_some", "x :: Int? = #some (7)\nx\n"),
-    ("optional_none", "x :: Int? = #none\nx\n"),
+    ("maybe_present", "x :: Maybe Int = #present (42);\nx\n"),
+    ("maybe_absent", "x :: Maybe Int = #absent;\nx\n"),
+    ("optional_some", "x :: Int? = #some (7);\nx\n"),
+    ("optional_none", "x :: Int? = #none;\nx\n"),
     (
         "record_optional_field",
-        "r :: { x : Int?; y : Int; } = { x = #some (42); y = 10; }\nr\n",
+        "r :: { x : Int?; y : Int; } = { x = #some (42); y = 10; };\nr\n",
     ),
     (
         "recursive_maybe",
-        "Nested :: type { next : Maybe Nested; val : Int; }\nmkNested :: Int -> Nested\n  = n => if n == 0 then { next = #absent; val = 0; } else { next = #present (mkNested (n - 1)); val = n; };\nmkNested 2\n",
+        "Nested :: type { next : Maybe Nested; val : Int; };\nmkNested :: Int -> Nested\n  = n => if n == 0 then { next = #absent; val = 0; } else { next = #present (mkNested (n - 1)); val = n; };\nmkNested 2\n",
     ),
-    ("float_value", "x :: Float = 5.0\nx\n"),
-    ("coalesce_some", "x :: Int? = #some (7)\nx ?? 0\n"),
-    ("coalesce_none", "y :: Int? = #none\ny ?? 99\n"),
+    ("float_value", "x :: Float = 5.0;\nx\n"),
+    ("coalesce_some", "x :: Int? = #some (7);\nx ?? 0\n"),
+    ("coalesce_none", "y :: Int? = #none;\ny ?? 99\n"),
     // ── value-rendering divergence guards (docs/TBD.md) ──────────────────────
     // The backend sorts record fields by name for slot layout; the interpreter
     // must render the same order. These exercise the shapes a backend/interp
@@ -1186,17 +1186,17 @@ const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     ),
     (
         "variant_record_payload",
-        "Shape :: type { #square : { side : Int; }; #circle : { radius : Int; }; }\ns :: Shape = #circle { radius = 5; }\ns\n",
+        "Shape :: type { #square : { side : Int; }; #circle : { radius : Int; }; };\ns :: Shape = #circle { radius = 5; };\ns\n",
     ),
     (
         "variant_in_record",
-        "Status :: type { #ok; #err; }\nr :: { tag : Status; n : Int; } = { tag = #err; n = 3; }\nr\n",
+        "Status :: type { #ok; #err; };\nr :: { tag : Status; n : Int; } = { tag = #err; n = 3; };\nr\n",
     ),
     ("nested_tuple", "(1, (2, (3, 4)))\n"),
     ("tuple_in_record", "{ pos = (1, 2); name = \"x\"; }\n"),
     ("text_escapes", "\"x\\ty\\nz\\\"w\\\\v\"\n"),
     ("negative_in_record", "{ b = 0 - 3; a = 7; }\n"),
-    ("negatives_in_list", "[0 - 1; 0 - 2; 3;]\n"),
+    ("negatives_in_list", "{ 0 - 1; 0 - 2; 3; }\n"),
 ];
 
 #[test]
@@ -1212,13 +1212,13 @@ fn check_valid_zt_file_passes() {
 
 #[test]
 fn check_zt_parse_error_exits_nonzero() {
-    let path = write_tmp("cli_test_check_parse_err.zt", "[1; 2]\n");
+    let path = write_tmp("cli_test_check_parse_err.zt", "{1; 2}\n");
     cli().arg("check").arg(&path).assert().failure();
 }
 
 #[test]
 fn check_zt_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_check_type_err.zt", "x :: Int = \"bad\";\nx\n");
     cli().arg("check").arg(&path).assert().failure();
 }
 
@@ -1227,7 +1227,7 @@ fn check_renders_human_readable_type_diagnostic() {
     // `check` must render THIR type errors with a human message and source
     // context (like parse errors), not dump the raw `SemanticDiagnostic { .. }`
     // Debug form. The exact human string is absent from the old Debug output.
-    let path = write_tmp("cli_test_check_render.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_check_render.zt", "x :: Int = \"bad\";\nx\n");
     cli()
         .arg("check")
         .arg(&path)
@@ -1284,13 +1284,13 @@ fn compile_valid_zt_file_emits_llvm_ir() {
 
 #[test]
 fn compile_zt_parse_error_exits_nonzero() {
-    let path = write_tmp("cli_test_compile_parse_err.zt", "[1; 2]\n");
+    let path = write_tmp("cli_test_compile_parse_err.zt", "{1; 2}\n");
     cli().arg("compile").arg(&path).assert().failure();
 }
 
 #[test]
 fn compile_zt_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_compile_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_compile_type_err.zt", "x :: Int = \"bad\";\nx\n");
     cli().arg("compile").arg(&path).assert().failure();
 }
 
@@ -1363,8 +1363,8 @@ fn compile_effectful_generator_stays_gated() {
     // residual-effect gate must refuse it (never miscompile), matching the
     // committed strict-AOT-rejects-effects boundary.
     let src = r#"
-Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }
-sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int }
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
   = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
 handle (sumEff (stream { yield perform tick (); })) with { tick = \_. resume 5; }
 "#;
@@ -1531,7 +1531,7 @@ fn compiled_rank2_lambda_arg_matches_oracle() {
     // `∀`-type, so the Dataflow structural validator found a non-`Fun` where a
     // `Lam` node requires one and panicked with an ICE. The compiled output must
     // now lower cleanly and match the interpreter oracle.
-    let src = "apply :: (<A> A -> A) -> Int = \\g. g 1\napply (\\x. x)\n";
+    let src = "apply :: (<A> A -> A) -> Int = \\g. g 1;\napply (\\x. x)\n";
     let run_output = run_stdout("cli_test_rank2_oracle.zt", src);
     let compiled_output = compile_bin_stdout("cli_test_rank2_compiled", src);
     assert_eq!(
@@ -1565,7 +1565,7 @@ fn compile_nullary_variant_bin_renders_tag() {
     assert_eq!(
         compile_bin_stdout(
             "cli_test_show_leaf",
-            "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; }\n#leaf\n",
+            "Tree :: type { #leaf; #node : { val : Int; left : Tree; right : Tree; }; };\n#leaf\n",
         ),
         "#leaf\n"
     );
@@ -1576,7 +1576,7 @@ fn compile_maybe_present_bin_renders_payload() {
     assert_eq!(
         compile_bin_stdout(
             "cli_test_show_present",
-            "x :: Maybe Int = #present (42)\nx\n",
+            "x :: Maybe Int = #present (42);\nx\n",
         ),
         "#present (42)\n"
     );
@@ -1594,7 +1594,7 @@ const FREE_MONAD_SPINE_SRC: &str = r#"
 Free :: type {
   #pure : { value : Int; };
   #ask  : { payload : Int; resume : Int -> Free; };
-}
+};
 
 go :: Int -> Int -> Free
   = 0 acc => #pure { value = acc; };
@@ -1630,10 +1630,10 @@ fn compile_rejects_recursive_effectful_callee() {
     // (strict-AOT-rejects). `go` accumulates the payload and resumes with unit;
     // `go 10 0` performs `warn` ten times and returns 10+9+...+1 = 55.
     let src = concat!(
-        "go :: Int -> Int -> Int ! { warn Int }\n",
+        "go :: Int -> Int -> Int ! { warn Int; }\n",
         "  = 0 acc => acc;\n",
-        "  = n acc => { perform warn n; go (n - 1) (acc + n) };\n",
-        "result ::= handle { go 10 0 } with { warn = \\w. resume (); }\n",
+        "  = n acc => [ perform warn n; go (n - 1) (acc + n) ];\n",
+        "result ::= handle [ go 10 0 ] with { warn = \\w. resume (); };\n",
         "result\n",
     );
     assert_eq!(run_stdout("cli_test_rec_effect_oracle.zt", src), "55\n");
@@ -1663,7 +1663,7 @@ fn compile_handled_effect_record_round_trips_runtime_pipeline() {
     let path = write_tmp(
         "cli_test_compile_handled_effect_record.zt",
         r#"
-result ::= handle { perform warn "diag"; { a = 1; b = 2; } } with { warn = \d. resume (); }
+result ::= handle [ perform warn "diag"; { a = 1; b = 2; } ] with { warn = \d. resume (); };
 result
 "#,
     );
@@ -1680,14 +1680,14 @@ fn compile_multi_op_and_nested_handlers_emit_runtime_value() {
     let llvm = compile_stdout(
         "cli_test_compile_nested_handlers.zt",
         r#"
-result ::= handle {
-  handle { perform inner "x"; perform outer "y"; perform note "z"; "ok" } with {
+result ::= handle [
+  handle [ perform inner "x"; perform outer "y"; perform note "z"; "ok" ] with {
     inner = \d. resume ();
     note = \d. resume ();
   }
-} with {
+] with {
   outer = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -1699,13 +1699,13 @@ fn compile_handler_clause_forwarding_emits_direct_return() {
     let llvm = compile_stdout(
         "cli_test_compile_handler_forwarding.zt",
         r#"
-result ::= handle {
-  handle { perform fail "bad"; "unreachable" } with {
-    fail = \e. { perform log e; "fallback" };
+result ::= handle [
+  handle [ perform fail "bad"; "unreachable" ] with {
+    fail = \e. [ perform log e; "fallback" ];
   }
-} with {
+] with {
   log = \d. resume ();
-}
+};
 result
 "#,
     );
@@ -1716,7 +1716,7 @@ result
 fn compile_print_list_uses_runtime_print_dispatch() {
     let llvm = compile_stdout(
         "cli_test_compile_print_list.zt",
-        r#"[print "a"; print "b";]"#,
+        r#"{ print "a"; print "b"; }"#,
     );
     assert!(!llvm.contains("@zutai.aot.print"), "{llvm}");
     assert!(!llvm.contains("@zutai.effect.print"), "{llvm}");
@@ -1728,7 +1728,7 @@ fn compile_print_list_uses_runtime_print_dispatch() {
 fn compile_reflection_schema_record_lowers_to_llvm() {
     let llvm = compile_stdout(
         "cli_test_compile_reflection_schema_record.zt",
-        "Server :: type { host : Text; port? : Int; }\nschema Server\n",
+        "Server :: type { host : Text; port? : Int; };\nschema Server\n",
     );
     assert!(llvm.contains("call void @zutai.show"), "{llvm}");
     assert!(llvm.contains("record_new"), "{llvm}");
@@ -1739,7 +1739,7 @@ fn compile_reflection_schema_record_lowers_to_llvm() {
 fn compile_reflection_schema_record_bin_renders_shape() {
     let out = compile_bin_stdout(
         "cli_test_compile_reflection_schema_record_bin",
-        "Server :: type { host : Text; port? : Int; }\nschema Server\n",
+        "Server :: type { host : Text; port? : Int; };\nschema Server\n",
     );
     assert!(out.contains("kind = #record"), "{out}");
     assert!(out.contains("name = \"host\""), "{out}");
@@ -1754,7 +1754,7 @@ fn compile_reflection_schema_union_bin_renders_shape() {
         r#"Result :: type {
   #done;
   #ok: { value : Text; };
-}
+};
 schema Result
 "#,
     );
@@ -1768,7 +1768,7 @@ schema Result
 fn compile_reflection_schema_empty_record_bin_renders_empty_fields() {
     let out = compile_bin_stdout(
         "cli_test_compile_reflection_schema_empty_record_bin",
-        "Empty :: type {}\nschema Empty\n",
+        "Empty :: type {};\nschema Empty\n",
     );
     assert!(out.contains("kind = #record"), "{out}");
     assert!(out.contains("fields = []"), "{out}");
@@ -1778,7 +1778,7 @@ fn compile_reflection_schema_empty_record_bin_renders_empty_fields() {
 fn compile_reflection_with_effectful_code_is_rejected() {
     let path = write_tmp(
         "cli_test_compile_reflection_with_effect.zt",
-        "Server :: type { host : Text; }\n_unused ::= schema Server\nprint \"hello\"\n",
+        "Server :: type { host : Text; };\n_unused ::= schema Server;\nprint \"hello\"\n",
     );
     cli()
         .arg("compile")
@@ -1792,7 +1792,7 @@ fn compile_reflection_with_effectful_code_is_rejected() {
 fn compile_reflection_schema_plain_enum_bin_renders_empty_variants() {
     let out = compile_bin_stdout(
         "cli_test_compile_reflection_schema_plain_enum_bin",
-        "Color :: type { #red; #green; #blue; }\nschema Color\n",
+        "Color :: type { #red; #green; #blue; };\nschema Color\n",
     );
     assert!(out.contains("kind = #union"), "{out}");
     assert!(out.contains("name = \"red\""), "{out}");
@@ -1804,7 +1804,7 @@ fn compile_reflection_schema_plain_enum_bin_renders_empty_variants() {
 fn compile_reflection_fields_raw_type_result_is_rejected() {
     let path = write_tmp(
         "cli_test_compile_reflection_fields_type.zt",
-        "Server :: type { host : Text; }\nfields Server\n",
+        "Server :: type { host : Text; };\nfields Server\n",
     );
     cli()
         .arg("compile")
@@ -1820,7 +1820,7 @@ fn compiled_variants_reflection_matches_oracle() {
     // were detected) and reach Dataflow Core, where it silently miscompiled to an
     // empty result. It must now fold to the same serialized list the interpreter
     // produces.
-    let src = "Color :: type { #red: {}; #green: {}; }\nvariants (Color)\n";
+    let src = "Color :: type { #red: {}; #green: {}; };\nvariants (Color)\n";
     let run_output = run_stdout("cli_test_variants_reflect_oracle.zt", src);
     let compiled_output = compile_bin_stdout("cli_test_variants_reflect_compiled", src);
     assert_eq!(compiled_output, run_output);
@@ -1834,8 +1834,8 @@ fn compiled_union_extension_matches_oracle() {
     // the extended union compile with full parity. Cover a spread member
     // (`#square` from `Shape`) and a freshly added member (`#sphere`).
     let src = r#"
-Shape :: type { #circle: { radius : Int; }; #square: { side : Int; }; }
-Shape3D :: type { ...Shape; #sphere: { radius : Int; }; }
+Shape :: type { #circle: { radius : Int; }; #square: { side : Int; }; };
+Shape3D :: type { ...Shape; #sphere: { radius : Int; }; };
 f :: Shape3D -> Int
   = #circle { radius = r; } => r;
   = #square { side = s; } => s + 100;
@@ -1893,8 +1893,8 @@ fn compiled_witness_reflection_dispatch_matches_oracle() {
     // expected). It must now AOT-fold through the TLC evaluator to the same value
     // the interpreter computes.
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p :: Point = { x = 1; y = 2; }
+Point :: type { x : Int; y : Int; };
+p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
 Show @Point :: derive
 (witness Show @Point).show p
@@ -1936,7 +1936,7 @@ fn compile_type_entry_is_rejected_before_backend_lowering() {
 fn compile_type_alias_value_entry_is_rejected_before_backend_lowering() {
     let path = write_tmp(
         "cli_test_compile_type_alias_entry.zt",
-        "MyInt :: type Int\nMyInt\n",
+        "MyInt :: type Int;\nMyInt\n",
     );
     cli()
         .arg("compile")
@@ -2000,7 +2000,7 @@ fn compile_capturing_lambda_uses_heap_closure() {
     // `n`, so applying `adder` allocates a one-capture heap closure.
     let path = write_tmp(
         "cli_test_compile_closure_capture.zt",
-        "adder n x = x + n\nadder 10 5\n",
+        "adder n x = x + n;\nadder 10 5\n",
     );
     cli()
         .arg("compile")
@@ -2036,7 +2036,7 @@ fn compile_posit64_emits_helper_and_show_runtime() {
 fn compile_record_result_emits_type_descriptor_and_show() {
     let llvm = compile_stdout(
         "cli_test_compile_descriptor_record.zt",
-        "r ::= { host = \"localhost\"; port = 8080; }\nr\n",
+        "r ::= { host = \"localhost\"; port = 8080; };\nr\n",
     );
     assert!(llvm.contains("@zutai.desc."), "{llvm}");
     assert!(llvm.contains("@zutai.desc.str."), "{llvm}");
@@ -2063,9 +2063,9 @@ fn compile_union_construction_uses_dense_tags() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
-c :: Shape = #circle { radius = 3; }
-s :: Shape = #square { side = 4; }
+};
+c :: Shape = #circle { radius = 3; };
+s :: Shape = #square { side = 4; };
 c
 "#;
     let llvm = compile_stdout("cli_test_compile_dense_union_tags.zt", src);
@@ -2115,7 +2115,7 @@ fn compile_emit_bin_runs() {
 fn compile_emit_bin_record_descriptor_matches_slots() {
     let path = write_tmp(
         "cli_test_compile_emit_bin_record_slots.zt",
-        "{ prime_count = 10; compact_primes = [2; 3; 5;]; }\n",
+        "{ prime_count = 10; compact_primes = { 2; 3; 5; }; }\n",
     );
     let out = write_tmp("cli_test_compile_emit_bin_record_slots", "");
     cli()
@@ -2147,8 +2147,8 @@ fn compile_emit_bin_union_runs() {
     let src = r#"Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
-shape :: Shape = #circle { radius = 3; }
+};
+shape :: Shape = #circle { radius = 3; };
 shape
 "#;
     assert_eq!(
@@ -2540,7 +2540,7 @@ fn compile_emit_bin_gc_keeps_footprint_flat() {
 // A program whose result depends on an O(n) *live* heap structure: a 2000-node
 // linked list, fully built before it is summed, so every node must survive until
 // the fold reads it.
-const GC_LIVE_CHAIN_SRC: &str = "Chain :: type { #nil; #cons : { head : Int; tail : Chain; }; }\n\
+const GC_LIVE_CHAIN_SRC: &str = "Chain :: type { #nil; #cons : { head : Int; tail : Chain; }; };\n\
 build :: Int -> Chain\n  = 0 => #nil;\n  = n => #cons { head = n; tail = build (n - 1); };\n\
 sumL :: Chain -> Int\n  = #nil => 0;\n  = #cons { head = h; tail = t; } => h + sumL t;\n\
 sumL (build 2000)\n";
@@ -2699,9 +2699,9 @@ fn compile_emit_bin_gc_is_default_on_with_opt_out() {
 #[test]
 fn compile_derive_witness_program_passes() {
     let src = r#"
-Point :: type { x : Int; y : Int; }
-p1 :: Point = { x = 1; y = 2; }
-p2 :: Point = { x = 1; y = 2; }
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 2; };
 Eq :: <A> @A { eq :: A -> A -> Bool; } derive
 Eq @Point :: derive
 eq p1 p2
@@ -2722,10 +2722,10 @@ fn compile_conditional_witness_program_passes() {
     let src = r#"
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 Eq @Int :: { eq = \a b. a == b; }
-Pair :: <A> type { fst : A; snd : A; }
+Pair :: <A> type { fst : A; snd : A; };
 Eq @(Pair A) :: <A: Eq> { eq = \p q. eq p.fst q.fst; }
-p1 :: Pair Int = { fst = 1; snd = 2; }
-p2 :: Pair Int = { fst = 1; snd = 2; }
+p1 :: Pair Int = { fst = 1; snd = 2; };
+p2 :: Pair Int = { fst = 1; snd = 2; };
 eq p1 p2
 "#;
     let path = write_tmp("cli_test_compile_conditional.zt", src);
@@ -2740,8 +2740,8 @@ eq p1 p2
 // ─── `select` projection (check / run / compile) ───────────────────────────────
 
 const SELECT_SRC: &str =
-    "s ::= { host = \"h\"; port = 8080; name = \"n\"; }\nselect s { port; host; }\n";
-const SELECT_BAD_SRC: &str = "s ::= { host = \"h\"; }\nselect s { missing; }\n";
+    "s ::= { host = \"h\"; port = 8080; name = \"n\"; };\nselect s { port; host; }\n";
+const SELECT_BAD_SRC: &str = "s ::= { host = \"h\"; };\nselect s { missing; }\n";
 
 #[test]
 fn check_select_passes() {
@@ -2779,8 +2779,8 @@ fn compile_select_emits_record_projection() {
 #[test]
 fn compile_record_update_emits_record_update_call() {
     let src = r#"
-Server :: type { host : Text; port : Int; }
-server :: Server = { host = "localhost"; port = 80; }
+Server :: type { host : Text; port : Int; };
+server :: Server = { host = "localhost"; port = 80; };
 server with { port = 8080; }
 "#;
     let llvm = compile_stdout("cli_test_compile_record_update.zt", src);
@@ -2798,7 +2798,7 @@ server with { port = 8080; }
 fn compile_record_access_uses_sorted_slot_zero() {
     let llvm = compile_stdout(
         "cli_test_compile_record_slot_zero.zt",
-        "r ::= { b = 10; a = 20; }\nr.a\n",
+        "r ::= { b = 10; a = 20; };\nr.a\n",
     );
     assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 0), "{llvm}");
     assert!(
@@ -2814,7 +2814,7 @@ fn compile_record_access_uses_sorted_slot_zero() {
 fn compile_record_access_uses_sorted_slot_one() {
     let llvm = compile_stdout(
         "cli_test_compile_record_slot_one.zt",
-        "r ::= { b = 10; a = 20; }\nr.b\n",
+        "r ::= { b = 10; a = 20; };\nr.b\n",
     );
     assert!(llvm_call_uses_slot(&llvm, "@zutai.record_get", 1), "{llvm}");
     assert!(
@@ -2843,7 +2843,7 @@ fn compile_variant_pattern_uses_variant_value() {
 Shape :: type {
   #circle: { radius: Int; };
   #square: { side: Int; };
-}
+};
 area :: Shape -> Int
   = #circle { radius = r; } => r;
   = #square { side = s; } => s;
@@ -2854,20 +2854,20 @@ area (#circle { radius = 3; })
 }
 
 const OVERLAY_SRC: &str = r#"
-Config :: type { host : Text; port : Int; }
-defaults :: Config = { host = "localhost"; port = 80; }
-patch :: Patch Config = { port = 8080; }
+Config :: type { host : Text; port : Int; };
+defaults :: Config = { host = "localhost"; port = 80; };
+patch :: Patch Config = { port = 8080; };
 defaults |> overlay patch
 "#;
 
 const OVERLAY_DEEP_SRC: &str = r#"
-Server :: type { host : Text; port : Int; }
-Config :: type { server : Server; name : Text; }
+Server :: type { host : Text; port : Int; };
+Config :: type { server : Server; name : Text; };
 defaults :: Config = {
   server = { host = "localhost"; port = 80; };
   name = "dev";
-}
-patch :: DeepPatch Config = { server = { port = 8080; }; }
+};
+patch :: DeepPatch Config = { server = { port = 8080; }; };
 defaults |> overlayDeep patch
 "#;
 
@@ -2983,7 +2983,7 @@ fn dataflow_valid_zt_file_prints_graph() {
 
 #[test]
 fn dataflow_zt_parse_error_exits_nonzero() {
-    let path = write_tmp("cli_test_dataflow_parse_err.zt", "[1; 2]\n");
+    let path = write_tmp("cli_test_dataflow_parse_err.zt", "{1; 2}\n");
     cli().arg("dataflow").arg(&path).assert().failure();
 }
 
@@ -3002,7 +3002,7 @@ fn dataflow_effect_program_is_rejected_by_residual_effect_gate() {
 fn dataflow_reflection_schema_lowers_to_graph() {
     let path = write_tmp(
         "cli_test_dataflow_reflection_schema.zt",
-        "Server :: type { host : Text; }\nschema Server\n",
+        "Server :: type { host : Text; };\nschema Server\n",
     );
     cli()
         .arg("dataflow")
@@ -3027,7 +3027,7 @@ fn dataflow_type_entry_is_rejected_before_backend_lowering() {
 fn dataflow_type_alias_value_entry_is_rejected_before_backend_lowering() {
     let path = write_tmp(
         "cli_test_dataflow_type_alias_entry.zt",
-        "MyInt :: type Int\nMyInt\n",
+        "MyInt :: type Int;\nMyInt\n",
     );
     cli()
         .arg("dataflow")
@@ -3055,7 +3055,7 @@ fn run_print_writes_to_stdout() {
 fn run_print_list_emits_each_line() {
     let path = write_tmp(
         "cli_test_print_list.zt",
-        "[print \"a\"; print \"b\"; print \"c\";]\n",
+        "{ print \"a\"; print \"b\"; print \"c\"; }\n",
     );
     cli().arg("run").arg(&path).assert().success().stdout(
         predicate::str::contains("a")
@@ -3068,7 +3068,7 @@ fn run_print_list_emits_each_line() {
 fn run_effect_sequence_prints_in_order() {
     let path = write_tmp(
         "cli_test_print_sequence.zt",
-        "{ perform io.print \"a\"; perform io.print \"b\"; 7 }\n",
+        "[ perform io.print \"a\"; perform io.print \"b\"; 7 ]\n",
     );
     cli()
         .arg("run")
@@ -3107,7 +3107,7 @@ fn compile_print_function_prints_at_runtime() {
     let out = compile_bin_stdout(
         "cli_test_print_function_runtime",
         r#"
-printer :: Text -> Text ! { io.print : Text -> Text }
+printer :: Text -> Text ! { io.print : Text -> Text; }
   = t => print t;
 printer "fn"
 "#,
@@ -3120,7 +3120,7 @@ fn compile_higher_order_print_prints_at_runtime() {
     let out = compile_bin_stdout(
         "cli_test_higher_order_print_runtime",
         r#"
-apply :: (Text -> Text ! { io.print : Text -> Text }) -> Text ! { io.print : Text -> Text }
+apply :: (Text -> Text ! { io.print : Text -> Text; }) -> Text ! { io.print : Text -> Text; }
   = f => f "ho";
 apply print
 "#,
@@ -3143,7 +3143,7 @@ fn run_fs_read_dispatches_granted_host_effect() {
     let data_path = write_tmp("cli_test_host_fs_read_data.txt", "phase27");
     let source = format!(
         r#"
-readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+readFile :: Path -> Text ! {{ fs.read : Path -> Text; }}
   = path => perform fs.read path;
 readFile "{}"
 "#,
@@ -3158,7 +3158,7 @@ fn compile_fs_read_dispatches_granted_host_effect_at_runtime() {
     let data_path = write_tmp("cli_test_compile_host_fs_read_data.txt", "compiled");
     let source = format!(
         r#"
-readFile :: Path -> Text ! {{ fs.read : Path -> Text }}
+readFile :: Path -> Text ! {{ fs.read : Path -> Text; }}
   = path => perform fs.read path;
 readFile "{}"
 "#,
@@ -3173,7 +3173,7 @@ fn compile_env_get_dispatches_optional_host_effect() {
     let out = compile_bin_stdout(
         "cli_test_compile_host_env_get",
         r#"
-lookup :: Text -> Text? ! { env.get : Text -> Text? }
+lookup :: Text -> Text? ! { env.get : Text -> Text?; }
   = name => perform env.get name;
 lookup "__ZUTAI_PHASE27_UNSET__" ?? "missing"
 "#,
@@ -3186,7 +3186,7 @@ fn compile_env_get_some_branch_dispatches_optional_host_effect() {
     let out = compile_bin_stdout(
         "cli_test_compile_host_env_get_some",
         r#"
-lookup :: Text -> Text? ! { env.get : Text -> Text? }
+lookup :: Text -> Text? ! { env.get : Text -> Text?; }
   = name => perform env.get name;
 lookup "HOME" ?? "__missing_home__"
 "#,
@@ -3199,7 +3199,7 @@ fn compile_fs_write_dispatches_and_can_read_back() {
     let path = write_tmp("cli_test_compile_host_fs_write_data.txt", "");
     let source = format!(
         r#"
-{{ perform fs.write {{ contents = "written"; path = "{}"; }}; perform fs.read "{}"; }}
+[ perform fs.write {{ contents = "written"; path = "{}"; }}; perform fs.read "{}" ]
 "#,
         zt_string_literal(&path),
         zt_string_literal(&path)
@@ -3213,7 +3213,7 @@ fn compile_clock_now_dispatches_host_effect() {
     let out = compile_bin_stdout(
         "cli_test_compile_host_clock_now",
         r#"
-now :: Unit -> Instant ! { clock.now : Unit -> Instant }
+now :: Unit -> Instant ! { clock.now : Unit -> Instant; }
   = tick => perform clock.now tick;
 now ()
 "#,
@@ -3226,7 +3226,7 @@ fn compile_rng_next_dispatches_deterministic_host_effect() {
     let out = compile_bin_stdout(
         "cli_test_compile_host_rng_next",
         r#"
-next :: Unit -> Int ! { rng.next : Unit -> Int }
+next :: Unit -> Int ! { rng.next : Unit -> Int; }
   = tick => perform rng.next tick;
 next ()
 "#,
@@ -3241,9 +3241,9 @@ fn capability_record_entry_supplies_advisory_tokens() {
     let data_path = write_tmp("cli_test_cap_entry_data.txt", "capdata");
     let source = format!(
         r#"
-readConfig :: FsRead -> Text ! {{ fs.read : Path -> Text }}
+readConfig :: FsRead -> Text ! {{ fs.read : Path -> Text; }}
   = fs => perform fs.read "{}";
-main :: {{ fs : FsRead; }} -> Text ! {{ fs.read : Path -> Text }}
+main :: {{ fs : FsRead; }} -> Text ! {{ fs.read : Path -> Text; }}
   = caps => readConfig caps.fs;
 main
 "#,
@@ -3260,7 +3260,7 @@ fn capability_single_entry_supplies_token() {
     let data_path = write_tmp("cli_test_cap_single_data.txt", "single");
     let source = format!(
         r#"
-main :: FsRead -> Text ! {{ fs.read : Path -> Text }}
+main :: FsRead -> Text ! {{ fs.read : Path -> Text; }}
   = fs => perform fs.read "{}";
 main
 "#,
@@ -3278,7 +3278,7 @@ fn capability_curried_entry_supplies_all_tokens() {
     let data_path = write_tmp("cli_test_cap_curried_data.txt", "curried");
     let source = format!(
         r#"
-main :: FsRead -> Env -> Text ! {{ fs.read : Path -> Text; env.get : Text -> Text? }}
+main :: FsRead -> Env -> Text ! {{ fs.read : Path -> Text; env.get : Text -> Text?; }}
   = fs e => perform fs.read "{}";
 main
 "#,
@@ -3385,7 +3385,7 @@ fn run_worker_panic_exits_cleanly_without_repanic() {
 
 #[test]
 fn dataflow_zt_type_error_exits_nonzero() {
-    let path = write_tmp("cli_test_dataflow_type_err.zt", "x :: Int = \"bad\"\nx\n");
+    let path = write_tmp("cli_test_dataflow_type_err.zt", "x :: Int = \"bad\";\nx\n");
     cli()
         .arg("dataflow")
         .arg(&path)
@@ -3458,7 +3458,7 @@ fn compile_zti_import_field_matches_oracle() {
                 "config.zti",
                 "{\n  host = \"127.0.0.1\";\n  port = 8080;\n}\n",
             ),
-            ("main.zt", "cfg :: import \"config.zti\"\ncfg.port\n"),
+            ("main.zt", "cfg :: import \"config.zti\";\ncfg.port\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3477,7 +3477,7 @@ fn compile_zti_import_whole_record_matches_oracle() {
                 "data.zti",
                 "{\n  a = 1;\n  nested = { b = 2; };\n  items = [10; 20;];\n  flag = true;\n  tag = #ok;\n  name = \"hi\";\n}\n",
             ),
-            ("main.zt", "d :: import \"data.zti\"\nd\n"),
+            ("main.zt", "d :: import \"data.zti\";\nd\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3495,7 +3495,7 @@ fn compile_zt_function_import_matches_oracle() {
                 "lib.zt",
                 "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
             ),
-            ("main.zt", "f :: import \"lib.zt\"\nf 2 3\n"),
+            ("main.zt", "f :: import \"lib.zt\";\nf 2 3\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3513,9 +3513,9 @@ fn compile_zt_transitive_import_matches_oracle() {
             ("config.zti", "{ host = \"127.0.0.1\"; port = 8080; }\n"),
             (
                 "mid.zt",
-                "cfg :: import \"config.zti\"\n{ port = cfg.port; }\n",
+                "cfg :: import \"config.zti\";\n{ port = cfg.port; }\n",
             ),
-            ("top.zt", "mid :: import \"mid.zt\"\nmid.port\n"),
+            ("top.zt", "mid :: import \"mid.zt\";\nmid.port\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3534,12 +3534,12 @@ fn compile_zt_diamond_import_matches_oracle() {
         "zt_diamond",
         "main.zt",
         &[
-            ("base.zt", "n ::= 10\nn\n"),
-            ("a.zt", "base :: import \"base.zt\"\nbase + 1\n"),
-            ("b.zt", "base :: import \"base.zt\"\nbase + 2\n"),
+            ("base.zt", "n ::= 10;\nn\n"),
+            ("a.zt", "base :: import \"base.zt\";\nbase + 1\n"),
+            ("b.zt", "base :: import \"base.zt\";\nbase + 2\n"),
             (
                 "main.zt",
-                "a :: import \"a.zt\"\nb :: import \"b.zt\"\na + b\n",
+                "a :: import \"a.zt\";\nb :: import \"b.zt\";\na + b\n",
             ),
         ],
     );
@@ -3563,7 +3563,7 @@ fn compile_zt_imported_concrete_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "eq 3 3\n",
                 ),
@@ -3591,7 +3591,7 @@ fn compile_zt_imported_bool_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"bool_eq.zt\"\n",
+                    "_ :: import \"bool_eq.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "eq false false\n",
                 ),
@@ -3619,7 +3619,7 @@ fn compile_zt_imported_ord_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"cmp_lib.zt\"\n",
+                    "_ :: import \"cmp_lib.zt\";\n",
                     "Ord :: <A> @A { lt :: A -> A -> Bool; }\n",
                     "lt 1 2\n",
                 ),
@@ -3653,7 +3653,7 @@ fn compile_zt_imported_multi_instance_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "(eq 3 3, eq true true)\n",
                 ),
@@ -3684,7 +3684,7 @@ fn compile_zt_imported_conditional_pair_witness_matches_oracle() {
                 concat!(
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Eq @Int :: { eq = \\a b. a == b; }\n",
-                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; };\n",
                     "Eq @(Pair A) :: <A: Eq> { eq = \\p q. eq p.fst q.fst; }\n",
                     "1\n",
                 ),
@@ -3692,12 +3692,12 @@ fn compile_zt_imported_conditional_pair_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "Pair :: <A> type { fst : A; snd : A; }\n",
-                    "p1 :: Pair Int = { fst = 1; snd = 2; }\n",
-                    "p2 :: Pair Int = { fst = 1; snd = 9; }\n",
-                    "p3 :: Pair Int = { fst = 7; snd = 2; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; };\n",
+                    "p1 :: Pair Int = { fst = 1; snd = 2; };\n",
+                    "p2 :: Pair Int = { fst = 1; snd = 9; };\n",
+                    "p3 :: Pair Int = { fst = 7; snd = 2; };\n",
                     "(eq p1 p2, eq p1 p3)\n",
                 ),
             ),
@@ -3734,15 +3734,15 @@ fn compile_zt_imported_conditional_list_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "(eq 1 1, eq [1;] [1;])\n",
+                    "(eq 1 1, eq { 1; } { 1; })\n",
                 ),
             ),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
-    // eq 1 1 -> true (Int ==), eq [1;] [1;] -> false (List sentinel).
+    // eq 1 1 -> true (Int ==), eq { 1; } { 1; } -> false (List sentinel).
     assert!(
         native.contains("true") && native.contains("false"),
         "expected both true (Int) and false (List), got {native:?}"
@@ -3766,7 +3766,7 @@ fn compile_zt_imported_nested_conditional_witness_matches_oracle() {
                 concat!(
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Eq @Int :: { eq = \\a b. a == b; }\n",
-                    "Pair :: <A> type { fst : A; snd : A; }\n",
+                    "Pair :: <A> type { fst : A; snd : A; };\n",
                     "Eq @(Pair A) :: <A: Eq> { eq = \\p q. eq p.fst q.fst; }\n",
                     "Eq @(List A) :: <A: Eq> { eq = \\xs ys. false; }\n",
                     "1\n",
@@ -3775,13 +3775,13 @@ fn compile_zt_imported_nested_conditional_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "Pair :: <A> type { fst : A; snd : A; }\n",
-                    "a :: Pair Int = { fst = 1; snd = 2; }\n",
-                    "b :: Pair Int = { fst = 1; snd = 2; }\n",
-                    "xs :: List (Pair Int) = [a;]\n",
-                    "ys :: List (Pair Int) = [b;]\n",
+                    "Pair :: <A> type { fst : A; snd : A; };\n",
+                    "a :: Pair Int = { fst = 1; snd = 2; };\n",
+                    "b :: Pair Int = { fst = 1; snd = 2; };\n",
+                    "xs :: List (Pair Int) = { a; };\n",
+                    "ys :: List (Pair Int) = { b; };\n",
                     "(eq a b, eq xs ys)\n",
                 ),
             ),
@@ -3816,10 +3816,10 @@ fn compile_zt_imported_conditional_optional_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "x :: Int? = #some (1)\n",
-                    "y :: Int? = #some (1)\n",
+                    "x :: Int? = #some (1);\n",
+                    "y :: Int? = #some (1);\n",
                     "(eq 1 1, eq x y)\n",
                 ),
             ),
@@ -3856,9 +3856,9 @@ fn compile_zt_imported_conditional_cross_constraint_component_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "eq [1;] [1;]\n",
+                    "eq { 1; } { 1; }\n",
                 ),
             ),
         ],
@@ -3882,7 +3882,7 @@ fn compile_zt_imported_conditional_digit_suffix_record_matches_oracle() {
                 concat!(
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Eq @Int :: { eq = \\a b. a == b; }\n",
-                    "Rec :: <A> type { x : A; x2 : A; }\n",
+                    "Rec :: <A> type { x : A; x2 : A; };\n",
                     "Eq @(Rec A) :: <A: Eq> { eq = \\p q. eq p.x q.x; }\n",
                     "1\n",
                 ),
@@ -3890,11 +3890,11 @@ fn compile_zt_imported_conditional_digit_suffix_record_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\"\n",
+                    "_ :: import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
-                    "Rec :: <A> type { x : A; x2 : A; }\n",
-                    "r1 :: Rec Int = { x = 1; x2 = 2; }\n",
-                    "r2 :: Rec Int = { x = 9; x2 = 2; }\n",
+                    "Rec :: <A> type { x : A; x2 : A; };\n",
+                    "r1 :: Rec Int = { x = 1; x2 = 2; };\n",
+                    "r2 :: Rec Int = { x = 9; x2 = 2; };\n",
                     "(eq r1 r1, eq r1 r2)\n",
                 ),
             ),

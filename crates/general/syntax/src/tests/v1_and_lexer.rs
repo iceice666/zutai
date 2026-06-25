@@ -195,7 +195,7 @@ fn v1_effect_row_syntax_parses() {
 fn v1_effect_row_no_payload_and_signature_shapes() {
     let f = parse_str(
         r#"
-Eff :: type Unit ! { tick; fs.read : Path -> Text; fail Error }
+Eff :: type Unit ! { tick; fs.read : Path -> Text; fail Error };
 1
 "#,
     );
@@ -286,7 +286,7 @@ fn v1_config_names_parse_as_identifiers() {
         assert_eq!(as_ident(&e), name);
     }
 
-    let ty_source = "PatchAlias :: type Patch\nDeepPatchAlias :: type DeepPatch\nPatch";
+    let ty_source = "PatchAlias :: type Patch;\nDeepPatchAlias :: type DeepPatch;\nPatch";
     let f = parse_str(ty_source);
     let (_, _, ty) = as_alias(decl_by(&f, "PatchAlias"));
     assert!(matches!(ty, TypeExpr::Ident { name, .. } if name == "Patch"));
@@ -573,7 +573,7 @@ fn parse_lossless_traversal_covers_from_raw() {
 fn parse_string_bmp_unicode_escape() {
     // A = 'A', a normal BMP codepoint (not a surrogate).
     // This exercises parse_unicode_escape's `other =>` arm and parse_u16_hex_escape.
-    let file = parse_str("x ::= \"\\u0041\"\nx");
+    let file = parse_str("x ::= \"\\u0041\";\nx");
     let _ = file;
 }
 
@@ -583,7 +583,7 @@ fn parse_string_bmp_unicode_escape() {
 fn parse_string_surrogate_pair_escape() {
     // \uD800 is a high surrogate; \uDC00 is a low surrogate.
     // Together they encode U+10000 via the surrogate-pair algorithm.
-    let file = parse_str("x ::= \"\\uD800\\uDC00\"\nx");
+    let file = parse_str("x ::= \"\\uD800\\uDC00\";\nx");
     let _ = file;
 }
 
@@ -644,7 +644,7 @@ fn parse_record_lookahead_unicode_ws_no_panic() {
 /// U+00A0 in the block let-binding lookahead must not panic.
 #[test]
 fn parse_block_let_lookahead_unicode_ws_no_panic() {
-    let f = parse_ast_only("{ x\u{00A0}:= 1; x }")
+    let f = parse_ast_only("[ x\u{00A0}:= 1; x ]")
         .into_ast()
         .expect("should parse without panic");
     assert!(
@@ -657,7 +657,7 @@ fn parse_block_let_lookahead_unicode_ws_no_panic() {
 /// U+00A0 after an identifier in the decl-start lookahead must not panic.
 #[test]
 fn parse_decl_lookahead_unicode_ws_no_panic() {
-    let f = parse_ast_only("foo\u{00A0}:: Int = 42\n42")
+    let f = parse_ast_only("foo\u{00A0}:: Int = 42;\n42")
         .into_ast()
         .expect("should parse without panic");
     let (name, _ty, val) = as_typed(decl_by(&f, "foo"));
@@ -679,14 +679,12 @@ fn parse_unicode_ws_multi_byte_no_panic() {
             ws as u32
         );
         assert!(
-            parse_ast_only(&format!("{{ x{ws}:= 1; x }}"))
-                .ast()
-                .is_some(),
+            parse_ast_only(&format!("[ x{ws}:= 1; x ]")).ast().is_some(),
             "block with U+{:04X} produced no AST",
             ws as u32
         );
         assert!(
-            parse_ast_only(&format!("foo{ws}:: Int = 42\n42"))
+            parse_ast_only(&format!("foo{ws}:: Int = 42;\n42"))
                 .ast()
                 .is_some(),
             "decl with U+{:04X} produced no AST",
@@ -697,7 +695,7 @@ fn parse_unicode_ws_multi_byte_no_panic() {
 
 #[test]
 fn parse_unicode_ident_atom_and_field_name() {
-    let parsed = parse_ast_only("café ::= #café\n{ café = café; }");
+    let parsed = parse_ast_only("café ::= #café;\n{ café = café; }");
     assert!(
         parsed.diagnostics().is_empty(),
         "{:?}",
@@ -710,7 +708,7 @@ fn parse_unicode_ident_atom_and_field_name() {
 
 #[test]
 fn parse_cjk_identifier_without_case() {
-    let parsed = parse_ast_only("名前 ::= 1\n名前");
+    let parsed = parse_ast_only("名前 ::= 1;\n名前");
     assert!(
         parsed.diagnostics().is_empty(),
         "{:?}",

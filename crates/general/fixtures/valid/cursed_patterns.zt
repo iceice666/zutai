@@ -3,7 +3,7 @@
 MaybeInt :: type {
   #empty;
   #filled: { value: Int; };
-}
+};
 
 Packet :: type {
   status : {#ok; #err; #pending;};
@@ -12,7 +12,7 @@ Packet :: type {
     retry_count : Int;
     label : Text?;
   };
-}
+};
 
 unwrapOr :: MaybeInt -> Int -> Int
   = #empty fallback => fallback;
@@ -43,7 +43,7 @@ sample :: Packet = {
     retry_count = 2;
     label = #none;
   };
-}
+};
 
 {
   result = describe sample;
