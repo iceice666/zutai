@@ -31,6 +31,10 @@ fn alloc_aborts_when_heap_cap_exceeded() {
         ])
         .env(CHILD_ENV, "1")
         .env("ZUTAI_HEAP_MAX", "1M")
+        // The cap is the leak-by-default runaway guard; opt out of the now
+        // default-on collector so the discarded allocations actually accumulate
+        // past the ceiling instead of being reclaimed.
+        .env("ZUTAI_GC", "0")
         .output()
         .expect("spawn child test process");
 

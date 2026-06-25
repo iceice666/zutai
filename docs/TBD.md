@@ -11,19 +11,21 @@ v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
 underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
-(Phase 34, opt-in), V2-A, V3-G1/G2/G3/G4, and cross-module polymorphism (single-
-and multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1628 workspace
-tests pass.
+(Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine), and
+cross-module polymorphism (single- and multi-type, XM-1…3) have all landed — see
+`docs/ARCHIVED.md`. 1631 workspace tests pass.
 
 ## Active milestone — none
 
-V3-G4 (effectful generators) **landed 2026-06-25** at reference-interpreter level
-— see `docs/ARCHIVED.md` "V3-G4". An effectful generator runs under a granting
-handler on the interpreter (`handle (sumEff (stream { yield perform tick (); }))
-with { tick = … }`); without a handler the effect is refused, and native lowering
-of the (non-`io.print`) effect stays refused by the committed strict-AOT-rejects
-boundary. The next V3 phase is **G5** (GC default-on for unbounded stream
-programs). See `docs/v3_spec/02-roadmap.md`.
+V3-G5 (GC keeps unbounded stream pipelines bounded) **landed 2026-06-25** — see
+`docs/ARCHIVED.md` "V3-G5". Acceptance met: `fold (+) 0 (take n (countFrom 1))`
+over an infinite generator holds peak committed flat at 1 MiB for `n = 100k` and
+`800k` (leak-by-default grows 34 → 269 MiB), with correct output and stress
+soundness. G5 first landed with the collector opt-in; the default was then flipped
+to **GC on by default** (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
+default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.**
+Remaining V3 work is the demand-gated Track 2 boundaries and the open generator
+questions below.
 
 **G4 follow-ups (open):** cancellation/finalization and resource lifetime for
 effectful generators; an ergonomic effectful-stream *type* (the supported idiom
@@ -38,8 +40,9 @@ ready to pick up.
 
 ## GC residual — future / gated
 
-The conservative mark-sweep collector landed opt-in (Phase 34, archived). Still
-future / gated:
+The conservative mark-sweep collector (Phase 34) is now **on by default** where the
+stack scan is supported (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
+default-on (D-0008 reversal)". Still future / gated:
 
 - **Precise/moving endgame.** The `runtime-abi.md` D-0008 endgame (precise
   non-moving mark-sweep → generational Cheney copying) stays deferred: it needs a
@@ -50,7 +53,8 @@ future / gated:
   old→young pointers) would force a write barrier; strict-plus-TCO is committed.
 - **Other-target root finding.** The conservative stack scan is wired up for
   macOS (`pthread_get_stackaddr_np`) and Linux (`pthread_getattr_np`); other
-  targets leave the collector off (leak-by-default) until their stack-bounds path
+  targets leave the collector off (leak-by-default, even with the new default-on)
+  until their stack-bounds path
   lands.
 
 ## v1 residual — by design, not gaps
@@ -76,14 +80,14 @@ Do not file these as missing native work:
 
 Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
 
-- **Track 1 — generators and streams (active spine).** The finite
-  `stream { yield …; }` shell landed (Phase 29); the richer-generator design is
-  open (`docs/v3_spec/01-generators.md`). The roadmap fixes the keystone
-  decision — `Stream A` is **codata** (demand-driven step+seed), not a
-  memoizing lazy list, so it stays inside strict+TCO and the write-barrier-free
-  GC — and sequences it as V3-G1 (codata `Stream` representation) → G2 (stdlib
-  `Stream` API) → G3 (richer `yield`) → G4 (resource-backed generators) → G5
-  (GC default-on for unbounded streams). G1/G2/G3/G4 landed; resume at **G5**.
+- **Track 1 — generators and streams. ✅ Complete (V3-G1…G5, 2026-06-25).**
+  `Stream A` is **codata** (demand-driven step+seed), not a memoizing lazy list,
+  so it stays inside strict+TCO and the write-barrier-free GC. The full spine
+  landed: G1 (codata representation) → G2 (stdlib API) → G3 (richer `yield`) → G4
+  (effectful generators, reference-interpreter) → G5 (GC keeps unbounded pipelines
+  bounded). Open follow-ups: cancellation/finalization and resource lifetime for
+  effectful generators; an ergonomic effectful-stream type; the G2 residuals
+  above (`empty`/`unfold`, `List` interop, importable `.zt` packaging).
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

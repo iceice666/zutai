@@ -236,7 +236,7 @@ fn bool_render() {
 
 #[test]
 fn arena_allocates_below_cap_aligned_and_distinct() {
-    let mut a = Arena::with_cap(CHUNK_BYTES);
+    let mut a = Arena::with_cap_leak(CHUNK_BYTES);
     let p1 = a.try_alloc(8).expect("first alloc fits");
     let p2 = a.try_alloc(8).expect("second alloc fits");
     assert_ne!(p1, p2, "distinct allocations");
@@ -249,7 +249,7 @@ fn arena_allocates_below_cap_aligned_and_distinct() {
 #[test]
 fn arena_try_alloc_returns_none_past_cap() {
     // Cap below one chunk: the first chunk is clamped to the cap, then exhausts.
-    let mut a = Arena::with_cap(64);
+    let mut a = Arena::with_cap_leak(64);
     assert!(a.try_alloc(32).is_some(), "32 fits in a 64-byte cap");
     assert!(
         a.try_alloc(32).is_some(),
@@ -265,7 +265,7 @@ fn arena_try_alloc_returns_none_past_cap() {
 
 #[test]
 fn arena_oversized_request_past_cap_is_rejected() {
-    let mut a = Arena::with_cap(64);
+    let mut a = Arena::with_cap_leak(64);
     assert!(
         a.try_alloc(128).is_none(),
         "a single request bigger than the cap -> None"
@@ -275,7 +275,7 @@ fn arena_oversized_request_past_cap_is_rejected() {
 
 #[test]
 fn arena_committed_tracks_chunk_growth() {
-    let mut a = Arena::with_cap(usize::MAX);
+    let mut a = Arena::with_cap_leak(usize::MAX);
     assert_eq!(a.committed, 0);
     a.try_alloc(8).expect("alloc");
     assert_eq!(a.committed, CHUNK_BYTES, "first chunk is one CHUNK_BYTES");

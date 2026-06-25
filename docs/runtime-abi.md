@@ -277,7 +277,19 @@ parity-breaking `<function>`. (`Type`/witness results are already gated upstream
 stdout is flushed before exit so streamed `io.print` and the final line are
 never reordered or lost.
 
-### D-0008 — Memory model: thread-local bump arena, capped leak-by-default
+### D-0008 — Memory model: thread-local bump arena + default-on conservative GC
+
+> **Update (2026-06-25): GC is now on by default.** The conservative non-moving
+> mark-sweep collector (Phase 34) runs **by default** wherever the conservative
+> stack scan can establish the stack bounds (macOS, Linux); `ZUTAI_GC=0`
+> (or `false`/`no`/`off`) opts back out to the original leak-by-default arena, and
+> platforms without a stack-bounds path stay leak-by-default regardless. This
+> reverses the original "leak-by-default" commitment below — the arena and cap
+> remain the substrate and the opt-out, but bounded-live / unbounded-allocation
+> programs (notably unbounded streams, V3-G5) now hold steady-state memory flat
+> without an env var. The precise/moving trajectory at the end of this section is
+> still future work. Historical rationale (why leak-by-default shipped first) is
+> preserved below.
 
 - `i64 zutai.alloc(i64 nbytes)` — bump a **thread-local**, chunk-growing arena
   (1 MiB `Box<[u128]>` chunks, so every result is 16-byte aligned *by
@@ -290,8 +302,10 @@ never reordered or lost.
   overridable via `ZUTAI_HEAP_MAX` (`k`/`m`/`g` suffixes; `0`/`unlimited`/`none`
   disables). An allocation that would grow the arena past the cap aborts with a
   `heap limit exceeded` diagnostic and `exit(1)`, turning the unbounded leak
-  into a clean, debuggable failure instead of an OS OOM-kill. Nothing is
-  reclaimed below the cap; the OS reclaims everything at process exit.
+  into a clean, debuggable failure instead of an OS OOM-kill. Under the default-on
+  collector the cap is a backstop that the reclaimed footprint rarely approaches;
+  under `ZUTAI_GC=0` nothing is reclaimed below the cap and the OS reclaims
+  everything at process exit.
 - The `nil` sentinel is a single process-static (16-byte aligned), not an arena
   allocation — a per-thread arena cannot back a process-global pointer.
 

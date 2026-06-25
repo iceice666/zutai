@@ -146,6 +146,62 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### GC default-on (D-0008 reversal) ✅
+
+_Completed 2026-06-25. The conservative mark-sweep collector (Phase 34), shipped
+opt-in, is now **on by default** wherever the conservative stack scan is wired up
+(macOS, Linux). This reverses the original D-0008 leak-by-default commitment;
+`ZUTAI_GC=0` (or `false`/`no`/`off`) opts back out, and platforms with no
+stack-bounds path stay leak-by-default regardless. Supersedes the V3-G5 "keep
+opt-in" decision below._
+
+- **Change.** `gc_mode()` in `crates/general/runtime/src/lib.rs` now enables the
+  collector unless explicitly opted out: `enabled = (stress || !env_falsy("ZUTAI_GC"))
+  && stack_base().is_some()`. A new `env_falsy` helper recognizes `0`/`false`/`no`/
+  `off`; `ZUTAI_GC_STRESS` still forces collection and overrides the opt-out. No
+  ABI change (D-0002 untagged `i64` not reopened); the arena, cap, and conservative
+  scan are unchanged — only the default gate flipped.
+- **Effect.** A bounded-live / unbounded-allocation program now holds steady-state
+  memory flat with no env var: the `n = 800k` accumulator and the unbounded stream
+  pipeline both stay at 1 MiB peak committed by default, where `ZUTAI_GC=0`
+  restores the ~13 MiB / ~269 MiB leak. Output is unchanged on both paths.
+- **Tests.** `compile_emit_bin_gc_is_default_on_with_opt_out` (no-env run collects
+  and stays small; `ZUTAI_GC=0` leaks; both correct). The leak-baseline tests
+  (`compile_emit_bin_accumulator_garbage_dominates_gc_gate` via `run_with_heap_stats`,
+  and `compile_emit_bin_heap_stress_aborts_over_cap`) now pin `ZUTAI_GC=0`
+  explicitly so they still measure the leak baseline / cap-abort guard.
+- **Still future.** The precise/moving (Cheney) endgame and a lazy backend remain
+  deferred (`TBD.md` "GC residual"); strict-plus-TCO stays committed.
+
+### V3-G5: GC keeps unbounded stream pipelines bounded ✅
+
+_Completed 2026-06-25. Acceptance met: a long-running `unfold`/stream pipeline
+holds steady-state RSS flat under collection while producing correct output. No
+GC or compiler code changed — the Phase 34 conservative collector already keeps
+demand-driven streams bounded; this milestone characterizes that for the unbounded
+stream workload (GC gate condition (a), enabled by V3-G1) and records the
+default-on policy decision. **Track 1 (generators & streams) is complete.**_
+
+- **Measurement.** `fold (+) 0 (take n (countFrom 1))` over an infinite recursive
+  generator (V3-G3) has an O(1) live set (one in-flight cell + the fold
+  accumulator) against O(n) allocation. Under `ZUTAI_GC`, peak committed stays
+  **flat at 1 MiB** for `n = 100k` and `n = 800k` (8×), where leak-by-default
+  grows ~linearly (34 MiB → 269 MiB); the collector reclaims ~268 MiB across 269
+  cycles. Output is correct on both paths, and the pipeline stays correct under
+  `ZUTAI_GC_STRESS` (collect before every allocation), proving the conservative
+  root/heap scan retains the in-flight cell and accumulator.
+- **Policy decision (default-on).** As landed, G5 kept the collector **opt-in**
+  (the committed D-0008 leak-by-default), with streams as first-class
+  beneficiaries. **Superseded later the same day:** the default was flipped to
+  **GC on by default** with a `ZUTAI_GC=0` opt-out — see "GC default-on (D-0008
+  reversal)" above. (Auto-enabling GC for "stream programs" specifically was *not*
+  taken — a global default-on with opt-out is simpler than a fragile static
+  "is-a-stream-program" heuristic.)
+- **Tests.** `compile_emit_bin_gc_keeps_stream_footprint_flat` (flat peak at N vs
+  8N, correct output, reclaimed ≫ peak) and
+  `compile_emit_bin_gc_stress_preserves_stream_output` (soundness under stress),
+  alongside the Phase 34 accumulator GC tests.
+
 ### V3-G4: Effectful generators (reference-interpreter) ✅
 
 _Completed 2026-06-25. An effectful generator runs under a granting handler on
@@ -358,8 +414,10 @@ lower and evaluate._
 _Completed 2026-06-24. Built after the gate condition (b) was instrumented and
 shown met — the post-Phase-33 accumulator's footprint is O(n) garbage against an
 O(1) live set (`compile_emit_bin_accumulator_garbage_dominates_gc_gate`). The
-collector is **opt-in**; the committed default stays leak-by-default (D-0008), so
-all pre-existing behavior and tests are unchanged._
+collector landed **opt-in**; the committed default was leak-by-default (D-0008), so
+all pre-existing behavior and tests were unchanged. (**Later flipped to on-by-default
+2026-06-25** — see "GC default-on (D-0008 reversal)" above; the machinery here is
+unchanged, only the default gate.)_
 
 **Outcome: a zero-ABI conservative non-moving mark-sweep collector
 (`crates/general/runtime/src/lib.rs`), enabled by `ZUTAI_GC` (and

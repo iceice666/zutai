@@ -10,13 +10,15 @@ boundaries as demand-gated — features to build only when a concrete need arise
 not a backlog to burn down.
 
 The generator *shell* (Phase 29) and the opt-in conservative collector
-(Phase 34) have landed; both are prerequisites that make the Track 1 spine below
-implementable. **V3-G1/G2/G3/G4 have all landed 2026-06-25** (`docs/ARCHIVED.md`):
-`Stream A` is demand-driven codata with a builtin source prelude (G1), the core
-combinator API ships as ambient prelude functions (G2), richer `yield`
-(conditionals + tail recursion) desugars onto the codata cell (G3), and effectful
-generators run under a granting handler at reference-interpreter level (G4). The
-next phase is **V3-G5** (GC default-on for unbounded stream programs).
+(Phase 34) have landed; both are prerequisites that made the Track 1 spine below
+implementable. **Track 1 is complete: V3-G1…G5 all landed 2026-06-25**
+(`docs/ARCHIVED.md`). `Stream A` is demand-driven codata with a builtin source
+prelude (G1), the core combinator API ships as ambient prelude functions (G2),
+richer `yield` (conditionals + tail recursion) desugars onto the codata cell (G3),
+effectful generators run under a granting handler at reference-interpreter level
+(G4), and the conservative collector keeps unbounded stream pipelines bounded
+(G5; the collector was subsequently flipped **on by default**, `ZUTAI_GC=0` to opt
+out — a D-0008 reversal, see `docs/ARCHIVED.md`). Track 2 stays demand-gated.
 
 ## Backend-compatibility invariants
 
@@ -110,11 +112,16 @@ oracle parity (a wrong value is worse than a refused one).
   the existing effect machinery carries it. See `docs/ARCHIVED.md` "V3-G4" and
   `01-generators.md` "Effectful generators". Cancellation/finalization and
   resource lifetime remain open.
-- **V3-G5 — GC default-on for unbounded stream programs.** With genuine
-  unbounded streams reaching the backend (gate condition (a) now met), evaluate
-  promoting the conservative collector from opt-in toward default for stream
-  workloads.
-  *Acceptance:* a long-running `unfold` pipeline holds steady-state RSS flat
+- **V3-G5 — GC for unbounded stream programs. ✅ Landed (acceptance) 2026-06-25.**
+  With genuine unbounded streams reaching the backend (gate condition (a), met by
+  V3-G1), the Phase 34 conservative collector keeps a long-running stream pipeline
+  bounded: `fold (+) 0 (take n (countFrom 1))` over an infinite generator holds
+  **peak committed flat at 1 MiB** for `n = 100k` and `n = 800k` under `ZUTAI_GC`
+  (where leak-by-default grows 34 MiB → 269 MiB), with correct output and
+  soundness under `ZUTAI_GC_STRESS`. *"Default-on":* G5 first landed with the
+  collector opt-in; the default was then flipped to **GC on by default** (with a
+  `ZUTAI_GC=0` opt-out, D-0008 reversal) — see `docs/ARCHIVED.md` "GC default-on".
+  *Acceptance met:* a long-running `unfold` pipeline holds steady-state RSS flat
   under collection while producing correct output.
 
 Open generator questions to settle within the track (carried from
@@ -148,10 +155,12 @@ change — never as an additive convenience.
 ## Sequencing and entry point
 
 Track 1 ran from **V3-G1** — the codata `Stream` representation, the keystone the
-rest of the track hangs off — through G2 (stdlib API), G3 (richer `yield`), and
-G4 (effectful generators, reference-interpreter level), each a contained phase
-with no ABI change. **Resume at V3-G5** (GC default-on for unbounded stream
-programs). Track 2 stays demand-gated.
+rest of the track hung off — through G2 (stdlib API), G3 (richer `yield`), G4
+(effectful generators, reference-interpreter level), and G5 (GC keeps unbounded
+stream pipelines bounded), each a contained phase with no ABI change. **Track 1
+is complete.** Remaining V3 work is the demand-gated Track 2 boundaries and the
+open generator questions (cancellation/finalization, resource lifetime) below.
+Track 2 stays demand-gated.
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

@@ -165,10 +165,12 @@ const DEFAULT_HEAP_MAX: usize = 2 << 30;
 /// `Box<[u128]>` payloads are 16-byte aligned and keep a stable address across
 /// `chunks` growth.
 ///
-/// When `gc` is `Some` (opt-in, `ZUTAI_GC`), the arena additionally tracks every
-/// live allocation in a side table and reclaims unreachable objects with a
-/// conservative non-moving mark-sweep collector (Phase 34). The default (`None`)
-/// is the committed leak-by-default behaviour: pure bump, no per-alloc tracking.
+/// When `gc` is `Some` (on by default where supported; opt out with `ZUTAI_GC=0`),
+/// the arena additionally tracks every live allocation in a side table and
+/// reclaims unreachable objects with a conservative non-moving mark-sweep
+/// collector (Phase 34). When `None` — an explicit opt-out, or a platform with no
+/// stack-bounds path — the arena is pure bump with no per-alloc tracking
+/// (leak-by-default).
 struct Arena {
     chunks: Vec<Box<[u128]>>,
     /// Byte offset into the last chunk.
@@ -177,7 +179,7 @@ struct Arena {
     committed: usize,
     /// Maximum committed bytes; `usize::MAX` means unlimited.
     cap: usize,
-    /// Collector state; `None` unless `ZUTAI_GC` enabled it.
+    /// Collector state; `None` only when opted out (`ZUTAI_GC=0`) or unsupported.
     gc: Option<Gc>,
 }
 
@@ -190,6 +192,20 @@ impl Arena {
             committed: 0,
             cap,
             gc: mode.enabled.then(|| Gc::new(mode.stress)),
+        }
+    }
+
+    /// A leak-by-default arena (collector disabled) for white-box cap/accounting
+    /// tests that exercise the pure-bump substrate deterministically, independent
+    /// of the process-wide default-on collector (`gc_mode()`).
+    #[cfg(test)]
+    fn with_cap_leak(cap: usize) -> Self {
+        Arena {
+            chunks: Vec::new(),
+            off: 0,
+            committed: 0,
+            cap,
+            gc: None,
         }
     }
 
@@ -353,9 +369,10 @@ impl Arena {
     }
 }
 
-// ── Conservative mark-sweep collector (Phase 34, opt-in via ZUTAI_GC) ────────────
+// ── Conservative mark-sweep collector (Phase 34, on by default; opt out ZUTAI_GC=0) ─
 
-/// Per-arena collector state (present only when `ZUTAI_GC` enabled it).
+/// Per-arena collector state (present unless opted out via `ZUTAI_GC=0` or the
+/// platform lacks a stack-bounds path).
 struct Gc {
     /// Live allocations: object start address -> byte size. Ordered so a
     /// candidate pointer (exact or interior) resolves to its object via a range
@@ -397,14 +414,32 @@ fn env_truthy(var: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Read the collector mode once per process. The conservative stack scan needs a
-/// platform way to find the stack bounds; only macOS is wired up, so elsewhere
-/// the collector stays off (leak-by-default) regardless of the env var.
+/// Whether an env var is explicitly set to a falsy value (`0`/`false`/`no`/`off`).
+/// Distinct from "unset": only an explicit opt-out turns the default-on collector
+/// back to leak-by-default.
+fn env_falsy(var: &str) -> bool {
+    std::env::var(var)
+        .map(|v| {
+            let v = v.trim();
+            v == "0"
+                || v.eq_ignore_ascii_case("false")
+                || v.eq_ignore_ascii_case("no")
+                || v.eq_ignore_ascii_case("off")
+        })
+        .unwrap_or(false)
+}
+
+/// Read the collector mode once per process. The collector is **on by default**
+/// wherever the conservative stack scan can establish the stack bounds; an
+/// explicit `ZUTAI_GC=0` (or `false`/`no`/`off`), or a platform with no
+/// stack-bounds path (`stack_base()` is `None`), returns to leak-by-default.
+/// `ZUTAI_GC_STRESS` additionally forces a collection before every allocation and
+/// keeps the collector on even past an explicit opt-out.
 fn gc_mode() -> GcMode {
     static MODE: OnceLock<GcMode> = OnceLock::new();
     *MODE.get_or_init(|| {
         let stress = env_truthy("ZUTAI_GC_STRESS");
-        let enabled = (stress || env_truthy("ZUTAI_GC")) && stack_base().is_some();
+        let enabled = (stress || !env_falsy("ZUTAI_GC")) && stack_base().is_some();
         GcMode { enabled, stress }
     })
 }

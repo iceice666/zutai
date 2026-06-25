@@ -2105,9 +2105,12 @@ fn compile_emit_bin_heap_stress_aborts_over_cap() {
         .assert()
         .success();
     // ~4000 records (~64 KiB) overrun a 32 KiB ceiling: abort cleanly with a
-    // diagnostic instead of leaking until the OS OOM-kills the process.
+    // diagnostic instead of leaking until the OS OOM-kills the process. Pins
+    // `ZUTAI_GC=0` — the cap is the leak-by-default runaway guard; with the
+    // default-on collector the dead records would be reclaimed and never hit it.
     let output = StdCommand::new(&out)
         .env("ZUTAI_HEAP_MAX", "32k")
+        .env("ZUTAI_GC", "0")
         .output()
         .unwrap();
     assert!(
@@ -2217,7 +2220,9 @@ fn int_after(haystack: &str, needle: &str) -> u64 {
 }
 
 /// Compile `src` to a native binary, run it with `ZUTAI_HEAP_STATS=1`, and
-/// return `(stdout, stderr)` (the stats line lands on stderr).
+/// return `(stdout, stderr)` (the stats line lands on stderr). Pins `ZUTAI_GC=0`:
+/// this helper measures the *leak-by-default* allocation footprint, so the
+/// now-default-on collector is explicitly opted out.
 fn run_with_heap_stats(name: &str, src: &str) -> (String, String) {
     let path = write_tmp(&format!("{name}.zt"), src);
     let out = write_tmp(name, "");
@@ -2231,6 +2236,7 @@ fn run_with_heap_stats(name: &str, src: &str) -> (String, String) {
         .success();
     let output = StdCommand::new(&out)
         .env("ZUTAI_HEAP_STATS", "1")
+        .env("ZUTAI_GC", "0")
         .output()
         .unwrap();
     assert!(output.status.success(), "program should run: {output:?}");
@@ -2421,6 +2427,122 @@ fn compile_emit_bin_gc_reports_collections() {
     assert!(
         collections > 0,
         "expected at least one collection; stats: {stats}"
+    );
+}
+
+// ── V3-G5: GC keeps unbounded stream pipelines flat ──────────────────────────
+
+/// A long-running pipeline over a genuinely *unbounded* codata stream: an
+/// infinite recursive generator (`countFrom`, V3-G3) bounded by `take n` and
+/// summed with `fold`. Demand-driven codata produces each cell, sums it, and
+/// drops it, so the live set is O(1) while allocation is O(n) — the unbounded
+/// sequence reaching the backend that V3-G1 made possible (GC gate condition (a)).
+fn stream_pipeline_src(n: u64) -> String {
+    format!(
+        "countFrom :: Int -> Stream Int\n  = m => stream {{ yield m; yield from countFrom (m + 1); }};\n\
+fold (\\a b. a + b) 0 (take {n} (countFrom 1))\n"
+    )
+}
+
+/// V3-G5 acceptance: a long-running `unfold`/stream pipeline holds steady-state
+/// RSS flat under collection while producing correct output. With `ZUTAI_GC`, the
+/// realized footprint (peak committed) stays flat as the bounded `take` grows 8×,
+/// where the leak-by-default (`ZUTAI_GC=0`) arena grows ~linearly. This is the
+/// stream analogue of `compile_emit_bin_gc_keeps_footprint_flat`: the live set is
+/// O(1) (one cell plus the fold accumulator) but allocation is O(n), so the
+/// collector is what keeps it bounded. (The collector is now on by default; this
+/// test sets `ZUTAI_GC=1` explicitly, equivalent to the default.)
+#[test]
+fn compile_emit_bin_gc_keeps_stream_footprint_flat() {
+    const N: u64 = 100_000;
+    let gc = [("ZUTAI_GC", "1"), ("ZUTAI_HEAP_STATS", "1")];
+    let (out_n, stats_n) = run_bin_env("cli_test_gc_stream_n", &stream_pipeline_src(N), &gc);
+    let (out_8n, stats_8n) = run_bin_env("cli_test_gc_stream_8n", &stream_pipeline_src(8 * N), &gc);
+
+    // Semantics preserved under collection: sum of 1..k = k(k+1)/2.
+    assert_eq!(out_n.trim(), (N * (N + 1) / 2).to_string());
+    assert_eq!(out_8n.trim(), (8 * N * (8 * N + 1) / 2).to_string());
+
+    let peak_n = int_after(&stats_n, "peak committed ");
+    let peak_8n = int_after(&stats_8n, "peak committed ");
+    let ratio = peak_8n as f64 / peak_n as f64;
+    assert!(
+        ratio < 1.5,
+        "8× the stream length must not ~8× the footprint under GC; \
+         peak({N})={peak_n} peak({})={peak_8n} ratio={ratio:.2}",
+        8 * N
+    );
+
+    // The collector ran and reclaimed far more than a single footprint of the
+    // discarded stream cells (records, `#cons` variants, tail closures).
+    let reclaimed = int_after(&stats_8n, "reclaimed ");
+    assert!(
+        reclaimed > peak_8n,
+        "GC should reclaim much more than one footprint; reclaimed={reclaimed} stats: {stats_8n}"
+    );
+
+    eprintln!(
+        "v3-g5 gc: stream peak committed {peak_n}B (n={N}) vs {peak_8n}B (n={}); ratio {ratio:.2} \
+         (flat); reclaimed {reclaimed}B",
+        8 * N
+    );
+}
+
+/// V3-G5 soundness: with the collector running before *every* allocation
+/// (`ZUTAI_GC_STRESS`), the stream pipeline must still produce the correct value.
+/// The fold's accumulator and the currently-forced cell are stack-only roots; if
+/// the conservative scan missed one, an in-flight cell would be freed and the sum
+/// would be wrong. Sum of 1..500 = 125250.
+#[test]
+fn compile_emit_bin_gc_stress_preserves_stream_output() {
+    let (out, _) = run_bin_env(
+        "cli_test_gc_stress_stream",
+        &stream_pipeline_src(500),
+        &[("ZUTAI_GC_STRESS", "1")],
+    );
+    assert_eq!(out.trim(), "125250");
+}
+
+/// The collector is **on by default** (no env var needed) wherever the
+/// conservative stack scan is wired up, and `ZUTAI_GC=0` opts back out to
+/// leak-by-default. A bounded-live / unbounded-allocation accumulator run with no
+/// GC env keeps its footprint small and reports collector activity; the same
+/// binary with `ZUTAI_GC=0` leaks (a much larger peak, no collector). Both produce
+/// the correct value.
+#[test]
+fn compile_emit_bin_gc_is_default_on_with_opt_out() {
+    const N: u64 = 800_000;
+    let src = accumulator_src(N);
+    let expected = (N * (N + 1) / 2).to_string();
+
+    let (out_default, stats_default) =
+        run_bin_env("cli_test_gc_default_on", &src, &[("ZUTAI_HEAP_STATS", "1")]);
+    let (out_off, stats_off) = run_bin_env(
+        "cli_test_gc_opt_out",
+        &src,
+        &[("ZUTAI_HEAP_STATS", "1"), ("ZUTAI_GC", "0")],
+    );
+
+    // Semantics identical on both paths.
+    assert_eq!(out_default.trim(), expected);
+    assert_eq!(out_off.trim(), expected);
+
+    // Default-on: the collector ran (stats line present) and held the footprint
+    // far below the opt-out leak.
+    assert!(
+        stats_default.contains("zutai gc stats:"),
+        "GC should run by default; stats: {stats_default}"
+    );
+    assert!(
+        !stats_off.contains("zutai gc stats:"),
+        "ZUTAI_GC=0 must opt out of the collector; stats: {stats_off}"
+    );
+    let peak_default = int_after(&stats_default, "peak committed ");
+    let peak_off = int_after(&stats_off, "peak committed ");
+    assert!(
+        peak_default * 2 < peak_off,
+        "default-on footprint must be far below the leak-by-default opt-out; \
+         default={peak_default} opt_out={peak_off}"
     );
 }
 
