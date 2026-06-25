@@ -547,20 +547,68 @@ fn compile_zt_imported_generic_record_matches_oracle() {
 }
 
 #[test]
-fn compile_zt_imported_generic_multitype_rejected_cleanly() {
-    // The import boundary has no polymorphism representation yet, so the import is
-    // monomorphized by its first use; using it at two types is a clean type error
-    // (refused, never miscompiled — no internal compiler error / ICE).
-    let dir = std::env::temp_dir().join("zutai_imp_xm_multitype");
+fn compile_zt_imported_generic_multitype_matches_oracle() {
+    // The import boundary now carries polymorphism (XM-1..3): an imported generic
+    // is quantified and instantiated fresh per use, so using it at two different
+    // concrete types type-checks and lowers natively. `id` at Bool and at Int:
+    // `if dep true then dep 1 else 0` = 1.
+    let (interp, native) = import_run_vs_compile(
+        "xm_generic_multitype",
+        "main.zt",
+        &[
+            ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
+            (
+                "main.zt",
+                "dep :: import \"dep.zt\"\nif dep true then dep 1 else 0\n",
+            ),
+        ],
+    );
+    assert_eq!(native.trim(), "1");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_generic_record_multitype_matches_oracle() {
+    // A record of generic functions (the importable-stdlib shape) used at two
+    // types: `apply` at Int->Int and at Bool->Bool.
+    let (interp, native) = import_run_vs_compile(
+        "xm_generic_record_multitype",
+        "main.zt",
+        &[
+            (
+                "dep.zt",
+                "apply :: <A, B> (A -> B) -> A -> B = f x => f x;\n{ apply = apply; }\n",
+            ),
+            (
+                "main.zt",
+                "dep :: import \"dep.zt\"\nfirst :: Int -> Bool -> Int = i _ => i;\nfirst (dep.apply (\\x. x + 1) 41) (dep.apply (\\b. b) true)\n",
+            ),
+        ],
+    );
+    assert_eq!(native.trim(), "42");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_unexportable_value_stays_monomorphic() {
+    // Only genuine type parameters are generalized across the boundary. A value
+    // of an un-exportable type (interned as an unconstrained `Unknown`) must NOT
+    // become polymorphic — using it at two incompatible types is a clean type
+    // error (monomorphic-by-use), never accepted-and-miscompiled / an ICE.
+    let dir = std::env::temp_dir().join("zutai_imp_xm_unexportable");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("dep.zt"), "idS :: <A> A -> A = x => x;\nidS\n").unwrap();
     std::fs::write(
-        dir.join("main.zt"),
-        "dep :: import \"dep.zt\"\nif dep true then dep 1 else 0\n",
+        dir.join("dep.zt"),
+        "Box :: <A> type { #box : { val : A; }; }\nb :: Box Int = #box { val = 7; }\nb\n",
     )
     .unwrap();
-    let out = cli()
+    std::fs::write(
+        dir.join("main.zt"),
+        "dep :: import \"dep.zt\"\ng :: Int -> Bool -> Int = i _ => i;\ng dep dep\n",
+    )
+    .unwrap();
+    let stderr = cli()
         .arg("compile")
         .arg("--emit=bin")
         .arg(dir.join("main.zt"))
@@ -571,10 +619,10 @@ fn compile_zt_imported_generic_multitype_rejected_cleanly() {
         .get_output()
         .stderr
         .clone();
-    let stderr = String::from_utf8_lossy(&out);
+    let stderr = String::from_utf8_lossy(&stderr);
     assert!(
         !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
-        "multi-type cross-module use must be a clean rejection, not an ICE: {stderr}"
+        "un-exportable import used at two types must be a clean rejection, not an ICE: {stderr}"
     );
 }
 

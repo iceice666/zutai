@@ -50,6 +50,12 @@ pub enum ImportedType {
     /// import boundary.  The inner descriptor is the denoted structural type
     /// (e.g. the record `{ host: Text; port: Int }` behind `Server`).
     Type(Box<ImportedType>),
+    /// A bound type variable of a polymorphic export, identified by the exporting
+    /// module's type-parameter binding id. The importer maps each distinct id to
+    /// one fresh inference variable (so `∀A. A -> A` stays `?a -> ?a`, preserving
+    /// the `A = A` constraint) and quantifies the binding over them, instantiating
+    /// fresh at every use site (multi-type cross-module generics).
+    TyVar(u32),
     /// Element type of an empty imported list, or an unconstrained position —
     /// interned as a fresh inference variable so it unifies with whatever the
     /// consumer needs.

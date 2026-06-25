@@ -146,6 +146,42 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Cross-module polymorphism — multi-type (XM-1…3) ✅
+
+_Completed 2026-06-25. An imported polymorphic value (a module exporting
+`id :: <A> A -> A`, or a record of generic functions — the importable-stdlib
+shape) can now be used at **multiple concrete types in one program**: it
+type-checks and lowers natively, matching the interpreter. Builds on the
+single-type validator relaxation below._
+
+- **Boundary scheme (XM-1).** `ImportedType::TyVar(u32)` represents an exported
+  type parameter (`crates/general/thir/src/import.rs`).
+- **Generalize on export (XM-2).** `export.rs` turns a free `TypeVar`/`InferVar`
+  in an exported value's type into a `TyVar` (the two id spaces kept disjoint via
+  a high-bit tag); `ForAll` exports its body. Previously these flattened to
+  `Unknown`.
+- **Instantiate on import (XM-3).** Interning maps each exported `TyVar` id to one
+  fresh inference variable (cached, so `∀A. A -> A` stays `?a -> ?a`, preserving
+  `A = A`). The import binding is generalized in the main decl pass over **only**
+  those exported-parameter vars (recorded in `import_poly_candidates`), so each
+  reference instantiates fresh — while `Unknown` (un-exportable) positions are
+  deliberately excluded and stay monomorphic-by-use. Native lowering reuses the
+  single-type validator relaxation (no further Dataflow work).
+- **Acceptance.** Native==interpreter oracle for an imported `id` used at Bool and
+  Int (`compile_zt_imported_generic_multitype_matches_oracle`), and a record
+  `apply` used at `Int->Int` and `Bool->Bool`
+  (`compile_zt_imported_generic_record_multitype_matches_oracle`). A value of an
+  un-exportable type used at two types is **cleanly rejected**, never made
+  polymorphic (`compile_zt_imported_unexportable_value_stays_monomorphic`).
+  Reviewer (two rounds) found and fixed a round-1 P0 (generalizing `Unknown`-derived
+  vars), with no residual soundness issue from the candidate-based fix. 1619
+  workspace tests pass.
+- **Pre-existing residual (not from this milestone).** An un-exportable import
+  value passed only to a generic that never pins its type (e.g. `ign :: <A> A ->
+  Int = _ => 0; ign dep`) leaks an unconstrained inference variable into Dataflow
+  Core and ICEs — verified present on the prior baseline too. Tracked in
+  `docs/TBD.md`.
+
 ### Cross-module polymorphism (single-type) ✅
 
 _Completed 2026-06-25. A module exporting a polymorphic value (`id :: <A> A -> A`,

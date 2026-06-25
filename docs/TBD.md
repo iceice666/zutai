@@ -85,27 +85,25 @@ Dataflow structural validator was taught to accept a use type that is a sound
 `validate/refs.rs`), instead of ICEing on the `Fun(TyVar,TyVar)` vs `Fun(Int,Int)`
 mismatch. Multi-type use is **cleanly rejected** (a THIR type error, never an ICE).
 
-### Residual — multi-type cross-module generics (for the importable stdlib)
+**Multi-type cross-module generics landed 2026-06-25 (XM-1…3)** — see
+`docs/ARCHIVED.md` "Cross-module polymorphism — multi-type". The import boundary
+now carries polymorphism (`ImportedType::TyVar`); an imported generic is
+generalized over its exported type parameters and instantiated fresh per use, so
+it type-checks and compiles natively at multiple types (the importable `Stream`
+stdlib shape now works). `Unknown` (un-exportable) positions stay
+monomorphic-by-use and are not generalized.
 
-The import boundary still has *no* polymorphism representation: `export.rs`
-flattens `TypeVar`/`ForAll` to `ImportedType::Unknown` (`export.rs:135,141`) and
-`import.rs` interns `Unknown` as a *fresh inference variable* (`import.rs:53`), so
-an imported generic is monomorphized by its first use — using it at two types is a
-type error. Lifting this (needed only when one program uses an imported generic at
-several types, e.g. an importable `Stream` stdlib with `map` at both `Int` and
-`Text`) needs the boundary-scheme rework:
+### Residual — refuse residual infer vars reaching the backend
 
-- **XM-1 — Boundary scheme representation.** Quantified variant on `ImportedType`
-  (bound type-var ids + body), with round-trip.
-- **XM-2 — Generalize on export.** `export.rs` emits the scheme (top-level
-  `∀A. A->A`, and the higher-rank record-field case `{ id : ∀A. A->A }` — rank-2,
-  within v2's predicative budget; confirm).
-- **XM-3 — Instantiate on import (THIR).** Import interning yields a poly scheme;
-  THIR instantiates each imported reference at its use site (fresh vars + `TyApp`).
-  *Acceptance:* an imported generic used at **two concrete types** type-checks.
-  (Native lowering is already handled by the single-type validator relaxation
-  above, so no further Dataflow work is expected once THIR emits the per-use
-  instantiation.)
+Pre-existing (present before XM, verified on the prior baseline): an import value
+of an **un-exportable** type passed only to a generic that never pins it (e.g.
+`ign :: <A> A -> Int = _ => 0; ign dep`, where `dep` exports as `Unknown`) leaves
+an unconstrained inference variable in THIR; it passes the type checker and the
+interpreter (returns a defensible value) but **ICEs in Dataflow** (`global` type
+mismatch at `dataflow/src/lower/mod.rs`). Fix: the eval/compile gate should refuse
+a program whose THIR retains an unresolved free inference variable that would
+reach Dataflow Core, turning the ICE into a clean diagnostic (the strict-AOT
+contract). General gate hardening, not specific to imports.
 
 ## V2 milestone — remaining work
 

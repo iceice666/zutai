@@ -126,6 +126,16 @@ struct Lowerer<'hir> {
     /// Bindings absent here are monomorphic (used at a single type, or shared with
     /// the surrounding environment).
     poly_schemes: FxHashMap<BindingId, Vec<u32>>,
+    /// Per-import working map from an exported type-parameter id (`ImportedType::
+    /// TyVar`) to the single fresh `InferVar` it interns to, so repeated
+    /// occurrences of one exported variable share a var (`∀A. A -> A` stays
+    /// `?a -> ?a`). Cleared before interning each import binding's type.
+    import_tyvar_cache: FxHashMap<u32, TypeId>,
+    /// For each import binding, the inference variables interned from its exported
+    /// type parameters (`ImportedType::TyVar`) — the *only* vars to generalize.
+    /// `Unknown` positions (un-exportable types) are deliberately excluded so they
+    /// stay monomorphic-by-use rather than being unsoundly quantified.
+    import_poly_candidates: FxHashMap<BindingId, Vec<TypeId>>,
     /// Declared kind of each type parameter, from `<F :: Type -> Type>` kind
     /// annotations. Absent params default to `Kind::ground()`. Used for
     /// kind-checking higher-kinded constraints/witnesses and carried into

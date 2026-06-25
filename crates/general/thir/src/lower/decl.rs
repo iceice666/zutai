@@ -27,9 +27,19 @@ impl<'hir> Lowerer<'hir> {
                 continue;
             };
 
+            self.import_tyvar_cache.clear();
             let ty = self.intern_imported_type_with_source(&desc, Some(source), decl.span);
             self.value_types.insert(decl.binding, ty);
             self.binding_import_key.insert(decl.binding, source.clone());
+            // Record the inference vars interned for this import's exported type
+            // parameters. Only these are generalized in the main decl pass (after
+            // the value is checked), so each reference instantiates them fresh —
+            // multi-type cross-module generics — while `Unknown` (un-exportable)
+            // positions stay monomorphic.
+            let candidates: Vec<TypeId> = self.import_tyvar_cache.values().copied().collect();
+            if !candidates.is_empty() {
+                self.import_poly_candidates.insert(decl.binding, candidates);
+            }
 
             if let ImportedType::Type(inner) = desc {
                 let denotation = self.intern_imported_type_with_source(&inner, None, decl.span);
@@ -174,7 +184,26 @@ impl<'hir> Lowerer<'hir> {
                 };
                 let ty = predeclared_import_ty.unwrap_or_else(|| self.expr(value).ty);
                 self.value_types.insert(decl.binding, ty);
-                if binding_kind != BindingKind::TopImport {
+                if binding_kind == BindingKind::TopImport {
+                    // Generalize an import over *only* the inference vars from its
+                    // exported type parameters (resolved through the check above),
+                    // so each reference instantiates them fresh. `Unknown`
+                    // (un-exportable) positions are excluded and stay monomorphic —
+                    // generalizing them would unsoundly let one value be used at
+                    // incompatible types.
+                    if let Some(candidates) = self.import_poly_candidates.remove(&decl.binding) {
+                        let mut scheme = Vec::new();
+                        for candidate in candidates {
+                            let resolved = self.resolve(candidate);
+                            self.free_infer_vars_into(resolved, &mut scheme);
+                        }
+                        scheme.sort_unstable();
+                        scheme.dedup();
+                        if !scheme.is_empty() {
+                            self.poly_schemes.insert(decl.binding, scheme);
+                        }
+                    }
+                } else {
                     self.generalize_if_polymorphic(decl.binding, ty);
                 }
                 ThirDeclKind::Value { ty, value }

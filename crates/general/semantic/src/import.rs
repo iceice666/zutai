@@ -546,6 +546,7 @@ fn imported_type_key(ty: &ImportedType) -> String {
             format!("({}->{})", imported_type_key(from), imported_type_key(to))
         }
         ImportedType::Type(inner) => format!("Type({})", imported_type_key(inner)),
+        ImportedType::TyVar(id) => format!("'{id}"),
         ImportedType::Unknown => "?".to_string(),
     }
 }

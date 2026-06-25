@@ -24,6 +24,11 @@ pub struct ExportUnsupported {
     pub reason: &'static str,
 }
 
+/// High bit tagging an `ImportedType::TyVar` id derived from an inference
+/// variable, keeping it disjoint from ids derived from named type-variable
+/// bindings (which are masked to clear this bit).
+const TYVAR_INFER_TAG: u32 = 1 << 31;
+
 /// Convert `ty` (a type in `file`'s arena) into a neutral [`ImportedType`].
 pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUnsupported> {
     let aliases = build_alias_map(file);
@@ -130,15 +135,23 @@ fn export(
             seen.remove(&binding);
             result
         }
-        // Free inference / type variables represent unconstrained positions; the
-        // importer re-introduces a fresh variable for them.
-        TypeKind::InferVar(_) | TypeKind::TypeVar(_) => Ok(ImportedType::Unknown),
+        // In an exported value's type, a free type/inference variable is a
+        // generalizable (Hindley–Milner) type parameter — the value is polymorphic
+        // in it — so export it as a `TyVar`. Repeated occurrences of the same var
+        // share an id (the importer maps each id to one fresh inference variable,
+        // preserving constraints like `A = A`, and quantifies the binding so each
+        // use instantiates fresh). The two id spaces are kept disjoint by tagging
+        // inference-variable ids with the high bit.
+        TypeKind::TypeVar(binding) => Ok(ImportedType::TyVar(binding.0 & !TYVAR_INFER_TAG)),
+        TypeKind::InferVar(v) => Ok(ImportedType::TyVar(v | TYVAR_INFER_TAG)),
+        // An explicit quantifier just exports its body; the body's parameters are
+        // free type variables there and are generalized by the arm above.
+        TypeKind::ForAll { body, .. } => export(file, aliases, body, seen),
         // Parametric constructors and patch markers do not cross module
         // boundaries as concrete exported data in this phase.
         TypeKind::AliasApply { .. }
         | TypeKind::Apply { .. }
         | TypeKind::Con(_)
-        | TypeKind::ForAll { .. }
         | TypeKind::Patch { .. } => Ok(ImportedType::Unknown),
         TypeKind::Function { from, to } => Ok(ImportedType::Function {
             from: Box::new(export(file, aliases, from, seen)?),

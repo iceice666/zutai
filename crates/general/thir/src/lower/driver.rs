@@ -25,6 +25,8 @@ impl<'hir> Lowerer<'hir> {
             handled_stack: Vec::new(),
             resume_stack: Vec::new(),
             poly_schemes: FxHashMap::default(),
+            import_tyvar_cache: FxHashMap::default(),
+            import_poly_candidates: FxHashMap::default(),
             type_param_kinds: FxHashMap::default(),
             next_level_meta: 0,
             level_lower_bounds: FxHashMap::default(),

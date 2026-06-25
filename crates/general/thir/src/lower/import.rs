@@ -25,6 +25,7 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         match self.imports.get(source).cloned() {
             Some(desc) => {
+                self.import_tyvar_cache.clear();
                 let ty = self.intern_imported_type_with_source(&desc, Some(source), span);
                 self.alloc_expr(ThirExpr {
                     source: id,
@@ -152,6 +153,20 @@ impl<'hir> Lowerer<'hir> {
                 // No denotation registration here — the field-name context is
                 // unavailable.  Just return `type_type`.
                 self.type_type
+            }
+            ImportedType::TyVar(id) => {
+                // Each exported type variable interns to one fresh inference
+                // variable, shared across its occurrences (cache keyed by export
+                // id), so `∀A. A -> A` becomes `?a -> ?a`. The binding is then
+                // quantified over these vars by `predeclare_import_decls` and
+                // instantiated fresh at every use site.
+                if let Some(&ty) = self.import_tyvar_cache.get(id) {
+                    ty
+                } else {
+                    let ty = self.fresh_infer_var(span);
+                    self.import_tyvar_cache.insert(*id, ty);
+                    ty
+                }
             }
             ImportedType::Unknown => self.fresh_infer_var(span),
         }
