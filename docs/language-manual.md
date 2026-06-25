@@ -251,7 +251,7 @@ General mode is pure and lazy. Unused bindings are not evaluated, and function a
 
 Zutai has static typing with inference, explicit parametric generics, and first-class compile-time `Type` values. A value of type `Type` describes a type; type values can be bound, passed to type-level functions, imported from `.zt` modules, and used in annotations, but they are not serializable final outputs.
 
-Built-in type values include `Type`, `Text`, `Bool`, `Int`, `Float`, fixed-width integer and float names (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`), posit scalar names (`Posit32`, `Posit64`, `Posit32eN`, `Posit64eN`), and `List`.
+Built-in type values include `Type`, `Unit`, `Text`, `Bool`, `Int`, `Float`, fixed-width integer and float names (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`), posit scalar names (`Posit32`, `Posit64`, `Posit32eN`, `Posit64eN`), and `List`. `Unit` is the empty-tuple type `()`, whose only value is `()`.
 
 Annotations use `::`:
 

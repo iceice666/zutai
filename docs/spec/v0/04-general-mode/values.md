@@ -126,6 +126,8 @@ Tuples use parentheses and comma-separated items:
 
 A parenthesized single expression is a group, not a one-element tuple. Tuples are used for anonymous structured data and intermediate computation.
 
+The empty tuple `()` is the **unit value**. Its type is the empty tuple type, also spelled `Unit` (see [Type system](../05-type-system/overview.md)). `()` is the only value tuple that does not require a comma; every other tuple needs at least one comma.
+
 ### Lists
 
 Lists use semicolon-terminated elements:

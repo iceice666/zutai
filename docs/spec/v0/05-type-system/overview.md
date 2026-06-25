@@ -6,6 +6,7 @@ Core built-in type values include:
 
 ```zt
 Type
+Unit
 Text
 Bool
 Int
@@ -26,6 +27,8 @@ Posit32eN
 Posit64eN
 List
 ```
+
+`Unit` is the empty-tuple type `()`: the type whose only value is `()`. It is not a distinct primitive — `Unit` is a built-in spelling for the zero-field tuple, and the two are interchangeable in type position. It is the conventional result type for effect operations that produce no meaningful value and the conventional parameter type for thunked codata (for example a stream cell is `Unit -> StreamCell A`).
 
 `Int` and `Float` are the default source-level numeric types. In v0, `Int` aliases `i64` and `Float` aliases `f64`; fixed-width suffixes choose the corresponding fixed-width type directly. `Posit32`, `Posit64`, `Posit32eN`, and `Posit64eN` are experimental implementation-provided scalar types; `Posit32` and `Posit64` use exponent size `e2`, and explicit `eN` forms are valid for `0 <= N < 32` or `0 <= N < 64` respectively.
 
