@@ -93,17 +93,15 @@ it type-checks and compiles natively at multiple types (the importable `Stream`
 stdlib shape now works). `Unknown` (un-exportable) positions stay
 monomorphic-by-use and are not generalized.
 
-### Residual — refuse residual infer vars reaching the backend
-
-Pre-existing (present before XM, verified on the prior baseline): an import value
-of an **un-exportable** type passed only to a generic that never pins it (e.g.
-`ign :: <A> A -> Int = _ => 0; ign dep`, where `dep` exports as `Unknown`) leaves
-an unconstrained inference variable in THIR; it passes the type checker and the
-interpreter (returns a defensible value) but **ICEs in Dataflow** (`global` type
-mismatch at `dataflow/src/lower/mod.rs`). Fix: the eval/compile gate should refuse
-a program whose THIR retains an unresolved free inference variable that would
-reach Dataflow Core, turning the ICE into a clean diagnostic (the strict-AOT
-contract). General gate hardening, not specific to imports.
+The pre-existing ICE in this area (an un-exportable import value passed only to a
+generic that never pins it — `ign :: <A> A -> Int = _ => 0; ign dep` — left an
+unconstrained inference variable that reached Dataflow with an opaque use-site
+type and ICEd) was **fixed 2026-06-25**: the Dataflow `GlobalRef` validator now
+also skips when the *use-site* type is opaque (`is_opaque_shape_type(node.ty)`).
+A `GlobalRef` lowers to a symbolic by-name reference that never consults its
+node type, and any concrete access happens at a separate, separately-checked
+node, so under untagged-i64 this is a machine-safe pass-through — it now compiles
+and matches the interpreter (`compile_zt_imported_unexportable_value_through_generic_matches_oracle`).
 
 ## V2 milestone — remaining work
 

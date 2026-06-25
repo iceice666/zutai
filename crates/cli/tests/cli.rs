@@ -627,6 +627,30 @@ fn compile_zt_imported_unexportable_value_stays_monomorphic() {
 }
 
 #[test]
+fn compile_zt_imported_unexportable_value_through_generic_matches_oracle() {
+    // A value of an un-exportable type (interned as an unconstrained `Unknown`)
+    // passed only to a generic that never pins it leaves an opaque use-site type
+    // on the dependency global. Under untagged-i64 it is a machine-safe
+    // pass-through, so it must compile (matching the interpreter), not ICE.
+    let (interp, native) = import_run_vs_compile(
+        "xm_unexportable_generic",
+        "main.zt",
+        &[
+            (
+                "dep.zt",
+                "Box :: <A> type { #box : { val : A; }; }\nb :: Box Int = #box { val = 7; }\nb\n",
+            ),
+            (
+                "main.zt",
+                "dep :: import \"dep.zt\"\nign :: <A> A -> Int = _ => 0;\nign dep\n",
+            ),
+        ],
+    );
+    assert_eq!(native.trim(), "0");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
 fn run_bare_filename_import_parent_escape_is_rejected() {
     let root = std::env::temp_dir();
     let dir = root.join("zutai_cli_bare_base");

@@ -411,10 +411,15 @@ pub(super) fn check_node_type_compat(
                 // under an Optional annotation. A cross-module reference to a
                 // generic dependency global keeps the dependency's free-`TyVar`
                 // type while the use site is concrete, so accept any sound
-                // instantiation of it (`is_instantiation_of`). Stray refs and
-                // target existence remain checked.
+                // instantiation of it (`is_instantiation_of`). An *opaque* use-site
+                // type (an unconstrained `TyVar` — e.g. a value of an un-exportable
+                // import type passed only to a generic that never pins it) never
+                // accesses the value's structure, so under untagged-i64 it is a
+                // machine-safe pass-through; skip it rather than ICE. Stray refs
+                // and target existence remain checked.
                 if !matches!(&graph.types[target_ty], DfTy::TyFun(_, _))
                     && !is_opaque_shape_type(graph, target_ty)
+                    && !is_opaque_shape_type(graph, node.ty)
                     && !is_wrapper_type(graph, target_ty)
                     && !is_wrapper_type(graph, node.ty)
                     && !is_instantiation_of(graph, target_ty, node.ty)

@@ -176,11 +176,17 @@ single-type validator relaxation below._
   Reviewer (two rounds) found and fixed a round-1 P0 (generalizing `Unknown`-derived
   vars), with no residual soundness issue from the candidate-based fix. 1619
   workspace tests pass.
-- **Pre-existing residual (not from this milestone).** An un-exportable import
-  value passed only to a generic that never pins its type (e.g. `ign :: <A> A ->
-  Int = _ => 0; ign dep`) leaks an unconstrained inference variable into Dataflow
-  Core and ICEs — verified present on the prior baseline too. Tracked in
-  `docs/TBD.md`.
+- **Follow-up: pre-existing ICE fixed.** An un-exportable import value passed only
+  to a generic that never pins its type (e.g. `ign :: <A> A -> Int = _ => 0;
+  ign dep`) used to leak an unconstrained inference variable into Dataflow Core
+  and ICE (present on the prior baseline too). Fixed by also skipping the Dataflow
+  `GlobalRef` structural check when the *use-site* type is opaque
+  (`is_opaque_shape_type(node.ty)`): a `GlobalRef` lowers to a symbolic by-name
+  reference and any concrete access is a separate, separately-checked node, so
+  under untagged-i64 it is a machine-safe pass-through — it now compiles and
+  matches the interpreter
+  (`compile_zt_imported_unexportable_value_through_generic_matches_oracle`).
+  Reviewed sound (no P0/P1).
 
 ### Cross-module polymorphism (single-type) ✅
 
