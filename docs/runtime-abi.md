@@ -188,7 +188,11 @@ nil       = a unique sentinel value             // TAG_NIL (immediate or singlet
 ZtVariant { i64 header; i64 tag; i64 payload; } // TAG_VARIANT
 ```
 
-- `i64 zutai.list_nil()`, `i64 zutai.list_cons(i64 head, i64 tail)`.
+- `i64 zutai.list_nil()`, `i64 zutai.list_cons(i64 head, i64 tail)`. Read-only
+  accessors `i64 zutai.list_is_nil(i64 v)` (`1`/`0` Bool), `i64 zutai.list_head(i64 v)`,
+  `i64 zutai.list_tail(i64 v)` back the stream `toList`/`fromList` list-bridge
+  primitives (`list_head`/`list_tail` are undefined on nil; the `.zt` source guards
+  them with `list_is_nil`).
 - `i64 zutai.variant_new(i64 tag, i64 payload)`, `i64 zutai.variant_tag(i64 v)`,
   `i64 zutai.variant_value(i64 v)`.
 - **Optional/Maybe** are ordinary variants: `#none`/`#some (v)` and
@@ -460,6 +464,9 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.tuple_get` | `i64 (i64 t, i64 slot)` | Get slot by ordinal index. |
 | `zutai.list_nil` | `i64 ()` | The nil sentinel. |
 | `zutai.list_cons` | `i64 (i64 head, i64 tail)` | Allocate a cons cell. |
+| `zutai.list_is_nil` | `i64 (i64 v)` | `1`/`0` Bool: is `v` the nil sentinel? (stream list-bridge primitive) |
+| `zutai.list_head` | `i64 (i64 v)` | Head of a cons cell; undefined on nil. (stream list-bridge primitive) |
+| `zutai.list_tail` | `i64 (i64 v)` | Tail of a cons cell; undefined on nil. (stream list-bridge primitive) |
 | `zutai.variant_new` | `i64 (i64 tag, i64 payload)` | Allocate a variant. |
 | `zutai.variant_tag` | `i64 (i64 v)` | Variant tag. |
 | `zutai.variant_value` | `i64 (i64 v)` | Variant payload. |

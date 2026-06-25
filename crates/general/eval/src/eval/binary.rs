@@ -53,6 +53,50 @@ impl<'a> Evaluator<'a> {
                 let mut force = |thunk: &Thunk| thunk.force(self);
                 overlay_value(base, patch, func == BuiltinFn::OverlayDeep, &mut force)
             }
+            BuiltinFn::ListEmpty => Ok(Value::List(Rc::from(Vec::<Thunk>::new()))),
+            BuiltinFn::ListCons => {
+                // The head thunk stays unforced — `listCons` is lazy in its element.
+                let head = args[0].clone();
+                match args[1].force(self)? {
+                    Value::List(items) => {
+                        let mut elems = Vec::with_capacity(items.len() + 1);
+                        elems.push(head);
+                        elems.extend(items.iter().cloned());
+                        Ok(Value::List(Rc::from(elems)))
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "List",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
+            BuiltinFn::ListIsNil => match args[0].force(self)? {
+                Value::List(items) => Ok(Value::Bool(items.is_empty())),
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
+            BuiltinFn::ListHead => match args[0].force(self)? {
+                Value::List(items) => match items.first() {
+                    Some(head) => head.force(self),
+                    None => Err(EvalError::Internal("listHead on an empty list")),
+                },
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
+            BuiltinFn::ListTail => match args[0].force(self)? {
+                Value::List(items) => match items.split_first() {
+                    Some((_, rest)) => Ok(Value::List(rest.iter().cloned().collect())),
+                    None => Err(EvalError::Internal("listTail on an empty list")),
+                },
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
         }
     }
 

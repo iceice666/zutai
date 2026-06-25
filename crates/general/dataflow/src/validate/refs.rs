@@ -570,6 +570,11 @@ pub(super) fn check_node_refs(
             check_node_ref(graph, owner, "lhs", *lhs, errors);
             check_node_ref(graph, owner, "rhs", *rhs, errors);
         }
+        DfNodeKind::ListPrim { args, .. } => {
+            for arg in args {
+                check_node_ref(graph, owner, "arg", *arg, errors);
+            }
+        }
         DfNodeKind::Sequence(items) => {
             for item in items {
                 check_node_ref(graph, owner, "item", *item, errors);

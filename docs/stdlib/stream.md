@@ -12,9 +12,14 @@ name of the same spelling wins). `unfold` takes a step function returning a
 compose with a record payload at the surface. `empty :: <A> Stream A` is a
 polymorphic nullary value; it now instantiates correctly per use (a `<A>`
 reference outside callee position freshens its type variable — see
-`docs/ARCHIVED.md` "BindingRef instantiation site"). Deferred: the `List`-interop
-subset (`take -> List`, `toList`, `fromList`), which needs source-level list
-construction the language lacks. See `docs/ARCHIVED.md` "V3-G2".
+`docs/ARCHIVED.md` "BindingRef instantiation site"). The `List`-interop subset —
+`toList`, `fromList`, and `takeList` (`= toList ∘ take`) — **shipped 2026-06-26**
+(V3-G2 residual). `take` stays `Stream -> Stream`; `takeList` is the named
+`take -> List` form. The builtin `List` has no source-level head/tail ops, so the
+three combinators ride internal scalar bridge primitives the compiler provides
+over the builtin `List` (`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`);
+the `if`/`match` branching lives in the `.zt` source. See `docs/ARCHIVED.md`
+"V3-G2".
 
 ## Two surfaces, one source
 
@@ -57,11 +62,12 @@ unfold    :: <S, A> (S -> Step S A) -> S -> Stream A
 uncons    :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
 map       :: <A, B> (A -> B) -> Stream A -> Stream B
 filter    :: <A> (A -> Bool) -> Stream A -> Stream A
-take      :: <A> Int -> Stream A -> List A
+take      :: <A> Int -> Stream A -> Stream A
 drop      :: <A> Int -> Stream A -> Stream A
 fold      :: <A, B> (B -> A -> B) -> B -> Stream A -> B
 fromList  :: <A> List A -> Stream A
 toList    :: <A> Stream A -> List A
+takeList  :: <A> Int -> Stream A -> List A   -- = toList (take k s)
 ```
 
 ## Edge behavior

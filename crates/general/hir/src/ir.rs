@@ -20,6 +20,11 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "schema",
     "overlay",
     "overlayDeep",
+    "listEmpty",
+    "listCons",
+    "listIsNil",
+    "listHead",
+    "listTail",
 ];
 
 /// Opaque standard host-capability types. They are seeded into every root scope

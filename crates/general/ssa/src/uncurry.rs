@@ -182,6 +182,7 @@ fn op_values(op: &SsaOp) -> Vec<&SsaValue> {
         SsaOp::Variant { value, .. } => vec![value],
         SsaOp::VariantValue { scrutinee } => vec![scrutinee],
         SsaOp::Builtin { lhs, rhs, .. } => vec![lhs, rhs],
+        SsaOp::ListPrim { args, .. } => args.iter().collect(),
         SsaOp::Coalesce { value, fallback } => vec![value, fallback],
         SsaOp::Alias { value } => vec![value],
         SsaOp::Phi { branches } => branches.iter().map(|(_, v)| v).collect(),

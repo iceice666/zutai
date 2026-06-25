@@ -402,6 +402,36 @@ fn stream_generator_evaluates_as_codata_stream() {
 }
 
 #[test]
+fn stream_tolist_materializes_finite_stream() {
+    // V3-G2 List interop: `toList` walks a codata stream into a builtin `List`
+    // via the `listEmpty`/`listCons` bridge primitives. The result equals the
+    // corresponding list literal.
+    let src = "toList (cons 1 (cons 2 (singleton 3)))\n";
+    assert_eq!(run(src), run("{1; 2; 3;}"));
+}
+
+#[test]
+fn stream_fromlist_roundtrips_through_tolist() {
+    // `fromList` adapts a `List` into a codata stream via `listIsNil`/`listHead`/
+    // `listTail`; `toList` materializes it back, yielding the original list.
+    assert_eq!(run("toList (fromList {4; 5; 6;})"), run("{4; 5; 6;}"));
+}
+
+#[test]
+fn stream_fromlist_empty_is_empty_stream() {
+    // The empty builtin `List` adapts to the empty stream; `toList` yields `[]`.
+    let src = "e :: List Int = {;};\ntoList (fromList e)\n";
+    assert_eq!(run(src), run("e :: List Int = {;};\ne"));
+}
+
+#[test]
+fn stream_takelist_bounds_infinite_generator() {
+    // `takeList` = `toList ∘ take`: a bounded prefix of an infinite generator.
+    let src = "countFrom :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\ntakeList 3 (countFrom 1)\n";
+    assert_eq!(run(src), run("{1; 2; 3;}"));
+}
+
+#[test]
 fn bare_stream_constructor_is_rejected_as_value_type() {
     let err = run_err("bad :: Stream = {;};\nbad");
     let EvalError::TypeCheckFailed(messages) = err else {

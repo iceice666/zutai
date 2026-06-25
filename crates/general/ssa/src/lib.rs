@@ -6,7 +6,8 @@
 //! points (e.g. after match arms or conditional branches).
 
 pub use zutai_anf::{
-    DfBuiltinOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes, HostOp,
+    DfBuiltinOp, DfListPrimOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes,
+    HostOp,
 };
 
 mod lower;
@@ -109,6 +110,11 @@ pub enum SsaOp {
         op: DfBuiltinOp,
         lhs: SsaValue,
         rhs: SsaValue,
+    },
+    /// Scalar list-bridge primitive: a single runtime `zutai.list_*` call.
+    ListPrim {
+        op: DfListPrimOp,
+        args: Vec<SsaValue>,
     },
     /// Optional coalesce: dest = value ?? fallback.
     Coalesce { value: SsaValue, fallback: SsaValue },

@@ -234,6 +234,76 @@ fn compile_prelude_stream_empty_polymorphic_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+// V3-G2 residual: List interop. `fromList` adapts a builtin `List` into a codata
+// `Stream`, `map` transforms it, `toList` materializes the finite result back to a
+// `List`. Exercises the scalar list-bridge primitives (`listIsNil`/`listHead`/
+// `listTail` under `fromList`, `listCons`/`listEmpty` under `toList`) on the native
+// backend against the interpreter oracle.
+const PRELUDE_STREAM_TOLIST_SRC: &str =
+    "double :: Int -> Int = x => x * 2;\ntoList (map double (fromList {1; 2; 3;}))\n";
+
+#[test]
+fn compile_prelude_stream_tolist_matches_oracle() {
+    // fromList [1,2,3] → stream; map (*2) → 2,4,6; toList → [2; 4; 6].
+    let native = compile_bin_stdout("cli_test_prelude_tolist", PRELUDE_STREAM_TOLIST_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_tolist_oracle.zt",
+        PRELUDE_STREAM_TOLIST_SRC,
+    );
+    assert_eq!(native.trim(), "[2; 4; 6]");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// `fromList` feeds the ordinary stream pipeline; folding to a scalar avoids
+// depending on list rendering and proves the List→Stream adaptation steps lazily.
+const PRELUDE_STREAM_FROMLIST_SRC: &str =
+    "fold (\\a b. a + b) 0 (filter (\\x. x > 15) (fromList {10; 20; 30;}))\n";
+
+#[test]
+fn compile_prelude_stream_fromlist_matches_oracle() {
+    // fromList [10,20,30] → filter >15 → 20,30 → fold (+) 0 = 50.
+    let native = compile_bin_stdout("cli_test_prelude_fromlist", PRELUDE_STREAM_FROMLIST_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_fromlist_oracle.zt",
+        PRELUDE_STREAM_FROMLIST_SRC,
+    );
+    assert_eq!(native.trim(), "50");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// `takeList` materializes a bounded prefix of an *infinite* generator — proving the
+// `toList ∘ take` composition terminates natively under demand.
+const PRELUDE_STREAM_TAKELIST_SRC: &str = "countFrom :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\ntakeList 5 (countFrom 1)\n";
+
+#[test]
+fn compile_prelude_stream_takelist_infinite_matches_oracle() {
+    // takeList 5 (countFrom 1) → [1; 2; 3; 4; 5].
+    let native = compile_bin_stdout("cli_test_prelude_takelist", PRELUDE_STREAM_TAKELIST_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_takelist_oracle.zt",
+        PRELUDE_STREAM_TAKELIST_SRC,
+    );
+    assert_eq!(native.trim(), "[1; 2; 3; 4; 5]");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// Empty edges: `takeList 0` and `toList empty` both materialize the empty list.
+const PRELUDE_STREAM_TOLIST_EMPTY_SRC: &str = "takeList 0 (cons 1 (singleton 2))\n";
+
+#[test]
+fn compile_prelude_stream_tolist_empty_matches_oracle() {
+    let native = compile_bin_stdout(
+        "cli_test_prelude_tolist_empty",
+        PRELUDE_STREAM_TOLIST_EMPTY_SRC,
+    );
+    let interp = run_stdout(
+        "cli_test_prelude_tolist_empty_oracle.zt",
+        PRELUDE_STREAM_TOLIST_EMPTY_SRC,
+    );
+    assert_eq!(native.trim(), "[]");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 // V3-G3: richer `yield` — a recursive generator (guard `if` + `yield` + tail
 // `yield from`) folds to the same value as the equivalent `unfold`. `range 1 6`
 // yields 1..5; sum = 15.
@@ -738,6 +808,29 @@ fn compile_zt_imported_stream_empty_matches_oracle() {
         ],
     );
     assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_stream_list_interop_matches_oracle() {
+    // V3-G2 residual through the import boundary: `s.fromList`/`s.toList`/`s.takeList`
+    // qualified on the imported module. A builtin `List` round-trips List→Stream→List
+    // through the qualified combinators; native compile must match the oracle.
+    let (interp, native) = import_run_vs_compile(
+        "g6_stream_list_interop",
+        "main.zt",
+        &[
+            ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
+            (
+                "main.zt",
+                "s :: import \"stream.zt\";\n\
+                 double :: Int -> Int = x => x * 2;\n\
+                 s.toList (s.take 2 (s.map double (s.fromList {1; 2; 3;})))\n",
+            ),
+        ],
+    );
+    // fromList [1,2,3] → map (*2) → 2,4,6; take 2 → 2,4; toList → [2; 4].
+    assert_eq!(native.trim(), "[2; 4]");
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 

@@ -200,6 +200,11 @@ pub(crate) fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
             collect_from_value(lhs, constants);
             collect_from_value(rhs, constants);
         }
+        SsaOp::ListPrim { op: _, args } => {
+            for v in args {
+                collect_from_value(v, constants);
+            }
+        }
         SsaOp::Coalesce { value, fallback } => {
             collect_from_value(value, constants);
             collect_from_value(fallback, constants);

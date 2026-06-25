@@ -158,6 +158,44 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G2 residual: List interop (`toList`/`fromList`/`takeList`) ✅
+
+_Completed 2026-06-26. Ships the stream↔list interop combinators — the last V3-G2
+residual — closing V3-G2. Native compile + interpreter (THIR & TLC) oracle parity._
+
+- **The gap.** The builtin `List` has no source-level head/tail ops: the `Pattern`
+  enum has no list/cons pattern, and the runtime had `list_cons`/`list_nil`
+  constructors but no destructor. So `.zt` source could neither build a `List` of
+  dynamic length nor take one apart — which is why `toList`/`fromList` could not be
+  written in `.zt`. (The interpreter represents `List` as a flat `Rc<[Thunk]>`; the
+  native backend as a `TAG_NIL`/`TAG_CONS` cons-cell list.)
+- **Design — scalar bridge primitives + `.zt` combinators.** Rather than a single
+  list-destructor node (which would force a branching CFG inside the per-instruction
+  codegen to build a result variant), five *scalar* bridge primitives map 1:1 to
+  pure `i64→i64` runtime calls, and the `if`/`match` branching lives in the shared
+  `stream.zt` source: `listEmpty :: <A> Unit -> List A` (lowers to an empty list
+  literal), `listCons`, `listIsNil`, `listHead`, `listTail`. The combinators are
+  ordinary `.zt` recursion over them (`toList` via `match s ()`; `fromList` via
+  `if listIsNil xs then #nil else #cons {…}`), riding the proven native stream path.
+  `take` stays `Stream → Stream`; `takeList = toList ∘ take` is the named
+  `take → List` form. The primitives are globally-visible builtin values
+  (`BUILTIN_VALUE_NAMES`), documented as internal bridge ops.
+- **Pipeline.** THIR builtin types (`thir/.../builtins.rs`); interpreter `BuiltinFn`
+  variants on both walkers (`eval/binary.rs`, `eval_tlc/effects.rs`, laziness
+  preserved — `listCons` keeps its head thunk unforced); native lowering via a new
+  `DfNodeKind::ListPrim { op, args }` intercepted in the DC lowerer's saturated-App
+  spine, threaded through validate/ANF/SSA/codegen; runtime ABI gains read-only
+  `zutai.list_is_nil`/`list_head`/`list_tail`. No backend-gate change (the new
+  primitives are not in the reflection/overlay reject lists). GC/codata invariants
+  hold: standard cons cells + a standard codata closure, no new heap shape, no
+  write barrier.
+- **Tests.** Native == oracle: `compile_prelude_stream_tolist_matches_oracle`,
+  `_fromlist_`, `_takelist_infinite_`, `_tolist_empty_`, and
+  `compile_zt_imported_stream_list_interop_matches_oracle` (qualified `s.toList`/
+  `s.fromList`). Interpreter unit + THIR↔TLC differential battery cover finite
+  `toList`, `fromList` round-trip, empty edges, and bounded `takeList` over an
+  infinite generator. 1647 workspace tests pass.
+
 ### BindingRef instantiation site — polymorphic values (ships `empty`) ✅
 
 _Completed 2026-06-25. Makes a `BindingRef` a first-class instantiation site so a

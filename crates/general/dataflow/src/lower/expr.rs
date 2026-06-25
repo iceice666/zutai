@@ -2,7 +2,7 @@ use rustc_hash::FxHashSet;
 
 use zutai_tlc::{BuiltinOp, PrimTy, TlcExpr, TlcExprId, TlcTupleItem, TlcType};
 
-use crate::{DfArm, DfBuiltinOp, DfNodeKind, DfTupleNodeItem, NodeId};
+use crate::{DfArm, DfBuiltinOp, DfListPrimOp, DfNodeKind, DfTupleNodeItem, NodeId};
 
 use super::*;
 
@@ -56,6 +56,13 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::App(func, arg) => {
+                // A saturated call to a list-bridge builtin (`listCons`/`listIsNil`/
+                // `listHead`/`listTail`/`listEmpty`) lowers to a dedicated primitive
+                // node rather than a closure `Apply`, since builtin values have no
+                // closure object to call.
+                if let Some(node) = self.try_lower_list_bridge(id, df_ty, span) {
+                    return node;
+                }
                 let func_node = self.lower_expr(func);
                 let arg_node = self.lower_expr(arg);
                 self.alloc_node(
@@ -300,6 +307,74 @@ impl<'m> Lowerer<'m> {
             TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
                 self.alloc_node(DfNodeKind::Error, self.error_ty, span)
             }
+        }
+    }
+
+    /// Lower a saturated application of a list-bridge builtin (`listEmpty`,
+    /// `listCons`, `listIsNil`, `listHead`, `listTail`) to a primitive node.
+    /// Returns `None` for any other callee or an under-saturated call, so the
+    /// caller falls back to the ordinary closure `Apply` path.
+    fn try_lower_list_bridge(
+        &mut self,
+        id: TlcExprId,
+        df_ty: crate::DfTyId,
+        span: Option<Span>,
+    ) -> Option<NodeId> {
+        // Peel the App/TyApp spine to the head Var, collecting value-arg ids.
+        let mut args_rev: Vec<TlcExprId> = Vec::new();
+        let mut cur = id;
+        let name = loop {
+            match &self.module.expr_arena[cur] {
+                TlcExpr::App(func, arg) => {
+                    args_rev.push(*arg);
+                    cur = *func;
+                }
+                TlcExpr::TyApp(inner, _) => cur = *inner,
+                TlcExpr::Var(binding) => break self.list_bridge_builtin_name(*binding)?,
+                _ => return None,
+            }
+        };
+        args_rev.reverse();
+        let args = args_rev;
+
+        let op = match (name, args.len()) {
+            // `listEmpty ()` is just an empty list literal of the result type; the
+            // unit argument carries no runtime value, so it is discarded.
+            ("listEmpty", 1) => {
+                return Some(self.alloc_node(DfNodeKind::List(Vec::new()), df_ty, span));
+            }
+            ("listCons", 2) => DfListPrimOp::Cons,
+            ("listIsNil", 1) => DfListPrimOp::IsNil,
+            ("listHead", 1) => DfListPrimOp::Head,
+            ("listTail", 1) => DfListPrimOp::Tail,
+            // Under-saturated (or unknown arity) — fall back to closure Apply.
+            _ => return None,
+        };
+        let arg_nodes: Vec<NodeId> = args.iter().map(|&a| self.lower_expr(a)).collect();
+        Some(self.alloc_node(
+            DfNodeKind::ListPrim {
+                op,
+                args: arg_nodes,
+            },
+            df_ty,
+            span,
+        ))
+    }
+
+    /// Name of a list-bridge builtin value binding, or `None` if `binding` is not
+    /// one of them.
+    fn list_bridge_builtin_name(&self, binding: BindingId) -> Option<&'static str> {
+        let b = self.hir_bindings.get(binding.0 as usize)?;
+        if b.kind != BindingKind::BuiltinValue {
+            return None;
+        }
+        match b.name.as_str() {
+            "listEmpty" => Some("listEmpty"),
+            "listCons" => Some("listCons"),
+            "listIsNil" => Some("listIsNil"),
+            "listHead" => Some("listHead"),
+            "listTail" => Some("listTail"),
+            _ => None,
         }
     }
 

@@ -957,6 +957,27 @@ pub extern "C" fn list_cons(head: i64, tail: i64) -> i64 {
     p as i64
 }
 
+/// `1` (Bool true) for the nil sentinel, `0` for a cons cell. Backs the
+/// `listIsNil` bridge primitive; the result is a plain untagged-i64 Bool.
+#[unsafe(export_name = "zutai.list_is_nil")]
+pub extern "C" fn list_is_nil(v: i64) -> i64 {
+    unsafe { (header_tag(word(v, 0)) == TAG_NIL) as i64 }
+}
+
+/// First element of a cons cell. Undefined on nil (the `.zt` `fromList` guards
+/// this with `listIsNil`). Backs the `listHead` bridge primitive.
+#[unsafe(export_name = "zutai.list_head")]
+pub extern "C" fn list_head(v: i64) -> i64 {
+    unsafe { word(v, 1) }
+}
+
+/// Tail of a cons cell. Undefined on nil (guarded by `listIsNil`). Backs the
+/// `listTail` bridge primitive.
+#[unsafe(export_name = "zutai.list_tail")]
+pub extern "C" fn list_tail(v: i64) -> i64 {
+    unsafe { word(v, 2) }
+}
+
 // ── Variant ABI (D-0005 / D-0009, dense indices) ────────────────────────────────
 
 #[unsafe(export_name = "zutai.variant_new")]

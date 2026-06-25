@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-25)
+## Status (2026-06-26)
 
 v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
@@ -13,9 +13,10 @@ underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
 (Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
 cross-module polymorphism (single- and multi-type, XM-1…3), V3-G6 (importable
-`stream.zt` module), and the `unfold` + `empty` stream combinators (V3-G2
-residuals, the latter on a first-class `BindingRef` instantiation site) have all
-landed — see `docs/ARCHIVED.md`. 1638 workspace tests pass.
+`stream.zt` module), the `unfold` + `empty` stream combinators (V3-G2
+residuals, the latter on a first-class `BindingRef` instantiation site), and the
+`List`-interop subset (`toList`/`fromList`/`takeList`, V3-G2 residual) have all
+landed — see `docs/ARCHIVED.md`. **This closes V3-G2.** 1647 workspace tests pass.
 
 ## Active milestone — none
 
@@ -73,11 +74,10 @@ default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.*
 effectful generators; an ergonomic effectful-stream *type* (the supported idiom
 uses the raw cell type, not the pure `Stream` alias).
 
-**Other G2 residuals** (after V3-G6 closed the importable-module residual and
-`unfold` + `empty` shipped, 2026-06-25): only the `List`-interop subset remains.
-
-- **`List`-interop subset** `take -> List`/`toList`/`fromList` — needs source-level
-  list construction the language lacks.
+**Other G2 residuals:** all landed. The importable-module residual closed with
+V3-G6, `unfold` + `empty` shipped 2026-06-25, and the `List`-interop subset
+(`toList`/`fromList`/`takeList`) shipped 2026-06-26 — see `docs/ARCHIVED.md`
+"V3-G2 residual: List interop". **No V3-G2 residuals remain.**
 
 (`unfold` landed as an ambient + importable combinator taking a `Step S A` union
 (`#done`/`#yield { item; next }`) — the builtin `Optional`'s `#some` payload is a
@@ -133,9 +133,9 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   so it stays inside strict+TCO and the write-barrier-free GC. The full spine
   landed: G1 (codata representation) → G2 (stdlib API) → G3 (richer `yield`) → G4
   (effectful generators, reference-interpreter) → G5 (GC keeps unbounded pipelines
-  bounded). Open follow-ups: cancellation/finalization and resource lifetime for
-  effectful generators; an ergonomic effectful-stream type; the G2 residuals
-  above (`empty`/`unfold`, `List` interop, importable `.zt` packaging).
+  bounded). The G2 residuals (`empty`/`unfold`, `List` interop, importable `.zt`
+  packaging) have all landed. Open follow-ups: cancellation/finalization and
+  resource lifetime for effectful generators; an ergonomic effectful-stream type.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

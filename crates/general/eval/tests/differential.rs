@@ -147,6 +147,19 @@ less 2 1"#,
             "match_record_clause",
             "P :: type { a : Int; b : Int; };\nf :: P -> Int\n  = { a = a; b = b; } => a + b;\nf { a = 2; b = 3; }",
         ),
+        // V3-G2 List interop bridge primitives.
+        (
+            "stream_tolist",
+            "toList (cons 1 (cons 2 (singleton 3))) == {1; 2; 3;}",
+        ),
+        (
+            "stream_fromlist_roundtrip",
+            "toList (fromList {4; 5; 6;}) == {4; 5; 6;}",
+        ),
+        (
+            "stream_takelist",
+            "countFrom :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\ntakeList 3 (countFrom 1) == {1; 2; 3;}",
+        ),
     ]
 }
 

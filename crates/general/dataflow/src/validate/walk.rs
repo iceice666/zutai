@@ -148,6 +148,11 @@ pub(super) fn walk_node(
             walk_child(graph, id, "lhs", *lhs, scope, owners, visited, errors);
             walk_child(graph, id, "rhs", *rhs, scope, owners, visited, errors);
         }
+        DfNodeKind::ListPrim { args, .. } => {
+            for arg in args {
+                walk_child(graph, id, "arg", *arg, scope, owners, visited, errors);
+            }
+        }
         DfNodeKind::HostPrint { arg } => {
             walk_child(graph, id, "arg", *arg, scope, owners, visited, errors);
         }

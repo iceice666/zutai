@@ -99,6 +99,11 @@ fn collect_global_refs(
             collect_global_refs(graph, *lhs, out, visited);
             collect_global_refs(graph, *rhs, out, visited);
         }
+        DfNodeKind::ListPrim { args, .. } => {
+            for arg in args {
+                collect_global_refs(graph, *arg, out, visited);
+            }
+        }
         DfNodeKind::Sequence(items) => {
             for item in items {
                 collect_global_refs(graph, *item, out, visited);

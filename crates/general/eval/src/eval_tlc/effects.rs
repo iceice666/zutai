@@ -83,6 +83,54 @@ impl<'a> TlcEvaluator<'a> {
                     &mut force,
                 )?))
             }
+            BuiltinFn::ListEmpty => Ok(EvalControl::Value(Value::List(Rc::from(
+                Vec::<Thunk>::new(),
+            )))),
+            BuiltinFn::ListCons => {
+                // The head thunk stays unforced — `listCons` is lazy in its element.
+                let head = args[0].clone();
+                match args[1].force_tlc(&self)? {
+                    Value::List(items) => {
+                        let mut elems = Vec::with_capacity(items.len() + 1);
+                        elems.push(head);
+                        elems.extend(items.iter().cloned());
+                        Ok(EvalControl::Value(Value::List(Rc::from(elems))))
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "List",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
+            BuiltinFn::ListIsNil => match args[0].force_tlc(&self)? {
+                Value::List(items) => Ok(EvalControl::Value(Value::Bool(items.is_empty()))),
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
+            BuiltinFn::ListHead => match args[0].force_tlc(&self)? {
+                Value::List(items) => match items.first() {
+                    Some(head) => Ok(EvalControl::Value(head.force_tlc(&self)?)),
+                    None => Err(EvalError::Internal("listHead on an empty list")),
+                },
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
+            BuiltinFn::ListTail => match args[0].force_tlc(&self)? {
+                Value::List(items) => match items.split_first() {
+                    Some((_, rest)) => Ok(EvalControl::Value(Value::List(
+                        rest.iter().cloned().collect(),
+                    ))),
+                    None => Err(EvalError::Internal("listTail on an empty list")),
+                },
+                other => Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: value_type_name(&other),
+                }),
+            },
         }
     }
 

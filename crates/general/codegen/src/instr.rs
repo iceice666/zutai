@@ -369,6 +369,29 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             }
         }
 
+        // ── List bridge primitives ──────────────────────────────────────────
+        SsaOp::ListPrim { op, args } => {
+            let operands: Vec<String> = args
+                .iter()
+                .map(|a| emit_value_operand(out, tmp, a))
+                .collect();
+            let (callee, operands) = match op {
+                DfListPrimOp::Cons => ("zutai.list_cons", operands.as_slice()),
+                DfListPrimOp::IsNil => ("zutai.list_is_nil", operands.as_slice()),
+                DfListPrimOp::Head => ("zutai.list_head", operands.as_slice()),
+                DfListPrimOp::Tail => ("zutai.list_tail", operands.as_slice()),
+            };
+            let arglist = operands
+                .iter()
+                .map(|v| format!("i64 {}", v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "  %{} = call i64 @{}({})\n",
+                dest, callee, arglist
+            ));
+        }
+
         // ── Coalesce ────────────────────────────────────────────────────────
         SsaOp::Coalesce { value, fallback } => {
             // @zutai.coalesce unwraps one Optional or Maybe layer:

@@ -87,10 +87,11 @@ oracle parity (a wrong value is worse than a refused one).
   `uncons` ship as **ambient prelude functions** (`.zt` over the codata cell),
   native-compiled and oracle-checked. The prelude is a *fallback* (user /
   constraint names of the same spelling win) and per-module reachability-gated.
-  See `docs/ARCHIVED.md` "V3-G2". *Deferred:* `empty`/`unfold` (type-inference
-  edge cases); the `List`-interop subset `take -> List`/`toList`/`fromList` (needs
-  source-level list construction); and the **importable `.zt` module** packaging
-  (blocked natively by cross-module polymorphism — `docs/TBD.md`).
+  See `docs/ARCHIVED.md` "V3-G2". *Residuals — all since landed:* `empty`/`unfold`
+  (2026-06-25); the importable `.zt` module packaging (V3-G6, 2026-06-25); and the
+  `List`-interop subset (`toList`/`fromList`/`takeList`, 2026-06-26 — scalar list
+  bridge primitives over the builtin `List`, native + oracle-checked). **V3-G2 is
+  complete.**
 - **V3-G3 — Richer `yield`. ✅ Landed 2026-06-25.** `yield` now appears under
   conditionals (`if cond then { … } [else { … }]`) and recursion (tail
   `yield from`), settling the open question: richer `yield` is **statement syntax

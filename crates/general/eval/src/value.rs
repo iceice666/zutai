@@ -109,6 +109,15 @@ pub enum BuiltinFn {
     Variants,
     Overlay,
     OverlayDeep,
+    /// Stream↔list bridge primitives. The builtin `List` has no source-level
+    /// head/tail ops, so these leaf operations let the `.zt` `toList`/`fromList`
+    /// combinators build and destructure it. `listHead`/`listTail` are partial
+    /// (defined only on a non-nil list); `fromList` guards them with `listIsNil`.
+    ListEmpty,
+    ListCons,
+    ListIsNil,
+    ListHead,
+    ListTail,
 }
 
 impl BuiltinFn {
@@ -122,6 +131,11 @@ impl BuiltinFn {
             "variants" => Some(BuiltinFn::Variants),
             "overlay" => Some(BuiltinFn::Overlay),
             "overlayDeep" => Some(BuiltinFn::OverlayDeep),
+            "listEmpty" => Some(BuiltinFn::ListEmpty),
+            "listCons" => Some(BuiltinFn::ListCons),
+            "listIsNil" => Some(BuiltinFn::ListIsNil),
+            "listHead" => Some(BuiltinFn::ListHead),
+            "listTail" => Some(BuiltinFn::ListTail),
             _ => None,
         }
     }
@@ -130,6 +144,11 @@ impl BuiltinFn {
         match self {
             BuiltinFn::Print | BuiltinFn::Fields | BuiltinFn::Variants | BuiltinFn::Schema => 1,
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => 2,
+            BuiltinFn::ListEmpty
+            | BuiltinFn::ListIsNil
+            | BuiltinFn::ListHead
+            | BuiltinFn::ListTail => 1,
+            BuiltinFn::ListCons => 2,
         }
     }
 
@@ -141,6 +160,11 @@ impl BuiltinFn {
             BuiltinFn::Schema => "schema",
             BuiltinFn::Overlay => "overlay",
             BuiltinFn::OverlayDeep => "overlayDeep",
+            BuiltinFn::ListEmpty => "listEmpty",
+            BuiltinFn::ListCons => "listCons",
+            BuiltinFn::ListIsNil => "listIsNil",
+            BuiltinFn::ListHead => "listHead",
+            BuiltinFn::ListTail => "listTail",
         }
     }
 }

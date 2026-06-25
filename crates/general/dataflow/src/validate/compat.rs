@@ -395,6 +395,11 @@ pub(super) fn check_node_type_compat(
             }
         }
         DfNodeKind::Builtin(op, lhs, rhs) => check_builtin(graph, owner, *op, *lhs, *rhs, errors),
+        // Scalar list-bridge primitives: operand existence/scope are checked in
+        // walk/refs. Under untagged-i64 the structural type check here is only a
+        // sanity aid, and the `.zt` source already type-checks these calls; skip
+        // it (mirrors the `Variant` no-op).
+        DfNodeKind::ListPrim { .. } => {}
         DfNodeKind::Sequence(items) => {
             if let Some(last) = items.last().and_then(|item| child_ty(graph, *item)) {
                 check_same_type(graph, owner, "last", last, node.ty, errors);

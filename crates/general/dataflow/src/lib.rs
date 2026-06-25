@@ -142,6 +142,22 @@ pub enum DfBuiltinOp {
     Posit { op: DfPositOp, spec: PositSpec },
 }
 
+/// Scalar bridge primitive over the builtin `List`, backing the stream `.zt`
+/// `toList`/`fromList` combinators. Each lowers to a single runtime call; the
+/// `if`/`match` branching lives in the `.zt` source, not in a node. `Head`/`Tail`
+/// are partial (the source guards them with `IsNil`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DfListPrimOp {
+    /// `listCons : A -> List A -> List A` — prepend (2 args: head, tail).
+    Cons,
+    /// `listIsNil : List A -> Bool` — emptiness test (1 arg).
+    IsNil,
+    /// `listHead : List A -> A` — first element (1 arg).
+    Head,
+    /// `listTail : List A -> List A` — drop the first element (1 arg).
+    Tail,
+}
+
 // ── Node kinds ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -218,6 +234,12 @@ pub enum DfNodeKind {
 
     // ── Primitive binary operations ──
     Builtin(DfBuiltinOp, NodeId, NodeId),
+    /// Scalar stream↔list bridge primitive. `args` are operands (`Cons` takes
+    /// `[head, tail]`; `IsNil`/`Head`/`Tail` take `[list]`).
+    ListPrim {
+        op: DfListPrimOp,
+        args: Vec<NodeId>,
+    },
     /// Explicit left-to-right runtime sequence. Every item is lowered in order;
     /// the sequence result is the last item, or Error for an empty sequence.
     Sequence(Vec<NodeId>),

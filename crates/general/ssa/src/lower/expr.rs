@@ -200,6 +200,11 @@ pub(super) fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: 
             rhs: lower_atom_value(rhs, fb, ctx),
         },
 
+        AnfExpr::ListPrim { op, args } => SsaOp::ListPrim {
+            op: *op,
+            args: args.iter().map(|a| lower_atom_value(a, fb, ctx)).collect(),
+        },
+
         AnfExpr::Variant {
             tag,
             tag_index,

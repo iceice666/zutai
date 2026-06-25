@@ -53,8 +53,108 @@ impl<'hir> Lowerer<'hir> {
             "schema" => Some(self.schema_builtin_type(span)),
             "overlay" => Some(self.overlay_builtin_type(span, false)),
             "overlayDeep" => Some(self.overlay_builtin_type(span, true)),
+            "listEmpty" => Some(self.list_empty_builtin_type(span)),
+            "listCons" => Some(self.list_cons_builtin_type(span)),
+            "listIsNil" => Some(self.list_is_nil_builtin_type(span)),
+            "listHead" => Some(self.list_head_builtin_type(span)),
+            "listTail" => Some(self.list_tail_builtin_type(span)),
             _ => None,
         }
+    }
+
+    /// `listEmpty :: <A> Unit -> List A` — the Unit-arg form keeps the builtin a
+    /// normal function value (a nullary builtin cannot itself be a materialized
+    /// empty list). One of three internal stream↔list bridge primitives.
+    pub(in crate::lower) fn list_empty_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        let unit = self.unit_type(span);
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: unit,
+                to: list,
+            },
+            span,
+        })
+    }
+
+    /// `listCons :: <A> A -> List A -> List A` — prepend onto the flat builtin
+    /// `List`. Bridge primitive used by the `.zt` `toList` combinator.
+    pub(in crate::lower) fn list_cons_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        let tail = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: list,
+            },
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: elem,
+                to: tail,
+            },
+            span,
+        })
+    }
+
+    /// `listIsNil :: <A> List A -> Bool` — the source-level emptiness test for
+    /// the builtin `List`. Bridge primitive guarding the `.zt` `fromList`.
+    pub(in crate::lower) fn list_is_nil_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        let bool_ty = self.bool_type(span);
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: bool_ty,
+            },
+            span,
+        })
+    }
+
+    /// `listHead :: <A> List A -> A` — first element of a non-nil builtin
+    /// `List` (partial; `fromList` guards it with `listIsNil`). Bridge primitive.
+    pub(in crate::lower) fn list_head_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: elem,
+            },
+            span,
+        })
+    }
+
+    /// `listTail :: <A> List A -> List A` — all but the first element of a
+    /// non-nil builtin `List` (partial; guarded by `listIsNil`). Bridge primitive.
+    pub(in crate::lower) fn list_tail_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: list,
+            },
+            span,
+        })
     }
 
     pub(in crate::lower) fn overlay_builtin_type(&mut self, span: Span, deep: bool) -> TypeId {

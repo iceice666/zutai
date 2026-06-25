@@ -48,6 +48,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::Variant { .. } => "Variant".to_string(),
             SsaOp::VariantValue { .. } => "VariantValue".to_string(),
             SsaOp::Builtin { .. } => "Builtin".to_string(),
+            SsaOp::ListPrim { .. } => "ListPrim".to_string(),
             SsaOp::Coalesce { .. } => "Coalesce".to_string(),
             SsaOp::Error => "Error".to_string(),
             SsaOp::Alias { .. } => "Alias".to_string(),
