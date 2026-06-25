@@ -11,11 +11,12 @@ not a backlog to burn down.
 
 The generator *shell* (Phase 29) and the opt-in conservative collector
 (Phase 34) have landed; both are prerequisites that make the Track 1 spine below
-implementable. **V3-G1/G2/G3 have all landed 2026-06-25** (`docs/ARCHIVED.md`):
+implementable. **V3-G1/G2/G3/G4 have all landed 2026-06-25** (`docs/ARCHIVED.md`):
 `Stream A` is demand-driven codata with a builtin source prelude (G1), the core
-combinator API ships as ambient prelude functions (G2), and richer `yield`
-(conditionals + tail recursion) desugars onto the codata cell (G3). The next
-phase is **V3-G4** (resource-backed / effectful generators).
+combinator API ships as ambient prelude functions (G2), richer `yield`
+(conditionals + tail recursion) desugars onto the codata cell (G3), and effectful
+generators run under a granting handler at reference-interpreter level (G4). The
+next phase is **V3-G5** (GC default-on for unbounded stream programs).
 
 ## Backend-compatibility invariants
 
@@ -97,12 +98,18 @@ oracle parity (a wrong value is worse than a refused one).
   bind a *prefix* of the parameters (uniform across clauses), so a generator
   function supplies the codata `Unit` from its desugared thunk. See
   `docs/ARCHIVED.md` "V3-G3". (Acceptance met on interpreter and native backend.)
-- **V3-G4 — Resource-backed generators.** Capability-typed producers that read a
-  host resource / observe time / sample randomness, via ordinary capability
-  parameters and effect rows (ties to Phase 27 host capabilities). Residual
-  unhandled host operations keep rejecting before backend erasure.
-  *Acceptance:* a capability-typed generator runs under a granted handler and is
-  rejected (not miscompiled) without one.
+- **V3-G4 — Resource-backed generators. ✅ Landed (reference-interpreter) 2026-06-25.**
+  An effectful generator runs under a *granting handler* on the interpreter: a
+  `yield perform op …` defers the operation into a lazy cell field, so the effect
+  is charged to the consumer that strictly forces it — `handle (sumEff (stream {
+  yield perform tick (); })) with { tick = \_. resume 5; }` evaluates. Without a
+  handler the effect escapes and is refused; native lowering of the (non-`io.print`)
+  effect stays refused by the committed strict-AOT-rejects boundary (Phase 35), so
+  resource host effects (`fs.read`, networking, clocks, randomness) reach only the
+  interpreter behind an explicit grant. No new effectful-codata type was added;
+  the existing effect machinery carries it. See `docs/ARCHIVED.md` "V3-G4" and
+  `01-generators.md` "Effectful generators". Cancellation/finalization and
+  resource lifetime remain open.
 - **V3-G5 — GC default-on for unbounded stream programs.** With genuine
   unbounded streams reaching the backend (gate condition (a) now met), evaluate
   promoting the conservative collector from opt-in toward default for stream
@@ -141,9 +148,10 @@ change — never as an additive convenience.
 ## Sequencing and entry point
 
 Track 1 ran from **V3-G1** — the codata `Stream` representation, the keystone the
-rest of the track hangs off — through G2 (stdlib API) and G3 (richer `yield`),
-each a contained, oracle-gated phase with no ABI change. **Resume at V3-G4**
-(resource-backed generators). Track 2 stays demand-gated.
+rest of the track hangs off — through G2 (stdlib API), G3 (richer `yield`), and
+G4 (effectful generators, reference-interpreter level), each a contained phase
+with no ABI change. **Resume at V3-G5** (GC default-on for unbounded stream
+programs). Track 2 stays demand-gated.
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

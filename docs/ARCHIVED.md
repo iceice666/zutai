@@ -146,6 +146,38 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G4: Effectful generators (reference-interpreter) ✅
+
+_Completed 2026-06-25. An effectful generator runs under a granting handler on
+the interpreter; native lowering of its (non-`io.print`) effects stays refused by
+the committed strict-AOT-rejects boundary (Phase 35). Support level: **check +
+reference-interpreter**. No new effectful-codata type or compiler feature was
+added — the existing effect machinery already carries it; this milestone
+characterizes and locks in the support boundary with tests and docs._
+
+- **Mechanism.** A `yield perform op …` defers the operation into a *lazy cell
+  field*, so the effect is charged to whoever **forces** that field, not to the
+  constructor. The supported idiom: the producer performs in its cells
+  (`stream { yield perform tick (); }`), a consumer that *strictly* forces each
+  element declares the effect in its own row
+  (`sumEff :: (Unit -> Cell) -> Int ! { tick … }`), and the whole consumption runs
+  under a handler (`handle (sumEff gen) with { tick = \_. resume 5; }` → `10`).
+- **Boundaries (each refused, never miscompiled).** No handler / pure consumer →
+  the effect escapes the ambient row (type error). Pure `Stream A` annotation of
+  an effectful producer → rejected (the deferred effect cannot satisfy the pure
+  thunk the alias demands; effectful streams are not the pure `Stream` alias and
+  do not interoperate with the pure prelude combinators). Lazy escape (returning
+  an unforced effectful head) → runtime "unhandled effect" refusal, consistent
+  with demand-driven ordering. Native → residual-effect gate refuses any
+  non-`io.print` effectful generator.
+- **Consequence.** Resource host effects (`fs.read`, networking, clocks,
+  randomness) reach only the interpreter behind an explicit grant; they have no
+  native path. Cancellation/finalization and resource lifetime remain open.
+- **Tests.** `effectful_generator_runs_under_granted_handler`,
+  `effectful_generator_without_a_handler_is_rejected`,
+  `effectful_stream_generator_against_pure_stream_alias_is_rejected` (eval);
+  `compile_effectful_generator_stays_gated` (CLI, native refusal).
+
 ### V3-G3: Richer `yield` ✅
 
 _Completed 2026-06-25. `yield` may now appear under conditionals and recursion

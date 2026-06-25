@@ -2,8 +2,9 @@
 
 Status: richer `yield` implemented (V3-G3). Phase 29 introduced the finite
 generator shell; V3-G1 made `Stream A` demand-driven codata; V3-G3 lets `yield`
-appear under conditionals and recursion. Resource-backed (effectful) generators
-remain future work (V3-G4).
+appear under conditionals and recursion. Effectful generators run under a
+granting handler at **reference-interpreter level** (V3-G4); native lowering of
+their effects stays refused by committed design.
 
 ## Decisions
 
@@ -53,6 +54,44 @@ from a host resource, observes time, samples randomness, or later consumes a
 network source needs ordinary capability parameters and effect rows. Residual
 host operations that are not handled or granted must keep rejecting before
 backend erasure.
+
+## Effectful generators (V3-G4)
+
+Support level: **check + reference-interpreter**. An effectful generator runs on
+the interpreter when its effects are *granted*; native lowering of those effects
+stays refused (the committed strict-AOT-rejects boundary — `Phase 35`,
+`docs/spec/v1/05-effects.md`).
+
+The mechanism reuses the existing effect machinery rather than a new effectful
+codata type. A `yield perform op …` defers the operation into a *lazy cell
+field*; the effect is therefore charged to whoever **forces** that field, not to
+the constructor. So the supported idiom is:
+
+- the producer performs effects in its cells (`stream { yield perform tick (); }`);
+- a consumer that **strictly forces** each element declares the effect in its own
+  row (`sumEff :: (Unit -> Cell) -> Int ! { tick … }`, forcing heads with
+  `h + …`); and
+- the whole consumption runs under a granting handler (`handle (sumEff gen) with
+  { tick = \_. resume 5; }`).
+
+Boundaries (each refused, never miscompiled):
+
+- **No handler / pure consumer.** The effect escapes the ambient row → type error
+  (`effectful_generator_without_a_handler_is_rejected`).
+- **Pure `Stream A` annotation.** Typing an effectful producer as the pure alias
+  `Stream A = Unit -> StreamCell A` is rejected — the deferred effect cannot
+  satisfy the pure thunk the alias demands. Effectful streams are not the pure
+  `Stream` alias and do not interoperate with the pure prelude combinators.
+- **Lazy escape.** A consumer that *returns* an unforced effectful head (instead
+  of forcing it under the handler) hits a runtime "unhandled effect" — a refusal,
+  consistent with the spec's demand-driven ordering of pure data construction.
+- **Native.** Any generator whose cells carry a non-`io.print` effect is refused
+  by the residual-effect gate (`compile_effectful_generator_stays_gated`).
+
+Resource host effects (`fs.read`, networking, clocks, randomness) therefore reach
+only the interpreter, behind an explicit handler that grants them; they have no
+native path. Cancellation/finalization and resource lifetime for such generators
+remain open.
 
 ## Remaining non-goals
 

@@ -351,12 +351,14 @@ abort
 }
 
 #[test]
-fn effectful_stream_generator_defers_effect_and_is_rejected_for_now() {
-    // Under codata streams (`Stream A = Unit -> StreamCell A`), a `yield perform …`
-    // defers the effect into the cell thunk, so it no longer threads through a
-    // pure `Stream A`. Effectful / resource-backed generators are V3-G4 work; for
-    // now the effect is correctly *rejected* (refused, never miscompiled) rather
-    // than silently dropped.
+fn effectful_stream_generator_against_pure_stream_alias_is_rejected() {
+    // Annotating an effectful generator as the *pure* `Stream A` alias
+    // (`Stream A = Unit -> StreamCell A`) is rejected: the `yield perform …`
+    // defers a `fs.read` effect into the cell thunk, which cannot satisfy the
+    // pure thunk the alias demands. The effect is refused, never silently
+    // dropped. (The *supported* V3-G4 form threads the effect through the
+    // consumer's row and consumes the generator under a handler — see
+    // `effectful_generator_runs_under_granted_handler`.)
     let err = run_err(
         "load :: FsRead -> Stream Text ! { fs.read : Path -> Text }\n  = fs => stream { yield perform fs.read \"Cargo.toml\"; };\n1\n",
     );
@@ -366,6 +368,35 @@ fn effectful_stream_generator_defers_effect_and_is_rejected_for_now() {
     assert!(
         messages.iter().any(|msg| msg.contains("fs.read")),
         "expected fs.read effect diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
+fn effectful_generator_runs_under_granted_handler() {
+    // V3-G4 (reference-interpreter level): a generator that performs an effect in
+    // its cells runs when consumed *strictly* under a granting handler. The effect
+    // rides on the consumer's row (a `perform` in a lazy cell field is deferred to
+    // whoever forces it), so `sumEff` — which forces each head with `h + …` inside
+    // the `handle` — fires `tick` in the handler's dynamic extent. Two `perform
+    // tick`s, each resumed with 5, sum to 10.
+    let src = "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }\nsumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int }\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumEff t;\n  };\nhandle (sumEff (stream { yield perform tick (); yield perform tick (); })) with {\n  tick = \\_. resume 5;\n}\n";
+    assert_eq!(run(src), Value::Int(10));
+}
+
+#[test]
+fn effectful_generator_without_a_handler_is_rejected() {
+    // The dual of the above: the same effectful generator with no handler (and a
+    // pure consumer) is refused — `tick` escapes the (empty) ambient effect row.
+    // A refused program is the safe direction; the effect is never silently lost.
+    let err = run_err(
+        "Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }\nsumEff :: (Unit -> Cell) -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };\nsumEff (stream { yield perform tick (); })\n",
+    );
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages.iter().any(|msg| msg.contains("tick")),
+        "expected an unhandled `tick` effect diagnostic, got {messages:?}"
     );
 }
 

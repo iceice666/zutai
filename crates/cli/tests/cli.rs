@@ -1206,6 +1206,31 @@ handle apply g with { value = \v. v; fail = \m. 0; }
 }
 
 #[test]
+fn compile_effectful_generator_stays_gated() {
+    // V3-G4: an effectful generator (a `stream { yield perform … }` consumed
+    // strictly under a handler) runs on the interpreter, but the deferred
+    // user-defined effect does not lower to the native backend — the
+    // residual-effect gate must refuse it (never miscompile), matching the
+    // committed strict-AOT-rejects-effects boundary.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; }
+sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
+handle (sumEff (stream { yield perform tick (); })) with { tick = \_. resume 5; }
+"#;
+    let path = write_tmp("cli_test_compile_effectful_gen.zt", src);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        // Specifically the residual-effect gate (not some incidental effect
+        // error): the deferred `tick` survives to TLC and cannot be lowered.
+        .stderr(predicate::str::contains("effects remain after TLC"));
+}
+
+#[test]
 fn compile_open_row_select_lowers_to_llvm() {
     // Phase C: an open-row field select is monomorphized at the concrete call site
     // (the field's slot is recomputed for the concrete record layout), so it now

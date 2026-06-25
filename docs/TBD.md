@@ -11,19 +11,23 @@ v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
 underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
-(Phase 34, opt-in), V2-A, V3-G1/G2/G3, and cross-module polymorphism (single- and
-multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1625 workspace
+(Phase 34, opt-in), V2-A, V3-G1/G2/G3/G4, and cross-module polymorphism (single-
+and multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1628 workspace
 tests pass.
 
 ## Active milestone — none
 
-V3-G3 (richer `yield`) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G3".
-`yield` now appears under conditionals and tail recursion, desugared by
-continuation-passing onto the V3-G1 codata cell; recursive/loop generators
-type-check and evaluate (interpreter + native) to the same `Stream` as the
-equivalent `unfold`. The next V3 phase is **G4** (resource-backed / effectful
-generators — currently rejected); G5 (GC default-on for unbounded streams)
-follows. See `docs/v3_spec/02-roadmap.md`.
+V3-G4 (effectful generators) **landed 2026-06-25** at reference-interpreter level
+— see `docs/ARCHIVED.md` "V3-G4". An effectful generator runs under a granting
+handler on the interpreter (`handle (sumEff (stream { yield perform tick (); }))
+with { tick = … }`); without a handler the effect is refused, and native lowering
+of the (non-`io.print`) effect stays refused by the committed strict-AOT-rejects
+boundary. The next V3 phase is **G5** (GC default-on for unbounded stream
+programs). See `docs/v3_spec/02-roadmap.md`.
+
+**G4 follow-ups (open):** cancellation/finalization and resource lifetime for
+effectful generators; an ergonomic effectful-stream *type* (the supported idiom
+uses the raw cell type, not the pure `Stream` alias).
 
 **G2 residuals** (do not block G3): `empty`/`unfold` (type-inference edge cases);
 the `List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level
@@ -79,7 +83,7 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   memoizing lazy list, so it stays inside strict+TCO and the write-barrier-free
   GC — and sequences it as V3-G1 (codata `Stream` representation) → G2 (stdlib
   `Stream` API) → G3 (richer `yield`) → G4 (resource-backed generators) → G5
-  (GC default-on for unbounded streams). G1/G2/G3 landed; resume at **G4**.
+  (GC default-on for unbounded streams). G1/G2/G3/G4 landed; resume at **G5**.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,
