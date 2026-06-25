@@ -5,123 +5,33 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-24)
+## Status (2026-06-25)
 
-Both backend-closing tracks have landed (see `docs/ARCHIVED.md`):
-
-- **Track 1** — v1 native-backend, Phases A–D — complete. **Track 2** —
-  performance, Phases 30–33 — complete.
-- **v1 is semantically and natively complete.** Every feature parses,
-  type-checks through THIR, elaborates to TLC, runs in the `zutai-eval`
-  differential oracle, and lowers to native code. Row polymorphism is
-  native-complete (open-row selects, Phase C; open-union matches, Phase D); the
-  constraints/witnesses item dispatches natively including conditional
-  cross-module witnesses (Phase B). Residual v1 items are by-design non-goals
-  ("v1 residual" below), not unfinished work.
-- **Escaping-effect residual-ABI spike (Phase 35) closed 2026-06-24** — see
-  `docs/ARCHIVED.md` "Phase 35". The `Free Op A` encoding is proven to lower over
-  the cyclic `DfTyId` types and match the oracle for the monomorphic closed-row
-  recursive case, at ~2× the allocation of the CPS path; the decision is that
-  strict-AOT-rejects stays the committed backend behavior.
-- **Phase 34 (conservative mark-sweep GC) landed opt-in 2026-06-24** — see
-  `docs/ARCHIVED.md` "Phase 34". A zero-ABI conservative collector behind
-  `ZUTAI_GC` keeps accumulator peak-committed flat (1 MiB) as work grows 8×; the
-  committed default stays leak-by-default, so nothing changed by default. Only
-  the precise/moving (Cheney) endgame and a lazy backend remain deferred.
-- **v2 is largely native.** The five v2 features landed at
-  check-plus-reference-interpreter level (Phases 24–28); four also lower
-  natively — recursive types (cyclic type descriptors), host capabilities
-  (`HostOp` lowering + the Track B entry boundary), derive recipes
-  (fold-or-reject reflection), and higher-rank polymorphism (rank-2 lambda-arg
-  compile parity, `compiled_rank2_lambda_arg_matches_oracle`). The fifth feature,
-  universe levels, gained its **explicit surface syntax** in milestone V2-A
-  (`$ℓ` / `<$l>`, front-end-only, erases before TLC); levels still erase before
-  the backend, so no new native lowering is required.
-- 1609 workspace tests pass.
-
-**Can we move to v2?** We already have — Phases 24–28 and Track B are v2 work,
-and four of the five v2 features lower natively. There is no v1 native-backend
-blocker left. The small **v2 tail** (V2-A, explicit universe syntax) **landed
-2026-06-24** (`docs/ARCHIVED.md` "V2-A"), so all five v2 features now have
-surface syntax. The **escaping-effect residual-ABI spike** (Phase 35) **closed
-2026-06-24** with a no-go on delivery (`docs/ARCHIVED.md` "Phase 35"). Phase 34
-(conservative GC) **landed opt-in 2026-06-24** (`docs/ARCHIVED.md` "Phase 34").
-The **V3 roadmap** is now written (`docs/v3_spec/02-roadmap.md`) and its first
-phase **V3-G1 (codata `Stream` representation)** **landed 2026-06-25**
-(`docs/ARCHIVED.md` "V3-G1"); the next phase is G2 (stdlib `Stream` API).
+v1 is semantically and natively complete; v2 is largely native (four of five
+features lower natively, universe levels erase before the backend); v3 is
+underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
+escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
+(Phase 34, opt-in), V2-A, V3-G1/G2, and cross-module polymorphism (single- and
+multi-type, XM-1…3) have all landed — see `docs/ARCHIVED.md`. 1609 workspace
+tests pass.
 
 ## Active milestone — none
 
-V3-G1 (codata `Stream` representation) **landed 2026-06-25** — see
-`docs/ARCHIVED.md` "V3-G1". `Stream A` is now demand-driven codata
-(`Unit -> StreamCell A`); finite generators fold correctly and infinite
-`unfold`/`take` terminates, on both the interpreter and native backend.
-
-**V3-G2 (stdlib `Stream` API) landed via the prelude 2026-06-25** — see
-`docs/ARCHIVED.md` "V3-G2". The core combinators (`cons`, `singleton`, `map`,
-`filter`, `take`, `drop`, `fold`, `uncons`) are ambient prelude functions,
-native-compiled and oracle-checked, with the prelude acting as a fallback (user /
-constraint names win). The next V3 phase is **G3** (richer `yield`); G4
-(resource-backed / effectful generators — currently rejected) and G5 (GC
-default-on for unbounded streams) follow.
+The next V3 phase is **G3 (richer `yield`)**; G4 (resource-backed / effectful
+generators — currently rejected) and G5 (GC default-on for unbounded streams)
+follow. See `docs/v3_spec/02-roadmap.md`.
 
 **G2 residuals** (do not block G3): `empty`/`unfold` (type-inference edge cases);
 the `List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level
 list construction the language lacks); and the **importable `.zt` module**
-packaging, which is blocked natively by cross-module polymorphism (scoped below).
-The importable packaging is the originally-preferred form — pick it up once
-cross-module polymorphism lands.
+packaging. The importable packaging is the originally-preferred form; it was
+blocked natively by cross-module polymorphism, which has now landed, so it is
+ready to pick up.
 
-## Cross-module polymorphism
+## GC residual — future / gated
 
-**Single-instantiation cross-module generics landed 2026-06-25** — see
-`docs/ARCHIVED.md` "Cross-module polymorphism (single-type)". A module exporting a
-polymorphic value (`id :: <A> A -> A`, or a record of generic combinators) and
-used at a **single concrete type per program** now compiles natively and matches
-the interpreter. The fix exploited the untagged-i64 ABI (D-0002): a parametric
-value is compiled once and is bit-identical across instantiations, so the
-Dataflow structural validator was taught to accept a use type that is a sound
-`TyVar`-instantiation of a generic dependency global (`is_instantiation_of` in
-`validate/refs.rs`), instead of ICEing on the `Fun(TyVar,TyVar)` vs `Fun(Int,Int)`
-mismatch. Multi-type use is **cleanly rejected** (a THIR type error, never an ICE).
-
-**Multi-type cross-module generics landed 2026-06-25 (XM-1…3)** — see
-`docs/ARCHIVED.md` "Cross-module polymorphism — multi-type". The import boundary
-now carries polymorphism (`ImportedType::TyVar`); an imported generic is
-generalized over its exported type parameters and instantiated fresh per use, so
-it type-checks and compiles natively at multiple types (the importable `Stream`
-stdlib shape now works). `Unknown` (un-exportable) positions stay
-monomorphic-by-use and are not generalized.
-
-The pre-existing ICE in this area (an un-exportable import value passed only to a
-generic that never pins it — `ign :: <A> A -> Int = _ => 0; ign dep` — left an
-unconstrained inference variable that reached Dataflow with an opaque use-site
-type and ICEd) was **fixed 2026-06-25**: the Dataflow `GlobalRef` validator now
-also skips when the *use-site* type is opaque (`is_opaque_shape_type(node.ty)`).
-A `GlobalRef` lowers to a symbolic by-name reference that never consults its
-node type, and any concrete access happens at a separate, separately-checked
-node, so under untagged-i64 this is a machine-safe pass-through — it now compiles
-and matches the interpreter (`compile_zt_imported_unexportable_value_through_generic_matches_oracle`).
-
-## V2 milestone — remaining work
-
-V2-A (explicit universe-level syntax) **landed 2026-06-24** — see
-`docs/ARCHIVED.md` "V2-A". The escaping-effect residual-ABI spike (Phase 35,
-below) **closed 2026-06-24** with a no-go on delivery. No active V2-adjacent
-work remains; Phase 34 (conservative GC) **landed opt-in 2026-06-24**, with only
-the precise/moving endgame deferred.
-
-### Phase 34 — Conservative mark-sweep GC (LANDED opt-in 2026-06-24)
-
-**Landed as an opt-in bridge collector** — see `docs/ARCHIVED.md` "Phase 34".
-After the gate condition (b) was instrumented and shown met (the post-Phase-33
-accumulator is O(n) garbage against an O(1) live set), a zero-ABI conservative
-non-moving mark-sweep collector was built behind `ZUTAI_GC` /`ZUTAI_GC_STRESS`.
-The committed default stays **leak-by-default** (D-0008): the collector is opt-in,
-so no existing behavior changed. With it enabled, accumulator peak-committed stays
-flat (1 MiB) as work grows 8× where the leak default grows ~linearly (2→13 MiB).
-
-Residual GC work, still future / gated:
+The conservative mark-sweep collector landed opt-in (Phase 34, archived). Still
+future / gated:
 
 - **Precise/moving endgame.** The `runtime-abi.md` D-0008 endgame (precise
   non-moving mark-sweep → generational Cheney copying) stays deferred: it needs a
@@ -134,46 +44,6 @@ Residual GC work, still future / gated:
   macOS (`pthread_get_stackaddr_np`) and Linux (`pthread_getattr_np`); other
   targets leave the collector off (leak-by-default) until their stack-bounds path
   lands.
-
-### Phase 35 — Escaping-effect residual ABI (spike CLOSED 2026-06-24, no-go on delivery)
-
-**Closed 2026-06-24.** The four sub-tasks below are done; the full go/no-go
-rationale lives in `docs/ARCHIVED.md` "Phase 35". Summary: the `Free Op A`
-encoding lowers over the cyclic `DfTyId` types and matches the oracle for the
-monomorphic closed-row recursive/self-tail case (~2× the CPS path's allocation),
-but does not by itself reach polymorphic/higher-order effectful values or open
-rows. Decision: **strict-AOT-rejects stays the committed backend behavior**; the
-encoding is de-risked and left ready to scope only if a real workload demands
-native recursive effects.
-
-Background: handled effects CPS-elaborate and lower natively (including effects
-reached *through a call* to a monomorphic, non-recursive effectful function via
-Phase A inline-specialization, plus ambient `io.print`); recursive/mutually-recursive
-effectful callees, polymorphic/higher-order effectful values, partial
-applications, and open effect rows stay **rejected** (refused, never
-miscompiled) before Dataflow Core (`docs/spec/v1/05-effects.md`). Phase 25 lifted
-the one representational blocker `tlc-core.md` §9 named (DC types were finite
-trees; recursive types now lower to cyclic `DfTyId` graphs), which is what made
-the `Free Op A` encoding worth a feasibility spike. The four sub-tasks, all
-**done**:
-
-- [x] **Encode.** Express `Free Op A = { pure: A } | { impure: Op }` with
-  `resume: R -> Free Op A` over a cyclic `DfTyId`; confirm the perform spine
-  represents as a real DC value (no new TLC node). *Done — recursive union with a
-  `resume` function field lowers via the same equirecursive knot-tying as `Tree`.*
-- [x] **Lower one case.** Take the simplest rejected case — a single
-  recursive/self-tail effectful callee — through DC → ANF → SSA → native and run
-  it against the `zutai-eval` oracle. *Done —
-  `compiled_free_monad_spine_matches_oracle` in `crates/cli/tests/cli.rs`.*
-- [x] **Cost it.** Measure allocation/dispatch overhead of the reified spine
-  versus the handler-passing CPS path that already lowers, and note which
-  rejected cases (polymorphic/higher-order effectful values, partial
-  applications, open rows) the encoding does *not* reach. *Done — ~2× allocation
-  (`ZUTAI_HEAP_STATS`); reaches only the monomorphic closed-row recursive case.*
-- [x] **Go/no-go.** Write the decision: either scope a delivery phase for the
-  cases the encoding covers, or record that strict-AOT-rejects stays the
-  committed behavior and close the spike. Either outcome lands in
-  `docs/ARCHIVED.md`. *Done — no-go on delivery; strict-AOT-rejects committed.*
 
 ## v1 residual — by design, not gaps
 
@@ -201,11 +71,11 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
 - **Track 1 — generators and streams (active spine).** The finite
   `stream { yield …; }` shell landed (Phase 29); the richer-generator design is
   open (`docs/v3_spec/01-generators.md`). The roadmap fixes the keystone
-  decision — `Stream A` becomes **codata** (demand-driven step+seed), not a
+  decision — `Stream A` is **codata** (demand-driven step+seed), not a
   memoizing lazy list, so it stays inside strict+TCO and the write-barrier-free
   GC — and sequences it as V3-G1 (codata `Stream` representation) → G2 (stdlib
   `Stream` API) → G3 (richer `yield`) → G4 (resource-backed generators) → G5
-  (GC default-on for unbounded streams). Start at V3-G1.
+  (GC default-on for unbounded streams). G1/G2 landed; resume at **G3**.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,
