@@ -39,9 +39,11 @@ impl<'thir> Lowerer<'thir> {
             }
             ThirExprKind::String(s) => self.alloc_expr(TlcExpr::Lit(Literal::Str(s)), tlc_ty, span),
             ThirExprKind::Atom(s) => self.alloc_expr(TlcExpr::Lit(Literal::Atom(s)), tlc_ty, span),
-            ThirExprKind::BindingRef(binding) => {
-                self.lower_binding_ref(binding, tlc_ty, thir_ty, span)
-            }
+            ThirExprKind::BindingRef {
+                binding,
+                instantiation,
+                ..
+            } => self.lower_binding_ref(binding, &instantiation, tlc_ty, thir_ty, span),
             ThirExprKind::Record(fields) => {
                 let tlc_fields: Vec<(String, TlcExprId)> = fields
                     .iter()
@@ -189,7 +191,7 @@ impl<'thir> Lowerer<'thir> {
                 // Extract func binding info without holding a borrow while calling &mut self.
                 let func_binding_info = {
                     let fe = &self.thir.expr_arena[func];
-                    if let ThirExprKind::BindingRef(b) = fe.kind {
+                    if let ThirExprKind::BindingRef { binding: b, .. } = fe.kind {
                         Some((b, fe.ty, fe.span))
                     } else {
                         None
@@ -209,92 +211,18 @@ impl<'thir> Lowerer<'thir> {
                         );
                     }
 
-                    // Constraint method call: dispatch via GetField on the active dict param.
-                    if let Some(info) = self.constraint_methods.get(&binding).cloned()
-                        && !instantiation.is_empty()
-                    {
-                        // Recover the method sig's exact type-var order (deduped,
-                        // sorted by binding id) — this reproduces THIR's
-                        // `collect_type_vars` and is positionally aligned with
-                        // `instantiation`, even when the method omits some declared
-                        // param. Fall back to constraint-param + method-params if the
-                        // sig is unavailable.
-                        let vars: Vec<BindingId> = self
-                            .method_sig_for(info.constraint, &info.name)
-                            .map(|sig| self.collect_thir_type_vars(sig))
-                            .filter(|v| !v.is_empty())
-                            .unwrap_or_else(|| {
-                                let mut v: Vec<BindingId> =
-                                    Vec::with_capacity(1 + info.method_params.len());
-                                v.push(info.constraint_param);
-                                v.extend(info.method_params.iter().copied());
-                                v.sort_by_key(|b| b.0);
-                                v.dedup();
-                                v
-                            });
-                        let index_of = |b: BindingId| vars.iter().position(|v| *v == b);
-
-                        // The constraint param's instantiation selects the dict.
-                        let dict_inst = index_of(info.constraint_param)
-                            .and_then(|i| instantiation.get(i).copied())
-                            .unwrap_or(instantiation[0]);
-                        let dict_expr = self.get_dict_expr(info.constraint, dict_inst, func_span);
-                        let method_ty = self.lower_type(func_thir_ty);
-                        let method_name = info.name.clone();
-                        let mut acc = self.alloc_expr(
-                            TlcExpr::GetField(dict_expr, method_name.clone()),
-                            method_ty,
-                            span,
-                        );
-                        self.register_dict_field_slot(acc, info.constraint, &method_name);
-                        // Record the concrete dispatch key (the instantiated
-                        // operand type) so the interpreter can dispatch an imported
-                        // witness method to the instance whose target matches the
-                        // operand. The `GetField` node's own type is the generic
-                        // method scheme, so the concrete type is captured here. An
-                        // abstract/unkeyable operand yields "" (never matches a
-                        // witness → dispatch refuses).
-                        let dispatch_key = self
-                            .structural_witness_key(
-                                dict_inst,
-                                &mut rustc_hash::FxHashSet::default(),
-                            )
-                            .unwrap_or_default();
-                        self.dict_dispatch_keys.insert(acc, dispatch_key);
-                        // Each method-level type param becomes a `TyApp`, in
-                        // declaration order, so the dict's `TyLam`-wrapped method is
-                        // instantiated at the call site's inferred type arguments.
-                        for &mp in &info.method_params {
-                            if let Some(i) = index_of(mp)
-                                && let Some(&inst_ty) = instantiation.get(i)
-                            {
-                                let ty_arg = self.lower_type(inst_ty);
-                                acc = self.alloc_expr(TlcExpr::TyApp(acc, ty_arg), method_ty, span);
-                            }
-                        }
+                    // Constraint-method / explicit-params dispatch: build the
+                    // instantiated callee (TyApps + dict Apps) then apply the arg.
+                    if let Some(callee) = self.lower_instantiated_callee(
+                        binding,
+                        func_thir_ty,
+                        func_span,
+                        &instantiation,
+                        tlc_ty,
+                        span,
+                    ) {
                         let arg_tlc = self.lower_expr(arg);
-                        return self.alloc_expr(TlcExpr::App(acc, arg_tlc), tlc_ty, span);
-                    }
-
-                    // Explicit-params function call: inject TyApp + dict App before value arg.
-                    if let Some(explicit_params) = self.fn_explicit_params.get(&binding).cloned()
-                        && !instantiation.is_empty()
-                    {
-                        let fn_var_ty = self.lower_type(func_thir_ty);
-                        let mut cur = self.alloc_expr(TlcExpr::Var(binding), fn_var_ty, func_span);
-                        for (i, (_, constraint_bindings)) in explicit_params.iter().enumerate() {
-                            if i < instantiation.len() {
-                                let inst_ty_id = instantiation[i];
-                                let ty_arg = self.lower_type(inst_ty_id);
-                                cur = self.alloc_expr(TlcExpr::TyApp(cur, ty_arg), tlc_ty, span);
-                                for &cst_b in constraint_bindings.iter() {
-                                    let dict = self.get_dict_expr(cst_b, inst_ty_id, span);
-                                    cur = self.alloc_expr(TlcExpr::App(cur, dict), tlc_ty, span);
-                                }
-                            }
-                        }
-                        let arg_tlc = self.lower_expr(arg);
-                        return self.alloc_expr(TlcExpr::App(cur, arg_tlc), tlc_ty, span);
+                        return self.alloc_expr(TlcExpr::App(callee, arg_tlc), tlc_ty, span);
                     }
                 }
 
@@ -407,7 +335,7 @@ impl<'thir> Lowerer<'thir> {
         else {
             return None;
         };
-        let ThirExprKind::BindingRef(binding) = &self.thir.expr_arena[*builtin].kind else {
+        let ThirExprKind::BindingRef { binding, .. } = &self.thir.expr_arena[*builtin].kind else {
             return None;
         };
         match self.builtin_overlay_name(*binding)? {
@@ -442,7 +370,7 @@ impl<'thir> Lowerer<'thir> {
                     .map(|field| (field.name.clone(), field.value))
                     .collect(),
             ),
-            ThirExprKind::BindingRef(binding) => {
+            ThirExprKind::BindingRef { binding, .. } => {
                 if !seen.insert(*binding) {
                     return None;
                 }
@@ -528,9 +456,104 @@ impl<'thir> Lowerer<'thir> {
         Some(self.lower_expr(patch_value))
     }
 
+    /// Build the instantiated callee expression for a reference to `binding` at
+    /// `instantiation` — the type-application / dictionary-passing prefix an
+    /// `Apply` injects before the value argument. Returns `None` when `binding`
+    /// needs no such dispatch (the caller then uses the plain `Var`, possibly with
+    /// InferVar poly-scheme `TyApp`s). Shared by the `Apply` callee path and a
+    /// standalone `BindingRef` (a polymorphic *value* used outside callee
+    /// position, e.g. `empty :: <A> Stream A`).
+    fn lower_instantiated_callee(
+        &mut self,
+        binding: BindingId,
+        callee_thir_ty: TypeId,
+        callee_span: Span,
+        instantiation: &[TypeId],
+        tlc_ty: TlcTypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if instantiation.is_empty() {
+            return None;
+        }
+
+        // Constraint method: dispatch via GetField on the active dict param.
+        if let Some(info) = self.constraint_methods.get(&binding).cloned() {
+            // Recover the method sig's exact type-var order (deduped, sorted by
+            // binding id) — reproduces THIR's `collect_type_vars`, positionally
+            // aligned with `instantiation` even when the method omits a declared
+            // param. Fall back to constraint-param + method-params if unavailable.
+            let vars: Vec<BindingId> = self
+                .method_sig_for(info.constraint, &info.name)
+                .map(|sig| self.collect_thir_type_vars(sig))
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| {
+                    let mut v: Vec<BindingId> = Vec::with_capacity(1 + info.method_params.len());
+                    v.push(info.constraint_param);
+                    v.extend(info.method_params.iter().copied());
+                    v.sort_by_key(|b| b.0);
+                    v.dedup();
+                    v
+                });
+            let index_of = |b: BindingId| vars.iter().position(|v| *v == b);
+
+            // The constraint param's instantiation selects the dict.
+            let dict_inst = index_of(info.constraint_param)
+                .and_then(|i| instantiation.get(i).copied())
+                .unwrap_or(instantiation[0]);
+            let dict_expr = self.get_dict_expr(info.constraint, dict_inst, callee_span);
+            let method_ty = self.lower_type(callee_thir_ty);
+            let method_name = info.name.clone();
+            let mut acc = self.alloc_expr(
+                TlcExpr::GetField(dict_expr, method_name.clone()),
+                method_ty,
+                span,
+            );
+            self.register_dict_field_slot(acc, info.constraint, &method_name);
+            // Record the concrete dispatch key (the instantiated operand type) so
+            // the interpreter can dispatch an imported witness method to the
+            // instance whose target matches the operand. An abstract/unkeyable
+            // operand yields "" (never matches a witness → dispatch refuses).
+            let dispatch_key = self
+                .structural_witness_key(dict_inst, &mut rustc_hash::FxHashSet::default())
+                .unwrap_or_default();
+            self.dict_dispatch_keys.insert(acc, dispatch_key);
+            // Each method-level type param becomes a `TyApp`, in declaration order.
+            for &mp in &info.method_params {
+                if let Some(i) = index_of(mp)
+                    && let Some(&inst_ty) = instantiation.get(i)
+                {
+                    let ty_arg = self.lower_type(inst_ty);
+                    acc = self.alloc_expr(TlcExpr::TyApp(acc, ty_arg), method_ty, span);
+                }
+            }
+            return Some(acc);
+        }
+
+        // Explicit-params function: inject TyApp + dict App over the plain Var.
+        if let Some(explicit_params) = self.fn_explicit_params.get(&binding).cloned() {
+            let fn_var_ty = self.lower_type(callee_thir_ty);
+            let mut cur = self.alloc_expr(TlcExpr::Var(binding), fn_var_ty, callee_span);
+            for (i, (_, constraint_bindings)) in explicit_params.iter().enumerate() {
+                if i < instantiation.len() {
+                    let inst_ty_id = instantiation[i];
+                    let ty_arg = self.lower_type(inst_ty_id);
+                    cur = self.alloc_expr(TlcExpr::TyApp(cur, ty_arg), tlc_ty, span);
+                    for &cst_b in constraint_bindings.iter() {
+                        let dict = self.get_dict_expr(cst_b, inst_ty_id, span);
+                        cur = self.alloc_expr(TlcExpr::App(cur, dict), tlc_ty, span);
+                    }
+                }
+            }
+            return Some(cur);
+        }
+
+        None
+    }
+
     fn lower_binding_ref(
         &mut self,
         binding: BindingId,
+        instantiation: &[TypeId],
         tlc_ty: TlcTypeId,
         ref_thir_ty: TypeId,
         span: zutai_syntax::Span,
@@ -549,6 +572,15 @@ impl<'thir> Lowerer<'thir> {
                 span,
             );
             return self.alloc_expr(TlcExpr::Lam(arg_binding, arg_ty, perform), tlc_ty, span);
+        }
+
+        // A polymorphic value used outside callee position carries a recorded
+        // instantiation (THIR `lower_binding_ref` freshened its `<A>` TypeVars):
+        // emit the same TyApp + dict-App prefix the Apply path would.
+        if let Some(callee) =
+            self.lower_instantiated_callee(binding, ref_thir_ty, span, instantiation, tlc_ty, span)
+        {
+            return callee;
         }
 
         let var_expr = self.alloc_expr(TlcExpr::Var(binding), tlc_ty, span);

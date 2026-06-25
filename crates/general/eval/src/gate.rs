@@ -377,7 +377,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
             | ThirExprKind::Posit(_)
             | ThirExprKind::String(_)
             | ThirExprKind::Atom(_)
-            | ThirExprKind::BindingRef(_)
+            | ThirExprKind::BindingRef { .. }
             | ThirExprKind::Import(_)
             | ThirExprKind::TypeValue(_)
             | ThirExprKind::WitnessReflect { .. } => {}

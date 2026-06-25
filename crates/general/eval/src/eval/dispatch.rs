@@ -22,7 +22,7 @@ impl<'a> Evaluator<'a> {
     ) -> Result<Option<Value>, EvalError> {
         // Step 1: func must be a BindingRef to a constraint method.
         let method_binding = match &self.expr(func).kind {
-            ThirExprKind::BindingRef(b) => *b,
+            ThirExprKind::BindingRef { binding, .. } => *binding,
             _ => return Ok(None),
         };
 

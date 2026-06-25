@@ -40,6 +40,18 @@ impl<'hir> Lowerer<'hir> {
             return self.lower_overlay_apply_expr(id, func, arg, span, overlay);
         }
         let func = self.infer_expr(func);
+        // A rank-1 polymorphic `BindingRef` callee has already freshened its `<A>`
+        // TypeVars and recorded the instantiation (`lower_binding_ref`), leaving
+        // only InferVars in its type — so the local `collect_type_vars` below would
+        // find nothing. Forward the ref's recorded instantiation onto the `Apply`
+        // node so callee dispatch is unchanged. (Higher-rank bindings record an
+        // empty instantiation and keep the existing peel/collect path.)
+        let binding_ref_inst = match &self.expr(func).kind {
+            ThirExprKind::BindingRef { instantiation, .. } if !instantiation.is_empty() => {
+                Some(instantiation.clone())
+            }
+            _ => None,
+        };
         let func_ty = self.expr(func).ty;
         let (func_ty, forall_instantiation) = self.peel_forall(func_ty, span);
         let Some((from, to)) = self.function_input_output(func_ty, span) else {
@@ -131,6 +143,7 @@ impl<'hir> Lowerer<'hir> {
             }
             _ => result_ty,
         };
+        let instantiation = binding_ref_inst.unwrap_or(instantiation);
         self.alloc_expr(ThirExpr {
             source: id,
             ty: result_ty,
@@ -190,7 +203,8 @@ impl<'hir> Lowerer<'hir> {
         let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
             return self.error_expr(id, span);
         };
-        let builtin_ref = self.lower_binding_ref(builtin, binding, self.hir_expr(builtin).span);
+        let builtin_ref =
+            self.lower_binding_ref(builtin, binding, self.hir_expr(builtin).span, true);
         let base_expr = self.infer_expr(base);
         let target = self.expr(base_expr).ty;
         let patch_ty = self.patch_type(target, deep, span);
@@ -231,8 +245,14 @@ impl<'hir> Lowerer<'hir> {
         id: HirExprId,
         binding: BindingId,
         span: Span,
+        instantiate: bool,
     ) -> ThirExprId {
         let binding_info = &self.hir.bindings[binding.0 as usize];
+        // Local bindings (a parameter / let-bound name) carry type variables that
+        // are *inherited* from an enclosing function's scheme — rigid in this
+        // context and not the binding's own quantifier. Only a top-level binding
+        // owns its `<A>` scheme, so only those may be freshened per use.
+        let is_local = matches!(binding_info.kind, BindingKind::Param | BindingKind::Local);
         if matches!(
             binding_info.kind,
             BindingKind::BuiltinType | BindingKind::TopType
@@ -253,6 +273,7 @@ impl<'hir> Lowerer<'hir> {
 
         match self.value_types.get(&binding).copied() {
             Some(ty) => {
+                // InferVar-based poly scheme (no-signature inference).
                 let ty = match self.poly_schemes.get(&binding).cloned() {
                     Some(scheme) => {
                         let subst: FxHashMap<u32, TypeId> = scheme
@@ -263,10 +284,42 @@ impl<'hir> Lowerer<'hir> {
                     }
                     None => ty,
                 };
+                // A rank-1 explicit `<A>` annotation lowers to free `TypeVar`s.
+                // When this binding is *applied*, `lower_apply_expr` freshens them
+                // per call site; but a polymorphic *value* used directly (passed as
+                // an argument, returned, or bound) is never in callee position, so
+                // freshen them here and record the instantiation so TLC can
+                // monomorphize and thread witness dicts. Higher-rank bindings (an
+                // outer `ForAll`) are left untouched — their quantifiers stay on the
+                // existing apply-site / fall-through path; freshening here would
+                // wrongly capture `ForAll`-bound vars as if they were free.
+                let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
+                let is_forall = matches!(self.ty(resolved).kind, TypeKind::ForAll { .. });
+                let type_vars = if instantiate && !is_forall && !is_local {
+                    self.collect_type_vars(ty)
+                } else {
+                    Vec::new()
+                };
+                let (ty, instantiation) = if type_vars.is_empty() {
+                    (ty, Vec::new())
+                } else {
+                    let mut subst: FxHashMap<BindingId, TypeId> = FxHashMap::default();
+                    let mut inst = Vec::with_capacity(type_vars.len());
+                    for var in &type_vars {
+                        let fresh = self.fresh_infer_var(span);
+                        subst.insert(*var, fresh);
+                        inst.push(fresh);
+                    }
+                    (self.instantiate_type_vars(ty, &subst), inst)
+                };
                 self.alloc_expr(ThirExpr {
                     source: id,
                     ty,
-                    kind: ThirExprKind::BindingRef(binding),
+                    kind: ThirExprKind::BindingRef {
+                        binding,
+                        instantiation,
+                        forall_instantiation: Vec::new(),
+                    },
                     span,
                 })
             }

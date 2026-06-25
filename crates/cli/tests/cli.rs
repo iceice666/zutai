@@ -187,6 +187,53 @@ fn compile_prelude_stream_cons_uncons_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+// V3-G2 residual: `unfold` — the canonical codata producer (step + seed). A
+// `Step S A` (`#done`/`#yield { item; next }`) step function drives an infinite
+// stream that `take`/`fold` bound. Native-compiled, matching the oracle.
+const PRELUDE_STREAM_UNFOLD_SRC: &str = "step :: Int -> Step Int Int\n  = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\nfold (\\a b. a + b) 0 (take 4 (unfold step 1))\n";
+
+#[test]
+fn compile_prelude_stream_unfold_matches_oracle() {
+    // unfold step 1 → 1,2,3,4,5; take 4 → 1,2,3,4; fold (+) 0 → 10.
+    let native = compile_bin_stdout("cli_test_prelude_unfold", PRELUDE_STREAM_UNFOLD_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_unfold_oracle.zt",
+        PRELUDE_STREAM_UNFOLD_SRC,
+    );
+    assert_eq!(native.trim(), "10");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// V3-G2 residual: `empty` — the empty stream. A polymorphic *nullary value*; the
+// case that drove the `BindingRef`-instantiation fix (it leaks a rigid type var
+// when referenced outside callee position). Consumed by `cons`/`fold` here.
+const PRELUDE_STREAM_EMPTY_SRC: &str = "sumI :: Stream Int -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumI t; };\nsumI (cons 5 (cons 7 empty))\n";
+
+#[test]
+fn compile_prelude_stream_empty_matches_oracle() {
+    // empty = []; cons 7 → [7]; cons 5 → [5,7]; sum = 12.
+    let native = compile_bin_stdout("cli_test_prelude_empty", PRELUDE_STREAM_EMPTY_SRC);
+    let interp = run_stdout("cli_test_prelude_empty_oracle.zt", PRELUDE_STREAM_EMPTY_SRC);
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// `empty` instantiates independently per use — consumed at both `Stream Bool`
+// and `Stream Int` in one program — proving true polymorphism on the backend.
+const PRELUDE_STREAM_EMPTY_POLY_SRC: &str = "sumI :: Stream Int -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumI t; };\nfirstB :: Bool -> Stream Bool -> Bool\n  = d s => match uncons s { | #none => d; | #some { head = h; tail = _; } => h; };\nif firstB true empty then sumI (cons 5 (cons 7 empty)) else sumI empty\n";
+
+#[test]
+fn compile_prelude_stream_empty_polymorphic_matches_oracle() {
+    // firstB true empty → true (empty has no head); then sumI [5,7] = 12.
+    let native = compile_bin_stdout("cli_test_prelude_empty_poly", PRELUDE_STREAM_EMPTY_POLY_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_empty_poly_oracle.zt",
+        PRELUDE_STREAM_EMPTY_POLY_SRC,
+    );
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 // V3-G3: richer `yield` — a recursive generator (guard `if` + `yield` + tail
 // `yield from`) folds to the same value as the equivalent `unfold`. `range 1 6`
 // yields 1..5; sum = 15.
@@ -642,6 +689,54 @@ fn compile_zt_imported_stream_module_matches_oracle() {
     );
     // src = [1,2,3,4,6]; filter even = [2,4,6]; map (*2) = [4,8,12]; take 2 = [4,8];
     // fold (+) 0 = 12.
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_stream_unfold_matches_oracle() {
+    // V3-G2 residual through the import boundary: `s.unfold` builds a stream from a
+    // step function. The `Step S A` producer union crosses the import boundary
+    // structurally inside `unfold`'s signature (the `Step` type is not an exported
+    // field, so the importer names a local structural alias for the step
+    // annotation). Native compile must match the interpreter oracle.
+    let (interp, native) = import_run_vs_compile(
+        "g6_stream_unfold",
+        "main.zt",
+        &[
+            ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
+            (
+                "main.zt",
+                "s :: import \"stream.zt\"\n\
+                 Step :: <S, A> type { #done; #yield : { item : A; next : S; }; }\n\
+                 step :: Int -> Step Int Int = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\n\
+                 add :: Int -> Int -> Int = a b => a + b;\n\
+                 s.fold add 0 (s.take 4 (s.unfold step 1))\n",
+            ),
+        ],
+    );
+    // unfold step 1 → 1,2,3,4,5; take 4 → 1,2,3,4; fold (+) 0 → 10.
+    assert_eq!(native.trim(), "10");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_stream_empty_matches_oracle() {
+    // `s.empty` through the import boundary: a polymorphic nullary value crossing
+    // the module boundary, then consumed by `s.cons`/`s.fold`. Native == oracle.
+    let (interp, native) = import_run_vs_compile(
+        "g6_stream_empty",
+        "main.zt",
+        &[
+            ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
+            (
+                "main.zt",
+                "s :: import \"stream.zt\"\n\
+                 add :: Int -> Int -> Int = a b => a + b;\n\
+                 s.fold add 0 (s.cons 5 (s.cons 7 s.empty))\n",
+            ),
+        ],
+    );
     assert_eq!(native.trim(), "12");
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }

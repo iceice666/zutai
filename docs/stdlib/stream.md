@@ -3,12 +3,18 @@
 Status: core API shipped as ambient prelude functions (V3-G2, 2026-06-25) **and**
 as an importable module (V3-G6, 2026-06-25). `Stream A` is demand-driven
 **codata** — `Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }` (V3-G1) —
-not `List A`. The combinators `cons`, `singleton`, `map`, `filter`, `take` (as
-`Stream -> Stream`), `drop`, `fold`, and `uncons` are available without import
-(the prelude is a fallback: a user or constraint-method name of the same spelling
-wins). Deferred: `empty`/`unfold` (type-inference edge cases) and the
-`List`-interop subset (`take -> List`, `toList`, `fromList`), which needs
-source-level list construction; see `docs/ARCHIVED.md` "V3-G2".
+not `List A`. The combinators `empty`, `cons`, `singleton`, `unfold`, `map`,
+`filter`, `take` (as `Stream -> Stream`), `drop`, `fold`, and `uncons` are
+available without import (the prelude is a fallback: a user or constraint-method
+name of the same spelling wins). `unfold` takes a step function returning a
+`Step S A` union (`#done`/`#yield { item; next }`) rather than the builtin
+`Optional` — `Optional`'s `#some` payload is a positional tuple that does not
+compose with a record payload at the surface. `empty :: <A> Stream A` is a
+polymorphic nullary value; it now instantiates correctly per use (a `<A>`
+reference outside callee position freshens its type variable — see
+`docs/ARCHIVED.md` "BindingRef instantiation site"). Deferred: the `List`-interop
+subset (`take -> List`, `toList`, `fromList`), which needs source-level list
+construction the language lacks. See `docs/ARCHIVED.md` "V3-G2".
 
 ## Two surfaces, one source
 
@@ -43,11 +49,12 @@ the current list representation.
 
 ```zt
 Stream A
+Step S A  -- = { #done; #yield : { item : A; next : S; }; } (unfold step result)
 empty     :: <A> Stream A
 singleton :: <A> A -> Stream A
 cons      :: <A> A -> Stream A -> Stream A
-unfold    :: <S, A> (S -> Optional { item : A; next : S; }) -> S -> Stream A
-uncons    :: <A> Stream A -> Optional { head : A; tail : Stream A; }
+unfold    :: <S, A> (S -> Step S A) -> S -> Stream A
+uncons    :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
 map       :: <A, B> (A -> B) -> Stream A -> Stream B
 filter    :: <A> (A -> Bool) -> Stream A -> Stream A
 take      :: <A> Int -> Stream A -> List A

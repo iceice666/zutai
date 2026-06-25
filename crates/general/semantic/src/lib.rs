@@ -161,7 +161,7 @@ impl Analysis {
         let hir = &self.hir.as_ref()?.file;
         let file = self.thir.as_ref()?.file.as_ref()?;
         let uses_reflection = file.expr_arena.iter().any(|(_, expr)| {
-            let zutai_thir::ThirExprKind::BindingRef(binding) = expr.kind else {
+            let zutai_thir::ThirExprKind::BindingRef { binding, .. } = expr.kind else {
                 return false;
             };
             let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
@@ -202,7 +202,7 @@ impl Analysis {
         let file = self.thir.as_ref()?.file.as_ref()?;
         let uses_reflection = file.expr_arena.iter().any(|(_, expr)| match &expr.kind {
             zutai_thir::ThirExprKind::WitnessReflect { .. } => true,
-            zutai_thir::ThirExprKind::BindingRef(binding) => hir
+            zutai_thir::ThirExprKind::BindingRef { binding, .. } => hir
                 .bindings
                 .get(binding.0 as usize)
                 .is_some_and(|hir_binding| {

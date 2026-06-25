@@ -12,11 +12,23 @@ features lower natively, universe levels erase before the backend); v3 is
 underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
 (Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
-cross-module polymorphism (single- and multi-type, XM-1…3), and V3-G6 (importable
-`stream.zt` module) have all landed — see `docs/ARCHIVED.md`. 1633 workspace tests
-pass.
+cross-module polymorphism (single- and multi-type, XM-1…3), V3-G6 (importable
+`stream.zt` module), and the `unfold` + `empty` stream combinators (V3-G2
+residuals, the latter on a first-class `BindingRef` instantiation site) have all
+landed — see `docs/ARCHIVED.md`. 1638 workspace tests pass.
 
 ## Active milestone — none
+
+`empty` + `unfold` (V3-G2 residuals: the empty stream and the canonical codata
+producer) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G2 residual: `unfold`
+combinator" and "BindingRef instantiation site". `unfold` ships as an ambient
+prelude combinator and an importable `stream.zt` export, taking a step function
+returning a structural `Step S A` union (`#done`/`#yield { item; next }`) rather
+than the builtin `Optional` (whose `#some` payload is a positional tuple that does
+not compose with a record payload). `empty :: <A> Stream A` landed once a
+polymorphic value referenced outside callee position instantiates per use — the
+THIR `BindingRef` node now records its own instantiation (the fix that unblocked
+any polymorphic value, not just `empty`).
 
 V3-G6 (importable `stream.zt` module) **landed 2026-06-25** — see
 `docs/ARCHIVED.md` "V3-G6". The codata `Stream` combinators are now a real
@@ -61,10 +73,18 @@ default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.*
 effectful generators; an ergonomic effectful-stream *type* (the supported idiom
 uses the raw cell type, not the pure `Stream` alias).
 
-**Other G2 residuals** (now the only open G2 items, after V3-G6 closed the
-importable-module residual): `empty`/`unfold` (type-inference edge cases); the
-`List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level list
-construction the language lacks).
+**Other G2 residuals** (after V3-G6 closed the importable-module residual and
+`unfold` + `empty` shipped, 2026-06-25): only the `List`-interop subset remains.
+
+- **`List`-interop subset** `take -> List`/`toList`/`fromList` — needs source-level
+  list construction the language lacks.
+
+(`unfold` landed as an ambient + importable combinator taking a `Step S A` union
+(`#done`/`#yield { item; next }`) — the builtin `Optional`'s `#some` payload is a
+positional tuple that does not compose with a record payload at the surface.
+`empty :: <A> Stream A` landed once `BindingRef` became a first-class
+instantiation site, so a polymorphic value referenced outside callee position
+instantiates per use. See `docs/ARCHIVED.md`.)
 
 ## GC residual — future / gated
 

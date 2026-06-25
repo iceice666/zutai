@@ -80,6 +80,20 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
             HirExprKind::Sequence(items) => self.lower_sequence_expr(id, items, Some(expected)),
+            HirExprKind::BindingRef(binding) => {
+                // A polymorphic value reference instantiates its `<A>` per use —
+                // *unless* checked against a higher-rank (`ForAll`) parameter, where
+                // it must stay polymorphic so the rigid quantifier subsumes the
+                // expected one. Instantiate iff the expected type is not a ForAll.
+                let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), expr.span);
+                let instantiate = !matches!(self.ty(resolved).kind, TypeKind::ForAll { .. });
+                let lowered = self.lower_binding_ref(id, *binding, expr.span, instantiate);
+                let found = self.expr(lowered).ty;
+                if !self.type_matches(expected, found) {
+                    self.type_mismatch(expected, found, expr.span);
+                }
+                lowered
+            }
             _ => {
                 let lowered = self.infer_expr(id);
                 let found = self.expr(lowered).ty;
@@ -160,7 +174,9 @@ impl<'hir> Lowerer<'hir> {
                     span: expr.span,
                 })
             }
-            HirExprKind::BindingRef(binding) => self.lower_binding_ref(id, *binding, expr.span),
+            HirExprKind::BindingRef(binding) => {
+                self.lower_binding_ref(id, *binding, expr.span, true)
+            }
             HirExprKind::Record(fields) => self.infer_record_expr(id, fields, expr.span),
             HirExprKind::RecordUpdate { receiver, fields } => {
                 self.lower_record_update_expr(id, *receiver, fields, expr.span)

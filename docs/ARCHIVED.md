@@ -146,6 +146,73 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### BindingRef instantiation site — polymorphic values (ships `empty`) ✅
+
+_Completed 2026-06-25. Makes a `BindingRef` a first-class instantiation site so a
+polymorphic *value* (not just an applied function) instantiates its `<A>` per use.
+This unblocks any rank-1 polymorphic value referenced outside callee position; the
+motivating case is the stream combinator `empty :: <A> Stream A`._
+
+- **Root cause.** Explicit `<A>` annotations lower to rigid `TypeVar`s
+  (`thir/.../decl.rs`). The only per-use freshening was at an application's callee
+  (`thir/.../expr/call.rs::lower_apply_expr`). A polymorphic value used as an
+  argument / returned / bound is never a callee, so its `<A>` stayed one rigid
+  variable shared program-wide — fine while unconstrained (`take 3 empty`), but it
+  failed once a consumer pinned `A` (`cons 5 empty`).
+- **Producer.** `ThirExprKind::BindingRef` becomes a struct variant carrying
+  `instantiation` / `forall_instantiation` (mirroring `Apply`). `lower_binding_ref`
+  freshens the binding's free `TypeVar`s to InferVars and records them — but only
+  for **top-level** bindings (a `Param`/`Local`'s type vars are inherited and
+  rigid) and only when the value is **not** checked against a higher-rank `ForAll`
+  parameter (where it must stay polymorphic). `lower_apply_expr` forwards a
+  rank-1 `BindingRef` callee's recorded instantiation onto the `Apply` so callee
+  dispatch is unchanged.
+- **Consumer.** The TLC `Apply` handler's constraint-method / explicit-params
+  dispatch is extracted into a shared `lower_instantiated_callee`, reused by the
+  standalone `BindingRef` path so a polymorphic value emits the same `TyApp` +
+  dictionary `App` prefix (witness threading intact). No eval change was needed —
+  TLC dictionary-passing carries it.
+- **Guardrail.** The 13 witness/constraint fixtures (conditional/imported witnesses,
+  indirect bounded calls, higher-rank `apply`/`show`) that a naive blanket-freshen
+  regressed all stay green; the `Param`/`Local` and `ForAll` guards are what keep
+  them so.
+- **Tests.** `compile_prelude_stream_empty_matches_oracle`,
+  `compile_prelude_stream_empty_polymorphic_matches_oracle` (`empty` at `Stream
+  Bool` and `Stream Int` in one program), and
+  `compile_zt_imported_stream_empty_matches_oracle` — all native == interpreter
+  oracle. `empty` added to `stream.zt` (ambient + export).
+
+### V3-G2 residual: `unfold` combinator ✅
+
+_Completed 2026-06-25. Ships `unfold` — the canonical codata producer (step
+function + seed) — as both an ambient prelude combinator and an importable
+`stream.zt` export, closing the more valuable half of the deferred
+`empty`/`unfold` residual. `empty` stays deferred (precise diagnosis below)._
+
+- **Combinator + `Step` type.** `crates/general/hir/src/lower/prelude/stream.zt`
+  gains `Step :: <S, A> type { #done; #yield : { item : A; next : S; }; }` and
+  `unfold :: <S, A> (S -> Step S A) -> S -> Stream A = f s _ => match f s { … }`,
+  demand-driven (the trailing `_ =>` thunk defers stepping until forced). The
+  export record adds `unfold`. No ABI change; the new `Step` union crosses the
+  import boundary structurally inside `unfold`'s signature, the same way `Stream`
+  does (no further validator change needed).
+- **Why `Step`, not `Optional`.** The documented signature used
+  `Optional { item; next }`, but the builtin `Optional`'s `#some` payload is
+  represented as a positional 1-tuple (`thir/.../expr/tagged.rs`), which does not
+  compose with a record payload at the surface (`expected record, found tuple`).
+  A plain structural `Step` union sidesteps it with no type-system work — the
+  documented "type-inference edge case" for `unfold`.
+- **`empty` (then) deferred — now shipped.** `empty :: <A> Stream A` was deferred
+  here pending a type-system fix; it landed separately once `BindingRef` became a
+  first-class instantiation site (see "BindingRef instantiation site" below). The
+  earlier diagnosis blamed generalization narrowing the union; the true cause was
+  that a `<A>` reference outside callee position never freshened its type variable.
+- **Tests.** `compile_prelude_stream_unfold_matches_oracle` (ambient: an infinite
+  `unfold` gated by `take`, fold = 10) and
+  `compile_zt_imported_stream_unfold_matches_oracle` (`s.unfold` through the import
+  boundary with a local `Step` alias on the step annotation), both asserting
+  native == interpreter oracle.
+
 ### V3-G6: Importable `stream.zt` module ✅
 
 _Completed 2026-06-25. Closes the last structural V3-G2 residual: the codata
@@ -406,11 +473,13 @@ blocked by a backend gap (see `docs/TBD.md` "Cross-module polymorphism")._
   = 99); the prelude-fallback property is tested against the higher-kinded
   `Functor` check (`prelude_stream_name_yields_to_user_definition`). 1614
   workspace tests pass.
-- **Deferred.** `empty` and `unfold` hit type-inference edge cases (a polymorphic
-  nullary value; a self-referential producer union) and are left out; the
-  `List`-interop subset (`toList`/`fromList`/`take -> List`) needs source-level
-  list construction the language lacks; the importable-module packaging waits on
-  cross-module polymorphism.
+- **Deferred (status as of original V3-G2).** `empty` and `unfold` hit
+  type-inference edge cases (a polymorphic nullary value; a self-referential
+  producer union); the `List`-interop subset (`toList`/`fromList`/`take -> List`)
+  needs source-level list construction the language lacks; the importable-module
+  packaging waits on cross-module polymorphism. _Later closed:_ importable module
+  (V3-G6) and `unfold` (V3-G2 residual: `unfold` combinator, above — shipped via a
+  structural `Step` union). `empty` remains deferred.
 
 ### V3-G1: Codata `Stream` representation ✅
 

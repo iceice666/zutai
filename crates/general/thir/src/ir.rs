@@ -221,7 +221,17 @@ pub enum ThirExprKind {
         tag: String,
         payload: ThirExprId,
     },
-    BindingRef(BindingId),
+    BindingRef {
+        binding: BindingId,
+        /// Fresh InferVar TypeIds substituted for the binding's free `TypeVar`s
+        /// (explicit `<A>` params), in `collect_type_vars` order. Lets a
+        /// polymorphic *value* used outside callee position instantiate per use
+        /// — the same role `Apply.instantiation` plays for an applied callee.
+        instantiation: Vec<TypeId>,
+        /// One entry per ForAll param peeled from the binding's type, the
+        /// InferVar TypeId substituted for that param (mirrors `Apply`).
+        forall_instantiation: Vec<TypeId>,
+    },
     Record(Vec<ThirRecordField>),
     RecordUpdate {
         receiver: ThirExprId,

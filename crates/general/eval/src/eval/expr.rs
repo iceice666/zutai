@@ -133,7 +133,7 @@ impl<'a> Evaluator<'a> {
             }
 
             // ── binding reference ────────────────────────────────────────────
-            ThirExprKind::BindingRef(b) => {
+            ThirExprKind::BindingRef { binding: b, .. } => {
                 let thunk = env.lookup(*b)?;
                 thunk.force(self)
             }
@@ -273,7 +273,7 @@ impl<'a> Evaluator<'a> {
                 // function with param_bounds, inject a WitnessDict for each
                 // concrete (non-ambiguous) bound into the caller's env so that
                 // method dispatch inside the body can fall back to it.
-                if let ThirExprKind::BindingRef(bid) = &self.expr(*func).kind {
+                if let ThirExprKind::BindingRef { binding: bid, .. } = &self.expr(*func).kind {
                     let bid = *bid;
                     // Find the Function decl with params/param_bounds.
                     let maybe_bounds: Option<(Vec<BindingId>, Vec<Vec<BindingId>>)> =
