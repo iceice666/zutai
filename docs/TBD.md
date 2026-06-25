@@ -14,9 +14,11 @@ escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
 (Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
 cross-module polymorphism (single- and multi-type, XM-1…3), V3-G6 (importable
 `stream.zt` module), the `unfold` + `empty` stream combinators (V3-G2
-residuals, the latter on a first-class `BindingRef` instantiation site), and the
-`List`-interop subset (`toList`/`fromList`/`takeList`, V3-G2 residual) have all
-landed — see `docs/ARCHIVED.md`. **This closes V3-G2.** 1647 workspace tests pass.
+residuals, the latter on a first-class `BindingRef` instantiation site), the
+`List`-interop subset (`toList`/`fromList`/`takeList`, V3-G2 residual), and the
+V3-G6 import-ergonomics follow-ups (embedded `stdlib.stream`, `Stream`/`Step`
+type export, destructuring binding) have all landed — see `docs/ARCHIVED.md`.
+**This closes V3-G2.**
 
 ## Active milestone — none
 
@@ -43,22 +45,26 @@ global-ref compat fix in the Dataflow Core validator (sound under untagged-i64).
 **This closes the last structural V3-G2 residual.** Remaining V3 work is the
 demand-gated Track 2 boundaries and the open generator questions below.
 
-**V3-G6 follow-ups (deferred):**
+**V3-G6 import-ergonomics follow-ups — landed (see `docs/ARCHIVED.md`
+"Import ergonomics: embedded stdlib, type export, destructuring"):**
 
-- **Stdlib-root resolution.** A shared stdlib location and the dotted
-  `import stdlib.stream` form (`ImportSource::Path`, currently only the 2-part
-  `stem.ext` shorthand resolves) — needs an explicit allowance past the
-  subtree-confinement check (`semantic/src/import.rs:242`). G6 shipped
-  path-relative only, so a user imports a copy of `stream.zt` placed next to their
-  file; there is no global install path yet.
-- **`Stream` type export.** G6 exports the eight combinator *functions*; the
-  `Stream` type is not a record field, so importers cannot annotate with
-  `s.Stream` (the codata type still crosses structurally inside the combinator
-  signatures, so inference flows without it). Add `Stream` to the export record if
-  a concrete need for the qualified type name arises.
-- **Selective / open import.** An import binds one name and members are
-  field-accessed (`s.map`). Whether to add open-import / selective binding (`map`
-  unqualified after import) is a separate surface-syntax question.
+- **Stdlib-root resolution** shipped as an *embedded* stdlib: `import stdlib.stream`
+  resolves to in-binary source (no install path, no subtree-confinement exception).
+- **`Stream`/`Step` type export** shipped — both are now record fields on the
+  importable module and are selectable/destructurable.
+- **Selective / open import** shipped as a destructuring binding
+  (`{ map; fold; } ::= s;`) reusing the select-field list syntax.
+
+**Residual (open):**
+
+- **Applied imported type constructors.** A parametric imported type constructor
+  cannot be *applied* in an annotation (`x : s.Stream Int`), because `export_type`
+  does not preserve the constructor's binder across the boundary — it would need a
+  type-constructor representation in `ImportedType`. Refused with a precise
+  diagnostic; inference flows structurally without the annotation.
+- **`import` as a destructure RHS.** `{ … } ::= import stdlib.stream;` is rejected
+  (`import` is a declaration keyword, not an expression); use the two-step form
+  `s :: import …;` then `{ … } ::= s;`.
 
 ## Previous milestone — V3-G5 (landed 2026-06-25)
 

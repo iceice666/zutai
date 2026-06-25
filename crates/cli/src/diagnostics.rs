@@ -32,6 +32,7 @@ pub(crate) fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) 
     match &diag.kind {
         NoBaseDirectory => "cannot resolve an import without a base directory".to_string(),
         UnsupportedImportForm { path } => format!("unsupported import path: {path}"),
+        UnknownStdlibModule { name } => format!("unknown stdlib module: stdlib.{name}"),
         FileNotFound { path } => format!("file not found: {path}"),
         ReadError { path, msg } => format!("cannot read {path}: {msg}"),
         ParseError { path, msg } => format!("failed to parse {path}: {msg}"),

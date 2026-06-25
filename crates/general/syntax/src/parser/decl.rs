@@ -4,13 +4,15 @@ use winnow::combinator::fail;
 use winnow::token::take_till;
 
 use crate::ast::{
-    ConstraintMethod, Decl, DeriveRecipe, Expr, File, FuncClause, MethodName, TypeParam,
-    TypeParamBound, WitnessBody, WitnessField,
+    ConstraintMethod, Decl, DeriveRecipe, Expr, File, FuncClause, MethodName, SelectField,
+    TypeParam, TypeParamBound, WitnessBody, WitnessField,
 };
 use crate::span::Span;
 
 use super::expr::parse_expr;
-use super::lex::{enter_delimiter, kw, parse_ident, parse_import_source, spanned, ws};
+use super::lex::{
+    enter_delimiter, kw, parse_field_name, parse_ident, parse_import_source, spanned, ws,
+};
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
 
@@ -104,6 +106,12 @@ fn is_decl_start(input: &mut &str) -> bool {
     let mut tmp = *input;
     // Skip whitespace
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
+    // Destructuring binding: `{ a; b; } ::=`. Scan the balanced brace group and
+    // require `::=` after it — a trailing record/list final-expression has no
+    // `::=`, so this stays disjoint from the file's value expression.
+    if tmp.starts_with('{') {
+        return brace_group_then_assign(tmp);
+    }
     // Must start with an identifier
     if !tmp.starts_with(crate::ident::is_ident_start) {
         return false;
@@ -114,6 +122,32 @@ fn is_decl_start(input: &mut &str) -> bool {
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must be followed by `::`, `@` (witness), or a pattern-then-`=` sequence.
     tmp.starts_with("::") || tmp.starts_with('@') || is_nosig_fn_start(tmp)
+}
+
+/// Peek whether `s` (starting at `{`) is a balanced brace group followed by
+/// `::=`. Field lists contain only `name;` items (no strings or nested braces of
+/// their own), so a byte-level brace scan is sufficient to find the close.
+fn brace_group_then_assign(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut depth = 0usize;
+    let mut end = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(end) = end else { return false };
+    s[end..]
+        .trim_start_matches(|c: char| c.is_whitespace())
+        .starts_with("::=")
 }
 
 /// Peek whether the text (after an ident and ws) looks like a no-sig fn:
@@ -134,6 +168,12 @@ fn is_nosig_fn_start(s: &str) -> bool {
 
 pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
     ws(input)?;
+
+    // Destructuring binding: `{ a; b; } ::= value;`.
+    if input.starts_with('{') {
+        return parse_destructure_binding(input);
+    }
+
     let (name, name_span) = spanned(parse_ident).parse_next(input)?;
     ws(input)?;
 
@@ -161,6 +201,46 @@ pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
 
     // No-sig fn: one or more patterns followed by `=`
     parse_no_sig_fn(input, name, name_span)
+}
+
+/// `{ a; b; c } ::= value;` — a selective destructuring binding. The field list
+/// reuses the select-field syntax (`name;` items); `value` is any record-valued
+/// expression (commonly an imported module name).
+fn parse_destructure_binding(input: &mut &str) -> Result<Decl> {
+    let (fields, fields_span) = spanned(parse_destructure_fields).parse_next(input)?;
+    ws(input)?;
+    "::=".parse_next(input)?;
+    ws(input)?;
+    let value = parse_decl_value(input)?;
+    let span = fields_span.merge(value.span());
+    require_term(input)?;
+    Ok(Decl::Destructure {
+        fields,
+        value,
+        span,
+    })
+}
+
+fn parse_destructure_fields(input: &mut &str) -> Result<Vec<SelectField>> {
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut fields = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        fields.push(SelectField {
+            name,
+            span: name_span,
+        });
+    }
+    ws(input)?;
+    '}'.parse_next(input)?;
+    Ok(fields)
 }
 
 fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> Result<Decl> {

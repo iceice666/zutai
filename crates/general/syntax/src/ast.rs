@@ -81,6 +81,15 @@ pub enum Decl {
         source: ImportSource,
         span: Span,
     },
+    /// Selective destructuring binding: `{ a; b; c } ::= rec;` binds each named
+    /// member of the record value `value` as a top-level name. Reuses the
+    /// select-field list syntax; the canonical use is bringing imported module
+    /// members into scope unqualified (`{ map; fold } ::= s;`).
+    Destructure {
+        fields: Vec<SelectField>,
+        value: Expr,
+        span: Span,
+    },
     TypeAlias {
         name: String,
         params: Vec<TypeParam>,
@@ -128,10 +137,13 @@ impl Decl {
             | Decl::Function { span, .. }
             | Decl::NoSigFn { span, .. }
             | Decl::Constraint { span, .. }
+            | Decl::Destructure { span, .. }
             | Decl::Witness { span, .. } => *span,
         }
     }
 
+    /// The single bound name, or `""` for a destructuring binding (which binds
+    /// several names — callers that care handle `Decl::Destructure` explicitly).
     pub fn name(&self) -> &str {
         match self {
             Decl::Inferred { name, .. }
@@ -142,6 +154,7 @@ impl Decl {
             | Decl::NoSigFn { name, .. }
             | Decl::Constraint { name, .. } => name,
             Decl::Witness { constraint, .. } => constraint,
+            Decl::Destructure { .. } => "",
         }
     }
 }

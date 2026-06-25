@@ -100,6 +100,16 @@ fn write_decl(f: &mut fmt::Formatter<'_>, decl: &Decl, prefix: &str, indent: &st
         Decl::Witness { constraint, .. } => {
             writeln!(f, "{prefix} Witness for {constraint:?}")
         }
+        Decl::Destructure { fields, value, .. } => {
+            let names: Vec<_> = fields.iter().map(|field| field.name.as_str()).collect();
+            writeln!(f, "{prefix} Destructure {{ {} }}", names.join("; "))?;
+            write_expr(
+                f,
+                value,
+                &format!("{indent}└─ value: "),
+                &format!("{indent}   "),
+            )
+        }
     }
 }
 

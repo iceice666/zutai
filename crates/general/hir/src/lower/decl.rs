@@ -11,6 +11,26 @@ impl Lowerer {
             ast::Decl::Import { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopImport, decl.span())
             }
+            ast::Decl::Destructure { fields, span, .. } => {
+                // Allocate a synthetic (unscoped, so never a duplicate) receiver
+                // binding for the record value, plus one in-scope value binding per
+                // destructured field name. Pass 2 fills them via `lower_destructure_decl`.
+                let receiver = self.alloc_binding_unscoped(
+                    "$destructure".to_string(),
+                    BindingKind::TopValue,
+                    *span,
+                );
+                let field_bindings = fields
+                    .iter()
+                    .map(|f| {
+                        let binding =
+                            self.define_current(f.name.clone(), BindingKind::TopValue, f.span);
+                        (binding, f.name.clone())
+                    })
+                    .collect();
+                self.destructure_fields.insert(receiver, field_bindings);
+                receiver
+            }
             ast::Decl::TypeAlias { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopType, decl.span())
             }
@@ -107,6 +127,9 @@ impl Lowerer {
                     },
                     *span,
                 )
+            }
+            ast::Decl::Destructure { .. } => {
+                unreachable!("destructure decls are expanded in lower_file, not lower_decl")
             }
             ast::Decl::TypeAlias {
                 params, ty, span, ..
@@ -327,6 +350,57 @@ impl Lowerer {
             kind,
             span,
         })
+    }
+
+    /// Expand a destructuring binding into a synthetic `receiver ::= value` decl
+    /// plus one `field ::= receiver.field` value decl per name. The receiver is
+    /// bound once so member accesses do not re-evaluate the (possibly effectful or
+    /// import-backed) record value.
+    pub(super) fn lower_destructure_decl(
+        &mut self,
+        receiver: BindingId,
+        value: &ast::Expr,
+        out: &mut Vec<HirDeclId>,
+    ) {
+        let value_expr = self.lower_expr(value);
+        let receiver_span = self.bindings[receiver.0 as usize].span;
+        let receiver_decl = self.alloc_decl(HirDecl {
+            binding: receiver,
+            kind: HirDeclKind::Value {
+                annotation: None,
+                value: value_expr,
+            },
+            span: receiver_span,
+        });
+        out.push(receiver_decl);
+
+        let fields = self
+            .destructure_fields
+            .remove(&receiver)
+            .unwrap_or_default();
+        for (field_binding, field_name) in fields {
+            let span = self.bindings[field_binding.0 as usize].span;
+            let receiver_ref = self.alloc_expr(HirExpr {
+                kind: HirExprKind::BindingRef(receiver),
+                span,
+            });
+            let access = self.alloc_expr(HirExpr {
+                kind: HirExprKind::Access {
+                    receiver: receiver_ref,
+                    field: field_name,
+                },
+                span,
+            });
+            let decl = self.alloc_decl(HirDecl {
+                binding: field_binding,
+                kind: HirDeclKind::Value {
+                    annotation: None,
+                    value: access,
+                },
+                span,
+            });
+            out.push(decl);
+        }
     }
 
     pub(super) fn lower_type_params(&mut self, params: &[ast::TypeParam]) -> Vec<HirTypeParam> {

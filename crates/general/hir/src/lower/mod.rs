@@ -84,6 +84,10 @@ struct Lowerer {
     /// Maps each constraint's `BindingId` to the index-aligned vector of
     /// per-method bindings allocated in Pass 1.  `None` entries are operator methods.
     constraint_method_bindings: FxHashMap<BindingId, Vec<Option<BindingId>>>,
+    /// Maps a destructuring binding's synthetic receiver `BindingId` to the
+    /// per-field `(binding, field_name)` pairs allocated in Pass 1, so Pass 2 can
+    /// emit one `field ::= receiver.field` value decl per name.
+    destructure_fields: FxHashMap<BindingId, Vec<(BindingId, String)>>,
     /// The lexically-nearest enclosing `handle` clause body, if any. `resume`
     /// is only valid when this is `Some(HandlerClauseKind::Operation)`.
     handler_clause: Option<HandlerClauseKind>,
@@ -107,6 +111,7 @@ impl Lowerer {
             scopes: vec![Scope::default()],
             diagnostics: Vec::new(),
             constraint_method_bindings: FxHashMap::default(),
+            destructure_fields: FxHashMap::default(),
             handler_clause: None,
             used_level_params: FxHashSet::default(),
         };
@@ -194,7 +199,14 @@ impl Lowerer {
 
         let mut decls: Vec<HirDeclId> = Vec::new();
         for (decl, binding) in file.decls.iter().zip(user_bindings) {
-            decls.push(self.lower_decl(decl, binding));
+            match decl {
+                // A destructuring binding expands to a synthetic receiver decl
+                // plus one `field ::= receiver.field` decl per name.
+                ast::Decl::Destructure { value, .. } => {
+                    self.lower_destructure_decl(binding, value, &mut decls);
+                }
+                _ => decls.push(self.lower_decl(decl, binding)),
+            }
         }
         let final_expr = self.lower_expr(&file.final_expr);
 

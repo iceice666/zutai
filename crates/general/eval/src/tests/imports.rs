@@ -336,3 +336,21 @@ fn strict_tlc_rejects_imported_type_value() {
         other => panic!("expected ReflectionUnsupported, got {other:?}"),
     }
 }
+
+// ─── embedded stdlib + destructuring imports ──────────────────────────────────
+
+#[test]
+fn stdlib_stream_qualified_members_evaluate() {
+    // `import stdlib.stream` resolves to the embedded module with no base dir.
+    let src = "s :: import stdlib.stream;\n\
+               s.fold (\\acc x. acc + x) 0 (s.take 3 (s.cons 10 (s.cons 20 (s.singleton 30))))";
+    assert_eq!(run(src), Value::Int(60));
+}
+
+#[test]
+fn destructured_stdlib_members_evaluate_unqualified() {
+    let src = "s :: import stdlib.stream;\n\
+               { map; fold; singleton; cons; } ::= s;\n\
+               fold (\\acc x. acc + x) 0 (map (\\x. x * 2) (cons 1 (cons 2 (singleton 3))))";
+    assert_eq!(run(src), Value::Int(12));
+}

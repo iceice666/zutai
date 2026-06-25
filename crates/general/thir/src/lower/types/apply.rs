@@ -25,6 +25,17 @@ impl<'hir> Lowerer<'hir> {
         args.reverse();
 
         let HirTypeKind::BindingRef(binding) = self.hir_type(head).kind else {
+            // An imported parametric type constructor reached through field access
+            // (`s.Stream Int`) is not applicable across the module boundary: the
+            // export representation does not preserve the constructor's binder, so
+            // refuse rather than guess. Inference flows structurally without the
+            // annotation. See `export::export_type` (ForAll/AliasApply arms).
+            if matches!(self.hir_type(head).kind, HirTypeKind::Access { .. }) {
+                return self.invalid_type(
+                    "applying an imported parametric type constructor is not yet supported",
+                    span,
+                );
+            }
             return self.invalid_type("only named type constructors can be applied", span);
         };
         let name = self.hir.bindings[binding.0 as usize].name.clone();

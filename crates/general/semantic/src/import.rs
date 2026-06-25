@@ -102,6 +102,11 @@ pub enum ImportDiagnosticKind {
     UnsupportedImportForm {
         path: String,
     },
+    /// `import stdlib.<name>` named a module the embedded standard library does
+    /// not provide.
+    UnknownStdlibModule {
+        name: String,
+    },
     FileNotFound {
         path: String,
     },
@@ -193,6 +198,15 @@ pub(crate) fn resolve_imports(
 
 impl Resolver<'_> {
     fn resolve_one(&mut self, source: &HirImportSource, span: Span, ctx: &mut ImportContext) {
+        // `import stdlib.<name>` resolves to an embedded module (no filesystem,
+        // no install path, no subtree-confinement check). This is checked before
+        // `relative_path` so `stdlib.stream` is not mistaken for `stem.ext`.
+        if let HirImportSource::Path(parts) = source
+            && parts.first().map(String::as_str) == Some("stdlib")
+        {
+            return self.resolve_stdlib(source, parts, span, ctx);
+        }
+
         let rel = match relative_path(source) {
             Ok(rel) => rel,
             Err(kind) => return self.diag(kind, span),
@@ -295,38 +309,112 @@ impl Resolver<'_> {
                     Ok(contents) => contents,
                     Err(err) => return self.read_error(rel, &err, span),
                 };
-                ctx.in_progress.push(canonical.to_path_buf());
-                let analysis = crate::analyze_inner(
-                    &contents,
-                    canonical.parent(),
-                    Some(canonical),
-                    AnalysisOptions::default(),
-                    ctx,
-                );
-                ctx.in_progress.pop();
-
-                if analysis.blocking_diagnostics().next().is_some() || !analysis.is_thir_complete()
-                {
-                    // A cycle is first detected on the back-edge, one module
-                    // deeper; propagate it so every level on the chain reports
-                    // the cycle rather than a vague "module has errors".
-                    let kind = if contains_cycle(&analysis) {
-                        ImportDiagnosticKind::ImportCycle {
-                            path: rel.to_string(),
-                        }
-                    } else {
-                        ImportDiagnosticKind::ModuleHasErrors {
-                            path: rel.to_string(),
-                        }
-                    };
-                    return self.diag(kind, span);
+                match self.analyze_zt(canonical, canonical.parent(), &contents, rel, span, ctx) {
+                    Some(module) => module,
+                    None => return,
                 }
-                let module = Rc::new(analysis);
-                ctx.cache.insert(canonical.to_path_buf(), module.clone());
-                module
             }
         };
 
+        self.register_zt_module(source, module, rel, span);
+    }
+
+    /// `import stdlib.<name>` — resolve `<name>` against the embedded standard
+    /// library and analyze it from in-binary source. Uses a synthetic cache key
+    /// (`<stdlib>/<name>.zt`) so cycle detection and caching still apply without
+    /// touching the filesystem.
+    fn resolve_stdlib(
+        &mut self,
+        source: &HirImportSource,
+        parts: &[String],
+        span: Span,
+        ctx: &mut ImportContext,
+    ) {
+        let name = match parts {
+            [_, name] => name.as_str(),
+            _ => {
+                return self.diag(
+                    ImportDiagnosticKind::UnsupportedImportForm {
+                        path: parts.join("."),
+                    },
+                    span,
+                );
+            }
+        };
+        let Some(contents) = stdlib_source(name) else {
+            return self.diag(
+                ImportDiagnosticKind::UnknownStdlibModule {
+                    name: name.to_string(),
+                },
+                span,
+            );
+        };
+
+        let key = PathBuf::from("<stdlib>").join(format!("{name}.zt"));
+        let rel = format!("stdlib.{name}");
+        if ctx.in_progress.iter().any(|p| p == &key) {
+            return self.diag(ImportDiagnosticKind::ImportCycle { path: rel }, span);
+        }
+        let module = match ctx.cache.get(&key) {
+            Some(module) => module.clone(),
+            None => match self.analyze_zt(&key, key.parent(), contents, &rel, span, ctx) {
+                Some(module) => module,
+                None => return,
+            },
+        };
+
+        self.register_zt_module(source, module, &rel, span);
+    }
+
+    /// Recursively analyze a `.zt` module's source into a cached `Analysis`,
+    /// pushing a diagnostic and returning `None` on cycle or module errors.
+    /// `key` is the cache/cycle identity (a real canonical path or a synthetic
+    /// stdlib key); `parent` is the directory used to resolve the module's own
+    /// relative imports.
+    fn analyze_zt(
+        &mut self,
+        key: &Path,
+        parent: Option<&Path>,
+        contents: &str,
+        rel: &str,
+        span: Span,
+        ctx: &mut ImportContext,
+    ) -> Option<Rc<Analysis>> {
+        ctx.in_progress.push(key.to_path_buf());
+        let analysis =
+            crate::analyze_inner(contents, parent, Some(key), AnalysisOptions::default(), ctx);
+        ctx.in_progress.pop();
+
+        if analysis.blocking_diagnostics().next().is_some() || !analysis.is_thir_complete() {
+            // A cycle is first detected on the back-edge, one module deeper;
+            // propagate it so every level on the chain reports the cycle rather
+            // than a vague "module has errors".
+            let kind = if contains_cycle(&analysis) {
+                ImportDiagnosticKind::ImportCycle {
+                    path: rel.to_string(),
+                }
+            } else {
+                ImportDiagnosticKind::ModuleHasErrors {
+                    path: rel.to_string(),
+                }
+            };
+            self.diag(kind, span);
+            return None;
+        }
+        let module = Rc::new(analysis);
+        ctx.cache.insert(key.to_path_buf(), module.clone());
+        Some(module)
+    }
+
+    /// Type a resolved `.zt` module by its exported (final-expression) type and
+    /// register it under `source` for THIR lowering and evaluation.
+    fn register_zt_module(
+        &mut self,
+        source: &HirImportSource,
+        module: Rc<Analysis>,
+        rel: &str,
+        span: Span,
+    ) {
         // Type the import by exporting the module's final-expression type,
         // then enrich type-valued record fields with their denotations.
         let exported = {
@@ -392,6 +480,18 @@ impl Resolver<'_> {
                 }
             }
         }
+    }
+}
+
+/// Embedded standard-library modules, addressed as `import stdlib.<name>`.
+///
+/// Resolved from in-binary source so there is no filesystem stdlib root or
+/// install path. `stream` shares its source with the ambient prelude
+/// (`zutai_hir::STREAM_MODULE_SRC`), keeping one source of truth.
+fn stdlib_source(name: &str) -> Option<&'static str> {
+    match name {
+        "stream" => Some(zutai_hir::STREAM_MODULE_SRC),
+        _ => None,
     }
 }
 

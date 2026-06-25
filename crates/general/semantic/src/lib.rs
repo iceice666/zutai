@@ -552,6 +552,54 @@ mod tests {
         );
     }
 
+    // ── embedded stdlib + destructuring imports ────────────────────────────────
+
+    #[test]
+    fn stdlib_stream_import_resolves_without_base() {
+        // The embedded stdlib needs no filesystem base directory.
+        let analysis =
+            analyze("s :: import stdlib.stream;\ns.fold (\\acc x. acc + x) 0 (s.singleton 5)");
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn unknown_stdlib_module_is_diagnosed() {
+        let analysis = analyze("s :: import stdlib.nope;\ns");
+        assert!(has_import_diagnostic(
+            &analysis,
+            &ImportDiagnosticKind::UnknownStdlibModule {
+                name: "nope".to_string(),
+            },
+        ));
+    }
+
+    #[test]
+    fn destructured_stdlib_members_bind_unqualified() {
+        let analysis = analyze(
+            "s :: import stdlib.stream;\n{ map; fold; singleton; } ::= s;\nfold (\\a x. a + x) 0 (map (\\n. n + 1) (singleton 4))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn destructuring_an_unknown_field_is_diagnosed() {
+        let analysis = analyze("s :: import stdlib.stream;\n{ nope; } ::= s;\nnope");
+        assert!(!analysis.is_thir_complete());
+    }
+
     #[test]
     fn analyze_path_resolves_relative_import() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports/importer.zt");

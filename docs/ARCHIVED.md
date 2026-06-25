@@ -158,6 +158,34 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Import ergonomics: embedded stdlib, type export, destructuring ✅
+
+_Completed 2026-06-26. Closes the three V3-G6 import-ergonomics follow-ups
+(see `docs/TBD.md`). Reference-interpreter support level — module imports remain
+gated out of the native backend (unchanged), so these run in `zutai-eval`._
+
+- **Embedded stdlib (`import stdlib.stream`).** A `stdlib.<name>` dotted import
+  resolves to in-binary source, addressed through a registry (`stdlib_source`,
+  seeded with `stream` = `zutai_hir::STREAM_MODULE_SRC`, one source of truth with
+  the ambient prelude). Resolution uses a synthetic cache key (`<stdlib>/<name>.zt`)
+  so cycle detection and the analysis cache apply without touching the filesystem
+  or the path-relative subtree-confinement check (`semantic/src/import.rs`). Unknown
+  names give a precise `UnknownStdlibModule` diagnostic. `resolve_zt` was refactored
+  into `analyze_zt` + `register_zt_module` shared by the filesystem and embedded paths.
+- **`Stream`/`Step` type export.** Added to `stream.zt`'s export record, so both are
+  selectable/destructurable record fields. (Applying a parametric imported type
+  constructor in an annotation — `s.Stream Int` — stays unsupported and is refused
+  with a precise diagnostic in `thir/.../types/apply.rs`; `export_type` does not
+  carry the constructor's binder across the boundary.)
+- **Selective import via destructuring binding.** New `Decl::Destructure`
+  (`{ a; b; } ::= rec;`) reuses the select-field list syntax on the left of `::=`.
+  It lowers in HIR to a synthetic single-eval receiver binding plus one
+  `field ::= receiver.field` value decl per name (`lower_destructure_decl`), so the
+  selected members are in scope unqualified. The RHS is any record expression
+  (composes with `>>=` and a prior import). Non-fields are type errors; collisions
+  are duplicate-binding errors; a `{ … }` record final-expression (no `::=`) is
+  unaffected.
+
 ### V3-G2 residual: List interop (`toList`/`fromList`/`takeList`) ✅
 
 _Completed 2026-06-26. Ships the stream↔list interop combinators — the last V3-G2

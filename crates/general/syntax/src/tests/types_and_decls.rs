@@ -229,6 +229,29 @@ fn expression_import_is_rejected() {
 }
 
 #[test]
+fn parse_destructure_binding() {
+    let f = parse_str("{ map; fold; filter; } ::= s;\ns");
+    assert_eq!(f.decls.len(), 1);
+    match &f.decls[0] {
+        Decl::Destructure { fields, value, .. } => {
+            let names: Vec<_> = fields.iter().map(|field| field.name.as_str()).collect();
+            assert_eq!(names, ["map", "fold", "filter"]);
+            assert!(matches!(value, Expr::Ident { .. }));
+        }
+        other => panic!("expected Destructure, got {other:?}"),
+    }
+}
+
+#[test]
+fn trailing_record_is_not_a_destructure() {
+    // A `{ … }` record final-expression has no `::=`, so it stays the file's
+    // value rather than being parsed as a destructuring binding.
+    let f = parse_str("x ::= 5;\n{ a = x; b = x; }");
+    assert_eq!(f.decls.len(), 1);
+    assert!(matches!(f.final_expr, Expr::Record { .. }));
+}
+
+#[test]
 fn parse_typed_decl_lambda_value() {
     let src = "\ndouble :: Int -> Int = \\x. x * 2;\n\ndouble 5\n";
     let parsed = parse(src);

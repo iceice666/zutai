@@ -43,4 +43,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = map; filter = filter; take = take; drop = drop; fold = fold; uncons = uncons; toList = toList; fromList = fromList; takeList = takeList; }
+{ Stream = Stream; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = map; filter = filter; take = take; drop = drop; fold = fold; uncons = uncons; toList = toList; fromList = fromList; takeList = takeList; }
