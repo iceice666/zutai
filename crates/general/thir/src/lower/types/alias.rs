@@ -56,7 +56,7 @@ impl<'hir> Lowerer<'hir> {
                     TypeKind::Con(b) => {
                         let name = self.hir.bindings[b.0 as usize].name.clone();
                         match (name.as_str(), spine_args.len()) {
-                            ("List" | "Stream", 1) => self.alloc_type(Type {
+                            ("List", 1) => self.alloc_type(Type {
                                 kind: TypeKind::List(spine_args[0]),
                                 span,
                             }),

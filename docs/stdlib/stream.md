@@ -1,8 +1,14 @@
 # Standard Library: Stream
 
-Status: accepted shell. `Stream A` currently lowers transparently to `List A`
-for finite pure generators; the full recursive stream API remains planned once
-source-level recursive stream representation is stable.
+Status: core API shipped as ambient prelude functions (V3-G2, 2026-06-25).
+`Stream A` is demand-driven **codata** — `Unit -> { #nil; #cons : { head : A;
+tail : Stream A; }; }` (V3-G1) — not `List A`. The combinators `cons`,
+`singleton`, `map`, `filter`, `take` (as `Stream -> Stream`), `drop`, `fold`, and
+`uncons` are available without import (the prelude is a fallback: a user or
+constraint-method name of the same spelling wins). Deferred: `empty`/`unfold`
+(type-inference edge cases) and the `List`-interop subset (`take -> List`,
+`toList`, `fromList`), which needs source-level list construction; see
+`docs/ARCHIVED.md` "V3-G2".
 
 `Stream A` is a pure lazy sequence for iterator-style pipelines when producing
 or consuming every element as a `List A` would be unnecessary. Phase 29's

@@ -351,13 +351,22 @@ abort
 }
 
 #[test]
-fn stream_generator_preserves_effect_row_requirements() {
-    let src = r#"
-load :: FsRead -> Stream Text ! { fs.read : Path -> Text }
-  = fs => stream { yield perform fs.read "Cargo.toml"; };
-1
-"#;
-    assert_eq!(run(src), Value::Int(1));
+fn effectful_stream_generator_defers_effect_and_is_rejected_for_now() {
+    // Under codata streams (`Stream A = Unit -> StreamCell A`), a `yield perform …`
+    // defers the effect into the cell thunk, so it no longer threads through a
+    // pure `Stream A`. Effectful / resource-backed generators are V3-G4 work; for
+    // now the effect is correctly *rejected* (refused, never miscompiled) rather
+    // than silently dropped.
+    let err = run_err(
+        "load :: FsRead -> Stream Text ! { fs.read : Path -> Text }\n  = fs => stream { yield perform fs.read \"Cargo.toml\"; };\n1\n",
+    );
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages.iter().any(|msg| msg.contains("fs.read")),
+        "expected fs.read effect diagnostic, got {messages:?}"
+    );
 }
 
 #[test]

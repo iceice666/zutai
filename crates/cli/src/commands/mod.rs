@@ -920,9 +920,11 @@ pub(crate) fn run_repl() -> Result<(), Box<dyn Error>> {
 /// Estimate the number of top-level declarations in `src` from parsed HIR
 /// declarations (used only to classify REPL input).
 pub(crate) fn count_decls_in(src: &str) -> usize {
+    // Count user declarations from the parsed AST — the HIR additionally carries
+    // the builtin prelude (e.g. the `Stream` codata type), which is not user code.
     let analysis = zutai_semantic::analyze(src);
-    match analysis.hir.as_ref() {
-        Some(h) => h.file.decls.len(),
+    match analysis.ast.as_ref() {
+        Some(ast) => ast.decls.len(),
         None => 0,
     }
 }

@@ -98,6 +98,88 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
     go(graph, expected, actual, &mut FxHashSet::default())
 }
 
+/// Whether `actual` is a valid instantiation of the (possibly polymorphic) type
+/// `def`: structurally identical except that a `TyVar` in `def` matches *any*
+/// `actual` subterm. A cross-module reference to a generic global is lowered with
+/// the dependency's free-`TyVar` type (e.g. `Fun(TyVar, TyVar)`) while the use
+/// site has a concrete instantiation (`Fun(Int, Int)`); under the untagged-i64
+/// ABI (D-0002) a parametric value is compiled once and is bit-identical across
+/// instantiations, so this is a sound, non-miscompiling reconciliation — the
+/// non-`TyVar` structure must still match exactly, which keeps genuine shape
+/// mismatches (e.g. record-vs-tuple) rejected.
+pub(super) fn is_instantiation_of(graph: &DataflowGraph, def: DfTyId, actual: DfTyId) -> bool {
+    fn go(
+        graph: &DataflowGraph,
+        def: DfTyId,
+        actual: DfTyId,
+        seen: &mut FxHashSet<(DfTyId, DfTyId)>,
+    ) -> bool {
+        if def == actual {
+            return true;
+        }
+        if !type_exists(graph, def) || !type_exists(graph, actual) {
+            return false;
+        }
+        if !seen.insert((def, actual)) {
+            // Coinductive back-edge on a re-encountered pair. Unlike `same_type`'s
+            // equality back-edge, this assumes the pair *instantiates*; it is
+            // justified by the untagged-i64 ABI (a `TyVar` slot is layout-irrelevant,
+            // so cycle structure under a substituted position cannot miscompile),
+            // not by a general type-equality claim.
+            return true;
+        }
+        match (&graph.types[def], &graph.types[actual]) {
+            // A type variable in the definition matches any instantiation.
+            (DfTy::TyVar(_), _) => true,
+            (DfTy::List(a), DfTy::List(b))
+            | (DfTy::Optional(a), DfTy::Optional(b))
+            | (DfTy::Maybe(a), DfTy::Maybe(b)) => go(graph, *a, *b, seen),
+            (DfTy::Fun(a_arg, a_res), DfTy::Fun(b_arg, b_res)) => {
+                go(graph, *a_arg, *b_arg, seen) && go(graph, *a_res, *b_res, seen)
+            }
+            (DfTy::Record(a), DfTy::Record(b)) => {
+                a.len() == b.len()
+                    && a.iter().zip(b).all(|(a, b)| {
+                        a.name == b.name && a.optional == b.optional && go(graph, a.ty, b.ty, seen)
+                    })
+            }
+            (DfTy::Union(a), DfTy::Union(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .zip(b)
+                        .all(|(a, b)| a.tag == b.tag && go(graph, a.ty, b.ty, seen))
+            }
+            (DfTy::Tuple(a), DfTy::Tuple(b)) => {
+                a.len() == b.len()
+                    && a.iter().zip(b).all(|(a, b)| match (a, b) {
+                        (
+                            DfTupleField::Named { name: an, ty: at },
+                            DfTupleField::Named { name: bn, ty: bt },
+                        ) => an == bn && go(graph, *at, *bt, seen),
+                        (DfTupleField::Positional(at), DfTupleField::Positional(bt)) => {
+                            go(graph, *at, *bt, seen)
+                        }
+                        _ => false,
+                    })
+            }
+            (DfTy::TyApp(a_func, a_args), DfTy::TyApp(b_func, b_args)) => {
+                go(graph, *a_func, *b_func, seen)
+                    && a_args.len() == b_args.len()
+                    && a_args
+                        .iter()
+                        .zip(b_args)
+                        .all(|(a, b)| go(graph, *a, *b, seen))
+            }
+            (DfTy::TyFun(a_params, a_body), DfTy::TyFun(b_params, b_body)) => {
+                a_params == b_params && go(graph, *a_body, *b_body, seen)
+            }
+            // Leaves / mismatched constructors: require exact equality.
+            _ => same_type(graph, def, actual),
+        }
+    }
+    go(graph, def, actual, &mut FxHashSet::default())
+}
+
 pub(super) fn check_node_ref(
     graph: &DataflowGraph,
     owner: NodeId,

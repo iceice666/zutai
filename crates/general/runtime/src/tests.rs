@@ -335,3 +335,105 @@ fn format_stats_line_unlimited_cap_and_empty() {
     assert!(line.contains("(cap unlimited)"), "{line}");
     assert!(line.contains("closure/raw 0"), "{line}");
 }
+
+// ── Collector internals (Phase 34) ───────────────────────────────────────────────
+
+#[test]
+fn freelist_take_first_fit_splits_remainder() {
+    // First span large enough wins; the unused tail stays on the free list.
+    let mut free = vec![(0x1000usize, 16usize), (0x2000usize, 64usize)];
+    let got = freelist_take(&mut free, 32);
+    assert_eq!(
+        got,
+        Some(0x2000),
+        "first fit should skip the too-small 16 B span"
+    );
+    assert_eq!(
+        free,
+        vec![(0x1000, 16), (0x2020, 32)],
+        "remainder of the 64 B span (0x2000+32, 64-32) stays on the list"
+    );
+    // The 16 B span still cannot satisfy 32 B.
+    assert_eq!(freelist_take(&mut free, 48), None);
+}
+
+#[test]
+fn freelist_take_exact_fit_removes_span() {
+    let mut free = vec![(0x4000usize, 32usize)];
+    assert_eq!(freelist_take(&mut free, 32), Some(0x4000));
+    assert!(free.is_empty(), "an exact fit consumes the whole span");
+}
+
+#[test]
+fn coalesce_free_merges_only_contiguous_spans() {
+    // Two adjacent spans in one region merge; a span in another region (gap) does
+    // not, even after sorting.
+    let mut free = vec![
+        (0x2000usize, 16usize),
+        (0x1000usize, 16usize),
+        (0x1010usize, 32usize),
+    ];
+    coalesce_free(&mut free);
+    assert_eq!(
+        free,
+        vec![(0x1000, 48), (0x2000, 16)],
+        "0x1000+16 == 0x1010 coalesces; 0x2000 has a gap and stays separate"
+    );
+}
+
+#[test]
+fn find_object_resolves_exact_and_interior_pointers() {
+    let mut objects = BTreeMap::new();
+    objects.insert(0x1000usize, 24usize);
+    objects.insert(0x2000usize, 16usize);
+    assert_eq!(find_object(&objects, 0x1000), Some(0x1000), "exact start");
+    assert_eq!(
+        find_object(&objects, 0x1008),
+        Some(0x1000),
+        "interior pointer pins object"
+    );
+    assert_eq!(
+        find_object(&objects, 0x1017),
+        Some(0x1000),
+        "last byte is interior"
+    );
+    assert_eq!(
+        find_object(&objects, 0x1018),
+        None,
+        "one past the end is not interior"
+    );
+    assert_eq!(
+        find_object(&objects, 0x0fff),
+        None,
+        "below the lowest object"
+    );
+}
+
+#[test]
+fn ptr_in_chunks_range_check() {
+    let bounds = [(0x1000usize, 0x2000usize), (0x5000usize, 0x6000usize)];
+    assert!(ptr_in_chunks(&bounds, 0x1000), "inclusive low bound");
+    assert!(ptr_in_chunks(&bounds, 0x1fff));
+    assert!(!ptr_in_chunks(&bounds, 0x2000), "exclusive high bound");
+    assert!(!ptr_in_chunks(&bounds, 0x3000), "between chunks");
+    assert!(ptr_in_chunks(&bounds, 0x5500));
+}
+
+#[test]
+fn mark_candidate_marks_live_object_once() {
+    let mut objects = BTreeMap::new();
+    objects.insert(0x1000usize, 24usize);
+    let bounds = [(0x1000usize, 0x2000usize)];
+    let mut marked = HashSet::new();
+    let mut work = Vec::new();
+
+    // A non-pointer (outside chunks) does nothing.
+    mark_candidate(0x9999, &objects, &bounds, &mut marked, &mut work);
+    assert!(marked.is_empty());
+
+    // An interior pointer marks the object and enqueues it exactly once.
+    mark_candidate(0x1008, &objects, &bounds, &mut marked, &mut work);
+    mark_candidate(0x1000, &objects, &bounds, &mut marked, &mut work);
+    assert_eq!(marked.len(), 1);
+    assert_eq!(work, vec![0x1000]);
+}

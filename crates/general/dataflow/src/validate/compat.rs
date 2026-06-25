@@ -408,12 +408,16 @@ pub(super) fn check_node_type_compat(
                 // A polymorphic global reference is stored at its instantiated
                 // use-site type before TyApp; `id x = x; id 42` is the current
                 // lowering shape. `#none` also lowers through an Error sentinel
-                // under an Optional annotation. Stray refs and target existence
-                // remain checked.
+                // under an Optional annotation. A cross-module reference to a
+                // generic dependency global keeps the dependency's free-`TyVar`
+                // type while the use site is concrete, so accept any sound
+                // instantiation of it (`is_instantiation_of`). Stray refs and
+                // target existence remain checked.
                 if !matches!(&graph.types[target_ty], DfTy::TyFun(_, _))
                     && !is_opaque_shape_type(graph, target_ty)
                     && !is_wrapper_type(graph, target_ty)
                     && !is_wrapper_type(graph, node.ty)
+                    && !is_instantiation_of(graph, target_ty, node.ty)
                 {
                     check_same_type(graph, owner, "global", target_ty, node.ty, errors);
                 }

@@ -146,6 +146,216 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Cross-module polymorphism (single-type) ✅
+
+_Completed 2026-06-25. A module exporting a polymorphic value (`id :: <A> A -> A`,
+or a record of generic combinators — the importable-stdlib shape) used at a
+single concrete type per program now compiles natively and matches the
+interpreter. Previously this ICEd in Dataflow._
+
+- **Root cause.** The import boundary erases polymorphism: a polymorphic export
+  is lowered with the dependency's free-`TyVar` type (`Fun(TyVar, TyVar)`) while
+  the importer's use site is concrete (`Fun(Int, Int)`), so the cross-module
+  `GlobalRef` failed `validate_structural` with a `TypeMismatch` → `internal
+  compiler error` panic.
+- **Fix (ABI-justified, not the full boundary rework).** Under untagged-i64
+  (D-0002) a parametric value is compiled exactly once and is bit-identical across
+  all instantiations (parametricity), so the dependency `GlobalRef` points at the
+  same machine code regardless of the use type. `is_instantiation_of`
+  (`dataflow/src/validate/refs.rs`) accepts a use type that is a sound structural
+  instantiation of the generic definition (a definition-side `TyVar` matches any
+  use subterm; every other constructor must match exactly, so record-vs-tuple and
+  arity/tag/field mismatches stay rejected). Wired into the `GlobalRef` check in
+  `validate/compat.rs`.
+- **Acceptance.** Native==interpreter oracle for a bare imported generic function
+  (`compile_zt_imported_generic_fn_matches_oracle`, = 42) and an imported record
+  of generic functions (`compile_zt_imported_generic_record_matches_oracle`, = 42);
+  multi-type cross-module use is a **clean rejection, never an ICE**
+  (`compile_zt_imported_generic_multitype_rejected_cleanly`). Reviewer found no
+  P0/P1/P2 soundness issues. 1617 workspace tests pass.
+- **Residual (deferred).** Multi-type use — one program using an imported generic
+  at several types — still needs the import-boundary scheme rework (XM-1…3 in
+  `docs/TBD.md`), because the boundary currently monomorphizes by first use. The
+  native lowering is already done, so only the THIR type-side remains.
+
+### V3-G2: Stdlib `Stream` API via prelude ✅
+
+_Completed 2026-06-25. Second phase of the V3 generator/stream spine. Ships the
+core `Stream` combinators as **ambient prelude functions** (no import), the
+native-complete packaging — the originally-chosen importable-module packaging is
+blocked by a backend gap (see `docs/TBD.md` "Cross-module polymorphism")._
+
+- **API in the prelude** (`crates/general/hir/src/lower/mod.rs` `PRELUDE_SRC`):
+  `cons`, `singleton`, `map`, `filter`, `take`, `drop`, `fold`, `uncons` —
+  demand-driven `.zt` over the codata `Stream` cell, alongside the `Stream` type.
+- **Prelude is a fallback.** Each prelude declaration is defined only when its
+  name is not already owned by a user binding or constraint method (all share the
+  top scope), so e.g. a `Functor` method named `map` wins with no collision; and
+  a declaration is lowered into a module only when that module references it
+  (reachability over type *and* value `BindingRef`s), keeping unused builtins out
+  of THIR/TLC/codegen.
+- **Acceptance.** Native==interpreter oracle for a `map`/`filter`/`take`/`drop`/
+  `fold` pipeline (`compile_prelude_stream_pipeline_matches_oracle`, = 120) and
+  `cons`/`singleton`/`uncons` (`compile_prelude_stream_cons_uncons_matches_oracle`,
+  = 99); the prelude-fallback property is tested against the higher-kinded
+  `Functor` check (`prelude_stream_name_yields_to_user_definition`). 1614
+  workspace tests pass.
+- **Deferred.** `empty` and `unfold` hit type-inference edge cases (a polymorphic
+  nullary value; a self-referential producer union) and are left out; the
+  `List`-interop subset (`toList`/`fromList`/`take -> List`) needs source-level
+  list construction the language lacks; the importable-module packaging waits on
+  cross-module polymorphism.
+
+### V3-G1: Codata `Stream` representation ✅
+
+_Completed 2026-06-25. First phase of the V3 generator/stream spine
+(`docs/v3_spec/02-roadmap.md`). Turns the builtin `Stream A` from a strict
+`List A` alias into demand-driven **codata** — `Stream A ≡ Unit -> StreamCell A`,
+`StreamCell A ≡ { #nil; #cons : { head : A; tail : Stream A; }; }` — so infinite
+streams are representable and finite generators keep working, all within the
+committed strict+TCO / write-barrier-free-GC backend. No new backend capability
+was needed: the exploration confirmed recursive types (Phase 25), recursive
+unions with a function field (Phase 35), and nullary closures (D-0003) already
+lower and evaluate._
+
+- **Builtin source prelude (G1-P).** `crates/general/hir/src/lower/mod.rs` parses
+  a fixed prelude (`PRELUDE_SRC`) declaring `Stream` as a recursive `type` alias
+  and lowers it into every module. Prelude decls are appended after user decls
+  (keeping user binding ids / decl positions stable) and **included only when the
+  user program references a prelude name** (reachability scan over `type_arena`
+  for `HirTypeKind::BindingRef`), so unused builtins never reach THIR/TLC/codegen.
+- **Stream as codata alias (G1.1).** `Stream` removed from the builtin type-name
+  list and from the `List`-reduction arms (`thir/lower/types/{apply,alias,levels}`);
+  it now resolves through the ordinary recursive-alias path, and Dataflow ties the
+  cyclic knot via the alias binding.
+- **Generator desugaring (G1.2).** `stream { yield e1; yield e2; }` lowers (HIR)
+  to nested unit-thunks + `#cons`/`#nil` cell literals
+  (`\_. #cons { head = e1; tail = \_. #cons { head = e2; tail = \_. #nil } }`).
+- **Observability (G1.4).** A `Stream` value is now a closure, observed by forcing
+  (`s ()` → `#nil`/`#cons` cell) and folding, not printed as a list.
+- **Acceptance.** Finite generator folds to the same value on interpreter and
+  native (`compile_codata_stream_finite_generator_matches_oracle`); an `unfold`-
+  style infinite `nats` stream bounded by `takeSum 5` **terminates** with the
+  correct prefix on both paths (`compile_codata_stream_infinite_take_matches_oracle`).
+  1611 workspace tests pass.
+- **Effectful generators deferred.** Under codata a `yield perform …` defers its
+  effect into the cell thunk, so it no longer threads through a pure `Stream A`;
+  effectful / resource-backed generators are V3-G4 and are now *rejected* (refused,
+  never miscompiled), not silently dropped.
+
+### Phase 34: Conservative mark-sweep GC (opt-in bridge collector) ✅
+
+_Completed 2026-06-24. Built after the gate condition (b) was instrumented and
+shown met — the post-Phase-33 accumulator's footprint is O(n) garbage against an
+O(1) live set (`compile_emit_bin_accumulator_garbage_dominates_gc_gate`). The
+collector is **opt-in**; the committed default stays leak-by-default (D-0008), so
+all pre-existing behavior and tests are unchanged._
+
+**Outcome: a zero-ABI conservative non-moving mark-sweep collector
+(`crates/general/runtime/src/lib.rs`), enabled by `ZUTAI_GC` (and
+`ZUTAI_GC_STRESS` = collect before every allocation).** With it enabled, an
+accumulator's realized footprint (peak committed) stays **flat** as work grows 8×
+where the leak-by-default arena grows ~linearly:
+
+| n | leak-by-default peak | GC peak |
+| --- | --- | --- |
+| 100k | 2 MiB | 1 MiB |
+| 800k | 13 MiB | **1 MiB** |
+
+- **Design.** Every `arena_alloc` is recorded in a side table (`BTreeMap<start,
+  size>`); the bump arena gains a free list. Collection (a) finds roots by
+  flushing callee-saved registers with `setjmp` and conservatively scanning the
+  active machine stack `[sp, pthread_get_stackaddr_np)`, every word a candidate
+  pointer; (b) traces reachable objects by scanning their words the same way
+  (interior pointers resolve via a range query); (c) sweeps unmarked objects to
+  the free list (first-fit + coalescing). Allocation prefers free-list reuse,
+  then bump, then collect-and-retry under pressure, then a new chunk — so steady
+  state stops growing committed memory.
+- **No ABI change (D-0008 endgame, step 1).** Conservative scanning accepts false
+  retention precisely to avoid the shadow-stack / stack-map calling-convention
+  change a precise collector would need; D-0002 (untagged `i64`) is not reopened.
+- **Safe direction on failure.** If the stack bounds cannot be established the
+  cycle is abandoned *before sweeping* (retain/leak, never free a live object).
+  Stack bounds are wired up for macOS (`pthread_get_stackaddr_np`) and Linux
+  (`pthread_getattr_np` + `pthread_attr_getstack`); other targets keep the
+  collector off (leak-by-default) regardless of the env var. The Linux path is
+  verified in a glibc/aarch64 container by an in-process stress test
+  (`collector_retains_live_objects_through_stress`) that retains stack-only-rooted
+  objects through collect-before-every-allocation.
+- **Soundness.** Collection runs only at allocation safe points (synchronously
+  inside `try_alloc`). Validated by summing a fully-built 2000-node live list
+  with the collector running before *every* allocation
+  (`compile_emit_bin_gc_stress_preserves_live_structure`) — a missed root would
+  corrupt the list and break the sum. The macOS/arm64 `setjmp` register-save set
+  (x19–x28, including x19/x20 despite a stale SDK header comment) was verified
+  empirically; the load-bearing requirement is documented at the `setjmp` extern.
+  Collector internals (free-list split/coalesce, object-table range lookup, chunk
+  classification) have direct unit tests.
+- **Reporting.** `ZUTAI_HEAP_STATS` gains a `zutai gc stats:` line (collections,
+  bytes/objects reclaimed).
+- **Still gated.** Lazy backend (write barrier) and the precise moving (Cheney)
+  endgame stay future work; strict-plus-TCO remains committed.
+
+### Phase 35: Escaping-effect residual-ABI spike — go/no-go ✅
+
+_Completed 2026-06-24. Time-boxed feasibility spike from `docs/TBD.md`
+"Phase 35". Question: can a reified `Free Op A` free-monad encoding lower over
+the cyclic `DfTyId` types (Phase 25) to carry the genuinely-escaping effects the
+backend still rejects (recursive/self-tail effectful callees, polymorphic /
+higher-order effectful values, partial applications, open effect rows)? The
+representational blocker `tlc-core.md` §9 named — DC types being finite
+structural trees — was already lifted by Phase 25; what remained was
+investigation, not design._
+
+**Outcome: representation proven viable; strict-AOT-rejects stays the committed
+behavior; spike closed.** The encoding is de-risked and ready to scope if a real
+workload ever demands native recursive effects — the same demand-gated posture
+as the Phase 34 GC.
+
+- **Encode (✓).** `Free Op A = #pure { value: A } | #op { payload; resume: R ->
+  Free }` is an ordinary recursive union whose operation arm holds a function
+  field whose codomain is the recursive type — structurally identical to `Tree`,
+  and it lowers through the same equirecursive cyclic-`DfTyId` knot-tying. No new
+  TLC node is required; the perform spine is a real DC value built from existing
+  `Variant`/`Record`/`Lam` vocabulary.
+- **Lower one case (✓).** The hand-defunctionalized equivalent of a recursive,
+  self-tail effectful callee (the simplest rejected case) compiles
+  DC → ANF → SSA → native and matches the `zutai-eval` oracle, including
+  threading the resumed value back through the stored `resume : Int -> Free`
+  closure across an unbounded fold (`compiled_free_monad_spine_matches_oracle`,
+  `crates/cli/tests/cli.rs`). An analogous recursive, self-tail effectful callee
+  written directly with `perform`/`handle` still runs in the interpreter but is
+  refused by the backend (`compile_rejects_recursive_effectful_callee`),
+  confirming both the rejection baseline and that the encoding crosses it.
+- **Cost it (✓).** Measured with `ZUTAI_HEAP_STATS` at 10 operations: the reified
+  spine allocates ~1040 B / 33 objects (one boxed variant + one payload record +
+  one `resume` closure per op); the handler-passing CPS path the backend already
+  lowers allocates ~512 B / 31 objects (two closures + one arg tuple per op) —
+  roughly **2× the bytes**, because the free-monad path materializes the whole
+  perform spine as inspectable heap data instead of only continuation closures.
+  The CPS comparison is necessarily non-recursive (the recursive CPS case is
+  exactly what is rejected), so the trade is: the encoding reaches a case CPS
+  cannot, at ~2× allocation.
+- **Cases the encoding does NOT reach.** It covers the **monomorphic,
+  closed-row recursive/self-tail** callee. It does not by itself reach
+  polymorphic effectful values (the operation summand and result must be
+  monomorphized; genuine HKT-style effectful values stay check-only by the v1
+  residual design, `unify.rs` "a refused check is the safe direction"),
+  higher-order effectful values whose operation set is not statically known (the
+  `Op` union cannot be enumerated to defunctionalize), or **open effect rows**
+  (`RVar` is an unbounded operation set the closed union cannot represent;
+  rejected at the gate). Partial applications are an orthogonal
+  saturation/elaboration concern, not a representational one.
+- **Why no-go on delivery.** Three reasons, all consistent with the repo's
+  demand-gated posture: (1) ~2× allocation is a non-trivial standing cost; (2)
+  the cases reached are narrow (monomorphic closed-row recursive only) while the
+  broader rejected set stays out of reach; (3) no current workload needs native
+  recursive effects — strict-AOT-rejects (a refused compile, never a
+  miscompile) remains correct and safe. The remaining delivery work, if demand
+  appears, is an elaboration pass that reifies recursive effectful callees into
+  `Free Op A` data plus a driver loop and wires it past the residual gate; the
+  representation it would target is now proven to lower and run.
+
 ### V2-A: Explicit universe-level syntax ✅
 
 _Completed 2026-06-24. Implements the v2 spec §"Explicit Level Syntax"

@@ -116,17 +116,89 @@ fn run_unicode_identifier_prints_result() {
 }
 
 #[test]
-fn run_stream_generator_prints_stream_backed_value() {
+fn run_stream_generator_folds_codata_stream() {
+    // `Stream A` is demand-driven codata, so a generator is observed by forcing
+    // it (`s ()` yields a `#nil`/`#cons` cell), not printed as a list.
     let path = write_tmp(
         "cli_test_stream_generator.zt",
-        "xs :: Stream Int = stream { yield 1; yield 2; }\nxs\n",
+        "sumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (stream { yield 1; yield 2; yield 3; })\n",
     );
     cli()
         .arg("run")
         .arg(&path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("[1; 2]"));
+        .stdout(predicate::str::contains("6"));
+}
+
+// V3-G1: `Stream A` is demand-driven codata (`Unit -> StreamCell A`). A finite
+// generator folds to the same value the interpreter computes.
+const CODATA_STREAM_FINITE_SRC: &str = "sumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (stream { yield 1; yield 2; yield 3; })\n";
+
+// An *infinite* stream (`nats`) bounded by a demand-driven `takeSum`: forcing only
+// the first 5 cells terminates. Sum 0..4 = 10. Proves laziness on both paths.
+const CODATA_STREAM_INFINITE_SRC: &str = "nats :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = nats (n + 1); };\ntakeSum :: Int -> Stream Int -> Int\n  = k s => if k < 1 then 0 else match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + takeSum (k - 1) t;\n  };\ntakeSum 5 (nats 0)\n";
+
+#[test]
+fn compile_codata_stream_finite_generator_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_codata_finite", CODATA_STREAM_FINITE_SRC);
+    let interp = run_stdout("cli_test_codata_finite_oracle.zt", CODATA_STREAM_FINITE_SRC);
+    assert_eq!(native.trim(), "6");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_codata_stream_infinite_take_matches_oracle() {
+    // Demand-driven: an infinite stream must terminate under `take` on the native
+    // backend (a strict mislowering would loop or diverge).
+    let native = compile_bin_stdout("cli_test_codata_infinite", CODATA_STREAM_INFINITE_SRC);
+    let interp = run_stdout(
+        "cli_test_codata_infinite_oracle.zt",
+        CODATA_STREAM_INFINITE_SRC,
+    );
+    assert_eq!(native.trim(), "10");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// V3-G2: the ambient prelude `Stream` API (map/filter/take/drop/fold/cons/
+// singleton/uncons) — no import needed, native-compiled, matching the oracle.
+const PRELUDE_STREAM_PIPELINE_SRC: &str = "countFrom :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\nfold (\\a b. a + b) 0 (drop 1 (take 4 (filter (\\x. x > 15) (map (\\x. x * 10) (countFrom 1)))))\n";
+
+#[test]
+fn compile_prelude_stream_pipeline_matches_oracle() {
+    // map *10 -> 10,20,30,40,50; filter >15 -> 20,30,40,50; take 4 -> 20,30,40,50;
+    // drop 1 -> 30,40,50; fold + -> 120.
+    let native = compile_bin_stdout("cli_test_prelude_stream", PRELUDE_STREAM_PIPELINE_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_stream_oracle.zt",
+        PRELUDE_STREAM_PIPELINE_SRC,
+    );
+    assert_eq!(native.trim(), "120");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const PRELUDE_STREAM_CONS_SRC: &str = "firstOr :: Int -> Stream Int -> Int\n  = d s => match uncons s { | #none => d; | #some { head = h; tail = _; } => h; };\nfirstOr 0 (cons 99 (singleton 7))\n";
+
+#[test]
+fn compile_prelude_stream_cons_uncons_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_prelude_cons", PRELUDE_STREAM_CONS_SRC);
+    let interp = run_stdout("cli_test_prelude_cons_oracle.zt", PRELUDE_STREAM_CONS_SRC);
+    assert_eq!(native.trim(), "99");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn prelude_stream_name_yields_to_user_definition() {
+    // The prelude is a fallback: a user/constraint binding named like a prelude
+    // function (here a `Functor` method `map`) wins, with no collision.
+    let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\nmapTwice :: <F: Functor, A> (A -> A) -> F A -> F A\n  = f xs => map f (map f xs);\n1\n";
+    let path = write_tmp("cli_test_prelude_fallback.zt", src);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
 }
 
 #[test]
@@ -432,6 +504,78 @@ fn run_imported_value_can_flow_through_print_effect() {
         .assert()
         .success()
         .stdout(predicate::str::contains("127.0.0.1"));
+}
+
+#[test]
+fn compile_zt_imported_generic_fn_matches_oracle() {
+    // Cross-module polymorphism: a dependency exporting a polymorphic function,
+    // used at a concrete type, must lower natively (the dependency global keeps
+    // its free-`TyVar` type; under untagged-i64 it is the same machine code as any
+    // instantiation) and match the interpreter oracle.
+    let (interp, native) = import_run_vs_compile(
+        "xm_generic_fn",
+        "main.zt",
+        &[
+            ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
+            ("main.zt", "dep :: import \"dep.zt\"\ndep 42\n"),
+        ],
+    );
+    assert_eq!(native.trim(), "42");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_generic_record_matches_oracle() {
+    // A dependency exporting a record of polymorphic functions (the stdlib shape)
+    // used at a concrete type lowers natively.
+    let (interp, native) = import_run_vs_compile(
+        "xm_generic_record",
+        "main.zt",
+        &[
+            (
+                "dep.zt",
+                "apply :: <A, B> (A -> B) -> A -> B = f x => f x;\n{ apply = apply; }\n",
+            ),
+            (
+                "main.zt",
+                "dep :: import \"dep.zt\"\ndep.apply (\\x. x + 1) 41\n",
+            ),
+        ],
+    );
+    assert_eq!(native.trim(), "42");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_zt_imported_generic_multitype_rejected_cleanly() {
+    // The import boundary has no polymorphism representation yet, so the import is
+    // monomorphized by its first use; using it at two types is a clean type error
+    // (refused, never miscompiled — no internal compiler error / ICE).
+    let dir = std::env::temp_dir().join("zutai_imp_xm_multitype");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("dep.zt"), "idS :: <A> A -> A = x => x;\nidS\n").unwrap();
+    std::fs::write(
+        dir.join("main.zt"),
+        "dep :: import \"dep.zt\"\nif dep true then dep 1 else 0\n",
+    )
+    .unwrap();
+    let out = cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(dir.join("main.zt"))
+        .arg("-o")
+        .arg(dir.join("out.bin"))
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8_lossy(&out);
+    assert!(
+        !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
+        "multi-type cross-module use must be a clean rejection, not an ICE: {stderr}"
+    );
 }
 
 #[test]
@@ -1165,6 +1309,70 @@ fn compile_maybe_present_bin_renders_payload() {
     );
 }
 
+// Phase 35 (escaping-effect residual-ABI spike): a reified free-monad value —
+// a recursive union whose operation arm carries `resume : Int -> Free` (a
+// function field pointing back at the recursive type) — lowers over the cyclic
+// `DfTyId` machinery (Phase 25) all the way to native and matches the oracle.
+// This is the hand-defunctionalized equivalent of a recursive/self-tail
+// effectful callee, which `compile` still rejects directly (see
+// `compile_rejects_recursive_effectful_callee`). It confirms the encoding the
+// spike costed; it does NOT add automatic `perform`/`handle` elaboration.
+const FREE_MONAD_SPINE_SRC: &str = r#"
+Free :: type {
+  #pure : { value : Int; };
+  #ask  : { payload : Int; resume : Int -> Free; };
+}
+
+go :: Int -> Int -> Free
+  = 0 acc => #pure { value = acc; };
+  = n acc => #ask { payload = n; resume = \k. go (n - 1) (acc + k); };
+
+run :: Free -> Int
+  = #pure { value = v; }               => v;
+  = #ask { payload = p; resume = r; }  => run (r (p * 10));
+
+run (go 10 0)
+"#;
+
+#[test]
+fn compiled_free_monad_spine_matches_oracle() {
+    // The resumed value (`p * 10`) must thread back through the stored
+    // `resume : Int -> Free` closure into the accumulator, so this exercises a
+    // genuine boxed-closure call across a fold of an unbounded perform spine —
+    // not a constant-folded tree. Both paths must yield 550 = (10+9+...+1)*10.
+    let run_output = run_stdout("cli_test_free_monad_oracle.zt", FREE_MONAD_SPINE_SRC);
+    let compiled_output = compile_bin_stdout("cli_test_free_monad_compiled", FREE_MONAD_SPINE_SRC);
+    assert_eq!(run_output, "550\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled free-monad perform spine must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compile_rejects_recursive_effectful_callee() {
+    // An analogous recursive, self-tail effectful callee — the category the
+    // free-monad encoding above reifies by hand. It runs in the interpreter but
+    // the native backend still refuses it before Dataflow Core
+    // (strict-AOT-rejects). `go` accumulates the payload and resumes with unit;
+    // `go 10 0` performs `warn` ten times and returns 10+9+...+1 = 55.
+    let src = concat!(
+        "go :: Int -> Int -> Int ! { warn Int }\n",
+        "  = 0 acc => acc;\n",
+        "  = n acc => { perform warn n; go (n - 1) (acc + n) };\n",
+        "result ::= handle { go 10 0 } with { warn = \\w. resume (); }\n",
+        "result\n",
+    );
+    assert_eq!(run_stdout("cli_test_rec_effect_oracle.zt", src), "55\n");
+    let path = write_tmp("cli_test_rec_effect_reject.zt", src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("algebraic effects remain"));
+}
+
 #[test]
 fn compile_handled_effect_program_uses_runtime_pipeline() {
     let path = write_tmp("cli_test_compile_handled_effect.zt", HANDLED_EFFECT_SRC);
@@ -1849,6 +2057,247 @@ fn compile_emit_bin_uncurried_accumulator_drops_call_churn() {
     assert!(
         stderr.contains("record 4000"),
         "explicit box records are user data and must remain; stderr: {stderr}"
+    );
+}
+
+// ── Phase 34 GC-gate measurement ────────────────────────────────────────────────
+
+/// The canonical accumulator shape, parametric on iteration count `n`: a
+/// tail-recursive worker that allocates one short-lived `box` record per step
+/// while keeping only a scalar `acc` live. After Phase 33 this is the *only*
+/// per-step allocation (no call churn), so it is the cleanest probe for the
+/// Phase 34 gate condition "accumulator garbage dominates".
+fn accumulator_src(n: u64) -> String {
+    format!(
+        "box :: Int -> {{ v: Int; }}\n  = n => {{ v = n; }};\n\
+unbox :: {{ v: Int; }} -> Int\n  = {{ v = x; }} => x;\n\
+sum :: Int -> Int -> Int\n  = n acc => if n < 1 then acc else sum (n - 1) (acc + unbox (box n));\n\
+sum {n} 0\n"
+    )
+}
+
+/// Read the first integer that follows `needle` in `haystack`. Skips any
+/// non-digit run between the needle and the number, then takes the digit run.
+fn int_after(haystack: &str, needle: &str) -> u64 {
+    let start = haystack
+        .find(needle)
+        .unwrap_or_else(|| panic!("missing {needle:?} in: {haystack}"))
+        + needle.len();
+    let digits: String = haystack[start..]
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits
+        .parse()
+        .unwrap_or_else(|_| panic!("no integer after {needle:?} in: {haystack}"))
+}
+
+/// Compile `src` to a native binary, run it with `ZUTAI_HEAP_STATS=1`, and
+/// return `(stdout, stderr)` (the stats line lands on stderr).
+fn run_with_heap_stats(name: &str, src: &str) -> (String, String) {
+    let path = write_tmp(&format!("{name}.zt"), src);
+    let out = write_tmp(name, "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out)
+        .env("ZUTAI_HEAP_STATS", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "program should run: {output:?}");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// Phase 34 gate measurement (TBD.md gate condition (b): "accumulator garbage
+/// dominates after Phase 33"). The accumulator has an O(1) live set — it returns
+/// a single `Int` and retains no heap structure — yet allocates one `box` record
+/// per step. We compile it at `n` and `2n`, read `ZUTAI_HEAP_STATS`, and assert
+/// that there is exactly one user-data record per step (so the footprint is
+/// genuine user data, not the call churn Phase 33 removed) and that the bytes
+/// allocated grow linearly (2× when `n` doubles) — O(n) garbage.
+///
+/// A linear-growing footprint against an O(1) live set is precisely the
+/// dominating-garbage signal a collector would reclaim. Sizes sit well above the
+/// 1 MiB arena chunk granularity so the ratio is meaningful; run with
+/// `--nocapture` to see the measured numbers.
+#[test]
+fn compile_emit_bin_accumulator_garbage_dominates_gc_gate() {
+    const N: u64 = 200_000;
+    let (out_n, stats_n) = run_with_heap_stats("cli_test_gc_gate_n", &accumulator_src(N));
+    let (out_2n, stats_2n) = run_with_heap_stats("cli_test_gc_gate_2n", &accumulator_src(2 * N));
+
+    // Semantics preserved: sum of 1..k = k(k+1)/2.
+    assert_eq!(out_n.trim(), (N * (N + 1) / 2).to_string());
+    assert_eq!(out_2n.trim(), (2 * N * (2 * N + 1) / 2).to_string());
+
+    // One user-data `box` record per step — the genuine garbage, not call churn.
+    let rec_n = int_after(&stats_n, "record ");
+    let rec_2n = int_after(&stats_2n, "record ");
+    assert_eq!(
+        rec_n, N,
+        "expected one box record per step; stats: {stats_n}"
+    );
+    assert_eq!(
+        rec_2n,
+        2 * N,
+        "expected one box record per step; stats: {stats_2n}"
+    );
+
+    // O(n) garbage: doubling the work doubles the bytes allocated. The exact
+    // linear signal lives in the cumulative `allocated` counter (the `peak
+    // committed` figure rounds up to the 1 MiB chunk granularity, so it only
+    // tracks this approximately and is reported below for context).
+    let alloc_n = int_after(&stats_n, "allocated ");
+    let alloc_2n = int_after(&stats_2n, "allocated ");
+    let ratio = alloc_2n as f64 / alloc_n as f64;
+    assert!(
+        (1.95..=2.05).contains(&ratio),
+        "allocated bytes should grow linearly with work (O(n) garbage); \
+         alloc({N})={alloc_n} alloc({})={alloc_2n} ratio={ratio:.3}",
+        2 * N
+    );
+
+    // The live set is O(1), so the marginal footprint per extra step is a small
+    // constant: one box record (1-word header + 1 field = 16 B).
+    let per_step = (alloc_2n - alloc_n) / N;
+    assert!(
+        (16..=32).contains(&per_step),
+        "marginal footprint should be one small record per step; got {per_step} B/step"
+    );
+
+    // Peak committed is the realized footprint a collector would shrink; report
+    // it for the gate decision but don't pin its chunk-quantized exact value.
+    let peak_n = int_after(&stats_n, "peak committed ");
+    let peak_2n = int_after(&stats_2n, "peak committed ");
+    assert!(
+        peak_2n > peak_n,
+        "peak committed must grow with work; peak({N})={peak_n} peak({})={peak_2n}",
+        2 * N
+    );
+
+    eprintln!(
+        "phase-34 gate: records {rec_n}->{rec_2n}; allocated {alloc_n}B->{alloc_2n}B \
+         (ratio {ratio:.3}, ~{per_step} B/step); peak committed {peak_n}B->{peak_2n}B; \
+         live set O(1) => garbage dominates (gate met)"
+    );
+}
+
+// ── Phase 34 conservative mark-sweep collector (opt-in) ──────────────────────────
+
+/// Compile `src` to a native binary and run it with `env` set; return
+/// `(stdout, stderr)`.
+fn run_bin_env(name: &str, src: &str, env: &[(&str, &str)]) -> (String, String) {
+    let path = write_tmp(&format!("{name}.zt"), src);
+    let out = write_tmp(name, "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let mut cmd = StdCommand::new(&out);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "program should run: {output:?}");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// Phase 34 acceptance: with the collector enabled (`ZUTAI_GC`), the accumulator's
+/// realized footprint (peak committed) stays *flat* as the work grows 8×, where
+/// the leak-by-default arena grows ~linearly (the gate test above). Bounded
+/// memory for a bounded-live / unbounded-allocation program is exactly the
+/// property that justified building the collector.
+#[test]
+fn compile_emit_bin_gc_keeps_footprint_flat() {
+    const N: u64 = 100_000;
+    let gc = [("ZUTAI_GC", "1"), ("ZUTAI_HEAP_STATS", "1")];
+    let (out_n, stats_n) = run_bin_env("cli_test_gc_flat_n", &accumulator_src(N), &gc);
+    let (out_8n, stats_8n) = run_bin_env("cli_test_gc_flat_8n", &accumulator_src(8 * N), &gc);
+
+    // Semantics preserved under collection.
+    assert_eq!(out_n.trim(), (N * (N + 1) / 2).to_string());
+    assert_eq!(out_8n.trim(), (8 * N * (8 * N + 1) / 2).to_string());
+
+    let peak_n = int_after(&stats_n, "peak committed ");
+    let peak_8n = int_after(&stats_8n, "peak committed ");
+    let ratio = peak_8n as f64 / peak_n as f64;
+    assert!(
+        ratio < 1.5,
+        "8× the work must not ~8× the footprint under GC; \
+         peak({N})={peak_n} peak({})={peak_8n} ratio={ratio:.2}",
+        8 * N
+    );
+
+    // The collector ran and reclaimed far more than a single footprint of garbage.
+    let reclaimed = int_after(&stats_8n, "reclaimed ");
+    assert!(
+        reclaimed > peak_8n,
+        "GC should reclaim much more than one footprint; reclaimed={reclaimed} stats: {stats_8n}"
+    );
+
+    eprintln!(
+        "phase-34 gc: peak committed {peak_n}B (n={N}) vs {peak_8n}B (n={}); ratio {ratio:.2} \
+         (flat); reclaimed {reclaimed}B",
+        8 * N
+    );
+}
+
+// A program whose result depends on an O(n) *live* heap structure: a 2000-node
+// linked list, fully built before it is summed, so every node must survive until
+// the fold reads it.
+const GC_LIVE_CHAIN_SRC: &str = "Chain :: type { #nil; #cons : { head : Int; tail : Chain; }; }\n\
+build :: Int -> Chain\n  = 0 => #nil;\n  = n => #cons { head = n; tail = build (n - 1); };\n\
+sumL :: Chain -> Int\n  = #nil => 0;\n  = #cons { head = h; tail = t; } => h + sumL t;\n\
+sumL (build 2000)\n";
+
+/// Phase 34 soundness: with the collector running before *every* allocation
+/// (`ZUTAI_GC_STRESS`), a program that sums a fully-built 2000-node list must
+/// still produce the correct value. If the conservative root/heap scan missed a
+/// live reference the list would lose nodes and the sum would be wrong — a wrong
+/// value here would mean the collector is unsound.
+#[test]
+fn compile_emit_bin_gc_stress_preserves_live_structure() {
+    let (out, _) = run_bin_env(
+        "cli_test_gc_stress_chain",
+        GC_LIVE_CHAIN_SRC,
+        &[("ZUTAI_GC_STRESS", "1")],
+    );
+    // 1 + 2 + ... + 2000 = 2001000.
+    assert_eq!(out.trim(), "2001000");
+}
+
+/// Phase 34: the exit-time stats dump reports collector activity when GC and heap
+/// stats are both enabled.
+#[test]
+fn compile_emit_bin_gc_reports_collections() {
+    const N: u64 = 200_000;
+    let (out, stats) = run_bin_env(
+        "cli_test_gc_report",
+        &accumulator_src(N),
+        &[("ZUTAI_GC", "1"), ("ZUTAI_HEAP_STATS", "1")],
+    );
+    assert_eq!(out.trim(), (N * (N + 1) / 2).to_string());
+    assert!(stats.contains("zutai gc stats:"), "stats: {stats}");
+    let collections = int_after(&stats, "gc stats: ");
+    assert!(
+        collections > 0,
+        "expected at least one collection; stats: {stats}"
     );
 }
 

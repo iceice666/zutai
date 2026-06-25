@@ -1,6 +1,22 @@
 use super::*;
 
 impl Lowerer {
+    /// Wrap `body` in a unit-ignoring thunk `\_. body` — the deferral that makes
+    /// a codata `Stream` cell lazy (used by generator desugaring).
+    fn thunk(&mut self, body: HirExprId, span: Span) -> HirExprId {
+        let wildcard = self.alloc_pat(HirPat {
+            kind: HirPatKind::Wildcard,
+            span,
+        });
+        self.alloc_expr(HirExpr {
+            kind: HirExprKind::Lambda {
+                params: vec![wildcard],
+                body,
+            },
+            span,
+        })
+    }
+
     pub(super) fn lower_expr(&mut self, expr: &ast::Expr) -> HirExprId {
         let span = expr.span();
         let kind = match expr {
@@ -58,8 +74,45 @@ impl Lowerer {
             ast::Expr::List { items, .. } => {
                 HirExprKind::List(items.iter().map(|item| self.lower_expr(item)).collect())
             }
-            ast::Expr::Generator { yields, .. } => {
-                HirExprKind::List(yields.iter().map(|item| self.lower_expr(item)).collect())
+            ast::Expr::Generator { yields, span } => {
+                // Desugar to demand-driven codata. A `Stream A` is
+                // `Unit -> StreamCell A`, so `stream { yield e1; yield e2; }`
+                // becomes nested unit-thunks ending in `#nil`:
+                //   \_. #cons { head = e1; tail = \_. #cons { head = e2; tail = \_. #nil } }
+                let span = *span;
+                let heads: Vec<HirExprId> =
+                    yields.iter().map(|item| self.lower_expr(item)).collect();
+                let nil = self.alloc_expr(HirExpr {
+                    kind: HirExprKind::Atom("nil".to_string()),
+                    span,
+                });
+                let mut acc = self.thunk(nil, span);
+                for head in heads.into_iter().rev() {
+                    let payload = self.alloc_expr(HirExpr {
+                        kind: HirExprKind::Record(vec![
+                            HirRecordField {
+                                name: "head".to_string(),
+                                value: head,
+                                span,
+                            },
+                            HirRecordField {
+                                name: "tail".to_string(),
+                                value: acc,
+                                span,
+                            },
+                        ]),
+                        span,
+                    });
+                    let cell = self.alloc_expr(HirExpr {
+                        kind: HirExprKind::TaggedValue {
+                            tag: "cons".to_string(),
+                            payload,
+                        },
+                        span,
+                    });
+                    acc = self.thunk(cell, span);
+                }
+                return acc;
             }
             ast::Expr::Block {
                 bindings, result, ..

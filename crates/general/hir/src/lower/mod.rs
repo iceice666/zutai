@@ -33,6 +33,32 @@ impl Default for HirLowerOptions {
     }
 }
 
+/// Builtin prelude, made available to every module as a *fallback* (user and
+/// constraint-method names of the same spelling win). Declares the codata
+/// `Stream` type (`Unit -> StreamCell A`) and its core combinators
+/// (`cons`/`singleton`/`map`/`filter`/`take`/`drop`/`fold`/`uncons`); each
+/// declaration is lowered into a module only when that module references it. The
+/// trailing `0` is the required final expression and is discarded.
+const PRELUDE_SRC: &str = r#"Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }
+cons :: <A> A -> Stream A -> Stream A
+  = h t _ => #cons { head = h; tail = t; };
+singleton :: <A> A -> Stream A
+  = x _ => #cons { head = x; tail = \_. #nil; };
+map :: <A, B> (A -> B) -> Stream A -> Stream B
+  = f s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = f h; tail = map f t; }; };
+filter :: <A> (A -> Bool) -> Stream A -> Stream A
+  = p s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => if p h then #cons { head = h; tail = filter p t; } else (filter p t) (); };
+take :: <A> Int -> Stream A -> Stream A
+  = k s _ => if k < 1 then #nil else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = h; tail = take (k - 1) t; }; };
+drop :: <A> Int -> Stream A -> Stream A
+  = k s _ => if k < 1 then s () else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => (drop (k - 1) t) (); };
+fold :: <A, B> (B -> A -> B) -> B -> Stream A -> B
+  = f acc s => match s () { | #nil => acc; | #cons { head = h; tail = t; } => fold f (f acc h) t; };
+uncons :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
+  = s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => #some { head = h; tail = t; }; };
+0
+"#;
+
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())
 }
@@ -113,7 +139,6 @@ impl Lowerer {
             "f32",
             "f64",
             "List",
-            "Stream",
             "Optional",
             "Maybe",
             "Patch",
@@ -144,18 +169,69 @@ impl Lowerer {
     }
 
     fn lower_file(&mut self, file: &ast::File) -> LoweredHir {
-        let mut top_bindings = Vec::with_capacity(file.decls.len());
-        for decl in &file.decls {
-            top_bindings.push(self.define_top_decl(decl));
-        }
-
-        let decls = file
+        // Define user top-level names first, then the builtin prelude (the codata
+        // `Stream` type, …). All names are in scope before any body is lowered, so
+        // user code can reference prelude names; defining user decls first keeps
+        // their binding ids and decl positions stable.
+        let user_bindings: Vec<_> = file
             .decls
             .iter()
-            .zip(top_bindings)
-            .map(|(decl, binding)| self.lower_decl(decl, binding))
+            .map(|decl| self.define_top_decl(decl))
             .collect();
+        let prelude_ast = zutai_syntax::parse_ast_only(PRELUDE_SRC).into_ast();
+        // The prelude is a fixed constant; fail fast in dev builds if it stops
+        // parsing (e.g. as future stdlib declarations are added to PRELUDE_SRC).
+        debug_assert!(prelude_ast.is_some(), "builtin prelude must parse");
+        // The prelude is a fallback: define only names not already owned by user
+        // code or constraint methods (all share this scope), so user definitions
+        // always win and a colliding name (e.g. a `Functor` method named `map`)
+        // raises no spurious duplicate-binding diagnostic. Keep the decl index so
+        // the body can be lowered later if the name is actually used.
+        let prelude_decls: Vec<(usize, BindingId)> = prelude_ast
+            .as_ref()
+            .map(|p| {
+                p.decls
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, d)| {
+                        let taken = self
+                            .scopes
+                            .last()
+                            .is_some_and(|s| s.names.contains_key(d.name()));
+                        (!taken).then(|| (i, self.define_top_decl(d)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut decls: Vec<HirDeclId> = Vec::new();
+        for (decl, binding) in file.decls.iter().zip(user_bindings) {
+            decls.push(self.lower_decl(decl, binding));
+        }
         let final_expr = self.lower_expr(&file.final_expr);
+
+        // Include the prelude (all of it) only when the program references any of
+        // its names — a type (e.g. an annotation mentions `Stream`) or a value
+        // (e.g. a call to `map`). All-or-nothing is sufficient because the prelude
+        // functions depend only on `Stream` and self-recursion, never on each
+        // other, so any single reference co-satisfies every dependency. A program
+        // that touches no prelude name keeps it out of THIR/TLC/codegen entirely.
+        // The prelude is valid and never diagnoses.
+        if let Some(p) = prelude_ast.as_ref() {
+            let set: Vec<BindingId> = prelude_decls.iter().map(|(_, b)| *b).collect();
+            let referenced =
+                self.type_arena.iter().any(
+                    |(_, ty)| matches!(ty.kind, HirTypeKind::BindingRef(b) if set.contains(&b)),
+                ) || self
+                    .expr_arena
+                    .iter()
+                    .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)));
+            if referenced {
+                for (i, binding) in prelude_decls {
+                    decls.push(self.lower_decl(&p.decls[i], binding));
+                }
+            }
+        }
 
         LoweredHir {
             file: HirFile {

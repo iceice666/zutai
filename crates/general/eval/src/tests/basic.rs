@@ -392,15 +392,12 @@ fn list_equality() {
 }
 
 #[test]
-fn stream_generator_evaluates_as_stream_backed_list() {
-    match run("xs :: Stream Int = stream { yield 1; yield 2; }\nxs") {
-        Value::List(items) => {
-            assert_eq!(items.len(), 2);
-            assert_eq!(items[0].peek(), Some(Value::Int(1)));
-            assert_eq!(items[1].peek(), Some(Value::Int(2)));
-        }
-        other => panic!("expected stream/list value, got {other:?}"),
-    }
+fn stream_generator_evaluates_as_codata_stream() {
+    // `Stream A` is demand-driven codata (`Unit -> StreamCell A`), so a generator
+    // is observed by forcing/folding it, not as a list. Summing the two yielded
+    // elements exercises the desugared thunk + `#cons`/`#nil` cell.
+    let src = "sumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (stream { yield 1; yield 2; })\n";
+    assert_eq!(run(src), Value::Int(3));
 }
 
 #[test]
