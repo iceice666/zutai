@@ -98,15 +98,27 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
     go(graph, expected, actual, &mut FxHashSet::default())
 }
 
-/// Whether `actual` is a valid instantiation of the (possibly polymorphic) type
-/// `def`: structurally identical except that a `TyVar` in `def` matches *any*
-/// `actual` subterm. A cross-module reference to a generic global is lowered with
-/// the dependency's free-`TyVar` type (e.g. `Fun(TyVar, TyVar)`) while the use
-/// site has a concrete instantiation (`Fun(Int, Int)`); under the untagged-i64
-/// ABI (D-0002) a parametric value is compiled once and is bit-identical across
-/// instantiations, so this is a sound, non-miscompiling reconciliation — the
-/// non-`TyVar` structure must still match exactly, which keeps genuine shape
-/// mismatches (e.g. record-vs-tuple) rejected.
+/// Whether a cross-module global reference is type-compatible with the
+/// dependency value it points to: structurally identical except that an
+/// *abstract* leaf — a `TyVar` (polymorphic), `Opaque`, `Error`, or `Type` — on
+/// **either** side matches any subterm on the other.
+///
+/// Two soundness arguments, both resting on the untagged-i64 ABI (D-0002), where
+/// every value is one machine word and a parametric value is compiled once,
+/// bit-identical across instantiations:
+///
+/// - **`def`-side abstraction** (the dependency is polymorphic): a generic global
+///   is lowered with the dependency's free-`TyVar` type (e.g. `Fun(TyVar, TyVar)`)
+///   while the use site has a concrete instantiation (`Fun(Int, Int)`).
+/// - **`actual`-side abstraction** (the *use site* is opaque): an import whose type
+///   cannot be reconstructed structurally through the finite `ImportedType`
+///   boundary — notably the recursive codata `Stream`, abstracted to a fresh
+///   `TyVar` at the recursion horizon — references a dependency whose real value is
+///   fully structural. The use site never inspects that value's structure, so the
+///   one-word value is layout-identical to the concrete definition it stands in for.
+///
+/// The non-abstract structure must still match exactly, which keeps genuine shape
+/// mismatches (e.g. record-vs-tuple, differing field names) rejected.
 pub(super) fn is_instantiation_of(graph: &DataflowGraph, def: DfTyId, actual: DfTyId) -> bool {
     fn go(
         graph: &DataflowGraph,
@@ -131,6 +143,10 @@ pub(super) fn is_instantiation_of(graph: &DataflowGraph, def: DfTyId, actual: Df
         match (&graph.types[def], &graph.types[actual]) {
             // A type variable in the definition matches any instantiation.
             (DfTy::TyVar(_), _) => true,
+            // Symmetric: an abstract leaf on the use-site (`actual`) side matches
+            // any definition shape it stands in for. `TyApp` is excluded — it has
+            // its own structural arm below — so only genuine opaque leaves wildcard.
+            (_, DfTy::TyVar(_) | DfTy::Opaque(_) | DfTy::Error | DfTy::Type) => true,
             (DfTy::List(a), DfTy::List(b))
             | (DfTy::Optional(a), DfTy::Optional(b))
             | (DfTy::Maybe(a), DfTy::Maybe(b)) => go(graph, *a, *b, seen),

@@ -11,11 +11,43 @@ v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
 underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
-(Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine), and
-cross-module polymorphism (single- and multi-type, XM-1…3) have all landed — see
-`docs/ARCHIVED.md`. 1631 workspace tests pass.
+(Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
+cross-module polymorphism (single- and multi-type, XM-1…3), and V3-G6 (importable
+`stream.zt` module) have all landed — see `docs/ARCHIVED.md`. 1633 workspace tests
+pass.
 
 ## Active milestone — none
+
+V3-G6 (importable `stream.zt` module) **landed 2026-06-25** — see
+`docs/ARCHIVED.md` "V3-G6". The codata `Stream` combinators are now a real
+importable `.zt` module backed by one canonical source
+(`crates/general/hir/src/lower/prelude/stream.zt`, exposed as
+`zutai_hir::STREAM_MODULE_SRC`) that also feeds the ambient prelude via
+`include_str!`; the ambient surface is unchanged and `s :: import "stream.zt"`
+exports the eight combinators (`s.map`, `s.fold`, …). The recursive `Stream`
+codata type crossing the import boundary required a symmetric cross-module
+global-ref compat fix in the Dataflow Core validator (sound under untagged-i64).
+**This closes the last structural V3-G2 residual.** Remaining V3 work is the
+demand-gated Track 2 boundaries and the open generator questions below.
+
+**V3-G6 follow-ups (deferred):**
+
+- **Stdlib-root resolution.** A shared stdlib location and the dotted
+  `import stdlib.stream` form (`ImportSource::Path`, currently only the 2-part
+  `stem.ext` shorthand resolves) — needs an explicit allowance past the
+  subtree-confinement check (`semantic/src/import.rs:242`). G6 shipped
+  path-relative only, so a user imports a copy of `stream.zt` placed next to their
+  file; there is no global install path yet.
+- **`Stream` type export.** G6 exports the eight combinator *functions*; the
+  `Stream` type is not a record field, so importers cannot annotate with
+  `s.Stream` (the codata type still crosses structurally inside the combinator
+  signatures, so inference flows without it). Add `Stream` to the export record if
+  a concrete need for the qualified type name arises.
+- **Selective / open import.** An import binds one name and members are
+  field-accessed (`s.map`). Whether to add open-import / selective binding (`map`
+  unqualified after import) is a separate surface-syntax question.
+
+## Previous milestone — V3-G5 (landed 2026-06-25)
 
 V3-G5 (GC keeps unbounded stream pipelines bounded) **landed 2026-06-25** — see
 `docs/ARCHIVED.md` "V3-G5". Acceptance met: `fold (+) 0 (take n (countFrom 1))`
@@ -24,19 +56,15 @@ over an infinite generator holds peak committed flat at 1 MiB for `n = 100k` and
 soundness. G5 first landed with the collector opt-in; the default was then flipped
 to **GC on by default** (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
 default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.**
-Remaining V3 work is the demand-gated Track 2 boundaries and the open generator
-questions below.
 
 **G4 follow-ups (open):** cancellation/finalization and resource lifetime for
 effectful generators; an ergonomic effectful-stream *type* (the supported idiom
 uses the raw cell type, not the pure `Stream` alias).
 
-**G2 residuals** (do not block G3): `empty`/`unfold` (type-inference edge cases);
-the `List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level
-list construction the language lacks); and the **importable `.zt` module**
-packaging. The importable packaging is the originally-preferred form; it was
-blocked natively by cross-module polymorphism, which has now landed, so it is
-ready to pick up.
+**Other G2 residuals** (now the only open G2 items, after V3-G6 closed the
+importable-module residual): `empty`/`unfold` (type-inference edge cases); the
+`List`-interop subset `take -> List`/`toList`/`fromList` (needs source-level list
+construction the language lacks).
 
 ## GC residual — future / gated
 

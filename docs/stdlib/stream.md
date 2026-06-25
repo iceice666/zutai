@@ -1,14 +1,38 @@
 # Standard Library: Stream
 
-Status: core API shipped as ambient prelude functions (V3-G2, 2026-06-25).
-`Stream A` is demand-driven **codata** — `Unit -> { #nil; #cons : { head : A;
-tail : Stream A; }; }` (V3-G1) — not `List A`. The combinators `cons`,
-`singleton`, `map`, `filter`, `take` (as `Stream -> Stream`), `drop`, `fold`, and
-`uncons` are available without import (the prelude is a fallback: a user or
-constraint-method name of the same spelling wins). Deferred: `empty`/`unfold`
-(type-inference edge cases) and the `List`-interop subset (`take -> List`,
-`toList`, `fromList`), which needs source-level list construction; see
-`docs/ARCHIVED.md` "V3-G2".
+Status: core API shipped as ambient prelude functions (V3-G2, 2026-06-25) **and**
+as an importable module (V3-G6, 2026-06-25). `Stream A` is demand-driven
+**codata** — `Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }` (V3-G1) —
+not `List A`. The combinators `cons`, `singleton`, `map`, `filter`, `take` (as
+`Stream -> Stream`), `drop`, `fold`, and `uncons` are available without import
+(the prelude is a fallback: a user or constraint-method name of the same spelling
+wins). Deferred: `empty`/`unfold` (type-inference edge cases) and the
+`List`-interop subset (`take -> List`, `toList`, `fromList`), which needs
+source-level list construction; see `docs/ARCHIVED.md` "V3-G2".
+
+## Two surfaces, one source
+
+The combinators live in one canonical file,
+`crates/general/hir/src/lower/prelude/stream.zt` (exposed to Rust as
+`zutai_hir::STREAM_MODULE_SRC`), which feeds both surfaces (V3-G6):
+
+- **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects its
+  declarations as a fallback, so `map`/`filter`/`fold`/… resolve directly. This is
+  the original V3-G2 behavior, unchanged.
+- **Importable** (explicit). `s :: import "stream.zt"` binds the module's exported
+  record, so the combinators are used qualified — `s.map`, `s.fold`, … The file's
+  final expression is that record. Resolution is **path-relative** (the file must
+  sit in the importing file's directory subtree); there is no stdlib-root install
+  path yet (`docs/TBD.md` "V3-G6 follow-ups"). The export carries the eight
+  combinator functions; the `Stream` type is not a named field (it crosses
+  structurally inside the combinator signatures), so there is no `s.Stream` yet.
+
+```zt
+s :: import "stream.zt"
+double :: Int -> Int = x => x * 2;
+add :: Int -> Int -> Int = a b => a + b;
+s.fold add 0 (s.map double (s.cons 1 (s.cons 2 (s.singleton 3))))   -- 12
+```
 
 `Stream A` is a pure lazy sequence for iterator-style pipelines when producing
 or consuming every element as a `List A` would be unnecessary. Phase 29's

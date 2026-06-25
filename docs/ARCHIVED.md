@@ -146,6 +146,46 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G6: Importable `stream.zt` module ✅
+
+_Completed 2026-06-25. Closes the last structural V3-G2 residual: the codata
+`Stream` combinators are now a real importable `.zt` module, not only an embedded
+ambient string. Unblocked by cross-module polymorphism (XM-1…3). Single source of
+truth, both surfaces preserved; path-relative resolution (stdlib-root resolution
+stays deferred)._
+
+- **Single-source file.** `crates/general/hir/src/lower/prelude/stream.zt` holds
+  the `Stream` type plus the eight combinators (`cons`, `singleton`, `map`,
+  `filter`, `take`, `drop`, `fold`, `uncons`) and ends in a record exporting all
+  eight. The HIR lowerer's ambient prelude now `include_str!`s this file (exposed
+  as `zutai_hir::STREAM_MODULE_SRC`) instead of an inline literal; the ambient path
+  reads only the *declarations* and ignores the final record, so ambient behavior
+  is byte-for-byte unchanged (the fallback still yields to user/constraint names).
+  The import path uses the final record as the module's exported value, so
+  `s :: import "stream.zt"` gives `s.map`, `s.fold`, … qualified.
+- **Backend fix — cross-module global-ref compat.** The recursive `Stream` codata
+  type cannot be reconstructed structurally through the finite `ImportedType`
+  boundary, so the import abstracts it to a fresh `TyVar` at the recursion horizon,
+  while the dependency's real exported value is fully structural. The Dataflow Core
+  structural validator's `GlobalRef` check (`validate/refs.rs::is_instantiation_of`)
+  was made **symmetric**: an abstract leaf (`TyVar`/`Opaque`/`Error`/`Type`) on the
+  *use-site* side now wildcards any definition shape, mirroring the existing
+  def-side `TyVar` wildcard. Sound under the untagged-i64 ABI (D-0002): an opaque
+  use-site never inspects the value's structure, and a one-word value is
+  layout-identical to the concrete definition it stands in for. Non-abstract
+  structure (record/union/tuple shape, arity, field names) is still matched exactly,
+  so genuine mismatches stay rejected.
+- **Tests.** `compile_zt_imported_stream_module_matches_oracle` builds a finite
+  stream and runs `filter`/`map`/`take`/`fold` through the import boundary,
+  asserting native == interpreter oracle == 12 (the recursive-`Stream`-across-the-
+  boundary case that drove the compat fix). `ambient_stream_prelude_matches_imported_module`
+  confirms the ambient surface still resolves the same combinators. Workspace at
+  1633 tests.
+- **Deferred (open questions).** Stdlib-root resolution (a shared install location
+  and the dotted `import stdlib.stream` form, with an allowance past the
+  subtree-confinement check) and selective/open-import binding (unqualified names
+  after import) stay out of scope — see `TBD.md`.
+
 ### GC default-on (D-0008 reversal) ✅
 
 _Completed 2026-06-25. The conservative mark-sweep collector (Phase 34), shipped

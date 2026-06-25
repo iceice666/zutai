@@ -33,31 +33,19 @@ impl Default for HirLowerOptions {
     }
 }
 
-/// Builtin prelude, made available to every module as a *fallback* (user and
-/// constraint-method names of the same spelling win). Declares the codata
-/// `Stream` type (`Unit -> StreamCell A`) and its core combinators
-/// (`cons`/`singleton`/`map`/`filter`/`take`/`drop`/`fold`/`uncons`); each
-/// declaration is lowered into a module only when that module references it. The
-/// trailing `0` is the required final expression and is discarded.
-const PRELUDE_SRC: &str = r#"Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }
-cons :: <A> A -> Stream A -> Stream A
-  = h t _ => #cons { head = h; tail = t; };
-singleton :: <A> A -> Stream A
-  = x _ => #cons { head = x; tail = \_. #nil; };
-map :: <A, B> (A -> B) -> Stream A -> Stream B
-  = f s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = f h; tail = map f t; }; };
-filter :: <A> (A -> Bool) -> Stream A -> Stream A
-  = p s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => if p h then #cons { head = h; tail = filter p t; } else (filter p t) (); };
-take :: <A> Int -> Stream A -> Stream A
-  = k s _ => if k < 1 then #nil else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = h; tail = take (k - 1) t; }; };
-drop :: <A> Int -> Stream A -> Stream A
-  = k s _ => if k < 1 then s () else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => (drop (k - 1) t) (); };
-fold :: <A, B> (B -> A -> B) -> B -> Stream A -> B
-  = f acc s => match s () { | #nil => acc; | #cons { head = h; tail = t; } => fold f (f acc h) t; };
-uncons :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
-  = s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => #some { head = h; tail = t; }; };
-0
-"#;
+/// Canonical source for the codata `Stream` type and its combinators
+/// (`cons`/`singleton`/`map`/`filter`/`take`/`drop`/`fold`/`uncons`).
+///
+/// Single source of truth for two surfaces (V3-G6):
+/// - **Ambient prelude.** [`lower_file`] injects these *declarations* into every
+///   module as a fallback (user and constraint-method names of the same spelling
+///   win); each is lowered into a module only when that module references it. The
+///   final record expression is the export for the import surface and is ignored
+///   on this path.
+/// - **Importable module.** `s :: import "stream.zt"` exports the final record, so
+///   a program can use `s.map`, `s.fold`, … qualified. The same constant backs a
+///   user-importable copy of the file in tests, keeping one source of truth.
+pub const STREAM_MODULE_SRC: &str = include_str!("prelude/stream.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())
@@ -178,9 +166,9 @@ impl Lowerer {
             .iter()
             .map(|decl| self.define_top_decl(decl))
             .collect();
-        let prelude_ast = zutai_syntax::parse_ast_only(PRELUDE_SRC).into_ast();
+        let prelude_ast = zutai_syntax::parse_ast_only(STREAM_MODULE_SRC).into_ast();
         // The prelude is a fixed constant; fail fast in dev builds if it stops
-        // parsing (e.g. as future stdlib declarations are added to PRELUDE_SRC).
+        // parsing (e.g. as future stdlib declarations are added to STREAM_MODULE_SRC).
         debug_assert!(prelude_ast.is_some(), "builtin prelude must parse");
         // The prelude is a fallback: define only names not already owned by user
         // code or constraint methods (all share this scope), so user definitions

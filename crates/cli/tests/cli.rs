@@ -616,6 +616,61 @@ fn compile_zt_imported_generic_record_multitype_matches_oracle() {
 }
 
 #[test]
+fn compile_zt_imported_stream_module_matches_oracle() {
+    // V3-G6: the codata `Stream` combinators packaged as an importable `.zt`
+    // module. The module source is the single source of truth that also backs the
+    // ambient prelude (`zutai_hir::STREAM_MODULE_SRC`), so importing it must yield
+    // the same combinators the ambient surface already exposes — exercised here
+    // through the import boundary (qualified `s.map`/`s.filter`/…). A program builds
+    // a finite stream, maps/filters/takes/folds it, and the native compile must
+    // match the interpreter oracle. The recursive `Stream` codata type crossing the
+    // boundary is the case that drove the cross-module global-ref compat fix.
+    let (interp, native) = import_run_vs_compile(
+        "g6_stream_module",
+        "main.zt",
+        &[
+            ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
+            (
+                "main.zt",
+                "s :: import \"stream.zt\"\n\
+                 isEven :: Int -> Bool = n => (n / 2) * 2 == n;\n\
+                 add :: Int -> Int -> Int = a b => a + b;\n\
+                 double :: Int -> Int = x => x * 2;\n\
+                 s.fold add 0 (s.take 2 (s.map double (s.filter isEven (s.cons 1 (s.cons 2 (s.cons 3 (s.cons 4 (s.singleton 6))))))))\n",
+            ),
+        ],
+    );
+    // src = [1,2,3,4,6]; filter even = [2,4,6]; map (*2) = [4,8,12]; take 2 = [4,8];
+    // fold (+) 0 = 12.
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn ambient_stream_prelude_matches_imported_module() {
+    // The ambient prelude (no import) and the importable module share one source
+    // (`STREAM_MODULE_SRC`), so the same pipeline written against ambient names must
+    // produce the identical result to the imported, qualified form — confirming the
+    // single-source wiring keeps both surfaces in agreement.
+    let ambient = write_tmp(
+        "g6_ambient_stream.zt",
+        "double :: Int -> Int = x => x * 2;\n\
+         add :: Int -> Int -> Int = a b => a + b;\n\
+         fold add 0 (take 2 (map double (cons 1 (cons 2 (singleton 3)))))\n",
+    );
+    let out = cli()
+        .arg("run")
+        .arg(&ambient)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    // map (*2) [1,2,3] = [2,4,6]; take 2 = [2,4]; fold (+) 0 = 6.
+    assert_eq!(String::from_utf8(out).unwrap().trim(), "6");
+}
+
+#[test]
 fn compile_zt_imported_unexportable_value_stays_monomorphic() {
     // Only genuine type parameters are generalized across the boundary. A value
     // of an un-exportable type (interned as an unconstrained `Unknown`) must NOT
