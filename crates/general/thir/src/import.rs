@@ -56,6 +56,30 @@ pub enum ImportedType {
     /// the `A = A` constraint) and quantifies the binding over them, instantiating
     /// fresh at every use site (multi-type cross-module generics).
     TyVar(u32),
+    /// A parametric type constructor crossing a module boundary (`Stream` in
+    /// `import stdlib.stream`). `params` are the constructor's formal type
+    /// parameters identified by their export `TyVar` ids (same id space as
+    /// [`ImportedType::TyVar`]); `body` is the alias body, which references the
+    /// params via `TyVar` and references the constructor itself via [`ConApply`]
+    /// (so a recursive body like `tail: Stream A` stays bounded). The importer
+    /// rebuilds this as a local parametric type alias.
+    ///
+    /// [`ConApply`]: ImportedType::ConApply
+    TypeCon {
+        params: Vec<u32>,
+        body: Box<ImportedType>,
+    },
+    /// A reference to a parametric constructor exported by the *same* module,
+    /// applied to `args`. Left unexpanded so recursive/self-referential bodies
+    /// (`tail: Stream A`) export as a bounded reference rather than unfolding
+    /// forever. `ctor` is the constructor's source name, which by convention
+    /// equals its export field name; a `ConApply` whose name is not defined by a
+    /// `TypeCon` field of the same module is unresolvable on the import side and
+    /// is refused.
+    ConApply {
+        ctor: String,
+        args: Vec<ImportedType>,
+    },
     /// Element type of an empty imported list, or an unconstrained position —
     /// interned as a fresh inference variable so it unifies with whatever the
     /// consumer needs.

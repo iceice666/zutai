@@ -43,13 +43,6 @@ fn write_decl(f: &mut fmt::Formatter<'_>, decl: &Decl, prefix: &str, indent: &st
                 &format!("{indent}   "),
             )
         }
-        Decl::Import { name, source, .. } => {
-            writeln!(f, "{prefix} Import {name:?}")?;
-            match source {
-                ImportSource::String(s) => writeln!(f, "{indent}└─ source: {s:?}"),
-                ImportSource::Path(p) => writeln!(f, "{indent}└─ source: {}", p.join(".")),
-            }
-        }
         Decl::TypeAlias {
             name, params, ty, ..
         } => {
@@ -176,6 +169,10 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
         }
         Expr::String { value, .. } => writeln!(f, "{prefix}Str({value:?})"),
         Expr::Atom { name, .. } => writeln!(f, "{prefix}Atom(#{name})"),
+        Expr::Import { source, .. } => match source {
+            ImportSource::String(s) => writeln!(f, "{prefix}Import({s:?})"),
+            ImportSource::Path(p) => writeln!(f, "{prefix}Import({})", p.join(".")),
+        },
         Expr::TaggedValue { tag, payload, .. } => {
             writeln!(f, "{prefix}TaggedValue(#{tag})")?;
             write_expr(f, payload, &format!("{indent}└─ "), &format!("{indent}   "))

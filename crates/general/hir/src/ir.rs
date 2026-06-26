@@ -68,7 +68,6 @@ pub enum BindingKind {
     /// redefinition raises `DuplicateBinding`.
     BuiltinValue,
     TopValue,
-    TopImport,
     TopFunction,
     TopType,
     TopConstraint,

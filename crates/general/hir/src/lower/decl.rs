@@ -1,5 +1,3 @@
-use super::types::clone_import_source;
-
 use super::*;
 
 impl Lowerer {
@@ -7,9 +5,6 @@ impl Lowerer {
         match decl {
             ast::Decl::Inferred { .. } | ast::Decl::Typed { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopValue, decl.span())
-            }
-            ast::Decl::Import { .. } => {
-                self.define_current(decl.name().to_string(), BindingKind::TopImport, decl.span())
             }
             ast::Decl::Destructure { fields, span, .. } => {
                 // Allocate a synthetic (unscoped, so never a duplicate) receiver
@@ -115,19 +110,6 @@ impl Lowerer {
                 },
                 *span,
             ),
-            ast::Decl::Import { source, span, .. } => {
-                let value = self.alloc_expr(HirExpr {
-                    kind: HirExprKind::Import(clone_import_source(source)),
-                    span: *span,
-                });
-                (
-                    HirDeclKind::Value {
-                        annotation: None,
-                        value,
-                    },
-                    *span,
-                )
-            }
             ast::Decl::Destructure { .. } => {
                 unreachable!("destructure decls are expanded in lower_file, not lower_decl")
             }

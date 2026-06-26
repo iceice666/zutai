@@ -411,7 +411,7 @@ eq 1 2
 #[test]
 fn dispatch_imported_named_witness() {
     let src = r#"
-w :: import "witness_eq_int_a.zt";
+w ::= import "witness_eq_int_a.zt";
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 eq 1 2
 "#;
@@ -428,7 +428,7 @@ eq 1 2
 #[test]
 fn dispatch_imported_type_directed_witness_selection() {
     let src = r#"
-w :: import "witness_eq_int_bool.zt";
+w ::= import "witness_eq_int_bool.zt";
 Eq :: <A> @A { eq :: A -> A -> Bool; }
 (eq 1 1, eq true true)
 "#;
@@ -494,7 +494,7 @@ Eq @Int :: { (==) = \\a b. false; }
 #[test]
 fn op_dispatch_imported_witness_overrides_builtin() {
     let src = r#"
-w :: import "witness_eq_int_operator.zt";
+w ::= import "witness_eq_int_operator.zt";
 1 == 1
 "#;
     assert_eq!(run_in_imports(src), Value::Bool(false));
@@ -503,7 +503,7 @@ w :: import "witness_eq_int_operator.zt";
 #[test]
 fn op_dispatch_imported_bounded_operator_uses_witness() {
     let src = r#"
-w :: import "witness_eq_int_operator_bounded.zt";
+w ::= import "witness_eq_int_operator_bounded.zt";
 w
 "#;
     assert_eq!(run_in_imports(src), Value::Bool(false));

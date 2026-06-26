@@ -5,7 +5,7 @@
 --     module as a fallback (`include_str!` in `crates/general/hir/src/lower/mod.rs`),
 --     so `map`/`filter`/… are in scope without an import. The lowerer reads only
 --     the declarations; this file's final record expression is ignored on that path.
---   * Importable module — `s :: import "stream.zt"` exports the final record below,
+--   * Importable module — `s ::= import "stream.zt"` exports the final record below,
 --     so a program can use `s.map`, `s.fold`, … qualified. Cross-module polymorphism
 --     (XM-1..3) carries the generic combinators across the boundary.
 --

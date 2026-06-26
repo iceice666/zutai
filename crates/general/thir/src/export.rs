@@ -36,19 +36,140 @@ pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUn
     export(file, &aliases, ty, &mut seen)
 }
 
-fn build_alias_map(file: &ThirFile) -> FxHashMap<BindingId, TypeId> {
-    let mut map = FxHashMap::default();
-    for (_, decl) in file.decl_arena.iter() {
-        if let ThirDeclKind::TypeAlias { ty, .. } = decl.kind {
-            map.insert(decl.binding, ty);
+/// Export a type-value's denotation, preserving a parametric constructor's
+/// binder so it can be applied on the import side (`s.Stream Int`).
+///
+/// When `tid` denotes a *parametric* type alias (one with type parameters), the
+/// result is an [`ImportedType::TypeCon`] carrying the parameter list and the
+/// alias body (with the recursive self-reference kept bounded as
+/// [`ImportedType::ConApply`]). Otherwise it falls back to [`export_type`], so
+/// non-parametric type aliases (`serverLib.Server`) export exactly as before.
+pub fn export_type_value(file: &ThirFile, tid: TypeId) -> Result<ImportedType, ExportUnsupported> {
+    let aliases = build_alias_map(file);
+    // Follow a bare-alias chain (`Stream = Stream` lowers to `Alias(Stream)`) to
+    // the parametric constructor it names, without unfolding the body.
+    let mut head = tid;
+    let mut guard = FxHashSet::default();
+    while let TypeKind::Alias(binding) = file.type_arena[head.0 as usize].kind {
+        if let Some(params) = aliases.params.get(&binding)
+            && !params.is_empty()
+        {
+            let body_ty = aliases.bodies[&binding];
+            // Refuse higher-kinded constructor parameters: the descriptor carries
+            // only ground type parameters in this phase. HIR does not retain an
+            // alias param's kind annotation, so detect higher-kindedness by its
+            // use — a param applied as a constructor (`F A`) lowers to an `Apply`
+            // whose spine head is `TypeVar(param)`.
+            let param_set: FxHashSet<BindingId> = params.iter().copied().collect();
+            let mut visited = FxHashSet::default();
+            if body_applies_param(file, body_ty, &param_set, &mut visited) {
+                return Err(ExportUnsupported {
+                    reason: "higher-kinded imported type-constructor parameter",
+                });
+            }
+            let mut seen = FxHashSet::default();
+            let body = export(file, &aliases, body_ty, &mut seen)?;
+            let param_ids = params
+                .iter()
+                .map(|p| p.0 & !TYVAR_INFER_TAG)
+                .collect::<Vec<_>>();
+            return Ok(ImportedType::TypeCon {
+                params: param_ids,
+                body: Box::new(body),
+            });
+        }
+        if !guard.insert(binding) {
+            break;
+        }
+        match aliases.bodies.get(&binding).copied() {
+            Some(next) => head = next,
+            None => break,
         }
     }
-    map
+    export_type(file, tid)
+}
+
+/// Whether `ty` uses any binding in `params` in type-constructor position — the
+/// signal that the parameter is higher-kinded (`F A`). Walks the type graph with
+/// a `visited` set so recursive bodies (`tail: Lst A`) terminate.
+fn body_applies_param(
+    file: &ThirFile,
+    ty: TypeId,
+    params: &FxHashSet<BindingId>,
+    visited: &mut FxHashSet<TypeId>,
+) -> bool {
+    if !visited.insert(ty) {
+        return false;
+    }
+    match file.type_arena[ty.0 as usize].kind.clone() {
+        TypeKind::Apply { func, arg } => {
+            // The spine head being a param means the param is applied.
+            let mut head = func;
+            while let TypeKind::Apply { func: f, .. } = file.type_arena[head.0 as usize].kind {
+                head = f;
+            }
+            if let TypeKind::TypeVar(b) = file.type_arena[head.0 as usize].kind
+                && params.contains(&b)
+            {
+                return true;
+            }
+            body_applies_param(file, func, params, visited)
+                || body_applies_param(file, arg, params, visited)
+        }
+        TypeKind::AliasApply { args, .. } => args
+            .iter()
+            .any(|a| body_applies_param(file, *a, params, visited)),
+        TypeKind::List(inner)
+        | TypeKind::Optional(inner)
+        | TypeKind::Maybe(inner)
+        | TypeKind::Patch { target: inner, .. } => body_applies_param(file, inner, params, visited),
+        TypeKind::Function { from, to } => {
+            body_applies_param(file, from, params, visited)
+                || body_applies_param(file, to, params, visited)
+        }
+        TypeKind::Record(fields, _) => fields
+            .iter()
+            .any(|f| body_applies_param(file, f.ty, params, visited)),
+        TypeKind::Tuple(items) => items.iter().any(|item| {
+            let inner = match item {
+                TypeTupleItem::Named { ty, .. } => *ty,
+                TypeTupleItem::Positional(ty) => *ty,
+            };
+            body_applies_param(file, inner, params, visited)
+        }),
+        TypeKind::Union(variants, _) => variants.iter().any(|v| {
+            v.payload
+                .is_some_and(|p| body_applies_param(file, p, params, visited))
+        }),
+        TypeKind::ForAll { body, .. } => body_applies_param(file, body, params, visited),
+        _ => false,
+    }
+}
+
+/// Alias bodies and parameter lists for a module, gathered from its
+/// `TypeAlias` declarations.
+struct AliasMap {
+    bodies: FxHashMap<BindingId, TypeId>,
+    params: FxHashMap<BindingId, Vec<BindingId>>,
+}
+
+fn build_alias_map(file: &ThirFile) -> AliasMap {
+    let mut bodies = FxHashMap::default();
+    let mut params = FxHashMap::default();
+    for (_, decl) in file.decl_arena.iter() {
+        if let ThirDeclKind::TypeAlias { ty, params: ps } = &decl.kind {
+            bodies.insert(decl.binding, *ty);
+            if !ps.is_empty() {
+                params.insert(decl.binding, ps.clone());
+            }
+        }
+    }
+    AliasMap { bodies, params }
 }
 
 fn export(
     file: &ThirFile,
-    aliases: &FxHashMap<BindingId, TypeId>,
+    aliases: &AliasMap,
     ty: TypeId,
     seen: &mut FxHashSet<BindingId>,
 ) -> Result<ImportedType, ExportUnsupported> {
@@ -128,7 +249,7 @@ fn export(
                 // diagnostic), but stay total rather than recurse forever.
                 return Ok(ImportedType::Unknown);
             }
-            let result = match aliases.get(&binding).copied() {
+            let result = match aliases.bodies.get(&binding).copied() {
                 Some(target) => export(file, aliases, target, seen),
                 None => Ok(ImportedType::Unknown),
             };
@@ -147,8 +268,23 @@ fn export(
         // An explicit quantifier just exports its body; the body's parameters are
         // free type variables there and are generalized by the arm above.
         TypeKind::ForAll { body, .. } => export(file, aliases, body, seen),
-        // Parametric constructors and patch markers do not cross module
-        // boundaries as concrete exported data in this phase.
+        // A saturated application of a parametric alias (`Stream A`) exports as a
+        // bounded reference to that constructor — never unfolded, so a recursive
+        // body (`tail: Stream A`) terminates. The importer resolves the `ctor`
+        // name against the constructors exported by the same module.
+        TypeKind::AliasApply { binding, args } if aliases.params.contains_key(&binding) => {
+            let ctor = file.binding_names[binding.0 as usize].clone();
+            let mut exported = Vec::with_capacity(args.len());
+            for arg in &args {
+                exported.push(export(file, aliases, *arg, seen)?);
+            }
+            Ok(ImportedType::ConApply {
+                ctor,
+                args: exported,
+            })
+        }
+        // Other parametric constructors, curried applications, and patch markers
+        // do not cross module boundaries as concrete exported data in this phase.
         TypeKind::AliasApply { .. }
         | TypeKind::Apply { .. }
         | TypeKind::Con(_)

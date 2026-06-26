@@ -39,7 +39,7 @@ It is an inert serialized data tree.
 A `.zt` file contains pure lazy computation:
 
 ```zt
-cfg :: import "app.zti";
+cfg ::= import "app.zti";
 
 {
   name = cfg.name;
@@ -52,7 +52,7 @@ A `.zt` file consists of zero or more declarations followed by one final express
 ```zt
 name ::= expr;
 name :: TypeExpr = expr;
-name :: import "path.zti";
+name ::= import "path.zti";
 
 final_expr
 ```

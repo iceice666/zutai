@@ -1,2 +1,2 @@
-m :: import "witness_eq_int_a.zt";
+m ::= import "witness_eq_int_a.zt";
 m

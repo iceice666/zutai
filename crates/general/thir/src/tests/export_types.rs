@@ -134,6 +134,113 @@ fn export_type_type_value() {
     ));
 }
 
+// ── export_type_value: parametric type constructors ──────────────────────────
+
+/// Helper: export the denotation of a final type-value expression as a
+/// constructor (mirrors `enrich_with_type_denotations` in the semantic layer).
+fn export_final_type_value(src: &str) -> ImportedType {
+    let file = completed_file(src);
+    let final_expr = &file.expr_arena[file.final_expr];
+    let ThirExprKind::TypeValue(tid) = final_expr.kind else {
+        panic!("final expression is not a type value");
+    };
+    export_type_value(&file, tid).expect("export should succeed")
+}
+
+#[test]
+fn export_type_value_non_parametric_falls_back() {
+    // A non-parametric alias must export exactly as before (structural denotation),
+    // not as a `TypeCon` — the `serverLib.Server` path stays untouched.
+    let exported = export_final_type_value("MyInt :: type Int;\nMyInt");
+    assert!(matches!(exported, ImportedType::Int));
+}
+
+#[test]
+fn export_type_value_parametric_constructor_preserves_params() {
+    // `Pair :: <A, B> type { ... }` exports as a two-parameter constructor whose
+    // body references the params via `TyVar`.
+    let exported = export_final_type_value("Pair :: <A, B> type { first : A; second : B; };\nPair");
+    let ImportedType::TypeCon { params, body } = exported else {
+        panic!("expected a TypeCon, got {exported:?}");
+    };
+    assert_eq!(params.len(), 2, "two type parameters");
+    let ImportedType::Record(fields) = *body else {
+        panic!("expected a record body");
+    };
+    assert_eq!(fields.len(), 2);
+    for field in &fields {
+        assert!(
+            matches!(field.ty, ImportedType::TyVar(id) if params.contains(&id)),
+            "field {} should be a parameter TyVar, got {:?}",
+            field.name,
+            field.ty
+        );
+    }
+}
+
+#[test]
+fn export_type_value_recursive_constructor_is_bounded() {
+    // A recursive constructor must export with the self-reference kept as a
+    // bounded `ConApply` — never unfolded (the test terminating proves it).
+    let exported = export_final_type_value(
+        "Lst :: <A> type { #nil; #cons : { head : A; tail : Lst A; }; };\nLst",
+    );
+    let ImportedType::TypeCon { params, body } = exported else {
+        panic!("expected a TypeCon, got {exported:?}");
+    };
+    assert_eq!(params.len(), 1);
+    let ImportedType::Union(variants) = *body else {
+        panic!("expected a union body");
+    };
+    let cons = variants
+        .iter()
+        .find(|v| v.name == "cons")
+        .expect("#cons variant");
+    let ImportedType::Record(rec) = cons.payload.as_deref().expect("payload") else {
+        panic!("expected a record payload");
+    };
+    let tail = rec.iter().find(|f| f.name == "tail").expect("tail field");
+    assert!(
+        matches!(&tail.ty, ImportedType::ConApply { ctor, args }
+            if ctor == "Lst" && args.len() == 1),
+        "tail should be ConApply Lst[_], got {:?}",
+        tail.ty
+    );
+}
+
+#[test]
+fn export_value_type_references_sibling_constructor() {
+    // A value whose type mentions `Box A` exports that as a `ConApply` referring
+    // to the same constructor, so sibling exports unify with `s.Box Int`.
+    let file = completed_file(
+        "Box :: <A> type { value : A; };\nwrap :: <A> A -> Box A = x => { value = x; };\nwrap",
+    );
+    let final_ty = file.expr_arena[file.final_expr].ty;
+    let exported = export_type(&file, final_ty).expect("export should succeed");
+    let ImportedType::Function { to, .. } = exported else {
+        panic!("expected a function, got {exported:?}");
+    };
+    assert!(
+        matches!(&*to, ImportedType::ConApply { ctor, .. } if ctor == "Box"),
+        "result should be ConApply Box[_], got {to:?}"
+    );
+}
+
+#[test]
+fn export_higher_kinded_constructor_param_is_refused() {
+    // A higher-kinded constructor parameter cannot cross the boundary in this
+    // phase — export must refuse rather than emit a malformed descriptor.
+    let file = completed_file("Wrap :: <F :: Type -> Type, A> type { value : F A; };\nWrap");
+    let final_expr = &file.expr_arena[file.final_expr];
+    let ThirExprKind::TypeValue(tid) = final_expr.kind else {
+        panic!("final expression is not a type value");
+    };
+    assert!(
+        export_type_value(&file, tid).is_err(),
+        "higher-kinded constructor param should be refused"
+    );
+}
+
 // ── type_matches: Record / Tuple / Union / List deep match ───────────────────
 
 #[test]

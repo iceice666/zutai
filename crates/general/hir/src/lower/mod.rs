@@ -42,7 +42,7 @@ impl Default for HirLowerOptions {
 ///   win); each is lowered into a module only when that module references it. The
 ///   final record expression is the export for the import surface and is ignored
 ///   on this path.
-/// - **Importable module.** `s :: import "stream.zt"` exports the final record, so
+/// - **Importable module.** `s ::= import "stream.zt"` exports the final record, so
 ///   a program can use `s.map`, `s.fold`, … qualified. The same constant backs a
 ///   user-importable copy of the file in tests, keeping one source of truth.
 pub const STREAM_MODULE_SRC: &str = include_str!("prelude/stream.zt");

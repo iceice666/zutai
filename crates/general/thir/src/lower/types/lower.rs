@@ -178,7 +178,7 @@ impl<'hir> Lowerer<'hir> {
                     }
                 };
                 // Look up the record type of the receiver (e.g. the inferred
-                // record type of `serverLib :: import "server.zt"`).
+                // record type of `serverLib ::= import "server.zt"`).
                 let receiver_ty = match self.value_types.get(&binding).copied() {
                     Some(t) => t,
                     None => {
@@ -200,12 +200,33 @@ impl<'hir> Lowerer<'hir> {
                 // If this binding is a known import and the field carries a
                 // registered type denotation, return the concrete type so that
                 // annotation-position use (`x : serverLib.Server`) type-checks.
-                if let Some(import_source) = self.binding_import_key.get(&binding).cloned()
-                    && let Some(&denotation) = self
+                if let Some(import_source) = self.binding_import_key.get(&binding).cloned() {
+                    if let Some(&denotation) = self
                         .import_type_denotations
+                        .get(&(import_source.clone(), field.clone()))
+                    {
+                        return denotation;
+                    }
+                    // A parametric constructor used bare (`x :: s.Stream`) is a
+                    // zero-argument arity error, just like a local generic alias.
+                    if let Some(&ctor_binding) = self
+                        .import_type_constructors
                         .get(&(import_source, field.clone()))
-                {
-                    return denotation;
+                    {
+                        let expected = self
+                            .alias_params
+                            .get(&ctor_binding)
+                            .map_or(0, |params| params.len());
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                                name: field.clone(),
+                                expected,
+                                found: 0,
+                            },
+                            span: access_span,
+                        });
+                        return self.error_type;
+                    }
                 }
                 record_field.ty
             }

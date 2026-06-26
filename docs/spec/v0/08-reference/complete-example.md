@@ -43,7 +43,7 @@ Config :: type {
   server  : Server;
 };
 
-raw :: import "app.zti";
+raw ::= import "app.zti";
 rawConfig :: RawConfig = raw;
 
 normalizeServer :: RawServer -> Server
@@ -86,7 +86,7 @@ RawConfig :: type {
   };
 };
 
-raw :: import "nested.zti";
+raw ::= import "nested.zti";
 rawConfig :: RawConfig = raw;
 
 {

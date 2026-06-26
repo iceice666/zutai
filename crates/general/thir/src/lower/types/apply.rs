@@ -24,53 +24,59 @@ impl<'hir> Lowerer<'hir> {
         }
         args.reverse();
 
-        let HirTypeKind::BindingRef(binding) = self.hir_type(head).kind else {
-            // An imported parametric type constructor reached through field access
-            // (`s.Stream Int`) is not applicable across the module boundary: the
-            // export representation does not preserve the constructor's binder, so
-            // refuse rather than guess. Inference flows structurally without the
-            // annotation. See `export::export_type` (ForAll/AliasApply arms).
-            if matches!(self.hir_type(head).kind, HirTypeKind::Access { .. }) {
-                return self.invalid_type(
-                    "applying an imported parametric type constructor is not yet supported",
-                    span,
-                );
+        // `from_access` marks a head resolved from an imported constructor
+        // (`s.Stream`): it reuses the named-alias path below but skips the
+        // builtin-name fast path (a user field could shadow `List`).
+        let (binding, from_access) = match self.hir_type(head).kind.clone() {
+            HirTypeKind::BindingRef(binding) => (binding, false),
+            HirTypeKind::Access { receiver, field } => {
+                match self.imported_constructor_binding(receiver, &field) {
+                    Some(ctor_binding) => (ctor_binding, true),
+                    None => {
+                        return self.invalid_type(
+                            "type does not name an applicable parametric type constructor",
+                            span,
+                        );
+                    }
+                }
             }
-            return self.invalid_type("only named type constructors can be applied", span);
+            _ => return self.invalid_type("only named type constructors can be applied", span),
         };
-        let name = self.hir.bindings[binding.0 as usize].name.clone();
+        let name = self.binding_name(binding).to_string();
 
         // Built-in single-arg constructors keep existing handling and report
         // arity precisely instead of falling through to "not parametric".
-        match name.as_str() {
-            "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => {
-                if args.len() != 1 {
-                    self.diagnostics.push(ThirDiagnostic {
-                        kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
-                            name,
-                            expected: 1,
-                            found: args.len(),
-                        },
-                        span,
-                    });
-                    return self.error_type;
+        if !from_access {
+            match name.as_str() {
+                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => {
+                    if args.len() != 1 {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
+                                name,
+                                expected: 1,
+                                found: args.len(),
+                            },
+                            span,
+                        });
+                        return self.error_type;
+                    }
+                    return match name.as_str() {
+                        "List" => self.alloc_type(Type {
+                            kind: TypeKind::List(args[0]),
+                            span,
+                        }),
+                        "Optional" => self.optional_type(args[0], span),
+                        "Maybe" => self.maybe_type(args[0], span),
+                        "Patch" => self.patch_type(args[0], false, span),
+                        "DeepPatch" => self.patch_type(args[0], true, span),
+                        _ => unreachable!(),
+                    };
                 }
-                return match name.as_str() {
-                    "List" => self.alloc_type(Type {
-                        kind: TypeKind::List(args[0]),
-                        span,
-                    }),
-                    "Optional" => self.optional_type(args[0], span),
-                    "Maybe" => self.maybe_type(args[0], span),
-                    "Patch" => self.patch_type(args[0], false, span),
-                    "DeepPatch" => self.patch_type(args[0], true, span),
-                    _ => unreachable!(),
-                };
+                _ => {}
             }
-            _ => {}
         }
 
-        // Named parametric alias.
+        // Named parametric alias (includes imported synthetic constructors).
         if let Some(params) = self.alias_params.get(&binding).cloned() {
             if args.len() > params.len() {
                 // Over-application: more arguments than the constructor accepts.
@@ -101,10 +107,7 @@ impl<'hir> Lowerer<'hir> {
         // Higher-kinded type-variable application (`F A`, F a type param of kind
         // `Type -> Type`). Curried `Apply` over the var head so it composes under
         // substitution (`F := Result E` makes `F A` reduce to `Result E A`).
-        if matches!(
-            self.hir.bindings[binding.0 as usize].kind,
-            BindingKind::TypeParam
-        ) {
+        if matches!(self.binding_kind(binding), BindingKind::TypeParam) {
             let head_ty = self.alloc_type(Type {
                 kind: TypeKind::TypeVar(binding),
                 span,
@@ -113,6 +116,23 @@ impl<'hir> Lowerer<'hir> {
         }
 
         self.invalid_type("type is not a parametric constructor", span)
+    }
+
+    /// Resolve a type-field access head (`s.Stream`) to the synthetic binding of
+    /// the imported parametric constructor it names, or `None` if the receiver is
+    /// not a simple import binding or the field is not an imported constructor.
+    pub(in crate::lower) fn imported_constructor_binding(
+        &self,
+        receiver: HirTypeId,
+        field: &str,
+    ) -> Option<BindingId> {
+        let HirTypeKind::BindingRef(receiver_binding) = self.hir_type(receiver).kind else {
+            return None;
+        };
+        let source = self.binding_import_key.get(&receiver_binding)?;
+        self.import_type_constructors
+            .get(&(source.clone(), field.to_string()))
+            .copied()
     }
 
     /// Build a curried `Apply` spine: `fold_apply(F, [A, B])` → `Apply{Apply{F,A},B}`.
@@ -166,7 +186,11 @@ impl<'hir> Lowerer<'hir> {
                     .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),
             },
             BindingKind::TopType => self.alias_type(binding, span),
-            BindingKind::TopImport if self.aliases.contains_key(&binding) => {
+            // A type-valued import binding (`MyType ::= import "mytype.zt"`, whose
+            // module's final expression is a type) is a plain value binding whose
+            // alias denotation was registered in `predeclare_import_decls`. `import`
+            // is an expression now, so there is no `TopImport` kind to match.
+            BindingKind::TopValue if self.aliases.contains_key(&binding) => {
                 self.alias_type(binding, span)
             }
             BindingKind::TypeParam => self.alloc_type(Type {

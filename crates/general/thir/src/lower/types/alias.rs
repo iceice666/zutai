@@ -102,7 +102,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn push_alias_cycle(&mut self, binding: BindingId, span: Span) {
-        let name = self.hir.bindings[binding.0 as usize].name.clone();
+        let name = self.binding_name(binding).to_string();
         self.diagnostics.push(ThirDiagnostic {
             kind: ThirDiagnosticKind::AliasCycle { name },
             span,
@@ -140,21 +140,21 @@ impl<'hir> Lowerer<'hir> {
             }
             TypeKind::Never => "Never".to_string(),
             TypeKind::TypeVar(binding) | TypeKind::Alias(binding) => {
-                self.hir.bindings[binding.0 as usize].name.clone()
+                self.binding_name(binding).to_string()
             }
             TypeKind::AliasApply { binding, args } => {
-                let head = self.hir.bindings[binding.0 as usize].name.clone();
+                let head = self.binding_name(binding).to_string();
                 let parts: Vec<String> = args.iter().map(|&a| self.type_name(a)).collect();
                 format!("{head} {}", parts.join(" "))
             }
             TypeKind::ForAll { params, body, .. } => {
                 let names: Vec<String> = params
                     .iter()
-                    .map(|binding| self.hir.bindings[binding.0 as usize].name.clone())
+                    .map(|binding| self.binding_name(*binding).to_string())
                     .collect();
                 format!("(<{}> {})", names.join(", "), self.type_name(body))
             }
-            TypeKind::Con(binding) => self.hir.bindings[binding.0 as usize].name.clone(),
+            TypeKind::Con(binding) => self.binding_name(binding).to_string(),
             TypeKind::Apply { func, arg } => {
                 format!("{} {}", self.type_name(func), self.type_name(arg))
             }

@@ -76,11 +76,6 @@ pub enum Decl {
         value: Expr,
         span: Span,
     },
-    Import {
-        name: String,
-        source: ImportSource,
-        span: Span,
-    },
     /// Selective destructuring binding: `{ a; b; c } ::= rec;` binds each named
     /// member of the record value `value` as a top-level name. Reuses the
     /// select-field list syntax; the canonical use is bringing imported module
@@ -132,7 +127,6 @@ impl Decl {
         match self {
             Decl::Inferred { span, .. }
             | Decl::Typed { span, .. }
-            | Decl::Import { span, .. }
             | Decl::TypeAlias { span, .. }
             | Decl::Function { span, .. }
             | Decl::NoSigFn { span, .. }
@@ -148,7 +142,6 @@ impl Decl {
         match self {
             Decl::Inferred { name, .. }
             | Decl::Typed { name, .. }
-            | Decl::Import { name, .. }
             | Decl::TypeAlias { name, .. }
             | Decl::Function { name, .. }
             | Decl::NoSigFn { name, .. }
@@ -302,6 +295,14 @@ pub enum Expr {
         name: String,
         span: Span,
     },
+    /// `import "path"` / `import a.b.c` — a static import. The source is always a
+    /// literal (string or dotted path), never a runtime value, so resolution is
+    /// pure and static regardless of where the expression appears. The canonical
+    /// uses are `lib ::= import "lib.zt";` and `{ map; fold } ::= import stdlib.stream;`.
+    Import {
+        source: ImportSource,
+        span: Span,
+    },
     TaggedValue {
         tag: String,
         payload: Box<Expr>,
@@ -423,6 +424,7 @@ impl Expr {
             | Expr::Posit { span, .. }
             | Expr::String { span, .. }
             | Expr::Atom { span, .. }
+            | Expr::Import { span, .. }
             | Expr::TaggedValue { span, .. }
             | Expr::Ident { span, .. }
             | Expr::Record { span, .. }

@@ -8,8 +8,8 @@ use crate::ast::{
 use crate::span::Span;
 
 use crate::parser::lex::{
-    enter_delimiter, kw, parse_atom_name, parse_field_name, parse_ident, parse_number_value,
-    parse_string, spanned, ws,
+    enter_delimiter, kw, parse_atom_name, parse_field_name, parse_ident, parse_import_source,
+    parse_number_value, parse_string, spanned, ws,
 };
 use crate::parser::pattern::parse_pattern;
 use crate::parser::type_expr::parse_type_expr;
@@ -125,6 +125,15 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             }
             if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
                 return parse_type_form(input);
+            }
+            if input.starts_with("import") && peek(kw("import")).parse_next(input).is_ok() {
+                let (source, span) = spanned(|i: &mut &str| {
+                    kw("import").parse_next(i)?;
+                    ws(i)?;
+                    parse_import_source(i)
+                })
+                .parse_next(input)?;
+                return Ok(Expr::Import { source, span });
             }
             if input.starts_with("witness") && peek(kw("witness")).parse_next(input).is_ok() {
                 return parse_witness_reflect(input);

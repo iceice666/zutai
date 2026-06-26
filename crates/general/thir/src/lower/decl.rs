@@ -1,4 +1,4 @@
-use zutai_hir::{BindingKind, HirClause, HirDeclId, HirDeclKind, HirExprKind};
+use zutai_hir::{HirClause, HirDeclId, HirDeclKind, HirExprKind};
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
 use crate::import::ImportedType;
@@ -14,9 +14,10 @@ impl<'hir> Lowerer<'hir> {
     pub(super) fn predeclare_import_decls(&mut self) {
         for decl_id in &self.hir.decls {
             let decl = self.hir_decl(*decl_id);
-            if self.hir.bindings[decl.binding.0 as usize].kind != BindingKind::TopImport {
-                continue;
-            }
+            // An import binding is any value decl whose value is an `Import` expr —
+            // `lib ::= import …` directly, or a destructure receiver wrapping an
+            // import (`{ … } ::= import …`). `import` is an expression, so there is
+            // no dedicated binding kind to filter on.
             let HirDeclKind::Value { value, .. } = &decl.kind else {
                 continue;
             };
@@ -28,7 +29,11 @@ impl<'hir> Lowerer<'hir> {
             };
 
             self.import_tyvar_cache.clear();
+            // Imported parametric constructors are defined here (once); the later
+            // re-intern when the `Import` expr is lowered must not redefine them.
+            self.current_import_decl = Some(*decl_id);
             let ty = self.intern_imported_type_with_source(&desc, Some(source), decl.span);
+            self.current_import_decl = None;
             self.value_types.insert(decl.binding, ty);
             self.binding_import_key.insert(decl.binding, source.clone());
             // Record the inference vars interned for this import's exported type
@@ -167,12 +172,14 @@ impl<'hir> Lowerer<'hir> {
                 annotation: None,
                 value,
             } => {
+                // An import binding is identified by its value being an `Import`
+                // expr (predeclared with its module type in `predeclare_import_decls`).
+                let is_import = matches!(&self.hir_expr(*value).kind, HirExprKind::Import(_));
                 // Track import-binding associations for annotation-position access.
                 if let HirExprKind::Import(source) = &self.hir_expr(*value).kind {
                     self.binding_import_key.insert(decl.binding, source.clone());
                 }
-                let binding_kind = self.hir.bindings[decl.binding.0 as usize].kind;
-                let predeclared_import_ty = if binding_kind == BindingKind::TopImport {
+                let predeclared_import_ty = if is_import {
                     self.value_types.get(&decl.binding).copied()
                 } else {
                     None
@@ -184,7 +191,7 @@ impl<'hir> Lowerer<'hir> {
                 };
                 let ty = predeclared_import_ty.unwrap_or_else(|| self.expr(value).ty);
                 self.value_types.insert(decl.binding, ty);
-                if binding_kind == BindingKind::TopImport {
+                if is_import {
                     // Generalize an import over *only* the inference vars from its
                     // exported type parameters (resolved through the check above),
                     // so each reference instantiates them fresh. `Unknown`

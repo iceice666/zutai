@@ -23,7 +23,7 @@ Create `app.zti`:
 Create `app.zt` in the same directory:
 
 ```zt
-cfg :: import "app.zti";
+cfg ::= import "app.zti";
 cfg.server.port
 ```
 
@@ -241,7 +241,7 @@ if condition then expr else expr
 
 The condition must have type `Bool`, and both branches must type-check to a compatible type.
 
-Imports are pure, deterministic, path-relative, cached top-level declarations: `cfg :: import "config.zti"` creates one prefixed binding. Importing `.zti` parses data into `.zt` records and lists. Importing `.zt` evaluates the imported module and exposes its final expression as the binding; fields are accessed as `cfg.field` or `lib.Type`.
+`import` is a pure, deterministic, path-relative, cached expression whose source is always a literal: `cfg ::= import "config.zti"` creates one prefixed binding, and `{ map; fold; } ::= import stdlib.stream` destructures members directly. Importing `.zti` parses data into `.zt` records and lists. Importing `.zt` evaluates the imported module and exposes its final expression as the binding; fields are accessed as `cfg.field` or `lib.Type`.
 
 Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`.
 

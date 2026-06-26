@@ -1,0 +1,5 @@
+-- A module whose parametric constructor has a higher-kinded parameter (`F`).
+-- Higher-kinded constructor parameters are refused at the export boundary in
+-- v1, so the importer cannot apply `m.Wrap`.
+Wrap :: <F :: Type -> Type, A> type { value : F A; };
+{ Wrap = Wrap; }

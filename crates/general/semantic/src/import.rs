@@ -646,6 +646,14 @@ fn imported_type_key(ty: &ImportedType) -> String {
             format!("({}->{})", imported_type_key(from), imported_type_key(to))
         }
         ImportedType::Type(inner) => format!("Type({})", imported_type_key(inner)),
+        ImportedType::TypeCon { params, body } => {
+            let ps: Vec<String> = params.iter().map(|id| format!("'{id}")).collect();
+            format!("\\<{}>{}", ps.join(","), imported_type_key(body))
+        }
+        ImportedType::ConApply { ctor, args } => {
+            let parts: Vec<String> = args.iter().map(imported_type_key).collect();
+            format!("{ctor}[{}]", parts.join(","))
+        }
         ImportedType::TyVar(id) => format!("'{id}"),
         ImportedType::Unknown => "?".to_string(),
     }
@@ -733,7 +741,7 @@ fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedTy
     match ty {
         ImportedType::Type(_) => {
             if let ThirExprKind::TypeValue(denotation_tid) = final_expr.kind
-                && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
+                && let Ok(denotation) = zutai_thir::export_type_value(file, denotation_tid)
             {
                 ImportedType::Type(Box::new(denotation))
             } else {
@@ -756,7 +764,7 @@ fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedTy
                 // The THIR field value must be a TypeValue to carry a denotation.
                 let value_expr = &file.expr_arena[thir_field.value];
                 if let ThirExprKind::TypeValue(denotation_tid) = value_expr.kind
-                    && let Ok(denotation) = zutai_thir::export_type(file, denotation_tid)
+                    && let Ok(denotation) = zutai_thir::export_type_value(file, denotation_tid)
                 {
                     imp_field.ty = ImportedType::Type(Box::new(denotation));
                 }

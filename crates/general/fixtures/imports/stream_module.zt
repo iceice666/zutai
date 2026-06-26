@@ -1,0 +1,17 @@
+-- A user module exporting a parametric codata `Stream` constructor plus a few
+-- combinators. Exercises importing a *parametric type constructor* across a
+-- module boundary (`m.Stream Int`) for arbitrary user modules.
+Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; };
+empty :: <A> Stream A
+  = _ => #nil;
+cons :: <A> A -> Stream A -> Stream A
+  = h t _ => #cons { head = h; tail = t; };
+toList :: <A> Stream A -> List A
+  = s => match s () { | #nil => listEmpty (); | #cons { head = h; tail = t; } => listCons h (toList t); };
+fromList :: <A> List A -> Stream A
+  = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
+take :: <A> Int -> Stream A -> Stream A
+  = k s _ => if k < 1 then #nil else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = h; tail = take (k - 1) t; }; };
+takeList :: <A> Int -> Stream A -> List A
+  = k s => toList (take k s);
+{ Stream = Stream; empty = empty; cons = cons; toList = toList; fromList = fromList; take = take; takeList = takeList; }

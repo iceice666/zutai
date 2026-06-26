@@ -183,6 +183,9 @@ impl Lowerer {
             ast::Expr::Posit { literal, .. } => HirExprKind::Posit(*literal),
             ast::Expr::String { value, .. } => HirExprKind::String(value.clone()),
             ast::Expr::Atom { name, .. } => HirExprKind::Atom(name.clone()),
+            ast::Expr::Import { source, .. } => {
+                HirExprKind::Import(super::types::clone_import_source(source))
+            }
             ast::Expr::TaggedValue { tag, payload, .. } => HirExprKind::TaggedValue {
                 tag: tag.clone(),
                 payload: self.lower_expr(payload),

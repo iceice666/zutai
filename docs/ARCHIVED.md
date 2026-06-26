@@ -37,7 +37,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), and
-2026-06-26 (general-mode `;`-terminator / container-glyph grammar; docs migrated)._
+2026-06-26 (general-mode `;`-terminator / container-glyph grammar; docs migrated;
+`import` unified as an expression — dedicated `name :: import` decl form removed)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -158,6 +159,69 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### `import` unified as an expression ✅
+
+_Completed 2026-06-26. `import <source>` is now an expression atom; the dedicated
+`name :: import source` declaration form was **removed**. A plain import binding is
+the ordinary inferred binding `name ::= import "path"`, and module members
+destructure straight off the import in one binding:
+`{ map; fold; } ::= import stdlib.stream;`. The `import` source remains a literal
+(string or dotted path), never a runtime value, so resolution stays fully static
+and pure — `import` in expression position cannot create runtime-selected loading._
+
+Mechanics: added `Expr::Import` (parser atom in
+`crates/general/syntax/src/parser/expr/atom.rs`, lowering to the existing
+`HirExprKind::Import`/`ThirExprKind::Import`) and dropped `Decl::Import` and the
+`BindingKind::TopImport` kind. THIR identifies an import binding structurally (a
+value decl whose value is an `Import` expr) instead of by binding kind, in
+`predeclare_import_decls` / `lower_decl` / `lower_type_apply`. The import resolver
+was already expr-arena-based, so discovery was unchanged. Support level unchanged
+(reference-interpreter; module imports remain gated out of the native backend).
+
+### Applied imported type constructors ✅
+
+_Completed 2026-06-26. Lifts the last V3-G6 import residual: a parametric
+imported type constructor can now be **applied** in an annotation
+(`x :: s.Stream Int`) for arbitrary user modules, not just the embedded stdlib.
+Reference-interpreter support level — module imports remain gated out of the
+native backend (unchanged), so these run in `zutai-eval`'s THIR oracle._
+
+- **Binder-preserving export.** `export_type_value` (`thir/src/export.rs`)
+  preserves a parametric type alias's binder as a new descriptor variant
+  `ImportedType::TypeCon { params, body }`; a saturated application of a
+  parametric alias exports as `ImportedType::ConApply { ctor, args }` (a *bounded*
+  reference, never unfolded), so a recursive body (`tail: Stream A`) terminates
+  and a sibling combinator signature (`empty :: <A> Stream A`) references the same
+  constructor. `enrich_with_type_denotations` (`semantic/src/import.rs`) builds the
+  `TypeCon` for `Type`-valued fields. Non-parametric aliases (`serverLib.Server`)
+  export unchanged.
+- **Import-side rebuild as a local alias.** `BindingId`s are HIR-owned and cannot
+  be minted in THIR, so the importer allocates *synthetic* bindings
+  (`alloc_synthetic_binding`, name/kind reads routed through
+  `binding_name`/`binding_kind`) for the constructor and one per parameter,
+  registers `alias_params`/`aliases` and an `import_type_constructors` lookup, and
+  materializes a `ThirDeclKind::TypeAlias` decl appended to `ThirFile::decls`.
+  Interning is two-pass (declare all constructors, then intern bodies) so
+  sibling/recursive `ConApply`s resolve. This reuses the existing `resolve_alias`,
+  capture-avoiding `instantiate_type_vars`, and equirecursive matcher verbatim —
+  the lowest-soundness-risk path. TLC and both evaluators then treat the imported
+  constructor as an ordinary local parametric alias.
+- **Application + annotation.** `lower_type_apply` resolves an `Access` head
+  (`s.Stream`) to its synthetic constructor and reuses the named-alias path
+  (saturated → `AliasApply`, partial → curried `Apply`). A bare `s.Stream` (no
+  args) is a zero-arity `TypeConstructorArityMismatch`, matching local generics.
+- **v1 scope / refusals.** Higher-kinded constructor parameters are refused at
+  export (detected by use, since HIR drops an alias param's kind annotation). A
+  `ConApply` to a constructor the module does not export degrades to an
+  unconstrained position (a safe opaque pass-through, as un-exportable types
+  already do) rather than a hard error. TLC *evaluation* of any module that
+  exports a type value is still refused by the pre-existing runtime-type-value
+  gate (`has_runtime_type_values`) — type elaboration of `s.Stream Int` itself
+  succeeds through TLC; only the runtime walker is gated.
+- **Tests.** Export units (`thir/.../tests/export_types.rs`), eval round-trip +
+  multiple-instantiation + ambient-vs-imported parity + refusal tests
+  (`eval/src/tests/imports.rs`, fixtures `stream_module.zt`/`hkt_module.zt`).
+
 ### Import ergonomics: embedded stdlib, type export, destructuring ✅
 
 _Completed 2026-06-26. Closes the three V3-G6 import-ergonomics follow-ups
@@ -174,9 +238,9 @@ gated out of the native backend (unchanged), so these run in `zutai-eval`._
   into `analyze_zt` + `register_zt_module` shared by the filesystem and embedded paths.
 - **`Stream`/`Step` type export.** Added to `stream.zt`'s export record, so both are
   selectable/destructurable record fields. (Applying a parametric imported type
-  constructor in an annotation — `s.Stream Int` — stays unsupported and is refused
-  with a precise diagnostic in `thir/.../types/apply.rs`; `export_type` does not
-  carry the constructor's binder across the boundary.)
+  constructor in an annotation — `s.Stream Int` — was unsupported at the time of
+  this milestone; it landed shortly after — see "Applied imported type
+  constructors" above.)
 - **Selective import via destructuring binding.** New `Decl::Destructure`
   (`{ a; b; } ::= rec;`) reuses the select-field list syntax on the left of `::=`.
   It lowers in HIR to a synthetic single-eval receiver binding plus one
@@ -307,7 +371,7 @@ stays deferred)._
   reads only the *declarations* and ignores the final record, so ambient behavior
   is byte-for-byte unchanged (the fallback still yields to user/constraint names).
   The import path uses the final record as the module's exported value, so
-  `s :: import "stream.zt"` gives `s.map`, `s.fold`, … qualified.
+  `s ::= import "stream.zt"` gives `s.map`, `s.fold`, … qualified.
 - **Backend fix — cross-module global-ref compat.** The recursive `Stream` codata
   type cannot be reconstructed structurally through the finite `ImportedType`
   boundary, so the import abstracts it to a fresh `TyVar` at the recursion horizon,

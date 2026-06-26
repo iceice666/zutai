@@ -34,15 +34,15 @@ normalize :: RawServer -> Server
 Another file:
 
 ```zt
-serverLib :: import "server.zt";
-raw :: import "server.zti";
+serverLib ::= import "server.zt";
+raw ::= import "server.zti";
 
 server :: serverLib.Server = serverLib.normalize raw;
 
 server
 ```
 
-This works because imported `.zt` modules can contain non-serializable values like functions and types, and import declarations expose them through the chosen prefix.
+This works because imported `.zt` modules can contain non-serializable values like functions and types, and an import binding exposes them through the chosen prefix.
 
 Only rendering requires serializability.
 
@@ -52,7 +52,7 @@ A dotted import resolves against the embedded standard library instead of the
 filesystem:
 
 ```zt
-s :: import stdlib.stream;
+s ::= import stdlib.stream;
 
 s.map f (s.singleton 1)
 ```
@@ -67,23 +67,28 @@ quoted-string imports use. An unknown `<name>` is a precise diagnostic
 
 An import binds one name and its members are reached by field access (`s.map`).
 A destructuring binding brings selected members into scope **unqualified**,
-reusing the select-field list syntax on the left of `::=`:
+reusing the select-field list syntax on the left of `::=`. Because `import` is an
+expression, members can be destructured straight off the import in one binding:
 
 ```zt
-s :: import stdlib.stream;
-{ map; fold; singleton; } ::= s;
+{ map; fold; singleton; } ::= import stdlib.stream;
 
 fold (+) 0 (map double (singleton 1))
 ```
 
-The right-hand side is any record-valued expression, so it composes with the
-`>>=` select operator (`{ map; } ::= s >>= { map; };`) and with a prior import
-binding. The receiver is evaluated once. A name that is not a field of the
-record is a type error; a destructured name that collides with another top-level
-binding is a duplicate-binding error.
+The right-hand side is any record-valued expression, so it equally composes with a
+prior import binding (`s ::= import stdlib.stream; { map; fold; } ::= s;`) and with
+the `>>=` select operator (`{ map; } ::= s >>= { map; };`). The receiver is
+evaluated once. A name that is not a field of the record is a type error; a
+destructured name that collides with another top-level binding is a
+duplicate-binding error.
 
-Type-valued members (e.g. `Stream`) may be exported and selected, but a
-parametric imported type constructor cannot yet be *applied* in an annotation
-(`x : s.Stream Int`); inference flows structurally without the annotation.
+Type-valued members (e.g. `Stream`) may be exported, selected, and **applied** in
+an annotation: a parametric imported type constructor resolves through qualified
+access, so `xs :: s.Stream Int = s.fromList {1; 2; 3;}` type-checks and the value
+built by imported combinators (`s.fromList`, `s.cons`) unifies with `s.Stream Int`.
+A constructor with a higher-kinded parameter (`<F :: Type -> Type>`) cannot cross
+the import boundary and is refused; a bare constructor used without arguments
+(`x :: s.Stream`) is an arity error, exactly like a local generic alias.
 
 ---

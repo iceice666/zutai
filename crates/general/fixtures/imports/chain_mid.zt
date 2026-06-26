@@ -1,4 +1,4 @@
-cfg :: import "config.zti";
+cfg ::= import "config.zti";
 {
   port = cfg.port;
 }

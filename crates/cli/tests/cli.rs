@@ -624,7 +624,7 @@ fn run_zt_with_import_error_exits_nonzero() {
     // Import a file that does not exist → import error.
     let path = write_tmp(
         "cli_test_import_err.zt",
-        "lib :: import \"./does_not_exist.zti\";\n1\n",
+        "lib ::= import \"./does_not_exist.zti\";\n1\n",
     );
     cli()
         .arg("run")
@@ -639,7 +639,7 @@ fn run_imported_value_can_flow_through_print_effect() {
     write_tmp("cli_test_print_import.zti", "{ host = \"127.0.0.1\"; }\n");
     let path = write_tmp(
         "cli_test_print_import.zt",
-        "cfg :: import \"./cli_test_print_import.zti\";\nprint cfg.host\n",
+        "cfg ::= import \"./cli_test_print_import.zti\";\nprint cfg.host\n",
     );
     cli()
         .arg("run")
@@ -660,7 +660,7 @@ fn compile_zt_imported_generic_fn_matches_oracle() {
         "main.zt",
         &[
             ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
-            ("main.zt", "dep :: import \"dep.zt\";\ndep 42\n"),
+            ("main.zt", "dep ::= import \"dep.zt\";\ndep 42\n"),
         ],
     );
     assert_eq!(native.trim(), "42");
@@ -681,7 +681,7 @@ fn compile_zt_imported_generic_record_matches_oracle() {
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\";\ndep.apply (\\x. x + 1) 41\n",
+                "dep ::= import \"dep.zt\";\ndep.apply (\\x. x + 1) 41\n",
             ),
         ],
     );
@@ -702,7 +702,7 @@ fn compile_zt_imported_generic_multitype_matches_oracle() {
             ("dep.zt", "idS :: <A> A -> A = x => x;\nidS\n"),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\";\nif dep true then dep 1 else 0\n",
+                "dep ::= import \"dep.zt\";\nif dep true then dep 1 else 0\n",
             ),
         ],
     );
@@ -724,7 +724,7 @@ fn compile_zt_imported_generic_record_multitype_matches_oracle() {
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\";\nfirst :: Int -> Bool -> Int = i _ => i;\nfirst (dep.apply (\\x. x + 1) 41) (dep.apply (\\b. b) true)\n",
+                "dep ::= import \"dep.zt\";\nfirst :: Int -> Bool -> Int = i _ => i;\nfirst (dep.apply (\\x. x + 1) 41) (dep.apply (\\b. b) true)\n",
             ),
         ],
     );
@@ -749,7 +749,7 @@ fn compile_zt_imported_stream_module_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\";\n\
+                "s ::= import \"stream.zt\";\n\
                  isEven :: Int -> Bool = n => (n / 2) * 2 == n;\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
                  double :: Int -> Int = x => x * 2;\n\
@@ -777,7 +777,7 @@ fn compile_zt_imported_stream_unfold_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\";\n\
+                "s ::= import \"stream.zt\";\n\
                  Step :: <S, A> type { #done; #yield : { item : A; next : S; }; };\n\
                  step :: Int -> Step Int Int = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
@@ -801,7 +801,7 @@ fn compile_zt_imported_stream_empty_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\";\n\
+                "s ::= import \"stream.zt\";\n\
                  add :: Int -> Int -> Int = a b => a + b;\n\
                  s.fold add 0 (s.cons 5 (s.cons 7 s.empty))\n",
             ),
@@ -823,7 +823,7 @@ fn compile_zt_imported_stream_list_interop_matches_oracle() {
             ("stream.zt", zutai_hir::STREAM_MODULE_SRC),
             (
                 "main.zt",
-                "s :: import \"stream.zt\";\n\
+                "s ::= import \"stream.zt\";\n\
                  double :: Int -> Int = x => x * 2;\n\
                  s.toList (s.take 2 (s.map double (s.fromList {1; 2; 3;})))\n",
             ),
@@ -874,7 +874,7 @@ fn compile_zt_imported_unexportable_value_stays_monomorphic() {
     .unwrap();
     std::fs::write(
         dir.join("main.zt"),
-        "dep :: import \"dep.zt\";\ng :: Int -> Bool -> Int = i _ => i;\ng dep dep\n",
+        "dep ::= import \"dep.zt\";\ng :: Int -> Bool -> Int = i _ => i;\ng dep dep\n",
     )
     .unwrap();
     let stderr = cli()
@@ -911,7 +911,7 @@ fn compile_zt_imported_unexportable_value_through_generic_matches_oracle() {
             ),
             (
                 "main.zt",
-                "dep :: import \"dep.zt\";\nign :: <A> A -> Int = _ => 0;\nign dep\n",
+                "dep ::= import \"dep.zt\";\nign :: <A> A -> Int = _ => 0;\nign dep\n",
             ),
         ],
     );
@@ -927,7 +927,7 @@ fn run_bare_filename_import_parent_escape_is_rejected() {
     std::fs::write(root.join("zutai_cli_bare_escape.zti"), "{ secret = 1; }\n").unwrap();
     std::fs::write(
         dir.join("main.zt"),
-        "cfg :: import \"../zutai_cli_bare_escape.zti\";\ncfg.secret\n",
+        "cfg ::= import \"../zutai_cli_bare_escape.zti\";\ncfg.secret\n",
     )
     .unwrap();
 
@@ -948,7 +948,7 @@ fn run_imported_function_can_flow_through_print_effect() {
     );
     let path = write_tmp(
         "cli_test_func_print_import.zt",
-        "add :: import \"./cli_test_func_import.zt\";\n[ print \"using import\"; add 2 3 ]\n",
+        "add ::= import \"./cli_test_func_import.zt\";\n[ print \"using import\"; add 2 3 ]\n",
     );
     cli()
         .arg("run")
@@ -970,7 +970,7 @@ fn compile_zt_value_import_matches_oracle() {
                 "dep.zt",
                 "base ::= 21;\n{ doubled = base; name = \"svc\"; }\n",
             ),
-            ("main.zt", "dep :: import \"dep.zt\";\ndep\n"),
+            ("main.zt", "dep ::= import \"dep.zt\";\ndep\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -985,7 +985,7 @@ fn compile_zt_int_import_matches_oracle() {
         "main.zt",
         &[
             ("lib.zt", "x ::= 7;\ny ::= 6;\nx * y\n"),
-            ("main.zt", "n :: import \"lib.zt\";\nn + 1\n"),
+            ("main.zt", "n ::= import \"lib.zt\";\nn + 1\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -1018,7 +1018,7 @@ fn parse_zt_with_valid_import_prints_ast() {
     );
     let path = write_tmp(
         "cli_test_parse_import_cfg.zt",
-        "cfg :: import \"./cli_test_parse_import_cfg.zti\";\ncfg.host\n",
+        "cfg ::= import \"./cli_test_parse_import_cfg.zti\";\ncfg.host\n",
     );
     cli()
         .arg("parse")
@@ -1035,7 +1035,7 @@ fn parse_zt_with_import_error_surfaces_root_cause() {
     // After fix: the FileNotFound import diagnostic is included in the filter.
     let path = write_tmp(
         "cli_test_parse_import_err.zt",
-        "cfg :: import \"./does_not_exist_parse.zti\";\ncfg\n",
+        "cfg ::= import \"./does_not_exist_parse.zti\";\ncfg\n",
     );
     cli()
         .arg("parse")
@@ -3551,7 +3551,7 @@ fn compile_zti_import_field_matches_oracle() {
                 "config.zti",
                 "{\n  host = \"127.0.0.1\";\n  port = 8080;\n}\n",
             ),
-            ("main.zt", "cfg :: import \"config.zti\";\ncfg.port\n"),
+            ("main.zt", "cfg ::= import \"config.zti\";\ncfg.port\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3570,7 +3570,7 @@ fn compile_zti_import_whole_record_matches_oracle() {
                 "data.zti",
                 "{\n  a = 1;\n  nested = { b = 2; };\n  items = [10; 20;];\n  flag = true;\n  tag = #ok;\n  name = \"hi\";\n}\n",
             ),
-            ("main.zt", "d :: import \"data.zti\";\nd\n"),
+            ("main.zt", "d ::= import \"data.zti\";\nd\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3588,7 +3588,7 @@ fn compile_zt_function_import_matches_oracle() {
                 "lib.zt",
                 "add :: Int -> Int -> Int\n  = a b => a + b;\nadd\n",
             ),
-            ("main.zt", "f :: import \"lib.zt\";\nf 2 3\n"),
+            ("main.zt", "f ::= import \"lib.zt\";\nf 2 3\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3606,9 +3606,9 @@ fn compile_zt_transitive_import_matches_oracle() {
             ("config.zti", "{ host = \"127.0.0.1\"; port = 8080; }\n"),
             (
                 "mid.zt",
-                "cfg :: import \"config.zti\";\n{ port = cfg.port; }\n",
+                "cfg ::= import \"config.zti\";\n{ port = cfg.port; }\n",
             ),
-            ("top.zt", "mid :: import \"mid.zt\";\nmid.port\n"),
+            ("top.zt", "mid ::= import \"mid.zt\";\nmid.port\n"),
         ],
     );
     assert_eq!(native, interp, "native must match the interpreter oracle");
@@ -3628,11 +3628,11 @@ fn compile_zt_diamond_import_matches_oracle() {
         "main.zt",
         &[
             ("base.zt", "n ::= 10;\nn\n"),
-            ("a.zt", "base :: import \"base.zt\";\nbase + 1\n"),
-            ("b.zt", "base :: import \"base.zt\";\nbase + 2\n"),
+            ("a.zt", "base ::= import \"base.zt\";\nbase + 1\n"),
+            ("b.zt", "base ::= import \"base.zt\";\nbase + 2\n"),
             (
                 "main.zt",
-                "a :: import \"a.zt\";\nb :: import \"b.zt\";\na + b\n",
+                "a ::= import \"a.zt\";\nb ::= import \"b.zt\";\na + b\n",
             ),
         ],
     );
@@ -3656,7 +3656,7 @@ fn compile_zt_imported_concrete_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "eq 3 3\n",
                 ),
@@ -3684,7 +3684,7 @@ fn compile_zt_imported_bool_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"bool_eq.zt\";\n",
+                    "_ ::= import \"bool_eq.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "eq false false\n",
                 ),
@@ -3712,7 +3712,7 @@ fn compile_zt_imported_ord_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"cmp_lib.zt\";\n",
+                    "_ ::= import \"cmp_lib.zt\";\n",
                     "Ord :: <A> @A { lt :: A -> A -> Bool; }\n",
                     "lt 1 2\n",
                 ),
@@ -3746,7 +3746,7 @@ fn compile_zt_imported_multi_instance_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "(eq 3 3, eq true true)\n",
                 ),
@@ -3785,7 +3785,7 @@ fn compile_zt_imported_conditional_pair_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Pair :: <A> type { fst : A; snd : A; };\n",
                     "p1 :: Pair Int = { fst = 1; snd = 2; };\n",
@@ -3827,7 +3827,7 @@ fn compile_zt_imported_conditional_list_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "(eq 1 1, eq { 1; } { 1; })\n",
                 ),
@@ -3868,7 +3868,7 @@ fn compile_zt_imported_nested_conditional_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Pair :: <A> type { fst : A; snd : A; };\n",
                     "a :: Pair Int = { fst = 1; snd = 2; };\n",
@@ -3909,7 +3909,7 @@ fn compile_zt_imported_conditional_optional_witness_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "x :: Int? = #some (1);\n",
                     "y :: Int? = #some (1);\n",
@@ -3949,7 +3949,7 @@ fn compile_zt_imported_conditional_cross_constraint_component_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "eq { 1; } { 1; }\n",
                 ),
@@ -3983,7 +3983,7 @@ fn compile_zt_imported_conditional_digit_suffix_record_matches_oracle() {
             (
                 "main.zt",
                 concat!(
-                    "_ :: import \"eq_lib.zt\";\n",
+                    "_ ::= import \"eq_lib.zt\";\n",
                     "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
                     "Rec :: <A> type { x : A; x2 : A; };\n",
                     "r1 :: Rec Int = { x = 1; x2 = 2; };\n",

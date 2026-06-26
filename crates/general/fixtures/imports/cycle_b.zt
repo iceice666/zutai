@@ -1,2 +1,2 @@
-a :: import "cycle_a.zt";
+a ::= import "cycle_a.zt";
 a

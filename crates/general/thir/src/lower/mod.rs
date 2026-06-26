@@ -188,4 +188,30 @@ struct Lowerer<'hir> {
     /// Queried by the `HirTypeKind::Access` arm when the field's type is
     /// `TypeKind::Type` and the receiver is a known import binding.
     pub(super) import_type_denotations: FxHashMap<(ImportKey, String), TypeId>,
+    /// Synthetic bindings minted during import interning for imported parametric
+    /// type constructors and their type parameters. HIR cannot mint `BindingId`s,
+    /// so these get ids past the HIR range (`hir.bindings.len() + index`); name
+    /// and kind reads route through `binding_name`/`binding_kind`, and the names
+    /// are appended to `ThirFile::binding_names`/`binding_kinds` on finalize.
+    pub(super) synthetic_bindings: Vec<(String, BindingKind)>,
+    /// `(import source, exported constructor field name)` → the synthetic
+    /// constructor binding it was rebuilt as, so `s.Stream Int` resolves to the
+    /// local parametric alias. Mirrors `import_type_denotations` for the
+    /// *parametric* (constructor) case.
+    pub(super) import_type_constructors: FxHashMap<(ImportKey, String), BindingId>,
+    /// Active map from an imported constructor's exported type-parameter id
+    /// (`ImportedType::TyVar`) to the synthetic `TypeParam` binding it interns to,
+    /// set while interning that constructor's body so a `TyVar` in the body
+    /// becomes the matching `TypeVar`. Empty outside constructor-body interning.
+    pub(super) ctor_param_map: FxHashMap<u32, BindingId>,
+    /// Synthetic `TypeAlias` decls materialized for imported constructors,
+    /// appended to `ThirFile::decls` so TLC and the evaluators resolve them like
+    /// any local parametric alias.
+    pub(super) synthetic_decls: Vec<ThirDeclId>,
+    /// The import declaration currently being predeclared, if any. Imported
+    /// parametric constructors are defined exactly once — during
+    /// `predeclare_import_decls`, where this is `Some` — so the later re-interning
+    /// when the `Import` expr node is lowered does not redefine them, and the
+    /// materialized `TypeAlias` decl has a real HIR source to point at.
+    pub(super) current_import_decl: Option<HirDeclId>,
 }

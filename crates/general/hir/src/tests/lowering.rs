@@ -32,14 +32,16 @@ fn normalizes_no_signature_function_to_function_decl() {
 }
 
 #[test]
-fn import_decl_lowers_to_top_import_binding() {
-    let lowered = lower("lib :: import \"lib.zt\";\nlib");
+fn import_binding_lowers_to_value_with_import_expr() {
+    // `import` is an expression: `lib ::= import "lib.zt"` is an ordinary
+    // inferred value binding whose value is an `Import` expr.
+    let lowered = lower("lib ::= import \"lib.zt\";\nlib");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
     let binding = find_binding_by_name(&lowered.file, "lib").expect("lib binding");
     assert_eq!(
         lowered.file.bindings[binding.0 as usize].kind,
-        BindingKind::TopImport
+        BindingKind::TopValue
     );
 
     let decl = &lowered.file.decl_arena[lowered.file.decls[0]];

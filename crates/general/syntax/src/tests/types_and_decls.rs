@@ -194,38 +194,62 @@ fn parse_typed_decl() {
 }
 
 #[test]
-fn parse_import_decl_string() {
-    let f = parse_str("lib :: import \"lib.zt\";\nlib");
+fn parse_import_binding_string() {
+    // `import` is an expression; a plain import binding is an inferred binding
+    // whose value is an `Expr::Import`.
+    let f = parse_str("lib ::= import \"lib.zt\";\nlib");
     assert_eq!(f.decls.len(), 1);
     match decl_by(&f, "lib") {
-        Decl::Import { name, source, .. } => {
+        Decl::Inferred { name, value, .. } => {
             assert_eq!(name, "lib");
-            assert!(matches!(source, ImportSource::String(s) if s == "lib.zt"));
+            match value {
+                Expr::Import { source, .. } => {
+                    assert!(matches!(source, ImportSource::String(s) if s == "lib.zt"));
+                }
+                other => panic!("expected Import expr, got {other:?}"),
+            }
         }
-        other => panic!("expected Import, got {other:?}"),
+        other => panic!("expected Inferred, got {other:?}"),
     }
 }
 
 #[test]
-fn parse_import_decl_path() {
-    let f = parse_str("lib :: import lib.zt;\nlib");
+fn parse_import_binding_path() {
+    let f = parse_str("lib ::= import lib.zt;\nlib");
     assert_eq!(f.decls.len(), 1);
     match decl_by(&f, "lib") {
-        Decl::Import { source, .. } => match source {
-            ImportSource::Path(parts) => {
-                assert_eq!(parts.len(), 2);
-                assert_eq!(parts[0], "lib");
-                assert_eq!(parts[1], "zt");
+        Decl::Inferred { value, .. } => match value {
+            Expr::Import {
+                source: ImportSource::Path(parts),
+                ..
+            } => {
+                assert_eq!(parts, &["lib", "zt"]);
             }
-            other => panic!("expected path import source, got {other:?}"),
+            other => panic!("expected path import expr, got {other:?}"),
         },
-        other => panic!("expected Import, got {other:?}"),
+        other => panic!("expected Inferred, got {other:?}"),
     }
 }
 
 #[test]
-fn expression_import_is_rejected() {
-    assert!(parse("{ cfg := import \"config.zti\"; cfg }").has_errors());
+fn import_destructures_in_one_binding() {
+    // The unified form: destructure straight off an `import` expression.
+    let f = parse_str("{ map; fold; } ::= import stdlib.stream;\nmap");
+    assert_eq!(f.decls.len(), 1);
+    match &f.decls[0] {
+        Decl::Destructure { fields, value, .. } => {
+            let names: Vec<_> = fields.iter().map(|field| field.name.as_str()).collect();
+            assert_eq!(names, ["map", "fold"]);
+            assert!(matches!(value, Expr::Import { .. }));
+        }
+        other => panic!("expected Destructure, got {other:?}"),
+    }
+}
+
+#[test]
+fn old_import_decl_form_is_rejected() {
+    // `name :: import …` no longer exists — import is purely an expression.
+    assert!(parse("lib :: import \"lib.zt\";\nlib").has_errors());
 }
 
 #[test]

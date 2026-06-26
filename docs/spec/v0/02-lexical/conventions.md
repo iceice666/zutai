@@ -319,7 +319,7 @@ or pattern**. They never overlap.
 | `:=`             | inferred local binding inside a `[ … ]` do-block (`name := expr;`)         |
 | `::=`            | inferred top-level value binding (`name ::= expr;`)                       |
 | `:`              | typed local binding (`name : T = expr;`) and type annotation in type positions: type-record fields, tuple type fields, optional-field marker |
-| `::`             | typed top-level binding, function signature, import declaration, and type definition |
+| `::`             | typed top-level binding, function signature, and type definition |
 | `\|`             | match arm introducer inside `match` bodies                                |
 | `=`              | value/pattern field binding and top-level function clause introducer       |
 | `->`             | function type arrow                                                        |

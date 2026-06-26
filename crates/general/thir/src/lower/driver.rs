@@ -41,6 +41,11 @@ impl<'hir> Lowerer<'hir> {
             type_eval_fuel: 10_000,
             binding_import_key: FxHashMap::default(),
             import_type_denotations: FxHashMap::default(),
+            synthetic_bindings: Vec::new(),
+            import_type_constructors: FxHashMap::default(),
+            ctor_param_map: FxHashMap::default(),
+            synthetic_decls: Vec::new(),
+            current_import_decl: None,
         };
         lowerer.error_type = lowerer.alloc_type(Type {
             kind: TypeKind::Error,
@@ -96,14 +101,17 @@ impl<'hir> Lowerer<'hir> {
         }
         self.check_witnesses();
         self.check_witness_coherence();
-        // Reassemble in source order.
-        let decls: Vec<_> = self
+        // Reassemble in source order, then append any synthetic `TypeAlias` decls
+        // materialized for imported parametric type constructors (these have no
+        // HIR origin, so they are not in `hir.decls`).
+        let mut decls: Vec<_> = self
             .hir
             .decls
             .iter()
             .copied()
             .map(|id| id_map[&id])
             .collect();
+        decls.extend(self.synthetic_decls.iter().copied());
         let saved_effect_ambient = self.enter_host_effect_boundary(self.hir.span);
         let final_expr = self.infer_expr(self.hir.final_expr);
         self.exit_effectful_result(saved_effect_ambient);
@@ -132,12 +140,14 @@ impl<'hir> Lowerer<'hir> {
                 .bindings
                 .iter()
                 .map(|binding| binding.name.clone())
+                .chain(self.synthetic_bindings.iter().map(|(name, _)| name.clone()))
                 .collect(),
             binding_kinds: self
                 .hir
                 .bindings
                 .iter()
                 .map(|binding| binding.kind)
+                .chain(self.synthetic_bindings.iter().map(|(_, kind)| *kind))
                 .collect(),
         };
         let diagnostics = std::mem::take(&mut self.diagnostics);
@@ -148,6 +158,44 @@ impl<'hir> Lowerer<'hir> {
             pass_reports: Vec::new(),
         }
     }
+    /// Mint a synthetic binding (id past the HIR binding range) for an imported
+    /// parametric type constructor or one of its type parameters. HIR owns all
+    /// real `BindingId`s; these synthetic ones let an imported constructor be
+    /// rebuilt as an ordinary local parametric alias.
+    pub(in crate::lower) fn alloc_synthetic_binding(
+        &mut self,
+        name: String,
+        kind: BindingKind,
+    ) -> BindingId {
+        let id = self.hir.bindings.len() + self.synthetic_bindings.len();
+        self.synthetic_bindings.push((name, kind));
+        BindingId(id as u32)
+    }
+
+    /// Name of a binding, dispatching to the synthetic side table for ids past
+    /// the HIR range.
+    pub(in crate::lower) fn binding_name(&self, binding: BindingId) -> &str {
+        let idx = binding.0 as usize;
+        let hir_len = self.hir.bindings.len();
+        if idx < hir_len {
+            &self.hir.bindings[idx].name
+        } else {
+            &self.synthetic_bindings[idx - hir_len].0
+        }
+    }
+
+    /// Kind of a binding, dispatching to the synthetic side table for ids past
+    /// the HIR range.
+    pub(in crate::lower) fn binding_kind(&self, binding: BindingId) -> BindingKind {
+        let idx = binding.0 as usize;
+        let hir_len = self.hir.bindings.len();
+        if idx < hir_len {
+            self.hir.bindings[idx].kind
+        } else {
+            self.synthetic_bindings[idx - hir_len].1
+        }
+    }
+
     /// Populate `type_param_kinds` from every type parameter's `<.. :: Kind>`
     /// annotation across constraint, witness, function, and constraint-method
     /// param lists. Params without an annotation default to `Kind::ground()`.

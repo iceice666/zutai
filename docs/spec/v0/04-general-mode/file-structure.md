@@ -11,7 +11,7 @@ file ::= top_decl* expr
 Example:
 
 ```zt
-cfg :: import "app.zti";
+cfg ::= import "app.zti";
 name ::= cfg.name;
 
 {
@@ -40,13 +40,13 @@ name ::= expr;
 name :: TypeExpr = expr;
 ```
 
-**Import binding** — static top-level module/data import:
+**Import binding** — `import` is an expression with a literal source, so a static module/data import is an ordinary inferred binding:
 
 ```zt
-name :: import "path.zti";
+name ::= import "path.zti";
 ```
 
-The declaration creates one prefixed binding. Imported fields are accessed through that binding, for example `name.field` or `name.Type`.
+This creates one prefixed binding; imported fields are accessed through it, for example `name.field` or `name.Type`. Members can also be destructured directly: `{ field; } ::= import "path.zt";`.
 
 
 **Function definition** — uses `::` for the signature, followed by one or more `=` clauses:
@@ -69,7 +69,7 @@ x ::= 42;
 
 port :: Int = 8080;
 
-cfg :: import "app.zti";
+cfg ::= import "app.zti";
 
 add :: Int -> Int -> Int
   = a b => a + b;
@@ -85,7 +85,7 @@ def add ...
 class Server ...
 ```
 
-Everything is one of these declaration forms; `import` is not an expression form.
+Every top-level binding is one of these forms. `import` itself is an expression (with a literal source), so it appears as the right-hand side of a binding rather than as a dedicated declaration form.
 
 ### Function definitions
 

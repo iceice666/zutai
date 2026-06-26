@@ -38,7 +38,7 @@ V3-G6 (importable `stream.zt` module) **landed 2026-06-25** — see
 importable `.zt` module backed by one canonical source
 (`crates/general/hir/src/lower/prelude/stream.zt`, exposed as
 `zutai_hir::STREAM_MODULE_SRC`) that also feeds the ambient prelude via
-`include_str!`; the ambient surface is unchanged and `s :: import "stream.zt"`
+`include_str!`; the ambient surface is unchanged and `s ::= import "stream.zt"`
 exports the eight combinators (`s.map`, `s.fold`, …). The recursive `Stream`
 codata type crossing the import boundary required a symmetric cross-module
 global-ref compat fix in the Dataflow Core validator (sound under untagged-i64).
@@ -57,14 +57,21 @@ demand-gated Track 2 boundaries and the open generator questions below.
 
 **Residual (open):**
 
-- **Applied imported type constructors.** A parametric imported type constructor
-  cannot be *applied* in an annotation (`x : s.Stream Int`), because `export_type`
-  does not preserve the constructor's binder across the boundary — it would need a
-  type-constructor representation in `ImportedType`. Refused with a precise
-  diagnostic; inference flows structurally without the annotation.
-- **`import` as a destructure RHS.** `{ … } ::= import stdlib.stream;` is rejected
-  (`import` is a declaration keyword, not an expression); use the two-step form
-  `s :: import …;` then `{ … } ::= s;`.
+- **Applied imported type constructors — landed 2026-06-26** (see
+  `docs/ARCHIVED.md` "Applied imported type constructors"). A parametric imported
+  type constructor can now be *applied* in an annotation (`x :: s.Stream Int`) for
+  arbitrary user modules: `export_type_value` preserves the constructor's binder
+  as `ImportedType::TypeCon` (recursive self-references stay bounded as
+  `ConApply`), and the importer rebuilds it as a local parametric alias via
+  synthetic bindings + a materialized `TypeAlias` decl. v1 refuses higher-kinded
+  constructor parameters and (cleanly, via the runtime type-value gate) TLC
+  evaluation of modules that export type values; both refusals are precise.
+- **`import` as a destructure RHS — landed 2026-06-26** (see `docs/ARCHIVED.md`
+  "`import` unified as an expression"). `import` is now an expression atom and the
+  dedicated `name :: import source` declaration form was removed, so a plain import
+  binding is `name ::= import …` and members destructure in one binding:
+  `{ map; fold; } ::= import stdlib.stream;`. The source stays a literal, so
+  resolution remains pure and static.
 
 ## Previous milestone — V3-G5 (landed 2026-06-25)
 

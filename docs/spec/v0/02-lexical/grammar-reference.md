@@ -12,7 +12,6 @@ TopDecl
   ::= Ident "::=" Expr ";"
    | Ident "::" TypeExpr "=" Expr ";"
    | Ident "::" TypeParamList? "type" TypeExpr ";"
-   | Ident "::" "import" String ";"
    | Ident "::" TypeParamList? TypeExpr FunctionClause+
    | Ident Pattern+ "=" Expr ";"
    | Ident "::" TypeParamList? "@" TypeAtom "{" ConstraintMethod* "}" "derive"?
