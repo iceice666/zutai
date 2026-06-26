@@ -16,8 +16,10 @@
 //! the call site's handler and the existing, trusted lexical CPS elaborator
 //! discharges it identically to the interpreter.
 //!
-//! Recursive (self/mutual), polymorphic, higher-order, and let-bound effectful
-//! callees, and partial applications, are left untouched and stay gated
+//! Recursive (self/mutual) effectful callees are left for the reify pass
+//! (`super::reify`), which lowers them to a free-monad `Computation` driver
+//! rather than inlining. Polymorphic, higher-order, and let-bound effectful
+//! callees, and partial applications, are still left untouched and stay gated
 //! (refused, never miscompiled) — the reachability-scoped residual-effect gate
 //! is the safety net. Inlined-away decls are dead-code-eliminated so their now
 //! orphaned bodies and effectful function types stop tripping the gate.

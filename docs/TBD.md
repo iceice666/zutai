@@ -22,15 +22,58 @@ type export, destructuring binding) have all landed — see `docs/ARCHIVED.md`.
 
 ## Active milestone — none
 
+**Native effect parity — landed 2026-06-26** (see `docs/ARCHIVED.md` "Native
+effect parity — reified delimited-continuation lowering"). The native backend now
+compiles the handled algebraic effects it previously refused, by reifying the
+interpreter's runtime continuation model into generated TLC
+(`reify_residual_effects`), reversing the Phase 35 "no-go" on the user's explicit
+request. Recursive & mutually-recursive callees, higher-order effectful values,
+partial application, effectful builtin operands, and `finally` all compile
+natively and match the `eval_tlc` oracle; the lexical CPS fast path is unchanged.
+
+**Native effect-parity residual gates — landed 2026-06-26** (see `docs/ARCHIVED.md`
+"Native effect-parity residual gates closed"). The two conservative gates surfaced
+by the pressure test now compile natively and match the oracle: an *inline*
+partial-application passed as a higher-order argument (`applyTo (addP 5)`) is
+eta-expanded to a lambda value whose body is reified at the call site, and an
+effectful function stored in a *record field* (`box.f 7`) is discovered through the
+wrapper, has its field type rewritten to `… -> Computation`, and is called through a
+`GetField`-headed reified call. The two paths compose (`applyTo (box.f 5)`). Anything
+beyond the new envelope (a wrapper observed outside the handle scope, multi-shot
+resume, polymorphic effectful values) still refuses cleanly — parity-or-refuse held.
+
+**Effectful generators (V3-G4) — the supported idiom now compiles natively
+(2026-06-26).** `stream { yield perform … }` consumed strictly under a handler
+(the *raw-cell-type* idiom the docs designate as supported) now lowers and matches
+the oracle (`compiled_effectful_generator{,_ordering}_matches_oracle`). The reify
+pass stores the deferred `perform` as strict `Computation`-DATA in the cell's
+effectful field — the carrier goes on the *field*, not the demand thunk, so
+`Computation` stays monomorphic — builds a scope-local `Cell'` with that field
+typed `Computation`, and the consumer `bind`s it; the cell is produced strictly and
+purely, so demand order and early termination (unforced tails never fire) follow
+the interpreter exactly (the interpreter is also strict-at-force for effectful
+modules — `tlc_module_can_defer_aggregates` is `false`). See `reify.rs`
+(`detect_eff_codata`, `build_cell_primes`, `reify_cell_body`).
+
+Not parity gaps: a **recursive/infinite** effectful generator is a pure-typed
+top-level producer function that performs, which the interpreter itself rejects
+(`tick not in effect row`); a **conditional** effectful generator type-errors on
+the interpreter too. **Polymorphic (`TyLam`) effectful values** and **open effect
+rows** likewise need polymorphic effect *execution* the interpreter refuses.
+Narrow residual: the same generator written with the parametric prelude `Stream`
+alias (rather than a raw cell type) runs on the interpreter but stays gated —
+its cell type is a *type application* (`StreamCell Int`) the monomorphic detection
+does not yet recognize.
+
 **V3-G4 follow-up: `finally` finalization clause — landed 2026-06-26** (see
 `docs/ARCHIVED.md` "`finally` finalization clause"). A `finally = expr` handler
 clause runs a teardown once when a `handle` reduces to its final value (normal
 completion *or* handler abort), in the outer row — the resource-finalization
 primitive for effectful generators. It fires even when a consumer stops early
 (partial `take`), because a deferred effect is charged to whoever forces it under
-the granting handler, so the handler's extent bounds the resource.
-Interpreter-only; native compilation of a finally-bearing handle is refused with a
-precise diagnostic.
+the granting handler, so the handler's extent bounds the resource. The teardown
+runs on both the interpreter and, as of the native-effect-parity work, the
+native backend (`desugar_finally` → outer-row sequencing).
 
 **V3-G4 follow-up: open effect-row tails (check-only foundation) — landed
 2026-06-26** (see `docs/ARCHIVED.md` "Open effect-row tails"). Effect-row

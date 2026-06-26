@@ -35,8 +35,16 @@ of scope until that decision is explicitly reopened.
   write-once. V3 features must not introduce heap mutation that would require a
   barrier, and must not reopen D-0002 (untagged `i64`).
 - **Equirecursive types**, **predicative higher-rank polymorphism**,
-  **advisory capability authority**, **fold-or-reject reflection**, and
-  **strict-AOT rejection of unhandled effects** all carry forward unchanged.
+  **advisory capability authority**, and **fold-or-reject reflection** all carry
+  forward unchanged.
+- **Strict-AOT rejection of *unhandled* effects** carries forward — but, as of
+  2026-06-26, *handled* effects the lexical CPS path could not discharge
+  (recursive, higher-order, partially-applied effectful values; effectful builtin
+  operands; `finally`) now compile natively via the reify pass
+  (`reify_residual_effects`), reversing the Phase 35 no-go. Genuinely unhandled
+  effects, polymorphic/open-row effect *execution* (also refused by the
+  interpreter), and effectful generators stay refused. See `docs/ARCHIVED.md`
+  "Native effect parity".
 - **Kernel invariant "equality = normalization"** (`tlc-core.md` §10): no V3
   surface feature may force a coercion/cast core node.
 

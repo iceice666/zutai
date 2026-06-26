@@ -577,6 +577,9 @@ pub(crate) fn run_compile(
     } else {
         zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses, extern_conditionals)
     };
+    // Backend-only: lower handled effects (finally, recursive/higher-order, …)
+    // that `lower_thir` leaves residual for the interpreter oracle.
+    zutai_tlc::lower_effects_for_backend(&mut module);
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);
@@ -736,6 +739,8 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
             extern_conditionals_df,
         )
     };
+    // Backend-only: lower handled effects that `lower_thir` leaves residual.
+    zutai_tlc::lower_effects_for_backend(&mut module);
     let mut folded_bindings = None;
     let boundary_host_grants = zutai_tlc::HostEffectSet::ALL;
     let has_host_io_print = zutai_tlc::contains_host_io_print(&module);

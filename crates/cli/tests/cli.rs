@@ -1411,87 +1411,256 @@ fn compile_effect_bin_is_rejected_before_toolchain() {
 }
 
 #[test]
-fn compile_recursive_effectful_fn_stays_gated() {
-    // A self-recursive effectful function cannot be inlined (no finite
-    // unfolding); the residual-effect gate must refuse rather than miscompile.
+fn compiled_recursive_effectful_fn_matches_oracle() {
+    // E1: a self-recursive effectful function cannot be inlined, but the reify
+    // pass lowers the handle to a generated free-monad driver that compiles
+    // natively and matches the interpreter. Here the `fail` handler aborts
+    // without resuming (no finite unfolding needed), yielding 0.
     let src = r#"
 loop :: Int -> Int ! { fail Text; }
   = n => if n < 1 then perform fail "z" else loop (n - 1);
 handle loop 3 with { value = \v. v; fail = \m. 0; }
 "#;
-    let path = write_tmp("cli_test_compile_rec_effect.zt", src);
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("effect"));
+    let run_output = run_stdout("cli_test_compile_rec_effect.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_compile_rec_effect", src);
+    assert_eq!(run_output, "0\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled recursive effectful fn must match the eval_tlc oracle"
+    );
 }
 
 #[test]
-fn compile_higher_order_effectful_value_stays_gated() {
-    // An effectful function passed as a value (not a statically-known callee)
-    // cannot be inlined; it must stay gated.
+fn compiled_higher_order_effectful_value_matches_oracle() {
+    // E2: an effectful function passed as a value. The reify pass rewrites the
+    // effectful parameter's type to its `Computation` form and treats `f 1` as a
+    // reified call, so this compiles natively and matches the interpreter. The
+    // `fail` handler aborts without resuming, yielding 0.
     let src = r#"
 g :: Int -> Int ! { fail Text; } = n => perform fail "x";
 apply :: (Int -> Int ! { fail Text; }) -> Int ! { fail Text; } = f => f 1;
 handle apply g with { value = \v. v; fail = \m. 0; }
 "#;
-    let path = write_tmp("cli_test_compile_ho_effect.zt", src);
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("effect"));
+    let run_output = run_stdout("cli_test_compile_ho_effect.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_compile_ho_effect", src);
+    assert_eq!(run_output, "0\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled higher-order effectful value must match the eval_tlc oracle"
+    );
 }
 
 #[test]
-fn compile_effectful_generator_stays_gated() {
-    // V3-G4: an effectful generator (a `stream { yield perform … }` consumed
-    // strictly under a handler) runs on the interpreter, but the deferred
-    // user-defined effect does not lower to the native backend — the
-    // residual-effect gate must refuse it (never miscompile), matching the
-    // committed strict-AOT-rejects-effects boundary.
-    let src = r#"
+fn compiled_partial_application_effect_matches_oracle() {
+    // E4: a partially-applied effectful function. `addP = add 10` has no leading
+    // lambdas, so the reify pass eta-expands it to full value arity before
+    // lowering. `addP 5` completes the call: x = op 10 (resume 10), 10 + 5 + 10 = 25.
+    let src = concat!(
+        "add :: Int -> Int -> Int ! { op : Int -> Int; }\n",
+        "  = a b => [ x := perform op a; a + b + x ];\n",
+        "addP ::= add 10;\n",
+        "handle [ addP 5 ] with { op = \\v. resume v; }\n",
+    );
+    let run_output = run_stdout("cli_test_partial_effect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_partial_effect_compiled", src);
+    assert_eq!(run_output, "25\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled partial-application effect must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_inline_partial_application_effect_matches_oracle() {
+    // E4 follow-up: an *inline* partially-applied effectful function passed as a
+    // higher-order argument (`applyTo (addP 5)`). The named-binding form
+    // (`applyTo addP`) already compiled; the reify pass now eta-expands the inline
+    // partial application to a lambda value and reifies its body at the call site,
+    // so this matches the oracle. `x = op 5 = 5`, `a + b + x = 5 + 11 + 5 = 21`.
+    let src = concat!(
+        "addP :: Int -> Int -> Int ! { op : Int -> Int; }\n",
+        "  = a b => [ x := perform op a; a + b + x ];\n",
+        "applyTo :: (Int -> Int ! { op : Int -> Int; }) -> Int ! { op : Int -> Int; }\n",
+        "  = f => f 11;\n",
+        "handle applyTo (addP 5) with { op = \\v. resume v; }\n",
+    );
+    let run_output = run_stdout("cli_test_inline_partial_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_inline_partial_compiled", src);
+    assert_eq!(run_output, "21\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled inline partial-application effect must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_record_field_effectful_call_matches_oracle() {
+    // An effectful function stored in a record field, then projected and called
+    // (`box.f 7`). The reify pass discovers the callee through the record wrapper,
+    // rewrites the wrapper's field type to `… -> Computation`, and reifies the
+    // `GetField`-headed call. `x = op 7 = 14`, `n + x = 7 + 14 = 21`.
+    let src = concat!(
+        "g :: Int -> Int ! { op : Int -> Int; } = n => [ x := perform op n; n + x ];\n",
+        "box :: { f : Int -> Int ! { op : Int -> Int; }; } = { f = g; };\n",
+        "handle box.f 7 with { op = \\v. resume (v * 2); }\n",
+    );
+    let run_output = run_stdout("cli_test_record_field_effect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_record_field_effect_compiled", src);
+    assert_eq!(run_output, "21\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled record-field effectful call must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_record_field_partial_application_effect_matches_oracle() {
+    // The two new paths composed: a record-field projection that is *also* an inline
+    // partial application passed as a higher-order argument (`applyTo (box.f 5)`).
+    // `x = op 5 = 5`, `a + b + x = 5 + 11 + 5 = 21`.
+    let src = concat!(
+        "addP :: Int -> Int -> Int ! { op : Int -> Int; }\n",
+        "  = a b => [ x := perform op a; a + b + x ];\n",
+        "box :: { f : Int -> Int -> Int ! { op : Int -> Int; }; } = { f = addP; };\n",
+        "applyTo :: (Int -> Int ! { op : Int -> Int; }) -> Int ! { op : Int -> Int; }\n",
+        "  = k => k 11;\n",
+        "handle applyTo (box.f 5) with { op = \\v. resume v; }\n",
+    );
+    let run_output = run_stdout("cli_test_record_partial_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_record_partial_compiled", src);
+    assert_eq!(run_output, "21\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled record-field partial application must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_effectful_operand_recursion_matches_oracle() {
+    // E5 (reify generalization): a recursive effectful call used as a *builtin
+    // operand* (`x + total (n - 1)`), not just in tail position. The reify pass
+    // composes it through `bind`, left-to-right. total 3 = (3+1)+(2+1)+(1+1) = 9.
+    let src = concat!(
+        "total :: Int -> Int ! { op : Int -> Int; }\n",
+        "  = 0 => 0;\n",
+        "  = n => [ x := perform op n; x + total (n - 1) ];\n",
+        "handle total 3 with { op = \\v. resume (v + 1); }\n",
+    );
+    let run_output = run_stdout("cli_test_eff_operand_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_eff_operand_compiled", src);
+    assert_eq!(run_output, "9\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled effectful-operand recursion must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_recursive_higher_order_effect_matches_oracle() {
+    // E2: a recursive higher-order function — `applyN` takes an effectful callback
+    // `f` and recurses, so it is reified (not inlined) with `f`'s type rewritten to
+    // `Int -> Computation`. Each `f n` resumes with `v + 1`, accumulated across the
+    // recursion: applyN g 3 0 = (3+1)+(2+1)+(1+1)+0 = 9.
+    let src = concat!(
+        "g :: Int -> Int ! { op : Int -> Int; } = n => perform op n;\n",
+        "applyN :: (Int -> Int ! { op : Int -> Int; }) -> Int -> Int -> Int ! { op : Int -> Int; }\n",
+        "  = f 0 acc => acc;\n",
+        "  = f n acc => [ x := f n; applyN f (n - 1) (acc + x) ];\n",
+        "handle applyN g 3 0 with { op = \\v. resume (v + 1); }\n",
+    );
+    let run_output = run_stdout("cli_test_ho_rec_effect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_ho_rec_effect_compiled", src);
+    assert_eq!(run_output, "9\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled recursive higher-order effect must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_effectful_generator_matches_oracle() {
+    // V3-G4: an effectful generator (`stream { yield perform … }`) consumed
+    // strictly under a handler. The deferred `perform` in the cell's `head` field
+    // is reified into `Computation`-data (carrier on the field, not the demand
+    // thunk, so `Computation` stays monomorphic); the consumer `bind`s it. One
+    // yield resumes 5, summed to 5.
+    let one = r#"
 Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
 sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
   = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
 handle (sumEff (stream { yield perform tick (); })) with { tick = \_. resume 5; }
 "#;
-    let path = write_tmp("cli_test_compile_effectful_gen.zt", src);
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        // Specifically the residual-effect gate (not some incidental effect
-        // error): the deferred `tick` survives to TLC and cannot be lowered.
-        .stderr(predicate::str::contains("effects remain after TLC"));
+    assert_eq!(run_stdout("cli_test_eff_gen_one.zt", one), "5\n");
+    assert_eq!(compile_bin_stdout("cli_test_eff_gen_one", one), "5\n");
+
+    // Two yields → 10; the second cell's effect fires only when the consumer
+    // forces its tail thunk, preserving demand order.
+    let two = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
+handle (sumEff (stream { yield perform tick (); yield perform tick (); })) with { tick = \_. resume 5; }
+"#;
+    assert_eq!(
+        compile_bin_stdout("cli_test_eff_gen_two", two),
+        run_stdout("cli_test_eff_gen_two.zt", two),
+    );
 }
 
 #[test]
-fn compile_handle_with_finally_is_refused() {
-    // V3-G4 finalization is interpreter-only: a `finally` teardown clause runs on
-    // the reference interpreter, but native compilation of resource-finalization
-    // handlers is refused before Dataflow Core — precisely, not via the generic
-    // residual-effect message. (A pure `finally` isolates the gate from any
-    // residual effect.)
+fn compiled_effectful_generator_ordering_matches_oracle() {
+    // V3-G4: three yields with distinct resume values lock left-to-right demand
+    // order and resume-value threading: tick v resumes v*10, so 1+2+3 yields
+    // 10+20+30 = 60.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+sumEff :: (Unit -> Cell) -> Int ! { tick : Int -> Int; }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
+handle (sumEff (stream { yield perform tick 1; yield perform tick 2; yield perform tick 3; })) with { tick = \v. resume (v * 10); }
+"#;
+    assert_eq!(run_stdout("cli_test_eff_gen_ord.zt", src), "60\n");
+    assert_eq!(compile_bin_stdout("cli_test_eff_gen_ord", src), "60\n");
+}
+
+#[test]
+fn compiled_finally_clause_matches_oracle() {
+    // E5: a `finally` teardown clause. The reify pipeline desugars it to
+    // `let r = (handle … without finally) in [ teardown; r ]`, so the teardown
+    // runs in the outer row after the handle reduces and the result is preserved.
+    // A pure teardown is discarded; the handle still yields "body".
     let src = r#"
 main ::= handle "body" with { finally = "cleanup"; };
 main
 "#;
-    let path = write_tmp("cli_test_compile_finally_refused.zt", src);
-    cli()
-        .arg("compile")
-        .arg("--emit=bin")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("interpreter-only"));
+    let run_output = run_stdout("cli_test_compile_finally.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_compile_finally", src);
+    assert_eq!(run_output, "\"body\"\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "pure finally must match oracle"
+    );
+
+    // The teardown runs on normal completion, performing into the outer handler
+    // (which aborts to a sentinel — observing it proves finalization ran).
+    let normal = r#"
+result ::= handle (handle "inner" with { finally = perform mark (); }) with { mark = \_. "finalized"; };
+result
+"#;
+    assert_eq!(
+        compile_bin_stdout("cli_test_finally_normal", normal),
+        run_stdout("cli_test_finally_normal.zt", normal),
+    );
+
+    // The teardown also runs on the handler-abort path (inner `fail` returns
+    // without resuming) and still performs its outer effect.
+    let abort = r#"
+result ::= handle (handle perform fail "x" with { fail = \e. "fallback"; finally = perform mark (); }) with { mark = \_. "finalized"; };
+result
+"#;
+    assert_eq!(
+        compile_bin_stdout("cli_test_finally_abort", abort),
+        run_stdout("cli_test_finally_abort.zt", abort),
+    );
 }
 
 #[test]
@@ -1737,12 +1906,13 @@ fn compiled_free_monad_spine_matches_oracle() {
 }
 
 #[test]
-fn compile_rejects_recursive_effectful_callee() {
-    // An analogous recursive, self-tail effectful callee — the category the
-    // free-monad encoding above reifies by hand. It runs in the interpreter but
-    // the native backend still refuses it before Dataflow Core
-    // (strict-AOT-rejects). `go` accumulates the payload and resumes with unit;
-    // `go 10 0` performs `warn` ten times and returns 10+9+...+1 = 55.
+fn compiled_recursive_effectful_callee_matches_oracle() {
+    // E1: a recursive, self-tail effectful callee — the category the free-monad
+    // encoding above reifies by hand — now lowers automatically. The reify pass
+    // rewrites `go` to a `Computation`-returning function and drives it with a
+    // generated `run`/`bind`. `go` accumulates the payload and resumes with unit;
+    // `go 10 0` performs `warn` ten times and returns 10+9+...+1 = 55, threading
+    // each resumed unit back through the stored continuation.
     let src = concat!(
         "go :: Int -> Int -> Int ! { warn Int; }\n",
         "  = 0 acc => acc;\n",
@@ -1750,14 +1920,88 @@ fn compile_rejects_recursive_effectful_callee() {
         "result ::= handle [ go 10 0 ] with { warn = \\w. resume (); };\n",
         "result\n",
     );
-    assert_eq!(run_stdout("cli_test_rec_effect_oracle.zt", src), "55\n");
-    let path = write_tmp("cli_test_rec_effect_reject.zt", src);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("algebraic effects remain"));
+    let run_output = run_stdout("cli_test_rec_effect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_rec_effect_compiled", src);
+    assert_eq!(run_output, "55\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled recursive effectful callee must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_mutually_recursive_effects_match_oracle() {
+    // E1: mutual recursion across the effectful-call graph. Both `ping` and `pong`
+    // perform `warn` and tail-call each other; the reify pass rewrites both to
+    // `Computation` form under one handler. `ping 6` performs six times and
+    // returns 0.
+    let src = concat!(
+        "ping :: Int -> Int ! { warn Int; }\n",
+        "  = 0 => 0;\n",
+        "  = n => [ perform warn n; pong (n - 1) ];\n",
+        "pong :: Int -> Int ! { warn Int; }\n",
+        "  = 0 => 0;\n",
+        "  = n => [ perform warn n; ping (n - 1) ];\n",
+        "result ::= handle [ ping 6 ] with { warn = \\w. resume (); };\n",
+        "result\n",
+    );
+    let run_output = run_stdout("cli_test_mutual_effect_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_mutual_effect_compiled", src);
+    assert_eq!(run_output, "0\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled mutually-recursive effects must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_mutually_recursive_resume_value_matches_oracle() {
+    // E1 + free-monad value threading: a mutually-recursive effectful pair that
+    // *consumes* the resumed value and uses the recursive effectful call as a
+    // builtin operand (`x + odd (n - 1)`). This stresses the CPS rewrite of a
+    // mutual group (commit 4d65e1f) together with the reify `bind` carrying an
+    // Int-valued continuation across the mutual edge (commit a2eb04f) — the
+    // existing mutual test only resumes with unit. `op n` resumes `n * 2`:
+    //   even 4 = 8 + odd 3, odd 3 = 6 + even 2, even 2 = 4 + odd 1,
+    //   odd 1 = 2 + even 0, even 0 = 0  ⇒  2,6,12,20  ⇒  20.
+    let src = concat!(
+        "even :: Int -> Int ! { op : Int -> Int; }\n",
+        "  = 0 => 0;\n",
+        "  = n => [ x := perform op n; x + odd (n - 1) ];\n",
+        "odd :: Int -> Int ! { op : Int -> Int; }\n",
+        "  = 0 => 0;\n",
+        "  = n => [ x := perform op n; x + even (n - 1) ];\n",
+        "handle even 4 with { op = \\v. resume (v * 2); }\n",
+    );
+    let run_output = run_stdout("cli_test_mutual_resume_val_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_mutual_resume_val_compiled", src);
+    assert_eq!(run_output, "20\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled mutually-recursive resume-value must match the eval_tlc oracle"
+    );
+}
+
+#[test]
+fn compiled_recursive_resume_value_matches_oracle() {
+    // E1: a recursive effectful callee that *consumes* the resumed value (not just
+    // unit). `op : Int -> Int` so each `perform op n` yields the handler's
+    // `resume (v + 1)`, threaded into the accumulator across the recursion. The
+    // generated `bind` must carry each resumed Int back through the continuation:
+    // sum 3 0 = (3+1) + (2+1) + (1+1) + 0 = 9.
+    let src = concat!(
+        "sum :: Int -> Int -> Int ! { op : Int -> Int; }\n",
+        "  = 0 acc => acc;\n",
+        "  = n acc => [ x := perform op n; sum (n - 1) (acc + x) ];\n",
+        "handle sum 3 0 with { value = \\v. v; op = \\v. resume (v + 1); }\n",
+    );
+    let run_output = run_stdout("cli_test_resume_val_oracle.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_resume_val_compiled", src);
+    assert_eq!(run_output, "9\n");
+    assert_eq!(
+        compiled_output, run_output,
+        "compiled recursive resume-value must match the eval_tlc oracle"
+    );
 }
 
 #[test]

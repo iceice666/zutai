@@ -38,7 +38,11 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), and
 2026-06-26 (general-mode `;`-terminator / container-glyph grammar; docs migrated;
-`import` unified as an expression — dedicated `name :: import` decl form removed)._
+`import` unified as an expression — dedicated `name :: import` decl form removed;
+**native effect parity** — recursive/higher-order/partially-applied handled
+effects and `finally` now compile natively via the reify pass, reversing the
+Phase 35 no-go; backend-only effect lowering split out of `lower_thir` so the
+interpreter oracle keeps its own `handle_control`/`run_finally`)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -159,6 +163,106 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Native effect-parity residual gates closed ✅
+
+_Completed 2026-06-26. Closes the two conservative gates a pressure test surfaced
+in the native-effect-parity work — both compiled the program on the interpreter but
+refused natively (`algebraic effects remain after TLC lowering`). Both fixes live in
+`crates/general/tlc/src/lower/effects/reify.rs` and preserve parity-or-refuse._
+
+- **Inline partial-application as a higher-order argument** (`applyTo (addP 5)`).
+  `normalize_undersaturated_eff_args` rewrites a maximal under-saturated
+  effectful-arrow application (a closure *value*, not a saturated computation — and
+  not itself the function side of an enclosing application) into an eta-expanded
+  lambda recorded in `eta_fn_args`; `subtree_is_effectful` then treats the argument
+  as pure, and `maybe_reify_eta_fn_arg` reifies the lambda's saturated body to
+  `Computation` at the call site (`reify` itself never descends into lambda bodies).
+  Already-applied effectful arguments are excluded, so the saturated core stays
+  reifiable. The named form (`applyTo addP`) was already supported.
+- **Effectful function stored in a record field** (`box.f 7`). `effectful_fn_set`
+  now descends through pure *wrapper* bindings to discover the callee (`g` via
+  `box`); `wrapper_set` + a generalized `fn_escapes_scope` keep the wrapper and
+  callee confined to the handle scope (a wrapper observed elsewhere refuses);
+  each wrapper's declared type is rewritten to monadic form (`{ f : Int -> Int !
+  {op} }` → `{ f : Int -> Computation }`) and its body restamped; and
+  `effectful_call` recognizes a `GetField`-headed call (`node_is_eff_field_ref`,
+  with the head identity now `Option<BindingId>`), reusing the existing
+  derive-monadic-type-from-head-node branch.
+
+The two paths compose (`applyTo (box.f 5)`). Verification: three new
+compiled-vs-oracle tests (`compiled_inline_partial_application_effect_matches_oracle`,
+`compiled_record_field_effectful_call_matches_oracle`,
+`compiled_record_field_partial_application_effect_matches_oracle`), all of cli
+(223/0) and tlc (128/0) green, clippy clean. The adversarial battery still refuses
+the out-of-envelope cases (escaping wrapper, multi-shot resume, polymorphic
+effectful values, partial generator forcing) — zero miscompiles, zero overruns.
+
+### Native effect parity — reified delimited-continuation lowering (reverses Phase 35) ✅
+
+_Completed 2026-06-26. Reverses the Phase 35 "no-go" on the explicit demand of
+the user: the native backend now compiles the handled algebraic effects it
+previously refused, by reifying the interpreter's runtime continuation model
+(`eval_tlc::effects::handle_control`) into generated TLC. The committed
+strict-AOT stance is relaxed for **handled** effects; genuinely **unhandled**
+effects still refuse on both paths (parity = compiling handled effects, not
+ambient unhandled ones)._
+
+A new TLC pass `reify_residual_effects` (`crates/general/tlc/src/lower/effects/
+reify.rs`), inserted after `elaborate_effects` (the lexical CPS fast path, kept
+unchanged), takes each residual `handle` the fast path could not discharge and:
+builds a per-scope recursive `Computation` union (a `TypeAlias`, tying the
+`resume` back-edge through the Phase-25 equirecursive `DfTyId` machinery — the
+exact shape `compiled_free_monad_spine_matches_oracle` proved lowers); rewrites
+every reachable effectful function to `… -> Computation` monadic form
+(`monadic_ty`, recursing into tuples/records/unions); and generates `bind`/`run`
+driver decls mirroring `handle_control`. It is conservative — it commits only
+when the whole scope is reifiable and otherwise leaves the handle residual for
+the gate to refuse (never miscompiled). A one-line DC change names synthetic
+TLC-generated globals (`$synth<id>`) so the driver `Var`s resolve. The Phase 35
+free-monad cost analysis (~2× allocation vs lexical CPS) is the standing cost of
+this fallback path; the fast path is unchanged for the cases it already covers.
+
+Support level: **full native compile/runtime, oracle-verified** for:
+- recursive & mutually-recursive effectful callees (E1);
+- higher-order effectful values — effectful function passed as a value /
+  parameter, incl. recursive (E2);
+- partial application of effectful functions (eta-expanded to saturation, E4);
+- effectful builtin operands (`x + f (n - 1)`) and a `finally` teardown clause
+  (desugared to outer-row sequencing; normal completion and handler abort, E5).
+
+Tests (`crates/cli/tests/cli.rs`): `compiled_recursive_effectful_{fn,callee}_
+matches_oracle`, `compiled_mutually_recursive_effects_match_oracle`,
+`compiled_recursive_resume_value_matches_oracle`,
+`compiled_higher_order_effectful_value_matches_oracle`,
+`compiled_recursive_higher_order_effect_matches_oracle`,
+`compiled_partial_application_effect_matches_oracle`,
+`compiled_effectful_operand_recursion_matches_oracle`,
+`compiled_finally_clause_matches_oracle`; the 17 `COMPILED_EFFECT_FIXTURES` and
+`compiled_free_monad_spine_matches_oracle` stay green.
+
+**Effectful generators (V3-G4) — supported idiom landed 2026-06-26.** A
+`stream { yield perform … }` consumed strictly under a handler (the raw-cell-type
+idiom) now compiles natively and matches the oracle
+(`compiled_effectful_generator{,_ordering}_matches_oracle`). The reify pass stores
+the deferred `perform` as strict `Computation`-DATA in the cell's effectful field —
+carrier on the *field*, not the demand thunk, keeping `Computation` monomorphic —
+via `detect_eff_codata` → `build_cell_primes` (a scope-local `Cell'` whose
+effectful field is `Computation`-typed and recursive `tail` is `Unit -> Cell'`) →
+`reify_cell_body`; the consumer `bind`s the head field via a per-`Case`-arm
+`comp_binders` marking. Native and oracle agree on demand order and early
+termination because both are strict-at-force for effectful modules
+(`tlc_module_can_defer_aggregates` is `false` when any `Perform`/`Handle`/`Resume`
+is present).
+
+Still refused (no parity gap / narrow residual): **polymorphic (`TyLam`) effectful
+values**, **open effect rows** (`...e`), and **recursive/conditional effectful
+generators** all need polymorphic effect *execution* (or perform in a pure-typed
+producer row) that the reference interpreter itself refuses — none is a backend
+gap. The one open residual is a generator written with the parametric prelude
+`Stream` alias instead of a raw cell type: it runs on the interpreter but stays
+gated, because its cell type is a type application (`StreamCell Int`) the
+monomorphic `cell_identity` does not yet recognize.
+
 ### V3-G4 follow-up: open effect-row tails (check-only foundation) ✅
 
 _Completed 2026-06-26. Effect-row annotations now accept an **open row tail**,
@@ -234,10 +338,14 @@ Mechanics:
   re-enters on resume — so the teardown fires exactly when the terminal value
   emerges, once, covering normal completion and abort. `finally` is **not**
   threaded into the recursive `handle_control` (that would re-run it per resume).
-- **Native**: `can_elaborate_handle*` treats a finally-bearing handle as
-  ineligible for CPS elaboration, and `residual_effect_reason` refuses it before
-  Dataflow Core with a precise "`finally` … is interpreter-only" message (not the
-  generic residual-effect message).
+- **Native (at this milestone)**: `can_elaborate_handle*` treats a
+  finally-bearing handle as ineligible for CPS elaboration, and
+  `residual_effect_reason` refuses it before Dataflow Core with a precise
+  "`finally` … is interpreter-only" message (not the generic residual-effect
+  message). _Superseded 2026-06-26: the native-effect-parity work desugars a
+  finally-bearing handle (`desugar_finally`) into outer-row teardown sequencing,
+  so it now compiles natively and matches the oracle —
+  `compiled_finally_clause_matches_oracle`. See "Native effect parity"._
 
 Tests: `finally_runs_on_normal_completion` (plus value-passthrough),
 `finally_runs_when_handler_aborts`, `finally_runs_after_early_stream_consumption`
@@ -817,6 +925,18 @@ investigation, not design._
 behavior; spike closed.** The encoding is de-risked and ready to scope if a real
 workload ever demands native recursive effects — the same demand-gated posture
 as the Phase 34 GC.
+
+> **Superseded 2026-06-26.** The no-go was reversed on the user's explicit
+> request. The delivery work this entry describes below ("an elaboration pass
+> that reifies recursive effectful callees into `Free Op A` data plus a driver
+> loop and wires it past the residual gate") landed as `reify_residual_effects`
+> — see "Native effect parity — reified delimited-continuation lowering" at the
+> top of the completed-milestones list. Recursive/mutually-recursive,
+> higher-order, partially-applied effectful values, effectful builtin operands,
+> and `finally` now compile natively and match the oracle. Polymorphic/open-row
+> effects and effectful generators remain refused (the first two have no parity
+> gap — the interpreter also refuses polymorphic effect execution; the last is an
+> open lazy-cell residual).
 
 - **Encode (✓).** `Free Op A = #pure { value: A } | #op { payload; resume: R ->
   Free }` is an ordinary recursive union whose operation arm holds a function

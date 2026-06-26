@@ -346,17 +346,24 @@ impl<'m> Lowerer<'m> {
         for &decl_id in &self.module.decls {
             match &self.module.decl_arena[decl_id] {
                 TlcDecl::Value { binding, ty, .. } => {
-                    if let Some(b) = self.hir_bindings.get(binding.0 as usize) {
+                    let base = if let Some(b) = self.hir_bindings.get(binding.0 as usize) {
                         // Witness instance bindings share the constraint's name in HIR
                         // (e.g. `Eq @Int` and `Eq @(Pair A)` are both named `"Eq"`), which
                         // means they would overwrite each other in `globals`, making the
                         // dispatch at concrete call sites use the wrong dict. Suffix each
                         // witness instance with its BindingId so all instances coexist.
-                        let base = if b.kind == BindingKind::TopWitness {
-                            format!("{}$w{}", b.name, binding.0)
+                        if b.kind == BindingKind::TopWitness {
+                            Some(format!("{}$w{}", b.name, binding.0))
                         } else {
-                            b.name.clone()
-                        };
+                            Some(b.name.clone())
+                        }
+                    } else {
+                        // A synthetic top-level decl minted by a TLC pass (the effect
+                        // reify `bind`/`run` drivers) has no HIR binding. Give it a
+                        // stable unique name so `Var` references resolve to it.
+                        Some(format!("$synth{}", binding.0))
+                    };
+                    if let Some(base) = base {
                         self.global_names
                             .insert(*binding, format!("{}{}", self.module_prefix, base));
                         self.global_types.insert(*binding, *ty);

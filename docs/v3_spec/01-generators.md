@@ -67,10 +67,19 @@ backend erasure.
 
 ## Effectful generators (V3-G4)
 
-Support level: **check + reference-interpreter**. An effectful generator runs on
-the interpreter when its effects are *granted*; native lowering of those effects
-stays refused (the committed strict-AOT-rejects boundary — `Phase 35`,
-`docs/spec/v1/05-effects.md`).
+Support level: **check + reference-interpreter + native** (raw-cell-type idiom, as
+of 2026-06-26). An effectful generator runs on the interpreter when its effects
+are *granted*, and the supported idiom — `stream { yield perform … }` consumed
+strictly under a handler over a **raw cell type** (not the pure `Stream` alias) —
+now also compiles natively and matches the oracle (`reify.rs`
+`detect_eff_codata`/`build_cell_primes`/`reify_cell_body`; see `docs/ARCHIVED.md`
+"Native effect parity"). The reify pass stores the deferred `perform` as strict
+`Computation`-data in the cell's effectful field (carrier on the field, not the
+demand thunk), so the cell is produced strictly and the effect fires when the
+consumer `bind`s it — matching the interpreter, which is also strict-at-force for
+effectful modules. Recursive/conditional effectful generators are rejected on both
+paths (a pure-typed producer cannot `perform`); a generator typed through the
+parametric prelude `Stream` alias remains a narrow native residual.
 
 The mechanism reuses the existing effect machinery rather than a new effectful
 codata type. A `yield perform op …` defers the operation into a *lazy cell

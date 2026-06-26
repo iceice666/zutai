@@ -2,7 +2,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 mod cps;
 mod eligible;
+mod finally;
 mod inline;
+mod reify;
 mod rewrite;
 
 use zutai_hir::BindingId;

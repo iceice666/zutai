@@ -19,6 +19,32 @@ pub use lower::{ExternConditionalWitness, lower_thir, lower_thir_with_extern_wit
 pub use monomorphize::{monomorphize_open_row_selects, reachable_exprs};
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
 
+/// Prepare a TLC module's algebraic effects for the native backend.
+///
+/// `lower_thir` deliberately leaves handled effects the lexical CPS path could
+/// not discharge as residual `Handle`/`Perform`/`Resume` nodes — the reference
+/// interpreter (`zutai-eval`) is the semantics oracle and evaluates those with
+/// its own `handle_control`/`run_finally`, so the shared lowering must not
+/// rewrite them. The *compile* path calls this afterwards to lower those
+/// residuals for Dataflow Core: it desugars `finally` to outer-row sequencing,
+/// then reifies recursive/higher-order/etc. handled effects into a free-monad
+/// `Computation` driver, then erases now-cleared effect rows. A genuinely
+/// unhandled effect is left residual and refused by the gate.
+pub fn lower_effects_for_backend(module: &mut TlcModule) {
+    // Desugar `finally` first, then re-run the lexical effect passes so the
+    // freshly-introduced inner handles are inlined/elaborated like any other,
+    // then reify whatever residual handled effects remain, then erase cleared
+    // rows. `inline`/`elaborate` already ran once in `lower_thir`; re-running is
+    // idempotent on the already-lowered parts and discharges the new handles.
+    module.desugar_finally();
+    module.inline_effectful_calls();
+    module.elaborate_effects();
+    module.reify_residual_effects();
+    if residual_effect_reason(module).is_none() {
+        module.erase_effects();
+    }
+}
+
 /// Return why a TLC module still cannot enter Dataflow Core.
 ///
 /// The implemented Phase 23 lowering removes general source effect control
