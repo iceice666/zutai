@@ -356,7 +356,32 @@ impl<'hir> Lowerer<'hir> {
             .collect();
         EffectRow {
             ops,
-            tail: RowTail::Closed,
+            tail: self.lower_effect_row_tail(row.tail.as_ref()),
+        }
+    }
+
+    /// Lower an effect-row tail. A row variable `...e` becomes a rigid `Param`
+    /// (threaded through signatures by exact-tail unification, like record/union
+    /// row variables); anonymous `...` / an unresolved name becomes `Open`. A
+    /// `...Shape` spread of a named type is not supported for effect rows — it is
+    /// refused precisely rather than silently dropped.
+    fn lower_effect_row_tail(&mut self, tail: Option<&HirRowTail>) -> RowTail {
+        let Some(tail) = tail else {
+            return RowTail::Closed;
+        };
+        match &tail.kind {
+            HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
+            HirRowTailKind::Var(binding) => RowTail::Param(*binding),
+            HirRowTailKind::Spread(_) => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason:
+                            "effect-row spread is not supported; use a row variable (...e) or an explicit op list",
+                    },
+                    span: tail.span,
+                });
+                RowTail::Closed
+            }
         }
     }
 

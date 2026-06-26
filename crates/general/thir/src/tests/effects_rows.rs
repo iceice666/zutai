@@ -764,6 +764,46 @@ fn function_param_is_contravariant_for_open_records() {
 }
 
 #[test]
+fn open_effect_row_tail_in_annotation_type_checks() {
+    // A row-polymorphic effect signature: the row variable `...e` threads from the
+    // argument thunk's effect row to the result thunk's. This is the check-only
+    // foundation for effect-row-polymorphic types (e.g. an ergonomic effectful
+    // stream). The rigid row variable lowers to `RowTail::Param` and threads via
+    // exact-tail unification, exactly like a record/union row variable.
+    let lowered = lower(
+        r#"
+forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }
+  = f => f;
+forward
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn effect_row_spread_of_named_type_is_refused() {
+    // `...Shape` (spreading a named type's row) is not supported for effect rows —
+    // refused precisely, never silently dropped to a closed row.
+    let lowered = lower(
+        r#"
+Shape :: type { a : Int; };
+f :: Int -> Int ! { ...Shape; }
+  = x => x;
+f
+"#,
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::InvalidTypeExpression { reason }
+                if reason.contains("effect-row spread")
+        )),
+        "{:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
 fn generic_effect_alias_substitutes_base_and_op_type() {
     let file = completed_file(
         r#"

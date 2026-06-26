@@ -69,10 +69,15 @@ impl<'module> EffectElaborator<'module> {
             TlcExpr::Sequence(items) => {
                 self.cps_sequence(id, items, current_handlers, parent_handlers, result_ty, k)
             }
-            TlcExpr::Handle { expr, value, ops } => {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 let mut enclosing = parent_handlers.to_vec();
                 enclosing.extend_from_slice(current_handlers);
-                if self.can_elaborate_handle_with_parent(expr, &ops, &enclosing) {
+                if self.can_elaborate_handle_with_parent(expr, finally, &ops, &enclosing) {
                     let handled =
                         self.elaborate_handle_with_parent(id, expr, value, ops, &enclosing);
                     k(self, handled)

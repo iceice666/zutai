@@ -12,8 +12,10 @@ impl Lowerer {
                 span: op.span,
             })
             .collect();
+        let tail = row.tail.as_ref().map(|tail| self.lower_row_tail(tail));
         HirEffectRow {
             ops,
+            tail,
             span: row.span,
         }
     }

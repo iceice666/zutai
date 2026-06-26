@@ -309,12 +309,33 @@ impl<'a> TlcEvaluator<'a> {
                 })
             }
 
-            TlcExpr::Handle { expr, value, ops } => {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 let ops = Rc::new(ops);
                 let env_for_handler = env.clone();
                 let outer_resume = resume.clone();
                 let control = self.eval_control(expr, env, resume)?;
-                self.handle_control(control, value, ops, env_for_handler, outer_resume)
+                let handled = self.handle_control(
+                    control,
+                    value,
+                    ops,
+                    env_for_handler.clone(),
+                    outer_resume.clone(),
+                )?;
+                // A `finally` teardown runs exactly once, when the handle reduces
+                // to its final value (normal return *or* handler abort). Wrapping
+                // the settled result — rather than threading `finally` into the
+                // recursive `handle_control` — keeps it from firing per resume.
+                match finally {
+                    None => Ok(handled),
+                    Some(finally) => {
+                        self.run_finally(handled, finally, env_for_handler, outer_resume)
+                    }
+                }
             }
 
             TlcExpr::Resume { value } => {

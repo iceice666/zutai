@@ -359,10 +359,18 @@ fn has_reachable_error(file: &ThirFile) -> bool {
             ThirExprKind::TaggedValue { payload, .. } => stack.push(*payload),
             ThirExprKind::Perform { arg, .. } => stack.push(*arg),
             ThirExprKind::Resume { value } => stack.push(*value),
-            ThirExprKind::Handle { expr, value, ops } => {
+            ThirExprKind::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 stack.push(*expr);
                 if let Some(value) = value {
                     stack.push(*value);
+                }
+                if let Some(finally) = finally {
+                    stack.push(*finally);
                 }
                 for op in ops {
                     stack.push(op.body);

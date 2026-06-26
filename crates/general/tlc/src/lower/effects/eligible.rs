@@ -3,16 +3,27 @@ use crate::ir::{Row, TlcExpr, TlcExprId, TlcHandleClause, TlcTupleItem, TlcType}
 use super::EffectElaborator;
 
 impl<'module> EffectElaborator<'module> {
-    pub(super) fn can_elaborate_handle(&self, expr: TlcExprId, ops: &[TlcHandleClause]) -> bool {
-        self.can_elaborate_handle_with_parent(expr, ops, &[])
+    pub(super) fn can_elaborate_handle(
+        &self,
+        expr: TlcExprId,
+        finally: Option<TlcExprId>,
+        ops: &[TlcHandleClause],
+    ) -> bool {
+        self.can_elaborate_handle_with_parent(expr, finally, ops, &[])
     }
 
     pub(super) fn can_elaborate_handle_with_parent(
         &self,
         expr: TlcExprId,
+        finally: Option<TlcExprId>,
         ops: &[TlcHandleClause],
         parent_handlers: &[TlcHandleClause],
     ) -> bool {
+        // A `finally` teardown is interpreter-only: never elaborate a handle
+        // carrying one into the CPS/native path (it is refused before lowering).
+        if finally.is_some() {
+            return false;
+        }
         let mut saw_perform = false;
         ops.iter()
             .all(|clause| self.handler_clause_is_elaboratable(clause.body, parent_handlers))
@@ -30,9 +41,9 @@ impl<'module> EffectElaborator<'module> {
                 parent_handlers.iter().any(|clause| clause.op == *op)
                     && self.handler_clause_is_elaboratable(*arg, parent_handlers)
             }
-            TlcExpr::Handle { expr, ops, .. } => {
-                self.can_elaborate_handle_with_parent(*expr, ops, parent_handlers)
-            }
+            TlcExpr::Handle {
+                expr, finally, ops, ..
+            } => self.can_elaborate_handle_with_parent(*expr, *finally, ops, parent_handlers),
             TlcExpr::Resume { value } => {
                 self.handler_clause_is_elaboratable(*value, parent_handlers)
             }
@@ -171,11 +182,12 @@ impl<'module> EffectElaborator<'module> {
             TlcExpr::Handle {
                 expr,
                 value: _,
+                finally,
                 ops: nested_ops,
             } => {
                 let mut enclosing = parent_handlers.to_vec();
                 enclosing.extend_from_slice(ops);
-                self.can_elaborate_handle_with_parent(*expr, nested_ops, &enclosing)
+                self.can_elaborate_handle_with_parent(*expr, *finally, nested_ops, &enclosing)
             }
             TlcExpr::Resume { .. } => false,
             TlcExpr::App(func, arg) => {

@@ -159,6 +159,93 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G4 follow-up: open effect-row tails (check-only foundation) ✅
+
+_Completed 2026-06-26. Effect-row annotations now accept an **open row tail**,
+mirroring the existing open-record/union row-tail syntax: `! { ops; ...e }` (a row
+variable), `! { ...e }`, and `! { ... }` (anonymous open). This is the
+expressibility foundation for effect-row-polymorphic types — the prerequisite for
+an ergonomic effectful-stream type — delivered **check-only**: a row-polymorphic
+effect signature type-checks and lowers cleanly through TLC; execution stays gated
+by the existing residual-effect gate._
+
+The investigation that scoped this found the downstream pipeline already supported
+open effect-row tails end to end — `thir_row_tail` maps `Open`/`Param`/`Infer` to
+`RVar`, and the residual gate already treats `RVar` as unsupported — so the gap was
+purely surface + THIR lowering. THIR's `lower_effect_row` had hardcoded
+`RowTail::Closed`.
+
+Mechanics (mirroring `RowTail` handling for records/unions):
+
+- **Syntax**: `ast::EffectRow` gains a `tail: Option<RowTail>`; `parse_effect_row`
+  parses a terminal `...e`/`...` tail (reusing `parse_row_tail`), with an optional
+  trailing separator before `}`.
+- **HIR**: `HirEffectRow` gains a `tail`; `lower_effect_row` resolves it via the
+  existing `lower_row_tail` (so `...e` → `Var`, `...Shape` → `Spread`, `...` →
+  `Anonymous`).
+- **THIR**: `lower_effect_row` calls a new `lower_effect_row_tail` — `Var → Param`,
+  `Anonymous`/`Unresolved → Open`, and `Spread →` refused precisely
+  (`InvalidTypeExpression`, "effect-row spread is not supported; use a row variable
+  (...e) or an explicit op list"). Effect rows unify by exact-tail equality
+  (`effect_rows_unify`), so a rigid row variable threads through a signature like a
+  record/union row variable and effects can never be silently dropped.
+- **TLC**: `collect_sig_row_params` gains a `TypeKind::Effect` arm (mirroring the
+  THIR collector) so an effect-row row-variable param is quantified with **row
+  kind**, not ground — keeping binder kind consistent with its `RVar` use.
+
+Tests: HIR `effect_row_tail_resolves_to_type_param_as_var` /
+`anonymous_effect_row_tail_lowers_to_open`; THIR
+`open_effect_row_tail_in_annotation_type_checks` /
+`effect_row_spread_of_named_type_is_refused`; eval
+`row_polymorphic_effect_signature_lowers_through_tlc`. **Still open** (the next
+step toward the ergonomic effectful-stream type): call-site effect-row inference (a
+pure argument unifying against an open-row parameter — exact-tail unification
+rejects it today) and the `StreamEff` alias itself.
+
+### V3-G4 follow-up: `finally` finalization clause ✅
+
+_Completed 2026-06-26. The first V3-G4 follow-up: a `finally = expr` handler
+clause that runs a teardown **once** when a `handle` reduces to its final value —
+both on normal completion and on handler abort (a clause that discards its
+continuation). This is the resource-finalization primitive for effectful
+generators: because a deferred effect is charged to whoever forces it under the
+granting handler, the handler's dynamic extent already bounds resource use, so
+`finally` fires exactly when consumption-under-the-handler ends — including when a
+consumer stops early (`take`-style partial consumption). Interpreter-only, by the
+committed strict-AOT-rejects-effects boundary._
+
+Design: a `finally` teardown attached to the **handler**, not to the codata
+`#cons` cell — a cell-level finalizer cannot work, since a dropped/recomputed tail
+would never run it (or run it twice). The teardown runs in the **outer** effect
+row (the handler layer is already popped), so its own effects propagate outward
+and are not discharged by this handler; its result is discarded. It licenses no
+`resume`.
+
+Mechanics:
+
+- **Syntax** unchanged — `finally = expr;` already parses as a handle clause with
+  op-path `["finally"]`; it becomes special at HIR (like `value`).
+- **HIR**: `HirHandleOp::Finally` + `HandlerClauseKind::Finally` (no `resume`).
+- **THIR/TLC**: a `finally: Option<_>` field on the `Handle` node; the THIR typer
+  infers the teardown body after popping the handler layer (outer row), value
+  discarded.
+- **Eval** (`zutai-eval`, TLC-first): `run_finally` wraps the settled handle
+  result with `bind_control`, which preserves outer-effect `Perform` escapes and
+  re-enters on resume — so the teardown fires exactly when the terminal value
+  emerges, once, covering normal completion and abort. `finally` is **not**
+  threaded into the recursive `handle_control` (that would re-run it per resume).
+- **Native**: `can_elaborate_handle*` treats a finally-bearing handle as
+  ineligible for CPS elaboration, and `residual_effect_reason` refuses it before
+  Dataflow Core with a precise "`finally` … is interpreter-only" message (not the
+  generic residual-effect message).
+
+Tests: `finally_runs_on_normal_completion` (plus value-passthrough),
+`finally_runs_when_handler_aborts`, `finally_runs_after_early_stream_consumption`
+(partial `take` of an effectful generator still finalizes), and
+`compile_handle_with_finally_is_refused` (native refusal). Still open from the
+V3-G4 follow-ups: cancellation (signalling a generator to stop mid-stream),
+general resource-lifetime, and the ergonomic effectful-stream *type*.
+
 ### `import` unified as an expression ✅
 
 _Completed 2026-06-26. `import <source>` is now an expression atom; the dedicated

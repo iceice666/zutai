@@ -541,9 +541,15 @@ fn clone_expr(
             let arg2 = clone_expr(module, arg, v, rest, tmemo);
             TlcExpr::Perform { op, arg: arg2 }
         }
-        TlcExpr::Handle { expr, value, ops } => {
+        TlcExpr::Handle {
+            expr,
+            value,
+            finally,
+            ops,
+        } => {
             let expr2 = clone_expr(module, expr, v, rest, tmemo);
             let value2 = value.map(|val| clone_expr(module, val, v, rest, tmemo));
+            let finally2 = finally.map(|fin| clone_expr(module, fin, v, rest, tmemo));
             let ops2 = ops
                 .into_iter()
                 .map(|c| TlcHandleClause {
@@ -554,6 +560,7 @@ fn clone_expr(
             TlcExpr::Handle {
                 expr: expr2,
                 value: value2,
+                finally: finally2,
                 ops: ops2,
             }
         }
@@ -703,10 +710,18 @@ pub(crate) fn push_child_exprs(expr: &TlcExpr, out: &mut Vec<TlcExprId>) {
         TlcExpr::Variant(_, e) | TlcExpr::Perform { arg: e, .. } | TlcExpr::Resume { value: e } => {
             out.push(*e)
         }
-        TlcExpr::Handle { expr, value, ops } => {
+        TlcExpr::Handle {
+            expr,
+            value,
+            finally,
+            ops,
+        } => {
             out.push(*expr);
             if let Some(val) = value {
                 out.push(*val);
+            }
+            if let Some(fin) = finally {
+                out.push(*fin);
             }
             out.extend(ops.iter().map(|c| c.body));
         }

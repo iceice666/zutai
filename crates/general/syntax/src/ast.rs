@@ -259,6 +259,9 @@ pub struct EffectOp {
 #[derive(Debug, PartialEq)]
 pub struct EffectRow {
     pub ops: Vec<EffectOp>,
+    /// An optional open row tail `...e` (a row variable) or `...` (anonymous
+    /// open), mirroring record/union row tails. `None` is a closed row.
+    pub tail: Option<RowTail>,
     pub span: Span,
 }
 

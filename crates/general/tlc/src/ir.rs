@@ -331,6 +331,11 @@ pub enum TlcExpr {
     Handle {
         expr: TlcExprId,
         value: Option<TlcExprId>,
+        /// `finally = expr` teardown run once when the handle reduces to a value
+        /// (normal return or handler abort), for effects in the outer row; its
+        /// result is discarded. Interpreter-only — native compilation refuses a
+        /// handle carrying a finally clause (see `residual_effect_reason`).
+        finally: Option<TlcExprId>,
         ops: Vec<TlcHandleClause>,
     },
     /// Resume the current one-shot operation continuation.

@@ -38,9 +38,19 @@ their effects stays refused by committed design.
   generation still requires ordinary capability parameters/effect rows, and
   unsupported residual host operations keep rejecting before backend erasure.
   No second effect system or host iterator abstraction is introduced.
-- Future work must still settle cancellation/finalization and resource lifetime
-  for resource-backed (effectful) generators (V3-G4), and whether a general
-  (non-tail) delegating yield is worth a shared codata `append`.
+- **Finalization landed** as a `finally` handler clause (V3-G4 follow-up, see
+  `docs/ARCHIVED.md` "`finally` finalization clause"): `handle e with { …;
+  finally = teardown; }` runs `teardown` once when the handle reduces to a value
+  (normal completion *or* abort), in the outer row. Because a deferred effect is
+  charged to the consumer that forces it under the granting handler, the handler's
+  extent bounds the resource, so `finally` fires even when a consumer stops early.
+  Interpreter-only; native compilation of a finally-bearing handle is refused.
+- Still open: *cancellation* (signalling a generator to stop mid-stream), general
+  resource lifetime, the ergonomic effectful-stream *type* (its expressibility
+  foundation — open effect-row tails in annotations — landed 2026-06-26 check-only,
+  see `docs/ARCHIVED.md`; the remaining step is call-site effect-row inference plus
+  the `StreamEff` alias), and whether a general (non-tail) delegating yield is worth
+  a shared codata `append`.
 
 ## Design intent
 
@@ -90,14 +100,33 @@ Boundaries (each refused, never miscompiled):
 
 Resource host effects (`fs.read`, networking, clocks, randomness) therefore reach
 only the interpreter, behind an explicit handler that grants them; they have no
-native path. Cancellation/finalization and resource lifetime for such generators
-remain open.
+native path. *Finalization* is supported via a `finally` handler clause (see
+below); *cancellation* and general resource lifetime remain open.
+
+### Finalization: the `finally` handler clause
+
+A `handle e with { …; finally = teardown; }` runs `teardown` exactly **once** when
+the handle reduces to its final value — both on normal completion and on handler
+abort (a clause that returns without `resume`, discarding the continuation). The
+teardown runs in the **outer** effect row (its own effects are not discharged by
+this handler) and licenses no `resume`; its result is discarded.
+
+Because a deferred generator effect is charged to whoever forces it under the
+granting handler, the handler's dynamic extent already bounds the resource — so
+`finally` fires precisely when consumption-under-the-handler ends, **including when
+a consumer stops early** (a `take`-style partial fold of an effectful generator
+still finalizes). The teardown is attached to the *handler*, not to the codata
+`#cons` cell: a cell-level finalizer cannot work, since a dropped or recomputed
+tail would never run it (or run it twice). Interpreter-only — native compilation
+of a finally-bearing handle is refused with a precise diagnostic.
 
 ## Remaining non-goals
 
 - No ambient filesystem, environment, clock, randomness, or network iteration.
 - No second iterator abstraction beside `Stream`.
-- No cancellation-aware or finalization-aware generator runtime (V3-G4+).
+- No *cancellation*-aware generator runtime (signalling a generator to stop
+  mid-stream). Finalization landed as the `finally` handler clause (V3-G4
+  follow-up); cancellation and general resource lifetime stay open (V3-G4+).
 - No general (non-tail) `yield from`: only tail delegation lowers; a non-tail
   splice is refused pending a shared codata `append`.
 

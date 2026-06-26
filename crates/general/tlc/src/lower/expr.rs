@@ -267,9 +267,15 @@ impl<'thir> Lowerer<'thir> {
                 let value = self.lower_expr(value);
                 self.alloc_expr(TlcExpr::Resume { value }, tlc_ty, span)
             }
-            ThirExprKind::Handle { expr, value, ops } => {
+            ThirExprKind::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 let expr = self.lower_expr(expr);
                 let value = value.map(|value| self.lower_expr(value));
+                let finally = finally.map(|finally| self.lower_expr(finally));
                 let ops = ops
                     .into_iter()
                     .map(|clause| TlcHandleClause {
@@ -277,7 +283,16 @@ impl<'thir> Lowerer<'thir> {
                         body: self.lower_expr(clause.body),
                     })
                     .collect();
-                self.alloc_expr(TlcExpr::Handle { expr, value, ops }, tlc_ty, span)
+                self.alloc_expr(
+                    TlcExpr::Handle {
+                        expr,
+                        value,
+                        finally,
+                        ops,
+                    },
+                    tlc_ty,
+                    span,
+                )
             }
             ThirExprKind::Sequence(items) => {
                 let items = items

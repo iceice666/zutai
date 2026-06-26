@@ -50,6 +50,51 @@ fn named_row_tail_resolves_to_type_param_as_var() {
 }
 
 #[test]
+fn effect_row_tail_resolves_to_type_param_as_var() {
+    // An effect-row tail `...e` naming an in-scope type parameter lowers to a row
+    // variable, exactly like a record/union row tail. This is the foundation for
+    // effect-row-polymorphic annotations (e.g. an ergonomic effectful-stream type).
+    let lowered = lower("f :: <e> (Int ! { ...e; }) -> Int\n  = x => x;\nf");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    let HirDeclKind::Function { sig: Some(sig), .. } = &decl.kind else {
+        panic!("expected Function, got {:?}", decl.kind);
+    };
+    let HirTypeKind::Arrow { from, .. } = type_kind(&lowered.file, *sig) else {
+        panic!("expected Arrow sig");
+    };
+    let HirTypeKind::Effect { row, .. } = type_kind(&lowered.file, *from) else {
+        panic!("expected an effectful parameter type");
+    };
+    let tail = row.tail.as_ref().expect("expected an open effect-row tail");
+    assert!(
+        matches!(tail.kind, HirRowTailKind::Var(_)),
+        "in-scope type param must lower to a row variable, got {:?}",
+        tail.kind
+    );
+}
+
+#[test]
+fn anonymous_effect_row_tail_lowers_to_open() {
+    let lowered = lower("f :: (Int ! { ...; }) -> Int\n  = x => x;\nf");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    let HirDeclKind::Function { sig: Some(sig), .. } = &decl.kind else {
+        panic!("expected Function, got {:?}", decl.kind);
+    };
+    let HirTypeKind::Arrow { from, .. } = type_kind(&lowered.file, *sig) else {
+        panic!("expected Arrow sig");
+    };
+    let HirTypeKind::Effect { row, .. } = type_kind(&lowered.file, *from) else {
+        panic!("expected an effectful parameter type");
+    };
+    assert!(matches!(
+        row.tail.as_ref().map(|t| &t.kind),
+        Some(HirRowTailKind::Anonymous)
+    ));
+}
+
+#[test]
 fn named_union_row_tail_resolves_to_type_alias_as_spread() {
     let lowered =
         lower("Shape :: type { #dev; #test; };\nOpen :: type { ...Shape; #prod; };\nOpen");

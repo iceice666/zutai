@@ -1474,6 +1474,27 @@ handle (sumEff (stream { yield perform tick (); })) with { tick = \_. resume 5; 
 }
 
 #[test]
+fn compile_handle_with_finally_is_refused() {
+    // V3-G4 finalization is interpreter-only: a `finally` teardown clause runs on
+    // the reference interpreter, but native compilation of resource-finalization
+    // handlers is refused before Dataflow Core — precisely, not via the generic
+    // residual-effect message. (A pure `finally` isolates the gate from any
+    // residual effect.)
+    let src = r#"
+main ::= handle "body" with { finally = "cleanup"; };
+main
+"#;
+    let path = write_tmp("cli_test_compile_finally_refused.zt", src);
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("interpreter-only"));
+}
+
+#[test]
 fn compile_open_row_select_lowers_to_llvm() {
     // Phase C: an open-row field select is monomorphized at the concrete call site
     // (the field's slot is recomputed for the concrete record layout), so it now

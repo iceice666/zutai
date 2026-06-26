@@ -193,6 +193,30 @@ impl<'a> TlcEvaluator<'a> {
         }
     }
 
+    /// Run a `finally` teardown once the handled computation has reduced to its
+    /// final value, threading the value through unchanged. `bind_control`
+    /// preserves any outer-effect `Perform` escapes and re-enters on resume, so
+    /// the teardown fires exactly when the terminal value emerges — covering both
+    /// normal completion and handler abort. The teardown runs for its effects in
+    /// the outer row; its result is discarded.
+    pub(super) fn run_finally<'eval>(
+        self,
+        control: EvalControl<'eval>,
+        finally: TlcExprId,
+        env: Env,
+        outer_resume: Option<EvalCont<'eval>>,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        self.bind_control(control, move |value, this| {
+            let finally_control = this.eval_control(finally, &env, outer_resume.clone())?;
+            this.bind_control(finally_control, move |_discarded, _this| {
+                Ok(EvalControl::Value(value.clone()))
+            })
+        })
+    }
+
     pub(super) fn apply_value_clause<'eval>(
         self,
         value: Value,

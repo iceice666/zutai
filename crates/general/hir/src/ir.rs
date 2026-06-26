@@ -454,6 +454,9 @@ pub enum HirRowTailKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirEffectRow {
     pub ops: Vec<HirEffectOp>,
+    /// An optional open row tail `...e`/`...`, resolved the same way as
+    /// record/union tails (`HirRowTail`). `None` is a closed row.
+    pub tail: Option<HirRowTail>,
     pub span: Span,
 }
 
@@ -480,6 +483,10 @@ pub struct HirHandleClause {
 pub enum HirHandleOp {
     /// The special `value = ...` clause handling the final value.
     Value,
+    /// The special `finally = ...` clause: an expression run once when the
+    /// handled computation completes (normal return or handler abort), for its
+    /// effects — the resource-finalization teardown. Its result is discarded.
+    Finally,
     /// An operation clause handling a performed operation by name path.
     Operation(Vec<String>),
 }

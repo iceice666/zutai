@@ -36,6 +36,27 @@ pub fn residual_effect_reason_with_grants(
     module: &TlcModule,
     grants: HostEffectSet,
 ) -> Option<&'static str> {
+    // A `finally` teardown clause is interpreter-only (resource finalization for
+    // effectful generators, V3-G4): native lowering of effect handlers carrying
+    // one is refused before Dataflow Core, precisely rather than via the generic
+    // residual-effect message. Checked over reachable code only.
+    if crate::monomorphize::reachable_exprs(module)
+        .iter()
+        .any(|id| {
+            matches!(
+                module.expr_arena[*id],
+                TlcExpr::Handle {
+                    finally: Some(_),
+                    ..
+                }
+            )
+        })
+    {
+        return Some(
+            "a `finally` handler clause is interpreter-only; native compilation of resource-finalization handlers is not supported",
+        );
+    }
+
     let final_has_residual_effect = module.final_expr.is_some_and(|expr| {
         let mut visited = FxHashSet::default();
         reachable_expr_has_effect(module, expr, &mut visited, grants)
@@ -246,9 +267,15 @@ fn reachable_host_io_print(
         TlcExpr::Perform { op, arg } => {
             op == "io.print" || reachable_host_io_print(module, *arg, visited)
         }
-        TlcExpr::Handle { expr, value, ops } => {
+        TlcExpr::Handle {
+            expr,
+            value,
+            finally,
+            ops,
+        } => {
             reachable_host_io_print(module, *expr, visited)
                 || value.is_some_and(|value| reachable_host_io_print(module, value, visited))
+                || finally.is_some_and(|finally| reachable_host_io_print(module, finally, visited))
                 || ops
                     .iter()
                     .any(|clause| reachable_host_io_print(module, clause.body, visited))

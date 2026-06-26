@@ -58,12 +58,18 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
     ) -> ThirExprId {
         let mut value_clause = None;
+        let mut finally_clause = None;
         let mut op_clauses = Vec::new();
         for clause in clauses {
             match &clause.op {
                 HirHandleOp::Value => {
                     if value_clause.is_none() {
                         value_clause = Some(clause);
+                    }
+                }
+                HirHandleOp::Finally => {
+                    if finally_clause.is_none() {
+                        finally_clause = Some(clause);
                     }
                 }
                 HirHandleOp::Operation(path) => op_clauses.push((path.join("."), clause)),
@@ -124,12 +130,20 @@ impl<'hir> Lowerer<'hir> {
             });
         }
 
+        // The `finally` teardown runs after the handled computation and its
+        // value/operation clauses, in the *outer* effect row — the handler layer
+        // is already popped, so its effects propagate outward and are not
+        // discharged by this handler. Its result is discarded (it runs for
+        // effect), so the body is inferred freely.
+        let finally = finally_clause.map(|clause| self.infer_expr(clause.body));
+
         self.alloc_expr(ThirExpr {
             source: id,
             ty: result_ty,
             kind: ThirExprKind::Handle {
                 expr: handled_expr,
                 value,
+                finally,
                 ops,
             },
             span,
@@ -306,6 +320,9 @@ impl<'hir> Lowerer<'hir> {
                             HirHandleOp::Value => {
                                 Some(self.max_resumes_handler_clause_body(clause.body))
                             }
+                            // `finally` is a bare expression (not a lambda) and
+                            // licenses no `resume`; count its body directly.
+                            HirHandleOp::Finally => Some(self.max_resumes(clause.body)),
                             HirHandleOp::Operation(_) => None,
                         })
                         .sum::<usize>()

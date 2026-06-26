@@ -247,9 +247,15 @@ impl<'m> EffectInliner<'m> {
                 let arg = self.inline_expr(arg);
                 self.alloc_from(id, TlcExpr::Perform { op, arg })
             }
-            TlcExpr::Handle { expr, value, ops } => {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 let expr = self.inline_expr(expr);
                 let value = value.map(|value| self.inline_expr(value));
+                let finally = finally.map(|finally| self.inline_expr(finally));
                 let ops = ops
                     .into_iter()
                     .map(|clause| crate::ir::TlcHandleClause {
@@ -257,7 +263,15 @@ impl<'m> EffectInliner<'m> {
                         body: self.inline_expr(clause.body),
                     })
                     .collect();
-                self.alloc_from(id, TlcExpr::Handle { expr, value, ops })
+                self.alloc_from(
+                    id,
+                    TlcExpr::Handle {
+                        expr,
+                        value,
+                        finally,
+                        ops,
+                    },
+                )
             }
             TlcExpr::Resume { value } => {
                 let value = self.inline_expr(value);
@@ -501,9 +515,15 @@ impl<'m> EffectInliner<'m> {
                 op,
                 arg: self.freshen_expr(arg, subst),
             },
-            TlcExpr::Handle { expr, value, ops } => {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
                 let expr = self.freshen_expr(expr, subst);
                 let value = value.map(|value| self.freshen_expr(value, subst));
+                let finally = finally.map(|finally| self.freshen_expr(finally, subst));
                 let ops = ops
                     .into_iter()
                     .map(|clause| crate::ir::TlcHandleClause {
@@ -511,7 +531,12 @@ impl<'m> EffectInliner<'m> {
                         body: self.freshen_expr(clause.body, subst),
                     })
                     .collect();
-                TlcExpr::Handle { expr, value, ops }
+                TlcExpr::Handle {
+                    expr,
+                    value,
+                    finally,
+                    ops,
+                }
             }
             TlcExpr::Resume { value } => TlcExpr::Resume {
                 value: self.freshen_expr(value, subst),

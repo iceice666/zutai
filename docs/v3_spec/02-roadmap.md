@@ -126,8 +126,9 @@ oracle parity (a wrong value is worse than a refused one).
   under collection while producing correct output.
 
 Open generator questions to settle within the track (carried from
-`01-generators.md`): cancellation/finalization and resource lifetime for
-resource-backed generators.
+`01-generators.md`): *finalization* landed as the `finally` handler clause
+(2026-06-26, `docs/ARCHIVED.md`); cancellation and general resource lifetime for
+resource-backed generators remain open.
 
 ## Track 2 — Reserved design boundaries (demand-gated)
 
@@ -160,8 +161,8 @@ rest of the track hung off — through G2 (stdlib API), G3 (richer `yield`), G4
 (effectful generators, reference-interpreter level), and G5 (GC keeps unbounded
 stream pipelines bounded), each a contained phase with no ABI change. **Track 1
 is complete.** Remaining V3 work is the demand-gated Track 2 boundaries and the
-open generator questions (cancellation/finalization, resource lifetime) below.
-Track 2 stays demand-gated.
+open generator questions (cancellation, resource lifetime; finalization landed as
+the `finally` clause 2026-06-26) below. Track 2 stays demand-gated.
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

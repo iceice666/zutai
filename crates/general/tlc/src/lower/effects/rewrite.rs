@@ -38,9 +38,18 @@ impl<'module> EffectElaborator<'module> {
                 parent_handlers,
                 k,
             ),
-            TlcExpr::Handle { expr, value, ops } => {
-                let handled = if self.can_elaborate_handle_with_parent(expr, &ops, parent_handlers)
-                {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
+                let handled = if self.can_elaborate_handle_with_parent(
+                    expr,
+                    finally,
+                    &ops,
+                    parent_handlers,
+                ) {
                     self.elaborate_handle_with_parent(id, expr, value, ops, parent_handlers)
                 } else {
                     self.elaborate_expr(id)

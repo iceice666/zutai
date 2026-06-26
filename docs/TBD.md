@@ -22,6 +22,33 @@ type export, destructuring binding) have all landed — see `docs/ARCHIVED.md`.
 
 ## Active milestone — none
 
+**V3-G4 follow-up: `finally` finalization clause — landed 2026-06-26** (see
+`docs/ARCHIVED.md` "`finally` finalization clause"). A `finally = expr` handler
+clause runs a teardown once when a `handle` reduces to its final value (normal
+completion *or* handler abort), in the outer row — the resource-finalization
+primitive for effectful generators. It fires even when a consumer stops early
+(partial `take`), because a deferred effect is charged to whoever forces it under
+the granting handler, so the handler's extent bounds the resource.
+Interpreter-only; native compilation of a finally-bearing handle is refused with a
+precise diagnostic.
+
+**V3-G4 follow-up: open effect-row tails (check-only foundation) — landed
+2026-06-26** (see `docs/ARCHIVED.md` "Open effect-row tails"). Effect-row
+annotations now accept an open row tail — `! { ops; ...e }` (a row variable),
+`! { ...e }`, or `! { ... }` (anonymous open) — mirroring the existing
+record/union row-tail syntax. A `...e` naming an in-scope type parameter lowers to
+a rigid `RowTail::Param` (threaded by exact-tail unification); anonymous `...`
+lowers to `Open`; an effect-row `...Shape` spread of a named type is refused
+precisely. This is the **expressibility foundation** for an effectful-stream type;
+it is *check-only* — a row-polymorphic effect signature checks and lowers cleanly,
+and execution stays gated by the existing residual-effect gate.
+
+Still open from the V3-G4 follow-ups: **cancellation** (signalling a generator to
+stop mid-stream), general **resource lifetime**, and the **ergonomic
+effectful-stream type** itself — which now needs *call-site effect-row inference*
+(a pure argument unifying against an open-row parameter; today exact-tail
+unification rejects it) plus the `StreamEff` alias, built on the foundation above.
+
 `empty` + `unfold` (V3-G2 residuals: the empty stream and the canonical codata
 producer) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G2 residual: `unfold`
 combinator" and "BindingRef instantiation site". `unfold` ships as an ambient
@@ -83,9 +110,10 @@ soundness. G5 first landed with the collector opt-in; the default was then flipp
 to **GC on by default** (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
 default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.**
 
-**G4 follow-ups (open):** cancellation/finalization and resource lifetime for
-effectful generators; an ergonomic effectful-stream *type* (the supported idiom
-uses the raw cell type, not the pure `Stream` alias).
+**G4 follow-ups:** *finalization* landed as the `finally` handler clause
+(2026-06-26, see `docs/ARCHIVED.md`). Still open: cancellation and general
+resource lifetime for effectful generators; an ergonomic effectful-stream *type*
+(the supported idiom uses the raw cell type, not the pure `Stream` alias).
 
 **Other G2 residuals:** all landed. The importable-module residual closed with
 V3-G6, `unfold` + `empty` shipped 2026-06-25, and the `List`-interop subset
@@ -147,8 +175,9 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   landed: G1 (codata representation) → G2 (stdlib API) → G3 (richer `yield`) → G4
   (effectful generators, reference-interpreter) → G5 (GC keeps unbounded pipelines
   bounded). The G2 residuals (`empty`/`unfold`, `List` interop, importable `.zt`
-  packaging) have all landed. Open follow-ups: cancellation/finalization and
-  resource lifetime for effectful generators; an ergonomic effectful-stream type.
+  packaging) have all landed, as has G4 finalization (the `finally` handler
+  clause, 2026-06-26). Open follow-ups: cancellation and resource lifetime for
+  effectful generators; an ergonomic effectful-stream type.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

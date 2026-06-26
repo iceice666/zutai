@@ -263,6 +263,10 @@ pub enum ThirExprKind {
     Handle {
         expr: ThirExprId,
         value: Option<ThirExprId>,
+        /// The `finally = expr` teardown clause, if present: run once when the
+        /// handle reduces to a value (normal return or handler abort), for its
+        /// effects in the outer row; its result is discarded.
+        finally: Option<ThirExprId>,
         ops: Vec<ThirHandleClause>,
     },
     Resume {

@@ -408,6 +408,16 @@ impl<'thir> Lowerer<'thir> {
                     out.insert(b.0);
                 }
             }
+            TypeKind::Effect { base, row } => {
+                self.collect_sig_row_params(base, out);
+                for op in &row.ops {
+                    self.collect_sig_row_params(op.param, out);
+                    self.collect_sig_row_params(op.result, out);
+                }
+                if let RowTail::Param(b) = row.tail {
+                    out.insert(b.0);
+                }
+            }
             TypeKind::Tuple(items) => {
                 for item in &items {
                     let inner = match item {

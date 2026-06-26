@@ -351,6 +351,85 @@ abort
 }
 
 #[test]
+fn row_polymorphic_effect_signature_lowers_through_tlc() {
+    // The check-only open-effect-row foundation: a signature with an effect-row
+    // variable `...e` lowers cleanly through TLC and evaluates. This pins the TLC
+    // `collect_sig_row_params` Effect arm — the row-variable param must be
+    // quantified with row kind (not ground), matching the THIR collector. (Call-
+    // site inference where a pure argument meets an open-row parameter is a
+    // separate, deferred step; this only exercises definition + lowering.)
+    let src = "forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }\n  = f => f;\nforward\n";
+    assert_eq!(run(src).to_string(), "<function/1>");
+}
+
+#[test]
+fn finally_runs_on_normal_completion() {
+    // V3-G4 finalization: a `finally` teardown runs when the handled computation
+    // completes normally. The teardown performs `mark`, handled by the enclosing
+    // handler which aborts to a sentinel — so observing the sentinel proves the
+    // teardown ran (the un-finalized result would be the inner value "inner").
+    assert_eq!(
+        run(r#"
+result ::= handle (handle "inner" with { finally = perform mark (); }) with { mark = \_. "finalized"; };
+result
+"#,),
+        Value::Text("finalized".into())
+    );
+    // The teardown's own result is discarded — the handle still yields its value.
+    assert_eq!(
+        run(r#"
+passthrough ::= handle "body" with { finally = "cleanup"; };
+passthrough
+"#,),
+        Value::Text("body".into())
+    );
+}
+
+#[test]
+fn finally_runs_when_handler_aborts() {
+    // The teardown fires on the *abort* path too: the inner `fail` handler returns
+    // without resuming (discarding the continuation), yet `finally` still runs.
+    assert_eq!(
+        run(r#"
+result ::= handle (handle perform fail "x" with { fail = \e. "fallback"; finally = perform mark (); }) with { mark = \_. "finalized"; };
+result
+"#,),
+        Value::Text("finalized".into())
+    );
+}
+
+#[test]
+fn finally_runs_after_early_stream_consumption() {
+    // The resource-finalization scenario: an effectful generator is consumed
+    // *partially* (`take2` forces only the first two cells of a three-element
+    // stream), yet the granting handler's `finally` teardown still fires. `close`
+    // escapes to the enclosing handler, which aborts to `0 - 1`; observing it
+    // proves the resource was finalized despite the early stop. `tick` resumes 5
+    // twice, so the un-finalized result would be 10.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+take2 :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
+  = s => match s () {
+    | #nil => 0;
+    | #cons { head = h; tail = t; } => h + (match t () {
+        | #nil => 0;
+        | #cons { head = h2; tail = u; } => h2;
+      });
+  };
+result ::= handle (
+  handle (take2 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+    tick = \_. resume 5;
+    finally = perform close ();
+  }
+) with {
+  close = \_. 0 - 1;
+};
+result
+"#;
+    assert_eq!(run(src), Value::Int(-1));
+}
+
+#[test]
 fn effectful_stream_generator_against_pure_stream_alias_is_rejected() {
     // Annotating an effectful generator as the *pure* `Stream A` alias
     // (`Stream A = Unit -> StreamCell A`) is rejected: the `yield perform …`

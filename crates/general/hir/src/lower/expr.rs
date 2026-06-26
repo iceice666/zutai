@@ -416,11 +416,14 @@ impl Lowerer {
         // names a performed operation. Only operation clauses license `resume`.
         let op = if clause.op.len() == 1 && clause.op[0] == "value" {
             HirHandleOp::Value
+        } else if clause.op.len() == 1 && clause.op[0] == "finally" {
+            HirHandleOp::Finally
         } else {
             HirHandleOp::Operation(clause.op.clone())
         };
         let clause_kind = match &op {
             HirHandleOp::Value => HandlerClauseKind::Value,
+            HirHandleOp::Finally => HandlerClauseKind::Finally,
             HirHandleOp::Operation(_) => HandlerClauseKind::Operation,
         };
         let saved = self.handler_clause;

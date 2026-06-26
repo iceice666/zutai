@@ -63,10 +63,18 @@ impl<'module> EffectElaborator<'module> {
 
     pub(super) fn elaborate_expr(&mut self, id: TlcExprId) -> TlcExprId {
         match self.module.expr_arena[id].clone() {
-            TlcExpr::Handle { expr, value, ops } => {
-                if self.can_elaborate_handle(expr, &ops) {
+            TlcExpr::Handle {
+                expr,
+                value,
+                finally,
+                ops,
+            } => {
+                if self.can_elaborate_handle(expr, finally, &ops) {
                     self.elaborate_handle(id, expr, value, ops)
                 } else {
+                    // A non-elaboratable handle (residual effects, or a
+                    // `finally` teardown) is left intact for the interpreter and
+                    // refused by the native residual-effect gate.
                     id
                 }
             }
