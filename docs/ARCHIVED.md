@@ -36,13 +36,12 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 ## Current baseline
 
 _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
-2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), and
-2026-06-26 (general-mode `;`-terminator / container-glyph grammar; docs migrated;
-`import` unified as an expression — dedicated `name :: import` decl form removed;
-**native effect parity** — recursive/higher-order/partially-applied handled
-effects and `finally` now compile natively via the reify pass, reversing the
-Phase 35 no-go; backend-only effect lowering split out of `lower_thir` so the
-interpreter oracle keeps its own `handle_control`/`run_finally`)._
+2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
+(general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
+unified as an expression; **native effect parity**), and 2026-06-27 (resource
+lifetime for effectful generators: granting-handler dynamic extent is the owner;
+normal/partial/cancel/nested-unwind oracle coverage; lazy escapes and non-`io.print`
+resource-cell native lowering refuse precisely)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -1931,4 +1930,30 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   match exhaustiveness, lambda lowering, no-signature function inference,
   predicative polymorphism, imports, constraints, witnesses, and operator
   witness dispatch.
+
+### Resource lifetime for effectful generators (2026-06-27)
+
+The V3-G4 resource-lifetime follow-up landed at **reference-interpreter support
+with explicit backend rejection** for non-`io.print` resource effects. The
+granting handler's dynamic extent is the single owner of resource-backed stream
+lifetime: acquisition/step effects, normal full consumption, partial consumption,
+cooperative cancellation, cross-boundary abort unwinding, and `finally` teardown
+all run under that handler. Dropped or unforced tails do not imply cell-level
+RAII.
+
+Validation added oracle/refusal coverage in `crates/cli/tests/cli.rs`:
+`resource_generator_finalizes_once_on_legal_shapes` proves teardown runs exactly
+once on normal full consumption, early stop, cancellation, and nested-finalizer
+unwinding; `resource_generator_lazy_escape_is_rejected_at_force_boundary` proves
+an unforced effectful head returned outside the grant refuses when forced; and
+`compile_resource_effectful_generator_stays_gated` proves a source-handled
+`fs.read` generator still rejects on the native backend. The implementation gate
+lives in `crates/general/tlc/src/lower/effects/reify.rs`: effectful codata cells
+that carry non-`io.print` host-resource operations are left residual so the
+existing residual-effect gate rejects them before Dataflow Core.
+
+Non-goals remain unchanged: no asynchronous/preemptive cancellation, no ambient
+filesystem/clock/network/randomness iteration, no host iterator abstraction, no
+cell-level finalizers, and no native resource-effect lowering unless the backend
+contract is explicitly reopened.
 

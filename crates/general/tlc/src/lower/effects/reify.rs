@@ -1000,11 +1000,39 @@ impl<'m> Reifier<'m> {
         false
     }
 
+    fn reaches_non_print_host_perform(
+        &self,
+        id: TlcExprId,
+        handle_ops: &FxHashSet<String>,
+    ) -> bool {
+        let mut seen = FxHashSet::default();
+        let mut stack = vec![id];
+        while let Some(cur) = stack.pop() {
+            if !seen.insert(cur) {
+                continue;
+            }
+            match &self.module.expr_arena[cur] {
+                TlcExpr::Perform { op, .. }
+                    if handle_ops.contains(op)
+                        && crate::HostOp::from_name(op).is_some()
+                        && op != "io.print" =>
+                {
+                    return true;
+                }
+                TlcExpr::Lam(..) => continue,
+                _ => {}
+            }
+            push_child_exprs(&self.module.expr_arena[cur], &mut stack);
+        }
+        false
+    }
+
     /// Detect effectful-codata producers (V3-G4): a `Variant(tag, Record{…})` cell
     /// whose type is a named alias and one of whose strict fields holds a deferred
     /// handled `perform`. Records each `(cell_id, (tag, field))` in `eff_fields`.
     /// Returns `false` on an unsupported shape (a deferred-effect field on an
-    /// anonymous cell type) so the handle stays residual.
+    /// anonymous cell type, or a non-`io.print` host-resource operation in a cell)
+    /// so the handle stays residual and the native backend rejects it precisely.
     fn detect_eff_codata(&mut self, roots: &[TlcExprId], handle_ops: &FxHashSet<String>) -> bool {
         let mut seen = FxHashSet::default();
         let mut stack: Vec<TlcExprId> = roots.to_vec();
@@ -1021,6 +1049,12 @@ impl<'m> Reifier<'m> {
                     .map(|(name, _)| name.clone())
                     .collect();
                 if !effectful.is_empty() {
+                    if fields
+                        .iter()
+                        .any(|(_, v)| self.reaches_non_print_host_perform(*v, handle_ops))
+                    {
+                        return false;
+                    }
                     let Some(cell_id) = self.cell_identity(self.expr_ty(cur)) else {
                         return false; // deferred effect on an anonymous cell type
                     };

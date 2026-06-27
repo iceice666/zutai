@@ -8,19 +8,32 @@ New implementation phases should be added here when scoped.
 ## Status (2026-06-27)
 
 v1 is semantically and natively complete; v2 is largely native (four of five
-features lower natively, universe levels erase before the backend); v3 is
-underway on the generators/streams spine. The v1/v2 backend-closing tracks, the
+features lower natively, universe levels erase before the backend); v3 Track 1
+and its scoped follow-ups are complete. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
 (Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
 cross-module polymorphism (single- and multi-type, XM-1…3), V3-G6 (importable
 `stream.zt` module), the `unfold` + `empty` stream combinators (V3-G2
 residuals, the latter on a first-class `BindingRef` instantiation site), the
-`List`-interop subset (`toList`/`fromList`/`takeList`, V3-G2 residual), and the
-V3-G6 import-ergonomics follow-ups (embedded `stdlib.stream`, `Stream`/`Step`
-type export, destructuring binding) have all landed — see `docs/ARCHIVED.md`.
-**This closes V3-G2.**
+`List`-interop subset (`toList`/`fromList`/`takeList`, V3-G2 residual), V3-G6
+import ergonomics, and the resource-lifetime contract for effectful generators
+have all landed — see `docs/ARCHIVED.md`.
+**This closes V3-G2 and the scoped V3-G4 follow-ups.**
 
-## Active milestone — none
+## Previous milestone — Resource lifetime for effectful generators (landed 2026-06-27)
+
+Resource lifetime for effectful generators **landed 2026-06-27** — see
+`docs/ARCHIVED.md` "Resource lifetime for effectful generators". Support level:
+**reference-interpreter support with explicit backend rejection** for
+non-`io.print` resource effects. The granting handler's dynamic extent is the
+single owner of resource-backed stream lifetime; normal full consumption, partial
+consumption, cooperative cancellation, and cross-boundary abort through nested
+`finally` handlers are covered by oracle tests. Lazy escapes refuse when forced
+outside the grant, and native lowering of non-`io.print` resource-backed cells is
+gated. Non-goals remain: no asynchronous/preemptive cancellation, no ambient
+filesystem, clock, network, or randomness iteration, no host iterator abstraction,
+no cell-level finalizers, and no native resource-effect lowering unless the
+backend contract is explicitly reopened.
 
 **Cooperative cancellation — landed 2026-06-27** (see `docs/ARCHIVED.md` "V3-G4
 follow-up: cooperative cancellation for effectful generators"). Cancellation —
@@ -186,8 +199,8 @@ default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.*
 (2026-06-26), the *ergonomic effectful-stream type* landed as call-site
 effect-row inference + the `StreamEff` alias (2026-06-27), and *cooperative
 cancellation* landed as aborting-the-granting-handler (2026-06-27) — see
-`docs/ARCHIVED.md`. Still open: general resource lifetime (and full finalizer
-unwinding across a cross-boundary cancel) for effectful generators.
+`docs/ARCHIVED.md`. Still open: general resource lifetime for effectful
+generators.
 
 **Other G2 residuals:** all landed. The importable-module residual closed with
 V3-G6, `unfold` + `empty` shipped 2026-06-25, and the `List`-interop subset
@@ -253,8 +266,7 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   clause, 2026-06-26), the ergonomic effectful-stream type (call-site effect-row
   inference + the `StreamEff` alias, 2026-06-27), and cooperative cancellation
   (aborting the granting handler, 2026-06-27). Open follow-up: general resource
-  lifetime (and full finalizer unwinding across a cross-boundary cancel) for
-  effectful generators.
+  lifetime for effectful generators.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

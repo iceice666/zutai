@@ -83,6 +83,21 @@ pub fn residual_effect_reason_with_grants(
         );
     }
 
+    if module.final_expr.is_some_and(|expr| {
+        let mut visited = FxHashSet::default();
+        reachable_resource_codata_host_effect(module, expr, &mut visited)
+    }) || module.decls.iter().any(|&decl_id| {
+        let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
+            return false;
+        };
+        let mut visited = FxHashSet::default();
+        reachable_resource_codata_host_effect(module, body, &mut visited)
+    }) {
+        return Some(
+            "resource-backed effectful generator cells carrying non-io.print host effects are interpreter-only; native lowering is not supported",
+        );
+    }
+
     let final_has_residual_effect = module.final_expr.is_some_and(|expr| {
         let mut visited = FxHashSet::default();
         reachable_expr_has_effect(module, expr, &mut visited, grants)
@@ -209,6 +224,53 @@ pub fn contains_host_io_print(module: &TlcModule) -> bool {
             };
             reachable_host_io_print(module, body, &mut FxHashSet::default())
         })
+}
+
+fn expr_reaches_non_print_host_perform(
+    module: &TlcModule,
+    id: TlcExprId,
+    visited: &mut FxHashSet<TlcExprId>,
+) -> bool {
+    if !visited.insert(id) {
+        return false;
+    }
+    match &module.expr_arena[id] {
+        TlcExpr::Perform { op, .. } => {
+            HostOp::from_name(op).is_some_and(|host_op| host_op != HostOp::IoPrint)
+        }
+        TlcExpr::Lam(..) => false,
+        other => {
+            let mut children = Vec::new();
+            crate::monomorphize::push_child_exprs(other, &mut children);
+            children
+                .into_iter()
+                .any(|child| expr_reaches_non_print_host_perform(module, child, visited))
+        }
+    }
+}
+
+fn reachable_resource_codata_host_effect(
+    module: &TlcModule,
+    id: TlcExprId,
+    visited: &mut FxHashSet<TlcExprId>,
+) -> bool {
+    if !visited.insert(id) {
+        return false;
+    }
+    if let TlcExpr::Variant(_, payload) = module.expr_arena[id]
+        && let TlcExpr::Record(fields) = &module.expr_arena[payload]
+        && fields.iter().any(|(_, value)| {
+            let mut field_seen = FxHashSet::default();
+            expr_reaches_non_print_host_perform(module, *value, &mut field_seen)
+        })
+    {
+        return true;
+    }
+    let mut children = Vec::new();
+    crate::monomorphize::push_child_exprs(&module.expr_arena[id], &mut children);
+    children
+        .into_iter()
+        .any(|child| reachable_resource_codata_host_effect(module, child, visited))
 }
 
 fn reachable_expr_has_effect(

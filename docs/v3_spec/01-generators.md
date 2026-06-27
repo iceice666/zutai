@@ -38,13 +38,15 @@ their effects stays refused by committed design.
   generation still requires ordinary capability parameters/effect rows, and
   unsupported residual host operations keep rejecting before backend erasure.
   No second effect system or host iterator abstraction is introduced.
-- **Finalization landed** as a `finally` handler clause (V3-G4 follow-up, see
-  `docs/ARCHIVED.md` "`finally` finalization clause"): `handle e with { …;
-  finally = teardown; }` runs `teardown` once when the handle reduces to a value
-  (normal completion *or* abort), in the outer row. Because a deferred effect is
-  charged to the consumer that forces it under the granting handler, the handler's
-  extent bounds the resource, so `finally` fires even when a consumer stops early.
-  It runs on the interpreter and, as of native effect parity, the native backend.
+- **Resource-lifetime contract landed** (V3-G4 follow-up, 2026-06-27; see
+  `docs/ARCHIVED.md` "Resource lifetime for effectful generators"). The granting
+  handler's dynamic extent is the sole owner of resource-backed stream lifetime:
+  acquisition/step effects, early stop, cancellation, cross-boundary abort
+  unwinding, and `finally` teardown all run under that handler. Dropped or
+  unforced tails do not imply cell-level RAII. Interpreter support covers normal
+  full consumption, partial consumption, cooperative cancellation, and nested
+  finalizer unwinding; lazy escapes refuse when forced outside the grant, and
+  native lowering of non-`io.print` resource-backed cells is explicitly gated.
 - **Ergonomic effectful-stream type landed** (V3-G4 follow-up, 2026-06-27, see
   `docs/ARCHIVED.md`): call-site effect-row inference (a pure/concrete argument
   unifies against an instantiated open-row parameter) plus the `StreamEff A e`
@@ -75,19 +77,21 @@ backend erasure.
 
 ## Effectful generators (V3-G4)
 
-Support level: **check + reference-interpreter + native** (raw-cell-type idiom, as
-of 2026-06-26). An effectful generator runs on the interpreter when its effects
-are *granted*, and the supported idiom — `stream { yield perform … }` consumed
-strictly under a handler over a **raw cell type** (not the pure `Stream` alias) —
-now also compiles natively and matches the oracle (`reify.rs`
-`detect_eff_codata`/`build_cell_primes`/`reify_cell_body`; see `docs/ARCHIVED.md`
-"Native effect parity"). The reify pass stores the deferred `perform` as strict
-`Computation`-data in the cell's effectful field (carrier on the field, not the
-demand thunk), so the cell is produced strictly and the effect fires when the
-consumer `bind`s it — matching the interpreter, which is also strict-at-force for
-effectful modules. Recursive/conditional effectful generators are rejected on both
-paths (a pure-typed producer cannot `perform`); a generator typed through the
-parametric prelude `Stream` alias remains a narrow native residual.
+Support level: **reference-interpreter support; native support only for `io.print`-
+backed cells** (raw-cell-type idiom, as of 2026-06-27). An effectful generator
+runs on the interpreter when its effects are *granted*, and the supported idiom —
+`stream { yield perform … }` consumed strictly under a handler over a **raw cell
+type** (not the pure `Stream` alias) — compiles natively only when the cell-carried
+host effect is ambient `io.print`. The reify pass stores a compilable deferred
+`io.print` as strict `Computation`-data in the cell's effectful field (carrier on
+the field, not the demand thunk), so the cell is produced strictly and the effect
+fires when the consumer `bind`s it — matching the interpreter, which is also
+strict-at-force for effectful modules. Resource host operations (`fs.read`,
+networking, clocks, randomness) remain interpreter-only and are rejected before
+native lowering even when source-handled. Recursive/conditional effectful
+generators are rejected on both paths (a pure-typed producer cannot `perform`); a
+generator typed through the parametric prelude `Stream` alias remains a narrow
+native residual.
 
 The mechanism reuses the existing effect machinery rather than a new effectful
 codata type. A `yield perform op …` defers the operation into a *lazy cell
@@ -109,17 +113,20 @@ Boundaries (each refused, never miscompiled):
   `Stream A = Unit -> StreamCell A` is rejected — the deferred effect cannot
   satisfy the pure thunk the alias demands. Effectful streams are not the pure
   `Stream` alias and do not interoperate with the pure prelude combinators.
-- **Lazy escape.** A consumer that *returns* an unforced effectful head (instead
-  of forcing it under the handler) hits a runtime "unhandled effect" — a refusal,
-  consistent with the spec's demand-driven ordering of pure data construction.
-- **Native.** Any generator whose cells carry a non-`io.print` effect is refused
-  by the residual-effect gate (`compile_effectful_generator_stays_gated`).
+- **Lazy escape.** A consumer that *returns* an unforced effectful head or cell
+  outside the granting handler does not transfer the grant; forcing/displaying it
+  later hits runtime "unhandled effect" — a refusal, consistent with the spec's
+  demand-driven ordering of pure data construction.
+- **Native.** Any generator whose cells carry a non-`io.print` host-resource
+  effect is refused by the residual-effect gate
+  (`compile_resource_effectful_generator_stays_gated`).
 
 Resource host effects (`fs.read`, networking, clocks, randomness) therefore reach
 only the interpreter, behind an explicit handler that grants them; they have no
 native path. *Finalization* is supported via a `finally` handler clause (see
 below), and *cancellation* via the same handler's aborting clause (see
-"Cancellation"). General resource lifetime remains open.
+"Cancellation"). General resource lifetime is now the dynamic-extent contract
+above, not cell-level RAII.
 
 ### Finalization: the `finally` handler clause
 

@@ -1623,6 +1623,130 @@ handle (sumEff (stream { yield perform tick 1; yield perform tick 2; yield perfo
 }
 
 #[test]
+fn compile_resource_effectful_generator_stays_gated() {
+    // Resource-backed generator cells are interpreter-only: even with an explicit
+    // source handler granting `fs.read`, native lowering must refuse the deferred
+    // non-`io.print` host operation instead of reifying it into a backend stream.
+    let data_path = write_tmp("cli_test_resource_gen_data.txt", "mock");
+    let src = format!(
+        r#"
+Cell :: type {{ #nil; #cons : {{ head : Text; tail : Unit -> Cell; }}; }};
+first :: (Unit -> Cell) -> Text ! {{ fs.read : Path -> Text; }}
+  = s => match s () {{ | #nil => "empty"; | #cons {{ head = h; tail = t; }} => h; }};
+handle (first (stream {{ yield perform fs.read "{}"; }})) with {{ fs.read = \path. resume "mock"; }}
+"#,
+        zt_string_literal(&data_path)
+    );
+    assert_eq!(
+        run_stdout("cli_test_resource_gen_oracle.zt", &src),
+        "\"mock\"\n"
+    );
+    let path = write_tmp("cli_test_resource_gen_compile_gated.zt", &src);
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("effect"));
+}
+
+#[test]
+fn resource_generator_lazy_escape_is_rejected_at_force_boundary() {
+    // Returning the unforced effectful head from inside the granting handler does
+    // not transfer the resource lifetime. Displaying the escaped value forces it
+    // after the handler is gone, so the effect is refused as unhandled.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+firstLazy :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h; };
+handle (firstLazy (stream { yield perform tick (); })) with { tick = \_. resume 5; }
+"#;
+    let path = write_tmp("cli_test_resource_lazy_escape.zt", src);
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unhandled effect `tick`"));
+}
+
+#[test]
+fn resource_generator_finalizes_once_on_legal_shapes() {
+    let full = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+sumEff :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
+handle (sumEff (stream { yield perform tick (); yield perform tick (); })) with {
+  tick = \_. resume 5;
+  finally = print "close";
+}
+"#;
+    assert_eq!(
+        run_stdout("cli_test_resource_full_once.zt", full),
+        "close\n10\n"
+    );
+
+    let partial = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+take2 :: (Unit -> Cell) -> Int ! { tick : Unit -> Int; }
+  = s => match s () {
+    | #nil => 0;
+    | #cons { head = h; tail = t; } => h + (match t () { | #nil => 0; | #cons { head = h2; tail = u; } => h2; });
+  };
+handle (take2 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+  tick = \_. resume 5;
+  finally = print "close";
+}
+"#;
+    assert_eq!(
+        run_stdout("cli_test_resource_partial_once.zt", partial),
+        "close\n10\n"
+    );
+
+    let cancel = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+  tick = \_. resume 5;
+  stop = \r. r;
+  finally = print "close";
+}
+"#;
+    assert_eq!(
+        run_stdout("cli_test_resource_cancel_once.zt", cancel),
+        "close\n10\n"
+    );
+
+    let nested = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (
+  handle (
+    handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); })) with {
+      tick = \_. resume 5;
+      finally = print "inner";
+    }
+  ) with {
+    finally = print "outer";
+  }
+) with {
+  stop = \r. r;
+}
+"#;
+    assert_eq!(
+        run_stdout("cli_test_resource_nested_once.zt", nested),
+        "inner\nouter\n10\n"
+    );
+}
+#[test]
 fn compiled_finally_clause_matches_oracle() {
     // E5: a `finally` teardown clause. The reify pipeline desugars it to
     // `let r = (handle … without finally) in [ teardown; r ]`, so the teardown
