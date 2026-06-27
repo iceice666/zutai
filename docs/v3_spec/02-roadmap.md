@@ -119,8 +119,9 @@ oracle parity (a wrong value is worse than a refused one).
   resource host effects (`fs.read`, networking, clocks, randomness) reach only the
   interpreter behind an explicit grant. No new effectful-codata type was added;
   the existing effect machinery carries it. See `docs/ARCHIVED.md` "V3-G4" and
-  `01-generators.md` "Effectful generators". Cancellation/finalization and
-  resource lifetime remain open.
+  `01-generators.md` "Effectful generators". Finalization (`finally`) and
+  cooperative cancellation (aborting the granting handler) have since landed;
+  general resource lifetime remains open.
 - **V3-G5 — GC for unbounded stream programs. ✅ Landed (acceptance) 2026-06-25.**
   With genuine unbounded streams reaching the backend (gate condition (a), met by
   V3-G1), the Phase 34 conservative collector keeps a long-running stream pipeline
@@ -135,8 +136,11 @@ oracle parity (a wrong value is worse than a refused one).
 
 Open generator questions to settle within the track (carried from
 `01-generators.md`): *finalization* landed as the `finally` handler clause
-(2026-06-26, `docs/ARCHIVED.md`); cancellation and general resource lifetime for
-resource-backed generators remain open.
+(2026-06-26), the *ergonomic effectful-stream type* landed as call-site
+effect-row inference + the `StreamEff` alias (2026-06-27), and *cooperative
+cancellation* landed as consumer-driven mid-stream termination over the abort +
+`finally` machinery (2026-06-27, `docs/ARCHIVED.md`); general resource lifetime
+for resource-backed generators remains open.
 
 ## Track 2 — Reserved design boundaries (demand-gated)
 
@@ -169,8 +173,11 @@ rest of the track hung off — through G2 (stdlib API), G3 (richer `yield`), G4
 (effectful generators, reference-interpreter level), and G5 (GC keeps unbounded
 stream pipelines bounded), each a contained phase with no ABI change. **Track 1
 is complete.** Remaining V3 work is the demand-gated Track 2 boundaries and the
-open generator questions (cancellation, resource lifetime; finalization landed as
-the `finally` clause 2026-06-26) below. Track 2 stays demand-gated.
+open generator question of general resource lifetime (finalization landed as the
+`finally` clause 2026-06-26, the ergonomic effectful-stream type as call-site
+effect-row inference + the `StreamEff` alias 2026-06-27, and cooperative
+cancellation as aborting-the-granting-handler 2026-06-27) below. Track 2 stays
+demand-gated.
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

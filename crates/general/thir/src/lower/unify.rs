@@ -62,6 +62,29 @@ impl<'hir> Lowerer<'hir> {
         (variants, tail)
     }
 
+    /// Flatten an effect row `(ops, tail)` by appending every solved flexible
+    /// tail's captured ops until the tail is rigid or unsolved. The dual of
+    /// `flatten_record_row`/`flatten_union_row` for effect rows.
+    pub(in crate::lower) fn flatten_effect_row(
+        &self,
+        mut ops: Vec<EffectOp>,
+        mut tail: RowTail,
+    ) -> (Vec<EffectOp>, RowTail) {
+        while let RowTail::Infer(r) = tail {
+            match self.row_subst.get(&r) {
+                Some(RowSolution::Effect {
+                    ops: extra,
+                    tail: next,
+                }) => {
+                    ops.extend(extra.iter().cloned());
+                    tail = *next;
+                }
+                _ => break,
+            }
+        }
+        (ops, tail)
+    }
+
     /// Chase InferVar substitution chains to find the canonical representative.
     pub(in crate::lower) fn resolve(&self, ty: TypeId) -> TypeId {
         let mut current = ty;
@@ -241,6 +264,20 @@ impl<'hir> Lowerer<'hir> {
                 TypeKind::Union(variants, tail @ RowTail::Infer(_)) => {
                     let (variants, tail) = self.flatten_union_row(variants, tail);
                     self.type_arena[i].kind = TypeKind::Union(variants, tail);
+                }
+                TypeKind::Effect {
+                    base,
+                    row:
+                        EffectRow {
+                            ops,
+                            tail: tail @ RowTail::Infer(_),
+                        },
+                } => {
+                    let (ops, tail) = self.flatten_effect_row(ops, tail);
+                    self.type_arena[i].kind = TypeKind::Effect {
+                        base,
+                        row: EffectRow { ops, tail },
+                    };
                 }
                 _ => {}
             }

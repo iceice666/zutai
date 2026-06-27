@@ -564,47 +564,173 @@ impl<'hir> Lowerer<'hir> {
         found: &EffectRow,
         span: Span,
     ) {
-        for op in &expected.ops {
-            match found.find(&op.name) {
-                Some(found_op) => {
-                    self.unify(op.param, found_op.param, span);
-                    self.unify(op.result, found_op.result, span);
-                }
-                None => {
-                    self.type_mismatch_effect(expected, found, span);
-                    return;
-                }
+        // Flatten any solved flexible tails so the comparison sees the captured
+        // ops inline (the dual of record/union row flattening).
+        let (e_ops, et) = self.flatten_effect_row(expected.ops.clone(), expected.tail);
+        let (f_ops, ft) = self.flatten_effect_row(found.ops.clone(), found.tail);
+
+        // Unify the operations the two rows share (matched by name).
+        let f_by_name: FxHashMap<&str, &EffectOp> =
+            f_ops.iter().map(|op| (op.name.as_str(), op)).collect();
+        for e_op in &e_ops {
+            if let Some(f_op) = f_by_name.get(e_op.name.as_str()) {
+                self.unify(e_op.param, f_op.param, span);
+                self.unify(e_op.result, f_op.result, span);
             }
         }
-        if found
-            .ops
+        let e_names: FxHashSet<&str> = e_ops.iter().map(|o| o.name.as_str()).collect();
+        let f_names: FxHashSet<&str> = f_ops.iter().map(|o| o.name.as_str()).collect();
+        // Ops found has that expected lacks — expected's tail must absorb these.
+        let f_extra: Vec<EffectOp> = f_ops
             .iter()
-            .any(|found_op| expected.find(&found_op.name).is_none())
-            || expected.tail != found.tail
-        {
+            .filter(|o| !e_names.contains(o.name.as_str()))
+            .cloned()
+            .collect();
+        // Ops expected has that found lacks — found's tail must absorb these.
+        let e_extra: Vec<EffectOp> = e_ops
+            .iter()
+            .filter(|o| !f_names.contains(o.name.as_str()))
+            .cloned()
+            .collect();
+
+        self.unify_effect_tails(expected, found, et, ft, e_extra, f_extra, span);
+    }
+
+    /// Reconcile two effect-row tails after their shared ops have been unified.
+    /// A flexible tail (`RowTail::Infer`) is *solved* to absorb the residual ops
+    /// of the other row, exactly as record/union rows solve flexible tails;
+    /// rigid/closed tails keep the strict op-set-and-tail equality the effect
+    /// system requires, with the one relaxation that a rigid-open expected
+    /// (`...e`) admits a closed found with the same ops (mirrors union rows).
+    #[allow(clippy::too_many_arguments)]
+    fn unify_effect_tails(
+        &mut self,
+        expected: &EffectRow,
+        found: &EffectRow,
+        et: RowTail,
+        ft: RowTail,
+        e_extra: Vec<EffectOp>,
+        f_extra: Vec<EffectOp>,
+        span: Span,
+    ) {
+        if et == ft {
+            if !e_extra.is_empty() || !f_extra.is_empty() {
+                self.type_mismatch_effect(expected, found, span);
+            }
+            return;
+        }
+        // Expected has a flexible tail: it absorbs found's residual ops + tail.
+        if let RowTail::Infer(r) = et {
+            let resid_tail = if e_extra.is_empty() {
+                ft
+            } else if let RowTail::Infer(fr) = ft {
+                // Expected still owes `e_extra` to found; push it onto found's
+                // (also flexible) tail behind a fresh shared residual var.
+                let fresh = self.fresh_row_var();
+                self.row_subst.insert(
+                    fr,
+                    RowSolution::Effect {
+                        ops: e_extra,
+                        tail: fresh,
+                    },
+                );
+                fresh
+            } else {
+                // Found is closed/rigid and cannot supply the ops expected needs.
+                self.type_mismatch_effect(expected, found, span);
+                return;
+            };
+            self.row_subst.insert(
+                r,
+                RowSolution::Effect {
+                    ops: f_extra,
+                    tail: resid_tail,
+                },
+            );
+            return;
+        }
+        // Symmetric: found has a flexible tail and absorbs expected's residual.
+        if let RowTail::Infer(r) = ft {
+            if !f_extra.is_empty() {
+                self.type_mismatch_effect(expected, found, span);
+                return;
+            }
+            self.row_subst.insert(
+                r,
+                RowSolution::Effect {
+                    ops: e_extra,
+                    tail: et,
+                },
+            );
+            return;
+        }
+        // Neither tail is flexible and the tails differ. An anonymous-open
+        // expected discards anything it does not name; a rigid-open expected
+        // admits a closed found with the identical op set.
+        let compatible = e_extra.is_empty()
+            && f_extra.is_empty()
+            && matches!(
+                (et, ft),
+                (RowTail::Open, _) | (RowTail::Param(_), RowTail::Closed)
+            );
+        if !compatible {
             self.type_mismatch_effect(expected, found, span);
         }
     }
 
+    /// Row-aware effect assignability — the effect-row dual of
+    /// `union_rows_match`. A computation with effect row `found` is assignable to
+    /// an expected row when every op `found` may perform is accounted for by
+    /// `expected`: matched explicitly (with compatible param/result types) or
+    /// absorbed by `expected`'s tail (discarded by an anonymous tail, captured by
+    /// a flexible row variable, admitted-when-closed by a rigid tail, rejected by
+    /// a closed tail). Explicit `expected` ops absent from `found` are fine — a
+    /// handler may cover effects the computation never performs.
     pub(in crate::lower) fn effect_rows_match(
         &mut self,
         expected: &EffectRow,
         found: &EffectRow,
     ) -> bool {
-        if expected.tail != found.tail {
-            return false;
-        }
-        for found_op in &found.ops {
-            let Some(expected_op) = expected.find(&found_op.name) else {
-                return false;
-            };
-            if !self.type_matches(found_op.param, expected_op.param)
-                || !self.type_matches(expected_op.result, found_op.result)
-            {
-                return false;
+        let (e_ops, et) = self.flatten_effect_row(expected.ops.clone(), expected.tail);
+        let (f_ops, ft) = self.flatten_effect_row(found.ops.clone(), found.tail);
+        let e_by_name: FxHashMap<&str, &EffectOp> =
+            e_ops.iter().map(|o| (o.name.as_str(), o)).collect();
+        let mut extras: Vec<EffectOp> = Vec::new();
+        for f_op in &f_ops {
+            match e_by_name.get(f_op.name.as_str()) {
+                // Op params are contravariant, results covariant — preserved from
+                // the original exact matcher.
+                Some(e_op) => {
+                    if !self.type_matches(f_op.param, e_op.param)
+                        || !self.type_matches(e_op.result, f_op.result)
+                    {
+                        return false;
+                    }
+                }
+                None => extras.push(f_op.clone()),
             }
         }
-        true
+        match et {
+            RowTail::Closed => extras.is_empty() && ft == RowTail::Closed,
+            RowTail::Open => true,
+            RowTail::Param(p) => {
+                extras.is_empty() && (ft == RowTail::Closed || ft == RowTail::Param(p))
+            }
+            RowTail::Infer(r) => {
+                if ft == RowTail::Infer(r) {
+                    extras.is_empty()
+                } else {
+                    self.row_subst.insert(
+                        r,
+                        RowSolution::Effect {
+                            ops: extras,
+                            tail: ft,
+                        },
+                    );
+                    true
+                }
+            }
+        }
     }
 
     pub(in crate::lower) fn type_mismatch_effect(
@@ -622,6 +748,10 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn effect_row_name(&mut self, row: &EffectRow) -> String {
+        // Flatten any solved flexible tail so the rendered row shows the ops it
+        // captured rather than an opaque `...?n` residual.
+        let (ops, tail) = self.flatten_effect_row(row.ops.clone(), row.tail);
+        let row = &EffectRow { ops, tail };
         if row.ops.is_empty() && row.tail == RowTail::Closed {
             return "{}".to_string();
         }

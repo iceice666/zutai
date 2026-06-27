@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-26)
+## Status (2026-06-27)
 
 v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 is
@@ -21,6 +21,37 @@ type export, destructuring binding) have all landed — see `docs/ARCHIVED.md`.
 **This closes V3-G2.**
 
 ## Active milestone — none
+
+**Cooperative cancellation — landed 2026-06-27** (see `docs/ARCHIVED.md` "V3-G4
+follow-up: cooperative cancellation for effectful generators"). Cancellation —
+signalling a generator to stop mid-stream — needs no new runtime: it is **handler
+abort** (a clause returning without `resume`) reused as a control signal. A
+consumer performs a cancelling op (`perform stop acc`); the *granting* handler
+(bearing the generator's effects + `finally`) gives it an aborting clause
+(`stop = \r. r;`), so the suspended tail is never forced again and the handler's
+`finally` finalizes the resource. The milestone closed a silent-leak gap:
+cancellation that aborts *across* an inner `finally`-bearing handle would skip the
+inner teardown, so `EvalControl::Perform` now carries a `pending_finally` count
+(`run_finally` increments it; `handle_control` tracks whether a clause resumed) and
+an abort with a pending inner finalizer is refused with
+`EvalError::CancelAcrossFinalizer` — parity-or-refuse, never a leaked resource. The
+resume path is unaffected. Interpreter-only; full finalizer *unwinding* across a
+cross-boundary cancel and general resource lifetime stay open.
+
+**Ergonomic effectful-stream type — landed 2026-06-27** (see `docs/ARCHIVED.md`
+"Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff`").
+The two pieces the spec named as scoped both landed: **call-site effect-row
+inference** (a pure or concretely-effectful argument now unifies against an
+instantiated open-row parameter — `effect_rows_unify`/`effect_rows_match` solve a
+flexible `RowTail::Infer` into the new `RowSolution::Effect`, mirroring union/record
+rows, instead of exact-tail matching) and the **`StreamEff A e` ambient/importable
+prelude alias** naming the supported V3-G4 idiom (`StreamEff A {}` ≡ `Stream A`).
+Parity-or-refuse held (the pure-`Stream`-alias annotation still refuses; native
+lowering of the effect stays refused). Residual (pre-existing, not new): an
+*imported* `StreamEff` applied as a parametric constructor across a module boundary
+refuses cleanly — the row-param type constructor is outside the "Applied imported
+type constructors" envelope; the ambient form is the supported path. **This closes
+the last scoped V3-G4 follow-up.**
 
 **Native effect parity — landed 2026-06-26** (see `docs/ARCHIVED.md` "Native
 effect parity — reified delimited-continuation lowering"). The native backend now
@@ -86,11 +117,14 @@ precisely. This is the **expressibility foundation** for an effectful-stream typ
 it is *check-only* — a row-polymorphic effect signature checks and lowers cleanly,
 and execution stays gated by the existing residual-effect gate.
 
-Still open from the V3-G4 follow-ups: **cancellation** (signalling a generator to
-stop mid-stream), general **resource lifetime**, and the **ergonomic
-effectful-stream type** itself — which now needs *call-site effect-row inference*
-(a pure argument unifying against an open-row parameter; today exact-tail
-unification rejects it) plus the `StreamEff` alias, built on the foundation above.
+The **ergonomic effectful-stream type** landed 2026-06-27 (call-site effect-row
+inference + the `StreamEff` ambient/importable alias — see the active-milestone
+note above and `docs/ARCHIVED.md`). **Cooperative cancellation** landed 2026-06-27
+too (consumer-driven mid-stream termination over the abort + `finally` machinery;
+cancellation across an inner finalizer is refused with `CancelAcrossFinalizer` —
+see `docs/ARCHIVED.md` "cooperative cancellation"). Still open from the V3-G4
+follow-ups: general **resource lifetime** (and the full finalizer *unwinding* a
+cross-boundary cancel currently refuses rather than runs).
 
 `empty` + `unfold` (V3-G2 residuals: the empty stream and the canonical codata
 producer) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G2 residual: `unfold`
@@ -154,9 +188,11 @@ to **GC on by default** (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
 default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.**
 
 **G4 follow-ups:** *finalization* landed as the `finally` handler clause
-(2026-06-26, see `docs/ARCHIVED.md`). Still open: cancellation and general
-resource lifetime for effectful generators; an ergonomic effectful-stream *type*
-(the supported idiom uses the raw cell type, not the pure `Stream` alias).
+(2026-06-26), the *ergonomic effectful-stream type* landed as call-site
+effect-row inference + the `StreamEff` alias (2026-06-27), and *cooperative
+cancellation* landed as aborting-the-granting-handler (2026-06-27) — see
+`docs/ARCHIVED.md`. Still open: general resource lifetime (and full finalizer
+unwinding across a cross-boundary cancel) for effectful generators.
 
 **Other G2 residuals:** all landed. The importable-module residual closed with
 V3-G6, `unfold` + `empty` shipped 2026-06-25, and the `List`-interop subset
@@ -219,8 +255,11 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   (effectful generators, reference-interpreter) → G5 (GC keeps unbounded pipelines
   bounded). The G2 residuals (`empty`/`unfold`, `List` interop, importable `.zt`
   packaging) have all landed, as has G4 finalization (the `finally` handler
-  clause, 2026-06-26). Open follow-ups: cancellation and resource lifetime for
-  effectful generators; an ergonomic effectful-stream type.
+  clause, 2026-06-26), the ergonomic effectful-stream type (call-site effect-row
+  inference + the `StreamEff` alias, 2026-06-27), and cooperative cancellation
+  (aborting the granting handler, 2026-06-27). Open follow-up: general resource
+  lifetime (and full finalizer unwinding across a cross-boundary cancel) for
+  effectful generators.
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

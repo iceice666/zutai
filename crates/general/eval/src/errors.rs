@@ -30,6 +30,16 @@ pub enum EvalError {
     /// `resume` reached runtime without an operation continuation.
     #[error("runtime error: resume outside an operation handler")]
     ResumeOutsideHandler,
+    /// A handler aborted (returned without `resume`) an effect that was
+    /// suspended inside an inner `finally`-bearing handle. Honouring the abort
+    /// would silently skip that inner teardown — a resource leak — so the
+    /// interpreter refuses. The supported cancellation idiom co-locates the
+    /// aborting clause with the `finally` on the *granting* handler so the
+    /// teardown runs.
+    #[error(
+        "runtime error: cancellation across a finalizer boundary — aborting effect `{0}` would skip an inner `finally` teardown; co-locate the cancelling handler clause with the `finally`"
+    )]
+    CancelAcrossFinalizer(String),
     /// Runtime black-hole: a non-productive recursive binding was forced.
     #[error("runtime error: non-productive recursive definition (black hole)")]
     BlackHole,

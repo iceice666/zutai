@@ -1,4 +1,5 @@
 use super::*;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -59,6 +60,7 @@ impl<'a> TlcEvaluator<'a> {
                     Value::Text(_) => Ok(EvalControl::Perform {
                         op: "io.print".to_string(),
                         arg,
+                        pending_finally: 0,
                         cont: value_cont(),
                     }),
                     other => Err(EvalError::TypeMismatch {
@@ -149,13 +151,30 @@ impl<'a> TlcEvaluator<'a> {
             EvalControl::Value(value) => {
                 self.apply_value_clause(value, value_clause, env, outer_resume)
             }
-            EvalControl::Perform { op, arg, cont } => {
+            EvalControl::Perform {
+                op,
+                arg,
+                pending_finally,
+                cont,
+            } => {
                 if let Some(clause) = ops.iter().find(|clause| clause.op == op).cloned() {
                     let this = self;
                     let ops_for_resume = Rc::clone(&ops);
                     let env_for_resume = env.clone();
                     let outer_for_resume = outer_resume.clone();
+                    // Abort detection is only needed when the effect is suspended
+                    // inside a `finally` (`pending_finally > 0`): a clause that
+                    // returns without resuming aborts, discarding the continuation
+                    // and any inner teardown with it. Keep the common path — no
+                    // escaped finalizer — allocation-free by tracking the resume
+                    // flag only when it can matter.
+                    let resumed: Option<Rc<Cell<bool>>> =
+                        (pending_finally > 0).then(|| Rc::new(Cell::new(false)));
+                    let resumed_flag = resumed.clone();
                     let resume_cont: EvalCont<'eval> = Rc::new(move |resume_value| {
+                        if let Some(flag) = &resumed_flag {
+                            flag.set(true);
+                        }
                         let resumed = cont(resume_value)?;
                         this.handle_control(
                             resumed,
@@ -165,17 +184,32 @@ impl<'a> TlcEvaluator<'a> {
                             outer_for_resume.clone(),
                         )
                     });
+                    let resume_for_apply = Rc::clone(&resume_cont);
                     let handler_control =
                         self.eval_control(clause.body, &env, Some(Rc::clone(&resume_cont)))?;
-                    self.bind_control(handler_control, move |handler, this| {
-                        this.apply(handler, arg.clone(), Some(Rc::clone(&resume_cont)))
-                    })
+                    let applied = self.bind_control(handler_control, move |handler, this| {
+                        this.apply(handler, arg.clone(), Some(Rc::clone(&resume_for_apply)))
+                    })?;
+                    match resumed {
+                        // No escaped finalizer: original behavior, no extra layer.
+                        None => Ok(applied),
+                        // When the handle settles to a value without `resume`
+                        // having fired, the clause aborted — and would silently
+                        // skip the inner `finally` teardown, a resource leak. Refuse.
+                        Some(resumed) => self.bind_control(applied, move |value, _this| {
+                            if !resumed.get() {
+                                return Err(EvalError::CancelAcrossFinalizer(op.clone()));
+                            }
+                            Ok(EvalControl::Value(value))
+                        }),
+                    }
                 } else {
                     let this = self;
                     let ops_for_resume = Rc::clone(&ops);
                     Ok(EvalControl::Perform {
                         op,
                         arg,
+                        pending_finally,
                         cont: Rc::new(move |resume_value| {
                             let resumed = cont(resume_value)?;
                             this.handle_control(
@@ -194,11 +228,16 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     /// Run a `finally` teardown once the handled computation has reduced to its
-    /// final value, threading the value through unchanged. `bind_control`
+    /// final value, threading the value through unchanged. `bind_finally`
     /// preserves any outer-effect `Perform` escapes and re-enters on resume, so
     /// the teardown fires exactly when the terminal value emerges — covering both
     /// normal completion and handler abort. The teardown runs for its effects in
     /// the outer row; its result is discarded.
+    ///
+    /// Each escaping `Perform` carries `pending_finally + 1`: it is suspended
+    /// *inside* this teardown, so a handler that aborts it (declines to resume)
+    /// would skip the teardown. `handle_control` refuses such an abort rather
+    /// than leak the resource.
     pub(super) fn run_finally<'eval>(
         self,
         control: EvalControl<'eval>,
@@ -209,12 +248,48 @@ impl<'a> TlcEvaluator<'a> {
     where
         'a: 'eval,
     {
-        self.bind_control(control, move |value, this| {
-            let finally_control = this.eval_control(finally, &env, outer_resume.clone())?;
-            this.bind_control(finally_control, move |_discarded, _this| {
-                Ok(EvalControl::Value(value.clone()))
-            })
-        })
+        self.bind_finally(
+            control,
+            Rc::new(move |value, this: TlcEvaluator<'a>| {
+                let finally_control = this.eval_control(finally, &env, outer_resume.clone())?;
+                this.bind_control(finally_control, move |_discarded, _this| {
+                    Ok(EvalControl::Value(value.clone()))
+                })
+            }),
+        )
+    }
+
+    /// `bind_rc`, but every `Perform` that escapes before the value emerges is
+    /// marked as nested inside one more `finally` teardown (`pending_finally + 1`).
+    fn bind_finally<'eval>(
+        self,
+        control: EvalControl<'eval>,
+        f: BindFn<'eval, 'a>,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        match settle(control)? {
+            EvalControl::Value(value) => f(value, self),
+            EvalControl::Perform {
+                op,
+                arg,
+                pending_finally,
+                cont,
+            } => {
+                let this = self;
+                Ok(EvalControl::Perform {
+                    op,
+                    arg,
+                    pending_finally: pending_finally + 1,
+                    cont: Rc::new(move |resume_value| {
+                        let next = cont(resume_value)?;
+                        this.bind_finally(next, Rc::clone(&f))
+                    }),
+                })
+            }
+            EvalControl::Tail { .. } => unreachable!("settle drains tail bounces"),
+        }
     }
 
     pub(super) fn apply_value_clause<'eval>(
@@ -257,11 +332,17 @@ impl<'a> TlcEvaluator<'a> {
     {
         match settle(control)? {
             EvalControl::Value(value) => f(value, self),
-            EvalControl::Perform { op, arg, cont } => {
+            EvalControl::Perform {
+                op,
+                arg,
+                pending_finally,
+                cont,
+            } => {
                 let this = self;
                 Ok(EvalControl::Perform {
                     op,
                     arg,
+                    pending_finally,
                     cont: Rc::new(move |resume_value| {
                         let next = cont(resume_value)?;
                         this.bind_rc(next, Rc::clone(&f))
@@ -278,7 +359,7 @@ impl<'a> TlcEvaluator<'a> {
     {
         match settle(control)? {
             EvalControl::Value(value) => Ok(value),
-            EvalControl::Perform { op, arg, cont } => {
+            EvalControl::Perform { op, arg, cont, .. } => {
                 let value = eval_host_op(&op, arg, self)?;
                 let next = cont(value)?;
                 self.finish_top(next)

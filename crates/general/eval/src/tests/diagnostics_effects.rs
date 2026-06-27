@@ -352,14 +352,57 @@ abort
 
 #[test]
 fn row_polymorphic_effect_signature_lowers_through_tlc() {
-    // The check-only open-effect-row foundation: a signature with an effect-row
-    // variable `...e` lowers cleanly through TLC and evaluates. This pins the TLC
+    // The open-effect-row foundation: a signature with an effect-row variable
+    // `...e` lowers cleanly through TLC and evaluates. This pins the TLC
     // `collect_sig_row_params` Effect arm — the row-variable param must be
-    // quantified with row kind (not ground), matching the THIR collector. (Call-
-    // site inference where a pure argument meets an open-row parameter is a
-    // separate, deferred step; this only exercises definition + lowering.)
+    // quantified with row kind (not ground), matching the THIR collector.
     let src = "forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }\n  = f => f;\nforward\n";
     assert_eq!(run(src).to_string(), "<function/1>");
+}
+
+#[test]
+fn call_site_effect_row_inference_pure_and_effectful_args() {
+    // Call-site effect-row inference: applying a row-polymorphic function to an
+    // argument with a concrete effect row solves the instantiated open tail `...e`.
+    // A pure (explicitly-closed) thunk solves it to the empty row; an effectful
+    // thunk threads its op through to the result where the handler discharges it.
+    let forward =
+        "forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }\n  = f => f;\n";
+    assert_eq!(
+        run(&format!(
+            "{forward}g :: Unit -> Int ! {{}} = \\_. 9;\n(forward g) ()\n"
+        ))
+        .to_string(),
+        "9"
+    );
+    assert_eq!(
+        run(&format!(
+            "{forward}handle (forward (\\_. perform tick ()) ()) with {{ tick = \\_. resume 5; }}\n"
+        ))
+        .to_string(),
+        "5"
+    );
+}
+
+#[test]
+fn ambient_streameff_effectful_generator_runs_under_handler() {
+    // The ergonomic effectful-stream type: the ambient prelude `StreamEff A e`
+    // alias names the supported V3-G4 idiom. A `stream { yield perform … }`
+    // checks against `StreamEff Int { tick }` and, consumed strictly under a
+    // granting handler, threads `tick` to the handler — matching the raw-cell-type
+    // form (`effectful_generator_runs_under_granted_handler`) but with a named type.
+    let src = "sumEff :: StreamEff Int { tick : Unit -> Int; } -> Int ! { tick : Unit -> Int; }\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumEff t;\n  };\nhandle (sumEff (stream { yield perform tick (); yield perform tick (); })) with {\n  tick = \\_. resume 5;\n}\n";
+    assert_eq!(run(src), Value::Int(10));
+}
+
+#[test]
+fn ambient_streameff_pure_arg_to_row_polymorphic_consumer() {
+    // `StreamEff A {}` is exactly `Stream A`: a pure stream value flows into a
+    // consumer polymorphic over the effect row `...e`. This is the case the
+    // flexible effect-row tail enables — a closed-row stream meeting the
+    // instantiated open tail of the consumer's expanded thunk parameter.
+    let src = "headOr :: <A, e> A -> StreamEff A e -> A ! { ...e; }\n  = d s => match s () { | #nil => d; | #cons { head = h; tail = t; } => h; };\npureS :: StreamEff Int {} = \\_. #cons { head = 7; tail = \\_. #nil; };\nheadOr 0 pureS\n";
+    assert_eq!(run(src), Value::Int(7));
 }
 
 #[test]
@@ -427,6 +470,110 @@ result ::= handle (
 result
 "#;
     assert_eq!(run(src), Value::Int(-1));
+}
+
+#[test]
+fn cancellation_stops_generator_via_aborting_granting_handler() {
+    // V3-G4 cancellation: a consumer signals mid-stream cancellation by
+    // performing a `stop` operation whose granting-handler clause *aborts*
+    // (returns without `resume`). The generator stops mid-stream — the third
+    // `tick` never fires — and the consumer's accumulated result rides out on
+    // `stop`'s argument. (Were the generator run to exhaustion, the result
+    // would be 15; cancellation after the second element yields 10.)
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+  tick = \_. resume 5;
+  stop = \r. r;
+}
+"#;
+    assert_eq!(run(src), Value::Int(10));
+}
+
+#[test]
+fn cancellation_runs_finally_on_the_granting_handler() {
+    // The supported cancellation idiom co-locates the aborting `stop` clause
+    // with the `finally` teardown on the *granting* handler. Cancelling the
+    // generator mid-stream still fires `finally`: `close` escapes to the
+    // enclosing handler, which aborts to `0 - 1`. Observing it proves the
+    // resource was finalized on cancellation (the un-finalized result is 10).
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (
+  handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+    tick = \_. resume 5;
+    stop = \r. r;
+    finally = perform close ();
+  }
+) with { close = \_. 0 - 1; }
+"#;
+    assert_eq!(run(src), Value::Int(-1));
+}
+
+#[test]
+fn cancellation_across_a_finalizer_boundary_is_refused() {
+    // The unsound case is refused, never silently leaked. Here cancellation is
+    // handled by an *outer* handler past an *inner* `finally`-bearing handle:
+    // `perform stop` escapes the inner handle (which grants `tick` + `finally`)
+    // and the outer `stop` clause aborts. Honouring that abort would discard the
+    // continuation carrying the inner `finally`, skipping `close` — a resource
+    // leak. The interpreter refuses with `CancelAcrossFinalizer` rather than run
+    // the un-finalized program. (Co-locating `stop` with the `finally`, as in
+    // `cancellation_runs_finally_on_the_granting_handler`, is the supported path.)
+    let err = run_err(
+        r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (
+  handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); yield perform tick (); })) with {
+    tick = \_. resume 5;
+    finally = perform close ();
+  }
+) with {
+  stop = \r. r;
+  close = \_. 999;
+}
+"#,
+    );
+    assert_eq!(err, EvalError::CancelAcrossFinalizer("stop".to_string()));
+}
+
+#[test]
+fn effect_resumed_across_a_finalizer_boundary_still_runs() {
+    // The refusal is abort-only: an effect that escapes an inner
+    // `finally`-bearing handle and is *resumed* (not aborted) by an outer
+    // handler runs unchanged. `ask` escapes the inner handle (which grants only
+    // `finally`), the outer handler resumes it twice with 5, the inner handle
+    // settles, and its `finally` `close` runs (resumed by the outer handler) —
+    // the marked-but-resumed finalizer count is harmless.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+sumEff :: (Unit -> Cell) -> Int ! { ask : Unit -> Int; }
+  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumEff t; };
+handle (
+  handle (sumEff (stream { yield perform ask (); yield perform ask (); })) with {
+    finally = perform close ();
+  }
+) with {
+  ask = \_. resume 5;
+  close = \_. resume ();
+}
+"#;
+    assert_eq!(run(src), Value::Int(10));
 }
 
 #[test]

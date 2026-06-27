@@ -304,6 +304,7 @@ impl<'a> TlcEvaluator<'a> {
                     Ok(EvalControl::Perform {
                         op: op.clone(),
                         arg,
+                        pending_finally: 0,
                         cont: value_cont(),
                     })
                 })

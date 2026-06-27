@@ -154,6 +154,14 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn discharge_row(&mut self, row: &EffectRow, span: Span) {
+        // Flatten any solved flexible tail so ops captured by a call-site row
+        // variable (e.g. an instantiated `...e`) are discharged into the ambient
+        // handler too, not just the ops written inline.
+        let (ops, _tail) = self.flatten_effect_row(row.ops.clone(), row.tail);
+        let row = &EffectRow {
+            ops,
+            tail: row.tail,
+        };
         for op in &row.ops {
             match self.lookup_op(&op.name) {
                 Some((param, result)) => {

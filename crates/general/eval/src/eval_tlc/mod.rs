@@ -47,6 +47,13 @@ enum EvalControl<'eval> {
     Perform {
         op: String,
         arg: Value,
+        /// Number of enclosing `finally` teardowns this suspended effect sits
+        /// *inside* — teardowns that would be silently skipped if a handler
+        /// aborts the effect (returns without `resume`, discarding the
+        /// continuation). `run_finally` increments it as an effect escapes a
+        /// finally-bearing handle; `handle_control` refuses an aborting handler
+        /// when it is non-zero rather than leak the inner resource.
+        pending_finally: u32,
         cont: EvalCont<'eval>,
     },
     /// A pending tail call: evaluate `id` under `ev`/`env` in tail position.

@@ -163,6 +163,95 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G4 follow-up: cooperative cancellation for effectful generators ✅
+
+_Completed 2026-06-27. Settles the open generator question of *cancellation*
+(signalling a generator to stop mid-stream, `docs/v3_spec/01-generators.md`).
+Interpreter-only, like `finally`; native lowering of effectful generators stays
+refused. Built entirely in the reference interpreter's effect machinery
+(`crates/general/eval/src/eval_tlc/effects.rs`)._
+
+- **Cancellation needs no new runtime — it is handler abort reused as a signal.**
+  A consumer that decides to stop performs a cancelling operation
+  (`perform stop acc`); the **granting handler** (the one bearing the generator's
+  effects and its `finally`) gives it an aborting clause (`stop = \r. r;`). The
+  clause never `resume`s, so the suspended generator tail is never forced again —
+  it stops mid-stream — and the accumulated result rides out on the operation's
+  argument. The granting handler's `finally` then fires (finalization already runs
+  on abort), so a cancelled generator finalizes its resource. This was already
+  expressible; the milestone establishes it as the supported idiom with tests
+  (`cancellation_stops_generator_via_aborting_granting_handler`,
+  `cancellation_runs_finally_on_the_granting_handler`).
+- **Closed a silent-leak gap: cancellation across a finalizer boundary.** When a
+  cancelling effect escaped an *inner* `finally`-bearing handle to be aborted by an
+  *outer* handler, the interpreter discarded the continuation carrying the inner
+  `finally` and **silently skipped that teardown** — a resource leak (probed:
+  produced `10` where the finalizer's `999` should have run). `EvalControl::Perform`
+  now carries a `pending_finally: u32` count; `run_finally` increments it (via a new
+  `bind_finally`) on every effect that escapes its handle, and `handle_control`'s
+  handled branch tracks whether the clause ever invoked `resume` (a `Cell<bool>`
+  threaded into `resume_cont`). A clause that aborts an effect with
+  `pending_finally > 0` is refused with the new `EvalError::CancelAcrossFinalizer`
+  rather than run the un-finalized program — parity-or-refuse, a refused program
+  beats a leaked resource (`cancellation_across_a_finalizer_boundary_is_refused`).
+- **Resume is unaffected — the refusal is abort-only.** An escaped effect that an
+  outer handler *resumes* (rather than aborts) runs unchanged; its inner `finally`
+  fires when the inner handle settles
+  (`effect_resumed_across_a_finalizer_boundary_still_runs`). The `pending_finally`
+  marker is harmless on the resume path because it is only consulted at an abort.
+
+Full finalizer *unwinding* on a cross-boundary cancel (running inner finalizers
+instead of refusing) and general resource lifetime remain the open follow-ups.
+Verification: full workspace green (`cargo test --workspace`, `clippy`, `fmt`).
+
+### Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff` ✅
+
+_Completed 2026-06-27. Closes the last V3-G4 follow-up the spec named as scoped:
+the ergonomic effectful-stream type (`docs/v3_spec/01-generators.md` "Still open").
+Two pieces, both at the THIR effect-row layer plus a prelude alias._
+
+- **Call-site effect-row inference.** A pure or concretely-effectful argument now
+  unifies against an *instantiated* open-row parameter (`...e` → fresh
+  `RowTail::Infer` at the call site, already done by `instantiate_row_params` in
+  `expr/call.rs`). The gap was that `effect_rows_unify`/`effect_rows_match`
+  (`thir/src/lower/types/match_.rs`) only did **exact** tail comparison — they
+  never solved an `Infer` tail the way record/union rows do. Now both flatten the
+  row first (new `flatten_effect_row`, `unify.rs`) and **solve** a flexible tail
+  into the new `RowSolution::Effect { ops, tail }` (`lower/mod.rs`), mirroring
+  `union_rows_match` exactly: an `Infer` expected tail absorbs the found row's
+  residual ops + tail; a rigid `Param` tail is relaxed to also admit a `Closed`
+  found (a pure computation is a valid instance of a row-polymorphic one).
+  `discharge_row` (`effects.rs`), `effect_row_name`, and `zonk_type_arena` flatten
+  solved effect tails so captured ops discharge into the ambient handler and render
+  in diagnostics. The implicit-pure case (a thunk with *no* effect annotation) was
+  already widened elsewhere; the load-bearing new case is an **explicitly-closed**
+  (`! {}`) or rigid argument meeting the instantiated open tail — previously
+  "type mismatch: expected function, found function", now accepted
+  (`call_site_explicit_closed_arg_against_open_effect_row_param`,
+  `call_site_effect_row_inference_pure_and_effectful_args`).
+- **`StreamEff A e` prelude alias.** `StreamEff :: <A, e> type Unit -> { #nil;
+  #cons : { head : A; tail : StreamEff A e; }; } ! { ...e; }` is now an ambient
+  prelude type (and an importable `stream.zt`/`stdlib.stream` export beside
+  `Stream`/`Step`), naming the supported V3-G4 idiom. A `stream { yield perform …
+  }` checks against `StreamEff Int { tick }` and, consumed strictly under a
+  granting handler, threads the op to the handler exactly like the raw cell type —
+  but with a named type, and `StreamEff A {}` is exactly `Stream A`. The flexible
+  tail is what lets a pure stream flow into a consumer polymorphic over `...e`
+  (`ambient_streameff_effectful_generator_runs_under_handler`,
+  `ambient_streameff_pure_arg_to_row_polymorphic_consumer`).
+
+Parity-or-refuse held: annotating an effectful generator as the *pure* `Stream A`
+alias still refuses (`effectful_stream_generator_against_pure_stream_alias_is_rejected`),
+and native lowering of the (non-`io.print`) effect stays refused by the committed
+strict-AOT boundary. **Residual (pre-existing, not new):** an imported `StreamEff`
+*applied* as a parametric constructor across a module boundary
+(`s.StreamEff Int { … }`) refuses cleanly ("type does not name an applicable
+parametric type constructor") — the row-param type constructor is outside the
+"Applied imported type constructors" envelope, which itself has rough edges on the
+recursive `Stream` constructor in function-type position. The ambient form is the
+supported path. Verification: full workspace green (`cargo test --workspace`,
+`clippy`, `fmt`).
+
 ### Native effect-parity residual gates closed ✅
 
 _Completed 2026-06-26. Closes the two conservative gates a pressure test surfaced

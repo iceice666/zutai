@@ -781,6 +781,56 @@ forward
 }
 
 #[test]
+fn call_site_pure_arg_against_open_effect_row_param() {
+    // Call-site effect-row inference: applying a row-polymorphic function to a
+    // *pure* thunk instantiates the open-row parameter `...e` and solves it to the
+    // empty row. Previously exact-tail unification rejected `Closed` against the
+    // instantiated `Infer` tail; now the flexible tail absorbs the (empty) residual.
+    let lowered = lower(
+        r#"
+forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }
+  = f => f;
+forward (\_. 5)
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn call_site_explicit_closed_arg_against_open_effect_row_param() {
+    // The load-bearing case for flexible effect-row tails: a binding *explicitly*
+    // annotated with a closed effect row (`! {}`) passed to the row-polymorphic
+    // parameter. This reaches effect-row *assignability* (function contravariance
+    // over a `BindingRef` arg), where exact-tail matching previously rejected
+    // `Closed` against the instantiated open tail. The flexible tail now absorbs
+    // the empty residual, exactly as union/record rows do.
+    let lowered = lower(
+        r#"
+forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }
+  = f => f;
+g :: Unit -> Int ! {} = \_. 9;
+forward g
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn call_site_effectful_arg_threads_through_open_effect_row_param() {
+    // The dual: an *effectful* thunk passed to the row-polymorphic parameter
+    // solves the flexible tail to carry the `tick` operation through to the
+    // result, where the surrounding handler discharges it.
+    let lowered = lower(
+        r#"
+forward :: <e> (Unit -> Int ! { ...e; }) -> Unit -> Int ! { ...e; }
+  = f => f;
+handle (forward (\_. perform tick ()) ()) with { tick = \_. resume 5; }
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
 fn effect_row_spread_of_named_type_is_refused() {
     // `...Shape` (spreading a named type's row) is not supported for effect rows —
     // refused precisely, never silently dropped to a closed row.

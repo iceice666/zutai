@@ -45,12 +45,20 @@ their effects stays refused by committed design.
   charged to the consumer that forces it under the granting handler, the handler's
   extent bounds the resource, so `finally` fires even when a consumer stops early.
   Interpreter-only; native compilation of a finally-bearing handle is refused.
-- Still open: *cancellation* (signalling a generator to stop mid-stream), general
-  resource lifetime, the ergonomic effectful-stream *type* (its expressibility
-  foundation — open effect-row tails in annotations — landed 2026-06-26 check-only,
-  see `docs/ARCHIVED.md`; the remaining step is call-site effect-row inference plus
-  the `StreamEff` alias), and whether a general (non-tail) delegating yield is worth
-  a shared codata `append`.
+- **Ergonomic effectful-stream type landed** (V3-G4 follow-up, 2026-06-27, see
+  `docs/ARCHIVED.md`): call-site effect-row inference (a pure/concrete argument
+  unifies against an instantiated open-row parameter) plus the `StreamEff A e`
+  ambient/importable alias naming the supported idiom (`StreamEff A {}` ≡
+  `Stream A`). Built on the open-effect-row-tail foundation (2026-06-26).
+- **Cancellation landed** (V3-G4 follow-up) as consumer-driven mid-stream
+  termination over the existing abort + `finally` machinery (see "Cancellation"
+  below): a consumer performs a cancelling operation whose *granting*-handler
+  clause aborts (returns without `resume`), stopping the generator mid-stream and
+  running that handler's `finally`. Cancellation that aborts *across* an inner
+  `finally`-bearing handle — which would skip the inner teardown — is refused
+  (`CancelAcrossFinalizer`), never silently leaked. Interpreter-only. Still open:
+  general resource lifetime, and whether a general (non-tail) delegating yield is
+  worth a shared codata `append`.
 
 ## Design intent
 
@@ -110,7 +118,8 @@ Boundaries (each refused, never miscompiled):
 Resource host effects (`fs.read`, networking, clocks, randomness) therefore reach
 only the interpreter, behind an explicit handler that grants them; they have no
 native path. *Finalization* is supported via a `finally` handler clause (see
-below); *cancellation* and general resource lifetime remain open.
+below), and *cancellation* via the same handler's aborting clause (see
+"Cancellation"). General resource lifetime remains open.
 
 ### Finalization: the `finally` handler clause
 
@@ -129,13 +138,45 @@ still finalizes). The teardown is attached to the *handler*, not to the codata
 tail would never run it (or run it twice). Interpreter-only — native compilation
 of a finally-bearing handle is refused with a precise diagnostic.
 
+### Cancellation: aborting the granting handler
+
+Cancellation — signalling a generator to stop mid-stream — needs no new runtime:
+it is **handler abort** (a clause that returns without `resume`, discarding the
+continuation) reused as a control signal. The supported idiom:
+
+- the consumer performs a *cancelling* operation when it decides to stop
+  (`perform stop acc`), carrying any accumulated result as the argument;
+- the **granting handler** — the one bearing the generator's effects and its
+  `finally` — provides an aborting clause for it (`stop = \r. r;`). Because the
+  clause never resumes, the suspended generator tail is never forced again, so it
+  stops mid-stream;
+- that handler's `finally` then fires (finalization already runs on abort), so a
+  cancelled generator finalizes its resource.
+
+The accumulated result rides out on the cancelling operation's argument, so the
+handle reduces to the value the consumer had computed at the cancellation point.
+
+**Boundary — cancellation across a finalizer is refused.** Cancellation must abort
+on the *same* handler that bears the `finally` (or one outside all relevant
+finalizers). If a cancelling effect instead escapes an *inner* `finally`-bearing
+handle to be aborted by an *outer* handler, honouring the abort would discard the
+continuation carrying the inner `finally` and silently skip that teardown — a
+resource leak. The interpreter refuses this with `CancelAcrossFinalizer` rather
+than run the un-finalized program (parity-or-refuse: a refused program beats a
+leaked resource). Resuming such an escaped effect is unaffected — the refusal is
+abort-only. Full unwinding that runs inner finalizers on a cross-boundary cancel
+is the remaining open item (general resource lifetime). Interpreter-only, like
+`finally`.
+
 ## Remaining non-goals
 
 - No ambient filesystem, environment, clock, randomness, or network iteration.
 - No second iterator abstraction beside `Stream`.
-- No *cancellation*-aware generator runtime (signalling a generator to stop
-  mid-stream). Finalization landed as the `finally` handler clause (V3-G4
-  follow-up); cancellation and general resource lifetime stay open (V3-G4+).
+- No *preemptive/asynchronous* cancellation runtime. Cooperative cancellation —
+  a consumer aborting the granting handler to stop a generator mid-stream — landed
+  over the abort + `finally` machinery (V3-G4 follow-up, see "Cancellation").
+  What stays a non-goal is asynchronous interruption and full finalizer unwinding
+  across a cross-boundary cancel; general resource lifetime stays open (V3-G4+).
 - No general (non-tail) `yield from`: only tail delegation lowers; a non-tail
   splice is refused pending a shared codata `append`.
 

@@ -96,6 +96,10 @@ enum RowSolution {
         variants: Vec<UnionVariant>,
         tail: RowTail,
     },
+    Effect {
+        ops: Vec<EffectOp>,
+        tail: RowTail,
+    },
 }
 
 struct Lowerer<'hir> {
