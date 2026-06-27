@@ -154,6 +154,8 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 HostOp::EnvGet => "@zutai.host.env_get",
                 HostOp::ClockNow => "@zutai.host.clock_now",
                 HostOp::RngNext => "@zutai.host.rng_next",
+                HostOp::LoadZti => "@zutai.host.load_zti",
+                HostOp::LoadZt => "@zutai.host.load_zt",
             };
             out.push_str(&format!("  %{} = call i64 {helper}(i64 {})\n", dest, value));
         }

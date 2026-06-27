@@ -287,6 +287,56 @@ readFile "{path}"
 }
 
 #[test]
+fn top_level_dynamic_zti_load_returns_data_envelope() {
+    let path = std::env::temp_dir().join("zutai_eval_dynamic_load.zti");
+    std::fs::write(
+        &path,
+        r#"{ host = "localhost"; port = 8080; flags = [true; #fast;]; }"#,
+    )
+    .unwrap();
+    let path = path
+        .to_str()
+        .unwrap()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let src = format!(
+        r#"
+match loadZti "{path}" {{
+  | #record {{ fields = fields; }} => match listHead fields {{
+      | {{ name = name; value = #text {{ value = value; }}; }} => name == "host" && value == "localhost";
+      | _ => false;
+    }};
+  | _ => false;
+}}
+"#
+    );
+    assert_eq!(run(&src), Value::Bool(true));
+}
+
+#[test]
+fn top_level_dynamic_zt_load_returns_data_envelope() {
+    let path = std::env::temp_dir().join("zutai_eval_dynamic_load.zt");
+    std::fs::write(&path, r#"{ mode = #prod; port = 8000 + 80; }"#).unwrap();
+    let path = path
+        .to_str()
+        .unwrap()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let src = format!(
+        r#"
+match loadZt "{path}" {{
+  | #record {{ fields = fields; }} => match listHead fields {{
+      | {{ name = name; value = #atom {{ value = value; }}; }} => name == "mode" && value == "prod";
+      | _ => false;
+    }};
+  | _ => false;
+}}
+"#
+    );
+    assert_eq!(run(&src), Value::Bool(true));
+}
+
+#[test]
 fn source_handler_can_make_standard_host_effect_pure() {
     assert_eq!(
         run(r#"

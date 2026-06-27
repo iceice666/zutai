@@ -354,7 +354,7 @@ pub(super) fn check_node_type_compat(
         DfNodeKind::HostOp { op, arg } => {
             if let Some(arg_ty) = child_ty(graph, *arg) {
                 match op {
-                    HostOp::FsRead | HostOp::EnvGet
+                    HostOp::FsRead | HostOp::EnvGet | HostOp::LoadZti | HostOp::LoadZt
                         if !matches!(&graph.types[arg_ty], DfTy::Text) =>
                     {
                         unexpected_type(owner, "arg", "Text", arg_ty, errors);
@@ -390,6 +390,11 @@ pub(super) fn check_node_type_compat(
                 HostOp::RngNext => {
                     if !matches!(&graph.types[node.ty], DfTy::Int) {
                         unexpected_type(owner, "type", "Int", node.ty, errors);
+                    }
+                }
+                HostOp::LoadZti | HostOp::LoadZt => {
+                    if !matches!(&graph.types[node.ty], DfTy::Union(_)) {
+                        unexpected_type(owner, "type", "Data", node.ty, errors);
                     }
                 }
             }

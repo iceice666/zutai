@@ -35,6 +35,9 @@ impl<'a> Evaluator<'a> {
                     found: value_type_name(&other),
                 }),
             },
+            BuiltinFn::LoadZti | BuiltinFn::LoadZt => Err(EvalError::EffectfulNotExecutable(
+                "dynamic load builtins execute through the TLC evaluator".to_string(),
+            )),
             BuiltinFn::Fields => {
                 let arg = args[0].force(self)?;
                 self.reflect_fields_value(arg)

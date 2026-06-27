@@ -493,9 +493,9 @@ keeps its signature but gains a real definition.
 ## Effects
 
 `io.print` is the only ambient host operation in the current runtime ABI.
-Source handlers are elaborated before Dataflow Core; any residual unsupported
-operation remains a compile/dataflow error. Residual ambient `io.print` lowers
-to `HostPrint` through DC → ANF → SSA and emits:
+Source handlers are elaborated before Dataflow Core; any residual unsupported or
+ungranted operation remains a compile/dataflow error. Residual ambient
+`io.print` lowers to `HostPrint` through DC → ANF → SSA and emits:
 
 ```llvm
 call void @zutai.print_text(i64 %text)
@@ -506,9 +506,11 @@ value, so direct `print "x"`, higher-order `apply print`, and explicit
 `perform io.print "x"` keep the reference evaluator contract: streamed raw text
 appears before the final `zutai.show` rendering in `@main`.
 
-There is no generic runtime effect dispatcher yet. Filesystem/network/clock/etc.
-capabilities remain out of the ambient ABI and must stay rejected unless a
-future explicit capability lowering adds them.
+Non-ambient standard host operations lower through explicit `HostOp` helpers
+when granted by the CLI boundary: `fs.read`, `fs.write`, `env.get`,
+`clock.now`, `rng.next`, `load.zti`, and `load.zt`. Dynamic `load.zti` /
+`load.zt` return the source-level `Data` envelope; source handlers can intercept
+either operation before the runtime boundary.
 
 ---
 

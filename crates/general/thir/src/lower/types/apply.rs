@@ -234,7 +234,7 @@ impl<'hir> Lowerer<'hir> {
             "u32" => TypeKind::FixedNum(FixedWidth::U32),
             "u64" => TypeKind::FixedNum(FixedWidth::U64),
             "f32" => TypeKind::FixedNum(FixedWidth::F32),
-            "FsRead" | "FsWrite" | "Env" | "Clock" | "Rng" | "IoPrint" => {
+            "FsRead" | "FsWrite" | "Env" | "Clock" | "Rng" | "IoPrint" | "Load" => {
                 TypeKind::Opaque(name.to_string())
             }
             _ => return None,

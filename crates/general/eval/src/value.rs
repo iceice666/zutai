@@ -104,6 +104,8 @@ pub enum Value {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinFn {
     Print,
+    LoadZti,
+    LoadZt,
     Fields,
     Schema,
     Variants,
@@ -126,6 +128,8 @@ impl BuiltinFn {
     pub fn from_name(name: &str) -> Option<BuiltinFn> {
         match name {
             "print" => Some(BuiltinFn::Print),
+            "loadZti" => Some(BuiltinFn::LoadZti),
+            "loadZt" => Some(BuiltinFn::LoadZt),
             "fields" => Some(BuiltinFn::Fields),
             "schema" => Some(BuiltinFn::Schema),
             "variants" => Some(BuiltinFn::Variants),
@@ -142,7 +146,12 @@ impl BuiltinFn {
 
     pub fn arity(self) -> usize {
         match self {
-            BuiltinFn::Print | BuiltinFn::Fields | BuiltinFn::Variants | BuiltinFn::Schema => 1,
+            BuiltinFn::Print
+            | BuiltinFn::LoadZti
+            | BuiltinFn::LoadZt
+            | BuiltinFn::Fields
+            | BuiltinFn::Variants
+            | BuiltinFn::Schema => 1,
             BuiltinFn::Overlay | BuiltinFn::OverlayDeep => 2,
             BuiltinFn::ListEmpty
             | BuiltinFn::ListIsNil
@@ -155,6 +164,8 @@ impl BuiltinFn {
     pub fn name(self) -> &'static str {
         match self {
             BuiltinFn::Print => "print",
+            BuiltinFn::LoadZti => "loadZti",
+            BuiltinFn::LoadZt => "loadZt",
             BuiltinFn::Fields => "fields",
             BuiltinFn::Variants => "variants",
             BuiltinFn::Schema => "schema",

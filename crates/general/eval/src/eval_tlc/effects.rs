@@ -69,6 +69,25 @@ impl<'a> TlcEvaluator<'a> {
                     }),
                 }
             }
+            BuiltinFn::LoadZti | BuiltinFn::LoadZt => {
+                let arg = args[0].force_tlc(&self)?;
+                match arg {
+                    Value::Text(_) => Ok(EvalControl::Perform {
+                        op: match func {
+                            BuiltinFn::LoadZti => "load.zti".to_string(),
+                            BuiltinFn::LoadZt => "load.zt".to_string(),
+                            _ => unreachable!(),
+                        },
+                        arg,
+                        finalizers: Finalizers::new(),
+                        cont: value_cont(),
+                    }),
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "Text",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
             BuiltinFn::Fields | BuiltinFn::Variants | BuiltinFn::Schema => {
                 Err(EvalError::EffectfulNotExecutable(
                     "reflection builtins execute through the THIR type-value evaluator".to_string(),
@@ -479,6 +498,34 @@ fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Val
             Ok(Value::Text(Rc::from(millis.to_string())))
         }
         "rng.next" => Ok(Value::Int(next_rng())),
+        "load.zti" => {
+            let Value::Text(path) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            let source = std::fs::read_to_string(path.as_ref()).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("load.zti failed: {err}"))
+            })?;
+            let block = zutai_im::parse(&source).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("load.zti parse failed: {err}"))
+            })?;
+            Ok(data_from_zti_block(&block))
+        }
+        "load.zt" => {
+            let Value::Text(path) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            let value =
+                crate::eval_tlc_path(std::path::Path::new(path.as_ref())).map_err(|err| {
+                    EvalError::EffectfulNotExecutable(format!("load.zt failed: {err}"))
+                })?;
+            data_from_value(&value)
+        }
         _ => Err(EvalError::UnhandledEffect(op.to_string())),
     }
 }
@@ -487,6 +534,148 @@ fn tagged_slot_value(tag: &'static str, value: Value) -> Value {
     Value::TaggedValue {
         tag: Rc::from(tag),
         payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+    }
+}
+
+fn data_from_zti_block(block: &zutai_im::Block) -> Value {
+    let fields = block
+        .iter()
+        .map(|pair| {
+            data_record(vec![
+                ("name", Value::Text(Rc::from(pair.field_name.as_str()))),
+                ("value", data_from_zti_value(&pair.value)),
+            ])
+        })
+        .collect();
+    data_tagged("record", vec![("fields", data_list(fields))])
+}
+
+fn data_from_zti_value(value: &zutai_im::Value) -> Value {
+    match value {
+        zutai_im::Value::True => data_tagged("bool", vec![("value", Value::Bool(true))]),
+        zutai_im::Value::False => data_tagged("bool", vec![("value", Value::Bool(false))]),
+        zutai_im::Value::Atom(atom) => data_tagged(
+            "atom",
+            vec![("value", Value::Text(Rc::from(atom.as_str())))],
+        ),
+        zutai_im::Value::String(text) => data_tagged(
+            "text",
+            vec![("value", Value::Text(Rc::from(text.as_str())))],
+        ),
+        zutai_im::Value::Float(value) => {
+            data_tagged("float", vec![("value", Value::Float(*value))])
+        }
+        zutai_im::Value::Integer(value) => data_tagged("int", vec![("value", Value::Int(*value))]),
+        zutai_im::Value::Array(items) => {
+            let items = items.iter().map(data_from_zti_value).collect();
+            data_tagged("list", vec![("items", data_list(items))])
+        }
+        zutai_im::Value::Block(block) => data_from_zti_block(block),
+    }
+}
+
+fn data_from_value(value: &Value) -> Result<Value, EvalError> {
+    match value {
+        Value::Bool(value) => Ok(data_tagged("bool", vec![("value", Value::Bool(*value))])),
+        Value::Int(value) => Ok(data_tagged("int", vec![("value", Value::Int(*value))])),
+        Value::Float(value) => Ok(data_tagged("float", vec![("value", Value::Float(*value))])),
+        Value::Posit(literal) => Ok(data_tagged(
+            "float",
+            vec![("value", Value::Float(literal.bits as f64))],
+        )),
+        Value::Text(value) => Ok(data_tagged(
+            "text",
+            vec![("value", Value::Text(value.clone()))],
+        )),
+        Value::Atom(value) => Ok(data_tagged(
+            "atom",
+            vec![("value", Value::Text(value.clone()))],
+        )),
+        Value::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                let value = item.peek().ok_or(EvalError::Internal(
+                    "load.zt result contains an unforced list item",
+                ))?;
+                out.push(data_from_value(&value)?);
+            }
+            Ok(data_tagged("list", vec![("items", data_list(out))]))
+        }
+        Value::Tuple(items) => {
+            let mut fields = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                let value = item.value.peek().ok_or(EvalError::Internal(
+                    "load.zt result contains an unforced tuple item",
+                ))?;
+                let name = item
+                    .name
+                    .as_ref()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| index.to_string());
+                fields.push(data_record(vec![
+                    ("name", Value::Text(Rc::from(name))),
+                    ("value", data_from_value(&value)?),
+                ]));
+            }
+            Ok(data_tagged("record", vec![("fields", data_list(fields))]))
+        }
+        Value::Record(source_fields) => {
+            let mut fields = Vec::with_capacity(source_fields.len());
+            for (name, thunk) in source_fields.iter() {
+                let value = thunk.peek().ok_or(EvalError::Internal(
+                    "load.zt result contains an unforced record field",
+                ))?;
+                fields.push(data_record(vec![
+                    ("name", Value::Text(name.clone())),
+                    ("value", data_from_value(&value)?),
+                ]));
+            }
+            Ok(data_tagged("record", vec![("fields", data_list(fields))]))
+        }
+        Value::TaggedValue { tag, payload } => {
+            let payload = data_from_value(&Value::Record(payload.clone()))?;
+            Ok(data_tagged(
+                "tagged",
+                vec![("payload", payload), ("tag", Value::Text(tag.clone()))],
+            ))
+        }
+        Value::Nothing => Ok(data_tagged(
+            "atom",
+            vec![("value", Value::Text(Rc::from("absent")))],
+        )),
+        Value::Closure(_)
+        | Value::TypeValue(_)
+        | Value::WitnessDict(_)
+        | Value::TlcClosure(_)
+        | Value::Builtin(_)
+        | Value::BuiltinPartial { .. } => Err(EvalError::EffectfulNotExecutable(
+            "load.zt final value is not first-order serializable data".to_string(),
+        )),
+    }
+}
+
+fn data_list(items: Vec<Value>) -> Value {
+    Value::List(items.into_iter().map(Thunk::ready).collect())
+}
+
+fn data_record(fields: Vec<(&'static str, Value)>) -> Value {
+    Value::Record(Rc::new(
+        fields
+            .into_iter()
+            .map(|(name, value)| (Rc::from(name), Thunk::ready(value)))
+            .collect(),
+    ))
+}
+
+fn data_tagged(tag: &'static str, fields: Vec<(&'static str, Value)>) -> Value {
+    Value::TaggedValue {
+        tag: Rc::from(tag),
+        payload: Rc::new(
+            fields
+                .into_iter()
+                .map(|(name, value)| (Rc::from(name), Thunk::ready(value)))
+                .collect(),
+        ),
     }
 }
 

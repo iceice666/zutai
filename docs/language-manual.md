@@ -249,13 +249,15 @@ Pipelines are syntax for ordinary function application. `x |> f` means `f x`, an
 
 `x.f` is field or module access only; it is not method-call syntax.
 
-General mode is pure and lazy. Unused bindings are not evaluated, and function arguments are lazy unless forced. External data enters through explicit static import declarations, not ambient `now`, `random`, filesystem, shell, environment primitives, or runtime `.zti` loading. Dynamic data loading belongs to a later explicit effect/capability design.
+General mode is pure and lazy. Unused bindings are not evaluated, and function arguments are lazy unless forced. Static external data enters through explicit `import` declarations. Runtime-selected `.zti` / `.zt` loading is not ambient: it is an explicit host effect via `loadZti path` / `loadZt path`, returning the first-order `Data` envelope and requiring the `load.zti` / `load.zt` operation in the surrounding effect row unless handled.
 
 ## Types
 
 Zutai has static typing with inference, explicit parametric generics, and first-class compile-time `Type` values. A value of type `Type` describes a type; type values can be bound, passed to type-level functions, imported from `.zt` modules, and used in annotations, but they are not serializable final outputs.
 
 Built-in type values include `Type`, `Unit`, `Text`, `Bool`, `Int`, `Float`, fixed-width integer and float names (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`), posit scalar names (`Posit32`, `Posit64`, `Posit32eN`, `Posit64eN`), and `List`. `Unit` is the empty-tuple type `()`, whose only value is `()`.
+
+The ambient prelude also provides `Data` and `DataField` for dynamic load results. `Data` is a first-order tagged envelope with scalar, list, record, and tagged-value cases; `load.zt` rejects functions, `Type` values, witnesses, and other non-serializable final values.
 
 Annotations use `::`:
 
@@ -369,6 +371,7 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 | [Algebraic effects](spec/v1/05-effects.md) | `! { ... }`, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
 | [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
 | [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
+| Dynamic data loading | `loadZti path`, `loadZt path`, or `perform load.zti path` / `perform load.zt path` | explicit host capability/effect; `run` and compiled binaries dispatch runtime-selected `.zti`/`.zt` loads to a first-order `Data` envelope; handlers can intercept operations before the host boundary |
 | [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }` and `Stream A` | finite pure generator shell; syntax desugars through HIR to the current lazy list-backed `Stream` representation and uses existing effect rows |
 
 ## Errors and diagnostics

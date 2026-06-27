@@ -48,6 +48,8 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 }))
             }
+            "loadZti" => Some(self.load_builtin_type(span, "load.zti")),
+            "loadZt" => Some(self.load_builtin_type(span, "load.zt")),
             "fields" => Some(self.fields_builtin_type(span)),
             "variants" => Some(self.variants_builtin_type(span)),
             "schema" => Some(self.schema_builtin_type(span)),
@@ -60,6 +62,33 @@ impl<'hir> Lowerer<'hir> {
             "listTail" => Some(self.list_tail_builtin_type(span)),
             _ => None,
         }
+    }
+
+    fn load_builtin_type(&mut self, span: Span, op: &'static str) -> TypeId {
+        let path = self.text_type(span);
+        let data = self
+            .data_prelude_type(span)
+            .unwrap_or_else(|| self.invalid_type("Data prelude type is unavailable", span));
+        let row = EffectRow {
+            ops: vec![EffectOp {
+                name: op.to_string(),
+                param: path,
+                result: data,
+                span,
+            }],
+            tail: RowTail::Closed,
+        };
+        let effect_data = self.alloc_type(Type {
+            kind: TypeKind::Effect { base: data, row },
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: path,
+                to: effect_data,
+            },
+            span,
+        })
     }
 
     /// `listEmpty :: <A> Unit -> List A` — the Unit-arg form keeps the builtin a

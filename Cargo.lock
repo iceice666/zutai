@@ -1422,6 +1422,9 @@ name = "zutai-rt"
 version = "0.1.0"
 dependencies = [
  "fast-posit",
+ "zutai-eval",
+ "zutai-im",
+ "zutai-syntax",
 ]
 
 [[package]]

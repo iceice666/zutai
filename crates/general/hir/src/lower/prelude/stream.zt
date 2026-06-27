@@ -11,6 +11,17 @@
 --
 -- `Stream A` is demand-driven codata (`Unit -> StreamCell A`), not a memoizing
 -- lazy list: it stays inside strict+TCO and the write-barrier-free GC.
+DataField :: type { name : Text; value : Data; };
+Data :: type {
+  #bool : { value : Bool; };
+  #int : { value : Int; };
+  #float : { value : Float; };
+  #text : { value : Text; };
+  #atom : { value : Text; };
+  #list : { items : List Data; };
+  #record : { fields : List DataField; };
+  #tagged : { payload : Data; tag : Text; };
+};
 Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; };
 -- Effectful stream (V3-G4): like `Stream A`, but forcing a cell may perform the
 -- operations in effect row `e`. The supported effectful-generator idiom — a
@@ -49,4 +60,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = map; filter = filter; take = take; drop = drop; fold = fold; uncons = uncons; toList = toList; fromList = fromList; takeList = takeList; }
+{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = map; filter = filter; take = take; drop = drop; fold = fold; uncons = uncons; toList = toList; fromList = fromList; takeList = takeList; }

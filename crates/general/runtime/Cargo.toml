@@ -12,3 +12,6 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 fast-posit = "0.2.0"
+zutai-eval = { path = "../eval" }
+zutai-im = { path = "../../immediate/core" }
+zutai-syntax = { path = "../syntax" }

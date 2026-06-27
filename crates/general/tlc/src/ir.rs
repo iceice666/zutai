@@ -164,16 +164,20 @@ pub enum HostOp {
     EnvGet,
     ClockNow,
     RngNext,
+    LoadZti,
+    LoadZt,
 }
 
 impl HostOp {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::IoPrint,
         Self::FsRead,
         Self::FsWrite,
         Self::EnvGet,
         Self::ClockNow,
         Self::RngNext,
+        Self::LoadZti,
+        Self::LoadZt,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -184,6 +188,8 @@ impl HostOp {
             Self::EnvGet => "env.get",
             Self::ClockNow => "clock.now",
             Self::RngNext => "rng.next",
+            Self::LoadZti => "load.zti",
+            Self::LoadZt => "load.zt",
         }
     }
 
@@ -195,6 +201,7 @@ impl HostOp {
             Self::EnvGet => "Env",
             Self::ClockNow => "Clock",
             Self::RngNext => "Rng",
+            Self::LoadZti | Self::LoadZt => "Load",
         }
     }
 
@@ -221,7 +228,9 @@ impl HostEffectSet {
             | (1 << HostOp::FsWrite as u8)
             | (1 << HostOp::EnvGet as u8)
             | (1 << HostOp::ClockNow as u8)
-            | (1 << HostOp::RngNext as u8),
+            | (1 << HostOp::RngNext as u8)
+            | (1 << HostOp::LoadZti as u8)
+            | (1 << HostOp::LoadZt as u8),
     );
 
     pub fn with(mut self, op: HostOp) -> Self {

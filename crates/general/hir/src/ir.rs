@@ -25,13 +25,16 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "listIsNil",
     "listHead",
     "listTail",
+    "loadZti",
+    "loadZt",
 ];
 
 /// Opaque standard host-capability types. They are seeded into every root scope
 /// as builtin types, but source programs cannot construct values of these types;
 /// the host entry boundary synthesizes advisory capability tokens.
-pub const HOST_CAPABILITY_TYPE_NAMES: &[&str] =
-    &["FsRead", "FsWrite", "Env", "Clock", "Rng", "IoPrint"];
+pub const HOST_CAPABILITY_TYPE_NAMES: &[&str] = &[
+    "FsRead", "FsWrite", "Env", "Clock", "Rng", "IoPrint", "Load",
+];
 
 /// Standard support type names needed by v2 host operation signatures. `Path`
 /// and `Instant` are represented as `Text` at runtime in the v2 implementation;

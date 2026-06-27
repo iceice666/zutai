@@ -39,9 +39,8 @@ _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend harden
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
 unified as an expression; **native effect parity**), and 2026-06-27 (resource
-lifetime for effectful generators: granting-handler dynamic extent is the owner;
-normal/partial/cancel/nested-unwind oracle coverage; lazy escapes and non-`io.print`
-resource-cell native lowering refuse precisely)._
+lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects
+returning the first-order `Data` envelope in the evaluator and native runtime)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -81,24 +80,27 @@ resource-cell native lowering refuse precisely)._
   Record/tuple access is slot-indexed; union construction now uses dense
   per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
   granted v2 host operations lower to explicit `HostOp` nodes through
-  Dataflow/ANF/SSA/LLVM/runtime; recursive and generic recursive aliases lower
-  to finite cyclic `DfTyId` graphs; codegen emits static descriptors for
-  `zutai.show`; `@main` renders through the type-directed runtime display path
-  and rejects function / `Type` results. **`.zti` data imports and `.zt` pure
-  value/function imports compile natively** via one-arena Dataflow Core merge
-  (Phase A): imported modules are lowered into the same graph under a `$dep{idx}$`
-  namespace prefix; the root references the dep's module-value global
-  (`$dep{idx}$$value`). Modules that export typeclass witnesses are rejected before
-  DC by the witness gate (cross-module witness dispatch is still interpreter-only).
+  Dataflow/ANF/SSA/LLVM/runtime; dynamic `load.zti` / `load.zt` dispatches parse
+  `.zti` data or evaluates a `.zt` file at runtime and return the source-level
+  `Data` envelope; recursive and generic recursive aliases lower to finite
+  cyclic `DfTyId` graphs; codegen emits static descriptors for `zutai.show`;
+  `@main` renders through the type-directed runtime display path and rejects
+  function / `Type` results. **`.zti` data imports and `.zt` pure value/function
+  imports compile natively** via one-arena Dataflow Core merge (Phase A): imported
+  modules are lowered into the same graph under a `$dep{idx}$` namespace prefix;
+  the root references the dep's module-value global (`$dep{idx}$$value`). Modules
+  that export typeclass witnesses are rejected before DC by the witness gate
+  (cross-module witness dispatch is still interpreter-only).
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce
   PIE-capable Linux binaries without `-no-pie`.
 - `zutai-eval` has both the THIR oracle and TLC evaluator. Differential coverage
-  includes constraints, optionals, `.zti` imports, `.zt` imports, imported
-  functions, transitive imports, imported witness dictionaries, record update,
-  config overlay, effects, reflection/type-value boundaries, polymorphic
-  curried helpers, repeated nested destructures, and name-sorted record display.
+  includes constraints, optionals, `.zti` imports, `.zt` imports, dynamic
+  `.zti`/`.zt` loads, imported functions, transitive imports, imported witness
+  dictionaries, record update, config overlay, effects, reflection/type-value
+  boundaries, polymorphic curried helpers, repeated nested destructures, and
+  name-sorted record display.
 - `print` remains a prelude compatibility binding, but its type is now
   `Text -> Text ! { io.print : Text -> Text }`. TLC lowers the builtin value to
   a runtime-dispatching function; source handlers can intercept `io.print`, and
@@ -117,9 +119,9 @@ resource-cell native lowering refuse precisely)._
   `overlay`/`overlayDeep` applications with record-literal patch values become
   ordinary record updates, and required nested records merge recursively.
 - Unsupported residual overlay forms, optional nested-record deep overlays,
-  reflection combined with effectful code, non-`io.print` residual effects,
-  unsupported effect rows, function entries, and `Type` entries still reject
-  before DC.
+  reflection combined with effectful code, unsupported host operations/effect
+  rows, function entries, and `Type` entries still reject before DC. Dynamic
+  `load.zt` also rejects non-first-order final values at the host boundary.
 
 ## Validation notes
 

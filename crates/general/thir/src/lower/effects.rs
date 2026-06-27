@@ -95,47 +95,72 @@ impl<'hir> Lowerer<'hir> {
             ),
             span,
         });
+        let mut ops = vec![
+            EffectOp {
+                name: "io.print".to_string(),
+                param: text,
+                result: text,
+                span,
+            },
+            EffectOp {
+                name: "fs.read".to_string(),
+                param: text,
+                result: text,
+                span,
+            },
+            EffectOp {
+                name: "fs.write".to_string(),
+                param: write_arg,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "env.get".to_string(),
+                param: text,
+                result: maybe_text,
+                span,
+            },
+            EffectOp {
+                name: "clock.now".to_string(),
+                param: unit,
+                result: text,
+                span,
+            },
+            EffectOp {
+                name: "rng.next".to_string(),
+                param: unit,
+                result: int,
+                span,
+            },
+        ];
+        if let Some(data) = self.data_prelude_type(span) {
+            ops.push(EffectOp {
+                name: "load.zti".to_string(),
+                param: text,
+                result: data,
+                span,
+            });
+            ops.push(EffectOp {
+                name: "load.zt".to_string(),
+                param: text,
+                result: data,
+                span,
+            });
+        }
         EffectRow {
-            ops: vec![
-                EffectOp {
-                    name: "io.print".to_string(),
-                    param: text,
-                    result: text,
-                    span,
-                },
-                EffectOp {
-                    name: "fs.read".to_string(),
-                    param: text,
-                    result: text,
-                    span,
-                },
-                EffectOp {
-                    name: "fs.write".to_string(),
-                    param: write_arg,
-                    result: unit,
-                    span,
-                },
-                EffectOp {
-                    name: "env.get".to_string(),
-                    param: text,
-                    result: maybe_text,
-                    span,
-                },
-                EffectOp {
-                    name: "clock.now".to_string(),
-                    param: unit,
-                    result: text,
-                    span,
-                },
-                EffectOp {
-                    name: "rng.next".to_string(),
-                    param: unit,
-                    result: int,
-                    span,
-                },
-            ],
+            ops,
             tail: RowTail::Closed,
         }
+    }
+
+    pub(in crate::lower) fn data_prelude_type(&mut self, span: Span) -> Option<TypeId> {
+        let binding = self
+            .hir
+            .bindings
+            .iter()
+            .position(|binding| binding.name == "Data")
+            .map(|index| zutai_hir::BindingId(index as u32))?;
+        Some(self.alias_or_builtin_type(binding, span))
     }
 
     pub(in crate::lower) fn is_non_function_effect_type(&mut self, ty: TypeId) -> bool {

@@ -220,10 +220,15 @@ impl Lowerer {
         // The prelude is valid and never diagnoses.
         if let Some(p) = prelude_ast.as_ref() {
             let set: Vec<BindingId> = prelude_decls.iter().map(|(_, b)| *b).collect();
-            let referenced =
-                self.type_arena.iter().any(
+            let references_dynamic_load_builtin = self.expr_arena.iter().any(|(_, e)| {
+                matches!(e.kind, HirExprKind::BindingRef(b) if matches!(self.bindings.get(b.0 as usize).map(|binding| binding.name.as_str()), Some("loadZti" | "loadZt")))
+                    || matches!(&e.kind, HirExprKind::Perform { op, .. } if matches!(op.as_slice(), [namespace, ext] if namespace == "load" && (ext == "zti" || ext == "zt")))
+            });
+            let referenced = references_dynamic_load_builtin
+                || self.type_arena.iter().any(
                     |(_, ty)| matches!(ty.kind, HirTypeKind::BindingRef(b) if set.contains(&b)),
-                ) || self
+                )
+                || self
                     .expr_arena
                     .iter()
                     .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)));

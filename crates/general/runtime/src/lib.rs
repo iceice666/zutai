@@ -19,6 +19,7 @@
 //! symbol lives here. `TAG_CLOSURE` is reserved for the header layout only.
 
 use fast_posit::{Posit, RoundInto};
+use zutai_eval::{EvalError, Value as EvalValue};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
@@ -1097,6 +1098,174 @@ pub extern "C" fn host_fs_read(path: i64) -> i64 {
         Ok(contents) => text_from_string(contents),
         Err(err) => runtime_error(&format!("fs.read failed for {path:?}: {err}")),
     }
+}
+
+#[unsafe(export_name = "zutai.host.load_zti")]
+pub extern "C" fn host_load_zti(path: i64) -> i64 {
+    let path = unsafe {
+        str::from_utf8(text_parts(path))
+            .unwrap_or_else(|_| runtime_error("load.zti path is not UTF-8"))
+    };
+    let source = std::fs::read_to_string(path)
+        .unwrap_or_else(|err| runtime_error(&format!("load.zti failed for {path:?}: {err}")));
+    let block = zutai_im::parse(&source)
+        .unwrap_or_else(|err| runtime_error(&format!("load.zti parse failed for {path:?}: {err}")));
+    data_from_zti_block(&block)
+}
+
+#[unsafe(export_name = "zutai.host.load_zt")]
+pub extern "C" fn host_load_zt(path: i64) -> i64 {
+    let path = unsafe {
+        str::from_utf8(text_parts(path))
+            .unwrap_or_else(|_| runtime_error("load.zt path is not UTF-8"))
+    };
+    match zutai_eval::eval_tlc_path(std::path::Path::new(path))
+        .and_then(|value| data_from_eval_value(&value))
+    {
+        Ok(value) => value,
+        Err(err) => runtime_error(&format!("load.zt failed for {path:?}: {err}")),
+    }
+}
+
+fn data_from_zti_block(block: &zutai_im::Block) -> i64 {
+    let mut fields = list_nil();
+    for pair in block.iter().rev() {
+        let field = data_field(&pair.field_name, data_from_zti_value(&pair.value));
+        fields = list_cons(field, fields);
+    }
+    data_variant(6, data_record(&[("fields", fields)]))
+}
+
+fn data_from_zti_value(value: &zutai_im::Value) -> i64 {
+    match value {
+        zutai_im::Value::True => data_variant(0, data_record(&[("value", 1)])),
+        zutai_im::Value::False => data_variant(0, data_record(&[("value", 0)])),
+        zutai_im::Value::Atom(atom) => data_variant(
+            4,
+            data_record(&[("value", text_from_bytes(atom.as_bytes()))]),
+        ),
+        zutai_im::Value::String(text) => data_variant(
+            3,
+            data_record(&[("value", text_from_bytes(text.as_bytes()))]),
+        ),
+        zutai_im::Value::Float(value) => {
+            data_variant(2, data_record(&[("value", value.to_bits() as i64)]))
+        }
+        zutai_im::Value::Integer(value) => data_variant(1, data_record(&[("value", *value)])),
+        zutai_im::Value::Array(items) => {
+            let mut out = list_nil();
+            for item in items.iter().rev() {
+                out = list_cons(data_from_zti_value(item), out);
+            }
+            data_variant(5, data_record(&[("items", out)]))
+        }
+        zutai_im::Value::Block(block) => data_from_zti_block(block),
+    }
+}
+
+fn data_from_eval_value(value: &EvalValue) -> Result<i64, EvalError> {
+    match value {
+        EvalValue::Bool(value) => Ok(data_variant(
+            0,
+            data_record(&[("value", i64::from(*value))]),
+        )),
+        EvalValue::Int(value) => Ok(data_variant(1, data_record(&[("value", *value)]))),
+        EvalValue::Float(value) => Ok(data_variant(
+            2,
+            data_record(&[("value", value.to_bits() as i64)]),
+        )),
+        EvalValue::Posit(literal) => Ok(data_variant(
+            2,
+            data_record(&[("value", (literal.bits as f64).to_bits() as i64)]),
+        )),
+        EvalValue::Text(value) => Ok(data_variant(
+            3,
+            data_record(&[("value", text_from_bytes(value.as_bytes()))]),
+        )),
+        EvalValue::Atom(value) => Ok(data_variant(
+            4,
+            data_record(&[("value", text_from_bytes(value.as_bytes()))]),
+        )),
+        EvalValue::List(items) => {
+            let mut out = list_nil();
+            for item in items.iter().rev() {
+                let Some(value) = item.peek() else {
+                    return Err(EvalError::Internal(
+                        "load.zt result contains an unforced list item",
+                    ));
+                };
+                out = list_cons(data_from_eval_value(&value)?, out);
+            }
+            Ok(data_variant(5, data_record(&[("items", out)])))
+        }
+        EvalValue::Tuple(items) => {
+            let mut fields = list_nil();
+            for (index, item) in items.iter().enumerate().rev() {
+                let Some(value) = item.value.peek() else {
+                    return Err(EvalError::Internal(
+                        "load.zt result contains an unforced tuple item",
+                    ));
+                };
+                let name = item
+                    .name
+                    .as_ref()
+                    .map(|name| name.to_string())
+                    .unwrap_or_else(|| index.to_string());
+                fields = list_cons(data_field(&name, data_from_eval_value(&value)?), fields);
+            }
+            Ok(data_variant(6, data_record(&[("fields", fields)])))
+        }
+        EvalValue::Record(source_fields) => {
+            let mut fields = list_nil();
+            for (name, thunk) in source_fields.iter().rev() {
+                let Some(value) = thunk.peek() else {
+                    return Err(EvalError::Internal(
+                        "load.zt result contains an unforced record field",
+                    ));
+                };
+                fields = list_cons(data_field(name, data_from_eval_value(&value)?), fields);
+            }
+            Ok(data_variant(6, data_record(&[("fields", fields)])))
+        }
+        EvalValue::TaggedValue { tag, payload } => {
+            let payload = data_from_eval_value(&EvalValue::Record(payload.clone()))?;
+            Ok(data_variant(
+                7,
+                data_record(&[
+                    ("payload", payload),
+                    ("tag", text_from_bytes(tag.as_bytes())),
+                ]),
+            ))
+        }
+        EvalValue::Nothing => Ok(data_variant(
+            4,
+            data_record(&[("value", text_from_bytes(b"absent"))]),
+        )),
+        EvalValue::Closure(_)
+        | EvalValue::TypeValue(_)
+        | EvalValue::WitnessDict(_)
+        | EvalValue::TlcClosure(_)
+        | EvalValue::Builtin(_)
+        | EvalValue::BuiltinPartial { .. } => Err(EvalError::EffectfulNotExecutable(
+            "load.zt final value is not first-order serializable data".to_string(),
+        )),
+    }
+}
+
+fn data_field(name: &str, value: i64) -> i64 {
+    data_record(&[("name", text_from_bytes(name.as_bytes())), ("value", value)])
+}
+
+fn data_record(fields: &[(&str, i64)]) -> i64 {
+    let record = record_new(fields.len() as i64);
+    for (index, (_, value)) in fields.iter().enumerate() {
+        record_set(record, index as i64, *value);
+    }
+    record
+}
+
+fn data_variant(tag_index: i64, payload: i64) -> i64 {
+    variant_new(tag_index, payload)
 }
 
 #[unsafe(export_name = "zutai.host.fs_write")]

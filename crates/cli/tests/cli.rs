@@ -3651,6 +3651,42 @@ readFile "{}"
 }
 
 #[test]
+fn run_load_zti_returns_data_envelope() {
+    let data_path = write_tmp(
+        "cli_test_dynamic_load_data.zti",
+        r#"{ host = "localhost"; port = 8080; }"#,
+    );
+    let source = format!(
+        r#"
+match loadZti "{}" {{
+  | #record {{ fields = fields; }} => match listHead fields {{
+      | {{ name = name; value = #text {{ value = value; }}; }} => name == "host" && value == "localhost";
+      | _ => false;
+    }};
+  | _ => false;
+}}
+"#,
+        zt_string_literal(&data_path)
+    );
+    let out = run_stdout("cli_test_dynamic_load_zti.zt", &source);
+    assert_eq!(out, "true\n");
+}
+
+#[test]
+fn compile_load_zt_dispatches_at_runtime() {
+    let data_path = write_tmp("cli_test_dynamic_load_data.zt", r#"{ mode = #prod; }"#);
+    let source = format!(
+        r#"loadZt "{}"
+"#,
+        zt_string_literal(&data_path)
+    );
+    let out = compile_bin_stdout("cli_test_dynamic_load_zt", &source);
+    assert!(out.contains("#record"), "{out}");
+    assert!(out.contains("mode"), "{out}");
+    assert!(out.contains("prod"), "{out}");
+}
+
+#[test]
 fn compile_env_get_dispatches_optional_host_effect() {
     let out = compile_bin_stdout(
         "cli_test_compile_host_env_get",
