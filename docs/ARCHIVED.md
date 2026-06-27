@@ -163,6 +163,31 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### V3-G4 follow-up: cross-boundary finalizer unwinding ✅
+
+_Completed 2026-06-27. Closes the cooperative-cancellation residual where an
+outer abort crossing an inner `finally`-bearing handler had to refuse rather than
+skip the inner teardown. Interpreter semantics now unwind those finalizers
+explicitly; native remains parity-or-refuse for out-of-envelope effectful
+generator paths._
+
+- `EvalControl::Perform` now carries an explicit inner-to-outer stack of
+  finalizer continuations instead of a `pending_finally` count. `bind_finally`
+  pushes the teardown as data when an effect escapes a `finally`-bearing handle.
+- `handle_control` still tracks whether the handler clause called `resume`; the
+  resume path is unchanged and runs the original continuation, so finalizers are
+  neither early nor duplicated (`effect_resumed_across_a_finalizer_boundary_still_runs`).
+- If the handler aborts, `unwind_finalizers` runs the discarded continuation's
+  teardowns inner-to-outer through the active handler stack. A finalizer's own
+  handled abort keeps the existing `finally` precedence rule, so the documented
+  cross-boundary case returns `999` (`cancellation_across_a_finalizer_boundary_unwinds_inner_finally`),
+  and stacked finalizers are covered by
+  `cancellation_across_stacked_finalizers_unwinds_inner_to_outer`.
+
+Verification: `cargo test -p zutai-eval cancellation_across`,
+`cargo test -p zutai-eval diagnostics_effects`, `cargo test -p zutai-eval`,
+`cargo check --workspace`, `just build`, `just ci`.
+
 ### V3-G4 follow-up: cooperative cancellation for effectful generators ✅
 
 _Completed 2026-06-27. Settles the open generator question of *cancellation*
@@ -182,26 +207,20 @@ refused. Built entirely in the reference interpreter's effect machinery
   expressible; the milestone establishes it as the supported idiom with tests
   (`cancellation_stops_generator_via_aborting_granting_handler`,
   `cancellation_runs_finally_on_the_granting_handler`).
-- **Closed a silent-leak gap: cancellation across a finalizer boundary.** When a
-  cancelling effect escaped an *inner* `finally`-bearing handle to be aborted by an
-  *outer* handler, the interpreter discarded the continuation carrying the inner
-  `finally` and **silently skipped that teardown** — a resource leak (probed:
-  produced `10` where the finalizer's `999` should have run). `EvalControl::Perform`
-  now carries a `pending_finally: u32` count; `run_finally` increments it (via a new
-  `bind_finally`) on every effect that escapes its handle, and `handle_control`'s
-  handled branch tracks whether the clause ever invoked `resume` (a `Cell<bool>`
-  threaded into `resume_cont`). A clause that aborts an effect with
-  `pending_finally > 0` is refused with the new `EvalError::CancelAcrossFinalizer`
-  rather than run the un-finalized program — parity-or-refuse, a refused program
-  beats a leaked resource (`cancellation_across_a_finalizer_boundary_is_refused`).
-- **Resume is unaffected — the refusal is abort-only.** An escaped effect that an
-  outer handler *resumes* (rather than aborts) runs unchanged; its inner `finally`
-  fires when the inner handle settles
-  (`effect_resumed_across_a_finalizer_boundary_still_runs`). The `pending_finally`
-  marker is harmless on the resume path because it is only consulted at an abort.
+- **Closed the immediate silent-leak gap conservatively.** When a cancelling
+  effect escaped an *inner* `finally`-bearing handle to be aborted by an *outer*
+  handler, the interpreter would have discarded the continuation carrying the
+  inner `finally` and **silently skipped that teardown** — a resource leak
+  (probed: produced `10` where the finalizer's `999` should have run). This
+  milestone introduced a `pending_finally: u32` guard and refused aborts that
+  would skip an inner finalizer — parity-or-refuse, a refused program beats a
+  leaked resource. The later cross-boundary finalizer-unwinding follow-up above
+  replaces that temporary refusal with explicit teardown unwinding.
+- **Resume was unaffected.** An escaped effect that an outer handler *resumes*
+  (rather than aborts) runs unchanged; its inner `finally` fires when the inner
+  handle settles (`effect_resumed_across_a_finalizer_boundary_still_runs`).
 
-Full finalizer *unwinding* on a cross-boundary cancel (running inner finalizers
-instead of refusing) and general resource lifetime remain the open follow-ups.
+General resource lifetime remains the open follow-up.
 Verification: full workspace green (`cargo test --workspace`, `clippy`, `fmt`).
 
 ### Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff` ✅

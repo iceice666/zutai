@@ -29,14 +29,11 @@ abort** (a clause returning without `resume`) reused as a control signal. A
 consumer performs a cancelling op (`perform stop acc`); the *granting* handler
 (bearing the generator's effects + `finally`) gives it an aborting clause
 (`stop = \r. r;`), so the suspended tail is never forced again and the handler's
-`finally` finalizes the resource. The milestone closed a silent-leak gap:
-cancellation that aborts *across* an inner `finally`-bearing handle would skip the
-inner teardown, so `EvalControl::Perform` now carries a `pending_finally` count
-(`run_finally` increments it; `handle_control` tracks whether a clause resumed) and
-an abort with a pending inner finalizer is refused with
-`EvalError::CancelAcrossFinalizer` — parity-or-refuse, never a leaked resource. The
-resume path is unaffected. Interpreter-only; full finalizer *unwinding* across a
-cross-boundary cancel and general resource lifetime stay open.
+`finally` finalizes the resource. A follow-up replaced the temporary
+cross-boundary refusal guard with explicit finalizer unwinding: an abort that
+crosses an inner `finally`-bearing handler now runs the inner teardowns
+inner-to-outer before completing, and resumed effects remain unaffected. General
+resource lifetime stays open.
 
 **Ergonomic effectful-stream type — landed 2026-06-27** (see `docs/ARCHIVED.md`
 "Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff`").
@@ -118,13 +115,11 @@ it is *check-only* — a row-polymorphic effect signature checks and lowers clea
 and execution stays gated by the existing residual-effect gate.
 
 The **ergonomic effectful-stream type** landed 2026-06-27 (call-site effect-row
-inference + the `StreamEff` ambient/importable alias — see the active-milestone
-note above and `docs/ARCHIVED.md`). **Cooperative cancellation** landed 2026-06-27
-too (consumer-driven mid-stream termination over the abort + `finally` machinery;
-cancellation across an inner finalizer is refused with `CancelAcrossFinalizer` —
-see `docs/ARCHIVED.md` "cooperative cancellation"). Still open from the V3-G4
-follow-ups: general **resource lifetime** (and the full finalizer *unwinding* a
-cross-boundary cancel currently refuses rather than runs).
+inference + the `StreamEff` ambient/importable alias — see `docs/ARCHIVED.md`).
+**Cooperative cancellation** and the **cross-boundary finalizer unwinding**
+follow-up landed 2026-06-27 too (consumer-driven mid-stream termination over the
+abort + `finally` machinery, with inner finalizers run on cross-boundary aborts).
+Still open from the V3-G4 follow-ups: general **resource lifetime**.
 
 `empty` + `unfold` (V3-G2 residuals: the empty stream and the canonical codata
 producer) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G2 residual: `unfold`

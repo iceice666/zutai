@@ -60,7 +60,7 @@ impl<'a> TlcEvaluator<'a> {
                     Value::Text(_) => Ok(EvalControl::Perform {
                         op: "io.print".to_string(),
                         arg,
-                        pending_finally: 0,
+                        finalizers: Finalizers::new(),
                         cont: value_cont(),
                     }),
                     other => Err(EvalError::TypeMismatch {
@@ -154,7 +154,7 @@ impl<'a> TlcEvaluator<'a> {
             EvalControl::Perform {
                 op,
                 arg,
-                pending_finally,
+                finalizers,
                 cont,
             } => {
                 if let Some(clause) = ops.iter().find(|clause| clause.op == op).cloned() {
@@ -163,13 +163,13 @@ impl<'a> TlcEvaluator<'a> {
                     let env_for_resume = env.clone();
                     let outer_for_resume = outer_resume.clone();
                     // Abort detection is only needed when the effect is suspended
-                    // inside a `finally` (`pending_finally > 0`): a clause that
+                    // inside one or more `finally` teardowns: a clause that
                     // returns without resuming aborts, discarding the continuation
-                    // and any inner teardown with it. Keep the common path — no
-                    // escaped finalizer — allocation-free by tracking the resume
-                    // flag only when it can matter.
+                    // carrying those teardowns. Keep the common path — no escaped
+                    // finalizer — allocation-free by tracking the resume flag only
+                    // when it can matter.
                     let resumed: Option<Rc<Cell<bool>>> =
-                        (pending_finally > 0).then(|| Rc::new(Cell::new(false)));
+                        (!finalizers.is_empty()).then(|| Rc::new(Cell::new(false)));
                     let resumed_flag = resumed.clone();
                     let resume_cont: EvalCont<'eval> = Rc::new(move |resume_value| {
                         if let Some(flag) = &resumed_flag {
@@ -194,14 +194,26 @@ impl<'a> TlcEvaluator<'a> {
                         // No escaped finalizer: original behavior, no extra layer.
                         None => Ok(applied),
                         // When the handle settles to a value without `resume`
-                        // having fired, the clause aborted — and would silently
-                        // skip the inner `finally` teardown, a resource leak. Refuse.
-                        Some(resumed) => self.bind_control(applied, move |value, _this| {
-                            if !resumed.get() {
-                                return Err(EvalError::CancelAcrossFinalizer(op.clone()));
-                            }
-                            Ok(EvalControl::Value(value))
-                        }),
+                        // having fired, the clause aborted. Run the finalizers
+                        // that the discarded continuation would have run, using
+                        // the current handler for their effects and the existing
+                        // finalizer semantics for any abort they trigger.
+                        Some(resumed) => {
+                            let finalizers: Rc<[EvalCont<'eval>]> = finalizers.into_vec().into();
+                            self.bind_control(applied, move |value, this| {
+                                if resumed.get() {
+                                    return Ok(EvalControl::Value(value));
+                                }
+                                this.unwind_finalizers(
+                                    value,
+                                    Rc::clone(&finalizers),
+                                    0,
+                                    Rc::clone(&ops),
+                                    env.clone(),
+                                    outer_resume.clone(),
+                                )
+                            })
+                        }
                     }
                 } else {
                     let this = self;
@@ -209,7 +221,7 @@ impl<'a> TlcEvaluator<'a> {
                     Ok(EvalControl::Perform {
                         op,
                         arg,
-                        pending_finally,
+                        finalizers,
                         cont: Rc::new(move |resume_value| {
                             let resumed = cont(resume_value)?;
                             this.handle_control(
@@ -234,10 +246,9 @@ impl<'a> TlcEvaluator<'a> {
     /// normal completion and handler abort. The teardown runs for its effects in
     /// the outer row; its result is discarded.
     ///
-    /// Each escaping `Perform` carries `pending_finally + 1`: it is suspended
-    /// *inside* this teardown, so a handler that aborts it (declines to resume)
-    /// would skip the teardown. `handle_control` refuses such an abort rather
-    /// than leak the resource.
+    /// Each escaping `Perform` carries the teardown as an explicit finalizer. If
+    /// a later handler aborts the effect without resuming, `handle_control`
+    /// unwinds those finalizers inner-to-outer instead of leaking them.
     pub(super) fn run_finally<'eval>(
         self,
         control: EvalControl<'eval>,
@@ -260,7 +271,7 @@ impl<'a> TlcEvaluator<'a> {
     }
 
     /// `bind_rc`, but every `Perform` that escapes before the value emerges is
-    /// marked as nested inside one more `finally` teardown (`pending_finally + 1`).
+    /// marked as nested inside one more unwindable `finally` teardown.
     fn bind_finally<'eval>(
         self,
         control: EvalControl<'eval>,
@@ -274,14 +285,19 @@ impl<'a> TlcEvaluator<'a> {
             EvalControl::Perform {
                 op,
                 arg,
-                pending_finally,
+                mut finalizers,
                 cont,
             } => {
                 let this = self;
+                let finalizer = {
+                    let f = Rc::clone(&f);
+                    Rc::new(move |value| f(value, this))
+                };
+                finalizers.push(finalizer);
                 Ok(EvalControl::Perform {
                     op,
                     arg,
-                    pending_finally: pending_finally + 1,
+                    finalizers,
                     cont: Rc::new(move |resume_value| {
                         let next = cont(resume_value)?;
                         this.bind_finally(next, Rc::clone(&f))
@@ -290,6 +306,41 @@ impl<'a> TlcEvaluator<'a> {
             }
             EvalControl::Tail { .. } => unreachable!("settle drains tail bounces"),
         }
+    }
+
+    fn unwind_finalizers<'eval>(
+        self,
+        value: Value,
+        finalizers: Rc<[EvalCont<'eval>]>,
+        index: usize,
+        ops: Rc<Vec<TlcHandleClause>>,
+        env: Env,
+        outer_resume: Option<EvalCont<'eval>>,
+    ) -> Result<EvalControl<'eval>, EvalError>
+    where
+        'a: 'eval,
+    {
+        let Some(finalizer) = finalizers.get(index).cloned() else {
+            return Ok(EvalControl::Value(value));
+        };
+        let finalizer_control = finalizer(value)?;
+        let handled = self.handle_control(
+            finalizer_control,
+            None,
+            Rc::clone(&ops),
+            env.clone(),
+            outer_resume.clone(),
+        )?;
+        self.bind_control(handled, move |value, this| {
+            this.unwind_finalizers(
+                value,
+                Rc::clone(&finalizers),
+                index + 1,
+                Rc::clone(&ops),
+                env.clone(),
+                outer_resume.clone(),
+            )
+        })
     }
 
     pub(super) fn apply_value_clause<'eval>(
@@ -335,14 +386,14 @@ impl<'a> TlcEvaluator<'a> {
             EvalControl::Perform {
                 op,
                 arg,
-                pending_finally,
+                finalizers,
                 cont,
             } => {
                 let this = self;
                 Ok(EvalControl::Perform {
                     op,
                     arg,
-                    pending_finally,
+                    finalizers,
                     cont: Rc::new(move |resume_value| {
                         let next = cont(resume_value)?;
                         this.bind_rc(next, Rc::clone(&f))

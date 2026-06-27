@@ -33,6 +33,7 @@ use crate::{
 type EvalCont<'eval> = Rc<dyn Fn(Value) -> Result<EvalControl<'eval>, EvalError> + 'eval>;
 type BindFn<'eval, 'module> =
     Rc<dyn Fn(Value, TlcEvaluator<'module>) -> Result<EvalControl<'eval>, EvalError> + 'eval>;
+type Finalizers<'eval> = SmallVec<[EvalCont<'eval>; 1]>;
 type FinishValues<'eval> = Rc<dyn Fn(Vec<Value>) -> Value + 'eval>;
 pub type TlcModuleRegistry<'a> = Vec<&'a TlcModule>;
 
@@ -47,13 +48,11 @@ enum EvalControl<'eval> {
     Perform {
         op: String,
         arg: Value,
-        /// Number of enclosing `finally` teardowns this suspended effect sits
-        /// *inside* — teardowns that would be silently skipped if a handler
-        /// aborts the effect (returns without `resume`, discarding the
-        /// continuation). `run_finally` increments it as an effect escapes a
-        /// finally-bearing handle; `handle_control` refuses an aborting handler
-        /// when it is non-zero rather than leak the inner resource.
-        pending_finally: u32,
+        /// Enclosing `finally` teardowns this suspended effect sits inside,
+        /// ordered inner-to-outer. If a handler aborts this effect (returns
+        /// without `resume`), the continuation is discarded, so these teardowns
+        /// must be unwound explicitly before the abort value escapes.
+        finalizers: Finalizers<'eval>,
         cont: EvalCont<'eval>,
     },
     /// A pending tail call: evaluate `id` under `ev`/`env` in tail position.

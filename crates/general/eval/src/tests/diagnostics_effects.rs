@@ -521,17 +521,15 @@ handle (
 }
 
 #[test]
-fn cancellation_across_a_finalizer_boundary_is_refused() {
-    // The unsound case is refused, never silently leaked. Here cancellation is
-    // handled by an *outer* handler past an *inner* `finally`-bearing handle:
-    // `perform stop` escapes the inner handle (which grants `tick` + `finally`)
-    // and the outer `stop` clause aborts. Honouring that abort would discard the
-    // continuation carrying the inner `finally`, skipping `close` — a resource
-    // leak. The interpreter refuses with `CancelAcrossFinalizer` rather than run
-    // the un-finalized program. (Co-locating `stop` with the `finally`, as in
-    // `cancellation_runs_finally_on_the_granting_handler`, is the supported path.)
-    let err = run_err(
-        r#"
+fn cancellation_across_a_finalizer_boundary_unwinds_inner_finally() {
+    // Cross-boundary cancellation now unwinds the inner finalizer instead of
+    // refusing. `stop` is handled by an outer aborting clause, so the suspended
+    // continuation carrying the inner `finally` is discarded; the interpreter
+    // runs that finalizer explicitly before completing the abort. `close` is
+    // handled by the same outer handler and aborts to 999, reusing the existing
+    // finalizer semantics where a finalizer's own handled abort determines the
+    // result.
+    let src = r#"
 Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
 foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
   = acc s => match s () {
@@ -547,9 +545,38 @@ handle (
   stop = \r. r;
   close = \_. 999;
 }
-"#,
-    );
-    assert_eq!(err, EvalError::CancelAcrossFinalizer("stop".to_string()));
+"#;
+    assert_eq!(run(src), Value::Int(999));
+}
+
+#[test]
+fn cancellation_across_stacked_finalizers_unwinds_inner_to_outer() {
+    // The inner finalizer runs first. Its `close` handler resumes, so the abort
+    // value (10) continues to the outer finalizer; the outer `mark` handler
+    // aborts to 999 and determines the final result.
+    let src = r#"
+Cell :: type { #nil; #cons : { head : Int; tail : Unit -> Cell; }; };
+foldUntil :: Int -> (Unit -> Cell) -> Int ! { tick : Unit -> Int; stop : Int -> Int; }
+  = acc s => match s () {
+    | #nil => acc;
+    | #cons { head = h; tail = t; } => (if acc + h > 7 then perform stop (acc + h) else foldUntil (acc + h) t);
+  };
+handle (
+  handle (
+    handle (foldUntil 0 (stream { yield perform tick (); yield perform tick (); })) with {
+      tick = \_. resume 5;
+      finally = perform close ();
+    }
+  ) with {
+    finally = perform mark ();
+  }
+) with {
+  stop = \r. r;
+  close = \_. resume ();
+  mark = \_. 999;
+}
+"#;
+    assert_eq!(run(src), Value::Int(999));
 }
 
 #[test]
