@@ -1,0 +1,21 @@
+-- Simple TCP line echo server (single request)
+-- Usage: zutai run examples/net_echo.zt
+-- Listens on port 7777, echoes one line, then exits.
+
+serveOnce :: Int -> Text ! {
+  net.listen : Int -> Int;
+  net.accept : Int -> Int;
+  net.read : Int -> Text;
+  net.write : Text -> Unit;
+  net.close : Int -> Unit;
+}
+  = port => [
+    listener := perform net.listen port;
+    conn := perform net.accept listener;
+    line := perform net.read conn;
+    written := perform net.write line;
+    closed := perform net.close conn;
+    line
+  ];
+
+serveOnce 7777

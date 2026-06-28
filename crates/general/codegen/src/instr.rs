@@ -156,6 +156,11 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 HostOp::RngNext => "@zutai.host.rng_next",
                 HostOp::LoadZti => "@zutai.host.load_zti",
                 HostOp::LoadZt => "@zutai.host.load_zt",
+                HostOp::NetListen => "@zutai.host.net_listen",
+                HostOp::NetAccept => "@zutai.host.net_accept",
+                HostOp::NetRead => "@zutai.host.net_read",
+                HostOp::NetWrite => "@zutai.host.net_write",
+                HostOp::NetClose => "@zutai.host.net_close",
             };
             out.push_str(&format!("  %{} = call i64 {helper}(i64 {})\n", dest, value));
         }

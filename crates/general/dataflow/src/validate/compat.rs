@@ -485,6 +485,14 @@ pub(super) fn check_node_type_compat(
                     HostOp::IoPrint if !matches!(&graph.types[arg_ty], DfTy::Text) => {
                         unexpected_type(owner, "arg", "Text", arg_ty, errors);
                     }
+                    HostOp::NetListen | HostOp::NetAccept | HostOp::NetRead | HostOp::NetClose
+                        if !matches!(&graph.types[arg_ty], DfTy::Int) =>
+                    {
+                        unexpected_type(owner, "arg", "Int", arg_ty, errors);
+                    }
+                    HostOp::NetWrite if !matches!(&graph.types[arg_ty], DfTy::Text) => {
+                        unexpected_type(owner, "arg", "Text", arg_ty, errors);
+                    }
                     _ => {}
                 }
             }
@@ -506,6 +514,21 @@ pub(super) fn check_node_type_compat(
                 HostOp::RngNext => {
                     if !matches!(&graph.types[node.ty], DfTy::Int) {
                         unexpected_type(owner, "type", "Int", node.ty, errors);
+                    }
+                }
+                HostOp::NetListen | HostOp::NetAccept => {
+                    if !matches!(&graph.types[node.ty], DfTy::Int) {
+                        unexpected_type(owner, "type", "Int", node.ty, errors);
+                    }
+                }
+                HostOp::NetRead => {
+                    if !matches!(&graph.types[node.ty], DfTy::Text) {
+                        unexpected_type(owner, "type", "Text", node.ty, errors);
+                    }
+                }
+                HostOp::NetWrite | HostOp::NetClose => {
+                    if !matches!(&graph.types[node.ty], DfTy::Tuple(items) if items.is_empty()) {
+                        unexpected_type(owner, "type", "Unit", node.ty, errors);
                     }
                 }
                 HostOp::LoadZti | HostOp::LoadZt => {

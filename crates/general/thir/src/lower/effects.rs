@@ -132,6 +132,36 @@ impl<'hir> Lowerer<'hir> {
                 result: int,
                 span,
             },
+            EffectOp {
+                name: "net.listen".to_string(),
+                param: int,
+                result: int,
+                span,
+            },
+            EffectOp {
+                name: "net.accept".to_string(),
+                param: int,
+                result: int,
+                span,
+            },
+            EffectOp {
+                name: "net.read".to_string(),
+                param: int,
+                result: text,
+                span,
+            },
+            EffectOp {
+                name: "net.write".to_string(),
+                param: text,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "net.close".to_string(),
+                param: int,
+                result: unit,
+                span,
+            },
         ];
         if let Some(data) = self.data_prelude_type(span) {
             ops.push(EffectOp {

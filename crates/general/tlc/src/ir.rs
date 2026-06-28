@@ -166,10 +166,14 @@ pub enum HostOp {
     RngNext,
     LoadZti,
     LoadZt,
+    NetListen,
+    NetAccept,
+    NetRead,
+    NetWrite,
+    NetClose,
 }
-
 impl HostOp {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 13] = [
         Self::IoPrint,
         Self::FsRead,
         Self::FsWrite,
@@ -178,6 +182,11 @@ impl HostOp {
         Self::RngNext,
         Self::LoadZti,
         Self::LoadZt,
+        Self::NetListen,
+        Self::NetAccept,
+        Self::NetRead,
+        Self::NetWrite,
+        Self::NetClose,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -190,9 +199,13 @@ impl HostOp {
             Self::RngNext => "rng.next",
             Self::LoadZti => "load.zti",
             Self::LoadZt => "load.zt",
+            Self::NetListen => "net.listen",
+            Self::NetAccept => "net.accept",
+            Self::NetRead => "net.read",
+            Self::NetWrite => "net.write",
+            Self::NetClose => "net.close",
         }
     }
-
     pub const fn capability_type(self) -> &'static str {
         match self {
             Self::IoPrint => "IoPrint",
@@ -202,6 +215,9 @@ impl HostOp {
             Self::ClockNow => "Clock",
             Self::RngNext => "Rng",
             Self::LoadZti | Self::LoadZt => "Load",
+            Self::NetListen | Self::NetAccept | Self::NetRead | Self::NetWrite | Self::NetClose => {
+                "Net"
+            }
         }
     }
 
@@ -217,29 +233,34 @@ impl HostOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HostEffectSet(u8);
+pub struct HostEffectSet(u16);
 
 impl HostEffectSet {
     pub const EMPTY: Self = Self(0);
-    pub const AMBIENT: Self = Self(1 << HostOp::IoPrint as u8);
+    pub const AMBIENT: Self = Self(1 << HostOp::IoPrint as u16);
     pub const ALL: Self = Self(
-        (1 << HostOp::IoPrint as u8)
-            | (1 << HostOp::FsRead as u8)
-            | (1 << HostOp::FsWrite as u8)
-            | (1 << HostOp::EnvGet as u8)
-            | (1 << HostOp::ClockNow as u8)
-            | (1 << HostOp::RngNext as u8)
-            | (1 << HostOp::LoadZti as u8)
-            | (1 << HostOp::LoadZt as u8),
+        (1 << HostOp::IoPrint as u16)
+            | (1 << HostOp::FsRead as u16)
+            | (1 << HostOp::FsWrite as u16)
+            | (1 << HostOp::EnvGet as u16)
+            | (1 << HostOp::ClockNow as u16)
+            | (1 << HostOp::RngNext as u16)
+            | (1 << HostOp::LoadZti as u16)
+            | (1 << HostOp::LoadZt as u16)
+            | (1 << HostOp::NetListen as u16)
+            | (1 << HostOp::NetAccept as u16)
+            | (1 << HostOp::NetRead as u16)
+            | (1 << HostOp::NetWrite as u16)
+            | (1 << HostOp::NetClose as u16),
     );
 
     pub fn with(mut self, op: HostOp) -> Self {
-        self.0 |= 1 << (op as u8);
+        self.0 |= 1 << (op as u16);
         self
     }
 
     pub fn contains(self, op: HostOp) -> bool {
-        self.0 & (1 << (op as u8)) != 0
+        self.0 & (1 << (op as u16)) != 0
     }
 }
 

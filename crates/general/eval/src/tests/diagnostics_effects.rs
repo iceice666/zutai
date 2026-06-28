@@ -287,6 +287,62 @@ readFile "{path}"
 }
 
 #[test]
+fn top_level_net_http_echo_effects_are_handled_by_host_boundary() {
+    let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+
+    let src = format!(
+        r#"
+t ::= import stdlib.text;
+serveOnce :: Int -> Text ! {{ net.listen : Int -> Int; net.accept : Int -> Int; net.read : Int -> Text; net.write : Text -> Unit; net.close : Int -> Unit; }}
+  = port => [
+    listener := perform net.listen port;
+    conn := perform net.accept listener;
+    requestLine := perform net.read conn;
+    response := t.join "" {{
+      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+      requestLine;
+    }};
+    written := perform net.write response;
+    closed := perform net.close conn;
+    requestLine
+  ];
+serveOnce {port}
+"#
+    );
+    let server = std::thread::spawn(move || {
+        assert_eq!(run(&src), Value::Text("GET /echo HTTP/1.1".into()));
+    });
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut stream = loop {
+        match std::net::TcpStream::connect(addr) {
+            Ok(stream) => break stream,
+            Err(err) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                let _ = err;
+            }
+            Err(err) => panic!("failed to connect to Zutai net.listen on {addr}: {err}"),
+        }
+    };
+
+    use std::io::{Read, Write};
+    stream
+        .write_all(b"GET /echo HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    let mut echoed = String::new();
+    stream.read_to_string(&mut echoed).unwrap();
+
+    assert_eq!(
+        echoed,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nGET /echo HTTP/1.1"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn top_level_dynamic_zti_load_returns_data_envelope() {
     let path = std::env::temp_dir().join("zutai_eval_dynamic_load.zti");
     std::fs::write(

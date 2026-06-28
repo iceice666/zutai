@@ -1,0 +1,38 @@
+-- Recursive HTTP echo server
+-- Usage: zutai run examples/echo_http.zt
+-- Listens on port 8080, echoes each request line in an HTTP 200 response,
+-- then accepts the next connection.
+
+t ::= import stdlib.text;
+
+loop :: Int -> Text ! {
+  net.accept : Int -> Int;
+  net.read : Int -> Text;
+  net.write : Text -> Unit;
+  net.close : Int -> Unit;
+}
+  = listener => [
+    conn := perform net.accept listener;
+    requestLine := perform net.read conn;
+    response := t.join "" {
+      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+      requestLine;
+    };
+    written := perform net.write response;
+    closed := perform net.close conn;
+    loop listener
+  ];
+
+serve :: Int -> Text ! {
+  net.listen : Int -> Int;
+  net.accept : Int -> Int;
+  net.read : Int -> Text;
+  net.write : Text -> Unit;
+  net.close : Int -> Unit;
+}
+  = port => [
+    listener := perform net.listen port;
+    loop listener
+  ];
+
+serve 8080

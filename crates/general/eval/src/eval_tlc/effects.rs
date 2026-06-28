@@ -1,7 +1,24 @@
 use super::*;
+use rustc_hash::FxHashMap;
 use std::cell::Cell;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use parking_lot::Mutex;
+
+static LISTENERS: LazyLock<Mutex<FxHashMap<u64, TcpListener>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+static CONNECTIONS: LazyLock<Mutex<FxHashMap<u64, TcpStream>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+static CURRENT_CONNECTION: AtomicU64 = AtomicU64::new(0);
+static NEXT_NET_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_net_id() -> u64 {
+    NEXT_NET_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 impl<'a> TlcEvaluator<'a> {
     pub(super) fn apply<'eval>(
@@ -575,6 +592,110 @@ fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Val
                     EvalError::EffectfulNotExecutable(format!("load.zt failed: {err}"))
                 })?;
             data_from_value(&value)
+        }
+        "net.listen" => {
+            let Value::Int(port) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Int",
+                    found: value_type_name(&arg),
+                });
+            };
+            let port = u16::try_from(port).map_err(|_| {
+                EvalError::EffectfulNotExecutable(format!("net.listen: invalid port {port}"))
+            })?;
+            let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("net.listen failed: {err}"))
+            })?;
+            let id = next_net_id();
+            LISTENERS.lock().insert(id, listener);
+            Ok(Value::Int(id as i64))
+        }
+        "net.accept" => {
+            let Value::Int(listener_id) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Int",
+                    found: value_type_name(&arg),
+                });
+            };
+            let listeners = LISTENERS.lock();
+            let listener = listeners.get(&(listener_id as u64)).ok_or_else(|| {
+                EvalError::EffectfulNotExecutable(format!(
+                    "net.accept: listener {} not found",
+                    listener_id
+                ))
+            })?;
+            let (stream, _addr) = listener.accept().map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("net.accept failed: {err}"))
+            })?;
+            drop(listeners);
+            let conn_id = next_net_id();
+            CONNECTIONS.lock().insert(conn_id, stream);
+            CURRENT_CONNECTION.store(conn_id, Ordering::Relaxed);
+            Ok(Value::Int(conn_id as i64))
+        }
+        "net.read" => {
+            let Value::Int(conn_id) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Int",
+                    found: value_type_name(&arg),
+                });
+            };
+            let mut conns = CONNECTIONS.lock();
+            let stream = conns.get_mut(&(conn_id as u64)).ok_or_else(|| {
+                EvalError::EffectfulNotExecutable(format!(
+                    "net.read: connection {} not found",
+                    conn_id
+                ))
+            })?;
+            let mut reader = BufReader::new(&mut *stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("net.read failed: {err}"))
+            })?;
+            // Trim trailing \r\n or \n
+            let trimmed = line.trim_end_matches(['\r', '\n']);
+            Ok(Value::Text(Rc::from(trimmed.to_string())))
+        }
+        "net.write" => {
+            let Value::Text(text) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            let conn_id = CURRENT_CONNECTION.load(Ordering::Relaxed);
+            if conn_id == 0 {
+                return Err(EvalError::EffectfulNotExecutable(
+                    "net.write: no current connection".to_string(),
+                ));
+            }
+            let mut conns = CONNECTIONS.lock();
+            let stream = conns.get_mut(&conn_id).ok_or_else(|| {
+                EvalError::EffectfulNotExecutable(format!(
+                    "net.write: connection {} not found",
+                    conn_id
+                ))
+            })?;
+            write!(stream, "{text}").map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("net.write failed: {err}"))
+            })?;
+            stream.flush().map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("net.write flush failed: {err}"))
+            })?;
+            Ok(Value::Tuple(Rc::from([])))
+        }
+        "net.close" => {
+            let Value::Int(conn_id) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Int",
+                    found: value_type_name(&arg),
+                });
+            };
+            CONNECTIONS.lock().remove(&(conn_id as u64));
+            if CURRENT_CONNECTION.load(Ordering::Relaxed) == conn_id as u64 {
+                CURRENT_CONNECTION.store(0, Ordering::Relaxed);
+            }
+            Ok(Value::Tuple(Rc::from([])))
         }
         _ => Err(EvalError::UnhandledEffect(op.to_string())),
     }
