@@ -120,6 +120,7 @@ pub enum BuiltinFn {
     ListIsNil,
     ListHead,
     ListTail,
+    ListFoldlStrict,
 }
 
 impl BuiltinFn {
@@ -140,6 +141,7 @@ impl BuiltinFn {
             "listIsNil" => Some(BuiltinFn::ListIsNil),
             "listHead" => Some(BuiltinFn::ListHead),
             "listTail" => Some(BuiltinFn::ListTail),
+            "listFoldlStrict" => Some(BuiltinFn::ListFoldlStrict),
             _ => None,
         }
     }
@@ -158,6 +160,7 @@ impl BuiltinFn {
             | BuiltinFn::ListHead
             | BuiltinFn::ListTail => 1,
             BuiltinFn::ListCons => 2,
+            BuiltinFn::ListFoldlStrict => 3,
         }
     }
 
@@ -176,6 +179,7 @@ impl BuiltinFn {
             BuiltinFn::ListIsNil => "listIsNil",
             BuiltinFn::ListHead => "listHead",
             BuiltinFn::ListTail => "listTail",
+            BuiltinFn::ListFoldlStrict => "listFoldlStrict",
         }
     }
 }

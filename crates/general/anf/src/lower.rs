@@ -332,6 +332,10 @@ fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut FxHashMa
                 collect_pat_bind_names(sub, counter, out);
             }
         }
+        DfPattern::ListCons { head, tail } => {
+            collect_pat_bind_names(head, counter, out);
+            collect_pat_bind_names(tail, counter, out);
+        }
         DfPattern::Record(fields) => {
             for (_, _, p) in fields {
                 collect_pat_bind_names(p, counter, out);
@@ -340,7 +344,7 @@ fn collect_pat_bind_names(pat: &DfPattern, counter: &mut u32, out: &mut FxHashMa
         DfPattern::Variant { pattern, .. } => {
             collect_pat_bind_names(pattern, counter, out);
         }
-        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
+        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) | DfPattern::ListNil => {}
     }
 }
 
@@ -371,6 +375,11 @@ fn lower_dc_pattern(pat: &DfPattern, pat_binds: &FxHashMap<NodeId, String>) -> A
                 .collect();
             AnfPattern::Tuple(anf_items)
         }
+        DfPattern::ListNil => AnfPattern::ListNil,
+        DfPattern::ListCons { head, tail } => AnfPattern::ListCons {
+            head: Box::new(lower_dc_pattern(head, pat_binds)),
+            tail: Box::new(lower_dc_pattern(tail, pat_binds)),
+        },
         DfPattern::Record(fields) => {
             let anf_fields: Vec<(usize, AnfPattern)> = fields
                 .iter()

@@ -582,6 +582,11 @@ impl<'m> EffectInliner<'m> {
                     })
                     .collect(),
             ),
+            TlcPat::ListNil => TlcPat::ListNil,
+            TlcPat::ListCons(head, tail) => TlcPat::ListCons(
+                Box::new(self.freshen_pat(*head, subst, restores)),
+                Box::new(self.freshen_pat(*tail, subst, restores)),
+            ),
             TlcPat::Record(fields) => TlcPat::Record(
                 fields
                     .into_iter()

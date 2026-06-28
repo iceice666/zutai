@@ -133,6 +133,11 @@ pub enum AnfPattern {
     /// Bind: introduce a name for the matched value.
     Bind(String),
     Tuple(Vec<AnfTuplePatItem>),
+    ListNil,
+    ListCons {
+        head: Box<AnfPattern>,
+        tail: Box<AnfPattern>,
+    },
     Record(Vec<(usize, AnfPattern)>),
     Variant {
         tag: String,

@@ -1,12 +1,14 @@
 # Standard Library: Stream
 
-Status: core API shipped as ambient prelude functions (V3-G2, 2026-06-25) **and**
+Status: core API shipped as source prelude functions (V3-G2, 2026-06-25) **and**
 as an importable module (V3-G6, 2026-06-25). `Stream A` is demand-driven
 **codata** — `Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }` (V3-G1) —
-not `List A`. The combinators `empty`, `cons`, `singleton`, `unfold`, `map`,
-`filter`, `take` (as `Stream -> Stream`), `drop`, `fold`, and `uncons` are
-available without import (the prelude is a fallback: a user or constraint-method
-name of the same spelling wins). `unfold` takes a step function returning a
+not `List A`. The non-conflicting combinators `empty`, `cons`, `singleton`,
+`unfold`, `take` (as `Stream -> Stream`), `drop`, `toList`, `fromList`, and
+`takeList` are still available without import. Stream `map`/`filter`/`fold`/
+`uncons` are exported by `import stdlib.stream` and should be used qualified
+because the unqualified names now denote the ambient `List` verbs. `unfold`
+takes a step function returning a
 `Step S A` union (`#done`/`#yield { item; next }`) rather than the builtin
 `Optional` — `Optional`'s `#some` payload is a positional tuple that does not
 compose with a record payload at the surface. `empty :: <A> Stream A` is a
@@ -27,20 +29,22 @@ The combinators live in one canonical file,
 `crates/general/hir/src/lower/prelude/stream.zt` (exposed to Rust as
 `zutai_hir::STREAM_MODULE_SRC`), which feeds both surfaces (V3-G6):
 
-- **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects its
-  declarations as a fallback, so `map`/`filter`/`fold`/… resolve directly. This is
-  the original V3-G2 behavior, unchanged.
+- **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects
+  non-conflicting declarations as a fallback. Stream `empty`/`cons`/`singleton`/
+  `unfold`/`take`/`drop`/`toList`/`fromList`/`takeList` resolve directly; a user
+  or constraint-method binding of the same spelling still wins.
 - **Importable** (explicit). `import stdlib.stream` resolves to **embedded
   in-binary source** (no install path, no subtree-confinement exception) and
-  binds the module's exported record, so the combinators are used qualified —
-  `s.map`, `s.fold`, … A path-relative `import "stream.zt"` still works when a
-  local file of that name sits in the importing file's directory subtree. The
-  export record carries the combinator functions **and** the type values
-  `Stream`, `Step`, and `StreamEff` as named, selectable/destructurable fields,
-  so `s.Stream`, `s.Step`, and `s.StreamEff` are available, and a parametric
-  imported constructor can be *applied* in an annotation (`x :: s.Stream Int`).
-  Selective/open import reuses the destructuring binding form:
-  `{ map; fold; } ::= import stdlib.stream;` brings those members in unqualified.
+  binds the module's exported record, so every combinator is available qualified —
+  `s.map`, `s.fold`, `s.uncons`, … A path-relative `import "stream.zt"` still
+  works when a local file of that name sits in the importing file's directory
+  subtree. The export record carries the combinator functions **and** the type
+  values `Stream`, `Step`, and `StreamEff` as named, selectable/destructurable
+  fields, so `s.Stream`, `s.Step`, and `s.StreamEff` are available, and a
+  parametric imported constructor can be *applied* in an annotation
+  (`x :: s.Stream Int`). Selective/open import reuses the destructuring binding
+  form: `{ map; fold; } ::= import stdlib.stream;` brings those stream members in
+  unqualified when wanted.
 
 ```zt
 s ::= import stdlib.stream;

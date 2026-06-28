@@ -7,8 +7,8 @@ use crate::ast::{Pattern, RecordPatternField, TuplePatternItem};
 use crate::span::Span;
 
 use super::lex::{
-    enter_delimiter, parse_atom_name, parse_bool_false, parse_bool_true, parse_field_name,
-    parse_ident, parse_number_value, parse_string, spanned, ws,
+    enter_delimiter, parse_atom_name, parse_bool_false, parse_bool_true, parse_number_value,
+    parse_string, parse_value_field_name, parse_value_ident, spanned, ws,
 };
 use crate::ast::Expr;
 
@@ -18,6 +18,7 @@ pub fn parse_pattern(input: &mut &str) -> Result<Pattern> {
     ws(input)?;
     alt((
         parse_tuple_pattern,
+        parse_list_pattern,
         parse_record_pattern,
         parse_wildcard,
         parse_pattern_atom,
@@ -97,7 +98,7 @@ fn parse_pattern_literal(input: &mut &str) -> Result<Pattern> {
 }
 
 fn parse_pattern_ident(input: &mut &str) -> Result<Pattern> {
-    let (name, span) = spanned(parse_ident).parse_next(input)?;
+    let (name, span) = spanned(parse_value_ident).parse_next(input)?;
     Ok(Pattern::Ident { name, span })
 }
 
@@ -152,7 +153,7 @@ fn parse_tuple_pattern_inner(input: &mut &str) -> Result<Vec<TuplePatternItem>> 
 fn parse_tuple_pattern_item(input: &mut &str) -> Result<TuplePatternItem> {
     // Try named: `field_name '=' pattern`
     let checkpoint = *input;
-    if let Ok(name) = parse_field_name(input) {
+    if let Ok(name) = parse_value_field_name(input) {
         ws(input)?;
         if input.starts_with('=') && !input.starts_with("==") {
             '='.parse_next(input)?;
@@ -220,6 +221,61 @@ fn parse_tagged_tuple_pattern_payload(input: &mut &str) -> Result<Vec<RecordPatt
 }
 
 // ---------------------------------------------------------------------------
+// List patterns: `{;}` or `{head; ...tail}`
+// ---------------------------------------------------------------------------
+
+fn parse_list_pattern(input: &mut &str) -> Result<Pattern> {
+    let checkpoint = *input;
+    let (pat, span) = match spanned(parse_list_pattern_inner).parse_next(input) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            *input = checkpoint;
+            return Err(err);
+        }
+    };
+    match pat {
+        Pattern::ListNil { .. } => Ok(Pattern::ListNil { span }),
+        Pattern::ListCons { head, tail, .. } => Ok(Pattern::ListCons { head, tail, span }),
+        _ => unreachable!(),
+    }
+}
+
+fn parse_list_pattern_inner(input: &mut &str) -> Result<Pattern> {
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    ws(input)?;
+
+    if input.starts_with(';') {
+        ';'.parse_next(input)?;
+        ws(input)?;
+        '}'.parse_next(input)?;
+        return Ok(Pattern::ListNil {
+            span: Span::new(0, 0),
+        });
+    }
+
+    let head = parse_pattern(input)?;
+    ws(input)?;
+    ';'.parse_next(input)?;
+    ws(input)?;
+    "...".parse_next(input)?;
+    ws(input)?;
+    let tail = if input.starts_with('_') {
+        parse_wildcard(input)?
+    } else {
+        parse_pattern_ident(input)?
+    };
+    ws(input)?;
+    '}'.parse_next(input)?;
+
+    Ok(Pattern::ListCons {
+        head: Box::new(head),
+        tail: Box::new(tail),
+        span: Span::new(0, 0),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Record pattern: `{ field = pat; ... }`
 // ---------------------------------------------------------------------------
 
@@ -238,7 +294,7 @@ fn parse_record_pattern_inner(input: &mut &str) -> Result<Vec<RecordPatternField
         if input.starts_with('}') {
             break;
         }
-        let name = parse_field_name(input)?;
+        let name = parse_value_field_name(input)?;
         ws(input)?;
         // Must be `=` (not `==`)
         if input.starts_with('=') && !input.starts_with("==") {

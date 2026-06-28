@@ -156,6 +156,8 @@ pub enum DfListPrimOp {
     Head,
     /// `listTail : List A -> List A` — drop the first element (1 arg).
     Tail,
+    /// `listFoldlStrict : (B -> A -> B) -> B -> List A -> B` (3 args).
+    FoldlStrict,
 }
 
 // ── Node kinds ────────────────────────────────────────────────────────────────
@@ -268,6 +270,11 @@ pub enum DfPattern {
     /// `Bind(n)` — `n` must be a Bind node owned by this arm.
     Bind(NodeId),
     Tuple(Vec<DfTuplePatItem>),
+    ListNil,
+    ListCons {
+        head: Box<DfPattern>,
+        tail: Box<DfPattern>,
+    },
     Record(Vec<(String, usize, DfPattern)>),
     Variant {
         tag: String,

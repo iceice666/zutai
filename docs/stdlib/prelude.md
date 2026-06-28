@@ -24,24 +24,27 @@ written on top of the intrinsics and the core syntax — it imports nothing.
 Today two layers are live. The **intrinsic** layer is `BUILTIN_VALUE_NAMES`
 seeded in `crates/general/hir/src/lower/mod.rs`: `print`; reflection `fields`,
 `variants`, `schema`; config `overlay`, `overlayDeep`; the list-interop bridge
-`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`; and dynamic load
-`loadZti`/`loadZt` — plus the builtin type constructors (`List`, `Optional`,
-`Maybe`, `Patch`, `DeepPatch`). The **source** layer is two ambient prelude
-files, both `include_str!`d in the HIR lowerer with their declarations injected
-as a fallback (`crates/general/hir/src/lower/prelude/`):
+`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`; the strict list-fold
+bridge `listFoldlStrict`; and dynamic load `loadZti`/`loadZt` — plus the builtin
+type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
+**source** layer is two ambient prelude files, both `include_str!`d in the HIR
+lowerer with their declarations injected as a fallback
+(`crates/general/hir/src/lower/prelude/`):
 
-- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Stream`, `StreamEff`,
-  `Step`, and the combinators `empty`/`cons`/`singleton`/`unfold`/`map`/`filter`/
-  `take`/`drop`/`fold`/`uncons`/`toList`/`fromList`/`takeList` are in scope without
-  an import (V3-G2);
-- the *function* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
-  `id`/`const`/`compose`/`flip` are in scope without an import (stdlib slice B).
+- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Stream`,
+  `StreamEff`, `Step`, and the non-conflicting combinators `empty`/`cons`/
+  `singleton`/`unfold`/`take`/`drop`/`toList`/`fromList`/`takeList` are in scope
+  without an import (V3-G2);
+- the *function/list* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
+  `id`/`const`/`compose`/`flip` and the `List` verbs `fold`/`foldl'`/`map`/
+  `filter`/`length`/`append`/`uncons`/`head?`/`tail?` are in scope without an
+  import (stdlib slices B/C).
 
-Both are importable via `import stdlib.stream` / `import stdlib.prelude`. The
-still-pending piece is the *list-verb* source prelude (`map`/`filter`/`fold` over
-`List`): list iteration needs list-destructuring patterns and a strict-`fold`
-intrinsic that have not landed, so those names are not yet ambient (see
-*Build order*).
+Both are importable via `import stdlib.stream` / `import stdlib.prelude`.
+Stream `map`/`filter`/`fold`/`uncons` are still exported by `stdlib.stream`, but
+are not ambient because the unqualified names now denote the `List` verbs. Use a
+qualified stream import (`s.map`, `s.fold`, `s.uncons`) when both surfaces appear
+in one program.
 
 ## Contents
 
@@ -50,10 +53,11 @@ The prelude is deliberately focused — only what every pipeline needs:
 ```text
 Types        Type Text Bool Int Float List Optional Maybe   (intrinsic)
 Stream       Stream StreamEff Step; empty cons singleton unfold
-             map filter take drop fold uncons toList fromList takeList  (ambient source prelude)
-Effect       print                                               (intrinsic)
-Function     id const compose flip  (ambient source prelude)
-List verbs   map filter fold        -- planned (source prelude, not yet ambient)
+             take drop toList fromList takeList             (ambient source prelude)
+Effect       print                                           (intrinsic)
+Function     id const compose flip                           (ambient source prelude)
+List verbs   fold foldl' map filter length append uncons head? tail?
+                                                             (ambient source prelude)
 ```
 
 Rationale:
@@ -67,12 +71,15 @@ Rationale:
 
 Excluded from the prelude on purpose:
 
-- `foldr`, `foldl'`, `zip`, `flatten`, `length`, and friends live in `list`.
-- All of `text`, `num`, `optional`, `result`, `cmp`, `reflect` are explicit imports.
+- `foldr`, `zip`, `flatten`, `reverse`, `take`, `drop`, search/sort/grouping
+  helpers, and numeric aggregates remain explicit `list` work.
+- All of `text`, `num`, `optional`, `result`, `cmp`, and `reflect` are explicit
+  imports.
 
-Naming note: the list-specialized `map`/`fold` may later become the witness-dispatched
-`Functor`/`Foldable` methods once v1 constraints land
-(`docs/spec/v1/03-constraints.md`). That is a smooth migration, not a conflict.
+Naming note: the list-specialized `map`/`fold` may later become the
+witness-dispatched `Functor`/`Foldable` methods once v1 constraints land
+(`docs/spec/v1/03-constraints.md`). Stream methods with the same names remain
+available via `import stdlib.stream`.
 
 ## Source-canonical, intrinsic-optimized
 
@@ -81,24 +88,26 @@ a compiler-internal implementation is a *verified optimization of that exact bin
 never a second semantics. This avoids the drift trap where a hand-written intrinsic and the
 source form disagree.
 
-`map`/`filter`/`fold` are written in the source prelude using list-destructuring patterns
-and recursion (recursion and SCC scheduling already exist: `docs/ARCHIVED.md`, Phases 2–3).
-Compiler internals remain justified for two non-cosmetic reasons:
+`map`/`filter`/`fold` are source-prelude declarations over `List`. `map` and
+`filter` use list-destructuring patterns and recursion; `fold` and `foldl'`
+share the strict `listFoldlStrict` bridge so ambient pipelines are strict
+left folds rather than lazy accumulator chains. Compiler internals remain
+justified for two non-cosmetic reasons:
 
-- **Strict `fold` (`foldl'`).** A lazy core leaks space on a naive left fold. Until a
-  `seq`/`force` strictness primitive exists, the strict `fold` *cannot* be written in
-  source, so its intrinsic is mandatory.
-- **Spine access.** The runtime list value is a flat array (`Value::List(Rc<[Thunk]>)` in
-  `crates/general/eval/src/value.rs`), making naive `{h; ...t}` tail O(n). Internals can
-  lower to spine destructuring / backend loops.
+- **Strict `fold` (`foldl'`).** A lazy core leaks space on a naive left fold.
+  Until a `seq`/`force` strictness primitive exists, the strict `fold` cannot be
+  written directly in source, so the bridge intrinsic is mandatory.
+- **Spine access.** Runtime lists are flat arrays (`Value::List(Rc<[Thunk]>)` in
+  `crates/general/eval/src/value.rs`). Pattern lowering handles `{h; ...t}`
+  consistently through THIR/TLC/eval and the native pipeline.
 
-Equivalence between the source form and any optimized lowering is enforced by differential
-tests (source-defined path vs optimized path).
+Equivalence is enforced by differential tests: the source prelude is evaluated
+through TLC and the THIR oracle, and native list pipelines are checked against
+the interpreter.
 
 ## List-destructuring patterns
 
-`HirPatKind` (`crates/general/hir/src/ir.rs`) currently has no list pattern, which is why
-list iteration is unwritable in source today. The prelude work adds:
+`HirPatKind`/`ThirPatKind` carry explicit nil and cons-list patterns:
 
 ```zt
 match xs {
@@ -107,10 +116,10 @@ match xs {
 }
 ```
 
-Lists are non-finite, so exhaustiveness is **nil + (cons or wildcard)**, never an
-enumeration of lengths. The change spans grammar/`ast.rs`, `HirPatKind`/`ThirPatKind`,
-exhaustiveness (`crates/general/thir/src/lower/exhaust.rs`, with `Nil`/`Cons` constructors),
-the evaluators, and DC/ANF/SSA/codegen.
+Exhaustiveness is **nil + (cons or wildcard)**, never an enumeration of list
+lengths. The implementation spans grammar/`ast.rs`, `HirPatKind`/`ThirPatKind`,
+exhaustiveness (`crates/general/thir/src/lower/exhaust.rs`, with `ListNil` /
+`ListCons` constructors), the evaluators, and DC/ANF/SSA/codegen.
 
 ## `prelude.zt` resolution
 
@@ -135,9 +144,9 @@ evaluators resolve them uniformly with no special seeding: the THIR oracle
 (`crates/general/eval/src/tlc_entry.rs`) seed only the intrinsic `BuiltinFn`s;
 the source prelude decls thread through as ordinary top-level decls. The same
 source backs `import stdlib.stream` / `import stdlib.prelude` (the final record
-is the module export; the ambient path reads only the declarations). The
-list-verb prelude (`map`/`filter`/`fold` over `List`) is still pending on
-list-destructuring patterns.
+is the module export; the ambient path reads only the declarations). Stream
+`map`/`filter`/`fold`/`uncons` are intentionally qualified-only to keep the
+ambient names bound to `List`.
 
 The prelude **must not** re-export backend-gated intrinsics (`fields`, `schema`,
 or residual/partial `overlay`/`overlayDeep` forms): they stay behind explicit

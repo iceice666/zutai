@@ -83,6 +83,7 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.list_is_nil(i64)\n");
     out.push_str("declare i64 @zutai.list_head(i64)\n");
     out.push_str("declare i64 @zutai.list_tail(i64)\n");
+    out.push_str("declare i64 @zutai.list_foldl_strict(i64, i64, i64)\n");
 
     // Optional/Maybe operations
     out.push_str("declare i64 @zutai.coalesce(i64, i64)\n");

@@ -59,6 +59,16 @@ impl<'m> Lowerer<'m> {
                     .collect();
                 DfPattern::Tuple(df_items)
             }
+            TlcPat::ListNil => DfPattern::ListNil,
+            TlcPat::ListCons(head, tail) => {
+                let head_ty = self
+                    .list_element_ty_for_df_ty(context_ty)
+                    .unwrap_or(context_ty);
+                DfPattern::ListCons {
+                    head: Box::new(self.lower_pat(head, head_ty)),
+                    tail: Box::new(self.lower_pat(tail, context_ty)),
+                }
+            }
             TlcPat::Record(fields) => {
                 let df_fields = fields
                     .iter()

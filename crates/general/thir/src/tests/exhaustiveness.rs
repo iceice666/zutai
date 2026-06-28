@@ -109,6 +109,68 @@ f 1
 }
 
 #[test]
+fn list_nil_and_cons_patterns_are_exhaustive() {
+    completed_file(
+        r#"
+len :: List Int -> Int
+  = {;} => 0;
+  = {h; ...t} => 1;
+len (listCons 1 (listEmpty ()))
+"#,
+    );
+}
+
+#[test]
+fn list_nil_and_wildcard_patterns_are_exhaustive() {
+    completed_file(
+        r#"
+f :: List Int -> Int
+  = {;} => 0;
+  = _ => 1;
+f {;}
+"#,
+    );
+}
+
+#[test]
+fn list_nil_only_reports_cons_witness() {
+    let lowered = lower(
+        r#"
+f :: List Int -> Int
+  = {;} => 0;
+f {;}
+"#,
+    );
+    assert_eq!(
+        nonexhaustive_witness(&lowered).as_deref(),
+        Some("{_; ..._}")
+    );
+}
+
+#[test]
+fn list_cons_only_reports_nil_witness() {
+    let lowered = lower(
+        r#"
+f :: List Int -> Int
+  = {h; ...t} => h;
+f (listCons 1 (listEmpty ()))
+"#,
+    );
+    assert_eq!(nonexhaustive_witness(&lowered).as_deref(), Some("{;}"));
+}
+
+#[test]
+fn guarded_list_cons_only_reports_nil_witness() {
+    let lowered = lower(
+        r#"
+f :: List Int -> Int
+  = {h; ...t} if true => h;
+f (listCons 1 (listEmpty ()))
+"#,
+    );
+    assert_eq!(nonexhaustive_witness(&lowered).as_deref(), Some("{;}"));
+}
+#[test]
 fn int_match_with_wildcard_is_exhaustive() {
     completed_file(
         r#"

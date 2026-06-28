@@ -54,6 +54,30 @@ fn parse_type_optional_postfix() {
 }
 
 #[test]
+fn question_mark_value_suffix_does_not_steal_optional_type() {
+    let e = parse_expr_str("type Int?");
+    match &e {
+        Expr::TypeForm { ty, .. } => assert!(matches!(ty.as_ref(), TypeExpr::Optional { .. })),
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
+fn question_mark_value_suffix_does_not_steal_optional_record_field() {
+    let e = parse_expr_str("type { port? : Int; }");
+    match &e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record { fields, .. } => {
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "port");
+                assert!(fields[0].optional);
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+#[test]
 fn parse_type_union_in_record_field() {
     parse_str(r#"{ type_union = type {#a; #b; #c;}; }"#);
 }
@@ -167,6 +191,37 @@ fn parse_match_with_underscore_field() {
     parse_str(r#"{ match_expr = match #a { | #a => 1; }; }"#);
 }
 
+#[test]
+fn parse_list_patterns_in_match() {
+    parse_str(
+        r#"
+f :: List Int -> Int
+  = {;} => 0;
+  = {h; ...t} => h;
+f
+"#,
+    );
+}
+
+#[test]
+fn reject_invalid_list_pattern_shapes() {
+    assert!(!parse_kinds("f {h; t} = 0;\nf").is_empty());
+    assert!(!parse_kinds("f {...t} = 0;\nf").is_empty());
+    assert!(!parse_kinds("f {h; ...t; extra} = 0;\nf").is_empty());
+}
+
+#[test]
+fn parse_question_mark_destructure_binding() {
+    let f = parse_str("{ head?; } ::= import stdlib.prelude;\nhead?");
+    assert_eq!(f.decls.len(), 1);
+    match &f.decls[0] {
+        Decl::Destructure { fields, .. } => {
+            assert_eq!(fields.len(), 1);
+            assert_eq!(fields[0].name, "head?");
+        }
+        other => panic!("expected destructure, got {other:?}"),
+    }
+}
 // ---------------------------------------------------------------------------
 // M2: top-level declarations
 // ---------------------------------------------------------------------------

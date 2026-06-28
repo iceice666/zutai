@@ -25,6 +25,7 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "listIsNil",
     "listHead",
     "listTail",
+    "listFoldlStrict",
     "loadZti",
     "loadZt",
 ];
@@ -311,6 +312,11 @@ pub enum HirPatKind {
         payload: Vec<HirRecordPatField>,
     },
     Tuple(Vec<HirTuplePatItem>),
+    ListNil,
+    ListCons {
+        head: HirPatId,
+        tail: HirPatId,
+    },
     Record(Vec<HirRecordPatField>),
 }
 

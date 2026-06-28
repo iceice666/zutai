@@ -91,6 +91,7 @@ const EXPECTED_ZT_CHECK: &[&str] = &[
     "docs/spec/v0/07-modules/modules.md#01",
     "docs/spec/v0/07-modules/serialization-boundary.md#04",
     "docs/spec/v0/07-modules/serialization-boundary.md#06",
+    "docs/spec/v0/08-reference/complete-example.md#05",
 ];
 const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     ("docs/spec/v0/02-lexical/conventions.md#01", "()"),
@@ -188,6 +189,7 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
         "docs/spec/v0/07-modules/serialization-boundary.md#06",
         "{ a = #quit;  b = #spawn { command = \"ghostty\" } }",
     ),
+    ("docs/spec/v0/08-reference/complete-example.md#05", "()"),
 ];
 
 #[test]

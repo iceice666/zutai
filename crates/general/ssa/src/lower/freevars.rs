@@ -86,7 +86,9 @@ pub(super) fn free_vars_arm(arm: &AnfArm) -> FxHashSet<String> {
 
 pub(super) fn pattern_bindings(pat: &AnfPattern) -> Vec<String> {
     match pat {
-        AnfPattern::Wildcard | AnfPattern::Lit(_) | AnfPattern::Atom(_) => vec![],
+        AnfPattern::Wildcard | AnfPattern::Lit(_) | AnfPattern::Atom(_) | AnfPattern::ListNil => {
+            vec![]
+        }
         AnfPattern::Bind(name) => vec![name.clone()],
         AnfPattern::Tuple(items) => items
             .iter()
@@ -94,6 +96,10 @@ pub(super) fn pattern_bindings(pat: &AnfPattern) -> Vec<String> {
                 AnfTuplePatItem::Named { name: _, pattern } => pattern_bindings(pattern),
                 AnfTuplePatItem::Positional(p) => pattern_bindings(p),
             })
+            .collect(),
+        AnfPattern::ListCons { head, tail } => pattern_bindings(head)
+            .into_iter()
+            .chain(pattern_bindings(tail))
             .collect(),
         AnfPattern::Record(fields) => fields
             .iter()

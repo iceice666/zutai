@@ -248,13 +248,20 @@ fn collect_pat_bindings(pat: &crate::ir::TlcPat, used: &mut FxHashSet<BindingId>
                 }
             }
         }
+        crate::ir::TlcPat::ListCons(head, tail) => {
+            collect_pat_bindings(head, used);
+            collect_pat_bindings(tail, used);
+        }
         crate::ir::TlcPat::Record(fields) => {
             for (_, pat) in fields {
                 collect_pat_bindings(pat, used);
             }
         }
         crate::ir::TlcPat::Variant(_, inner) => collect_pat_bindings(inner, used),
-        crate::ir::TlcPat::Wildcard | crate::ir::TlcPat::Lit(_) | crate::ir::TlcPat::Atom(_) => {}
+        crate::ir::TlcPat::Wildcard
+        | crate::ir::TlcPat::Lit(_)
+        | crate::ir::TlcPat::Atom(_)
+        | crate::ir::TlcPat::ListNil => {}
     }
 }
 

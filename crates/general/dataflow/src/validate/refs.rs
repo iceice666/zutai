@@ -246,13 +246,17 @@ pub(super) fn collect_bind_nodes(pat: &DfPattern, out: &mut Vec<NodeId>) {
                 }
             }
         }
+        DfPattern::ListCons { head, tail } => {
+            collect_bind_nodes(head, out);
+            collect_bind_nodes(tail, out);
+        }
         DfPattern::Record(fields) => {
             for (_, _, p) in fields {
                 collect_bind_nodes(p, out);
             }
         }
         DfPattern::Variant { pattern, .. } => collect_bind_nodes(pattern, out),
-        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
+        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) | DfPattern::ListNil => {}
     }
 }
 
@@ -479,13 +483,17 @@ pub(super) fn check_pattern_refs(
                 }
             }
         }
+        DfPattern::ListCons { head, tail } => {
+            check_pattern_refs(graph, owner, head, errors);
+            check_pattern_refs(graph, owner, tail, errors);
+        }
         DfPattern::Record(fields) => {
             for (_, _, pattern) in fields {
                 check_pattern_refs(graph, owner, pattern, errors);
             }
         }
         DfPattern::Variant { pattern, .. } => check_pattern_refs(graph, owner, pattern, errors),
-        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
+        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) | DfPattern::ListNil => {}
     }
 }
 

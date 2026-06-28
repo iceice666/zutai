@@ -1,20 +1,19 @@
--- Canonical source for the small function prelude (stdlib slice B).
+-- Canonical source for the small function and List prelude (stdlib slices B/C).
 --
 -- Single source of truth for two surfaces:
 --   * Ambient prelude — the HIR lowerer injects these declarations into every
 --     module as a fallback (`include_str!` in `crates/general/hir/src/lower/mod.rs`),
---     so `id`/`const`/`compose`/`flip` are in scope without an import. The lowerer
---     reads only the declarations; this file's final record expression is ignored
---     on that path.
+--     so these helpers are in scope without an import. The lowerer reads only the
+--     declarations; this file's final record expression is ignored on that path.
 --   * Importable module — `p ::= import stdlib.prelude` (or `import "prelude.zt"`)
---     exports the final record below, so a program can use `p.id`, `p.compose`, …
+--     exports the final record below, so a program can use `p.id`, `p.map`, …
 --     qualified. Cross-module polymorphism carries the generic helpers across the
 --     boundary.
 --
--- Pure source-level stdlib: ordinary polymorphic functions over core syntax, no
--- intrinsics, no new syntax, no backend IR node. Resolution is
--- `user > prelude > intrinsic / ambient fallback` — a user binding of the same
--- name shadows these.
+-- Pure source-level stdlib where possible. `fold`/`foldl'` are source wrappers over
+-- the internal strict spine fold intrinsic because v0 has no general `seq`/`force`.
+-- Resolution is `user > prelude > intrinsic / ambient fallback` — a user binding of
+-- the same name shadows these.
 id :: <A> A -> A
   = x => x;
 const :: <A, B> A -> B -> A
@@ -23,4 +22,22 @@ compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
   = f g x => f (g x);
 flip :: <A, B, C> (A -> B -> C) -> B -> A -> C
   = f x y => f y x;
-{ id = id; const = const; compose = compose; flip = flip; }
+fold :: <A, B> (B -> A -> B) -> B -> List A -> B
+  = f z xs => listFoldlStrict f z xs;
+foldl' :: <A, B> (B -> A -> B) -> B -> List A -> B
+  = f z xs => listFoldlStrict f z xs;
+uncons :: <A> List A -> { #none; #some : { head : A; tail : List A; }; }
+  = xs => match xs { | {;} => #none; | {h; ...t} => #some { head = h; tail = t; }; };
+head? :: <A> List A -> A?
+  = xs => match uncons xs { | #none => #none; | #some { head = h; tail = _; } => #some (h); };
+tail? :: <A> List A -> (List A)?
+  = xs => match uncons xs { | #none => #none; | #some { head = _; tail = t; } => #some (t); };
+length :: <A> List A -> Int
+  = xs => fold (\acc _. acc + 1) 0 xs;
+append :: <A> List A -> List A -> List A
+  = xs ys => match xs { | {;} => ys; | {h; ...t} => listCons h (append t ys); };
+map :: <A, B> (A -> B) -> List A -> List B
+  = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (map f t); };
+filter :: <A> (A -> Bool) -> List A -> List A
+  = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then listCons h (filter p t) else filter p t; };
+{ id = id; const = const; compose = compose; flip = flip; fold = fold; foldl' = foldl'; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; }

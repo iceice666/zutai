@@ -98,6 +98,11 @@ impl Lowerer {
                     })
                     .collect(),
             ),
+            ast::Pattern::ListNil { .. } => HirPatKind::ListNil,
+            ast::Pattern::ListCons { head, tail, .. } => HirPatKind::ListCons {
+                head: self.lower_pattern(head),
+                tail: self.lower_pattern(tail),
+            },
             ast::Pattern::Record { fields, .. } => HirPatKind::Record(
                 fields
                     .iter()

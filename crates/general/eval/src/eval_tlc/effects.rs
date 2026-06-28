@@ -152,6 +152,24 @@ impl<'a> TlcEvaluator<'a> {
                     found: value_type_name(&other),
                 }),
             },
+            BuiltinFn::ListFoldlStrict => {
+                let func = args[0].force_tlc(&self)?;
+                let mut acc = args[1].force_tlc(&self)?;
+                match args[2].force_tlc(&self)? {
+                    Value::List(items) => {
+                        for elem in items.iter() {
+                            let partially_applied = self.apply_to_value(func.clone(), acc)?;
+                            let elem = elem.force_tlc(&self)?;
+                            acc = self.apply_to_value(partially_applied, elem)?;
+                        }
+                        Ok(EvalControl::Value(acc))
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "List",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
         }
     }
 

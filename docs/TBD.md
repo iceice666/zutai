@@ -20,9 +20,10 @@ demand-gated and must not be implemented unless a concrete program forces one
 of the reserved core-design boundaries.
 
 The next concrete follow-up is **source-prelude / stdlib usability** work:
-B (small function prelude) **landed 2026-06-28** (see `docs/ARCHIVED.md` "Small
-function prelude (stdlib slice B)"); C (minimal `List` verbs) is next. This is
-stdlib work, not Track 2, and does not reopen any core language boundary.
+B (small function prelude) and C (minimal `List` verbs) **landed 2026-06-28**
+(see `docs/ARCHIVED.md` "Small function prelude (stdlib slice B)" and "Minimal
+List verbs (stdlib slice C)"). This is stdlib work, not Track 2, and does not
+reopen any core language boundary.
 
 ## Source prelude / stdlib active work
 
@@ -39,26 +40,14 @@ user bindings shadow the prelude; interpreter/TLC/native agree on
 representative higher-order uses. See `docs/ARCHIVED.md` "Small function prelude
 (stdlib slice B)" for the summary._
 
-### C — Minimal `List` verbs
+### C — Minimal `List` verbs ✅
 
-- Add the smallest `List` iteration surface needed for ordinary pipelines:
-  strict `fold`/`foldl'`, `map`, `filter`, `length`, `append`, `uncons`, `head?`,
-  and `tail?`.
-- Land the required list-pattern / spine access support before claiming source
-  definitions for list iteration: nil/cons patterns, exhaustiveness for
-  `nil + cons-or-wildcard`, evaluator support, and native lowering that does not
-  turn tail access into repeated O(n) slicing.
-- Keep strict left fold space-safe. Until a general `seq`/`force` primitive
-  exists, a strict fold intrinsic or verified optimized lowering is allowed, but
-  it must be tested against the source-level specification.
-- Settle the planned name interaction with the ambient stream fallback before
-  implementation: `map`/`filter`/`fold` over `List` must not silently break
-  existing stream examples. Stream combinators remain available through
-  `import stdlib.stream`; any ambient shadowing behavior must be explicit in
-  `docs/stdlib/prelude.md`.
-- Acceptance: list pipelines work without explicit imports, stream combinators
-  stay reachable, user bindings still shadow prelude names, and interpreter,
-  TLC, Dataflow/LLVM/native outputs match for representative list programs.
+_Landed 2026-06-28. `prelude.zt` now ships ambient/importable `List` verbs
+`fold`/`foldl'`/`map`/`filter`/`length`/`append`/`uncons`/`head?`/`tail?`, backed
+by list nil/cons patterns through THIR/TLC/eval/native and a strict
+`listFoldlStrict` bridge. Stream `map`/`filter`/`fold`/`uncons` remain available
+through `import stdlib.stream`. See `docs/ARCHIVED.md` "Minimal List verbs
+(stdlib slice C)" for the summary._
 
 Non-goals for this slice: `optional`, `result`, `num`, `text`, `cmp`, full
 stdlib completion, non-tail generator `yield from`, cross-module witness native

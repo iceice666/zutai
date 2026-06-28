@@ -37,6 +37,22 @@ impl<'a> TlcEvaluator<'a> {
                     Ok(false)
                 }
             }
+            TlcPat::ListNil => Ok(matches!(val, Value::List(items) if items.is_empty())),
+            TlcPat::ListCons(head, tail) => {
+                let Value::List(items) = val else {
+                    return Ok(false);
+                };
+                let Some(first) = items.first() else {
+                    return Ok(false);
+                };
+                let head_val = first.force_tlc(self)?;
+                if !self.match_pattern(head, &head_val, env)? {
+                    return Ok(false);
+                }
+                let tail_val =
+                    Value::List(items.iter().skip(1).cloned().collect::<Vec<_>>().into());
+                self.match_pattern(tail, &tail_val, env)
+            }
             TlcPat::Record(field_pats) => {
                 if let Value::Record(record_fields) = val {
                     for (name, sub_pat) in field_pats {

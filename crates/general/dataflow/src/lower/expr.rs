@@ -347,6 +347,7 @@ impl<'m> Lowerer<'m> {
             ("listIsNil", 1) => DfListPrimOp::IsNil,
             ("listHead", 1) => DfListPrimOp::Head,
             ("listTail", 1) => DfListPrimOp::Tail,
+            ("listFoldlStrict", 3) => DfListPrimOp::FoldlStrict,
             // Under-saturated (or unknown arity) — fall back to closure Apply.
             _ => return None,
         };
@@ -374,6 +375,7 @@ impl<'m> Lowerer<'m> {
             "listIsNil" => Some("listIsNil"),
             "listHead" => Some("listHead"),
             "listTail" => Some("listTail"),
+            "listFoldlStrict" => Some("listFoldlStrict"),
             _ => None,
         }
     }

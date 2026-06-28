@@ -3,8 +3,7 @@
 -- Single source of truth for two surfaces:
 --   * Ambient prelude — the HIR lowerer injects these declarations into every
 --     module as a fallback (`include_str!` in `crates/general/hir/src/lower/mod.rs`),
---     so `map`/`filter`/… are in scope without an import. The lowerer reads only
---     the declarations; this file's final record expression is ignored on that path.
+--     so non-conflicting stream helpers are in scope without an import.
 --   * Importable module — `s ::= import "stream.zt"` exports the final record below,
 --     so a program can use `s.map`, `s.fold`, … qualified. Cross-module polymorphism
 --     (XM-1..3) carries the generic combinators across the boundary.
@@ -38,17 +37,17 @@ unfold :: <S, A> (S -> Step S A) -> S -> Stream A
   = f s _ => match f s { | #done => #nil; | #yield { item = a; next = s2; } => #cons { head = a; tail = unfold f s2; }; };
 singleton :: <A> A -> Stream A
   = x _ => #cons { head = x; tail = \_. #nil; };
-map :: <A, B> (A -> B) -> Stream A -> Stream B
-  = f s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = f h; tail = map f t; }; };
-filter :: <A> (A -> Bool) -> Stream A -> Stream A
-  = p s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => if p h then #cons { head = h; tail = filter p t; } else (filter p t) (); };
+streamMap :: <A, B> (A -> B) -> Stream A -> Stream B
+  = f s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = f h; tail = streamMap f t; }; };
+streamFilter :: <A> (A -> Bool) -> Stream A -> Stream A
+  = p s _ => match s () { | #nil => #nil; | #cons { head = h; tail = t; } => if p h then #cons { head = h; tail = streamFilter p t; } else (streamFilter p t) (); };
 take :: <A> Int -> Stream A -> Stream A
   = k s _ => if k < 1 then #nil else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => #cons { head = h; tail = take (k - 1) t; }; };
 drop :: <A> Int -> Stream A -> Stream A
   = k s _ => if k < 1 then s () else match s () { | #nil => #nil; | #cons { head = h; tail = t; } => (drop (k - 1) t) (); };
-fold :: <A, B> (B -> A -> B) -> B -> Stream A -> B
-  = f acc s => match s () { | #nil => acc; | #cons { head = h; tail = t; } => fold f (f acc h) t; };
-uncons :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
+streamFold :: <A, B> (B -> A -> B) -> B -> Stream A -> B
+  = f acc s => match s () { | #nil => acc; | #cons { head = h; tail = t; } => streamFold f (f acc h) t; };
+streamUncons :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
   = s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => #some { head = h; tail = t; }; };
 -- List interop (V3-G2 residual). The builtin `List` has no source-level head/tail
 -- ops, so these ride internal scalar bridge primitives (`listEmpty`/`listCons`/
@@ -60,4 +59,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = map; filter = filter; take = take; drop = drop; fold = fold; uncons = uncons; toList = toList; fromList = fromList; takeList = takeList; }
+{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; toList = toList; fromList = fromList; takeList = takeList; }

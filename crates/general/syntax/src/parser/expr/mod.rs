@@ -411,10 +411,10 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
         ws(input)?;
 
         if input.starts_with("?.") {
-            use super::lex::{parse_field_name, spanned};
+            use super::lex::{parse_value_field_name, spanned};
             "?.".parse_next(input)?;
             ws(input)?;
-            let (field, _) = spanned(parse_field_name).parse_next(input)?;
+            let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
             let span = node.span();
             node = Expr::OptAccess {
                 receiver: Box::new(node),
@@ -422,10 +422,10 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
                 span,
             };
         } else if input.starts_with('.') && !input.starts_with("..") {
-            use super::lex::{parse_field_name, spanned};
+            use super::lex::{parse_value_field_name, spanned};
             '.'.parse_next(input)?;
             ws(input)?;
-            let (field, _) = spanned(parse_field_name).parse_next(input)?;
+            let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
             let span = node.span();
             node = Expr::Access {
                 receiver: Box::new(node),
@@ -455,7 +455,7 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
 }
 
 fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Span)> {
-    use super::lex::{enter_delimiter, parse_field_name, spanned};
+    use super::lex::{enter_delimiter, parse_value_field_name, spanned};
 
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
@@ -465,7 +465,7 @@ fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Spa
         if input.starts_with('}') {
             break;
         }
-        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
         ws(input)?;
         if input.starts_with('=') && !input.starts_with("==") {
             '='.parse_next(input)?;

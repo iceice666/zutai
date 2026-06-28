@@ -359,6 +359,11 @@ pub enum ThirPatKind {
         payload: Vec<ThirRecordPatField>,
     },
     Tuple(Vec<ThirTuplePatItem>),
+    ListNil,
+    ListCons {
+        head: ThirPatId,
+        tail: ThirPatId,
+    },
     Record(Vec<ThirRecordPatField>),
 }
 

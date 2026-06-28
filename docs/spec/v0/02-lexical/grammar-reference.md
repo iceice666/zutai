@@ -306,6 +306,7 @@ Pattern
    | TaggedPattern
    | TuplePattern
    | RecordPattern
+   | ListPattern
 
 TaggedPattern
   ::= Atom RecordPattern
@@ -324,16 +325,21 @@ TuplePatternItem
 
 RecordPattern
   ::= "{" (FieldName "=" Pattern ";")* "}"
+
+ListPattern
+  ::= "{;}"
+   | "{" Pattern "}"
+   | "{" Pattern "..." Pattern "}"
 ```
 
 ### Lexical forms
 
 ```ebnf
 Ident
-  ::= [A-Za-z_][A-Za-z0-9_]*
+  ::= [A-Za-z_][A-Za-z0-9_]* ("'"*) "?"?
 
 FieldName
-  ::= [A-Za-z_][A-Za-z0-9_]*
+  ::= [A-Za-z_][A-Za-z0-9_]* "?"?
 
 Atom
   ::= "#" [A-Za-z_][A-Za-z0-9_-]*

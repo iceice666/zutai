@@ -7,7 +7,8 @@ pub(crate) fn mangle(name: &str) -> String {
         .replace(['-', '.', '='], "_")
         .replace('?', "_Q")
         .replace('!', "_B")
-        .replace('@', "_at_");
+        .replace('@', "_at_")
+        .replace('\'', "_prime");
     // `main` is the C entry symbol `emit_main` emits verbatim (`define i32
     // @main`); a user binding named `main` would redefine it. `$` cannot occur
     // in a source identifier (UAX #31 — only synthesized names like witness

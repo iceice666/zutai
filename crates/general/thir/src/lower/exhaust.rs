@@ -43,6 +43,10 @@ enum Ctor {
     PositLit(PositLiteral),
     StrLit(String),
     /// The single constructor of a plain tuple or record (a product type).
+    /// Empty list spine constructor.
+    ListNil,
+    /// Non-empty list spine constructor (`head` and `tail`).
+    ListCons,
     Struct,
     /// A tagged union member: a tuple led by `#tag`, carrying the remaining
     /// fields as payload. Stored without the leading `#`.
@@ -298,6 +302,13 @@ impl<'hir> Lowerer<'hir> {
                 ctor: Ctor::Struct,
                 fields: items.iter().map(tuple_item_ty).collect(),
             }]),
+            TypeKind::List(elem_ty) => Some(vec![
+                SigCtor::nullary(Ctor::ListNil),
+                SigCtor {
+                    ctor: Ctor::ListCons,
+                    fields: vec![elem_ty, resolved],
+                },
+            ]),
             TypeKind::Record(fields, _) => Some(vec![SigCtor {
                 ctor: Ctor::Struct,
                 fields: fields.iter().map(|f| f.ty).collect(),
@@ -368,6 +379,19 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
             ThirPatKind::Tuple(items) => self.decon_tuple_pattern(&items, col_ty, pat.span),
+            ThirPatKind::ListNil => DeconPat::nullary(Ctor::ListNil),
+            ThirPatKind::ListCons { head, tail } => {
+                let TypeKind::List(elem_ty) = self.ty(col_ty).kind else {
+                    return DeconPat::Wild;
+                };
+                DeconPat::Ctor {
+                    tag: Ctor::ListCons,
+                    fields: vec![
+                        self.decon_pattern(head, elem_ty),
+                        self.decon_pattern(tail, col_ty),
+                    ],
+                }
+            }
             ThirPatKind::Record(fields) => self.decon_record_pattern(&fields, col_ty),
             ThirPatKind::TaggedValue { tag, payload } => {
                 self.decon_tagged_value_pattern(tag, &payload, col_ty, pat.span)
@@ -602,12 +626,21 @@ fn rewrap(tag: &Ctor, arity: usize, mut witness: Vec<DeconPat>) -> Vec<DeconPat>
 /// A witness value for an uncovered first column: a named missing constructor
 /// when one exists, otherwise a wildcard.
 fn missing_witness(sig: &Signature, present: &FxHashSet<Ctor>) -> DeconPat {
-    if present.is_empty() {
-        return DeconPat::Wild;
-    }
     let Some(ctors) = &sig.ctors else {
         return DeconPat::Wild;
     };
+    if present.is_empty()
+        && ctors.first().is_some_and(|sc| sc.ctor == Ctor::ListNil)
+        && let Some(sc) = ctors.first()
+    {
+        return DeconPat::Ctor {
+            tag: sc.ctor.clone(),
+            fields: vec![DeconPat::Wild; sc.fields.len()],
+        };
+    }
+    if present.is_empty() {
+        return DeconPat::Wild;
+    }
     match ctors.iter().find(|c| !present.contains(&c.ctor)) {
         Some(sc) => DeconPat::Ctor {
             tag: sc.ctor.clone(),
@@ -647,6 +680,18 @@ fn render_one(pat: &DeconPat) -> String {
             Ctor::FloatLit(bits) => f64::from_bits(*bits).to_string(),
             Ctor::PositLit(literal) => render_posit_literal(*literal),
             Ctor::StrLit(value) => format!("{value:?}"),
+            Ctor::ListNil => "{;}".to_string(),
+            Ctor::ListCons => {
+                let head = fields
+                    .first()
+                    .map(render_one)
+                    .unwrap_or_else(|| "_".to_string());
+                let tail = fields
+                    .get(1)
+                    .map(render_one)
+                    .unwrap_or_else(|| "_".to_string());
+                format!("{{{head}; ...{tail}}}")
+            }
             Ctor::OptNone => "#none".to_string(),
             Ctor::OptSome => format!("#some ({})", render_payload(fields)),
             Ctor::MaybeAbsent => "#absent".to_string(),

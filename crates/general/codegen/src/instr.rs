@@ -382,6 +382,7 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 DfListPrimOp::IsNil => ("zutai.list_is_nil", operands.as_slice()),
                 DfListPrimOp::Head => ("zutai.list_head", operands.as_slice()),
                 DfListPrimOp::Tail => ("zutai.list_tail", operands.as_slice()),
+                DfListPrimOp::FoldlStrict => ("zutai.list_foldl_strict", operands.as_slice()),
             };
             let arglist = operands
                 .iter()

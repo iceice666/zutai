@@ -137,6 +137,10 @@ fn collect_pat_refs(
                 collect_pat_refs(graph, &sub, out, visited);
             }
         }
+        DfPattern::ListCons { head, tail } => {
+            collect_pat_refs(graph, head, out, visited);
+            collect_pat_refs(graph, tail, out, visited);
+        }
         DfPattern::Record(fields) => {
             let subs: Vec<DfPattern> = fields.iter().map(|(_, _, p)| p.clone()).collect();
             for sub in subs {
@@ -147,7 +151,7 @@ fn collect_pat_refs(
             let inner = pattern.as_ref().clone();
             collect_pat_refs(graph, &inner, out, visited);
         }
-        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) => {}
+        DfPattern::Wildcard | DfPattern::Lit(_) | DfPattern::Atom(_) | DfPattern::ListNil => {}
     }
 }
 

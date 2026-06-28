@@ -45,8 +45,10 @@ and 2026-06-28 (post-V3 readiness audit: user-facing doc reconciliation,
 support-level reconciliation, coverage/diagnostics/backend audit; ambient vs
 imported stream-combinator convergence follow-up fixed; small function prelude
 `id`/`const`/`compose`/`flip` landed as ambient source decls + `stdlib.prelude`;
-see "Post-V3 readiness audit", "Ambient/imported stream-combinator convergence",
-and "Small function prelude (stdlib slice B)")._
+minimal `List` verbs landed as ambient/importable source decls backed by list
+patterns and a strict fold bridge; see "Post-V3 readiness audit",
+"Ambient/imported stream-combinator convergence", "Small function prelude
+(stdlib slice B)", and "Minimal List verbs (stdlib slice C)")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -106,8 +108,9 @@ and "Small function prelude (stdlib slice B)")._
   includes constraints, optionals, `.zti` imports, `.zt` imports, dynamic
   `.zti`/`.zt` loads, imported functions, transitive imports, imported witness
   dictionaries, record update, config overlay, effects, reflection/type-value
-  boundaries, polymorphic curried helpers, repeated nested destructures, and
-  name-sorted record display.
+  boundaries, polymorphic curried helpers, ambient/imported list verbs, list
+  nil/cons pattern evaluation, repeated nested destructures, and name-sorted
+  record display.
 - `print` remains a prelude compatibility binding, but its type is now
   `Text -> Text ! { io.print : Text -> Text }`. TLC lowers the builtin value to
   a runtime-dispatching function; source handlers can intercept `io.print`, and
@@ -171,6 +174,46 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Minimal List verbs (stdlib slice C) ✅
+
+_Completed 2026-06-28. Ships the minimal `List` pipeline surface as ordinary
+source prelude declarations: `fold`/`foldl'`/`map`/`filter`/`length`/`append`/
+`uncons`/`head?`/`tail?`, ambient and importable as `stdlib.prelude`. This is
+stdlib work, not Track 2: no new surface expression form beyond list patterns,
+and no new backend IR beyond a verified strict-fold bridge/runtime call._
+
+- **List patterns through the compiler.** Syntax/AST support `{;}`, `{h}`, and
+  `{h ... t}` patterns; HIR/THIR/TLC/Dataflow/ANF/SSA carry explicit list nil and
+  cons pattern nodes; THIR exhaustiveness treats lists as `nil + cons-or-wildcard`
+  rather than enumerating lengths; the THIR and TLC evaluators match list spines
+  directly.
+- **Native lowering.** Dataflow validates list pattern bindings/refs, ANF and SSA
+  preserve list pattern binders/free vars, and codegen lowers the strict fold
+  bridge to `zutai.list_fold_strict`. The runtime applies a closure to each
+  element from left to right without building lazy accumulator chains.
+- **Ambient names.** `prelude.zt` now owns the unqualified `List` verbs. The stream
+  prelude keeps non-conflicting ambient names (`empty`, `cons`, `singleton`,
+  `unfold`, `take`, `drop`, `toList`, `fromList`, `takeList`); stream
+  `map`/`filter`/`fold`/`uncons` remain exported from `stdlib.stream` and should
+  be called qualified when both surfaces appear.
+- **Stdlib import.** `import stdlib.prelude` exports both function helpers and
+  list verbs from the same source file. User bindings still shadow fallback
+  prelude names without duplicate-binding diagnostics.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-syntax`,
+  `cargo test -p zutai-thir`,
+  `cargo test -p zutai-tlc`,
+  `cargo test -p zutai-dataflow`,
+  `cargo test -p zutai-anf`,
+  `cargo test -p zutai-ssa`,
+  `cargo test -p zutai-eval prelude && cargo test -p zutai-eval imports`,
+  `cargo test -p zutai-codegen`,
+  `cargo test -p zutai-rt`,
+  `cargo test -p zutai-cli --test cli compile_prelude_list_pipeline_matches_oracle -- --test-threads=1`,
+  and `cargo test -p zutai-cli --test cli -- --test-threads=1`. Final gates
+  passed: `cargo test --workspace -- --test-threads=1` and
+  `cargo clippy --workspace --all-targets`.
+
 ### Small function prelude (stdlib slice B) ✅
 
 _Completed 2026-06-28. Ships the first non-stream source prelude: ordinary
@@ -198,10 +241,9 @@ new backend IR node, no intrinsics, no Track 2 boundary._
   → `PRELUDE_MODULE_SRC`, so `import stdlib.prelude` resolves with no filesystem
   base (same registry as `stdlib.stream`).
 - **Docs reconciled.** `docs/stdlib/00-index.md` and `docs/stdlib/prelude.md`
-  now list `id`/`const`/`compose`/`flip` as ambient and drop the stale "`fn`
-  module" / "excluded from prelude" claims the older design held; the list-verb
-  prelude (`map`/`filter`/`fold` over `List`) remains pending on
-  list-destructuring patterns (milestone C).
+  listed `id`/`const`/`compose`/`flip` as ambient and dropped the stale "`fn`
+  module" / "excluded from prelude" claims the older design held. The then-pending
+  list-verb prelude landed later in stdlib slice C.
 - **Verification.** Targeted gates passed:
   `cargo test -p zutai-eval prelude` (ambient + shadowing + THIR/TLC parity),
   `cargo test -p zutai-eval imports::` (`stdlib.prelude` import),

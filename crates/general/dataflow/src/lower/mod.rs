@@ -249,6 +249,13 @@ impl<'m> Lowerer<'m> {
         }
     }
 
+    fn list_element_ty_for_df_ty(&self, ty: DfTyId) -> Option<DfTyId> {
+        match &self.types[ty] {
+            DfTy::List(elem) => Some(*elem),
+            _ => None,
+        }
+    }
+
     fn record_field_ty_for_df_ty(&self, ty: DfTyId, field: &str) -> Option<DfTyId> {
         match &self.types[ty] {
             DfTy::Record(fields) => fields
@@ -478,6 +485,10 @@ fn remove_pat_bindings(pat: &TlcPat, env: &mut FxHashMap<BindingId, NodeId>) {
                     TlcPatItem::Positional(p) => remove_pat_bindings(p, env),
                 }
             }
+        }
+        TlcPat::ListCons(head, tail) => {
+            remove_pat_bindings(head, env);
+            remove_pat_bindings(tail, env);
         }
         TlcPat::Record(fields) => {
             for (_, p) in fields {

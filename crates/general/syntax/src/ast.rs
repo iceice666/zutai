@@ -495,6 +495,14 @@ pub enum Pattern {
         items: Vec<TuplePatternItem>,
         span: Span,
     },
+    ListNil {
+        span: Span,
+    },
+    ListCons {
+        head: Box<Pattern>,
+        tail: Box<Pattern>,
+        span: Span,
+    },
     Record {
         fields: Vec<RecordPatternField>,
         span: Span,
@@ -513,6 +521,8 @@ impl Pattern {
             | Pattern::Atom { span, .. }
             | Pattern::TaggedValue { span, .. }
             | Pattern::Tuple { span, .. }
+            | Pattern::ListNil { span }
+            | Pattern::ListCons { span, .. }
             | Pattern::Record { span, .. } => *span,
         }
     }

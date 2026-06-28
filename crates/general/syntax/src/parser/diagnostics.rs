@@ -378,6 +378,11 @@ impl<'a> Scanner<'a> {
         let Some(prev) = self.prev_non_ws(self.pos) else {
             return;
         };
+        // List cons patterns end with the tail binding (`{h; ...t}`), not a
+        // value-item semicolon. They are pattern syntax, not value braces.
+        if self.src[open..self.pos].contains("...") {
+            return;
+        }
         // Fine: empty brace (`{`), a properly terminated item (`;`), or a last
         // item that ends in a closing delimiter — `}`/`]`/`)`. The closer case
         // covers brace groups that are not bare record/list items (generator

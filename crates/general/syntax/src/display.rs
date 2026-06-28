@@ -558,6 +558,22 @@ fn write_pattern(
             }
             Ok(())
         }
+        Pattern::ListNil { .. } => writeln!(f, "{prefix}ListNilPat({{;}})"),
+        Pattern::ListCons { head, tail, .. } => {
+            writeln!(f, "{prefix}ListConsPat")?;
+            write_pattern(
+                f,
+                head,
+                &format!("{indent}├─ head "),
+                &format!("{indent}│  "),
+            )?;
+            write_pattern(
+                f,
+                tail,
+                &format!("{indent}└─ tail "),
+                &format!("{indent}   "),
+            )
+        }
         Pattern::Record { fields, .. } => {
             writeln!(f, "{prefix}RecordPat")?;
             for field in fields {

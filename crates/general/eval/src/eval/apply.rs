@@ -139,6 +139,24 @@ impl<'a> Evaluator<'a> {
                     _ => Ok(false),
                 }
             }
+            ThirPatKind::ListNil => match thunk.force(self)? {
+                Value::List(items) => Ok(items.is_empty()),
+                _ => Ok(false),
+            },
+            ThirPatKind::ListCons { head, tail } => match thunk.force(self)? {
+                Value::List(items) if !items.is_empty() => {
+                    if !self.match_pattern(*head, items[0].clone(), child_env)? {
+                        return Ok(false);
+                    }
+                    let tail_items = items.iter().skip(1).cloned().collect::<Vec<_>>();
+                    self.match_pattern(
+                        *tail,
+                        Thunk::ready(Value::List(Rc::from(tail_items))),
+                        child_env,
+                    )
+                }
+                _ => Ok(false),
+            },
             ThirPatKind::Record(pat_fields) => {
                 let v = thunk.force(self)?;
                 match v {

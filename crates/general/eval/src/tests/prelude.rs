@@ -58,6 +58,43 @@ fn prelude_thir_oracle_matches_tlc_path() {
     }
 }
 
+#[test]
+fn list_prelude_pipeline_maps_filters_and_folds() {
+    let src =
+        "{1; 2; 3; 4;} |> filter (\\x. x > 1) |> map (\\x. x * 2) |> fold (\\acc x. acc + x) 0";
+    assert_eq!(run(src), Value::Int(18));
+}
+
+#[test]
+fn list_prelude_uncons_head_tail_edges() {
+    assert_eq!(run("length {9; 8; 7;}"), Value::Int(3));
+    assert_eq!(format!("{}", run("append {1; 2;} {3;}")), "[1; 2; 3]");
+    assert_eq!(format!("{}", run("uncons {;}")), "#none");
+    assert_eq!(format!("{}", run("head? {7; 8;}")), "#some (7)");
+    assert_eq!(format!("{}", run("tail? {7; 8;}")), "#some ([8])");
+}
+
+#[test]
+fn list_prelude_user_binding_shadows_map() {
+    let src = "map :: Int -> Int = x => x + 100;\nmap 5";
+    assert_eq!(run(src), Value::Int(105));
+}
+
+#[test]
+fn list_prelude_thir_oracle_matches_tlc_path() {
+    let srcs = [
+        "{1; 2; 3; 4;} |> filter (\\x. x > 1) |> map (\\x. x * 2) |> fold (\\acc x. acc + x) 0",
+        "append {1; 2;} {3;}",
+        "head? {7; 8;}",
+        "tail? {7; 8;}",
+    ];
+    for src in srcs {
+        let tlc = eval_file(src).expect("TLC eval failed");
+        let thir = eval_thir_file(src).expect("THIR oracle eval failed");
+        assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    }
+}
+
 // ─── user shadowing ──────────────────────────────────────────────────────────
 
 #[test]

@@ -979,6 +979,24 @@ pub extern "C" fn list_tail(v: i64) -> i64 {
     unsafe { word(v, 2) }
 }
 
+#[unsafe(export_name = "zutai.list_foldl_strict")]
+pub extern "C" fn list_foldl_strict(f: i64, mut acc: i64, mut xs: i64) -> i64 {
+    type ClosureCode = extern "C" fn(i64, i64) -> i64;
+    while list_is_nil(xs) == 0 {
+        let elem = list_head(xs);
+        let step = unsafe {
+            let code: ClosureCode = std::mem::transmute(word(f, 1));
+            code(f, acc)
+        };
+        acc = unsafe {
+            let code: ClosureCode = std::mem::transmute(word(step, 1));
+            code(step, elem)
+        };
+        xs = list_tail(xs);
+    }
+    acc
+}
+
 // ── Variant ABI (D-0005 / D-0009, dense indices) ────────────────────────────────
 
 #[unsafe(export_name = "zutai.variant_new")]

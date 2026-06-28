@@ -83,6 +83,13 @@ fn parse_ident_simple() {
 }
 
 #[test]
+fn parse_value_ident_suffixes() {
+    assert_eq!(as_ident(&parse_expr_str("foldl'")), "foldl'");
+    assert_eq!(as_ident(&parse_expr_str("head?")), "head?");
+    assert_eq!(as_ident(&parse_expr_str("tail?")), "tail?");
+}
+
+#[test]
 fn parse_ident_rejects_keywords() {
     crate::parser::lex::BASE_PTR.with(|c| c.set("type".as_ptr() as usize));
     let mut input = "type";
@@ -144,6 +151,15 @@ fn parse_record_field_pun() {
     assert_eq!(fields.len(), 2);
     assert_eq!(as_ident(field_val(fields, "host")), "host");
     assert_eq!(as_ident(field_val(fields, "port")), "port");
+}
+
+#[test]
+fn parse_question_mark_record_field_pun() {
+    let e = parse_expr_str("{ head? = head?; }");
+    let fields = as_record(&e);
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "head?");
+    assert_eq!(as_ident(&fields[0].value), "head?");
 }
 
 #[test]
@@ -337,6 +353,28 @@ fn parse_optional_chain() {
     }
 }
 
+#[test]
+fn parse_question_mark_field_access() {
+    let e = parse_expr_str("p.head?");
+    let (recv, field) = as_access(&e);
+    assert_eq!(as_ident(recv), "p");
+    assert_eq!(field, "head?");
+}
+
+#[test]
+fn question_mark_suffix_does_not_steal_optional_chain() {
+    let e = parse_expr_str("cfg?.port");
+    match &e {
+        Expr::OptAccess {
+            receiver, field, ..
+        } => {
+            assert_eq!(as_ident(receiver), "cfg");
+            assert_eq!(field, "port");
+        }
+        other => panic!("expected OptAccess, got {other:?}"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Arithmetic / operator precedence
 // ---------------------------------------------------------------------------
@@ -373,6 +411,15 @@ fn parse_coalesce_right_assoc() {
     assert_eq!(op, BinOp::Coalesce);
     let (op2, _, _) = as_binary(rhs);
     assert_eq!(op2, BinOp::Coalesce);
+}
+
+#[test]
+fn question_mark_suffix_does_not_steal_coalesce() {
+    let e = parse_expr_str("x ?? 1");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Coalesce);
+    assert_eq!(as_ident(lhs), "x");
+    assert_eq!(as_int(rhs), 1);
 }
 
 #[test]

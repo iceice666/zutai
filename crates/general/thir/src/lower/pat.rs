@@ -80,6 +80,19 @@ impl<'hir> Lowerer<'hir> {
                     scoped_bindings,
                 );
             }
+            HirPatKind::ListNil => {
+                return self.check_list_nil_pattern(id, expected, pattern.span);
+            }
+            HirPatKind::ListCons { head, tail } => {
+                return self.check_list_cons_pattern(
+                    id,
+                    *head,
+                    *tail,
+                    expected,
+                    pattern.span,
+                    scoped_bindings,
+                );
+            }
             HirPatKind::Record(fields) => {
                 return self.check_record_pattern(
                     id,
@@ -105,6 +118,55 @@ impl<'hir> Lowerer<'hir> {
             ty: expected,
             kind,
             span: pattern.span,
+        })
+    }
+
+    fn check_list_nil_pattern(&mut self, id: HirPatId, expected: TypeId, span: Span) -> ThirPatId {
+        let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), span);
+        if !matches!(self.ty(resolved).kind, TypeKind::List(_) | TypeKind::Error) {
+            let found = self.type_name(expected);
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::ExpectedList { found },
+                span,
+            });
+        }
+        self.alloc_pat(ThirPat {
+            source: id,
+            ty: expected,
+            kind: ThirPatKind::ListNil,
+            span,
+        })
+    }
+
+    fn check_list_cons_pattern(
+        &mut self,
+        id: HirPatId,
+        head: HirPatId,
+        tail: HirPatId,
+        expected: TypeId,
+        span: Span,
+        scoped_bindings: &mut Vec<BindingId>,
+    ) -> ThirPatId {
+        let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), span);
+        let (head_ty, tail_ty) = match self.ty(resolved).kind {
+            TypeKind::List(elem_ty) => (elem_ty, expected),
+            TypeKind::Error => (self.error_type, self.error_type),
+            _ => {
+                let found = self.type_name(expected);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedList { found },
+                    span,
+                });
+                (self.error_type, self.error_type)
+            }
+        };
+        let head = self.check_pattern(head, head_ty, scoped_bindings);
+        let tail = self.check_pattern(tail, tail_ty, scoped_bindings);
+        self.alloc_pat(ThirPat {
+            source: id,
+            ty: expected,
+            kind: ThirPatKind::ListCons { head, tail },
+            span,
         })
     }
 

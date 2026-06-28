@@ -375,6 +375,8 @@ pub enum TlcPat {
     Lit(Literal),
     Atom(String),
     Tuple(Vec<TlcPatItem>),
+    ListNil,
+    ListCons(Box<TlcPat>, Box<TlcPat>),
     Record(Vec<(String, TlcPat)>),
     /// Match a sum / union arm: `(#circle, inner_pat)`.
     Variant(String, Box<TlcPat>),

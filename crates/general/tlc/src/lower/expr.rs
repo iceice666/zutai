@@ -673,6 +673,11 @@ impl<'thir> Lowerer<'thir> {
                     .collect();
                 TlcPat::Tuple(tlc_items)
             }
+            ThirPatKind::ListNil => TlcPat::ListNil,
+            ThirPatKind::ListCons { head, tail } => TlcPat::ListCons(
+                Box::new(self.lower_pat(head)),
+                Box::new(self.lower_pat(tail)),
+            ),
             ThirPatKind::Record(fields) => {
                 let tlc_fields: Vec<(String, TlcPat)> = fields
                     .iter()

@@ -9,7 +9,7 @@ use crate::span::Span;
 
 use crate::parser::lex::{
     enter_delimiter, kw, parse_atom_name, parse_field_name, parse_ident, parse_import_source,
-    parse_number_value, parse_string, spanned, ws,
+    parse_number_value, parse_string, parse_value_field_name, parse_value_ident, spanned, ws,
 };
 use crate::parser::pattern::parse_pattern;
 use crate::parser::type_expr::parse_type_expr;
@@ -153,7 +153,7 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             if starts_resume(input) {
                 return parse_resume(input, options);
             }
-            let (name, span) = spanned(parse_ident).parse_next(input)?;
+            let (name, span) = spanned(parse_value_ident).parse_next(input)?;
             Ok(Expr::Ident { name, span })
         }
     }
@@ -235,7 +235,7 @@ fn parse_record_or_list_inner(input: &mut &str, options: ExprOptions) -> Result<
 
     let is_record = {
         let mut tmp = *input;
-        if let Ok(_name) = parse_field_name(&mut tmp) {
+        if let Ok(_name) = parse_value_field_name(&mut tmp) {
             tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
             tmp.starts_with('=') && !tmp.starts_with("==")
         } else {
@@ -258,7 +258,7 @@ fn parse_record_value_tail(input: &mut &str, _start: &str, options: ExprOptions)
         if input.starts_with('}') {
             break;
         }
-        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
         ws(input)?;
         if input.starts_with('=') && !input.starts_with("==") {
             '='.parse_next(input)?;
@@ -337,7 +337,7 @@ fn parse_block_inner(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         }
         let binding_kind = {
             let mut tmp = *input;
-            if let Ok(_name) = parse_ident(&mut tmp) {
+            if let Ok(_name) = parse_value_ident(&mut tmp) {
                 tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
                 if tmp.starts_with(":=") {
                     Some(false)
@@ -354,7 +354,7 @@ fn parse_block_inner(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         let Some(has_annotation) = binding_kind else {
             break;
         };
-        let (name, name_span) = spanned(parse_ident).parse_next(input)?;
+        let (name, name_span) = spanned(parse_value_ident).parse_next(input)?;
         ws(input)?;
         let annotation = if has_annotation {
             ':'.parse_next(input)?;
@@ -524,7 +524,7 @@ fn parse_tagged_tuple_payload(input: &mut &str, options: ExprOptions) -> Result<
 
 fn parse_tuple_item(input: &mut &str, options: ExprOptions) -> Result<TupleItem> {
     let checkpoint = *input;
-    if let Ok(name) = parse_field_name(input) {
+    if let Ok(name) = parse_value_field_name(input) {
         ws(input)?;
         if input.starts_with('=') && !input.starts_with("==") {
             '='.parse_next(input)?;
@@ -835,7 +835,7 @@ pub(super) fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> 
         if input.starts_with('}') {
             break;
         }
-        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
         ws(input)?;
         ';'.parse_next(input)?;
         fields.push(SelectField {

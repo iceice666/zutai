@@ -100,6 +100,72 @@ impl<'a> Evaluator<'a> {
                     found: value_type_name(&other),
                 }),
             },
+            BuiltinFn::ListFoldlStrict => {
+                let func = args[0].force(self)?;
+                let mut acc = args[1].force(self)?;
+                match args[2].force(self)? {
+                    Value::List(items) => {
+                        for elem in items.iter() {
+                            let partially_applied =
+                                self.apply_value_to_thunk(func.clone(), Thunk::ready(acc))?;
+                            let next =
+                                self.apply_value_to_thunk(partially_applied, elem.clone())?;
+                            acc = Thunk::ready(next).force(self)?;
+                        }
+                        Ok(acc)
+                    }
+                    other => Err(EvalError::TypeMismatch {
+                        expected: "List",
+                        found: value_type_name(&other),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn apply_value_to_thunk(&self, func: Value, arg: Thunk) -> Result<Value, EvalError> {
+        match func {
+            Value::Closure(c) => {
+                let mut applied = c.applied.clone();
+                applied.push(arg);
+                if applied.len() < c.arity {
+                    Ok(Value::Closure(Rc::new(Closure {
+                        binding: c.binding,
+                        arity: c.arity,
+                        clauses: c.clauses.clone(),
+                        applied,
+                        env: c.env.clone(),
+                        home: c.home,
+                    })))
+                } else {
+                    self.apply_closure(&c, applied)
+                }
+            }
+            Value::Builtin(func) => self.eval_builtin_or_partial(func, SmallVec::new(), arg),
+            Value::BuiltinPartial { func, args } => self.eval_builtin_or_partial(func, args, arg),
+            other => Err(EvalError::TypeMismatch {
+                expected: "Function",
+                found: value_type_name(&other),
+            }),
+        }
+    }
+
+    fn eval_builtin_or_partial(
+        &self,
+        func: BuiltinFn,
+        mut args: SmallVec<[Thunk; 2]>,
+        arg: Thunk,
+    ) -> Result<Value, EvalError> {
+        args.push(arg);
+        if args.len() < func.arity() {
+            Ok(Value::BuiltinPartial { func, args })
+        } else if args.len() == func.arity() {
+            self.eval_builtin(func, &args)
+        } else {
+            Err(EvalError::TypeMismatch {
+                expected: "Function",
+                found: "Function",
+            })
         }
     }
 

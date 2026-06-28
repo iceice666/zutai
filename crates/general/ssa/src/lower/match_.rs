@@ -167,6 +167,59 @@ pub(super) fn emit_pattern_test(
             }
             combined
         }
+        AnfPattern::ListNil => {
+            let is_nil = ctx.fresh.next_label("list_is_nil");
+            fb.push(SsaInstr {
+                dest: is_nil.clone(),
+                op: SsaOp::ListPrim {
+                    op: DfListPrimOp::IsNil,
+                    args: vec![scrutinee.clone()],
+                },
+            });
+            Some(SsaValue::Reg(is_nil))
+        }
+        AnfPattern::ListCons { head, tail } => {
+            let is_nil = ctx.fresh.next_label("list_is_nil");
+            fb.push(SsaInstr {
+                dest: is_nil.clone(),
+                op: SsaOp::ListPrim {
+                    op: DfListPrimOp::IsNil,
+                    args: vec![scrutinee.clone()],
+                },
+            });
+            let not_nil = emit_value_eq(
+                SsaValue::Reg(is_nil),
+                SsaValue::Lit(DfLit::Bool(false)),
+                fb,
+                ctx,
+            );
+            let head_value = emit_list_part_for_pattern(
+                scrutinee.clone(),
+                DfListPrimOp::Head,
+                "list_head",
+                fb,
+                ctx,
+            );
+            let tail_value = emit_list_part_for_pattern(
+                scrutinee.clone(),
+                DfListPrimOp::Tail,
+                "list_tail",
+                fb,
+                ctx,
+            );
+            let with_head = combine_optional_conditions(
+                Some(not_nil),
+                emit_pattern_test(head, &head_value, fb, ctx),
+                fb,
+                ctx,
+            );
+            combine_optional_conditions(
+                with_head,
+                emit_pattern_test(tail, &tail_value, fb, ctx),
+                fb,
+                ctx,
+            )
+        }
         AnfPattern::Record(fields) => {
             let mut combined = None;
             for (slot, inner) in fields {
@@ -225,6 +278,24 @@ pub(super) fn emit_select_for_pattern(
         op: SsaOp::Select {
             base: scrutinee,
             slot,
+        },
+    });
+    SsaValue::Reg(dest)
+}
+
+pub(super) fn emit_list_part_for_pattern(
+    scrutinee: SsaValue,
+    op: DfListPrimOp,
+    label: &str,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) -> SsaValue {
+    let dest = ctx.fresh.next_label(label);
+    fb.push(SsaInstr {
+        dest: dest.clone(),
+        op: SsaOp::ListPrim {
+            op,
+            args: vec![scrutinee],
         },
     });
     SsaValue::Reg(dest)
@@ -321,6 +392,28 @@ pub(super) fn bind_pattern(
                     }
                 }
             }
+        }
+        AnfPattern::ListNil => {}
+        AnfPattern::ListCons { head, tail } => {
+            let head_tmp = fresh.next_label("list_head");
+            bb.instrs.push(SsaInstr {
+                dest: head_tmp.clone(),
+                op: SsaOp::ListPrim {
+                    op: DfListPrimOp::Head,
+                    args: vec![scrutinee.clone()],
+                },
+            });
+            bind_pattern(head, &SsaValue::Reg(head_tmp), bb, fresh);
+
+            let tail_tmp = fresh.next_label("list_tail");
+            bb.instrs.push(SsaInstr {
+                dest: tail_tmp.clone(),
+                op: SsaOp::ListPrim {
+                    op: DfListPrimOp::Tail,
+                    args: vec![scrutinee.clone()],
+                },
+            });
+            bind_pattern(tail, &SsaValue::Reg(tail_tmp), bb, fresh);
         }
         AnfPattern::Record(fields) => {
             for (slot, inner) in fields {

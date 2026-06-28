@@ -568,6 +568,10 @@ impl<'module> EffectElaborator<'module> {
                     })
                     .collect(),
             ),
+            crate::ir::TlcPat::ListCons(head, tail) => crate::ir::TlcPat::ListCons(
+                Box::new(self.freshen_pat(*head, subst, old_bindings)),
+                Box::new(self.freshen_pat(*tail, subst, old_bindings)),
+            ),
             crate::ir::TlcPat::Record(fields) => crate::ir::TlcPat::Record(
                 fields
                     .into_iter()
@@ -580,7 +584,8 @@ impl<'module> EffectElaborator<'module> {
             ),
             crate::ir::TlcPat::Wildcard
             | crate::ir::TlcPat::Lit(_)
-            | crate::ir::TlcPat::Atom(_) => pat,
+            | crate::ir::TlcPat::Atom(_)
+            | crate::ir::TlcPat::ListNil => pat,
         }
     }
 

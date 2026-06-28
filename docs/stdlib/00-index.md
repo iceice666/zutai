@@ -32,22 +32,23 @@ mechanism, the list-destructuring decision, and the error-handling boundary.
 
 Auto-imported names: the intrinsic prelude (`print`; reflection `fields`
 `variants` `schema`; config `overlay` `overlayDeep`; list-bridge `listEmpty`
-`listCons` `listIsNil` `listHead` `listTail`; dynamic load `loadZti` `loadZt`), the
-ambient **stream** prelude (`Stream` `StreamEff` `Step` and the combinators
-`empty` `cons` `singleton` `unfold` `map` `filter` `take` `drop` `fold` `uncons`
-`toList` `fromList` `takeList`), and the ambient **function** prelude
-(`id` `const` `compose` `flip`). The list verbs `map`/`filter`/`fold` over `List`
-listed in [`prelude.md`](prelude.md) are still planned (no list-destructuring
-patterns yet); a user binding of the same spelling always shadows the ambient
-fallback.
+`listCons` `listIsNil` `listHead` `listTail`; strict list fold
+`listFoldlStrict`; dynamic load `loadZti` `loadZt`), the ambient **stream**
+prelude (`Stream` `StreamEff` `Step` and the non-conflicting combinators
+`empty` `cons` `singleton` `unfold` `take` `drop` `toList` `fromList`
+`takeList`), and the ambient **function/list** prelude (`id` `const`
+`compose` `flip`; `fold`/`foldl'` `map` `filter` `length` `append` `uncons`
+`head?` `tail?` over `List`). Stream `map`/`filter`/`fold`/`uncons` remain
+available through `import stdlib.stream`; a user binding of the same spelling
+always shadows the ambient fallback.
 
 ## Modules
 
 | Module | Contents | Status |
 | --- | --- | --- |
 | [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; full record-literal overlays lower to AOT record updates |
-| `list` | `foldr foldl' length reverse append zip flatten take drop find any all sum product partition sortBy groupBy indexOf uncons head? tail?` | planned (source + spine intrinsics) |
-| `stream` | `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), ambient prelude **and** importable via embedded `stdlib.stream`; pure finite and infinite generators run on interpreter and native backend; effectful generators reference-interpreter + native `io.print` parity (see [stream](stream.md)) |
+| `list` | `foldl' fold map filter length append uncons head? tail?` | accepted as ambient source prelude and importable through `stdlib.prelude`; `fold`/`foldl'` share a strict left-fold bridge intrinsic (`listFoldlStrict`) and native runtime call; list nil/cons patterns lower through THIR/TLC/Dataflow/ANF/SSA/LLVM |
+| `stream` | `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), importable via embedded `stdlib.stream`; non-conflicting names stay ambient, while stream `map`/`filter`/`fold`/`uncons` are qualified/imported to leave ambient names for `List`; pure finite and infinite generators run on interpreter and native backend; effectful generators reference-interpreter + native `io.print` parity (see [stream](stream.md)) |
 | `optional` | `map andThen filter withDefault isSome toList` | planned (source) |
 | `result` | `Result Validation ok err valid invalid map map2 mapErr andThen withDefault errors` | planned (source); see [Prelude](prelude.md) error model |
 | `num` | `min max abs clamp pow rem gcd toFloat round truncate` | planned (source + conversion intrinsics) |

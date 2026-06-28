@@ -60,6 +60,7 @@ impl<'hir> Lowerer<'hir> {
             "listIsNil" => Some(self.list_is_nil_builtin_type(span)),
             "listHead" => Some(self.list_head_builtin_type(span)),
             "listTail" => Some(self.list_tail_builtin_type(span)),
+            "listFoldlStrict" => Some(self.list_foldl_strict_builtin_type(span)),
             _ => None,
         }
     }
@@ -181,6 +182,51 @@ impl<'hir> Lowerer<'hir> {
             kind: TypeKind::Function {
                 from: list,
                 to: list,
+            },
+            span,
+        })
+    }
+
+    /// `listFoldlStrict :: <A, B> (B -> A -> B) -> B -> List A -> B`.
+    pub(in crate::lower) fn list_foldl_strict_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let acc = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        let a_to_b = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: elem,
+                to: acc,
+            },
+            span,
+        });
+        let folder = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: acc,
+                to: a_to_b,
+            },
+            span,
+        });
+        let list_to_b = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: acc,
+            },
+            span,
+        });
+        let acc_to_list = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: acc,
+                to: list_to_b,
+            },
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: folder,
+                to: acc_to_list,
             },
             span,
         })

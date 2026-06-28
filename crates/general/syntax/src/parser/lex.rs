@@ -243,6 +243,42 @@ pub fn parse_ident(input: &mut &str) -> Result<String> {
     Ok(name.to_string())
 }
 
+fn parse_value_name_body<'i>(input: &mut &'i str) -> Result<&'i str> {
+    let start = *input;
+    (
+        one_of(crate::ident::is_ident_start),
+        take_while(0.., |c: char| {
+            crate::ident::is_ident_continue(c) || c == '\''
+        }),
+    )
+        .void()
+        .parse_next(input)?;
+
+    if input.starts_with('?') && !input.starts_with("?.") && !input.starts_with("??") {
+        '?'.parse_next(input)?;
+    }
+
+    let consumed = start.len() - input.len();
+    Ok(&start[..consumed])
+}
+/// Runtime value identifier: identifier shape plus value-only `'` and `?` suffixes.
+pub fn parse_value_ident(input: &mut &str) -> Result<String> {
+    let start = *input;
+    let name = parse_value_name_body(input)?;
+
+    if RESERVED.contains(&name) {
+        *input = start;
+        return fail.parse_next(input);
+    }
+
+    Ok(name.to_string())
+}
+
+/// Value-level field name: runtime value-name suffixes without keyword rejection.
+pub fn parse_value_field_name(input: &mut &str) -> Result<String> {
+    parse_value_name_body(input).map(str::to_string)
+}
+
 /// Field name: identifier-like shape, without keyword rejection.
 pub fn parse_field_name(input: &mut &str) -> Result<String> {
     let name = (

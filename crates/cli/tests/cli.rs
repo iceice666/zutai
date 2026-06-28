@@ -160,9 +160,9 @@ fn compile_codata_stream_infinite_take_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
-// V3-G2: the ambient prelude `Stream` API (map/filter/take/drop/fold/cons/
-// singleton/uncons) — no import needed, native-compiled, matching the oracle.
-const PRELUDE_STREAM_PIPELINE_SRC: &str = "countFrom :: Int -> Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\nfold (\\a b. a + b) 0 (drop 1 (take 4 (filter (\\x. x > 15) (map (\\x. x * 10) (countFrom 1)))))\n";
+// V3-G2: the imported `Stream` API (map/filter/take/drop/fold/cons/
+// singleton/uncons), native-compiled, matching the oracle.
+const PRELUDE_STREAM_PIPELINE_SRC: &str = "s ::= import stdlib.stream;\ncountFrom :: Int -> s.Stream Int\n  = n _ => #cons { head = n; tail = countFrom (n + 1); };\ns.fold (\\a b. a + b) 0 (s.drop 1 (s.take 4 (s.filter (\\x. x > 15) (s.map (\\x. x * 10) (countFrom 1)))))\n";
 
 #[test]
 fn compile_prelude_stream_pipeline_matches_oracle() {
@@ -177,7 +177,7 @@ fn compile_prelude_stream_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
-const PRELUDE_STREAM_CONS_SRC: &str = "firstOr :: Int -> Stream Int -> Int\n  = d s => match uncons s { | #none => d; | #some { head = h; tail = _; } => h; };\nfirstOr 0 (cons 99 (singleton 7))\n";
+const PRELUDE_STREAM_CONS_SRC: &str = "s ::= import stdlib.stream;\nfirstOr :: Int -> s.Stream Int -> Int\n  = d xs => match s.uncons xs { | #none => d; | #some { head = h; tail = _; } => h; };\nfirstOr 0 (s.cons 99 (s.singleton 7))\n";
 
 #[test]
 fn compile_prelude_stream_cons_uncons_matches_oracle() {
@@ -187,10 +187,21 @@ fn compile_prelude_stream_cons_uncons_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const PRELUDE_LIST_PIPELINE_SRC: &str =
+    "{1; 2; 3; 4;} |> filter (\\x. x > 1) |> map (\\x. x * 2) |> fold (\\acc x. acc + x) 0\n";
+
+#[test]
+fn compile_prelude_list_pipeline_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_prelude_list", PRELUDE_LIST_PIPELINE_SRC);
+    let interp = run_stdout("cli_test_prelude_list_oracle.zt", PRELUDE_LIST_PIPELINE_SRC);
+    assert_eq!(native.trim(), "18");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 // V3-G2 residual: `unfold` — the canonical codata producer (step + seed). A
 // `Step S A` (`#done`/`#yield { item; next }`) step function drives an infinite
 // stream that `take`/`fold` bound. Native-compiled, matching the oracle.
-const PRELUDE_STREAM_UNFOLD_SRC: &str = "step :: Int -> Step Int Int\n  = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\nfold (\\a b. a + b) 0 (take 4 (unfold step 1))\n";
+const PRELUDE_STREAM_UNFOLD_SRC: &str = "s ::= import stdlib.stream;\nstep :: Int -> s.Step Int Int\n  = n => if n > 5 then #done else #yield { item = n; next = n + 1; };\ns.fold (\\a b. a + b) 0 (s.take 4 (s.unfold step 1))\n";
 
 #[test]
 fn compile_prelude_stream_unfold_matches_oracle() {
@@ -220,7 +231,7 @@ fn compile_prelude_stream_empty_matches_oracle() {
 
 // `empty` instantiates independently per use — consumed at both `Stream Bool`
 // and `Stream Int` in one program — proving true polymorphism on the backend.
-const PRELUDE_STREAM_EMPTY_POLY_SRC: &str = "sumI :: Stream Int -> Int\n  = s => match s () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumI t; };\nfirstB :: Bool -> Stream Bool -> Bool\n  = d s => match uncons s { | #none => d; | #some { head = h; tail = _; } => h; };\nif firstB true empty then sumI (cons 5 (cons 7 empty)) else sumI empty\n";
+const PRELUDE_STREAM_EMPTY_POLY_SRC: &str = "s ::= import stdlib.stream;\nsumI :: s.Stream Int -> Int\n  = xs => match xs () { | #nil => 0; | #cons { head = h; tail = t; } => h + sumI t; };\nfirstB :: Bool -> s.Stream Bool -> Bool\n  = d xs => match s.uncons xs { | #none => d; | #some { head = h; tail = _; } => h; };\nif firstB true s.empty then sumI (s.cons 5 (s.cons 7 s.empty)) else sumI s.empty\n";
 
 #[test]
 fn compile_prelude_stream_empty_polymorphic_matches_oracle() {
@@ -239,8 +250,7 @@ fn compile_prelude_stream_empty_polymorphic_matches_oracle() {
 // `List`. Exercises the scalar list-bridge primitives (`listIsNil`/`listHead`/
 // `listTail` under `fromList`, `listCons`/`listEmpty` under `toList`) on the native
 // backend against the interpreter oracle.
-const PRELUDE_STREAM_TOLIST_SRC: &str =
-    "double :: Int -> Int = x => x * 2;\ntoList (map double (fromList {1; 2; 3;}))\n";
+const PRELUDE_STREAM_TOLIST_SRC: &str = "s ::= import stdlib.stream;\ndouble :: Int -> Int = x => x * 2;\ns.toList (s.map double (s.fromList {1; 2; 3;}))\n";
 
 #[test]
 fn compile_prelude_stream_tolist_matches_oracle() {
@@ -256,8 +266,7 @@ fn compile_prelude_stream_tolist_matches_oracle() {
 
 // `fromList` feeds the ordinary stream pipeline; folding to a scalar avoids
 // depending on list rendering and proves the List→Stream adaptation steps lazily.
-const PRELUDE_STREAM_FROMLIST_SRC: &str =
-    "fold (\\a b. a + b) 0 (filter (\\x. x > 15) (fromList {10; 20; 30;}))\n";
+const PRELUDE_STREAM_FROMLIST_SRC: &str = "s ::= import stdlib.stream;\ns.fold (\\a b. a + b) 0 (s.filter (\\x. x > 15) (s.fromList {10; 20; 30;}))\n";
 
 #[test]
 fn compile_prelude_stream_fromlist_matches_oracle() {
@@ -317,10 +326,10 @@ fn compile_g3_recursive_generator_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
-// V3-G3: conditional yield (emit-or-skip) composed with prelude `take`/`fold`
+// V3-G3: conditional yield (emit-or-skip) composed with imported `take`/`fold`
 // over an *infinite* recursive generator — proves demand drives the conditional
 // on the native backend. `evensFrom 0` yields 0,2,4,…; take 4 → 0,2,4,6; sum 12.
-const G3_CONDITIONAL_GEN_SRC: &str = "evensFrom :: Int -> Stream Int\n  = n => stream {\n    if n - (n / 2) * 2 == 0 then { yield n; }\n    yield from evensFrom (n + 1);\n  };\nfold (\\a b. a + b) 0 (take 4 (evensFrom 0))\n";
+const G3_CONDITIONAL_GEN_SRC: &str = "s ::= import stdlib.stream;\nevensFrom :: Int -> s.Stream Int\n  = n => stream {\n    if n - (n / 2) * 2 == 0 then { yield n; }\n    yield from evensFrom (n + 1);\n  };\ns.fold (\\a b. a + b) 0 (s.take 4 (evensFrom 0))\n";
 
 #[test]
 fn compile_g3_conditional_infinite_generator_matches_oracle() {
@@ -876,16 +885,16 @@ fn compile_zt_imported_stream_list_interop_matches_oracle() {
 }
 
 #[test]
-fn compile_zt_mixed_imported_and_ambient_stream_combinators_matches_oracle() {
-    // Imported `map`/`fold` and ambient `take`/`unfold` mention two aliases for
-    // the same codata type (`s.Stream` and fallback `Stream`). They must compare
-    // equirecursively and compile natively instead of exhausting type-level fuel.
+fn compile_zt_stream_combinators_destructure_import_matches_oracle() {
+    // Stream `map`/`fold` are no longer ambient because unqualified names belong
+    // to the List prelude; destructuring `stdlib.stream` still makes the stream
+    // surface available unqualified when explicitly requested.
     let (interp, native) = import_run_vs_compile(
-        "g6_stream_mixed_imported_ambient",
+        "g6_stream_destructure_import",
         "main.zt",
         &[(
             "main.zt",
-            "{ map; fold; } ::= import stdlib.stream;\n\
+            "{ map; fold; take; unfold; } ::= import stdlib.stream;\n\
              fold (\\acc x. acc + x) 0 (take 3 (map (\\x. x * 2) (unfold (\\st. #yield { item = st; next = st + 1; }) 1)))\n",
         )],
     );
@@ -894,16 +903,16 @@ fn compile_zt_mixed_imported_and_ambient_stream_combinators_matches_oracle() {
 }
 
 #[test]
-fn ambient_stream_prelude_matches_imported_module() {
-    // The ambient prelude (no import) and the importable module share one source
-    // (`STREAM_MODULE_SRC`), so the same pipeline written against ambient names must
-    // produce the identical result to the imported, qualified form — confirming the
-    // single-source wiring keeps both surfaces in agreement.
+fn nonconflicting_ambient_stream_prelude_matches_imported_module() {
+    // Stream `cons`/`singleton`/`take` stay ambient; `map`/`fold` are qualified
+    // through `stdlib.stream` so unqualified `List` pipeline names remain
+    // available in the same scope.
     let ambient = write_tmp(
         "g6_ambient_stream.zt",
-        "double :: Int -> Int = x => x * 2;\n\
+        "s ::= import stdlib.stream;\n\
+         double :: Int -> Int = x => x * 2;\n\
          add :: Int -> Int -> Int = a b => a + b;\n\
-         fold add 0 (take 2 (map double (cons 1 (cons 2 (singleton 3)))))\n",
+         s.fold add 0 (take 2 (s.map double (cons 1 (cons 2 (singleton 3)))))\n",
     );
     let out = cli()
         .arg("run")
@@ -3130,8 +3139,8 @@ fn compile_emit_bin_gc_reports_collections() {
 /// sequence reaching the backend that V3-G1 made possible (GC gate condition (a)).
 fn stream_pipeline_src(n: u64) -> String {
     format!(
-        "countFrom :: Int -> Stream Int\n  = m => stream {{ yield m; yield from countFrom (m + 1); }};\n\
-fold (\\a b. a + b) 0 (take {n} (countFrom 1))\n"
+        "s ::= import stdlib.stream;\ncountFrom :: Int -> Stream Int\n  = m => stream {{ yield m; yield from countFrom (m + 1); }};\n\
+s.fold (\\a b. a + b) 0 (take {n} (countFrom 1))\n"
     )
 }
 

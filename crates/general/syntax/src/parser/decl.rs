@@ -10,7 +10,9 @@ use crate::ast::{
 use crate::span::Span;
 
 use super::expr::parse_expr;
-use super::lex::{enter_delimiter, kw, parse_field_name, parse_ident, spanned, ws};
+use super::lex::{
+    enter_delimiter, kw, parse_ident, parse_value_field_name, parse_value_ident, spanned, ws,
+};
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
 
@@ -114,8 +116,11 @@ fn is_decl_start(input: &mut &str) -> bool {
     if !tmp.starts_with(crate::ident::is_ident_start) {
         return false;
     }
-    // Consume ident
-    tmp = tmp.trim_start_matches(crate::ident::is_ident_continue);
+    // Consume value identifier body (`'` is value-name-only).
+    tmp = tmp.trim_start_matches(|c: char| crate::ident::is_ident_continue(c) || c == '\'');
+    if tmp.starts_with('?') && !tmp.starts_with("?.") && !tmp.starts_with("??") {
+        tmp = &tmp[1..];
+    }
     // Skip ws
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
     // Must be followed by `::`, `@` (witness), or a pattern-then-`=` sequence.
@@ -172,11 +177,16 @@ pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
         return parse_destructure_binding(input);
     }
 
-    let (name, name_span) = spanned(parse_ident).parse_next(input)?;
+    let (name, name_span) = spanned(parse_value_ident).parse_next(input)?;
     ws(input)?;
+
+    let value_suffix_question = name.ends_with('?');
 
     // Witness: `Constraint @Target :: ...`
     if input.starts_with('@') {
+        if value_suffix_question {
+            return fail.parse_next(input);
+        }
         return parse_witness(input, name, name_span);
     }
 
@@ -194,7 +204,7 @@ pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
         // Typed / TypeAlias / Function / Constraint
         "::".parse_next(input)?;
         ws(input)?;
-        return parse_top_decl_after_sig(input, name, name_span);
+        return parse_top_decl_after_sig(input, name, name_span, value_suffix_question);
     }
 
     // No-sig fn: one or more patterns followed by `=`
@@ -228,7 +238,7 @@ fn parse_destructure_fields(input: &mut &str) -> Result<Vec<SelectField>> {
         if input.starts_with('}') {
             break;
         }
-        let (name, name_span) = spanned(parse_field_name).parse_next(input)?;
+        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
         ws(input)?;
         ';'.parse_next(input)?;
         fields.push(SelectField {
@@ -241,7 +251,12 @@ fn parse_destructure_fields(input: &mut &str) -> Result<Vec<SelectField>> {
     Ok(fields)
 }
 
-fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> Result<Decl> {
+fn parse_top_decl_after_sig(
+    input: &mut &str,
+    name: String,
+    name_span: Span,
+    value_suffix_question: bool,
+) -> Result<Decl> {
     // Optional type-param list `<A, B, ...>` — only legal here
     let params = if input.starts_with('<') {
         parse_type_param_list(input)?
@@ -252,11 +267,17 @@ fn parse_top_decl_after_sig(input: &mut &str, name: String, name_span: Span) -> 
 
     // Constraint def: `Name :: [<params>] @Target { ... }`
     if input.starts_with('@') {
+        if value_suffix_question {
+            return fail.parse_next(input);
+        }
         return parse_constraint_body(input, name, name_span, params);
     }
 
     // Type alias: `:: [<params>] type TypeExpr`
     if input.starts_with("type") && kw("type").parse_next(input).is_ok() {
+        if value_suffix_question {
+            return fail.parse_next(input);
+        }
         ws(input)?;
         let ty = parse_type_expr(input)?;
         let span = name_span.merge(ty.span());
