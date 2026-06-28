@@ -46,9 +46,11 @@ support-level reconciliation, coverage/diagnostics/backend audit; ambient vs
 imported stream-combinator convergence follow-up fixed; small function prelude
 `id`/`const`/`compose`/`flip` landed as ambient source decls + `stdlib.prelude`;
 minimal `List` verbs landed as ambient/importable source decls backed by list
-patterns and a strict fold bridge; see "Post-V3 readiness audit",
+patterns and a strict fold bridge; native-link test race fixed with a
+process-released runtime-build lock; see "Post-V3 readiness audit",
 "Ambient/imported stream-combinator convergence", "Small function prelude
-(stdlib slice B)", and "Minimal List verbs (stdlib slice C)")._
+(stdlib slice B)", "Minimal List verbs (stdlib slice C)", and
+"Native-link test race fix")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -173,6 +175,27 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Native-link test race fix ✅
+
+_Completed 2026-06-28. Fixes the CLI native-link test race where parallel
+`cargo test --workspace` threads could each spawn `compile --emit=bin`, each
+inner CLI process could run `cargo build -p zutai-rt`, and a `clang` link could
+observe `target/debug/libzutai_rt.a` before another cargo build finished
+materializing it._
+
+- **Process-wide runtime build/link lock.** `crates/cli/src/commands/toolchain.rs`
+  now takes an OS advisory `flock` on `target/.zutai-rt-build.lock` before
+  running `cargo build -p zutai-rt`. The lock is held until after `clang` links
+  the native binary and is released by file-descriptor close/process exit, so
+  cooperating CLI processes sharing `CARGO_TARGET_DIR` cannot rebuild or replace
+  the runtime archive while a peer is linking it.
+- **Scope kept narrow.** The compile pipeline still assembles per-test objects
+  independently; no runtime ABI, codegen, or test semantics changed.
+- **Verification.** Reviewer round 1 reported one stale-lock risk; round 2 found
+  no issues in the flock-based direction. Final gate passed without serialized
+  test threads: `cargo fmt --check && cargo test --workspace &&
+  cargo clippy --workspace --all-targets`.
 
 ### Minimal List verbs (stdlib slice C) ✅
 

@@ -9,6 +9,7 @@ clap = { version = "4", features = ["derive"] }
 rustyline = "15"
 thiserror = "2.0.18"
 rustc-hash = "2.0.0"
+libc = "0.2"
 serde_json = "1"
 zutai-anf = { path = "../general/anf" }
 zutai-codegen = { path = "../general/codegen" }

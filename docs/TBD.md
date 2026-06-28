@@ -55,21 +55,9 @@ ABI, and all Track 2 boundaries.
 
 ## Tooling / test-harness backlog
 
-- **Native-link test race under `cargo test --workspace`.** CLI native-compile
-  tests (`compile_bin_stdout` and friends in `crates/cli/tests/cli.rs`) shell out
-  to `cargo build` to materialize `target/debug/libzutai_rt.a`
-  (`crates/cli/src/commands/toolchain.rs`), then invoke `clang` to link. Under
-  `cargo test --workspace`, concurrent test threads each spawn a CLI process →
-  inner `cargo build`, contending on the cargo package-cache lock; a `clang`
-  invocation can reach the link step before `libzutai_rt.a` is linkable, failing
-  with `clang: error: no such file or directory: '.../libzutai_rt.a'`. Repro:
-  passes in isolation (`cargo test -p zutai-cli --test cli -- <name>`) and with
-  `--test-threads=1`; flakes under parallel `cargo test --workspace`. Fix
-  options: pre-build `libzutai_rt.a` before the test suite, have the CLI reuse a
-  pre-built artifact instead of re-invoking `cargo build`, or serialize the
-  native-link tests. Surfaced 2026-06-28 during the function-prelude verify step
-  (the failure is independent of the function-prelude change, which never
-  touches `zutai-rt`/codegen linking).
+_No open tooling backlog items. The native-link test race under
+`cargo test --workspace` landed 2026-06-28; see `docs/ARCHIVED.md`
+"Native-link test race fix"._
 
 ## v1 residual — by design, not gaps
 

@@ -661,7 +661,7 @@ pub(crate) fn run_compile(
             fs::write(&ll, &llvm_ir)?;
             assemble_object(&ll, &obj)?;
             let rt = build_runtime_archive()?;
-            link_binary(&obj, &rt, &out)?;
+            link_binary(&obj, rt.path(), &out)?;
         }
     }
     Ok(())

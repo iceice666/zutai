@@ -1,5 +1,9 @@
 use std::error::Error;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 
 use super::*;
 
@@ -80,9 +84,53 @@ pub(super) fn append_rustflag(flag: &str) -> String {
     }
 }
 
-pub(super) fn build_runtime_archive() -> Result<PathBuf, Box<dyn Error>> {
+struct RuntimeBuildLock {
+    _file: File,
+}
+
+pub(super) struct RuntimeArchive {
+    path: PathBuf,
+    _lock: RuntimeBuildLock,
+}
+
+impl RuntimeArchive {
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+#[cfg(unix)]
+impl Drop for RuntimeBuildLock {
+    fn drop(&mut self) {
+        unsafe {
+            libc::flock(self._file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+fn acquire_runtime_build_lock(target_dir: &Path) -> Result<RuntimeBuildLock, Box<dyn Error>> {
+    fs::create_dir_all(target_dir)?;
+    let path = target_dir.join(".zutai-rt-build.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    #[cfg(unix)]
+    {
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+        if rc != 0 {
+            return Err(Box::new(std::io::Error::last_os_error()));
+        }
+    }
+    Ok(RuntimeBuildLock { _file: file })
+}
+
+pub(super) fn build_runtime_archive() -> Result<RuntimeArchive, Box<dyn Error>> {
     let root = workspace_root();
     let target_dir = cargo_target_dir(&root);
+    let lock = acquire_runtime_build_lock(&target_dir)?;
     let mut command = Command::new("cargo");
     command
         .arg("build")
@@ -93,7 +141,10 @@ pub(super) fn build_runtime_archive() -> Result<PathBuf, Box<dyn Error>> {
         command.env("RUSTFLAGS", append_rustflag("-C relocation-model=pic"));
     }
     run_tool(&mut command, "cargo", "building zutai-rt")?;
-    Ok(target_dir.join("debug").join("libzutai_rt.a"))
+    Ok(RuntimeArchive {
+        path: target_dir.join("debug").join("libzutai_rt.a"),
+        _lock: lock,
+    })
 }
 
 pub(super) fn runtime_link_flags() -> &'static [&'static str] {
