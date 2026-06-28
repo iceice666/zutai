@@ -43,8 +43,8 @@ of scope until that decision is explicitly reopened.
   operands; `finally`) now compile natively via the reify pass
   (`reify_residual_effects`), reversing the Phase 35 no-go. Genuinely unhandled
   effects, polymorphic/open-row effect *execution* (also refused by the
-  interpreter), and effectful generators stay refused. See `docs/ARCHIVED.md`
-  "Native effect parity".
+  interpreter), and effectful generators outside the supported `io.print`-backed
+  cell idiom stay refused. See `docs/ARCHIVED.md` "Native effect parity".
 - **Kernel invariant "equality = normalization"** (`tlc-core.md` §10): no V3
   surface feature may force a coercion/cast core node.
 

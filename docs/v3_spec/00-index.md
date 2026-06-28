@@ -11,5 +11,6 @@ Current topics:
 
 - [V3 roadmap](02-roadmap.md) — sequenced generator/stream spine (Track 1), the
   codata-not-lazy-lists decision, and the reserved design boundaries (Track 2).
-- [Generator and yield syntax](01-generators.md) — accepted finite
-  `stream { yield ...; }` shell plus remaining richer-generator design work.
+- [Generator and yield syntax](01-generators.md) — implemented `stream { yield ...; }`,
+  codata `Stream`, richer `yield`, effectful-generator boundaries, and remaining
+  non-goals.

@@ -65,9 +65,11 @@ committed design — a separate case from the handled-effect parity, not a singl
   (returns without `resume`), stopping the generator mid-stream and running
   applicable `finally` teardowns. Cross-boundary cancellation now unwinds inner
   finalizers explicitly instead of refusing; a finalizer's own handled abort uses
-  the established finalizer semantics. Interpreter-only. The resource-lifetime
-  follow-up subsequently landed as the dynamic-extent contract above. Still open:
-  whether a general (non-tail) delegating yield is worth a shared codata `append`.
+  the established finalizer semantics. Cross-boundary cancellation is
+  interpreter-only. The resource-lifetime follow-up subsequently landed as the
+  dynamic-extent contract above. The only remaining generator discussion is
+  demand-gated: whether a concrete program justifies general non-tail delegation
+  via a shared codata `append`.
 
 ## Design intent
 
@@ -178,7 +180,8 @@ the abort completes. Finalizer effects run through the same outer handler stack;
 if a finalizer's own handled effect aborts, that value determines the result, as
 with ordinary `finally` execution. Resuming such an escaped effect is unaffected:
 the original continuation runs and finalizers fire when their handles settle.
-Interpreter-only, like `finally`.
+Cross-boundary cancellation is interpreter-only; `finally` itself has native
+handled-effect parity for supported shapes.
 
 ## Remaining non-goals
 

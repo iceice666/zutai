@@ -2,8 +2,9 @@
 
 These features build on the v0 core and the v1 deferred-feature layer. They have
 landed at check-plus-reference-interpreter level (`docs/ARCHIVED.md` Phases
-24–28); native-backend parity varies per feature, and remaining backend gaps are
-tracked in [`TBD.md`](../TBD.md).
+24–28). Native-backend support is recorded per chapter; the remaining boundaries
+are deliberate refusal points unless a concrete program promotes one into
+[`TBD.md`](../TBD.md).
 
 v2 inherits all v0 and v1 surface syntax. It introduces user-defined recursive
 data types, host capabilities beyond `io.print`, user-defined `derive` recipes
