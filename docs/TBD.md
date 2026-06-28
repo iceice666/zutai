@@ -20,10 +20,11 @@ demand-gated and must not be implemented unless a concrete program forces one
 of the reserved core-design boundaries.
 
 The next concrete follow-up is **source-prelude / stdlib usability** work:
-B (small function prelude) and C (minimal `List` verbs) **landed 2026-06-28**
-(see `docs/ARCHIVED.md` "Small function prelude (stdlib slice B)" and "Minimal
-List verbs (stdlib slice C)"). This is stdlib work, not Track 2, and does not
-reopen any core language boundary.
+B (small function prelude), C (minimal `List` verbs), and D (Optional helpers)
+**landed 2026-06-28** (see `docs/ARCHIVED.md` "Small function prelude (stdlib
+slice B)", "Minimal List verbs (stdlib slice C)", and "Optional helpers (stdlib
+slice D)"). This is stdlib work, not Track 2, and does not reopen any core
+language boundary. The next unlanded stdlib slice is `result`.
 
 ## Source prelude / stdlib active work
 
@@ -49,9 +50,18 @@ by list nil/cons patterns through THIR/TLC/eval/native and a strict
 through `import stdlib.stream`. See `docs/ARCHIVED.md` "Minimal List verbs
 (stdlib slice C)" for the summary._
 
-Non-goals for this slice: `optional`, `result`, `num`, `text`, `cmp`, full
-stdlib completion, non-tail generator `yield from`, cross-module witness native
-ABI, and all Track 2 boundaries.
+### D — Optional helpers ✅
+
+_Landed 2026-06-28. `optional.zt` ships explicit-import-only helpers
+`map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList` over `Optional`; the
+module is available as `import stdlib.optional` and is not injected into the
+ambient prelude, so `List` `map`/`filter` remain the unqualified defaults. The
+next unlanded stdlib slice is `result`. See `docs/ARCHIVED.md` "Optional helpers
+(stdlib slice D)" for the summary._
+
+Non-goals for the next stdlib slice: `num`, `text`, `cmp`, full stdlib
+completion, non-tail generator `yield from`, cross-module witness native ABI,
+and all Track 2 boundaries.
 
 ## Tooling / test-harness backlog
 

@@ -46,11 +46,12 @@ support-level reconciliation, coverage/diagnostics/backend audit; ambient vs
 imported stream-combinator convergence follow-up fixed; small function prelude
 `id`/`const`/`compose`/`flip` landed as ambient source decls + `stdlib.prelude`;
 minimal `List` verbs landed as ambient/importable source decls backed by list
-patterns and a strict fold bridge; native-link test race fixed with a
-process-released runtime-build lock; see "Post-V3 readiness audit",
+patterns and a strict fold bridge; explicit `stdlib.optional` helpers landed for
+`map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList`; native-link test race
+fixed with a process-released runtime-build lock; see "Post-V3 readiness audit",
 "Ambient/imported stream-combinator convergence", "Small function prelude
-(stdlib slice B)", "Minimal List verbs (stdlib slice C)", and
-"Native-link test race fix")._
+(stdlib slice B)", "Minimal List verbs (stdlib slice C)", "Optional helpers
+(stdlib slice D)", and "Native-link test race fix")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -175,6 +176,28 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Optional helpers (stdlib slice D) ✅
+
+_Completed 2026-06-28. Ships the `stdlib.optional` source module as an explicit
+import, not an ambient prelude. Unqualified `map`/`filter` therefore keep their
+`List` prelude meaning unless a program intentionally destructures the optional
+module._
+
+- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/optional.zt`
+  is embedded as `zutai_hir::OPTIONAL_MODULE_SRC` and registered only through
+  `semantic/src/import.rs` for `import stdlib.optional`; HIR ambient fallback
+  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Exports.** The module exports `map`/`andThen`/`filter`/`withDefault`/
+  `isSome`/`toList` over `Optional`.
+- **No new primitive.** The helpers use existing `Optional` syntax, `??`,
+  `listEmpty`, and `listCons`; no `BuiltinFn`, runtime ABI, Dataflow Core, ANF,
+  SSA, LLVM, or backend primitive was added.
+- **Verification.** Targeted gates passed:
+  `cargo check -p zutai-semantic`,
+  `cargo test -p zutai-semantic stdlib_optional`,
+  `cargo test -p zutai-eval stdlib_optional`, and
+  `cargo test -p zutai-cli --test cli compile_stdlib_optional_pipeline_matches_oracle -- --test-threads=1`.
 
 ### Native-link test race fix ✅
 

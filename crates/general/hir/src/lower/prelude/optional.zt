@@ -1,0 +1,15 @@
+-- Canonical source for the Optional helpers (stdlib slice D).
+-- Explicit import only: `o ::= import stdlib.optional`; these names are not ambient.
+map :: <A, B> (A -> B) -> A? -> B?
+  = f opt => match opt { | #none => #none; | #some (x) => #some (f x); };
+andThen :: <A, B> (A -> B?) -> A? -> B?
+  = f opt => match opt { | #none => #none; | #some (x) => f x; };
+filter :: <A> (A -> Bool) -> A? -> A?
+  = p opt => match opt { | #none => #none; | #some (x) => if p x then #some (x) else #none; };
+withDefault :: <A> A -> A? -> A
+  = default opt => opt ?? default;
+isSome :: <A> A? -> Bool
+  = opt => match opt { | #none => false; | #some (_) => true; };
+toList :: <A> A? -> List A
+  = opt => match opt { | #none => listEmpty (); | #some (x) => listCons x (listEmpty ()); };
+{ map = map; andThen = andThen; filter = filter; withDefault = withDefault; isSome = isSome; toList = toList; }

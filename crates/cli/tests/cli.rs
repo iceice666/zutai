@@ -198,6 +198,22 @@ fn compile_prelude_list_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_OPTIONAL_PIPELINE_SRC: &str = "o ::= import stdlib.optional;\n\
+noneInt :: Int? = #none;\n\
+score :: Int? -> Int\n  = maybe => maybe |> o.filter (\\x. x > 1) |> o.map (\\x. x * 10) |> o.andThen (\\x. if x > 20 then #some (x + 1) else #none) |> o.withDefault 5;\n\
+score (#some (3)) + score (#some (1)) + score noneInt + length (o.toList (#some (9))) + length (o.toList noneInt)\n";
+
+#[test]
+fn compile_stdlib_optional_pipeline_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_optional", STDLIB_OPTIONAL_PIPELINE_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_optional_oracle.zt",
+        STDLIB_OPTIONAL_PIPELINE_SRC,
+    );
+    assert_eq!(native.trim(), "42");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 // V3-G2 residual: `unfold` — the canonical codata producer (step + seed). A
 // `Step S A` (`#done`/`#yield { item; next }`) step function drives an infinite
 // stream that `take`/`fold` bound. Native-compiled, matching the oracle.

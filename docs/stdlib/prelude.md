@@ -180,13 +180,14 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
 ## Build order
 
 1. List-destructuring patterns + strict-`fold` intrinsic + `map`/`filter`/`fold`
-   in source. *(still open — milestone C)*
-2. `prelude.zt` resolution. *(landed for the function prelude: `id`/`const`/
-   `compose`/`flip` are ambient source decls via HIR-lowerer injection, importable
-   as `stdlib.prelude`; the list-verb half waits on step 1)*
-3. `list`, `optional`.
-4. `stream` landed as ambient prelude **and** importable embedded `stdlib.stream`
-   (V3-G2/G6); `Stream A` is codata over recursive types, not a deferred module. ✅
-5. `result` (with `Validation`).
-6. Intrinsic-heavy `text`, `num`.
-7. Fold `config`/`reflect` under the import scheme.
+   in source. *(landed as slice C: ambient/importable `List` verbs in
+   `prelude.zt`)*
+2. `prelude.zt` resolution. *(landed for the function prelude:
+   `id`/`const`/`compose`/`flip` and the slice C list verbs as ambient source
+   declarations via HIR-lowerer injection, importable as `stdlib.prelude`)*
+3. `optional`. *(landed as slice D: explicit import only via
+   `stdlib.optional`; not ambient, so unqualified `map`/`filter` stay the List
+   prelude names unless the module is explicitly destructured)*
+4. Next unlanded stdlib slice: `result` (with `Validation`).
+5. Intrinsic-heavy `text`, `num`.
+6. Fold `config`/`reflect` under the import scheme.

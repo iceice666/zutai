@@ -630,6 +630,35 @@ mod tests {
     }
 
     #[test]
+    fn stdlib_optional_import_resolves_without_base() {
+        let analysis = analyze(
+            "o ::= import stdlib.optional;\no.withDefault 0 (o.map (\\x. x + 1) (#some (41)))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn destructured_stdlib_optional_members_bind_unqualified() {
+        let analysis = analyze(
+            "{ map; withDefault; } ::= import stdlib.optional;\nwithDefault 0 (map (\\n. n + 1) (#some (4)))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn user_binding_shadows_prelude_without_duplicate_diagnostic() {
         // The prelude is a fallback: a user `id` of the same name wins and raises
         // no duplicate-binding diagnostic.

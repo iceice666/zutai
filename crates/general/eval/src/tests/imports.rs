@@ -382,6 +382,42 @@ fn destructured_stdlib_prelude_members_evaluate() {
     assert_eq!(run(src), Value::Int(22));
 }
 
+#[test]
+fn stdlib_optional_qualified_members_evaluate() {
+    let src = "o ::= import stdlib.optional;\n\
+               noneInt :: Int? = #none;\n\
+               a ::= o.withDefault 0 (o.map (\\x. x + 1) (#some (40)));\n\
+               b ::= o.withDefault 0 (o.andThen (\\x. if x > 0 then #some (x + 1) else #none) (#some (1)));\n\
+               c ::= o.withDefault 0 (o.filter (\\x. x > 3) (#some (4)));\n\
+               d ::= if o.isSome noneInt then 100 else 0;\n\
+               e ::= length (o.toList (#some (9)));\n\
+               f ::= length (o.toList noneInt);\n\
+               a + b + c + d + e + f";
+    assert_eq!(run(src), Value::Int(48));
+}
+
+#[test]
+fn destructured_stdlib_optional_members_evaluate() {
+    let src = "{ map; withDefault; isSome; } ::= import stdlib.optional;\n\
+               if isSome (map (\\x. x + 1) (#some (4))) then withDefault 0 (map (\\x. x + 1) (#some (4))) else 0";
+    assert_eq!(run(src), Value::Int(5));
+}
+
+#[test]
+fn stdlib_optional_thir_oracle_matches_tlc_path() {
+    let srcs = [
+        "o ::= import stdlib.optional;\no.withDefault 0 (o.map (\\x. x + 1) (#some (4)))",
+        "o ::= import stdlib.optional;\no.withDefault 7 (o.andThen (\\x. #none) (#some (4)))",
+        "o ::= import stdlib.optional;\no.toList (#some (3))",
+        "o ::= import stdlib.optional;\nnoneInt :: Int? = #none;\no.toList noneInt",
+    ];
+    for src in srcs {
+        let tlc = eval_file(src).expect("TLC eval failed");
+        let thir = eval_thir_file(src).expect("THIR oracle eval failed");
+        assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    }
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

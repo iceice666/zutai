@@ -56,6 +56,14 @@ pub const STREAM_MODULE_SRC: &str = include_str!("prelude/stream.zt");
 /// exports the final record. Pure source-level stdlib — no intrinsics, no new
 /// syntax, no backend IR node.
 pub const PRELUDE_MODULE_SRC: &str = include_str!("prelude/prelude.zt");
+///
+/// Canonical source for the Optional helper module (stdlib slice D).
+///
+/// Explicit import only: `import stdlib.optional` exports the final record.
+/// Unlike `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`, this is not injected as
+/// an ambient fallback prelude, so unqualified `map`/`filter` keep their List
+/// prelude meaning unless the user explicitly destructures the module.
+pub const OPTIONAL_MODULE_SRC: &str = include_str!("prelude/optional.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())
