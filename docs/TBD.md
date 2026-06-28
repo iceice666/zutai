@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-27)
+## Status (2026-06-28)
 
 v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 Track 1
@@ -20,7 +20,155 @@ import ergonomics, and the resource-lifetime contract for effectful generators
 have all landed — see `docs/ARCHIVED.md`.
 **This closes V3-G2 and the scoped V3-G4 follow-ups.**
 
-**The GC residual is retired:** conservative default-on mark-sweep is the committed endpoint; precise/moving GC, a lazy-backend write barrier, and other-target collector expansion are no longer active milestones.
+**The GC residual is retired:** conservative default-on mark-sweep is the
+committed endpoint; precise/moving GC, a lazy-backend write barrier, and
+other-target collector expansion are no longer active milestones.
+
+Current active work is the post-V3 readiness audit below: a stabilization sweep
+that reconciles the completed baseline before any demand-gated Track 2 work is
+scoped.
+
+## Active milestone — Post-V3 readiness audit (opened 2026-06-28)
+
+This is the active stabilization milestone after V3 Track 1 and its scoped
+follow-ups. It is a **readiness audit**, not a new language-feature track:
+Track 2 remains demand-gated and must not be implemented unless a concrete
+program forces one of the reserved core-design boundaries.
+
+### Audit goal
+
+Reconcile the implemented post-V3 baseline with every user-facing claim,
+acceptance test, refusal gate, and roadmap pointer. The result should be a
+release-quality statement of what Zutai can check, interpret, lower, compile,
+or deliberately refuse after V3.
+
+### Source-of-truth baseline to audit against
+
+- `docs/ARCHIVED.md` "Current baseline" and completed milestones, especially
+  native effect parity, V3-G1…G6, import ergonomics, `List` interop,
+  `StreamEff`, cooperative cancellation, resource lifetime, dynamic
+  `load.zti` / `load.zt`, and default-on conservative GC.
+- `docs/v3_spec/02-roadmap.md`: V3 Track 1 is complete; Track 2 is
+  demand-gated, not backlog.
+- `docs/spec/v0/` remains the stable-language source of truth. v1/v2/v3 docs
+  describe implemented extensions only where `ARCHIVED.md` or tests confirm
+  support.
+- Rust tests remain the executable support contract; prefer parity-or-refuse
+  coverage over prose-only claims.
+
+### Workstreams
+
+1. **User-facing docs/status reconciliation**
+   - Audit `docs/language-manual.md` "Implemented extensions beyond v0" against
+     `ARCHIVED.md` support levels.
+   - Audit `docs/stdlib/stream.md` against the landed V3-G6/import-ergonomics
+     state: embedded `stdlib.stream`, exported `Stream`/`Step`, open/selective
+     destructuring, `empty`/`unfold`, and `List` interop.
+   - Audit `docs/v3_spec/01-generators.md` and `docs/v3_spec/02-roadmap.md`
+     for stale support-level text after native effect parity, resource lifetime,
+     and GC residual retirement.
+   - Audit `docs/v2_spec/00-index.md` and related v2 pages for stale "future" or
+     "reference-interpreter only" language where native support has since
+     landed.
+   - Remove or rewrite any claim that implies streams are list-backed, stdlib
+     imports require a local `stream.zt`, `s.Stream` is unavailable, scoped V3-G4
+     follow-ups remain open, or precise/moving GC is active work.
+
+2. **Support-level matrix**
+   - Produce or refresh a compact matrix covering **check-only**,
+     **reference-interpreter support**, **Dataflow/ANF/SSA/LLVM lowering**,
+     **native runtime support**, and **explicit backend rejection**.
+   - Include at least: `.zt`/`.zti` imports, embedded stdlib imports,
+     exported type values, applied imported type constructors, type-value runtime
+     gates, constraints/witnesses/derive, reflection, row-polymorphism,
+     higher-rank polymorphism, higher-kinded constraints, algebraic effects,
+     `io.print`, non-`io.print` host/resource effects, dynamic loads,
+     stream codata, pure infinite generators, effectful generators,
+     `StreamEff`, cancellation/finalization, config overlay, universe levels,
+     recursive aliases, and conservative GC.
+   - Mark each non-full-support feature as **by-design refusal**, **temporary
+     implementation residual**, or **Track 2 demand-gated boundary**. Do not
+     file by-design refusals as bugs.
+
+3. **Regression and parity coverage audit**
+   - Map each support claim to an executable test or identify the missing test
+     as follow-up work.
+   - Prefer oracle parity tests for behavior (`zutai-eval` vs compile/native)
+     and explicit refusal tests for unsupported paths.
+   - Cover stale-prone paths: imported stdlib stream combinators, exported
+     `Stream`/`Step`, imported/applied `Stream`, ambient and importable
+     `StreamEff`, `toList`/`fromList`/`takeList`, `empty` instantiation at
+     `BindingRef`, effectful generator ordering, cancellation, cross-boundary
+     finalizer unwinding, resource lazy-escape refusal, non-`io.print` resource
+     backend rejection, dynamic `load.zti` / `load.zt`, default-on GC and
+     `ZUTAI_GC=0` opt-out.
+   - Keep tests behavior-facing. Do not add mocks or tests that only pin
+     spelling/config defaults.
+
+4. **Diagnostics and refusal-quality audit**
+   - Confirm unsupported paths refuse before the wrong backend stage and with
+     actionable diagnostics: residual reflection, runtime `Type` values,
+     function-valued `@main`, unsupported overlay forms, unhandled effects,
+     polymorphic/open-row effect execution, higher-kinded execution, residual
+     non-`io.print` host/resource effects, lazy resource escape, non-tail
+     `yield from`, and Track 2 boundaries.
+   - Ensure diagnostics distinguish "implemented but backend-gated" from
+     "reserved by design" and "syntax/type error".
+
+5. **Example and doc-fence smoke audit**
+   - Re-run or extend the existing doc-fence/spec conformance harness so current
+     examples use the post-grammar semicolon/container syntax.
+   - Smoke the language-manual quick-start snippets, stream/std-lib examples,
+     import/destructuring examples, generator examples, and dynamic-load examples.
+   - Promote stable, high-signal examples into tests when they protect a support
+     claim likely to drift again.
+
+6. **Backend/runtime readiness audit**
+   - Check that docs, tests, and CLI behavior agree on the committed backend
+     invariants: strict evaluation, TCO, write-once heap, no lazy thunk-update
+     backend, conservative default-on GC, `ZUTAI_GC=0` opt-out, and no reopening
+     of untagged `i64`.
+   - Confirm native artifact paths still have explicit host-toolchain diagnostics
+     and do not claim unsupported target GC behavior.
+
+7. **Roadmap hygiene**
+   - Keep `docs/TBD.md` focused on open audit work and any residuals it
+     discovers.
+   - When this audit lands, move a compressed summary to `docs/ARCHIVED.md`
+     "Completed milestones, newest first", update "Last updated" notes, and leave
+     only concrete unfinished follow-ups in `TBD.md`.
+   - Do not add Track 2 implementation milestones unless the audit cites a
+     concrete program that cannot be expressed without the reserved feature.
+
+### Initial drift already surfaced
+
+- `docs/language-manual.md` still describes stream-backed generators as a
+  "finite pure generator shell" over a "lazy list-backed `Stream` representation";
+  post-V3 `Stream A` is codata and pure infinite generators are supported.
+- `docs/stdlib/stream.md` still says explicit stream import is path-relative
+  with no stdlib-root path, exports only eight combinators, and has no `s.Stream`;
+  V3-G6 import ergonomics landed embedded `stdlib.stream`, exported `Stream` /
+  `Step`, and destructuring.
+- `docs/stdlib/stream.md` still describes `Stream A` as a "pure lazy sequence"
+  whose `stream { ... }` syntax uses the current list representation; this should
+  be rewritten to codata/demand-driven wording.
+- `docs/v3_spec/01-generators.md` needs a support-level pass so native handled
+  effect parity and the non-`io.print` resource-effect backend gate are stated as
+  separate cases, not collapsed into stale "native lowering refused" language.
+
+### Completion criteria
+
+- No user-facing doc claims a V3 residual remains open when `ARCHIVED.md` says it
+  landed.
+- Every implemented-extension support claim names the highest verified support
+  level and the precise refusal boundary, if any.
+- Every materially supported feature has at least one executable coverage anchor
+  or a concrete follow-up item in `TBD.md`.
+- Stale stream/import phrases are removed or replaced across the docs.
+- Track 2 remains explicitly demand-gated.
+- Verification gate before archiving: run the narrow doc/example tests touched by
+  the audit, then the repo-required `cargo fmt`, `cargo test --workspace`, and
+  `cargo clippy --workspace --all-targets` when practical.
 
 ## Previous milestone — Resource lifetime for effectful generators (landed 2026-06-27)
 
