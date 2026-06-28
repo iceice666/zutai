@@ -18,36 +18,8 @@ default-on mark-sweep is the committed endpoint). Track 2 remains
 demand-gated and must not be implemented unless a concrete program forces one
 of the reserved core-design boundaries.
 
-One concrete follow-up the audit surfaced is open below.
-
-## Open follow-up — ambient vs imported stream-combinator type divergence
-
-Discovered by the audit's diagnostics-quality workstream. Mixing
-**destructured-import** stream combinators with **ambient** stream combinators
-in one expression diverges type-level evaluation fuel instead of converging or
-refusing cleanly. Reproduction:
-
-```zt
-{ map; fold; } ::= import stdlib.stream;
-fold (\a b. a + b) 0 (take 3 (map (\x. x * 2) (unfold (\st. #yield { item = st; next = st + 1; }) 1)))
-```
-
-Here `map`/`fold` are the *imported* `s.Stream`-typed combinators while
-`take`/`unfold` resolve to the *ambient* prelude combinators (typed over the
-ambient `Stream` alias). Unifying the imported `Stream` alias against the
-ambient one unfolds both equirecursive aliases without converging, exhausting
-type-level fuel with a generic "type-level computation exceeded evaluation
-limit" diagnostic rather than an actionable mismatch message. Destructuring
-*all* used names (`{ map; fold; take; unfold; } ::= import stdlib.stream;`) or
-using the fully-qualified `s.` form converges and evaluates correctly.
-
-This is a diagnostics-quality / type-equality residual, not a Track 2 boundary:
-both `Stream` aliases denote the same codata type, so the intended behavior is
-convergence (or a precise "imported vs ambient `Stream` constructor" diagnostic),
-not fuel exhaustion. It is related to the known "Applied imported type
-constructors" rough edge on the recursive `Stream` constructor in
-function-type position (see `docs/ARCHIVED.md`). No test currently pins this
-path; a parity-or-refuse test should be added when it is addressed.
+No concrete implementation follow-up is open. Do not add Track 2 work here
+unless a real program cannot be expressed inside the committed support envelope.
 
 ## v1 residual — by design, not gaps
 

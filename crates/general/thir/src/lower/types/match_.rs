@@ -167,11 +167,43 @@ impl<'hir> Lowerer<'hir> {
                     binding: fb,
                     args: fa,
                 },
-            ) if eb == fb && ea.len() == fa.len() && self.alias_is_recursive(eb) => {
-                let result = ea
+            ) if ea.len() == fa.len()
+                && (self.alias_is_recursive(eb) || self.alias_is_recursive(fb)) =>
+            {
+                let args_match = ea
                     .iter()
                     .zip(fa.iter())
                     .all(|(&ea, &fa)| self.type_matches(ea, fa) && self.type_matches(fa, ea));
+                if !args_match {
+                    if let Some(key) = guard_key {
+                        self.type_match_in_progress.remove(&key);
+                    }
+                    return false;
+                }
+                if eb == fb {
+                    if let Some(key) = guard_key {
+                        self.type_match_in_progress.remove(&key);
+                    }
+                    return true;
+                }
+
+                let alias_key = if eb.0 <= fb.0 { (eb, fb) } else { (fb, eb) };
+                if !self.alias_match_in_progress.insert(alias_key) {
+                    if let Some(key) = guard_key {
+                        self.type_match_in_progress.remove(&key);
+                    }
+                    return true;
+                }
+                let result = match (
+                    self.expand_alias_apply_once(eb, &ea, e_span),
+                    self.expand_alias_apply_once(fb, &fa, f_span),
+                ) {
+                    (Some(expected), Some(found)) => {
+                        self.type_matches(expected, found) && self.type_matches(found, expected)
+                    }
+                    _ => false,
+                };
+                self.alias_match_in_progress.remove(&alias_key);
                 if let Some(key) = guard_key {
                     self.type_match_in_progress.remove(&key);
                 }

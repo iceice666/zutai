@@ -835,6 +835,24 @@ fn compile_zt_imported_stream_list_interop_matches_oracle() {
 }
 
 #[test]
+fn compile_zt_mixed_imported_and_ambient_stream_combinators_matches_oracle() {
+    // Imported `map`/`fold` and ambient `take`/`unfold` mention two aliases for
+    // the same codata type (`s.Stream` and fallback `Stream`). They must compare
+    // equirecursively and compile natively instead of exhausting type-level fuel.
+    let (interp, native) = import_run_vs_compile(
+        "g6_stream_mixed_imported_ambient",
+        "main.zt",
+        &[(
+            "main.zt",
+            "{ map; fold; } ::= import stdlib.stream;\n\
+             fold (\\acc x. acc + x) 0 (take 3 (map (\\x. x * 2) (unfold (\\st. #yield { item = st; next = st + 1; }) 1)))\n",
+        )],
+    );
+    assert_eq!(native.trim(), "12");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
 fn ambient_stream_prelude_matches_imported_module() {
     // The ambient prelude (no import) and the importable module share one source
     // (`STREAM_MODULE_SRC`), so the same pipeline written against ambient names must

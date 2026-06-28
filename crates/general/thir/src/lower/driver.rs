@@ -35,6 +35,7 @@ impl<'hir> Lowerer<'hir> {
             type_universe_cache: FxHashMap::default(),
             alias_universe_in_progress: FxHashSet::default(),
             type_match_in_progress: FxHashSet::default(),
+            alias_match_in_progress: FxHashSet::default(),
             alias_recursive_cache: FxHashMap::default(),
             alias_params: FxHashMap::default(),
             type_param_scope: FxHashSet::default(),

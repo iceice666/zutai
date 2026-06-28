@@ -355,6 +355,17 @@ fn destructured_stdlib_members_evaluate_unqualified() {
     assert_eq!(run(src), Value::Int(12));
 }
 
+#[test]
+fn mixed_destructured_and_ambient_stream_combinators_evaluate() {
+    // Imported `map`/`fold` expose the `stdlib.stream` module's `s.Stream`
+    // constructor while ambient `take`/`unfold` use the fallback prelude
+    // constructor. Both denote the same equirecursive codata type, so unification
+    // must converge instead of exhausting type-level expansion fuel.
+    let src = "{ map; fold; } ::= import stdlib.stream;\n\
+               fold (\\acc x. acc + x) 0 (take 3 (map (\\x. x * 2) (unfold (\\st. #yield { item = st; next = st + 1; }) 1)))";
+    assert_eq!(run(src), Value::Int(12));
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

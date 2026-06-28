@@ -42,8 +42,9 @@ unified as an expression; **native effect parity**), and 2026-06-27 (resource
 lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects;
 GC residual retired with conservative default-on GC as the committed endpoint),
 and 2026-06-28 (post-V3 readiness audit: user-facing doc reconciliation,
-support-level reconciliation, coverage/diagnostics/backend audit; see "Post-V3
-readiness audit")._
+support-level reconciliation, coverage/diagnostics/backend audit; ambient vs
+imported stream-combinator convergence follow-up fixed; see "Post-V3 readiness
+audit" and "Ambient/imported stream-combinator convergence")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -168,6 +169,26 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Ambient/imported stream-combinator convergence ✅
+
+_Completed 2026-06-28. Closes the post-V3 readiness audit follow-up where mixing
+destructured `stdlib.stream` combinators with ambient stream combinators
+exhausted type-level fuel._
+
+- **Type equality fixed at the source.** THIR unification and assignability now
+  treat recursive alias-head pairs coinductively, so imported `s.Stream A` and
+  ambient `Stream A` compare as the same codata type instead of repeatedly
+  instantiating fresh recursive bodies until the generic fuel limit fires.
+- **Regression pinned.** `mixed_destructured_and_ambient_stream_combinators_evaluate`
+  covers the interpreter path; `compile_zt_mixed_imported_and_ambient_stream_combinators_matches_oracle`
+  covers the CLI/native path and asserts native output matches the interpreter
+  oracle.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-eval mixed_destructured_and_ambient_stream_combinators_evaluate`,
+  `cargo test -p zutai-eval imports::`, `cargo test -p zutai-thir`, and
+  `cargo test -p zutai-cli compile_zt_mixed_imported_and_ambient_stream_combinators_matches_oracle`.
+
+
 ### Post-V3 readiness audit ✅
 
 _Completed 2026-06-28. A stabilization sweep after V3 Track 1 and its scoped
@@ -216,11 +237,10 @@ Zutai can check, interpret, lower, compile, or deliberately refuse after V3._
   effect gate, runtime-`Type`-value gate, and effectful-generator/backend gates).
   The obsolete interpreter-only `finally` support story was removed: `finally`
   is covered by native handled-effect parity, while out-of-envelope
-  resource-generator paths still refuse explicitly. One diagnostics-quality
-  residual surfaced and is tracked as the open follow-up in `docs/TBD.md`:
-  mixing destructured-import and ambient stream combinators diverges type-level
-  fuel (generic "exceeded evaluation limit") instead of converging or refusing
-  cleanly.
+  resource-generator paths still refuse explicitly. The audit's one
+  diagnostics-quality residual — mixed destructured-import and ambient stream
+  combinators exhausting type-level fuel — is now closed by the
+  "Ambient/imported stream-combinator convergence" milestone above.
 - **Backend/runtime readiness.** Docs, tests, and CLI agree on the committed
   invariants: strict evaluation + TCO, write-once heap, no lazy thunk-update
   backend, conservative default-on GC with `ZUTAI_GC=0` opt-out, and no

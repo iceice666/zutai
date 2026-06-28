@@ -164,6 +164,11 @@ struct Lowerer<'hir> {
     /// the same pair through record/union fields; re-entry means the equirecursive
     /// comparison has reached its fixpoint.
     type_match_in_progress: FxHashSet<(TypeId, TypeId)>,
+    /// Alias-head pairs currently being matched. Recursive alias instantiation
+    /// mints fresh `TypeId`s at each unfold, so `type_match_in_progress` alone
+    /// cannot see a cross-module recursive pair (`Stream` vs imported
+    /// `s.Stream`) re-entering through its own tail.
+    alias_match_in_progress: FxHashSet<(BindingId, BindingId)>,
     /// Memoized "is this alias (directly or mutually) recursive?" — gates the
     /// bidirectional same-binding AliasApply fast path in `type_matches`.
     alias_recursive_cache: FxHashMap<BindingId, bool>,

@@ -139,6 +139,16 @@ impl<'hir> Lowerer<'hir> {
     /// Structural unification of two types.  Solves InferVars in `infer_subst`.
     /// Reports a `TypeMismatch` diagnostic for rigid conflicts.
     pub(in crate::lower) fn unify(&mut self, t1: TypeId, t2: TypeId, span: Span) {
+        self.unify_inner(t1, t2, span, &mut FxHashSet::default());
+    }
+
+    fn unify_inner(
+        &mut self,
+        t1: TypeId,
+        t2: TypeId,
+        span: Span,
+        seen_alias_pairs: &mut FxHashSet<(BindingId, BindingId)>,
+    ) {
         let t1 = self.resolve(t1);
         let t2 = self.resolve(t2);
         if t1 == t2 {
@@ -175,19 +185,25 @@ impl<'hir> Lowerer<'hir> {
             }
 
             (TypeKind::Function { from: f1, to: r1 }, TypeKind::Function { from: f2, to: r2 }) => {
-                self.unify(f1, f2, span);
-                self.unify(r1, r2, span);
+                self.unify_inner(f1, f2, span, seen_alias_pairs);
+                self.unify_inner(r1, r2, span, seen_alias_pairs);
             }
 
             (TypeKind::Effect { base: b1, row: r1 }, TypeKind::Effect { base: b2, row: r2 }) => {
-                self.unify(b1, b2, span);
+                self.unify_inner(b1, b2, span, seen_alias_pairs);
                 self.effect_rows_unify(&r1, &r2, span);
             }
 
-            (TypeKind::List(e1), TypeKind::List(e2)) => self.unify(e1, e2, span),
+            (TypeKind::List(e1), TypeKind::List(e2)) => {
+                self.unify_inner(e1, e2, span, seen_alias_pairs)
+            }
 
-            (TypeKind::Optional(e1), TypeKind::Optional(e2)) => self.unify(e1, e2, span),
-            (TypeKind::Maybe(e1), TypeKind::Maybe(e2)) => self.unify(e1, e2, span),
+            (TypeKind::Optional(e1), TypeKind::Optional(e2)) => {
+                self.unify_inner(e1, e2, span, seen_alias_pairs)
+            }
+            (TypeKind::Maybe(e1), TypeKind::Maybe(e2)) => {
+                self.unify_inner(e1, e2, span, seen_alias_pairs)
+            }
             (
                 TypeKind::Patch {
                     target: t1,
@@ -197,15 +213,136 @@ impl<'hir> Lowerer<'hir> {
                     target: t2,
                     deep: d2,
                 },
-            ) if d1 == d2 => self.unify(t1, t2, span),
+            ) if d1 == d2 => self.unify_inner(t1, t2, span, seen_alias_pairs),
+
+            (TypeKind::Tuple(items1), TypeKind::Tuple(items2)) => {
+                if items1.len() != items2.len() {
+                    self.type_mismatch(t1, t2, span);
+                    return;
+                }
+                for (left, right) in items1.iter().zip(items2.iter()) {
+                    match (left, right) {
+                        (
+                            TypeTupleItem::Named {
+                                name: n1, ty: t1, ..
+                            },
+                            TypeTupleItem::Named {
+                                name: n2, ty: t2, ..
+                            },
+                        ) if n1 == n2 => self.unify_inner(*t1, *t2, span, seen_alias_pairs),
+                        (TypeTupleItem::Positional(t1), TypeTupleItem::Positional(t2)) => {
+                            self.unify_inner(*t1, *t2, span, seen_alias_pairs);
+                        }
+                        _ => {
+                            self.type_mismatch(t1, t2, span);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            (TypeKind::Record(fields1, tail1), TypeKind::Record(fields2, tail2)) => {
+                let (fields1, tail1) = self.flatten_record_row(fields1, tail1);
+                let (fields2, tail2) = self.flatten_record_row(fields2, tail2);
+                if tail1 != tail2 || fields1.len() != fields2.len() {
+                    self.type_mismatch(t1, t2, span);
+                    return;
+                }
+                let fields2_by_name: FxHashMap<&str, &TypeRecordField> = fields2
+                    .iter()
+                    .map(|field| (field.name.as_str(), field))
+                    .collect();
+                for field1 in &fields1 {
+                    let Some(field2) = fields2_by_name.get(field1.name.as_str()) else {
+                        self.type_mismatch(t1, t2, span);
+                        return;
+                    };
+                    if field1.optional != field2.optional {
+                        self.type_mismatch(t1, t2, span);
+                        return;
+                    }
+                    self.unify_inner(field1.ty, field2.ty, span, seen_alias_pairs);
+                }
+            }
+
+            (TypeKind::Union(vars1, tail1), TypeKind::Union(vars2, tail2)) => {
+                let (vars1, tail1) = self.flatten_union_row(vars1, tail1);
+                let (vars2, tail2) = self.flatten_union_row(vars2, tail2);
+                if tail1 != tail2 || vars1.len() != vars2.len() {
+                    self.type_mismatch(t1, t2, span);
+                    return;
+                }
+                let vars2_by_name: FxHashMap<&str, &UnionVariant> = vars2
+                    .iter()
+                    .map(|variant| (variant.name.as_str(), variant))
+                    .collect();
+                for var1 in &vars1 {
+                    let Some(var2) = vars2_by_name.get(var1.name.as_str()) else {
+                        self.type_mismatch(t1, t2, span);
+                        return;
+                    };
+                    match (var1.payload, var2.payload) {
+                        (Some(left), Some(right)) => {
+                            self.unify_inner(left, right, span, seen_alias_pairs);
+                        }
+                        (None, None) => {}
+                        _ => {
+                            self.type_mismatch(t1, t2, span);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Equirecursive aliases are transparent, but comparing two distinct
+            // recursive aliases by repeatedly expanding both sides can consume the
+            // global type-level fuel forever (`ambient Stream A` versus imported
+            // `s.Stream A`). Remember alias-head pairs coinductively: once the
+            // same pair is seen below itself, the recursive back-edge has matched.
+            (
+                TypeKind::AliasApply {
+                    binding: b1,
+                    args: a1,
+                },
+                TypeKind::AliasApply {
+                    binding: b2,
+                    args: a2,
+                },
+            ) => {
+                if a1.len() != a2.len() {
+                    self.type_mismatch(t1, t2, span);
+                    return;
+                }
+                for (left, right) in a1.iter().zip(a2.iter()) {
+                    self.unify_inner(*left, *right, span, seen_alias_pairs);
+                }
+                if b1 == b2 {
+                    return;
+                }
+
+                let key = if b1.0 <= b2.0 { (b1, b2) } else { (b2, b1) };
+                if !seen_alias_pairs.insert(key) {
+                    return;
+                }
+
+                match (
+                    self.expand_alias_apply_once(b1, &a1, span),
+                    self.expand_alias_apply_once(b2, &a2, span),
+                ) {
+                    (Some(left), Some(right)) => {
+                        self.unify_inner(left, right, span, seen_alias_pairs);
+                    }
+                    _ => self.type_mismatch(t1, t2, span),
+                }
+            }
 
             // Higher-kinded application: decompose head and argument. Required so
             // method-level / constraint type params solve when unifying `F A`
             // shapes (`F A ~ F B`, `?f A ~ F A`). Structural `!=` would spuriously
             // mismatch two separately-built but equal `Apply` nodes.
             (TypeKind::Apply { func: f1, arg: a1 }, TypeKind::Apply { func: f2, arg: a2 }) => {
-                self.unify(f1, f2, span);
-                self.unify(a1, a2, span);
+                self.unify_inner(f1, f2, span, seen_alias_pairs);
+                self.unify_inner(a1, a2, span, seen_alias_pairs);
             }
 
             (left, right) => {
@@ -223,7 +360,7 @@ impl<'hir> Lowerer<'hir> {
                     let r1 = self.resolve_alias(t1, &mut FxHashSet::default(), span);
                     let r2 = self.resolve_alias(t2, &mut FxHashSet::default(), span);
                     if r1 != t1 || r2 != t2 {
-                        self.unify(r1, r2, span);
+                        self.unify_inner(r1, r2, span, seen_alias_pairs);
                         return;
                     }
                 }
@@ -238,6 +375,30 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
         }
+    }
+
+    pub(in crate::lower) fn expand_alias_apply_once(
+        &mut self,
+        binding: BindingId,
+        args: &[TypeId],
+        span: Span,
+    ) -> Option<TypeId> {
+        if self.type_eval_fuel == 0 {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::TypeLevelEvalLimitExceeded,
+                span,
+            });
+            return Some(self.error_type);
+        }
+        self.type_eval_fuel -= 1;
+        let params = self.alias_params.get(&binding).cloned()?;
+        if params.len() != args.len() {
+            return None;
+        }
+        let body = self.aliases.get(&binding).copied()?;
+        let subst: FxHashMap<BindingId, TypeId> =
+            params.into_iter().zip(args.iter().copied()).collect();
+        Some(self.instantiate_type_vars(body, &subst))
     }
 
     /// Zonk: for every solved InferVar slot in the type arena, overwrite it
