@@ -13,8 +13,8 @@ serveOnce :: Int -> Text ! {
     listener := perform net.listen port;
     conn := perform net.accept listener;
     line := perform net.read conn;
-    written := perform net.write line;
-    closed := perform net.close conn;
+    perform net.write line;
+    perform net.close conn;
     line
   ];
 

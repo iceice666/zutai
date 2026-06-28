@@ -66,6 +66,13 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.host.load_zti(i64)\n");
     out.push_str("declare i64 @zutai.host.load_zt(i64)\n");
 
+    // TCP / network capability operations
+    out.push_str("declare i64 @zutai.host.net_listen(i64)\n");
+    out.push_str("declare i64 @zutai.host.net_accept(i64)\n");
+    out.push_str("declare i64 @zutai.host.net_read(i64)\n");
+    out.push_str("declare i64 @zutai.host.net_write(i64)\n");
+    out.push_str("declare i64 @zutai.host.net_close(i64)\n");
+
     // Record operations
     out.push_str("declare i64 @zutai.record_new(i64)\n");
     out.push_str("declare void @zutai.record_set(i64, i64, i64)\n");

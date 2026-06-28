@@ -18,8 +18,8 @@ loop :: Int -> Text ! {
       "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
       requestLine;
     };
-    written := perform net.write response;
-    closed := perform net.close conn;
+    perform net.write response;
+    perform net.close conn;
     loop listener
   ];
 

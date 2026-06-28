@@ -23,10 +23,12 @@ use zutai_eval::{EvalError, Value as EvalValue};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
+use std::io::{BufRead, BufReader};
+use std::net::{TcpListener, TcpStream};
 use std::slice;
 use std::str;
 use std::sync::{
-    Once, OnceLock,
+    Mutex, Once, OnceLock,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1575,6 +1577,99 @@ pub extern "C" fn host_rng_next(_unit: i64) -> i64 {
             Err(found) => state = found,
         }
     }
+}
+
+// ── Network capability operations ────────────────────────────────────────────────
+
+static NET_LISTENERS: Mutex<Vec<Option<TcpListener>>> = Mutex::new(Vec::new());
+static NET_CONNECTIONS: Mutex<Vec<Option<TcpStream>>> = Mutex::new(Vec::new());
+static NET_CURRENT_CONN: AtomicU64 = AtomicU64::new(0);
+static NET_NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+fn net_alloc_id(next: &AtomicU64) -> u64 {
+    next.fetch_add(1, Ordering::Relaxed)
+}
+
+#[unsafe(export_name = "zutai.host.net_listen")]
+pub extern "C" fn host_net_listen(port: i64) -> i64 {
+    let addr = format!("127.0.0.1:{port}");
+    let listener =
+        TcpListener::bind(&addr).unwrap_or_else(|err| runtime_error(&format!("net.listen: {err}")));
+    let id = net_alloc_id(&NET_NEXT_ID);
+    let mut listeners = NET_LISTENERS.lock().unwrap();
+    while listeners.len() <= id as usize {
+        listeners.push(None);
+    }
+    listeners[id as usize] = Some(listener);
+    id as i64
+}
+
+#[unsafe(export_name = "zutai.host.net_accept")]
+pub extern "C" fn host_net_accept(listener_id: i64) -> i64 {
+    let mut listeners = NET_LISTENERS.lock().unwrap();
+    let listener = listeners
+        .get_mut(listener_id as usize)
+        .and_then(|opt| opt.as_mut())
+        .unwrap_or_else(|| runtime_error(&format!("net.accept: listener {listener_id} not found")));
+    let (stream, _addr) = listener
+        .accept()
+        .unwrap_or_else(|err| runtime_error(&format!("net.accept: {err}")));
+    let conn_id = net_alloc_id(&NET_NEXT_ID);
+    let mut conns = NET_CONNECTIONS.lock().unwrap();
+    while conns.len() <= conn_id as usize {
+        conns.push(None);
+    }
+    conns[conn_id as usize] = Some(stream);
+    NET_CURRENT_CONN.store(conn_id, Ordering::Relaxed);
+    conn_id as i64
+}
+
+#[unsafe(export_name = "zutai.host.net_read")]
+pub extern "C" fn host_net_read(conn_id: i64) -> i64 {
+    let mut conns = NET_CONNECTIONS.lock().unwrap();
+    let stream = conns
+        .get_mut(conn_id as usize)
+        .and_then(|opt| opt.as_mut())
+        .unwrap_or_else(|| runtime_error(&format!("net.read: connection {conn_id} not found")));
+    let mut reader = BufReader::new(&mut *stream);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .unwrap_or_else(|err| runtime_error(&format!("net.read: {err}")));
+    let trimmed = line.trim_end_matches(['\r', '\n']);
+    text_from_string(trimmed.to_string())
+}
+
+#[unsafe(export_name = "zutai.host.net_write")]
+pub extern "C" fn host_net_write(text: i64) -> i64 {
+    let conn_id = NET_CURRENT_CONN.load(Ordering::Relaxed);
+    if conn_id == 0 {
+        runtime_error("net.write: no current connection");
+    }
+    let mut conns = NET_CONNECTIONS.lock().unwrap();
+    let stream = conns
+        .get_mut(conn_id as usize)
+        .and_then(|opt| opt.as_mut())
+        .unwrap_or_else(|| runtime_error(&format!("net.write: connection {conn_id} not found")));
+    let data = unsafe { text_parts(text) };
+    use std::io::Write;
+    stream
+        .write_all(data)
+        .and_then(|_| stream.flush())
+        .unwrap_or_else(|err| runtime_error(&format!("net.write: {err}")));
+    tuple_new(0)
+}
+
+#[unsafe(export_name = "zutai.host.net_close")]
+pub extern "C" fn host_net_close(conn_id: i64) -> i64 {
+    let mut conns = NET_CONNECTIONS.lock().unwrap();
+    if (conn_id as usize) < conns.len() {
+        conns[conn_id as usize] = None;
+    }
+    if NET_CURRENT_CONN.load(Ordering::Relaxed) == conn_id as u64 {
+        NET_CURRENT_CONN.store(0, Ordering::Relaxed);
+    }
+    tuple_new(0)
 }
 
 // ── Output ──────────────────────────────────────────────────────────────────────
