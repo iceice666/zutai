@@ -43,8 +43,10 @@ lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects;
 GC residual retired with conservative default-on GC as the committed endpoint),
 and 2026-06-28 (post-V3 readiness audit: user-facing doc reconciliation,
 support-level reconciliation, coverage/diagnostics/backend audit; ambient vs
-imported stream-combinator convergence follow-up fixed; see "Post-V3 readiness
-audit" and "Ambient/imported stream-combinator convergence")._
+imported stream-combinator convergence follow-up fixed; small function prelude
+`id`/`const`/`compose`/`flip` landed as ambient source decls + `stdlib.prelude`;
+see "Post-V3 readiness audit", "Ambient/imported stream-combinator convergence",
+and "Small function prelude (stdlib slice B)")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -168,6 +170,46 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Small function prelude (stdlib slice B) ✅
+
+_Completed 2026-06-28. Ships the first non-stream source prelude: ordinary
+polymorphic function helpers `id`/`const`/`compose`/`flip`, ambient (no import)
+and importable as `stdlib.prelude`. Pure source-level stdlib — no new syntax, no
+new backend IR node, no intrinsics, no Track 2 boundary._
+
+- **Single-source file.** `crates/general/hir/src/lower/prelude/prelude.zt` holds
+  the four declarations plus a final record export. The HIR lowerer
+  `include_str!`s it (exposed as `zutai_hir::PRELUDE_MODULE_SRC`) and injects its
+  declarations as an ambient fallback, mirroring the stream prelude
+  (`STREAM_MODULE_SRC`). The ambient path reads only the declarations; the import
+  path (`import stdlib.prelude`) uses the final record as the module export.
+- **Lowerer generalized.** `lower_file` was refactored to inject both source
+  preludes through two helpers — `define_prelude_fallback` (register only names
+  not already owned by user/constraint code) and `lower_prelude_if_referenced`
+  (all-or-nothing body lowering, with the stream prelude's `loadZti`/`loadZt`
+  force-include trigger preserved). The function prelude has no such trigger.
+- **Real declarations, not builtins.** The helpers are ordinary polymorphic
+  source decls, so they thread through THIR/TLC/eval/native with no `BuiltinFn`
+  seeding — `top_env.rs`/`tlc_entry.rs` seed only intrinsics. Resolution stays
+  `user > prelude > intrinsic / ambient fallback`: a user binding of the same
+  name wins and raises no duplicate-binding diagnostic.
+- **Stdlib import.** `semantic/src/import.rs` `stdlib_source` gains `"prelude"`
+  → `PRELUDE_MODULE_SRC`, so `import stdlib.prelude` resolves with no filesystem
+  base (same registry as `stdlib.stream`).
+- **Docs reconciled.** `docs/stdlib/00-index.md` and `docs/stdlib/prelude.md`
+  now list `id`/`const`/`compose`/`flip` as ambient and drop the stale "`fn`
+  module" / "excluded from prelude" claims the older design held; the list-verb
+  prelude (`map`/`filter`/`fold` over `List`) remains pending on
+  list-destructuring patterns (milestone C).
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-eval prelude` (ambient + shadowing + THIR/TLC parity),
+  `cargo test -p zutai-eval imports::` (`stdlib.prelude` import),
+  `cargo test -p zutai-semantic prelude`,
+  `cargo test -p zutai-cli -- compile_prelude_functions compile_stdlib_prelude_import`
+  (native == interpreter oracle, including the import boundary); full workspace
+  `cargo test --workspace` + `cargo clippy --workspace --all-targets` clean.
+
 
 ### Ambient/imported stream-combinator convergence ✅
 

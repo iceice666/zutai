@@ -26,15 +26,22 @@ seeded in `crates/general/hir/src/lower/mod.rs`: `print`; reflection `fields`,
 `variants`, `schema`; config `overlay`, `overlayDeep`; the list-interop bridge
 `listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`; and dynamic load
 `loadZti`/`loadZt` — plus the builtin type constructors (`List`, `Optional`,
-`Maybe`, `Patch`, `DeepPatch`). The **source** layer is the ambient *stream*
-prelude: `STREAM_MODULE_SRC` (`crates/general/hir/src/lower/prelude/stream.zt`)
-is `include_str!`d and its declarations injected as a fallback, so `Stream`,
-`StreamEff`, `Step`, and the combinators `empty`/`cons`/`singleton`/`unfold`/
-`map`/`filter`/`take`/`drop`/`fold`/`uncons`/`toList`/`fromList`/`takeList` are in
-scope without an import (V3-G2). The still-pending piece is the *list-verb* source
-prelude (`prelude.zt` with `map`/`filter`/`fold` over `List` and `id`): list
-iteration needs list-destructuring patterns and a strict-`fold` intrinsic that
-have not landed, so those names are not yet ambient (see *Build order*).
+`Maybe`, `Patch`, `DeepPatch`). The **source** layer is two ambient prelude
+files, both `include_str!`d in the HIR lowerer with their declarations injected
+as a fallback (`crates/general/hir/src/lower/prelude/`):
+
+- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Stream`, `StreamEff`,
+  `Step`, and the combinators `empty`/`cons`/`singleton`/`unfold`/`map`/`filter`/
+  `take`/`drop`/`fold`/`uncons`/`toList`/`fromList`/`takeList` are in scope without
+  an import (V3-G2);
+- the *function* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
+  `id`/`const`/`compose`/`flip` are in scope without an import (stdlib slice B).
+
+Both are importable via `import stdlib.stream` / `import stdlib.prelude`. The
+still-pending piece is the *list-verb* source prelude (`map`/`filter`/`fold` over
+`List`): list iteration needs list-destructuring patterns and a strict-`fold`
+intrinsic that have not landed, so those names are not yet ambient (see
+*Build order*).
 
 ## Contents
 
@@ -45,8 +52,8 @@ Types        Type Text Bool Int Float List Optional Maybe   (intrinsic)
 Stream       Stream StreamEff Step; empty cons singleton unfold
              map filter take drop fold uncons toList fromList takeList  (ambient source prelude)
 Effect       print                                               (intrinsic)
+Function     id const compose flip  (ambient source prelude)
 List verbs   map filter fold        -- planned (source prelude, not yet ambient)
-Function     id                     -- planned (source prelude, not yet ambient)
 ```
 
 Rationale:
@@ -60,8 +67,6 @@ Rationale:
 
 Excluded from the prelude on purpose:
 
-- `const`, `compose`, `flip` live in `fn`. `compose` duplicates `|>`; `flip` usually
-  papers over a bad argument order rather than fixing it.
 - `foldr`, `foldl'`, `zip`, `flatten`, `length`, and friends live in `list`.
 - All of `text`, `num`, `optional`, `result`, `cmp`, `reflect` are explicit imports.
 
@@ -109,20 +114,30 @@ the evaluators, and DC/ANF/SSA/codegen.
 
 ## `prelude.zt` resolution
 
-The source prelude is loaded by the semantic facade (`zutai-semantic`):
+The source prelude is loaded by the HIR lowerer (`zutai-hir`), not a separate
+semantic pass — the same model as the stream prelude:
 
 ```text
-- Parse + lower `prelude.zt` once, cache it.
-- Prefix its declarations into every module's scope AFTER intrinsic seeding and BEFORE
-  user name resolution.
-- It imports nothing; it depends only on intrinsics + core syntax + list patterns.
+- `include_str!` each prelude file (`stream.zt`, `prelude.zt`) and parse it.
+- Inject its declarations into every module's root scope as a FALLBACK, after
+  intrinsic seeding and user top-level names: a user/constraint binding of the
+  same spelling wins, and a colliding name raises no duplicate-binding error.
+- Lower a prelude's bodies only when the program references one of its names
+  (all-or-nothing per prelude); a program that touches no prelude name keeps it
+  out of THIR/TLC/codegen entirely.
+- It imports nothing; it depends only on intrinsics + core syntax.
 - A parse/lower failure is an internal compiler diagnostic, not a user error.
 ```
 
-Both evaluators must resolve prelude names as **real declarations**, uniformly: the THIR
-oracle (`crates/general/eval/src/eval/top_env.rs`) and the TLC path
-(`crates/general/eval/src/tlc_entry.rs`) currently seed only `BuiltinFn`s and need the
-prelude decls threaded through.
+Because prelude names are real HIR declarations (not `BuiltinFn`s), both
+evaluators resolve them uniformly with no special seeding: the THIR oracle
+(`crates/general/eval/src/eval/top_env.rs`) and the TLC path
+(`crates/general/eval/src/tlc_entry.rs`) seed only the intrinsic `BuiltinFn`s;
+the source prelude decls thread through as ordinary top-level decls. The same
+source backs `import stdlib.stream` / `import stdlib.prelude` (the final record
+is the module export; the ambient path reads only the declarations). The
+list-verb prelude (`map`/`filter`/`fold` over `List`) is still pending on
+list-destructuring patterns.
 
 The prelude **must not** re-export backend-gated intrinsics (`fields`, `schema`,
 or residual/partial `overlay`/`overlayDeep` forms): they stay behind explicit
@@ -155,11 +170,14 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
 
 ## Build order
 
-1. List-destructuring patterns + strict-`fold` intrinsic + `map`/`filter`/`fold` in source.
-2. `prelude.zt` resolution + seeding in `zutai-semantic` and both evaluators.
-3. `fn`, `list`, `optional`.
+1. List-destructuring patterns + strict-`fold` intrinsic + `map`/`filter`/`fold`
+   in source. *(still open — milestone C)*
+2. `prelude.zt` resolution. *(landed for the function prelude: `id`/`const`/
+   `compose`/`flip` are ambient source decls via HIR-lowerer injection, importable
+   as `stdlib.prelude`; the list-verb half waits on step 1)*
+3. `list`, `optional`.
 4. `stream` landed as ambient prelude **and** importable embedded `stdlib.stream`
-   (V3-G2/G6); `Stream A` is codata over recursive types, not a deferred module.
+   (V3-G2/G6); `Stream A` is codata over recursive types, not a deferred module. ✅
 5. `result` (with `Validation`).
 6. Intrinsic-heavy `text`, `num`.
 7. Fold `config`/`reflect` under the import scheme.

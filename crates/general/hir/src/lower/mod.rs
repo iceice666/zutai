@@ -46,6 +46,16 @@ impl Default for HirLowerOptions {
 ///   a program can use `s.map`, `s.fold`, … qualified. The same constant backs a
 ///   user-importable copy of the file in tests, keeping one source of truth.
 pub const STREAM_MODULE_SRC: &str = include_str!("prelude/stream.zt");
+///
+/// Canonical source for the small function prelude — the ordinary polymorphic
+/// helpers `id`/`const`/`compose`/`flip` (stdlib slice B).
+///
+/// Same two-surface model as `STREAM_MODULE_SRC`: [`lower_file`] injects the
+/// declarations as an ambient fallback (user/constraint names of the same
+/// spelling win; lowered only when referenced), and `import stdlib.prelude`
+/// exports the final record. Pure source-level stdlib — no intrinsics, no new
+/// syntax, no backend IR node.
+pub const PRELUDE_MODULE_SRC: &str = include_str!("prelude/prelude.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())
@@ -163,40 +173,24 @@ impl Lowerer {
     }
 
     fn lower_file(&mut self, file: &ast::File) -> LoweredHir {
-        // Define user top-level names first, then the builtin prelude (the codata
-        // `Stream` type, …). All names are in scope before any body is lowered, so
-        // user code can reference prelude names; defining user decls first keeps
-        // their binding ids and decl positions stable.
+        // Define user top-level names first, then the source preludes (the codata
+        // `Stream` type + combinators, and the small function prelude). All names
+        // are in scope before any body is lowered, so user code can reference
+        // prelude names; defining user decls first keeps their binding ids and
+        // decl positions stable.
         let user_bindings: Vec<_> = file
             .decls
             .iter()
             .map(|decl| self.define_top_decl(decl))
             .collect();
-        let prelude_ast = zutai_syntax::parse_ast_only(STREAM_MODULE_SRC).into_ast();
-        // The prelude is a fixed constant; fail fast in dev builds if it stops
-        // parsing (e.g. as future stdlib declarations are added to STREAM_MODULE_SRC).
-        debug_assert!(prelude_ast.is_some(), "builtin prelude must parse");
-        // The prelude is a fallback: define only names not already owned by user
-        // code or constraint methods (all share this scope), so user definitions
-        // always win and a colliding name (e.g. a `Functor` method named `map`)
-        // raises no spurious duplicate-binding diagnostic. Keep the decl index so
-        // the body can be lowered later if the name is actually used.
-        let prelude_decls: Vec<(usize, BindingId)> = prelude_ast
-            .as_ref()
-            .map(|p| {
-                p.decls
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, d)| {
-                        let taken = self
-                            .scopes
-                            .last()
-                            .is_some_and(|s| s.names.contains_key(d.name()));
-                        (!taken).then(|| (i, self.define_top_decl(d)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        // Each source prelude is a fallback: define only names not already owned by
+        // user code or constraint methods (all share this scope), so user
+        // definitions always win and a colliding name raises no spurious
+        // duplicate-binding diagnostic. The decl index is kept so the body can be
+        // lowered later if the name is actually used.
+        let (stream_prelude_ast, stream_prelude_decls) =
+            self.define_prelude_fallback(STREAM_MODULE_SRC);
+        let (fn_prelude_ast, fn_prelude_decls) = self.define_prelude_fallback(PRELUDE_MODULE_SRC);
 
         let mut decls: Vec<HirDeclId> = Vec::new();
         for (decl, binding) in file.decls.iter().zip(user_bindings) {
@@ -211,32 +205,34 @@ impl Lowerer {
         }
         let final_expr = self.lower_expr(&file.final_expr);
 
-        // Include the prelude (all of it) only when the program references any of
+        // Include each prelude (all of it) only when the program references any of
         // its names — a type (e.g. an annotation mentions `Stream`) or a value
-        // (e.g. a call to `map`). All-or-nothing is sufficient because the prelude
-        // functions depend only on `Stream` and self-recursion, never on each
-        // other, so any single reference co-satisfies every dependency. A program
-        // that touches no prelude name keeps it out of THIR/TLC/codegen entirely.
-        // The prelude is valid and never diagnoses.
-        if let Some(p) = prelude_ast.as_ref() {
-            let set: Vec<BindingId> = prelude_decls.iter().map(|(_, b)| *b).collect();
-            let references_dynamic_load_builtin = self.expr_arena.iter().any(|(_, e)| {
-                matches!(e.kind, HirExprKind::BindingRef(b) if matches!(self.bindings.get(b.0 as usize).map(|binding| binding.name.as_str()), Some("loadZti" | "loadZt")))
-                    || matches!(&e.kind, HirExprKind::Perform { op, .. } if matches!(op.as_slice(), [namespace, ext] if namespace == "load" && (ext == "zti" || ext == "zt")))
-            });
-            let referenced = references_dynamic_load_builtin
-                || self.type_arena.iter().any(
-                    |(_, ty)| matches!(ty.kind, HirTypeKind::BindingRef(b) if set.contains(&b)),
-                )
-                || self
-                    .expr_arena
-                    .iter()
-                    .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)));
-            if referenced {
-                for (i, binding) in prelude_decls {
-                    decls.push(self.lower_decl(&p.decls[i], binding));
-                }
-            }
+        // (e.g. a call to `map`/`id`). All-or-nothing is sufficient because each
+        // prelude's declarations depend only on their own shared type
+        // (`Stream`/`Step` for the stream prelude) and self-recursion, never on
+        // each other, so any single reference co-satisfies every dependency; the
+        // function prelude's helpers are mutually independent. A program that
+        // touches no prelude name keeps it out of THIR/TLC/codegen entirely. Both
+        // preludes are valid and never diagnose.
+        //
+        // The stream prelude is also force-included when the program uses the
+        // `loadZti`/`loadZt` builtins (or their `perform load.zti`/`load.zt`
+        // forms): those return `Data`/`DataField`, whose type declarations live in
+        // the stream prelude even though no prelude binding is textually named.
+        let references_dynamic_load_builtin = self.expr_arena.iter().any(|(_, e)| {
+            matches!(e.kind, HirExprKind::BindingRef(b) if matches!(self.bindings.get(b.0 as usize).map(|binding| binding.name.as_str()), Some("loadZti" | "loadZt")))
+                || matches!(&e.kind, HirExprKind::Perform { op, .. } if matches!(op.as_slice(), [namespace, ext] if namespace == "load" && (ext == "zti" || ext == "zt")))
+        });
+        if let Some(p) = stream_prelude_ast.as_ref() {
+            self.lower_prelude_if_referenced(
+                p,
+                &stream_prelude_decls,
+                references_dynamic_load_builtin,
+                &mut decls,
+            );
+        }
+        if let Some(p) = fn_prelude_ast.as_ref() {
+            self.lower_prelude_if_referenced(p, &fn_prelude_decls, false, &mut decls);
         }
 
         LoweredHir {
@@ -252,6 +248,68 @@ impl Lowerer {
             },
             diagnostics: std::mem::take(&mut self.diagnostics),
             pass_reports: Vec::new(),
+        }
+    }
+
+    /// Parse a source prelude (`src`) and define its declarations as fallback
+    /// bindings — only names not already owned by user code or constraint
+    /// methods. Returns the parsed AST (for later body lowering) and the
+    /// `(decl index, binding)` pairs that survived the fallback filter. The
+    /// prelude is a fixed constant; a parse failure is an internal bug, so fail
+    /// fast in dev builds.
+    fn define_prelude_fallback(
+        &mut self,
+        src: &str,
+    ) -> (Option<ast::File>, Vec<(usize, BindingId)>) {
+        let prelude_ast = zutai_syntax::parse_ast_only(src).into_ast();
+        debug_assert!(prelude_ast.is_some(), "builtin prelude must parse");
+        let prelude_decls = prelude_ast
+            .as_ref()
+            .map(|p| {
+                p.decls
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, d)| {
+                        let taken = self
+                            .scopes
+                            .last()
+                            .is_some_and(|s| s.names.contains_key(d.name()));
+                        (!taken).then(|| (i, self.define_top_decl(d)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (prelude_ast, prelude_decls)
+    }
+
+    /// Lower a prelude's declaration bodies into `decls` iff the program
+    /// references any of its fallback bindings. `force_include` covers
+    /// prelude-internal triggers that need the prelude present even though no
+    /// fallback binding is textually named — the stream prelude's `Data`/
+    /// `DataField` types, required by the `loadZti`/`loadZt` builtins.
+    /// All-or-nothing: every surviving decl is lowered together once any is
+    /// referenced, since each prelude's decls share a single dependency cluster.
+    fn lower_prelude_if_referenced(
+        &mut self,
+        prelude_ast: &ast::File,
+        prelude_decls: &[(usize, BindingId)],
+        force_include: bool,
+        decls: &mut Vec<HirDeclId>,
+    ) {
+        let set: Vec<BindingId> = prelude_decls.iter().map(|(_, b)| *b).collect();
+        let referenced = force_include
+            || self
+                .type_arena
+                .iter()
+                .any(|(_, ty)| matches!(ty.kind, HirTypeKind::BindingRef(b) if set.contains(&b)))
+            || self
+                .expr_arena
+                .iter()
+                .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)));
+        if referenced {
+            for (i, binding) in prelude_decls {
+                decls.push(self.lower_decl(&prelude_ast.decls[*i], *binding));
+            }
         }
     }
 

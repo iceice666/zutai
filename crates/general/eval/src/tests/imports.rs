@@ -366,6 +366,22 @@ fn mixed_destructured_and_ambient_stream_combinators_evaluate() {
     assert_eq!(run(src), Value::Int(12));
 }
 
+#[test]
+fn stdlib_prelude_qualified_members_evaluate() {
+    // `import stdlib.prelude` resolves to the embedded module with no base dir.
+    let src = "p ::= import stdlib.prelude;\n\
+               p.compose (\\x. x + 1) (\\x. x * 2) 3";
+    assert_eq!(run(src), Value::Int(7));
+}
+
+#[test]
+fn destructured_stdlib_prelude_members_evaluate() {
+    let src = "p ::= import stdlib.prelude;\n\
+               { id; compose; } ::= p;\n\
+               compose (\\x. x + 1) (\\x. x * 2) (id 3)";
+    assert_eq!(run(src), Value::Int(7));
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

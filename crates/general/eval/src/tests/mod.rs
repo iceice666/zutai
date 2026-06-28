@@ -74,4 +74,5 @@ mod display_runtime;
 mod functions_patterns;
 mod imports;
 mod json;
+mod prelude;
 mod witnesses;

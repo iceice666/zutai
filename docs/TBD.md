@@ -8,9 +8,10 @@ New implementation phases should be added here when scoped.
 ## Status (2026-06-28)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
-"Post-V3 readiness audit"). v1 is semantically and natively complete; v2 is
-largely native (four of five features lower natively, universe levels erase
-before the backend); v3 Track 1 and its scoped follow-ups are complete. The
+"Post-V3 readiness audit"). v1 semantics are complete, and native support is
+release-ready inside the documented AOT envelope; v2 is largely native (four of
+five features lower natively, universe levels erase before the backend); v3
+Track 1 and its scoped follow-ups are complete. The
 audit reconciled user-facing docs and support levels with the landed baseline,
 and confirmed an executable coverage anchor for every
 materially supported feature. The GC residual is retired (conservative
@@ -18,8 +19,68 @@ default-on mark-sweep is the committed endpoint). Track 2 remains
 demand-gated and must not be implemented unless a concrete program forces one
 of the reserved core-design boundaries.
 
-No concrete implementation follow-up is open. Do not add Track 2 work here
-unless a real program cannot be expressed inside the committed support envelope.
+The next concrete follow-up is **source-prelude / stdlib usability** work:
+B (small function prelude) **landed 2026-06-28** (see `docs/ARCHIVED.md` "Small
+function prelude (stdlib slice B)"); C (minimal `List` verbs) is next. This is
+stdlib work, not Track 2, and does not reopen any core language boundary.
+
+## Source prelude / stdlib active work
+
+Goal: make the planned source prelude real without changing V0–V3 core
+semantics. Source definitions are the specification; compiler intrinsics are
+allowed only as verified optimizations of the same binding or for operations
+that source cannot yet express safely.
+
+### B — Small function prelude ✅
+
+_Landed 2026-06-28. `prelude.zt` ships `id`/`const`/`compose`/`flip` as ambient
+source declarations (HIR-lowerer fallback, importable as `stdlib.prelude`);
+user bindings shadow the prelude; interpreter/TLC/native agree on
+representative higher-order uses. See `docs/ARCHIVED.md` "Small function prelude
+(stdlib slice B)" for the summary._
+
+### C — Minimal `List` verbs
+
+- Add the smallest `List` iteration surface needed for ordinary pipelines:
+  strict `fold`/`foldl'`, `map`, `filter`, `length`, `append`, `uncons`, `head?`,
+  and `tail?`.
+- Land the required list-pattern / spine access support before claiming source
+  definitions for list iteration: nil/cons patterns, exhaustiveness for
+  `nil + cons-or-wildcard`, evaluator support, and native lowering that does not
+  turn tail access into repeated O(n) slicing.
+- Keep strict left fold space-safe. Until a general `seq`/`force` primitive
+  exists, a strict fold intrinsic or verified optimized lowering is allowed, but
+  it must be tested against the source-level specification.
+- Settle the planned name interaction with the ambient stream fallback before
+  implementation: `map`/`filter`/`fold` over `List` must not silently break
+  existing stream examples. Stream combinators remain available through
+  `import stdlib.stream`; any ambient shadowing behavior must be explicit in
+  `docs/stdlib/prelude.md`.
+- Acceptance: list pipelines work without explicit imports, stream combinators
+  stay reachable, user bindings still shadow prelude names, and interpreter,
+  TLC, Dataflow/LLVM/native outputs match for representative list programs.
+
+Non-goals for this slice: `optional`, `result`, `num`, `text`, `cmp`, full
+stdlib completion, non-tail generator `yield from`, cross-module witness native
+ABI, and all Track 2 boundaries.
+
+## Tooling / test-harness backlog
+
+- **Native-link test race under `cargo test --workspace`.** CLI native-compile
+  tests (`compile_bin_stdout` and friends in `crates/cli/tests/cli.rs`) shell out
+  to `cargo build` to materialize `target/debug/libzutai_rt.a`
+  (`crates/cli/src/commands/toolchain.rs`), then invoke `clang` to link. Under
+  `cargo test --workspace`, concurrent test threads each spawn a CLI process →
+  inner `cargo build`, contending on the cargo package-cache lock; a `clang`
+  invocation can reach the link step before `libzutai_rt.a` is linkable, failing
+  with `clang: error: no such file or directory: '.../libzutai_rt.a'`. Repro:
+  passes in isolation (`cargo test -p zutai-cli --test cli -- <name>`) and with
+  `--test-threads=1`; flakes under parallel `cargo test --workspace`. Fix
+  options: pre-build `libzutai_rt.a` before the test suite, have the CLI reuse a
+  pre-built artifact instead of re-invoking `cargo build`, or serialize the
+  native-link tests. Surfaced 2026-06-28 during the function-prelude verify step
+  (the failure is independent of the function-prelude change, which never
+  touches `zutai-rt`/codegen linking).
 
 ## v1 residual — by design, not gaps
 
@@ -39,6 +100,11 @@ Do not file these as missing native work:
 - **Annotation-required inference** where row/constraint inference is not
   principal is specified behavior (`docs/spec/v1/01-row-polymorphism.md`
   "Extended Inference").
+- **Cross-module witness exports** stay native-gated: imported witness
+  dictionaries execute through the interpreter today, while native builds reject
+  modules that export typeclass witnesses before Dataflow Core rather than
+  silently dropping dispatch state. Promote this only if a concrete native
+  module-witness use case requires it.
 
 ## Deferred beyond v2 (v3+)
 

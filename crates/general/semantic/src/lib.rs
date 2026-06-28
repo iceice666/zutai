@@ -600,6 +600,45 @@ mod tests {
         assert!(!analysis.is_thir_complete());
     }
 
+    // ── ambient function prelude (stdlib slice B) ──────────────────────────────
+
+    #[test]
+    fn function_prelude_ambient_resolves_without_import() {
+        // `id`/`const`/`compose`/`flip` are ambient (no import); a higher-order
+        // use type-checks end-to-end through the semantic facade.
+        let analysis = analyze("compose (\\x. x + 1) (\\x. x * 2) 3");
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_prelude_import_resolves_without_base() {
+        let analysis =
+            analyze("p ::= import stdlib.prelude;\np.compose (\\x. x + 1) (\\x. x * 2) 3");
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn user_binding_shadows_prelude_without_duplicate_diagnostic() {
+        // The prelude is a fallback: a user `id` of the same name wins and raises
+        // no duplicate-binding diagnostic.
+        let analysis = analyze("id :: Int -> Int = x => x + 1;\nid 5");
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    }
+
     #[test]
     fn analyze_path_resolves_relative_import() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports/importer.zt");

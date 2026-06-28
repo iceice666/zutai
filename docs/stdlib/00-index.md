@@ -32,19 +32,20 @@ mechanism, the list-destructuring decision, and the error-handling boundary.
 
 Auto-imported names: the intrinsic prelude (`print`; reflection `fields`
 `variants` `schema`; config `overlay` `overlayDeep`; list-bridge `listEmpty`
-`listCons` `listIsNil` `listHead` `listTail`; dynamic load `loadZti` `loadZt`) and
-the ambient **stream** prelude (`Stream` `StreamEff` `Step` and the combinators
+`listCons` `listIsNil` `listHead` `listTail`; dynamic load `loadZti` `loadZt`), the
+ambient **stream** prelude (`Stream` `StreamEff` `Step` and the combinators
 `empty` `cons` `singleton` `unfold` `map` `filter` `take` `drop` `fold` `uncons`
-`toList` `fromList` `takeList`). The list verbs `map`/`filter`/`fold` and `id`
-listed in [`prelude.md`](prelude.md) are still planned (no `prelude.zt` yet); a
-user binding of the same spelling always shadows the ambient fallback.
+`toList` `fromList` `takeList`), and the ambient **function** prelude
+(`id` `const` `compose` `flip`). The list verbs `map`/`filter`/`fold` over `List`
+listed in [`prelude.md`](prelude.md) are still planned (no list-destructuring
+patterns yet); a user binding of the same spelling always shadows the ambient
+fallback.
 
 ## Modules
 
 | Module | Contents | Status |
 | --- | --- | --- |
 | [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; full record-literal overlays lower to AOT record updates |
-| `fn` | `const compose flip` | planned (source) |
 | `list` | `foldr foldl' length reverse append zip flatten take drop find any all sum product partition sortBy groupBy indexOf uncons head? tail?` | planned (source + spine intrinsics) |
 | `stream` | `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), ambient prelude **and** importable via embedded `stdlib.stream`; pure finite and infinite generators run on interpreter and native backend; effectful generators reference-interpreter + native `io.print` parity (see [stream](stream.md)) |
 | `optional` | `map andThen filter withDefault isSome toList` | planned (source) |

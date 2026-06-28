@@ -1,0 +1,26 @@
+-- Canonical source for the small function prelude (stdlib slice B).
+--
+-- Single source of truth for two surfaces:
+--   * Ambient prelude — the HIR lowerer injects these declarations into every
+--     module as a fallback (`include_str!` in `crates/general/hir/src/lower/mod.rs`),
+--     so `id`/`const`/`compose`/`flip` are in scope without an import. The lowerer
+--     reads only the declarations; this file's final record expression is ignored
+--     on that path.
+--   * Importable module — `p ::= import stdlib.prelude` (or `import "prelude.zt"`)
+--     exports the final record below, so a program can use `p.id`, `p.compose`, …
+--     qualified. Cross-module polymorphism carries the generic helpers across the
+--     boundary.
+--
+-- Pure source-level stdlib: ordinary polymorphic functions over core syntax, no
+-- intrinsics, no new syntax, no backend IR node. Resolution is
+-- `user > prelude > intrinsic / ambient fallback` — a user binding of the same
+-- name shadows these.
+id :: <A> A -> A
+  = x => x;
+const :: <A, B> A -> B -> A
+  = x _ => x;
+compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
+  = f g x => f (g x);
+flip :: <A, B, C> (A -> B -> C) -> B -> A -> C
+  = f x y => f y x;
+{ id = id; const = const; compose = compose; flip = flip; }

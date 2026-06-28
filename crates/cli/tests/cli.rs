@@ -344,6 +344,47 @@ fn prelude_stream_name_yields_to_user_definition() {
         .stdout(predicate::str::contains("check passed"));
 }
 
+// Stdlib slice B: the ambient function prelude (`id`/`const`/`compose`/`flip`) —
+// no import needed, ordinary polymorphic source decls, native-compiled, matching
+// the oracle on representative higher-order uses.
+const PRELUDE_FUNCTIONS_SRC: &str =
+    "compose (\\x. x + 1) (\\x. x * 2) (flip (\\x y. x - y) 3 10)\n";
+
+#[test]
+fn compile_prelude_functions_matches_oracle() {
+    // flip (-) 3 10 = 7; (*2) 7 = 14; (+1) 14 = 15.
+    let native = compile_bin_stdout("cli_test_prelude_functions", PRELUDE_FUNCTIONS_SRC);
+    let interp = run_stdout(
+        "cli_test_prelude_functions_oracle.zt",
+        PRELUDE_FUNCTIONS_SRC,
+    );
+    assert_eq!(native.trim(), "15");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_prelude_functions_user_shadow_matches_oracle() {
+    // A user `compose` shadows the ambient one; the program still native-compiles
+    // and matches the oracle (the prelude is a fallback, never a duplicate).
+    let src = "compose :: Int -> Int -> Int = a b => a - b;\ncompose 10 3\n";
+    let native = compile_bin_stdout("cli_test_prelude_functions_shadow", src);
+    let interp = run_stdout("cli_test_prelude_functions_shadow_oracle.zt", src);
+    assert_eq!(native.trim(), "7");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_stdlib_prelude_import_matches_oracle() {
+    // `import stdlib.prelude` exports the same helpers across the import
+    // boundary; native must match the interpreter oracle.
+    let src = "p ::= import stdlib.prelude;\n{ id; compose; flip; } ::= p;\ncompose (\\x. x + 1) id (flip (\\x y. x - y) 3 10)\n";
+    let native = compile_bin_stdout("cli_test_stdlib_prelude_import", src);
+    let interp = run_stdout("cli_test_stdlib_prelude_import_oracle.zt", src);
+    // flip (-) 3 10 = 7; id 7 = 7; (+1) 7 = 8.
+    assert_eq!(native.trim(), "8");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 #[test]
 fn run_posit_file_prints_posit_result() {
     let path = write_tmp("cli_test_posit_run.zt", "1p32 + 2p32\n");

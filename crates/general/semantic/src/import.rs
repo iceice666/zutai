@@ -486,11 +486,13 @@ impl Resolver<'_> {
 /// Embedded standard-library modules, addressed as `import stdlib.<name>`.
 ///
 /// Resolved from in-binary source so there is no filesystem stdlib root or
-/// install path. `stream` shares its source with the ambient prelude
-/// (`zutai_hir::STREAM_MODULE_SRC`), keeping one source of truth.
+/// install path. `stream` and `prelude` share their source with the ambient
+/// prelude (`zutai_hir::STREAM_MODULE_SRC` / `PRELUDE_MODULE_SRC`), keeping one
+/// source of truth per module.
 fn stdlib_source(name: &str) -> Option<&'static str> {
     match name {
         "stream" => Some(zutai_hir::STREAM_MODULE_SRC),
+        "prelude" => Some(zutai_hir::PRELUDE_MODULE_SRC),
         _ => None,
     }
 }
