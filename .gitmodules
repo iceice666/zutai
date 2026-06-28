@@ -1,6 +1,6 @@
 [submodule "editors/tree-sitter-zutai"]
 	path = editors/tree-sitter-zutai
-	url = git@github.com:iceice666/tree-sitter-zutai.git
+	url = https://github.com/iceice666/tree-sitter-zutai.git
 [submodule "editors/tree-sitter-zutai-immediate"]
 	path = editors/tree-sitter-zutai-immediate
-	url = git@github.com:iceice666/tree-sitter-zutai-immediate.git
+	url = https://github.com/iceice666/tree-sitter-zutai-immediate.git
