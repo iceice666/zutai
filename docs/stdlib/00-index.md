@@ -30,8 +30,14 @@ Two principles govern what lives where:
 See [Prelude](prelude.md) for the auto-imported set, the `prelude.zt` resolution
 mechanism, the list-destructuring decision, and the error-handling boundary.
 
-Auto-imported names: types `Type Text Bool Int Float List Optional Maybe`;
-list verbs `map filter fold`; `id`; `print`.
+Auto-imported names: the intrinsic prelude (`print`; reflection `fields`
+`variants` `schema`; config `overlay` `overlayDeep`; list-bridge `listEmpty`
+`listCons` `listIsNil` `listHead` `listTail`; dynamic load `loadZti` `loadZt`) and
+the ambient **stream** prelude (`Stream` `StreamEff` `Step` and the combinators
+`empty` `cons` `singleton` `unfold` `map` `filter` `take` `drop` `fold` `uncons`
+`toList` `fromList` `takeList`). The list verbs `map`/`filter`/`fold` and `id`
+listed in [`prelude.md`](prelude.md) are still planned (no `prelude.zt` yet); a
+user binding of the same spelling always shadows the ambient fallback.
 
 ## Modules
 
@@ -40,22 +46,23 @@ list verbs `map filter fold`; `id`; `print`.
 | [Config](config.md) | `overlay overlayDeep Patch DeepPatch` | accepted; full record-literal overlays lower to AOT record updates |
 | `fn` | `const compose flip` | planned (source) |
 | `list` | `foldr foldl' length reverse append zip flatten take drop find any all sum product partition sortBy groupBy indexOf uncons head? tail?` | planned (source + spine intrinsics) |
-| `stream` | `Stream`, finite `stream { yield ...; }`, planned `empty singleton cons unfold uncons map filter take drop fold fromList toList` | accepted shell; `Stream A` currently lowers to `List A` for finite pure generators, full stream API planned after recursive representation |
+| `stream` | `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), ambient prelude **and** importable via embedded `stdlib.stream`; pure finite and infinite generators run on interpreter and native backend; effectful generators reference-interpreter + native `io.print` parity (see [stream](stream.md)) |
 | `optional` | `map andThen filter withDefault isSome toList` | planned (source) |
 | `result` | `Result Validation ok err valid invalid map map2 mapErr andThen withDefault errors` | planned (source); see [Prelude](prelude.md) error model |
 | `num` | `min max abs clamp pow rem gcd toFloat round truncate` | planned (source + conversion intrinsics) |
 | `text` | `length split join trim toUpper toLower contains replace show parseInt parseFloat` | planned (intrinsic — no char ops in source) |
-| `cmp` | `Ordering (#lt/#eq/#gt)`, comparator builders | planned; generic `compare` waits on v1 constraints |
-| `reflect` | `fields schema` | accepted; THIR-only intrinsic, backend-gated |
+| `cmp` | `Ordering (#lt/#eq/#gt)`, comparator builders | planned; generic `compare` is witness-dispatched once a `cmp` module lands (v1 constraints already support `Ord`) |
+| `reflect` | `fields variants schema witness` | accepted; THIR/TLC/evaluator support; `compile`/`dataflow` fold serializable reflection to backend constants and reject residual reflection (a raw `witness` dictionary or `Type`-valued result) before lowering — the fold-or-reject model |
 
-`sortBy`/`groupBy`/`cmp` take explicit comparators: v0 has no `Ord`/`Eq` typeclass, so
-ad-hoc ordering is passed as a function until v1 constraints land.
+`sortBy`/`groupBy`/`cmp` take explicit comparators: the standard `Ord`/`Eq`
+constraints (v1) support witness-dispatched comparison, but a dedicated `cmp`
+module with comparator builders is still planned.
 
-`Stream` is the standard-library home for iterator-like pure APIs. It is not
-auto-imported; the prelude remains only the names listed in
-[`prelude.md`](prelude.md). The finite language-level producer
-`stream { yield ...; }` is syntax, not a standard-library function. Host-backed
-streams such as file lines, environment scans, clock events, and randomness
-require explicit capabilities after Phase 27; they must not become ambient APIs.
+`Stream` is the standard-library home for iterator-like pure APIs. Its
+combinators are **ambient prelude** (no import needed) and also importable via
+embedded `stdlib.stream`; the language-level producer `stream { yield ...; }` is
+syntax, not a standard-library function. Host-backed streams such as file lines,
+environment scans, clock events, and randomness require explicit capabilities
+(v2 host capabilities); they must not become ambient APIs.
 
 Standard-library names are ordinary bindings, not language keywords, unless a page explicitly says otherwise.

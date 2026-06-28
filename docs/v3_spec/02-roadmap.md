@@ -54,10 +54,10 @@ cells. This single constraint shapes the entire generator track.
 
 ## Track 1 — Generators and streams (complete)
 
-The one articulated V3 feature. Today `stream { yield e; … }` desugars to a
-`Stream A` value, but `Stream A ≡ List A` — fully strict, finite only
-(`docs/stdlib/stream.md`, `docs/v3_spec/01-generators.md`). Richer generators
-require a real stream representation first.
+The one articulated V3 feature. Before V3-G1, `stream { yield e; … }`
+desugared to a `Stream A` value whose representation was list-backed, fully
+strict, and finite-only. Track 1 replaced that placeholder with the codata
+representation below, then built the richer generator and stream API on top.
 
 ### Decision: streams are codata, not lazy lists
 

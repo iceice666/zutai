@@ -2,9 +2,16 @@
 
 Status: richer `yield` implemented (V3-G3). Phase 29 introduced the finite
 generator shell; V3-G1 made `Stream A` demand-driven codata; V3-G3 lets `yield`
-appear under conditionals and recursion. Effectful generators run under a
-granting handler at **reference-interpreter level** (V3-G4); native lowering of
-their effects stays refused by committed design.
+appear under conditionals and recursion, so pure finite *and* infinite generators
+type-check and evaluate on both the interpreter and the native backend. Effectful
+generators run under a granting handler (V3-G4). **Native effect parity landed
+2026-06-26**: handled algebraic effects the lexical CPS path could not discharge
+now compile natively via the reify pass, and the supported `io.print`-backed
+effectful-generator idiom (raw cell type) matches the oracle natively.
+**Non-`io.print` resource effects** (`fs.read`, networking, clocks, randomness)
+remain reference-interpreter only and are rejected before native lowering by
+committed design — a separate case from the handled-effect parity, not a single
+"native lowering refused" gate.
 
 ## Decisions
 

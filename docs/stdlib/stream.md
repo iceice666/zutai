@@ -30,31 +30,40 @@ The combinators live in one canonical file,
 - **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects its
   declarations as a fallback, so `map`/`filter`/`fold`/… resolve directly. This is
   the original V3-G2 behavior, unchanged.
-- **Importable** (explicit). `s ::= import "stream.zt";` binds the module's exported
-  record, so the combinators are used qualified — `s.map`, `s.fold`, … The file's
-  final expression is that record. Resolution is **path-relative** (the file must
-  sit in the importing file's directory subtree); there is no stdlib-root install
-  path yet (`docs/TBD.md` "V3-G6 follow-ups"). The export carries the eight
-  combinator functions; the `Stream` type is not a named field (it crosses
-  structurally inside the combinator signatures), so there is no `s.Stream` yet.
+- **Importable** (explicit). `import stdlib.stream` resolves to **embedded
+  in-binary source** (no install path, no subtree-confinement exception) and
+  binds the module's exported record, so the combinators are used qualified —
+  `s.map`, `s.fold`, … A path-relative `import "stream.zt"` still works when a
+  local file of that name sits in the importing file's directory subtree. The
+  export record carries the combinator functions **and** the type values
+  `Stream`, `Step`, and `StreamEff` as named, selectable/destructurable fields,
+  so `s.Stream`, `s.Step`, and `s.StreamEff` are available, and a parametric
+  imported constructor can be *applied* in an annotation (`x :: s.Stream Int`).
+  Selective/open import reuses the destructuring binding form:
+  `{ map; fold; } ::= import stdlib.stream;` brings those members in unqualified.
 
 ```zt
-s ::= import "stream.zt";
+s ::= import stdlib.stream;
 double :: Int -> Int = x => x * 2;
 add :: Int -> Int -> Int = a b => a + b;
 s.fold add 0 (s.map double (s.cons 1 (s.cons 2 (s.singleton 3))))   -- 12
 ```
 
-`Stream A` is a pure lazy sequence for iterator-style pipelines when producing
-or consuming every element as a `List A` would be unnecessary. Phase 29's
-`stream { yield expr; ... }` syntax produces finite stream-backed values through
-the current list representation.
+`Stream A` is demand-driven **codata** — a step function `Unit -> StreamCell A`
+over a `#nil`/`#cons` cell — not a memoizing lazy list: consuming a stream twice
+steps twice, and infinite streams are representable (an `unfold` with a
+non-terminating seed, bounded by `take`/`uncons`). The `stream { yield expr;
+... }` syntax desugars by continuation-passing onto this codata cell; `yield`
+may appear under conditionals and tail recursion (`yield from`), so pure finite
+*and* infinite generators type-check and evaluate on both the interpreter and
+the native backend.
 
 ## Initial API surface
 
 ```zt
-Stream A
-Step S A  -- = { #done; #yield : { item : A; next : S; }; } (unfold step result)
+Stream A          -- = Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }  (codata)
+StreamEff A e     -- effectful stream; forcing a cell may perform ops in row e. StreamEff A {} = Stream A
+Step S A          -- = { #done; #yield : { item : A; next : S; }; } (unfold step result)
 empty     :: <A> Stream A
 singleton :: <A> A -> Stream A
 cons      :: <A> A -> Stream A -> Stream A
@@ -84,12 +93,13 @@ takeList  :: <A> Int -> Stream A -> List A   -- = toList (take k s)
   the next matching element.
 
 ## Source and intrinsic policy
-
-Define stream functions in `.zt` when recursive types and list/optional
-primitives can express them. Today only the `Stream` type constructor and finite
-`stream { yield ...; }` producer shell are implemented; compiler intrinsics are
-allowed only to preserve sharing, avoid repeated thunk allocation, or optimize
-stream stepping without changing the source binding semantics.
+The full combinator set above is implemented in `.zt` over the codata cell and
+the list-interop bridge primitives (`listEmpty`/`listCons`/`listIsNil`/
+`listHead`/`listTail`); compiler intrinsics are allowed only to preserve sharing,
+avoid repeated thunk allocation, or optimize stream stepping without changing the
+source binding semantics. Effectful streams use the `StreamEff A e` alias and the
+effect machinery, not a separate effectful codata type (see
+`docs/v3_spec/01-generators.md`).
 
 ## Host boundary policy
 

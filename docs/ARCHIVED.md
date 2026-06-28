@@ -40,7 +40,10 @@ _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend harden
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
 unified as an expression; **native effect parity**), and 2026-06-27 (resource
 lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects;
-GC residual retired with conservative default-on GC as the committed endpoint)._
+GC residual retired with conservative default-on GC as the committed endpoint),
+and 2026-06-28 (post-V3 readiness audit: user-facing doc reconciliation,
+support-level reconciliation, coverage/diagnostics/backend audit; see "Post-V3
+readiness audit")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -73,9 +76,10 @@ GC residual retired with conservative default-on GC as the committed endpoint)._
   resolvable dictionaries using the same concrete/conditional lookup as implicit
   method dispatch. Runtime type reflection includes `fields`, `variants`, and
   `schema` views.
-- THIR and TLC carry internal universe levels for surface `Type`. Explicit level
-  syntax is still unsupported; level-polymorphic type constructors default to
-  the lowest consistent universe and erase before runtime/backend lowering.
+- THIR and TLC carry internal universe levels for surface `Type`. Explicit
+  `$ℓ` / `<$l>` surface syntax has landed as a front-end-only layer; level-
+  polymorphic type constructors default to the lowest consistent universe and
+  erase before runtime/backend lowering.
 - Dataflow Core, ANF, SSA, and LLVM IR text emission exist and are test-covered.
   Record/tuple access is slot-indexed; union construction now uses dense
   per-union tags; ambient `io.print` lowers to a runtime `HostPrint` path;
@@ -163,6 +167,70 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Post-V3 readiness audit ✅
+
+_Completed 2026-06-28. A stabilization sweep after V3 Track 1 and its scoped
+follow-ups — a readiness audit, not a new language-feature track. Reconciled
+the implemented post-V3 baseline with every user-facing claim, support level,
+refusal gate, and roadmap pointer; produced a release-quality statement of what
+Zutai can check, interpret, lower, compile, or deliberately refuse after V3._
+
+- **User-facing docs reconciled.** Removed stale stream/import/generator claims:
+  `docs/language-manual.md` no longer describes generators as a "finite pure
+  generator shell" over a "lazy list-backed `Stream`" — `Stream A` is codata and
+  pure infinite generators run on both interpreter and native backend.
+  `docs/stdlib/stream.md` now states embedded `stdlib.stream` resolution,
+  exported `Stream`/`Step`/`StreamEff` fields, applicable `s.Stream Int`,
+  destructuring import, and codata/demand-driven wording (previously
+  "path-relative only", "eight combinators", "no `s.Stream`", "pure lazy
+  sequence"). `docs/v3_spec/01-generators.md` status now splits native handled-
+  effect parity (landed 2026-06-26, `io.print`-backed idiom compiles natively)
+  from the non-`io.print` resource-effect backend gate, instead of collapsing
+  both into "native lowering refused". `docs/stdlib/00-index.md` and
+  `docs/stdlib/prelude.md` corrected to state the actual ambient prelude
+  (intrinsic layer + the ambient **stream** source prelude) and to mark the
+  list-verb/`id` source prelude (`prelude.zt`) as still planned — the prior
+  "auto-imported `map filter fold id`" claim was inaccurate (those names are not
+  seeded; `map`/`fold` resolve to the stream combinators). v1/v2 spec
+  "reserved for a future version" language was confirmed accurate for the
+  Track 2 boundaries (nominal types, higher-order kinds, impredicativity).
+- **Support levels reconciled.** Every implemented extension now names its
+  highest verified support level and precise refusal boundary in the relevant
+  user-facing docs. By-design refusals (HKT execution, residual reflection,
+  unhandled non-`io.print` effects, annotation-required non-principal inference)
+  are distinguished from temporary residuals and Track 2 demand-gated
+  boundaries.
+- **Coverage confirmed.** Every materially supported feature has an executable
+  anchor: imported stdlib stream combinators (`compile_zt_imported_stream_*`),
+  exported `Stream`/`Step`, imported/applied `s.Stream`, ambient `StreamEff`
+  (`ambient_streameff_*`), `toList`/`fromList`/`takeList`, `empty` at
+  `BindingRef`, effectful generator ordering, cancellation
+  (`cancellation_*`), cross-boundary finalizer unwinding, resource lazy-escape
+  refusal, non-`io.print` resource backend rejection
+  (`compile_resource_effectful_generator_stays_gated`), dynamic `load.zti` /
+  `load.zt`, and default-on GC + `ZUTAI_GC=0` opt-out
+  (`compile_emit_bin_gc_is_default_on_with_opt_out`).
+- **Diagnostics quality.** Refusal paths were confirmed to refuse before the
+  wrong backend stage with actionable messages (`unhandled effect`, residual-
+  effect gate, runtime-`Type`-value gate, and effectful-generator/backend gates).
+  The obsolete interpreter-only `finally` support story was removed: `finally`
+  is covered by native handled-effect parity, while out-of-envelope
+  resource-generator paths still refuse explicitly. One diagnostics-quality
+  residual surfaced and is tracked as the open follow-up in `docs/TBD.md`:
+  mixing destructured-import and ambient stream combinators diverges type-level
+  fuel (generic "exceeded evaluation limit") instead of converging or refusing
+  cleanly.
+- **Backend/runtime readiness.** Docs, tests, and CLI agree on the committed
+  invariants: strict evaluation + TCO, write-once heap, no lazy thunk-update
+  backend, conservative default-on GC with `ZUTAI_GC=0` opt-out, and no
+  reopening of untagged `i64` (D-0002). Native artifact paths retain explicit
+  host-toolchain diagnostics.
+- **Verification.** Full workspace green (`cargo test --workspace` 228/228 cli
+  + all crates; one native-link test flaked on `cargo` file-lock contention and
+  passed on re-run), `cargo clippy --workspace --all-targets`, `cargo fmt`.
+  Infinite-generator and embedded-stdlib examples smoke-tested on both
+  interpreter and native backend. Track 2 remains explicitly demand-gated.
 
 ### GC residual retired — conservative default-on GC is final for v0/v3 ✅
 

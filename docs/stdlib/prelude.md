@@ -21,20 +21,32 @@ Resolution layers as **user > prelude > intrinsics**. A user binding shadows a p
 name; a prelude binding shadows an intrinsic of the same spelling. The source prelude is
 written on top of the intrinsics and the core syntax — it imports nothing.
 
-Today only the intrinsic layer exists: `BUILTIN_VALUE_NAMES` (`print`, `fields`, `schema`,
-`overlay`, `overlayDeep`) seeded in `crates/general/hir/src/lower/mod.rs`, and the builtin
-type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`) recognized in the same
-lowerer. The source prelude (`prelude.zt`) is the new piece.
+Today two layers are live. The **intrinsic** layer is `BUILTIN_VALUE_NAMES`
+seeded in `crates/general/hir/src/lower/mod.rs`: `print`; reflection `fields`,
+`variants`, `schema`; config `overlay`, `overlayDeep`; the list-interop bridge
+`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`; and dynamic load
+`loadZti`/`loadZt` — plus the builtin type constructors (`List`, `Optional`,
+`Maybe`, `Patch`, `DeepPatch`). The **source** layer is the ambient *stream*
+prelude: `STREAM_MODULE_SRC` (`crates/general/hir/src/lower/prelude/stream.zt`)
+is `include_str!`d and its declarations injected as a fallback, so `Stream`,
+`StreamEff`, `Step`, and the combinators `empty`/`cons`/`singleton`/`unfold`/
+`map`/`filter`/`take`/`drop`/`fold`/`uncons`/`toList`/`fromList`/`takeList` are in
+scope without an import (V3-G2). The still-pending piece is the *list-verb* source
+prelude (`prelude.zt` with `map`/`filter`/`fold` over `List` and `id`): list
+iteration needs list-destructuring patterns and a strict-`fold` intrinsic that
+have not landed, so those names are not yet ambient (see *Build order*).
 
 ## Contents
 
 The prelude is deliberately focused — only what every pipeline needs:
 
 ```text
-Types       Type Text Bool Int Float List Optional Maybe
-List verbs  map filter fold
-Function    id
-Effect      print
+Types        Type Text Bool Int Float List Optional Maybe   (intrinsic)
+Stream       Stream StreamEff Step; empty cons singleton unfold
+             map filter take drop fold uncons toList fromList takeList  (ambient source prelude)
+Effect       print                                               (intrinsic)
+List verbs   map filter fold        -- planned (source prelude, not yet ambient)
+Function     id                     -- planned (source prelude, not yet ambient)
 ```
 
 Rationale:
@@ -134,19 +146,20 @@ earn an explicit `result` module, because effects do not cover:
 | Short-circuit / abort / capability | blessed | verbose |
 | Accumulate **all** errors (config normalize) | `fail` short-circuits | `Validation (List E)` |
 | Serialize errors across the `.zti` boundary | control, not data | ordinary union |
-| Compile to a backend binary today | effects stop at TLC (Phase 19 TBD) | pure, lowers now |
+| Compile to a backend binary today | handled effects lower natively (native effect parity, 2026-06-26); unhandled and non-`io.print` resource effects still gate at TLC→DC | pure, lowers now |
 
-So errors-as-data are an opt-in module, not prelude, and not the default. Revisit only if
-Phase 19 effect lowering plus a reify-at-boundary handler convention ever cover accumulate-all
-(unlikely to do so cleanly — `Validation` is expected to stay).
+So errors-as-data are an opt-in module, not prelude, and not the default. Native
+effect lowering has landed for handled effects, but accumulate-all error
+collection remains a distinct idiom that `Validation (List E)` covers cleanly
+(`fail` short-circuits by design); `Validation` is expected to stay.
 
 ## Build order
 
 1. List-destructuring patterns + strict-`fold` intrinsic + `map`/`filter`/`fold` in source.
 2. `prelude.zt` resolution + seeding in `zutai-semantic` and both evaluators.
 3. `fn`, `list`, `optional`.
-4. `stream` depends on v2 recursive types for a clean source representation, but
-   remains an explicit module.
+4. `stream` landed as ambient prelude **and** importable embedded `stdlib.stream`
+   (V3-G2/G6); `Stream A` is codata over recursive types, not a deferred module.
 5. `result` (with `Validation`).
 6. Intrinsic-heavy `text`, `num`.
 7. Fold `config`/`reflect` under the import scheme.

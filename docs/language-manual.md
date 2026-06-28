@@ -241,7 +241,12 @@ if condition then expr else expr
 
 The condition must have type `Bool`, and both branches must type-check to a compatible type.
 
-`import` is a pure, deterministic, path-relative, cached expression whose source is always a literal: `cfg ::= import "config.zti"` creates one prefixed binding, and `{ map; fold; } ::= import stdlib.stream` destructures members directly. Importing `.zti` parses data into `.zt` records and lists. Importing `.zt` evaluates the imported module and exposes its final expression as the binding; fields are accessed as `cfg.field` or `lib.Type`.
+`import` is a pure, deterministic, static, cached expression whose source is a
+literal import source: either a quoted path (`cfg ::= import "config.zti"`) or a
+dotted stdlib path (`{ map; fold; } ::= import stdlib.stream`). Importing `.zti`
+parses data into `.zt` records and lists. Importing `.zt` evaluates the imported
+module and exposes its final expression as the binding; fields are accessed as
+`cfg.field` or `lib.Type`.
 
 Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`.
 
@@ -356,7 +361,14 @@ Consumers of the JSON API must handle both shapes. Tagged union values do not ha
 
 ### Import paths
 
-Import paths are relative to the importing file's directory. Absolute paths and `..`-traversals that escape the importing file's directory are rejected as a security boundary. This means a user config file cannot `import "/etc/app/defaults.zt"`; layering must be managed at the host application level, not by importing absolute paths.
+Quoted-string imports are relative to the importing file's directory. Absolute
+paths and `..`-traversals that escape the importing file's directory are rejected
+as a security boundary. This means a user config file cannot
+`import "/etc/app/defaults.zt"`; layering must be managed at the host application
+level, not by importing absolute paths. Dotted stdlib imports such as
+`import stdlib.stream` are static literal import sources too, but they resolve to
+embedded in-binary modules rather than the filesystem and are not subject to the
+quoted-path subtree check.
 
 ## Implemented extensions beyond v0
 
@@ -372,7 +384,7 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 | [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
 | [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 | Dynamic data loading | `loadZti path`, `loadZt path`, or `perform load.zti path` / `perform load.zt path` | explicit host capability/effect; `run` and compiled binaries dispatch runtime-selected `.zti`/`.zt` loads to a first-order `Data` envelope; handlers can intercept operations before the host boundary |
-| [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }` and `Stream A` | finite pure generator shell; syntax desugars through HIR to the current lazy list-backed `Stream` representation and uses existing effect rows |
+| [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }`, `yield from`, and `Stream A` | `Stream A` is demand-driven **codata** (`Unit -> { #nil; #cons : { head; tail }; }`), not a memoizing lazy list; pure finite *and* infinite generators type-check and evaluate on both the interpreter and native backend. Effectful generators (`yield perform op`) run under a granting handler — reference-interpreter support plus native support for the `io.print`-backed cell idiom; non-`io.print` resource effects (`fs.read`, clocks, randomness) are reference-interpreter only and rejected before native lowering. `finally`, cooperative cancellation, and the granting-handler resource-lifetime contract are supported on the interpreter; native lowering of resource effects stays gated by committed design |
 
 ## Errors and diagnostics
 
