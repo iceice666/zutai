@@ -26,7 +26,8 @@ use crate::{
     env::Env,
     thunk::Thunk,
     value::{
-        BuiltinFn, ModuleId, TlcClosure, TupleField, Value, overlay_value, update_record_value,
+        BuiltinFn, ModuleId, TlcClosure, TupleField, Value, eval_num_builtin_values,
+        eval_text_builtin_values, overlay_value, update_record_value,
     },
 };
 

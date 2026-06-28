@@ -7,8 +7,8 @@
 //! See `docs/anf.md` for the design specification.
 
 pub use zutai_dataflow::{
-    DataflowGraph, DfBuiltinOp, DfListPrimOp, DfLit, DfPositOp, DfTupleField, DfTy, DfTyId,
-    DfTyVar, DfTypes, HostOp,
+    DataflowGraph, DfBuiltinOp, DfListPrimOp, DfLit, DfNumPrimOp, DfPositOp, DfTextPrimOp,
+    DfTupleField, DfTy, DfTyId, DfTyVar, DfTypes, HostOp,
 };
 
 mod lower;
@@ -96,6 +96,13 @@ pub enum AnfExpr {
     /// Scalar list-bridge primitive; all operands are atoms.
     ListPrim {
         op: DfListPrimOp,
+        args: Vec<AnfAtom>,
+    },
+    /// Scalar numeric bridge primitive; all operands are atoms.
+    NumPrim { op: DfNumPrimOp, args: Vec<AnfAtom> },
+    /// Scalar text bridge primitive; all operands are atoms.
+    TextPrim {
+        op: DfTextPrimOp,
         args: Vec<AnfAtom>,
     },
     /// Variant construction: `tag(value)` with the dense per-union tag index.

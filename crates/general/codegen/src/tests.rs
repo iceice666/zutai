@@ -106,6 +106,88 @@ fn coalesce_emits_runtime_helper_call() {
 }
 
 #[test]
+fn num_prim_emits_runtime_helper_calls() {
+    let module = test_module(
+        Vec::new(),
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![
+                    SsaInstr {
+                        dest: "pow".to_string(),
+                        op: SsaOp::NumPrim {
+                            op: DfNumPrimOp::Pow,
+                            args: vec![SsaValue::Lit(DfLit::Int(2)), SsaValue::Lit(DfLit::Int(10))],
+                        },
+                    },
+                    SsaInstr {
+                        dest: "float".to_string(),
+                        op: SsaOp::NumPrim {
+                            op: DfNumPrimOp::ToFloat,
+                            args: vec![SsaValue::Lit(DfLit::Int(42))],
+                        },
+                    },
+                ],
+                terminator: SsaTerminator::Return(SsaValue::Reg("pow".to_string())),
+            }],
+        },
+        DfTy::Int,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm(&module);
+    assert!(llvm.contains("declare i64 @zutai.num_pow(i64, i64)"));
+    assert!(llvm.contains("call i64 @zutai.num_pow(i64 2, i64 10)"));
+    assert!(llvm.contains("declare i64 @zutai.num_to_float(i64)"));
+    assert!(llvm.contains("call i64 @zutai.num_to_float(i64 42)"));
+}
+
+#[test]
+fn text_prim_emits_runtime_helper_calls() {
+    let module = test_module(
+        Vec::new(),
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![
+                    SsaInstr {
+                        dest: "len".to_string(),
+                        op: SsaOp::TextPrim {
+                            op: DfTextPrimOp::Length,
+                            args: vec![SsaValue::Lit(DfLit::Text("abc".to_string()))],
+                        },
+                    },
+                    SsaInstr {
+                        dest: "replaced".to_string(),
+                        op: SsaOp::TextPrim {
+                            op: DfTextPrimOp::Replace,
+                            args: vec![
+                                SsaValue::Lit(DfLit::Text("a".to_string())),
+                                SsaValue::Lit(DfLit::Text("o".to_string())),
+                                SsaValue::Lit(DfLit::Text("cat".to_string())),
+                            ],
+                        },
+                    },
+                ],
+                terminator: SsaTerminator::Return(SsaValue::Reg("len".to_string())),
+            }],
+        },
+        DfTy::Int,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm(&module);
+    assert!(llvm.contains("declare i64 @zutai.text_length(i64)"));
+    assert!(llvm.contains("call i64 @zutai.text_length"));
+    assert!(llvm.contains("declare i64 @zutai.text_replace(i64, i64, i64)"));
+    assert!(llvm.contains("call i64 @zutai.text_replace"));
+}
+
+#[test]
 fn record_update_emits_runtime_helper_call() {
     let module = test_module(
         Vec::new(),

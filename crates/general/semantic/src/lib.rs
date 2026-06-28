@@ -644,6 +644,99 @@ mod tests {
     }
 
     #[test]
+    fn stdlib_result_import_resolves_without_base() {
+        let analysis = analyze(
+            "r ::= import stdlib.result;\n\
+             res :: r.Result Text Int = r.ok 41;\n\
+             r.withDefault 0 (r.map (\\x. x + 1) res)",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn destructured_stdlib_result_members_bind_unqualified() {
+        let analysis = analyze(
+            "{ ok; err; map; withDefault; } ::= import stdlib.result;\n\
+             withDefault 0 (map (\\n. n + 1) (if true then ok 4 else err \"x\"))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_num_import_resolves_without_base() {
+        let analysis = analyze(
+            "n ::= import stdlib.num;\n\
+             n.clamp 0 10 (n.max (n.min 99 7) (n.abs (0 - 3)))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn destructured_stdlib_num_members_bind_unqualified() {
+        let analysis = analyze(
+            "{ gcd; rem; pow; toFloat; round; truncate; } ::= import stdlib.num;\n\
+             gcd 54 24 + rem 17 5 + pow 2 3 + round (toFloat 4) + truncate 3.9",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_text_import_resolves_without_base() {
+        let analysis = analyze(
+            "t ::= import stdlib.text;\n\
+             t.length (t.replace \"a\" \"o\" (t.trim \" cat \")) + t.length (t.show \"x\")",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_cmp_import_resolves_without_base() {
+        let analysis = analyze(
+            "c ::= import stdlib.cmp;\n\
+             c.then (c.compareInt 1 2) (c.reverse c.gt)",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn destructured_stdlib_optional_members_bind_unqualified() {
         let analysis = analyze(
             "{ map; withDefault; } ::= import stdlib.optional;\nwithDefault 0 (map (\\n. n + 1) (#some (4)))",

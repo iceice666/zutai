@@ -1,0 +1,23 @@
+-- Canonical source for integer numeric helpers (stdlib slice F).
+-- Explicit import only: `n ::= import stdlib.num`; these names are not ambient.
+min :: Int -> Int -> Int
+  = left right => if left <= right then left else right;
+max :: Int -> Int -> Int
+  = left right => if left >= right then left else right;
+abs :: Int -> Int
+  = value => __numAbs value;
+clamp :: Int -> Int -> Int -> Int
+  = lower upper value => if lower <= upper then max lower (min upper value) else max upper (min lower value);
+pow :: Int -> Int -> Int
+  = base exponent => __numPow base exponent;
+rem :: Int -> Int -> Int
+  = dividend divisor => __numRem dividend divisor;
+gcd :: Int -> Int -> Int
+  = left right => if right == 0 then abs left else gcd right (rem left right);
+toFloat :: Int -> Float
+  = value => __numToFloat value;
+round :: Float -> Int
+  = value => __numRound value;
+truncate :: Float -> Int
+  = value => __numTruncate value;
+{ min = min; max = max; abs = abs; clamp = clamp; pow = pow; rem = rem; gcd = gcd; toFloat = toFloat; round = round; truncate = truncate; }

@@ -23,8 +23,9 @@ pub use ir::{
     HirTypeTupleItem, HirUnionVariant,
 };
 pub use lower::{
-    HirLowerOptions, LoweredHir, OPTIONAL_MODULE_SRC, PRELUDE_MODULE_SRC, STREAM_MODULE_SRC,
-    lower_file, lower_file_with_options,
+    CMP_MODULE_SRC, HirLowerOptions, LoweredHir, NUM_MODULE_SRC, OPTIONAL_MODULE_SRC,
+    PRELUDE_MODULE_SRC, RESULT_MODULE_SRC, STREAM_MODULE_SRC, TEXT_MODULE_SRC, lower_file,
+    lower_file_with_options,
 };
 pub use pass::{
     HirPass, HirPassReport, StructuralKeyValidationPass, run_default_passes, run_passes,

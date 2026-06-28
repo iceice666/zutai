@@ -395,6 +395,61 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
             ));
         }
 
+        // ── Numeric bridge primitives ───────────────────────────────────────
+        SsaOp::NumPrim { op, args } => {
+            let operands: Vec<String> = args
+                .iter()
+                .map(|a| emit_value_operand(out, tmp, a))
+                .collect();
+            let callee = match op {
+                DfNumPrimOp::Abs => "zutai.num_abs",
+                DfNumPrimOp::Rem => "zutai.num_rem",
+                DfNumPrimOp::Pow => "zutai.num_pow",
+                DfNumPrimOp::ToFloat => "zutai.num_to_float",
+                DfNumPrimOp::Round => "zutai.num_round",
+                DfNumPrimOp::Truncate => "zutai.num_truncate",
+            };
+            let arglist = operands
+                .iter()
+                .map(|v| format!("i64 {}", v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "  %{} = call i64 @{}({})\n",
+                dest, callee, arglist
+            ));
+        }
+
+        // ── Text bridge primitives ──────────────────────────────────────────
+        SsaOp::TextPrim { op, args } => {
+            let operands: Vec<String> = args
+                .iter()
+                .map(|a| emit_value_operand(out, tmp, a))
+                .collect();
+            let callee = match op {
+                DfTextPrimOp::Length => "zutai.text_length",
+                DfTextPrimOp::Split => "zutai.text_split",
+                DfTextPrimOp::Join => "zutai.text_join",
+                DfTextPrimOp::Trim => "zutai.text_trim",
+                DfTextPrimOp::ToUpper => "zutai.text_to_upper",
+                DfTextPrimOp::ToLower => "zutai.text_to_lower",
+                DfTextPrimOp::Contains => "zutai.text_contains",
+                DfTextPrimOp::Replace => "zutai.text_replace",
+                DfTextPrimOp::Show => "zutai.text_show",
+                DfTextPrimOp::ParseInt => "zutai.text_parse_int",
+                DfTextPrimOp::ParseFloat => "zutai.text_parse_float",
+            };
+            let arglist = operands
+                .iter()
+                .map(|v| format!("i64 {}", v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "  %{} = call i64 @{}({})\n",
+                dest, callee, arglist
+            ));
+        }
+
         // ── Coalesce ────────────────────────────────────────────────────────
         SsaOp::Coalesce { value, fallback } => {
             // @zutai.coalesce unwraps one Optional or Maybe layer:

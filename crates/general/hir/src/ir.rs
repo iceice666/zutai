@@ -28,6 +28,23 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "listFoldlStrict",
     "loadZti",
     "loadZt",
+    "__numAbs",
+    "__numRem",
+    "__numPow",
+    "__numToFloat",
+    "__numRound",
+    "__numTruncate",
+    "__textLength",
+    "__textSplit",
+    "__textJoin",
+    "__textTrim",
+    "__textToUpper",
+    "__textToLower",
+    "__textContains",
+    "__textReplace",
+    "__textShow",
+    "__textParseInt",
+    "__textParseFloat",
 ];
 
 /// Opaque standard host-capability types. They are seeded into every root scope

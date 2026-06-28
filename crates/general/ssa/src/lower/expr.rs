@@ -204,6 +204,14 @@ pub(super) fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: 
             op: *op,
             args: args.iter().map(|a| lower_atom_value(a, fb, ctx)).collect(),
         },
+        AnfExpr::NumPrim { op, args } => SsaOp::NumPrim {
+            op: *op,
+            args: args.iter().map(|a| lower_atom_value(a, fb, ctx)).collect(),
+        },
+        AnfExpr::TextPrim { op, args } => SsaOp::TextPrim {
+            op: *op,
+            args: args.iter().map(|a| lower_atom_value(a, fb, ctx)).collect(),
+        },
 
         AnfExpr::Variant {
             tag,

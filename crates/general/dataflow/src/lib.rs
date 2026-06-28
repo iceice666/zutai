@@ -160,6 +160,33 @@ pub enum DfListPrimOp {
     FoldlStrict,
 }
 
+/// Scalar bridge primitives backing the explicit `stdlib.num` source module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DfNumPrimOp {
+    Abs,
+    Rem,
+    Pow,
+    ToFloat,
+    Round,
+    Truncate,
+}
+
+/// Scalar bridge primitives backing the explicit `stdlib.text` source module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DfTextPrimOp {
+    Length,
+    Split,
+    Join,
+    Trim,
+    ToUpper,
+    ToLower,
+    Contains,
+    Replace,
+    Show,
+    ParseInt,
+    ParseFloat,
+}
+
 // ── Node kinds ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -240,6 +267,16 @@ pub enum DfNodeKind {
     /// `[head, tail]`; `IsNil`/`Head`/`Tail` take `[list]`).
     ListPrim {
         op: DfListPrimOp,
+        args: Vec<NodeId>,
+    },
+    /// Scalar numeric bridge primitive. `args` are ABI-word operands.
+    NumPrim {
+        op: DfNumPrimOp,
+        args: Vec<NodeId>,
+    },
+    /// Scalar text bridge primitive. `args` are ABI-word operands.
+    TextPrim {
+        op: DfTextPrimOp,
         args: Vec<NodeId>,
     },
     /// Explicit left-to-right runtime sequence. Every item is lowered in order;

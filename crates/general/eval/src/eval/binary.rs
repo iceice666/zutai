@@ -120,6 +120,35 @@ impl<'a> Evaluator<'a> {
                     }),
                 }
             }
+            BuiltinFn::NumAbs
+            | BuiltinFn::NumRem
+            | BuiltinFn::NumPow
+            | BuiltinFn::NumToFloat
+            | BuiltinFn::NumRound
+            | BuiltinFn::NumTruncate => {
+                let values = args
+                    .iter()
+                    .map(|arg| arg.force(self))
+                    .collect::<Result<Vec<_>, _>>()?;
+                eval_num_builtin_values(func, &values)
+            }
+            BuiltinFn::TextLength
+            | BuiltinFn::TextSplit
+            | BuiltinFn::TextJoin
+            | BuiltinFn::TextTrim
+            | BuiltinFn::TextToUpper
+            | BuiltinFn::TextToLower
+            | BuiltinFn::TextContains
+            | BuiltinFn::TextReplace
+            | BuiltinFn::TextShow
+            | BuiltinFn::TextParseInt
+            | BuiltinFn::TextParseFloat => {
+                let values = args
+                    .iter()
+                    .map(|arg| force_deep(arg.force(self)?, self))
+                    .collect::<Result<Vec<_>, _>>()?;
+                eval_text_builtin_values(func, &values)
+            }
         }
     }
 

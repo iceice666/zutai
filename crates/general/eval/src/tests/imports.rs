@@ -418,6 +418,141 @@ fn stdlib_optional_thir_oracle_matches_tlc_path() {
     }
 }
 
+#[test]
+fn stdlib_result_qualified_members_evaluate() {
+    let src = "r ::= import stdlib.result;\n\
+               good :: r.Result Text Int = r.ok 40;\n\
+               bad :: r.Result Int Int = r.err 4;\n\
+               mappedErr :: r.Result Int Int = r.mapErr (\\e. e + 1) bad;\n\
+               expectedErr :: r.Result Int Int = r.err 5;\n\
+               a ::= r.withDefault 0 (r.map (\\x. x + 1) good);\n\
+               b ::= r.withDefault 0 (r.andThen (\\x. if x > 0 then r.ok (x + 1) else r.err \"neg\") (r.ok 1));\n\
+               c ::= if mappedErr == expectedErr then 6 else 0;\n\
+               v1 :: r.Validation Text Int = r.valid 3;\n\
+               v2 :: r.Validation Text Int = r.invalid {\"a\";};\n\
+               v3 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\n\
+               d ::= length (r.errors (r.map2 (\\x y. x + y) v1 (r.valid 4)));\n\
+               e ::= length (r.errors (r.map2 (\\x y. x + y) v2 v3));\n\
+               a + b + c + d + e";
+    assert_eq!(run(src), Value::Int(52));
+}
+
+#[test]
+fn destructured_stdlib_result_members_evaluate() {
+    let src = "{ ok; err; map; withDefault; } ::= import stdlib.result;\n\
+               withDefault 0 (map (\\x. x + 1) (if true then ok 4 else err \"x\"))";
+    assert_eq!(run(src), Value::Int(5));
+}
+
+#[test]
+fn stdlib_result_thir_oracle_matches_tlc_path() {
+    let srcs = [
+        "r ::= import stdlib.result;\nres :: r.Result Text Int = r.ok 4;\nr.withDefault 0 (r.map (\\x. x + 1) res)",
+        "r ::= import stdlib.result;\nres :: r.Result Text Int = r.ok 4;\nr.withDefault 7 (r.andThen (\\x. r.err \"stop\") res)",
+        "r ::= import stdlib.result;\nbad :: r.Result Int Int = r.err 4;\nexpected :: r.Result Int Int = r.err 5;\nr.mapErr (\\e. e + 1) bad == expected",
+        "r ::= import stdlib.result;\nv1 :: r.Validation Text Int = r.invalid {\"a\";};\nv2 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\nlength (r.errors (r.map2 (\\x y. x + y) v1 v2))",
+    ];
+    for src in srcs {
+        let tlc = eval_file(src).expect("TLC eval failed");
+        let thir = eval_thir_file(src).expect("THIR oracle eval failed");
+        assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    }
+}
+
+#[test]
+fn stdlib_num_qualified_members_evaluate() {
+    let src = "n ::= import stdlib.num;\n\
+               a ::= n.min 9 4;\n\
+               b ::= n.max 9 4;\n\
+               c ::= n.abs (0 - 8);\n\
+               d ::= n.clamp 0 10 99;\n\
+               e ::= n.clamp 10 0 (0 - 4);\n\
+               f ::= n.pow 2 5;\n\
+               g ::= n.rem 17 5;\n\
+               h ::= n.gcd (0 - 54) 24;\n\
+               i ::= n.round 2.6;\n\
+               j ::= n.truncate 2.9;\n\
+               k ::= if n.toFloat 3 == 3.0 then 7 else 0;\n\
+               a + b + c + d + e + f + g + h + i + j + k";
+    assert_eq!(run(src), Value::Int(83));
+}
+
+#[test]
+fn destructured_stdlib_num_members_evaluate() {
+    let src = "{ pow; gcd; round; truncate; toFloat; } ::= import stdlib.num;\n\
+               pow 3 3 + gcd 270 192 + round (toFloat 2) + truncate 4.9";
+    assert_eq!(run(src), Value::Int(39));
+}
+
+#[test]
+fn stdlib_num_thir_oracle_matches_tlc_path() {
+    let srcs = [
+        "n ::= import stdlib.num;\nn.pow 2 10",
+        "n ::= import stdlib.num;\nn.gcd (0 - 54) 24",
+        "n ::= import stdlib.num;\nn.round (0.0 - 2.5)",
+        "n ::= import stdlib.num;\nif n.toFloat 42 == 42.0 then n.truncate 3.9 else 0",
+    ];
+    for src in srcs {
+        let tlc = eval_file(src).expect("TLC eval failed");
+        let thir = eval_thir_file(src).expect("THIR oracle eval failed");
+        assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    }
+}
+
+#[test]
+fn stdlib_num_reports_domain_errors() {
+    assert_eq!(
+        run_err("n ::= import stdlib.num;\nn.rem 1 0"),
+        EvalError::RemByZero
+    );
+    assert_eq!(
+        run_err("n ::= import stdlib.num;\nn.pow 2 (0 - 1)"),
+        EvalError::InvalidNumericArgument("pow exponent must be non-negative")
+    );
+    assert_eq!(
+        run_err("n ::= import stdlib.num;\nn.round (0.0 / 0.0)"),
+        EvalError::InvalidNumericArgument("round requires finite Float")
+    );
+}
+
+#[test]
+fn stdlib_text_qualified_members_evaluate() {
+    let src = "t ::= import stdlib.text;\n\
+               o ::= import stdlib.optional;\n\
+               parts ::= t.split \",\" \"a,b,c\";\n\
+               score :: Int = t.length \"hé\" + t.length (t.join \":\" parts) + t.length (t.trim \"  z  \") +\n\
+                 (if t.contains \"b\" \"abc\" then 10 else 0) +\n\
+                 t.length (t.replace \"a\" \"o\" \"cat\") +\n\
+                 t.length (t.toUpper \"ß\") + t.length (t.toLower \"A\") +\n\
+                 t.length (t.show \"x\") +\n\
+                 o.withDefault 0 (t.parseInt \"42\") +\n\
+                 (if o.withDefault 0.0 (t.parseFloat \"2.5\") == 2.5 then 7 else 0);\n\
+               score";
+    assert_eq!(run(src), Value::Int(76));
+}
+
+#[test]
+fn stdlib_text_thir_oracle_matches_tlc_path() {
+    let srcs = [
+        "t ::= import stdlib.text;\nt.length (t.toUpper \"abc\")",
+        "t ::= import stdlib.text;\nt.join \"-\" (t.split \",\" \"a,b\")",
+        "t ::= import stdlib.text;\nt.replace \"a\" \"o\" (t.trim \" cat \")",
+        "t ::= import stdlib.text;\no ::= import stdlib.optional;\no.withDefault 0 (t.parseInt \"17\")",
+    ];
+    for src in srcs {
+        let tlc = eval_file(src).expect("TLC eval failed");
+        let thir = eval_thir_file(src).expect("THIR oracle eval failed");
+        assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    }
+}
+
+#[test]
+fn stdlib_cmp_qualified_members_evaluate() {
+    let src = "c ::= import stdlib.cmp;\n\
+               c.then (c.compareInt 1 2) (c.reverse c.gt) == c.lt";
+    assert_eq!(run(src), Value::Bool(true));
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

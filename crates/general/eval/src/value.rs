@@ -121,6 +121,25 @@ pub enum BuiltinFn {
     ListHead,
     ListTail,
     ListFoldlStrict,
+    /// Internal scalar bridge primitives used by explicit `stdlib.num`.
+    NumAbs,
+    NumRem,
+    NumPow,
+    NumToFloat,
+    NumRound,
+    NumTruncate,
+    /// Internal text bridge primitives used by explicit `stdlib.text`.
+    TextLength,
+    TextSplit,
+    TextJoin,
+    TextTrim,
+    TextToUpper,
+    TextToLower,
+    TextContains,
+    TextReplace,
+    TextShow,
+    TextParseInt,
+    TextParseFloat,
 }
 
 impl BuiltinFn {
@@ -142,6 +161,23 @@ impl BuiltinFn {
             "listHead" => Some(BuiltinFn::ListHead),
             "listTail" => Some(BuiltinFn::ListTail),
             "listFoldlStrict" => Some(BuiltinFn::ListFoldlStrict),
+            "__numAbs" => Some(BuiltinFn::NumAbs),
+            "__numRem" => Some(BuiltinFn::NumRem),
+            "__numPow" => Some(BuiltinFn::NumPow),
+            "__numToFloat" => Some(BuiltinFn::NumToFloat),
+            "__numRound" => Some(BuiltinFn::NumRound),
+            "__numTruncate" => Some(BuiltinFn::NumTruncate),
+            "__textLength" => Some(BuiltinFn::TextLength),
+            "__textSplit" => Some(BuiltinFn::TextSplit),
+            "__textJoin" => Some(BuiltinFn::TextJoin),
+            "__textTrim" => Some(BuiltinFn::TextTrim),
+            "__textToUpper" => Some(BuiltinFn::TextToUpper),
+            "__textToLower" => Some(BuiltinFn::TextToLower),
+            "__textContains" => Some(BuiltinFn::TextContains),
+            "__textReplace" => Some(BuiltinFn::TextReplace),
+            "__textShow" => Some(BuiltinFn::TextShow),
+            "__textParseInt" => Some(BuiltinFn::TextParseInt),
+            "__textParseFloat" => Some(BuiltinFn::TextParseFloat),
             _ => None,
         }
     }
@@ -158,9 +194,25 @@ impl BuiltinFn {
             BuiltinFn::ListEmpty
             | BuiltinFn::ListIsNil
             | BuiltinFn::ListHead
-            | BuiltinFn::ListTail => 1,
-            BuiltinFn::ListCons => 2,
-            BuiltinFn::ListFoldlStrict => 3,
+            | BuiltinFn::ListTail
+            | BuiltinFn::NumAbs
+            | BuiltinFn::NumToFloat
+            | BuiltinFn::NumRound
+            | BuiltinFn::NumTruncate
+            | BuiltinFn::TextLength
+            | BuiltinFn::TextTrim
+            | BuiltinFn::TextToUpper
+            | BuiltinFn::TextToLower
+            | BuiltinFn::TextShow
+            | BuiltinFn::TextParseInt
+            | BuiltinFn::TextParseFloat => 1,
+            BuiltinFn::ListCons
+            | BuiltinFn::NumRem
+            | BuiltinFn::NumPow
+            | BuiltinFn::TextSplit
+            | BuiltinFn::TextJoin
+            | BuiltinFn::TextContains => 2,
+            BuiltinFn::ListFoldlStrict | BuiltinFn::TextReplace => 3,
         }
     }
 
@@ -180,8 +232,206 @@ impl BuiltinFn {
             BuiltinFn::ListHead => "listHead",
             BuiltinFn::ListTail => "listTail",
             BuiltinFn::ListFoldlStrict => "listFoldlStrict",
+            BuiltinFn::NumAbs => "__numAbs",
+            BuiltinFn::NumRem => "__numRem",
+            BuiltinFn::NumPow => "__numPow",
+            BuiltinFn::NumToFloat => "__numToFloat",
+            BuiltinFn::NumRound => "__numRound",
+            BuiltinFn::NumTruncate => "__numTruncate",
+            BuiltinFn::TextLength => "__textLength",
+            BuiltinFn::TextSplit => "__textSplit",
+            BuiltinFn::TextJoin => "__textJoin",
+            BuiltinFn::TextTrim => "__textTrim",
+            BuiltinFn::TextToUpper => "__textToUpper",
+            BuiltinFn::TextToLower => "__textToLower",
+            BuiltinFn::TextContains => "__textContains",
+            BuiltinFn::TextReplace => "__textReplace",
+            BuiltinFn::TextShow => "__textShow",
+            BuiltinFn::TextParseInt => "__textParseInt",
+            BuiltinFn::TextParseFloat => "__textParseFloat",
         }
     }
+}
+
+pub(crate) fn eval_num_builtin_values(func: BuiltinFn, args: &[Value]) -> Result<Value, EvalError> {
+    match func {
+        BuiltinFn::NumAbs => {
+            let value = expect_int(&args[0])?;
+            value
+                .checked_abs()
+                .map(Value::Int)
+                .ok_or(EvalError::IntOverflow("abs"))
+        }
+        BuiltinFn::NumRem => {
+            let dividend = expect_int(&args[0])?;
+            let divisor = expect_int(&args[1])?;
+            if divisor == 0 {
+                return Err(EvalError::RemByZero);
+            }
+            dividend
+                .checked_rem(divisor)
+                .map(Value::Int)
+                .ok_or(EvalError::IntOverflow("rem"))
+        }
+        BuiltinFn::NumPow => {
+            let base = expect_int(&args[0])?;
+            let exponent = expect_int(&args[1])?;
+            if exponent < 0 {
+                return Err(EvalError::InvalidNumericArgument(
+                    "pow exponent must be non-negative",
+                ));
+            }
+            if exponent > u32::MAX as i64 {
+                return Err(EvalError::InvalidNumericArgument(
+                    "pow exponent must fit u32",
+                ));
+            }
+            base.checked_pow(exponent as u32)
+                .map(Value::Int)
+                .ok_or(EvalError::IntOverflow("pow"))
+        }
+        BuiltinFn::NumToFloat => Ok(Value::Float(expect_int(&args[0])? as f64)),
+        BuiltinFn::NumRound => {
+            let value = expect_float(&args[0], "round requires finite Float")?;
+            float_to_int(value.round(), "round result outside Int range")
+        }
+        BuiltinFn::NumTruncate => {
+            let value = expect_float(&args[0], "truncate requires finite Float")?;
+            float_to_int(value.trunc(), "truncate result outside Int range")
+        }
+        _ => Err(EvalError::Internal(
+            "non-numeric builtin dispatched to numeric helper",
+        )),
+    }
+}
+
+fn expect_int(value: &Value) -> Result<i64, EvalError> {
+    match value {
+        Value::Int(n) => Ok(*n),
+        other => Err(EvalError::TypeMismatch {
+            expected: "Int",
+            found: runtime_value_type_name(other),
+        }),
+    }
+}
+
+fn expect_float(value: &Value, finite_message: &'static str) -> Result<f64, EvalError> {
+    match value {
+        Value::Float(f) if f.is_finite() => Ok(*f),
+        Value::Float(_) => Err(EvalError::InvalidNumericArgument(finite_message)),
+        other => Err(EvalError::TypeMismatch {
+            expected: "Float",
+            found: runtime_value_type_name(other),
+        }),
+    }
+}
+
+fn float_to_int(value: f64, range_message: &'static str) -> Result<Value, EvalError> {
+    const INT_MIN_INCLUSIVE: f64 = -9_223_372_036_854_775_808.0;
+    const INT_MAX_EXCLUSIVE: f64 = 9_223_372_036_854_775_808.0;
+    if !(INT_MIN_INCLUSIVE..INT_MAX_EXCLUSIVE).contains(&value) {
+        return Err(EvalError::InvalidNumericArgument(range_message));
+    }
+    Ok(Value::Int(value as i64))
+}
+
+pub(crate) fn eval_text_builtin_values(
+    func: BuiltinFn,
+    args: &[Value],
+) -> Result<Value, EvalError> {
+    match func {
+        BuiltinFn::TextLength => Ok(Value::Int(expect_text(&args[0])?.chars().count() as i64)),
+        BuiltinFn::TextSplit => {
+            let separator = expect_text(&args[0])?;
+            let value = expect_text(&args[1])?;
+            let items: Vec<Thunk> = value
+                .split(separator.as_ref())
+                .map(|part| Thunk::ready(Value::Text(Rc::from(part))))
+                .collect();
+            Ok(Value::List(Rc::from(items)))
+        }
+        BuiltinFn::TextJoin => {
+            let separator = expect_text(&args[0])?;
+            let Value::List(items) = &args[1] else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "List",
+                    found: runtime_value_type_name(&args[1]),
+                });
+            };
+            let mut parts = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                match item.peek() {
+                    Some(value) => parts.push(expect_text(&value)?.to_string()),
+                    None => {
+                        return Err(EvalError::Internal("text join received deferred list item"));
+                    }
+                }
+            }
+            Ok(Value::Text(Rc::from(parts.join(separator.as_ref()))))
+        }
+        BuiltinFn::TextTrim => Ok(Value::Text(Rc::from(expect_text(&args[0])?.trim()))),
+        BuiltinFn::TextToUpper => Ok(Value::Text(Rc::from(expect_text(&args[0])?.to_uppercase()))),
+        BuiltinFn::TextToLower => Ok(Value::Text(Rc::from(expect_text(&args[0])?.to_lowercase()))),
+        BuiltinFn::TextContains => {
+            let needle = expect_text(&args[0])?;
+            let value = expect_text(&args[1])?;
+            Ok(Value::Bool(value.contains(needle.as_ref())))
+        }
+        BuiltinFn::TextReplace => {
+            let from = expect_text(&args[0])?;
+            let to = expect_text(&args[1])?;
+            let value = expect_text(&args[2])?;
+            Ok(Value::Text(Rc::from(
+                value.replace(from.as_ref(), to.as_ref()),
+            )))
+        }
+        BuiltinFn::TextShow => Ok(Value::Text(Rc::from(quote_text(expect_text(&args[0])?)))),
+        BuiltinFn::TextParseInt => match expect_text(&args[0])?.trim().parse::<i64>() {
+            Ok(value) => Ok(optional_value(Value::Int(value))),
+            Err(_) => Ok(Value::Atom(Rc::from("none"))),
+        },
+        BuiltinFn::TextParseFloat => match expect_text(&args[0])?.trim().parse::<f64>() {
+            Ok(value) if value.is_finite() => Ok(optional_value(Value::Float(value))),
+            _ => Ok(Value::Atom(Rc::from("none"))),
+        },
+        _ => Err(EvalError::Internal(
+            "non-text builtin dispatched to text helper",
+        )),
+    }
+}
+
+fn expect_text(value: &Value) -> Result<&Rc<str>, EvalError> {
+    match value {
+        Value::Text(text) => Ok(text),
+        other => Err(EvalError::TypeMismatch {
+            expected: "Text",
+            found: runtime_value_type_name(other),
+        }),
+    }
+}
+
+fn optional_value(value: Value) -> Value {
+    Value::TaggedValue {
+        tag: Rc::from("some"),
+        payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+    }
+}
+
+fn quote_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// A single-parameter closure produced by the TLC evaluator.

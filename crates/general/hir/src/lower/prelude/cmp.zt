@@ -1,0 +1,25 @@
+-- Canonical source for comparator helpers (stdlib slice H).
+-- Explicit import only: `c ::= import stdlib.cmp`; these names are not ambient.
+Ordering :: type { #lt; #eq; #gt; };
+lt :: Ordering = #lt;
+eq :: Ordering = #eq;
+gt :: Ordering = #gt;
+isLt :: Ordering -> Bool
+  = value => value == #lt;
+isEq :: Ordering -> Bool
+  = value => value == #eq;
+isGt :: Ordering -> Bool
+  = value => value == #gt;
+reverse :: Ordering -> Ordering
+  = value => match value { | #lt => #gt; | #eq => #eq; | #gt => #lt; };
+thenCmp :: Ordering -> Ordering -> Ordering
+  = first second => match first { | #eq => second; | #lt => #lt; | #gt => #gt; };
+by :: <A, B> (A -> B) -> (B -> B -> Ordering) -> A -> A -> Ordering
+  = project compare left right => compare (project left) (project right);
+compareInt :: Int -> Int -> Ordering
+  = left right => if (left < right) then #lt else if (left > right) then #gt else #eq;
+compareFloat :: Float -> Float -> Ordering
+  = left right => if (left < right) then #lt else if (left > right) then #gt else #eq;
+compareText :: Text -> Text -> Ordering
+  = left right => if (left < right) then #lt else if (left > right) then #gt else #eq;
+{ Ordering = Ordering; lt = lt; eq = eq; gt = gt; isLt = isLt; isEq = isEq; isGt = isGt; reverse = reverse; then = thenCmp; by = by; compareInt = compareInt; compareFloat = compareFloat; compareText = compareText; }

@@ -19,12 +19,12 @@ default-on mark-sweep is the committed endpoint). Track 2 remains
 demand-gated and must not be implemented unless a concrete program forces one
 of the reserved core-design boundaries.
 
-The next concrete follow-up is **source-prelude / stdlib usability** work:
-B (small function prelude), C (minimal `List` verbs), and D (Optional helpers)
-**landed 2026-06-28** (see `docs/ARCHIVED.md` "Small function prelude (stdlib
-slice B)", "Minimal List verbs (stdlib slice C)", and "Optional helpers (stdlib
-slice D)"). This is stdlib work, not Track 2, and does not reopen any core
-language boundary. The next unlanded stdlib slice is `result`.
+The source-prelude / stdlib usability row landed through slice H:
+B (small function prelude), C (minimal `List` verbs), D (Optional helpers),
+E (Result and Validation helpers), F (Numeric helpers), G (Text helpers), and
+H (Comparator helpers) **landed 2026-06-28** (see `docs/ARCHIVED.md` for the
+per-slice summaries). This is stdlib work, not Track 2, and does not reopen any
+core language boundary. Track 2 remains demand-gated.
 
 ## Source prelude / stdlib active work
 
@@ -55,13 +55,48 @@ through `import stdlib.stream`. See `docs/ARCHIVED.md` "Minimal List verbs
 _Landed 2026-06-28. `optional.zt` ships explicit-import-only helpers
 `map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList` over `Optional`; the
 module is available as `import stdlib.optional` and is not injected into the
-ambient prelude, so `List` `map`/`filter` remain the unqualified defaults. The
-next unlanded stdlib slice is `result`. See `docs/ARCHIVED.md` "Optional helpers
-(stdlib slice D)" for the summary._
+ambient prelude, so `List` `map`/`filter` remain the unqualified defaults. See
+`docs/ARCHIVED.md` "Optional helpers (stdlib slice D)" for the summary._
 
-Non-goals for the next stdlib slice: `num`, `text`, `cmp`, full stdlib
-completion, non-tail generator `yield from`, cross-module witness native ABI,
-and all Track 2 boundaries.
+### E — Result and Validation helpers ✅
+
+_Landed 2026-06-28. `result.zt` ships explicit-import-only `Result` and
+`Validation` helpers: `ok`/`err`/`valid`/`invalid`/`map`/`map2`/`mapErr`/
+`andThen`/`withDefault`/`errors`. The module is available as
+`import stdlib.result` and is not injected into the ambient prelude. See
+`docs/ARCHIVED.md` "Result and Validation helpers (stdlib slice E)" for the
+summary._
+
+### F — Numeric helpers ✅
+
+_Landed 2026-06-28. `num.zt` ships explicit-import-only helpers
+`min`/`max`/`abs`/`clamp`/`pow`/`rem`/`gcd`/`toFloat`/`round`/`truncate`.
+The module is available as `import stdlib.num` and is not injected into the
+ambient prelude. Checked scalar bridge intrinsics cover remainder, power,
+conversions, and checked abs on interpreter/TLC/native paths. See
+`docs/ARCHIVED.md` "Numeric helpers (stdlib slice F)" for the summary._
+
+### G — Text helpers ✅
+
+_Landed 2026-06-28. `text.zt` ships explicit-import-only helpers
+`length`/`split`/`join`/`trim`/`toUpper`/`toLower`/`contains`/`replace`/`show`/
+`parseInt`/`parseFloat`. The module is available as `import stdlib.text` and is
+not injected into the ambient prelude. Scalar bridge intrinsics cover runtime
+string operations and numeric parsing on interpreter/TLC/native paths. See
+`docs/ARCHIVED.md` "Text helpers (stdlib slice G)" for the summary._
+
+### H — Comparator helpers ✅
+
+_Landed 2026-06-28. `cmp.zt` ships explicit-import-only `Ordering` plus
+`lt`/`eq`/`gt`/`isLt`/`isEq`/`isGt`/`reverse`/`then`/`by` and concrete
+`compareInt`/`compareFloat`/`compareText` comparators. The module is available
+as `import stdlib.cmp` and is not injected into the ambient prelude. Generic
+witness-dispatched `compare` remains deferred. See `docs/ARCHIVED.md`
+"Comparator helpers (stdlib slice H)" for the summary._
+
+Non-goals after stdlib usability: non-tail generator `yield from`,
+cross-module witness native ABI, all Track 2 boundaries, and generic
+witness-dispatched `compare`.
 
 ## Tooling / test-harness backlog
 

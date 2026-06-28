@@ -49,7 +49,9 @@ pub(super) fn free_vars_expr(expr: &AnfExpr) -> FxHashSet<String> {
             })
             .collect(),
         AnfExpr::List(elems) => elems.iter().flat_map(free_vars_atom).collect(),
-        AnfExpr::ListPrim { args, .. } => args.iter().flat_map(free_vars_atom).collect(),
+        AnfExpr::ListPrim { args, .. }
+        | AnfExpr::NumPrim { args, .. }
+        | AnfExpr::TextPrim { args, .. } => args.iter().flat_map(free_vars_atom).collect(),
         AnfExpr::Select { base, slot: _ } => free_vars_atom(base),
         AnfExpr::Match { scrutinee, arms } => {
             let mut fv = free_vars_atom(scrutinee);

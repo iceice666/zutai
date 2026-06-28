@@ -64,6 +64,34 @@ pub const PRELUDE_MODULE_SRC: &str = include_str!("prelude/prelude.zt");
 /// an ambient fallback prelude, so unqualified `map`/`filter` keep their List
 /// prelude meaning unless the user explicitly destructures the module.
 pub const OPTIONAL_MODULE_SRC: &str = include_str!("prelude/optional.zt");
+///
+/// Canonical source for the Result and Validation helper module (stdlib slice E).
+///
+/// Explicit import only: `import stdlib.result` exports the final record. It is
+/// not injected as an ambient prelude, so `Result`/`Validation` and helper names
+/// exist only through explicit import or destructuring.
+pub const RESULT_MODULE_SRC: &str = include_str!("prelude/result.zt");
+///
+/// Canonical source for the numeric helper module (stdlib slice F).
+///
+/// Explicit import only: `import stdlib.num` exports the final record. It is
+/// not injected as an ambient prelude; public numeric helper names exist only
+/// through explicit import or destructuring.
+pub const NUM_MODULE_SRC: &str = include_str!("prelude/num.zt");
+///
+/// Canonical source for the text helper module (stdlib slice G).
+///
+/// Explicit import only: `import stdlib.text` exports the final record. It is
+/// not injected as an ambient prelude; public text helper names exist only
+/// through explicit import or destructuring.
+pub const TEXT_MODULE_SRC: &str = include_str!("prelude/text.zt");
+///
+/// Canonical source for the comparator helper module (stdlib slice H).
+///
+/// Explicit import only: `import stdlib.cmp` exports the final record. It is
+/// not injected as an ambient prelude; comparator helper names exist only
+/// through explicit import or destructuring.
+pub const CMP_MODULE_SRC: &str = include_str!("prelude/cmp.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())

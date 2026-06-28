@@ -214,6 +214,56 @@ fn compile_stdlib_optional_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_RESULT_PIPELINE_SRC: &str = "r ::= import stdlib.result;\n\
+good :: r.Result Text Int = r.ok 3;\n\
+bad :: r.Result Int Int = r.err 4;\n\
+score :: r.Result Text Int -> Int\n  = res => res |> r.map (\\x. x * 10) |> r.andThen (\\x. if x > 20 then r.ok (x + 1) else r.err \"small\") |> r.withDefault 5;\n\
+v1 :: r.Validation Text Int = r.invalid {\"a\";};\n\
+v2 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\n\
+score good + score (r.ok 1) + score (r.err \"no\") + length (r.errors (r.map2 (\\x y. x + y) v1 v2)) + (match r.mapErr (\\e. e + 1) bad { | #err { error = e; } => e - 2; | #ok { value = _; } => 0; })\n";
+
+#[test]
+fn compile_stdlib_result_pipeline_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_result", STDLIB_RESULT_PIPELINE_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_result_oracle.zt",
+        STDLIB_RESULT_PIPELINE_SRC,
+    );
+    assert_eq!(native.trim(), "47");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_NUM_PIPELINE_SRC: &str = "n ::= import stdlib.num;\n\
+score :: Int -> Int\n  = x => x |> n.clamp 0 10 |> n.pow 2 |> n.rem 17;\n\
+score 12 + score (0 - 3) + n.gcd (0 - 84) 30 + n.abs (0 - 9) + n.round 2.6 + n.truncate 2.9 + (if n.toFloat 4 == 4.0 then 5 else 0)\n";
+
+#[test]
+fn compile_stdlib_num_pipeline_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_num", STDLIB_NUM_PIPELINE_SRC);
+    let interp = run_stdout("cli_test_stdlib_num_oracle.zt", STDLIB_NUM_PIPELINE_SRC);
+    assert_eq!(native.trim(), "42");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_TEXT_CMP_PIPELINE_SRC: &str = "t ::= import stdlib.text;\n\
+c ::= import stdlib.cmp;\n\
+o ::= import stdlib.optional;\n\
+parts ::= t.split \",\" \"a,b,c\";\n\
+textScore :: Int = t.length (t.join \":\" parts) + t.length (t.trim \"  z  \") + t.length (t.replace \"a\" \"o\" \"cat\") + o.withDefault 0 (t.parseInt \"42\");\n\
+cmpScore :: Int = if c.then (c.compareText \"a\" \"b\") (c.reverse c.gt) == c.lt then 7 else 0;\n\
+textScore + cmpScore\n";
+
+#[test]
+fn compile_stdlib_text_cmp_pipeline_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_text_cmp", STDLIB_TEXT_CMP_PIPELINE_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_text_cmp_oracle.zt",
+        STDLIB_TEXT_CMP_PIPELINE_SRC,
+    );
+    assert_eq!(native.trim(), "58");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 // V3-G2 residual: `unfold` — the canonical codata producer (step + seed). A
 // `Step S A` (`#done`/`#yield { item; next }`) step function drives an infinite
 // stream that `take`/`fold` bound. Native-compiled, matching the oracle.

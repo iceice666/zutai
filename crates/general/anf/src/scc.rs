@@ -99,7 +99,9 @@ fn collect_global_refs(
             collect_global_refs(graph, *lhs, out, visited);
             collect_global_refs(graph, *rhs, out, visited);
         }
-        DfNodeKind::ListPrim { args, .. } => {
+        DfNodeKind::ListPrim { args, .. }
+        | DfNodeKind::NumPrim { args, .. }
+        | DfNodeKind::TextPrim { args, .. } => {
             for arg in args {
                 collect_global_refs(graph, *arg, out, visited);
             }

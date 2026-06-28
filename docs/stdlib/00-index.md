@@ -50,15 +50,14 @@ always shadows the ambient fallback.
 | `list` | `foldl' fold map filter length append uncons head? tail?` | accepted as ambient source prelude and importable through `stdlib.prelude`; `fold`/`foldl'` share a strict left-fold bridge intrinsic (`listFoldlStrict`) and native runtime call; list nil/cons patterns lower through THIR/TLC/Dataflow/ANF/SSA/LLVM |
 | `stream` | `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), importable via embedded `stdlib.stream`; non-conflicting names stay ambient, while stream `map`/`filter`/`fold`/`uncons` are qualified/imported to leave ambient names for `List`; pure finite and infinite generators run on interpreter and native backend; effectful generators reference-interpreter + native `io.print` parity (see [stream](stream.md)) |
 | `optional` | `map andThen filter withDefault isSome toList` | accepted as explicit importable source module via `import stdlib.optional`; exports `map` `andThen` `filter` `withDefault` `isSome` `toList` over `Optional`; interpreter/TLC/native parity covered |
-| `result` | `Result Validation ok err valid invalid map map2 mapErr andThen withDefault errors` | planned (source); see [Prelude](prelude.md) error model |
-| `num` | `min max abs clamp pow rem gcd toFloat round truncate` | planned (source + conversion intrinsics) |
-| `text` | `length split join trim toUpper toLower contains replace show parseInt parseFloat` | planned (intrinsic — no char ops in source) |
-| `cmp` | `Ordering (#lt/#eq/#gt)`, comparator builders | planned; generic `compare` is witness-dispatched once a `cmp` module lands (v1 constraints already support `Ord`) |
+| `result` | `Result Validation ok err valid invalid map map2 mapErr andThen withDefault errors` | accepted as explicit importable source module via `import stdlib.result`; exports `Result` `Validation` `ok` `err` `valid` `invalid` `map` `map2` `mapErr` `andThen` `withDefault` `errors`; `Result` short-circuits and `Validation` accumulates `List E` errors; interpreter/TLC/native parity covered |
+| `num` | `min max abs clamp pow rem gcd toFloat round truncate` | accepted as explicit importable source module via `import stdlib.num`; exports `min` `max` `abs` `clamp` `pow` `rem` `gcd` `toFloat` `round` `truncate`; Int helpers are source wrappers over checked scalar bridge intrinsics where needed; `toFloat`/`round`/`truncate` are conversion intrinsics; interpreter/TLC/native parity covered |
+| `text` | `length split join trim toUpper toLower contains replace show parseInt parseFloat` | accepted as explicit importable source module via `import stdlib.text`; backed by scalar bridge intrinsics/runtime helpers for Unicode scalar length, splitting/joining, trimming, case conversion, containment/replacement, text quoting, and numeric parsing; interpreter/TLC/native parity covered |
+| `cmp` | `Ordering (#lt/#eq/#gt) lt eq gt isLt isEq isGt reverse then by compareInt compareFloat compareText` | accepted as explicit importable source module via `import stdlib.cmp`; comparator composition and concrete Int/Float/Text comparators are source definitions; the exported `then` field is backed by an internal `thenCmp` binding because `then` is a keyword |
 | `reflect` | `fields variants schema witness` | accepted; THIR/TLC/evaluator support; `compile`/`dataflow` fold serializable reflection to backend constants and reject residual reflection (a raw `witness` dictionary or `Type`-valued result) before lowering — the fold-or-reject model |
 
-`sortBy`/`groupBy`/`cmp` take explicit comparators: the standard `Ord`/`Eq`
-constraints (v1) support witness-dispatched comparison, but a dedicated `cmp`
-module with comparator builders is still planned.
+`sortBy`/`groupBy` take explicit comparator functions. Generic witness-dispatched
+`compare` remains deferred; concrete `stdlib.cmp` comparators are available now.
 
 `Stream` is the standard-library home for iterator-like pure APIs. Its
 combinators are **ambient prelude** (no import needed) and also importable via

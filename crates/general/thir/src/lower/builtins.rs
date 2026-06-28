@@ -61,6 +61,71 @@ impl<'hir> Lowerer<'hir> {
             "listHead" => Some(self.list_head_builtin_type(span)),
             "listTail" => Some(self.list_tail_builtin_type(span)),
             "listFoldlStrict" => Some(self.list_foldl_strict_builtin_type(span)),
+            "__numAbs" => {
+                let int = self.int_type(span);
+                Some(self.unary_num_builtin_type(span, int, int))
+            }
+            "__numRem" | "__numPow" => {
+                let int = self.int_type(span);
+                Some(self.binary_num_builtin_type(span, int, int, int))
+            }
+            "__numToFloat" => {
+                let int = self.int_type(span);
+                let float = self.float_type(span);
+                Some(self.unary_num_builtin_type(span, int, float))
+            }
+            "__numRound" | "__numTruncate" => {
+                let float = self.float_type(span);
+                let int = self.int_type(span);
+                Some(self.unary_num_builtin_type(span, float, int))
+            }
+            "__textLength" => {
+                let text = self.text_type(span);
+                let int = self.int_type(span);
+                Some(self.unary_num_builtin_type(span, text, int))
+            }
+            "__textSplit" => {
+                let text = self.text_type(span);
+                let list_text = self.alloc_type(Type {
+                    kind: TypeKind::List(text),
+                    span,
+                });
+                Some(self.binary_num_builtin_type(span, text, text, list_text))
+            }
+            "__textJoin" => {
+                let text = self.text_type(span);
+                let list_text = self.alloc_type(Type {
+                    kind: TypeKind::List(text),
+                    span,
+                });
+                Some(self.binary_num_builtin_type(span, text, list_text, text))
+            }
+            "__textTrim" | "__textToUpper" | "__textToLower" | "__textShow" => {
+                let text = self.text_type(span);
+                Some(self.unary_num_builtin_type(span, text, text))
+            }
+            "__textContains" => {
+                let text = self.text_type(span);
+                let bool_ty = self.bool_type(span);
+                Some(self.binary_num_builtin_type(span, text, text, bool_ty))
+            }
+            "__textReplace" => {
+                let text = self.text_type(span);
+                let tail = self.binary_num_builtin_type(span, text, text, text);
+                Some(self.unary_num_builtin_type(span, text, tail))
+            }
+            "__textParseInt" => {
+                let text = self.text_type(span);
+                let int = self.int_type(span);
+                let optional_int = self.optional_type(int, span);
+                Some(self.unary_num_builtin_type(span, text, optional_int))
+            }
+            "__textParseFloat" => {
+                let text = self.text_type(span);
+                let float = self.float_type(span);
+                let optional_float = self.optional_type(float, span);
+                Some(self.unary_num_builtin_type(span, text, optional_float))
+            }
             _ => None,
         }
     }
@@ -90,6 +155,24 @@ impl<'hir> Lowerer<'hir> {
             },
             span,
         })
+    }
+
+    fn unary_num_builtin_type(&mut self, span: Span, from: TypeId, to: TypeId) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Function { from, to },
+            span,
+        })
+    }
+
+    fn binary_num_builtin_type(
+        &mut self,
+        span: Span,
+        first: TypeId,
+        second: TypeId,
+        result: TypeId,
+    ) -> TypeId {
+        let tail = self.unary_num_builtin_type(span, second, result);
+        self.unary_num_builtin_type(span, first, tail)
     }
 
     /// `listEmpty :: <A> Unit -> List A` — the Unit-arg form keeps the builtin a

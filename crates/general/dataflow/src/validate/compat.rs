@@ -249,6 +249,122 @@ pub(super) fn check_builtin(
     }
 }
 
+fn expect_type_kind(
+    graph: &DataflowGraph,
+    owner: NodeId,
+    field: &'static str,
+    ty: DfTyId,
+    expected: &'static str,
+    matches: impl FnOnce(&DfTy) -> bool,
+    errors: &mut Vec<ValidationError>,
+) {
+    if type_exists(graph, ty) && !matches(&graph.types[ty]) {
+        unexpected_type(owner, field, expected, ty, errors);
+    }
+}
+
+pub(super) fn check_num_prim(
+    graph: &DataflowGraph,
+    owner: NodeId,
+    op: DfNumPrimOp,
+    args: &[NodeId],
+    errors: &mut Vec<ValidationError>,
+) {
+    let result_ty = graph.nodes[owner].ty;
+    match op {
+        DfNumPrimOp::Abs => {
+            if let Some(arg_ty) = args.first().and_then(|arg| child_ty(graph, *arg)) {
+                expect_type_kind(
+                    graph,
+                    owner,
+                    "arg",
+                    arg_ty,
+                    "Int",
+                    |ty| matches!(ty, DfTy::Int),
+                    errors,
+                );
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Int",
+                |ty| matches!(ty, DfTy::Int),
+                errors,
+            );
+        }
+        DfNumPrimOp::Rem | DfNumPrimOp::Pow => {
+            for arg in args {
+                if let Some(arg_ty) = child_ty(graph, *arg) {
+                    expect_type_kind(
+                        graph,
+                        owner,
+                        "arg",
+                        arg_ty,
+                        "Int",
+                        |ty| matches!(ty, DfTy::Int),
+                        errors,
+                    );
+                }
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Int",
+                |ty| matches!(ty, DfTy::Int),
+                errors,
+            );
+        }
+        DfNumPrimOp::ToFloat => {
+            if let Some(arg_ty) = args.first().and_then(|arg| child_ty(graph, *arg)) {
+                expect_type_kind(
+                    graph,
+                    owner,
+                    "arg",
+                    arg_ty,
+                    "Int",
+                    |ty| matches!(ty, DfTy::Int),
+                    errors,
+                );
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Float",
+                |ty| matches!(ty, DfTy::Float),
+                errors,
+            );
+        }
+        DfNumPrimOp::Round | DfNumPrimOp::Truncate => {
+            if let Some(arg_ty) = args.first().and_then(|arg| child_ty(graph, *arg)) {
+                expect_type_kind(
+                    graph,
+                    owner,
+                    "arg",
+                    arg_ty,
+                    "Float",
+                    |ty| matches!(ty, DfTy::Float),
+                    errors,
+                );
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Int",
+                |ty| matches!(ty, DfTy::Int),
+                errors,
+            );
+        }
+    }
+}
+
 pub(super) fn check_node_type_compat(
     graph: &DataflowGraph,
     owner: NodeId,
@@ -405,6 +521,8 @@ pub(super) fn check_node_type_compat(
         // sanity aid, and the `.zt` source already type-checks these calls; skip
         // it (mirrors the `Variant` no-op).
         DfNodeKind::ListPrim { .. } => {}
+        DfNodeKind::NumPrim { op, args } => check_num_prim(graph, owner, *op, args, errors),
+        DfNodeKind::TextPrim { .. } => {}
         DfNodeKind::Sequence(items) => {
             if let Some(last) = items.last().and_then(|item| child_ty(graph, *item)) {
                 check_same_type(graph, owner, "last", last, node.ty, errors);

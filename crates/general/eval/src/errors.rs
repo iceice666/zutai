@@ -36,9 +36,15 @@ pub enum EvalError {
     /// Division by zero in integer division.
     #[error("runtime error: integer division by zero")]
     DivByZero,
+    /// Remainder by zero in integer remainder.
+    #[error("runtime error: integer remainder by zero")]
+    RemByZero,
     /// Integer overflow.
     #[error("runtime error: integer overflow in `{0}`")]
     IntOverflow(&'static str),
+    /// Invalid numeric builtin domain or conversion result.
+    #[error("runtime error: invalid numeric argument: {0}")]
+    InvalidNumericArgument(&'static str),
     /// No clause of a function matched the arguments.
     #[error("runtime error: no matching clause (non-exhaustive pattern match)")]
     NoMatchingClause,

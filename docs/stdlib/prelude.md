@@ -25,7 +25,9 @@ Today two layers are live. The **intrinsic** layer is `BUILTIN_VALUE_NAMES`
 seeded in `crates/general/hir/src/lower/mod.rs`: `print`; reflection `fields`,
 `variants`, `schema`; config `overlay`, `overlayDeep`; the list-interop bridge
 `listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`; the strict list-fold
-bridge `listFoldlStrict`; and dynamic load `loadZti`/`loadZt` — plus the builtin
+bridge `listFoldlStrict`; dynamic load `loadZti`/`loadZt`; and the internal
+numeric scalar bridge `__numAbs`/`__numRem`/`__numPow`/`__numToFloat`/
+`__numRound`/`__numTruncate` used by explicit `stdlib.num` — plus the builtin
 type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
 **source** layer is two ambient prelude files, both `include_str!`d in the HIR
 lowerer with their declarations injected as a fallback
@@ -74,7 +76,7 @@ Excluded from the prelude on purpose:
 - `foldr`, `zip`, `flatten`, `reverse`, `take`, `drop`, search/sort/grouping
   helpers, and numeric aggregates remain explicit `list` work.
 - All of `text`, `num`, `optional`, `result`, `cmp`, and `reflect` are explicit
-  imports.
+  imports (`num`/`optional`/`result` are landed explicit modules).
 
 Naming note: the list-specialized `map`/`fold` may later become the
 witness-dispatched `Functor`/`Foldable` methods once v1 constraints land
@@ -188,6 +190,15 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
 3. `optional`. *(landed as slice D: explicit import only via
    `stdlib.optional`; not ambient, so unqualified `map`/`filter` stay the List
    prelude names unless the module is explicitly destructured)*
-4. Next unlanded stdlib slice: `result` (with `Validation`).
-5. Intrinsic-heavy `text`, `num`.
-6. Fold `config`/`reflect` under the import scheme.
+4. `result` / `Validation`. *(landed as slice E: explicit import only via
+   `stdlib.result`; not ambient, so errors-as-data stay opt-in and outside the
+   prelude)*
+5. `num`. *(landed as slice F: explicit import only via `stdlib.num`, backed by
+   checked scalar bridge intrinsics for remainder, power, conversions, and
+   checked abs)*
+6. `text`. *(landed as slice G: explicit import only via `stdlib.text`, backed
+   by scalar bridge intrinsics for string operations and numeric parsing)*
+7. `cmp`. *(landed as slice H: explicit import only via `stdlib.cmp`; concrete
+   `compareInt`/`compareFloat`/`compareText` and comparator combinators are
+   source definitions; generic witness-dispatched `compare` remains deferred)*
+8. Fold `config`/`reflect` under the import scheme.

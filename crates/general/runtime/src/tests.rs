@@ -19,6 +19,65 @@ fn text(s: &str) -> i64 {
 }
 
 #[test]
+fn num_bridge_helpers_return_values() {
+    assert_eq!(num_abs(-5), 5);
+    assert_eq!(num_rem(17, 5), 2);
+    assert_eq!(num_pow(2, 10), 1024);
+    assert_eq!(f64::from_bits(num_to_float(42) as u64), 42.0);
+    assert_eq!(num_round(2.6f64.to_bits() as i64), 3);
+    assert_eq!(num_round((-2.5f64).to_bits() as i64), -3);
+    assert_eq!(num_truncate((-2.9f64).to_bits() as i64), -2);
+}
+
+#[test]
+fn text_bridge_helpers_return_values() {
+    assert_eq!(text_length(text("hé")), 2);
+    assert_eq!(
+        render_str(text_trim(text("  hi  ")), &[DESC_TEXT]),
+        "\"hi\""
+    );
+    assert_eq!(
+        render_str(text_to_upper(text("ab")), &[DESC_TEXT]),
+        "\"AB\""
+    );
+    assert_eq!(
+        render_str(text_to_lower(text("AB")), &[DESC_TEXT]),
+        "\"ab\""
+    );
+    assert_eq!(text_contains(text("b"), text("abc")), 1);
+    assert_eq!(
+        render_str(
+            text_replace(text("a"), text("o"), text("cat")),
+            &[DESC_TEXT]
+        ),
+        "\"cot\""
+    );
+    assert_eq!(
+        render_str(text_show(text("x")), &[DESC_TEXT]),
+        "\"\\\"x\\\"\""
+    );
+
+    let parts = text_split(text(","), text("a,b"));
+    assert_eq!(
+        render_str(text_join(text("-"), parts), &[DESC_TEXT]),
+        "\"a-b\""
+    );
+
+    let parsed_int = text_parse_int(text("42"));
+    let int_desc = [DESC_INT];
+    let opt_int_desc = [DESC_OPTIONAL, int_desc.as_ptr() as i64];
+    assert_eq!(render_str(parsed_int, &opt_int_desc), "#some (42)");
+
+    let parsed_float = text_parse_float(text("2.5"));
+    let float_desc = [DESC_FLOAT];
+    let opt_float_desc = [DESC_OPTIONAL, float_desc.as_ptr() as i64];
+    assert_eq!(render_str(parsed_float, &opt_float_desc), "#some (2.5)");
+    assert_eq!(
+        render_str(text_parse_int(text("nope")), &opt_int_desc),
+        "#none"
+    );
+}
+#[test]
 fn record_round_trip_and_update() {
     let r = record_new(2);
     record_set(r, 0, 1);

@@ -1,0 +1,25 @@
+-- Canonical source for Result and Validation helpers (stdlib slice E).
+-- Explicit import only: `r ::= import stdlib.result`; these names are not ambient.
+Result :: <E, A> type { #ok : { value : A; }; #err : { error : E; }; };
+Validation :: <E, A> type { #valid : { value : A; }; #invalid : { errors : List E; }; };
+ok :: <E, A> A -> Result E A
+  = value => #ok { value = value; };
+err :: <E, A> E -> Result E A
+  = error => #err { error = error; };
+valid :: <E, A> A -> Validation E A
+  = value => #valid { value = value; };
+invalid :: <E, A> List E -> Validation E A
+  = errs => #invalid { errors = errs; };
+map :: <E, A, B> (A -> B) -> Result E A -> Result E B
+  = f result => match result { | #ok { value = value; } => #ok { value = f value; }; | #err { error = error; } => #err { error = error; }; };
+map2 :: <E, A, B, C> (A -> B -> C) -> Validation E A -> Validation E B -> Validation E C
+  = f left right => match left { | #valid { value = a; } => match right { | #valid { value = b; } => #valid { value = f a b; }; | #invalid { errors = rightErrors; } => #invalid { errors = rightErrors; }; }; | #invalid { errors = leftErrors; } => match right { | #valid { value = _; } => #invalid { errors = leftErrors; }; | #invalid { errors = rightErrors; } => #invalid { errors = append leftErrors rightErrors; }; }; };
+mapErr :: <E, F, A> (E -> F) -> Result E A -> Result F A
+  = f result => match result { | #ok { value = value; } => #ok { value = value; }; | #err { error = error; } => #err { error = f error; }; };
+andThen :: <E, A, B> (A -> Result E B) -> Result E A -> Result E B
+  = f result => match result { | #ok { value = value; } => f value; | #err { error = error; } => #err { error = error; }; };
+withDefault :: <E, A> A -> Result E A -> A
+  = default result => match result { | #ok { value = value; } => value; | #err { error = _; } => default; };
+errors :: <E, A> Validation E A -> List E
+  = validation => match validation { | #valid { value = _; } => listEmpty (); | #invalid { errors = errs; } => errs; };
+{ Result = Result; Validation = Validation; ok = ok; err = err; valid = valid; invalid = invalid; map = map; map2 = map2; mapErr = mapErr; andThen = andThen; withDefault = withDefault; errors = errors; }

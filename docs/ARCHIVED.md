@@ -47,11 +47,21 @@ imported stream-combinator convergence follow-up fixed; small function prelude
 `id`/`const`/`compose`/`flip` landed as ambient source decls + `stdlib.prelude`;
 minimal `List` verbs landed as ambient/importable source decls backed by list
 patterns and a strict fold bridge; explicit `stdlib.optional` helpers landed for
-`map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList`; native-link test race
-fixed with a process-released runtime-build lock; see "Post-V3 readiness audit",
-"Ambient/imported stream-combinator convergence", "Small function prelude
-(stdlib slice B)", "Minimal List verbs (stdlib slice C)", "Optional helpers
-(stdlib slice D)", and "Native-link test race fix")._
+`map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList`; explicit
+`stdlib.result` landed for `Result`/`Validation` errors-as-data helpers;
+explicit `stdlib.num` landed for `min`/`max`/`abs`/`clamp`/`pow`/`rem`/`gcd`/
+`toFloat`/`round`/`truncate` with checked scalar bridge intrinsics and native
+runtime helpers; explicit `stdlib.text` landed for `length`/`split`/`join`/
+`trim`/`toUpper`/`toLower`/`contains`/`replace`/`show`/`parseInt`/`parseFloat`
+with text bridge intrinsics and native runtime helpers; explicit `stdlib.cmp`
+landed for `Ordering`, comparator combinators, and concrete Int/Float/Text
+comparators; native-link test race fixed with a process-released runtime-build
+lock; see "Post-V3 readiness audit", "Ambient/imported stream-combinator
+convergence", "Small function prelude (stdlib slice B)", "Minimal List verbs
+(stdlib slice C)", "Optional helpers (stdlib slice D)", "Result and Validation
+helpers (stdlib slice E)", "Numeric helpers (stdlib slice F)", "Text helpers
+(stdlib slice G)", "Comparator helpers (stdlib slice H)", and "Native-link test
+race fix")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -176,6 +186,93 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Comparator helpers (stdlib slice H) ✅
+
+_Completed 2026-06-28. Ships the `stdlib.cmp` source module as an explicit
+import, not an ambient prelude. Generic witness-dispatched `compare` remains
+deferred; this slice supplies a concrete comparator vocabulary._
+
+- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/cmp.zt` is
+  embedded as `zutai_hir::CMP_MODULE_SRC` and registered only through
+  `semantic/src/import.rs` for `import stdlib.cmp`.
+- **Exports.** The module exports `Ordering`, `lt`, `eq`, `gt`, `isLt`, `isEq`,
+  `isGt`, `reverse`, `then`, `by`, `compareInt`, `compareFloat`, and
+  `compareText`. The public record field `then` maps to an internal `thenCmp`
+  binding because `then` is a keyword.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-semantic stdlib_cmp -- --test-threads=1`,
+  `cargo test -p zutai-eval stdlib_cmp -- --test-threads=1`, and
+  `cargo test -p zutai-cli --test cli compile_stdlib_text_cmp_pipeline_matches_oracle -- --test-threads=1`.
+
+### Text helpers (stdlib slice G) ✅
+
+_Completed 2026-06-28. Ships the `stdlib.text` source module as an explicit
+import, not an ambient prelude. Source-level names wrap internal scalar bridge
+primitives for operations the current source language cannot express safely._
+
+- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/text.zt` is
+  embedded as `zutai_hir::TEXT_MODULE_SRC` and registered only through
+  `semantic/src/import.rs` for `import stdlib.text`.
+- **Exports.** The module exports `length`, `split`, `join`, `trim`, `toUpper`,
+  `toLower`, `contains`, `replace`, `show`, `parseInt`, and `parseFloat`.
+- **Bridge/runtime support.** Internal `__text*` builtins and Dataflow/ANF/SSA/
+  LLVM/runtime `TextPrim` lowering cover Unicode scalar length, split/join,
+  trim, case conversion, contains/replace, quoting, and numeric parsing.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-semantic stdlib_text -- --test-threads=1`,
+  `cargo test -p zutai-eval stdlib_text -- --test-threads=1`,
+  `cargo test -p zutai-codegen text_prim -- --test-threads=1`,
+  `cargo test -p zutai-rt text_bridge -- --test-threads=1`, and
+  `cargo test -p zutai-cli --test cli compile_stdlib_text_cmp_pipeline_matches_oracle -- --test-threads=1`.
+
+### Numeric helpers (stdlib slice F) ✅
+
+_Completed 2026-06-28. Ships the `stdlib.num` source module as an explicit
+import, not an ambient prelude. The module is Int-first by design and keeps
+generic comparison/ordering in the separate planned `cmp` row._
+
+- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/num.zt` is
+  embedded as `zutai_hir::NUM_MODULE_SRC` and registered only through
+  `semantic/src/import.rs` for `import stdlib.num`; HIR ambient fallback
+  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Exports.** The module exports exactly `min`/`max`/`abs`/`clamp`/`pow`/
+  `rem`/`gcd`/`toFloat`/`round`/`truncate`.
+- **Checked scalar bridge.** Internal `__num*` builtins and Dataflow/ANF/SSA/
+  LLVM/runtime `NumPrim` lowering cover checked abs, remainder, power, and
+  Int/Float conversions. Native runtime helpers use the same domain checks as
+  the interpreter/TLC paths.
+- **Verification.** Targeted gates passed:
+  `cargo check -p zutai-semantic`,
+  `cargo check -p zutai-ssa`,
+  `cargo check -p zutai-codegen -p zutai-rt`,
+  `cargo test -p zutai-semantic stdlib_num`,
+  `cargo test -p zutai-eval stdlib_num`,
+  `cargo test -p zutai-codegen num_prim`,
+  `cargo test -p zutai-rt num_`, and
+  `cargo test -p zutai-cli --test cli compile_stdlib_num_pipeline_matches_oracle -- --test-threads=1`.
+
+### Result and Validation helpers (stdlib slice E) ✅
+
+_Completed 2026-06-28. Ships the `stdlib.result` source module as an explicit
+import, not an ambient prelude. `Result` is the short-circuiting errors-as-data
+union, while `Validation` accumulates `List E` errors._
+
+- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/result.zt`
+  is embedded as `zutai_hir::RESULT_MODULE_SRC` and registered only through
+  `semantic/src/import.rs` for `import stdlib.result`; HIR ambient fallback
+  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Exports.** The module exports type constructors `Result`/`Validation` and
+  the helper values `ok`/`err`/`valid`/`invalid`/`map`/`map2`/`mapErr`/
+  `andThen`/`withDefault`/`errors`.
+- **No new primitive.** The helpers use existing union, record-payload, list,
+  match, and source-prelude machinery. No `BuiltinFn`, runtime ABI, Dataflow
+  Core, ANF, SSA, LLVM, or backend primitive was added.
+- **Verification.** Targeted gates passed:
+  `cargo check -p zutai-semantic`,
+  `cargo test -p zutai-semantic stdlib_result`,
+  `cargo test -p zutai-eval stdlib_result`, and
+  `cargo test -p zutai-cli --test cli compile_stdlib_result_pipeline_matches_oracle -- --test-threads=1`.
 
 ### Optional helpers (stdlib slice D) ✅
 

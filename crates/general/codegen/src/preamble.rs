@@ -85,6 +85,13 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.list_tail(i64)\n");
     out.push_str("declare i64 @zutai.list_foldl_strict(i64, i64, i64)\n");
 
+    // Numeric bridge operations
+    out.push_str("declare i64 @zutai.num_abs(i64)\n");
+    out.push_str("declare i64 @zutai.num_rem(i64, i64)\n");
+    out.push_str("declare i64 @zutai.num_pow(i64, i64)\n");
+    out.push_str("declare i64 @zutai.num_to_float(i64)\n");
+    out.push_str("declare i64 @zutai.num_round(i64)\n");
+    out.push_str("declare i64 @zutai.num_truncate(i64)\n");
     // Optional/Maybe operations
     out.push_str("declare i64 @zutai.coalesce(i64, i64)\n");
     // Variant operations
@@ -96,6 +103,17 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.text_from_global(i64, i64)\n");
     out.push_str("declare i64 @zutai.text_concat(i64, i64)\n");
     out.push_str("declare i64 @zutai.atom_from_global(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_length(i64)\n");
+    out.push_str("declare i64 @zutai.text_split(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_join(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_trim(i64)\n");
+    out.push_str("declare i64 @zutai.text_to_upper(i64)\n");
+    out.push_str("declare i64 @zutai.text_to_lower(i64)\n");
+    out.push_str("declare i64 @zutai.text_contains(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_replace(i64, i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_show(i64)\n");
+    out.push_str("declare i64 @zutai.text_parse_int(i64)\n");
+    out.push_str("declare i64 @zutai.text_parse_float(i64)\n");
 
     // C stdlib
     out.push_str("declare i64 @exit(i64)\n\n");

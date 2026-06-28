@@ -1,0 +1,25 @@
+-- Canonical source for text helpers (stdlib slice G).
+-- Explicit import only: `t ::= import stdlib.text`; these names are not ambient.
+length :: Text -> Int
+  = value => __textLength value;
+split :: Text -> Text -> List Text
+  = separator value => __textSplit separator value;
+join :: Text -> List Text -> Text
+  = separator values => __textJoin separator values;
+trim :: Text -> Text
+  = value => __textTrim value;
+toUpper :: Text -> Text
+  = value => __textToUpper value;
+toLower :: Text -> Text
+  = value => __textToLower value;
+contains :: Text -> Text -> Bool
+  = needle value => __textContains needle value;
+replace :: Text -> Text -> Text -> Text
+  = from to value => __textReplace from to value;
+show :: Text -> Text
+  = value => __textShow value;
+parseInt :: Text -> Int?
+  = value => __textParseInt value;
+parseFloat :: Text -> Float?
+  = value => __textParseFloat value;
+{ length = length; split = split; join = join; trim = trim; toUpper = toUpper; toLower = toLower; contains = contains; replace = replace; show = show; parseInt = parseInt; parseFloat = parseFloat; }

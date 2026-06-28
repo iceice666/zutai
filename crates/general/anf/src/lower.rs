@@ -214,6 +214,16 @@ impl<'g> BodyLowerer<'g> {
                     args.into_iter().map(|a| self.lower_to_atom(a)).collect();
                 AnfExpr::ListPrim { op, args: anf_args }
             }
+            DfNodeKind::NumPrim { op, args } => {
+                let anf_args: Vec<AnfAtom> =
+                    args.into_iter().map(|a| self.lower_to_atom(a)).collect();
+                AnfExpr::NumPrim { op, args: anf_args }
+            }
+            DfNodeKind::TextPrim { op, args } => {
+                let anf_args: Vec<AnfAtom> =
+                    args.into_iter().map(|a| self.lower_to_atom(a)).collect();
+                AnfExpr::TextPrim { op, args: anf_args }
+            }
             DfNodeKind::Variant {
                 tag,
                 tag_index,

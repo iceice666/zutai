@@ -2,7 +2,10 @@ use rustc_hash::FxHashSet;
 
 use zutai_tlc::{BuiltinOp, PrimTy, TlcExpr, TlcExprId, TlcTupleItem, TlcType};
 
-use crate::{DfArm, DfBuiltinOp, DfListPrimOp, DfNodeKind, DfTupleNodeItem, NodeId};
+use crate::{
+    DfArm, DfBuiltinOp, DfListPrimOp, DfNodeKind, DfNumPrimOp, DfTextPrimOp, DfTupleNodeItem,
+    NodeId,
+};
 
 use super::*;
 
@@ -56,11 +59,16 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::App(func, arg) => {
-                // A saturated call to a list-bridge builtin (`listCons`/`listIsNil`/
-                // `listHead`/`listTail`/`listEmpty`) lowers to a dedicated primitive
-                // node rather than a closure `Apply`, since builtin values have no
-                // closure object to call.
+                // Saturated calls to list/numeric/text bridge builtins lower to
+                // dedicated primitive nodes rather than closure `Apply`, since
+                // builtin values have no closure object to call.
                 if let Some(node) = self.try_lower_list_bridge(id, df_ty, span) {
+                    return node;
+                }
+                if let Some(node) = self.try_lower_num_prim(id, df_ty, span) {
+                    return node;
+                }
+                if let Some(node) = self.try_lower_text_prim(id, df_ty, span) {
                     return node;
                 }
                 let func_node = self.lower_expr(func);
@@ -362,6 +370,99 @@ impl<'m> Lowerer<'m> {
         ))
     }
 
+    /// Lower a saturated application of a numeric bridge builtin to a primitive
+    /// node. Returns `None` for any other callee or an under-saturated call.
+    fn try_lower_num_prim(
+        &mut self,
+        id: TlcExprId,
+        df_ty: crate::DfTyId,
+        span: Option<Span>,
+    ) -> Option<NodeId> {
+        let mut args_rev: Vec<TlcExprId> = Vec::new();
+        let mut cur = id;
+        let name = loop {
+            match &self.module.expr_arena[cur] {
+                TlcExpr::App(func, arg) => {
+                    args_rev.push(*arg);
+                    cur = *func;
+                }
+                TlcExpr::TyApp(inner, _) => cur = *inner,
+                TlcExpr::Var(binding) => break self.num_prim_builtin_name(*binding)?,
+                _ => return None,
+            }
+        };
+        args_rev.reverse();
+        let args = args_rev;
+
+        let op = match (name, args.len()) {
+            ("__numAbs", 1) => DfNumPrimOp::Abs,
+            ("__numRem", 2) => DfNumPrimOp::Rem,
+            ("__numPow", 2) => DfNumPrimOp::Pow,
+            ("__numToFloat", 1) => DfNumPrimOp::ToFloat,
+            ("__numRound", 1) => DfNumPrimOp::Round,
+            ("__numTruncate", 1) => DfNumPrimOp::Truncate,
+            _ => return None,
+        };
+        let arg_nodes: Vec<NodeId> = args.iter().map(|&a| self.lower_expr(a)).collect();
+        Some(self.alloc_node(
+            DfNodeKind::NumPrim {
+                op,
+                args: arg_nodes,
+            },
+            df_ty,
+            span,
+        ))
+    }
+
+    /// Lower a saturated application of a text bridge builtin to a primitive
+    /// node. Returns `None` for any other callee or an under-saturated call.
+    fn try_lower_text_prim(
+        &mut self,
+        id: TlcExprId,
+        df_ty: crate::DfTyId,
+        span: Option<Span>,
+    ) -> Option<NodeId> {
+        let mut args_rev: Vec<TlcExprId> = Vec::new();
+        let mut cur = id;
+        let name = loop {
+            match &self.module.expr_arena[cur] {
+                TlcExpr::App(func, arg) => {
+                    args_rev.push(*arg);
+                    cur = *func;
+                }
+                TlcExpr::TyApp(inner, _) => cur = *inner,
+                TlcExpr::Var(binding) => break self.text_prim_builtin_name(*binding)?,
+                _ => return None,
+            }
+        };
+        args_rev.reverse();
+        let args = args_rev;
+
+        let op = match (name, args.len()) {
+            ("__textLength", 1) => DfTextPrimOp::Length,
+            ("__textSplit", 2) => DfTextPrimOp::Split,
+            ("__textJoin", 2) => DfTextPrimOp::Join,
+            ("__textTrim", 1) => DfTextPrimOp::Trim,
+            ("__textToUpper", 1) => DfTextPrimOp::ToUpper,
+            ("__textToLower", 1) => DfTextPrimOp::ToLower,
+            ("__textContains", 2) => DfTextPrimOp::Contains,
+            ("__textReplace", 3) => DfTextPrimOp::Replace,
+            ("__textShow", 1) => DfTextPrimOp::Show,
+            ("__textParseInt", 1) => DfTextPrimOp::ParseInt,
+            ("__textParseFloat", 1) => DfTextPrimOp::ParseFloat,
+            _ => return None,
+        };
+        let arg_nodes: Vec<NodeId> = args.iter().map(|&a| self.lower_expr(a)).collect();
+        Some(self.alloc_node(
+            DfNodeKind::TextPrim {
+                op,
+                args: arg_nodes,
+            },
+            df_ty,
+            span,
+        ))
+    }
+
     /// Name of a list-bridge builtin value binding, or `None` if `binding` is not
     /// one of them.
     fn list_bridge_builtin_name(&self, binding: BindingId) -> Option<&'static str> {
@@ -376,6 +477,47 @@ impl<'m> Lowerer<'m> {
             "listHead" => Some("listHead"),
             "listTail" => Some("listTail"),
             "listFoldlStrict" => Some("listFoldlStrict"),
+            _ => None,
+        }
+    }
+
+    /// Name of a numeric bridge builtin value binding, or `None` if `binding` is
+    /// not one of them.
+    fn num_prim_builtin_name(&self, binding: BindingId) -> Option<&'static str> {
+        let b = self.hir_bindings.get(binding.0 as usize)?;
+        if b.kind != BindingKind::BuiltinValue {
+            return None;
+        }
+        match b.name.as_str() {
+            "__numAbs" => Some("__numAbs"),
+            "__numRem" => Some("__numRem"),
+            "__numPow" => Some("__numPow"),
+            "__numToFloat" => Some("__numToFloat"),
+            "__numRound" => Some("__numRound"),
+            "__numTruncate" => Some("__numTruncate"),
+            _ => None,
+        }
+    }
+
+    /// Name of a text bridge builtin value binding, or `None` if `binding` is
+    /// not one of them.
+    fn text_prim_builtin_name(&self, binding: BindingId) -> Option<&'static str> {
+        let b = self.hir_bindings.get(binding.0 as usize)?;
+        if b.kind != BindingKind::BuiltinValue {
+            return None;
+        }
+        match b.name.as_str() {
+            "__textLength" => Some("__textLength"),
+            "__textSplit" => Some("__textSplit"),
+            "__textJoin" => Some("__textJoin"),
+            "__textTrim" => Some("__textTrim"),
+            "__textToUpper" => Some("__textToUpper"),
+            "__textToLower" => Some("__textToLower"),
+            "__textContains" => Some("__textContains"),
+            "__textReplace" => Some("__textReplace"),
+            "__textShow" => Some("__textShow"),
+            "__textParseInt" => Some("__textParseInt"),
+            "__textParseFloat" => Some("__textParseFloat"),
             _ => None,
         }
     }

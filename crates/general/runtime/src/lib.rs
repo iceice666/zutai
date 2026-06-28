@@ -997,6 +997,80 @@ pub extern "C" fn list_foldl_strict(f: i64, mut acc: i64, mut xs: i64) -> i64 {
     acc
 }
 
+// ── Numeric bridge ABI ─────────────────────────────────────────────────────────
+
+fn numeric_runtime_error(message: &str) -> ! {
+    eprintln!("zutai runtime error: {message}");
+    std::process::exit(1);
+}
+
+fn int_from_float(value: f64, range_message: &'static str) -> i64 {
+    const INT_MIN_INCLUSIVE: f64 = -9_223_372_036_854_775_808.0;
+    const INT_MAX_EXCLUSIVE: f64 = 9_223_372_036_854_775_808.0;
+    if !(INT_MIN_INCLUSIVE..INT_MAX_EXCLUSIVE).contains(&value) {
+        numeric_runtime_error(range_message);
+    }
+    value as i64
+}
+
+#[unsafe(export_name = "zutai.num_abs")]
+pub extern "C" fn num_abs(value: i64) -> i64 {
+    value
+        .checked_abs()
+        .unwrap_or_else(|| numeric_runtime_error("integer overflow in `abs`"))
+}
+
+#[unsafe(export_name = "zutai.num_rem")]
+pub extern "C" fn num_rem(dividend: i64, divisor: i64) -> i64 {
+    if divisor == 0 {
+        numeric_runtime_error("integer remainder by zero");
+    }
+    dividend
+        .checked_rem(divisor)
+        .unwrap_or_else(|| numeric_runtime_error("integer overflow in `rem`"))
+}
+
+#[unsafe(export_name = "zutai.num_pow")]
+pub extern "C" fn num_pow(base: i64, exponent: i64) -> i64 {
+    if exponent < 0 {
+        numeric_runtime_error("invalid numeric argument: pow exponent must be non-negative");
+    }
+    if exponent > u32::MAX as i64 {
+        numeric_runtime_error("invalid numeric argument: pow exponent must fit u32");
+    }
+    base.checked_pow(exponent as u32)
+        .unwrap_or_else(|| numeric_runtime_error("integer overflow in `pow`"))
+}
+
+#[unsafe(export_name = "zutai.num_to_float")]
+pub extern "C" fn num_to_float(value: i64) -> i64 {
+    (value as f64).to_bits() as i64
+}
+
+#[unsafe(export_name = "zutai.num_round")]
+pub extern "C" fn num_round(value: i64) -> i64 {
+    let float = f64::from_bits(value as u64);
+    if !float.is_finite() {
+        numeric_runtime_error("invalid numeric argument: round requires finite Float");
+    }
+    int_from_float(
+        float.round(),
+        "invalid numeric argument: round result outside Int range",
+    )
+}
+
+#[unsafe(export_name = "zutai.num_truncate")]
+pub extern "C" fn num_truncate(value: i64) -> i64 {
+    let float = f64::from_bits(value as u64);
+    if !float.is_finite() {
+        numeric_runtime_error("invalid numeric argument: truncate requires finite Float");
+    }
+    int_from_float(
+        float.trunc(),
+        "invalid numeric argument: truncate result outside Int range",
+    )
+}
+
 // ── Variant ABI (D-0005 / D-0009, dense indices) ────────────────────────────────
 
 #[unsafe(export_name = "zutai.variant_new")]
@@ -1066,6 +1140,172 @@ pub extern "C" fn text_concat(a: i64, b: i64) -> i64 {
         std::ptr::copy_nonoverlapping(sb.as_ptr(), dst.add(sa.len()), sb.len());
         text_from_global(dst as i64, total as i64)
     }
+}
+
+#[unsafe(export_name = "zutai.text_length")]
+pub extern "C" fn text_length(value: i64) -> i64 {
+    unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.length input is not UTF-8"))
+            .chars()
+            .count() as i64
+    }
+}
+
+#[unsafe(export_name = "zutai.text_split")]
+pub extern "C" fn text_split(separator: i64, value: i64) -> i64 {
+    let separator = unsafe {
+        str::from_utf8(text_parts(separator))
+            .unwrap_or_else(|_| runtime_error("text.split separator is not UTF-8"))
+    };
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.split input is not UTF-8"))
+    };
+    let parts: Vec<&str> = value.split(separator).collect();
+    let mut out = list_nil();
+    for part in parts.into_iter().rev() {
+        out = list_cons(text_from_bytes(part.as_bytes()), out);
+    }
+    out
+}
+
+#[unsafe(export_name = "zutai.text_join")]
+pub extern "C" fn text_join(separator: i64, values: i64) -> i64 {
+    let separator = unsafe {
+        str::from_utf8(text_parts(separator))
+            .unwrap_or_else(|_| runtime_error("text.join separator is not UTF-8"))
+    };
+    let mut parts = Vec::new();
+    let mut xs = values;
+    while list_is_nil(xs) == 0 {
+        let item = list_head(xs);
+        let part = unsafe {
+            str::from_utf8(text_parts(item))
+                .unwrap_or_else(|_| runtime_error("text.join item is not UTF-8"))
+        };
+        parts.push(part.to_string());
+        xs = list_tail(xs);
+    }
+    text_from_string(parts.join(separator))
+}
+
+#[unsafe(export_name = "zutai.text_trim")]
+pub extern "C" fn text_trim(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.trim input is not UTF-8"))
+    };
+    text_from_bytes(value.trim().as_bytes())
+}
+
+#[unsafe(export_name = "zutai.text_to_upper")]
+pub extern "C" fn text_to_upper(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.toUpper input is not UTF-8"))
+    };
+    text_from_string(value.to_uppercase())
+}
+
+#[unsafe(export_name = "zutai.text_to_lower")]
+pub extern "C" fn text_to_lower(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.toLower input is not UTF-8"))
+    };
+    text_from_string(value.to_lowercase())
+}
+
+#[unsafe(export_name = "zutai.text_contains")]
+pub extern "C" fn text_contains(needle: i64, value: i64) -> i64 {
+    let needle = unsafe {
+        str::from_utf8(text_parts(needle))
+            .unwrap_or_else(|_| runtime_error("text.contains needle is not UTF-8"))
+    };
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.contains input is not UTF-8"))
+    };
+    value.contains(needle) as i64
+}
+
+#[unsafe(export_name = "zutai.text_replace")]
+pub extern "C" fn text_replace(from: i64, to: i64, value: i64) -> i64 {
+    let from = unsafe {
+        str::from_utf8(text_parts(from))
+            .unwrap_or_else(|_| runtime_error("text.replace from is not UTF-8"))
+    };
+    let to = unsafe {
+        str::from_utf8(text_parts(to))
+            .unwrap_or_else(|_| runtime_error("text.replace to is not UTF-8"))
+    };
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.replace input is not UTF-8"))
+    };
+    text_from_string(value.replace(from, to))
+}
+
+fn quoted_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
+#[unsafe(export_name = "zutai.text_show")]
+pub extern "C" fn text_show(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.show input is not UTF-8"))
+    };
+    text_from_string(quoted_text(value))
+}
+
+fn optional_runtime_value(value: Option<i64>) -> i64 {
+    match value {
+        Some(value) => {
+            let tuple = tuple_new(1);
+            tuple_set(tuple, 0, value);
+            variant_new(1, tuple)
+        }
+        None => text_from_bytes(b"none"),
+    }
+}
+
+#[unsafe(export_name = "zutai.text_parse_int")]
+pub extern "C" fn text_parse_int(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.parseInt input is not UTF-8"))
+    };
+    optional_runtime_value(value.trim().parse::<i64>().ok())
+}
+
+#[unsafe(export_name = "zutai.text_parse_float")]
+pub extern "C" fn text_parse_float(value: i64) -> i64 {
+    let value = unsafe {
+        str::from_utf8(text_parts(value))
+            .unwrap_or_else(|_| runtime_error("text.parseFloat input is not UTF-8"))
+    };
+    let parsed = value
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value.to_bits() as i64);
+    optional_runtime_value(parsed)
 }
 
 fn text_from_bytes(bytes: &[u8]) -> i64 {
