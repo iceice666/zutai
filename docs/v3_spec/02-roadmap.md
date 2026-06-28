@@ -1,6 +1,6 @@
 # Zutai V3 Roadmap
 
-Status: planning. _Last updated: 2026-06-24._
+Status: Track 1 complete; Track 2 demand-gated. _Last updated: 2026-06-27._
 
 V3 builds on the v0 core, the v1 deferred set, and the v2 deferral horizon. This
 document turns the V3 holding area into a sequenced plan: it names the one active
@@ -9,8 +9,8 @@ that track inside the committed backend, and restates the reserved design
 boundaries as demand-gated — features to build only when a concrete need arises,
 not a backlog to burn down.
 
-The generator *shell* (Phase 29) and the opt-in conservative collector
-(Phase 34) have landed; both are prerequisites that made the Track 1 spine below
+The generator shell (Phase 29) and the conservative collector (Phase 34, now
+default-on) have landed; both are prerequisites that made the Track 1 spine below
 implementable. **Track 1 is complete: V3-G1…G5 all landed 2026-06-25**
 (`docs/ARCHIVED.md`). `Stream A` is demand-driven codata with a builtin source
 prelude (G1), the core combinator API ships as ambient prelude functions (G2),
@@ -28,8 +28,8 @@ of scope until that decision is explicitly reopened.
 
 - **Strict evaluation + tail-call optimization** (Phase 31) is the committed
   execution model. **No lazy thunk-update backend**: a memoizing thunk is a
-  mutation (old→young pointers) and forces a write barrier (`TBD.md` Phase 34,
-  "Lazy backend not taken").
+  mutation (old→young pointers) and forces a write barrier (see
+  `ARCHIVED.md` "GC residual retired").
 - **Write-barrier-free garbage collection** (Phase 34): the conservative
   mark-sweep collector stays write-barrier-free only while the heap is
   write-once. V3 features must not introduce heap mutation that would require a
@@ -52,7 +52,7 @@ The practical consequence for V3: laziness and infinite sequences must be
 expressed as **codata** (demand-driven step functions), not as mutable lazy
 cells. This single constraint shapes the entire generator track.
 
-## Track 1 — Generators and streams (active spine)
+## Track 1 — Generators and streams (complete)
 
 The one articulated V3 feature. Today `stream { yield e; … }` desugars to a
 `Stream A` value, but `Stream A ≡ List A` — fully strict, finite only
@@ -119,9 +119,9 @@ oracle parity (a wrong value is worse than a refused one).
   resource host effects (`fs.read`, networking, clocks, randomness) reach only the
   interpreter behind an explicit grant. No new effectful-codata type was added;
   the existing effect machinery carries it. See `docs/ARCHIVED.md` "V3-G4" and
-  `01-generators.md` "Effectful generators". Finalization (`finally`) and
-  cooperative cancellation (aborting the granting handler) have since landed;
-  general resource lifetime remains open.
+  `01-generators.md` "Effectful generators". Finalization (`finally`),
+  cooperative cancellation (aborting the granting handler), and the resource
+  lifetime dynamic-extent contract have since landed.
 - **V3-G5 — GC for unbounded stream programs. ✅ Landed (acceptance) 2026-06-25.**
   With genuine unbounded streams reaching the backend (gate condition (a), met by
   V3-G1), the Phase 34 conservative collector keeps a long-running stream pipeline
@@ -134,13 +134,13 @@ oracle parity (a wrong value is worse than a refused one).
   *Acceptance met:* a long-running `unfold` pipeline holds steady-state RSS flat
   under collection while producing correct output.
 
-Open generator questions to settle within the track (carried from
-`01-generators.md`): *finalization* landed as the `finally` handler clause
+The open generator questions carried from `01-generators.md` are now settled for
+the scoped V3-G4 track: *finalization* landed as the `finally` handler clause
 (2026-06-26), the *ergonomic effectful-stream type* landed as call-site
-effect-row inference + the `StreamEff` alias (2026-06-27), and *cooperative
+effect-row inference + the `StreamEff` alias (2026-06-27), *cooperative
 cancellation* landed as consumer-driven mid-stream termination over the abort +
-`finally` machinery (2026-06-27, `docs/ARCHIVED.md`); general resource lifetime
-for resource-backed generators remains open.
+`finally` machinery (2026-06-27), and the resource-lifetime contract landed as
+granting-handler dynamic extent (2026-06-27; see `docs/ARCHIVED.md`).
 
 ## Track 2 — Reserved design boundaries (demand-gated)
 
@@ -172,12 +172,12 @@ Track 1 ran from **V3-G1** — the codata `Stream` representation, the keystone 
 rest of the track hung off — through G2 (stdlib API), G3 (richer `yield`), G4
 (effectful generators, reference-interpreter level), and G5 (GC keeps unbounded
 stream pipelines bounded), each a contained phase with no ABI change. **Track 1
-is complete.** Remaining V3 work is the demand-gated Track 2 boundaries and the
-open generator question of general resource lifetime (finalization landed as the
+is complete.** Remaining V3 work is limited to demand-gated Track 2 boundaries;
+the scoped generator questions from Track 1 have all landed (finalization as the
 `finally` clause 2026-06-26, the ergonomic effectful-stream type as call-site
-effect-row inference + the `StreamEff` alias 2026-06-27, and cooperative
-cancellation as aborting-the-granting-handler 2026-06-27) below. Track 2 stays
-demand-gated.
+effect-row inference + the `StreamEff` alias 2026-06-27, cooperative cancellation
+as aborting-the-granting-handler 2026-06-27, and resource lifetime as the
+granting-handler dynamic-extent contract 2026-06-27).
 
 When a V3 phase is scoped for implementation, add it to `docs/TBD.md` as the
 active phase and move its summary to `docs/ARCHIVED.md` on completion.

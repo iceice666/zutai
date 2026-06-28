@@ -67,12 +67,12 @@ Three concrete defects drove the ABI work and are now closed:
   type-erased before Dataflow Core (Decision 0002 in `docs/tlc-core.md`). Every
   value's static type is known at every use site, and rows/effects are closed
   before codegen. The runtime therefore does **not** need runtime type tags for
-  dispatch — the compiler picks the right helper. Tags exist only for printing,
-  debugging, and a future collector.
+  dispatch — the compiler picks the right helper. Tags exist only for printing
+  and debugging; the current conservative collector traces from the allocation side table.
 - **One uniform call convention.** Eliminate the Global-vs-closure split that
   produces defect (1); every function value is applied the same way.
-- **Boring memory first.** Ship a bump arena (leak-by-default); design the
-  object header so a real collector can be added later without an ABI break.
+- **Boring memory first.** Ship a bump arena first; the runtime now layers a
+  default-on conservative collector over that arena without changing object word layout.
 
 ---
 
@@ -110,8 +110,8 @@ resolved at compile time (monomorphized, dictionary-passed, rows/effects
 closed).
 
 - *Alternatives.* Low-bit pointer tagging (breaks full-range `i64`), NaN-boxing,
-  or a tagged `union`. All deferred; they buy runtime type recovery we don't
-  need until reflection-at-runtime or a precise GC lands.
+  or a tagged `union`. Still rejected: they buy runtime type recovery not needed
+  by static dispatch or the conservative collector.
 
 ### D-0003 — Closure ABI: uniform single-argument closures
 
@@ -283,17 +283,16 @@ never reordered or lost.
 
 ### D-0008 — Memory model: thread-local bump arena + default-on conservative GC
 
-> **Update (2026-06-25): GC is now on by default.** The conservative non-moving
-> mark-sweep collector (Phase 34) runs **by default** wherever the conservative
-> stack scan can establish the stack bounds (macOS, Linux); `ZUTAI_GC=0`
-> (or `false`/`no`/`off`) opts back out to the original leak-by-default arena, and
-> platforms without a stack-bounds path stay leak-by-default regardless. This
-> reverses the original "leak-by-default" commitment below — the arena and cap
-> remain the substrate and the opt-out, but bounded-live / unbounded-allocation
-> programs (notably unbounded streams, V3-G5) now hold steady-state memory flat
-> without an env var. The precise/moving trajectory at the end of this section is
-> still future work. Historical rationale (why leak-by-default shipped first) is
-> preserved below.
+> **Update (2026-06-27): GC work is closed for v0/v3.** The conservative
+> non-moving mark-sweep collector is the committed endpoint. It runs **by
+> default** wherever the conservative stack scan can establish stack bounds
+> (macOS, Linux); `ZUTAI_GC=0` (or `false`/`no`/`off`) opts back out to the
+> original leak-by-default arena, and platforms without a stack-bounds path stay
+> leak-by-default regardless. The earlier precise/moving trajectory is retired,
+> not pending: it would require a shadow stack or stack maps plus pointer-layout
+> metadata/calling-convention changes, while the untagged-`i64` ABI and
+> strict+TCO write-once backend remain fixed. Historical rationale (why
+> leak-by-default shipped first) is preserved below.
 
 - `i64 zutai.alloc(i64 nbytes)` — bump a **thread-local**, chunk-growing arena
   (1 MiB `Box<[u128]>` chunks, so every result is 16-byte aligned *by
@@ -329,41 +328,36 @@ never reordered or lost.
   so **uncurrying lands before any collector**. Caveat to "without an ABI break"
   below: that holds for the *object layout*, but **root-finding** does not —
   untagged `i64` roots (D-0002) need a shadow stack or stack maps for a precise
-  collector, which is a calling-convention change. Full record in `TBD.md`.
-- *Deferred GC trajectory.* The per-object header (D-0009) and type descriptors
-  (exact pointer-vs-immediate slot maps) make a **precise**, and even **moving**,
-  collector safe, so a collector can be added **without an ABI break**. The
-  planned path:
-  1. **v1 — precise, non-moving, stop-the-world mark-sweep.** Simplest correct
-     precise collector: no pointer fixup, reuses the descriptors, handles
-     `letrec` cycles natively. The bridge off the arena.
-  2. **v2 — generational, copying young generation** (Cheney semispace),
-     GHC-shaped. Minor GC is pointer-bump allocation plus a cheap survivor copy;
-     no fragmentation.
+  collector, which is a calling-convention change. Historical record is archived in `ARCHIVED.md`.
+- *Retired precise/moving trajectory (2026-06-27).* The default-on conservative
+  collector is the final GC posture for the current backend. The earlier planned
+  path — precise non-moving mark-sweep followed by a generational Cheney copying
+  young generation — is no longer active work. It needs exact root maps (shadow
+  stack or stack maps) and per-object pointer-layout metadata, which are
+  calling-convention and codegen contracts outside D-0008/D-0009. Keeping the
+  conservative collector preserves D-0002's untagged `i64` ABI, the strict+TCO
+  execution model, and the write-once heap invariant.
 
-  **Why not Go's collector.** Go's GC is concurrent, non-generational,
-  non-moving, with a hybrid (Dijkstra + Yuasa) write barrier — choices tuned for
-  a mutable, heavily-concurrent, cgo-interop language. Zutai's compiled core is
-  pure, immutable, single-threaded (v0), and write-once (no runtime thunks), so:
-  - a **write barrier is unnecessary** — an object can only reference objects
-    that existed when it was allocated, so the old generation never points into
-    the nursery (the invariant generational GC normally spends a barrier and a
-    remembered set to maintain). The one exception, co-allocated `letrec` SCCs,
-    is handled by both mark-sweep and copying;
-  - **moving is cheap and safe** because layout is precise and there is no
-    `cgo`-style raw-pointer interop to pin. This is why a generational copying
-    collector (à la GHC, the nearest pure/lazy precedent) is the endgame rather
-    than Go's non-moving design.
+  Unsupported targets keep the safe fallback: if stack bounds cannot be
+  established, collection is disabled or a cycle returns before sweeping. The
+  high object-header bits remain reserved for ABI headroom, but they are not an
+  active GC milestone.
+
+  **Why not a lazy backend / write barrier.** A memoizing lazy backend would turn
+  thunk update into heap mutation and create old→young pointers, forcing the
+  remembered-set/write-barrier machinery that the strict backend avoids. Zutai's
+  current compiled core is pure, immutable, and write-once; the collector stays
+  barrier-free by preserving that invariant.
 
   **Reference counting is rejected:** `letrec` produces cyclic immutable data,
   which refcounting leaks. Reintroducing runtime thunks or mutable references in
   a future language version would reintroduce a write barrier (GHC-style on thunk
-  update); the trajectory above assumes the current no-thunk model holds.
+  update); the current collector stays tied to the strict, no-thunk model.
 
 ### D-0009 — Object header and type descriptors
 
-The descriptor concept does **two jobs**; separating them clarifies what v0
-needs versus what the GC needs later.
+The descriptor concept does **two jobs**; separating them clarifies what v0 needs
+for printing versus what a retired precise collector would have needed.
 
 **Role A — static type descriptors (needed in v0).** For every type that
 reaches `zutai.show` (the entry type and, transitively, its components) codegen
@@ -417,19 +411,17 @@ directly by the runtime tag (no string compare, no collisions), and
 `#some`/`#present = 1`. The global atom hash is retained only for free-standing
 `Atom` values, which are not union discriminants.
 
-**Role B — per-object layout for the future GC (not in v0).** A collector traces
-from roots with no static type at each pointer, so each heap object must be
-self-describing about *which slots are pointers*: a record `{x: Int, y: Text}`
-has an immediate in slot 0 and a pointer in slot 1, which the kind-tag header
-alone does not capture. The header word is therefore laid out as: low byte =
-kind tag (`TAG_RECORD/TUPLE/CONS/NIL/VARIANT/TEXT/CLOSURE`), next bits =
-length/arity/`ncaps`, **high bits reserved for a layout/shape id** the v1 GC
-will use to find the object's pointer-map. v0 leaves the reserved bits zero;
-populating them is additive and does not change the v0 ABI.
+**Role B — precise pointer layout (retired for v0/v3).** A precise or moving
+collector would need each heap object to describe which slots are pointers: a
+record `{x: Int, y: Text}` has an immediate in slot 0 and a pointer in slot 1,
+which the kind-tag header alone does not capture. The header still reserves high
+bits for an optional future layout/shape id, but the active collector does not
+use them: it conservatively scans object words and accepts false retention.
 
-This split is the key point: **v0 ships only Role A** (static descriptors for
-`show`); the header reserves the bits that make Role B (precise GC tracing)
-landable later without an ABI break.
+This split remains useful for documentation, but **Role B is not active work**.
+Reopening precise/moving GC would require both object layout ids and exact root
+maps (shadow stack or stack maps) in the calling convention. The v0/v3 runtime
+does neither; the default-on conservative collector is the committed endpoint.
 
 ### D-0010 — Toolchain driver
 
@@ -536,7 +528,8 @@ and `cargo fmt --check`; native object/binary execution is toolchain-gated.
 
 ## Non-goals (v0)
 
-- Garbage collection (arena + leak; header/descriptors keep the door open).
+- Precise/moving garbage collection; v0/v3 use the default-on conservative
+  collector over the arena, with `ZUTAI_GC=0` preserving leak-by-default opt-out.
 - Tagged-pointer / NaN-boxing / runtime type recovery.
 - Multithreading, async, FFI, dynamic linking, separate compilation.
 - DWARF/debug info and source-level debugging of compiled output.

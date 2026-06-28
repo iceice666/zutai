@@ -11,7 +11,7 @@ v1 is semantically and natively complete; v2 is largely native (four of five
 features lower natively, universe levels erase before the backend); v3 Track 1
 and its scoped follow-ups are complete. The v1/v2 backend-closing tracks, the
 escaping-effect residual-ABI spike (Phase 35, no-go), the conservative GC
-(Phase 34, opt-in), V2-A, V3-G1…G5 (the full generators/streams spine),
+(Phase 34, now default-on), V2-A, V3-G1…G5 (the full generators/streams spine),
 cross-module polymorphism (single- and multi-type, XM-1…3), V3-G6 (importable
 `stream.zt` module), the `unfold` + `empty` stream combinators (V3-G2
 residuals, the latter on a first-class `BindingRef` instantiation site), the
@@ -19,6 +19,8 @@ residuals, the latter on a first-class `BindingRef` instantiation site), the
 import ergonomics, and the resource-lifetime contract for effectful generators
 have all landed — see `docs/ARCHIVED.md`.
 **This closes V3-G2 and the scoped V3-G4 follow-ups.**
+
+**The GC residual is retired:** conservative default-on mark-sweep is the committed endpoint; precise/moving GC, a lazy-backend write barrier, and other-target collector expansion are no longer active milestones.
 
 ## Previous milestone — Resource lifetime for effectful generators (landed 2026-06-27)
 
@@ -45,8 +47,8 @@ consumer performs a cancelling op (`perform stop acc`); the *granting* handler
 `finally` finalizes the resource. A follow-up replaced the temporary
 cross-boundary refusal guard with explicit finalizer unwinding: an abort that
 crosses an inner `finally`-bearing handler now runs the inner teardowns
-inner-to-outer before completing, and resumed effects remain unaffected. General
-resource lifetime stays open.
+inner-to-outer before completing, and resumed effects remain unaffected; the later
+resource-lifetime milestone closed the scoped V3-G4 lifetime follow-up.
 
 **Ergonomic effectful-stream type — landed 2026-06-27** (see `docs/ARCHIVED.md`
 "Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff`").
@@ -61,7 +63,7 @@ lowering of the effect stays refused). Residual (pre-existing, not new): an
 *imported* `StreamEff` applied as a parametric constructor across a module boundary
 refuses cleanly — the row-param type constructor is outside the "Applied imported
 type constructors" envelope; the ambient form is the supported path. **This closes
-the last scoped V3-G4 follow-up.**
+the scoped V3-G4 effectful-stream type follow-up.**
 
 **Native effect parity — landed 2026-06-26** (see `docs/ARCHIVED.md` "Native
 effect parity — reified delimited-continuation lowering"). The native backend now
@@ -132,7 +134,7 @@ inference + the `StreamEff` ambient/importable alias — see `docs/ARCHIVED.md`)
 **Cooperative cancellation** and the **cross-boundary finalizer unwinding**
 follow-up landed 2026-06-27 too (consumer-driven mid-stream termination over the
 abort + `finally` machinery, with inner finalizers run on cross-boundary aborts).
-Still open from the V3-G4 follow-ups: general **resource lifetime**.
+The later resource-lifetime milestone closed the remaining scoped V3-G4 follow-up.
 
 `empty` + `unfold` (V3-G2 residuals: the empty stream and the canonical codata
 producer) **landed 2026-06-25** — see `docs/ARCHIVED.md` "V3-G2 residual: `unfold`
@@ -197,10 +199,10 @@ default-on (D-0008 reversal)". **V3 Track 1 (generators & streams) is complete.*
 
 **G4 follow-ups:** *finalization* landed as the `finally` handler clause
 (2026-06-26), the *ergonomic effectful-stream type* landed as call-site
-effect-row inference + the `StreamEff` alias (2026-06-27), and *cooperative
-cancellation* landed as aborting-the-granting-handler (2026-06-27) — see
-`docs/ARCHIVED.md`. Still open: general resource lifetime for effectful
-generators.
+effect-row inference + the `StreamEff` alias (2026-06-27), *cooperative
+cancellation* landed as aborting-the-granting-handler (2026-06-27), and
+*resource lifetime* landed as the granting-handler dynamic-extent contract
+(2026-06-27) — see `docs/ARCHIVED.md`. No scoped G4 follow-ups remain.
 
 **Other G2 residuals:** all landed. The importable-module residual closed with
 V3-G6, `unfold` + `empty` shipped 2026-06-25, and the `List`-interop subset
@@ -213,25 +215,6 @@ positional tuple that does not compose with a record payload at the surface.
 `empty :: <A> Stream A` landed once `BindingRef` became a first-class
 instantiation site, so a polymorphic value referenced outside callee position
 instantiates per use. See `docs/ARCHIVED.md`.)
-
-## GC residual — future / gated
-
-The conservative mark-sweep collector (Phase 34) is now **on by default** where the
-stack scan is supported (`ZUTAI_GC=0` opts out) — see `docs/ARCHIVED.md` "GC
-default-on (D-0008 reversal)". Still future / gated:
-
-- **Precise/moving endgame.** The `runtime-abi.md` D-0008 endgame (precise
-  non-moving mark-sweep → generational Cheney copying) stays deferred: it needs a
-  shadow stack or stack maps (a calling-convention change beyond D-0008/D-0009),
-  which the conservative bridge collector exists specifically to avoid. D-0002
-  (untagged `i64`) is not reopened.
-- **Lazy backend not taken.** A lazy backend (thunk update = mutation =
-  old→young pointers) would force a write barrier; strict-plus-TCO is committed.
-- **Other-target root finding.** The conservative stack scan is wired up for
-  macOS (`pthread_get_stackaddr_np`) and Linux (`pthread_getattr_np`); other
-  targets leave the collector off (leak-by-default, even with the new default-on)
-  until their stack-bounds path
-  lands.
 
 ## v1 residual — by design, not gaps
 
@@ -264,9 +247,9 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   bounded). The G2 residuals (`empty`/`unfold`, `List` interop, importable `.zt`
   packaging) have all landed, as has G4 finalization (the `finally` handler
   clause, 2026-06-26), the ergonomic effectful-stream type (call-site effect-row
-  inference + the `StreamEff` alias, 2026-06-27), and cooperative cancellation
-  (aborting the granting handler, 2026-06-27). Open follow-up: general resource
-  lifetime for effectful generators.
+  inference + the `StreamEff` alias, 2026-06-27), cooperative cancellation
+  (aborting the granting handler, 2026-06-27), and resource lifetime as the
+  granting-handler dynamic-extent contract (2026-06-27).
 - **Track 2 — reserved design boundaries (demand-gated, not a backlog)**
   (`docs/v2_spec/00-index.md` "Deferred beyond v2"): GADT-style local type
   equalities and the coercion/cast core node (an explicit non-goal,

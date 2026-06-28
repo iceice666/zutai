@@ -58,9 +58,9 @@ their effects stays refused by committed design.
   (returns without `resume`), stopping the generator mid-stream and running
   applicable `finally` teardowns. Cross-boundary cancellation now unwinds inner
   finalizers explicitly instead of refusing; a finalizer's own handled abort uses
-  the established finalizer semantics. Interpreter-only. Still open: general
-  resource lifetime, and whether a general (non-tail) delegating yield is worth a
-  shared codata `append`.
+  the established finalizer semantics. Interpreter-only. The resource-lifetime
+  follow-up subsequently landed as the dynamic-extent contract above. Still open:
+  whether a general (non-tail) delegating yield is worth a shared codata `append`.
 
 ## Design intent
 
@@ -179,9 +179,9 @@ Interpreter-only, like `finally`.
 - No second iterator abstraction beside `Stream`.
 - No *preemptive/asynchronous* cancellation runtime. Cooperative cancellation —
   a consumer aborting a handler to stop a generator mid-stream — landed over the
-  abort + `finally` machinery (V3-G4 follow-up, see "Cancellation"). What stays a
-  non-goal is asynchronous interruption; general resource lifetime remains open
-  (V3-G4+).
+  abort + `finally` machinery (V3-G4 follow-up, see "Cancellation"). Resource
+  lifetime is the granting-handler dynamic-extent contract above, not cell-level
+  RAII.
 - No general (non-tail) `yield from`: only tail delegation lowers; a non-tail
   splice is refused pending a shared codata `append`.
 

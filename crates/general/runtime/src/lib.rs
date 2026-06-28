@@ -44,7 +44,7 @@ const TAG_TEXT: i64 = 6;
 const TAG_CLOSURE: i64 = 7;
 
 /// Pack a header word: low byte = kind tag, next bits = length/arity.
-/// High bits stay zero in v0 (reserved for the future GC's layout id).
+/// High bits stay zero in v0; the current conservative GC does not use layout ids.
 const fn header(tag: i64, count: u64) -> i64 {
     ((count << 8) as i64) | tag
 }
@@ -870,7 +870,7 @@ pub extern "C" fn alloc(nbytes: i64) -> i64 {
 
 #[unsafe(export_name = "zutai.free")]
 pub extern "C" fn free(_p: i64) {
-    // No-op in v0 (leak-by-default arena; OS reclaims at exit).
+    // No-op in v0; reclamation is collector-owned and arena chunks are released at process exit.
 }
 
 // ── Record ABI (D-0004, ordinal slots) ──────────────────────────────────────────

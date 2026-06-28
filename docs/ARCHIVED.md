@@ -39,8 +39,8 @@ _Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend harden
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
 unified as an expression; **native effect parity**), and 2026-06-27 (resource
-lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects
-returning the first-order `Data` envelope in the evaluator and native runtime)._
+lifetime for effectful generators; dynamic `load.zti` / `load.zt` host effects;
+GC residual retired with conservative default-on GC as the committed endpoint)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -164,6 +164,59 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### GC residual retired — conservative default-on GC is final for v0/v3 ✅
+
+_Completed 2026-06-27. Closes the open `TBD.md` GC residual as a deliberate
+scope decision: the shipped conservative non-moving mark-sweep collector remains
+the committed runtime GC for the current strict+TCO, write-once backend. This is
+a status/doc cutover, not a new collector implementation._
+
+- **Current support level.** The collector is **default-on** where the existing
+  conservative stack scan can establish bounds (macOS and Linux), with
+  `ZUTAI_GC=0` preserving the leak-by-default arena opt-out. Unsupported targets
+  keep the safe fallback: no sweep when roots cannot be bounded.
+- **Retired residuals.** The precise/moving endgame (precise mark-sweep →
+  generational Cheney copying) is no longer active work. It would require a
+  shadow stack or stack maps plus pointer-layout metadata/calling-convention
+  changes; those costs are exactly what the conservative bridge collector avoided.
+  D-0002's untagged `i64` ABI is not reopened.
+- **Backend invariant.** The lazy backend remains not taken. Runtime thunk update
+  would introduce heap mutation and old→young pointers, forcing a write barrier;
+  the committed backend stays strict, tail-call optimized, and write-once.
+- **Verification boundary.** No runtime behavior changed. Existing acceptance
+  remains the Phase 34/V3-G5 suite: accumulator and stream footprints stay flat
+  under GC, `ZUTAI_GC_STRESS` preserves live structures, heap stats report
+  collections, and `ZUTAI_GC=0` keeps the leak-baseline tests meaningful.
+
+### Resource lifetime for effectful generators ✅
+
+_Completed 2026-06-27. Closes the remaining scoped V3-G4 lifetime follow-up with
+reference-interpreter support and explicit backend rejection for non-`io.print`
+resource effects._
+
+The granting handler's dynamic extent is the single owner of resource-backed
+stream lifetime: acquisition/step effects, normal full consumption, partial
+consumption, cooperative cancellation, cross-boundary abort unwinding, and
+`finally` teardown all run under that handler. Dropped or unforced tails do not
+imply cell-level RAII.
+
+Validation added oracle/refusal coverage in `crates/cli/tests/cli.rs`:
+`resource_generator_finalizes_once_on_legal_shapes` proves teardown runs exactly
+once on normal full consumption, early stop, cancellation, and nested-finalizer
+unwinding; `resource_generator_lazy_escape_is_rejected_at_force_boundary` proves
+an unforced effectful head returned outside the grant refuses when forced; and
+`compile_resource_effectful_generator_stays_gated` proves a source-handled
+`fs.read` generator still rejects on the native backend. The implementation gate
+lives in `crates/general/tlc/src/lower/effects/reify.rs`: effectful codata cells
+that carry non-`io.print` host-resource operations are left residual so the
+existing residual-effect gate rejects them before Dataflow Core.
+
+Non-goals remain unchanged: no asynchronous/preemptive cancellation, no ambient
+filesystem/clock/network/randomness iteration, no host iterator abstraction, no
+cell-level finalizers, and no native resource-effect lowering unless the backend
+contract is explicitly reopened.
+
+
 ### V3-G4 follow-up: cross-boundary finalizer unwinding ✅
 
 _Completed 2026-06-27. Closes the cooperative-cancellation residual where an
@@ -221,8 +274,9 @@ refused. Built entirely in the reference interpreter's effect machinery
   (rather than aborts) runs unchanged; its inner `finally` fires when the inner
   handle settles (`effect_resumed_across_a_finalizer_boundary_still_runs`).
 
-General resource lifetime remains the open follow-up.
-Verification: full workspace green (`cargo test --workspace`, `clippy`, `fmt`).
+The later resource-lifetime milestone closed the remaining scoped V3-G4 lifetime
+follow-up. Verification: full workspace green (`cargo test --workspace`,
+`clippy`, `fmt`).
 
 ### Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff` ✅
 
@@ -459,9 +513,9 @@ Mechanics:
 Tests: `finally_runs_on_normal_completion` (plus value-passthrough),
 `finally_runs_when_handler_aborts`, `finally_runs_after_early_stream_consumption`
 (partial `take` of an effectful generator still finalizes), and
-`compile_handle_with_finally_is_refused` (native refusal). Still open from the
-V3-G4 follow-ups: cancellation (signalling a generator to stop mid-stream),
-general resource-lifetime, and the ergonomic effectful-stream *type*.
+`compile_handle_with_finally_is_refused` (native refusal). Later V3-G4 follow-ups
+closed cancellation, general resource lifetime, and the ergonomic effectful-stream
+type.
 
 ### `import` unified as an expression ✅
 
@@ -723,8 +777,8 @@ opt-in" decision below._
   (`compile_emit_bin_accumulator_garbage_dominates_gc_gate` via `run_with_heap_stats`,
   and `compile_emit_bin_heap_stress_aborts_over_cap`) now pin `ZUTAI_GC=0`
   explicitly so they still measure the leak baseline / cap-abort guard.
-- **Still future.** The precise/moving (Cheney) endgame and a lazy backend remain
-  deferred (`TBD.md` "GC residual"); strict-plus-TCO stays committed.
+- **Retired 2026-06-27.** The precise/moving (Cheney) endgame and lazy backend are
+  no longer active GC residuals; see "GC residual retired" above.
 
 ### V3-G5: GC keeps unbounded stream pipelines bounded ✅
 
@@ -1016,8 +1070,8 @@ where the leak-by-default arena grows ~linearly:
   classification) have direct unit tests.
 - **Reporting.** `ZUTAI_HEAP_STATS` gains a `zutai gc stats:` line (collections,
   bytes/objects reclaimed).
-- **Still gated.** Lazy backend (write barrier) and the precise moving (Cheney)
-  endgame stay future work; strict-plus-TCO remains committed.
+- **Retired 2026-06-27.** Lazy backend and precise/moving (Cheney) GC are no
+  longer active residuals; strict-plus-TCO remains committed.
 
 ### Phase 35: Escaping-effect residual-ABI spike — go/no-go ✅
 
@@ -1259,9 +1313,9 @@ parity; the field's runtime slot is recomputed for each concrete record._
 ### Phase 33: Uncurrying / known-call optimization ✅
 
 _Completed 2026-06-24. Closes the Track 2 Phase 33 item in `TBD.md` and the
-uncurrying prerequisite of the deferred GC trajectory. On accumulator loops the
-calling-convention churn — one closure + one arg-tuple per curried call — is
-eliminated entirely; values are unchanged._
+pre-GC accumulator-footprint prerequisite later used by Phase 34. On accumulator
+loops the calling-convention churn — one closure + one arg-tuple per curried call
+— is eliminated entirely; values are unchanged._
 
 - **New SSA op `CallKnown { func, args, tail }`** (`crates/general/ssa/src/lib.rs`):
   a direct multi-argument call to a named worker, emitted by codegen as
@@ -1773,9 +1827,10 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   and links native binaries with `clang` against `libzutai_rt`. Missing host
   tools produce actionable diagnostics; object/binary tests skip when the
   toolchain is absent.
-- v0 keeps the leak arena. Object headers still reserve high bits for future
-  precise/generational GC layout IDs, and runtime descriptors provide the
-  pointer-shape bridge for that later collector.
+- v0 originally kept the leak arena and reserved object-header high bits for later
+  precise/generational GC layout IDs. Superseded by Phase 34, GC default-on, and
+  the 2026-06-27 GC residual retirement: the current collector is conservative and
+  ignores layout IDs; high bits remain reserved but not a pending milestone.
 
 ### Phase 19: Effect AOT boundary ✅
 
@@ -1933,29 +1988,4 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   predicative polymorphism, imports, constraints, witnesses, and operator
   witness dispatch.
 
-### Resource lifetime for effectful generators (2026-06-27)
-
-The V3-G4 resource-lifetime follow-up landed at **reference-interpreter support
-with explicit backend rejection** for non-`io.print` resource effects. The
-granting handler's dynamic extent is the single owner of resource-backed stream
-lifetime: acquisition/step effects, normal full consumption, partial consumption,
-cooperative cancellation, cross-boundary abort unwinding, and `finally` teardown
-all run under that handler. Dropped or unforced tails do not imply cell-level
-RAII.
-
-Validation added oracle/refusal coverage in `crates/cli/tests/cli.rs`:
-`resource_generator_finalizes_once_on_legal_shapes` proves teardown runs exactly
-once on normal full consumption, early stop, cancellation, and nested-finalizer
-unwinding; `resource_generator_lazy_escape_is_rejected_at_force_boundary` proves
-an unforced effectful head returned outside the grant refuses when forced; and
-`compile_resource_effectful_generator_stays_gated` proves a source-handled
-`fs.read` generator still rejects on the native backend. The implementation gate
-lives in `crates/general/tlc/src/lower/effects/reify.rs`: effectful codata cells
-that carry non-`io.print` host-resource operations are left residual so the
-existing residual-effect gate rejects them before Dataflow Core.
-
-Non-goals remain unchanged: no asynchronous/preemptive cancellation, no ambient
-filesystem/clock/network/randomness iteration, no host iterator abstraction, no
-cell-level finalizers, and no native resource-effect lowering unless the backend
-contract is explicitly reopened.
 
