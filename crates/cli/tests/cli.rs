@@ -69,6 +69,16 @@ fn run_stdout(name: &str, content: &str) -> String {
     String::from_utf8(output).expect("run output should be UTF-8")
 }
 
+fn check_passes(name: &str, content: &str) {
+    let path = write_tmp(name, content);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
 fn llvm_call_uses_slot(llvm: &str, callee: &str, slot: usize) -> bool {
     let suffix = format!(", i64 {slot})");
     llvm.lines()
@@ -262,6 +272,73 @@ fn compile_stdlib_text_cmp_pipeline_matches_oracle() {
     );
     assert_eq!(native.trim(), "58");
     assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+// Release slice R0: one CLI acceptance pack for the shipped V3 + stdlib-H
+// envelope. It intentionally crosses `check`, interpreter `run`, and native
+// `compile --emit=bin`: ambient source preludes, explicit stdlib modules, codata
+// generators/streams, and runtime `io.print` must all agree. The aggregate stdlib
+// program stays pure because imported stdlib module records expose type members;
+// `io.print` is covered as a separate case in the same pack.
+const RELEASE_ACCEPTANCE_SRC: &str = r#"s ::= import stdlib.stream;
+o ::= import stdlib.optional;
+r ::= import stdlib.result;
+n ::= import stdlib.num;
+t ::= import stdlib.text;
+c ::= import stdlib.cmp;
+
+range :: Int -> Int -> s.Stream Int
+  = lo hi => stream {
+    if lo < hi then {
+      yield lo;
+      yield from range (lo + 1) hi;
+    }
+  };
+
+functionScore :: Int = compose (\x. x + 1) (\x. x * 2) (flip (\x y. x - y) 3 10);
+listScore :: Int = fold (\acc x. acc + x) 0 (map (\x. x * 2) (filter (\x. x > 1) {1; 2; 3;}));
+optionalScore :: Int = o.withDefault 0 (o.map (\x. x + 1) (#some (4))) + length (o.toList (#some (9)));
+resultScore :: Int = r.withDefault 0 (r.map (\x. x * 3) (r.ok 7)) + length (r.errors (r.map2 (\x y. x + y) (r.invalid {"a";}) (r.invalid {"b"; "c";})));
+numScore :: Int = n.gcd (0 - 84) 30 + n.abs (0 - 5) + n.round 2.6 + n.truncate 2.9;
+textScore :: Int = t.length (t.join ":" (t.split "," "a,b")) + o.withDefault 0 (t.parseInt "11");
+cmpScore :: Int = if c.then (c.compareInt 1 2) (c.reverse c.gt) == c.lt then 7 else 0;
+streamScore :: Int = s.fold (\acc x. acc + x) 0 (s.map (\x. x * 2) (s.take 3 (range 1 10)));
+total :: Int = functionScore + listScore + optionalScore + resultScore + numScore + textScore + cmpScore + streamScore;
+total
+"#;
+const RELEASE_ACCEPTANCE_PRINT_SRC: &str = "print \"release-acceptance\"\n";
+
+#[test]
+fn release_acceptance_pack_check_run_compile_match() {
+    check_passes(
+        "cli_test_release_acceptance_check.zt",
+        RELEASE_ACCEPTANCE_SRC,
+    );
+    let interp = run_stdout(
+        "cli_test_release_acceptance_oracle.zt",
+        RELEASE_ACCEPTANCE_SRC,
+    );
+    let native = compile_bin_stdout("cli_test_release_acceptance", RELEASE_ACCEPTANCE_SRC);
+    assert_eq!(interp, "104\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+
+    check_passes(
+        "cli_test_release_acceptance_print_check.zt",
+        RELEASE_ACCEPTANCE_PRINT_SRC,
+    );
+    let print_interp = run_stdout(
+        "cli_test_release_acceptance_print_oracle.zt",
+        RELEASE_ACCEPTANCE_PRINT_SRC,
+    );
+    let print_native = compile_bin_stdout(
+        "cli_test_release_acceptance_print",
+        RELEASE_ACCEPTANCE_PRINT_SRC,
+    );
+    assert_eq!(print_interp, "release-acceptance\n\"release-acceptance\"\n");
+    assert_eq!(
+        print_native, print_interp,
+        "native print must match the interpreter oracle"
+    );
 }
 
 // V3-G2 residual: `unfold` — the canonical codata producer (step + seed). A

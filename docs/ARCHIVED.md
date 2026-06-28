@@ -56,12 +56,14 @@ runtime helpers; explicit `stdlib.text` landed for `length`/`split`/`join`/
 with text bridge intrinsics and native runtime helpers; explicit `stdlib.cmp`
 landed for `Ordering`, comparator combinators, and concrete Int/Float/Text
 comparators; native-link test race fixed with a process-released runtime-build
-lock; see "Post-V3 readiness audit", "Ambient/imported stream-combinator
-convergence", "Small function prelude (stdlib slice B)", "Minimal List verbs
-(stdlib slice C)", "Optional helpers (stdlib slice D)", "Result and Validation
-helpers (stdlib slice E)", "Numeric helpers (stdlib slice F)", "Text helpers
-(stdlib slice G)", "Comparator helpers (stdlib slice H)", and "Native-link test
-race fix")._
+lock; release slice R0 added a single CLI acceptance pack that gates check/run/
+native-compile parity across the shipped V3 + stdlib-H envelope; see "Post-V3
+readiness audit", "Ambient/imported stream-combinator convergence", "Small
+function prelude (stdlib slice B)", "Minimal List verbs (stdlib slice C)",
+"Optional helpers (stdlib slice D)", "Result and Validation helpers (stdlib
+slice E)", "Numeric helpers (stdlib slice F)", "Text helpers (stdlib slice G)",
+"Comparator helpers (stdlib slice H)", "Native-link test race fix", and
+"Release acceptance pack (release slice R0)")._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -186,6 +188,23 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Release acceptance pack (release slice R0) ✅
+
+_Completed 2026-06-28. Adds one CLI acceptance pack for the current shipped
+baseline rather than a new language feature._
+
+- **Coverage anchor.** `crates/cli/tests/cli.rs`
+  `release_acceptance_pack_check_run_compile_match` runs `check`, interpreter
+  `run`, and native `compile --emit=bin` over a pure aggregate program spanning
+  ambient source preludes, explicit `stdlib.stream`/`optional`/`result`/`num`/
+  `text`/`cmp` imports, codata generators, and stream folds.
+- **Runtime effect parity.** The same test covers `print "release-acceptance"`
+  separately because imported stdlib module records expose type members and the
+  evaluator intentionally refuses programs that combine runtime type values with
+  source effect syntax.
+- **Verification.** Targeted gate passed:
+  `cargo test -p zutai-cli --test cli release_acceptance_pack_check_run_compile_match -- --test-threads=1`.
 
 ### Comparator helpers (stdlib slice H) ✅
 

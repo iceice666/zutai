@@ -101,8 +101,9 @@ witness-dispatched `compare`.
 ## Tooling / test-harness backlog
 
 _No open tooling backlog items. The native-link test race under
-`cargo test --workspace` landed 2026-06-28; see `docs/ARCHIVED.md`
-"Native-link test race fix"._
+`cargo test --workspace` and the release slice R0 CLI acceptance pack both landed
+2026-06-28; see `docs/ARCHIVED.md` "Native-link test race fix" and "Release
+acceptance pack (release slice R0)"._
 
 ## v1 residual — by design, not gaps
 
