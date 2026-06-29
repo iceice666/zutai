@@ -1,0 +1,27 @@
+-- Stdlib pipeline example
+-- Usage: zutai run examples/stdlib_pipeline.zt
+-- Uses explicit numeric, optional, and result helpers.
+
+n ::= import stdlib.num;
+o ::= import stdlib.optional;
+r ::= import stdlib.result;
+
+score :: Int -> Int
+  = x => x
+    |> n.clamp 0 10
+    |> n.pow 2
+    |> n.rem 17;
+
+maybeScore :: Int? -> Int
+  = value => value
+    |> o.filter (\x. x > 1)
+    |> o.map score
+    |> o.withDefault 5;
+
+resultScore :: r.Result Text Int -> Int
+  = value => value
+    |> r.map (\x. x + 3)
+    |> r.andThen (\x. if x > 10 then r.ok x else r.err "too-small")
+    |> r.withDefault 0;
+
+maybeScore (#some (12)) + maybeScore (#some (1)) + maybeScore (#none) + resultScore (r.ok 9)

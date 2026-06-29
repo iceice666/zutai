@@ -1,0 +1,19 @@
+-- Text reporting example
+-- Usage: zutai run examples/text_report.zt
+-- Splits, normalizes, replaces, joins, and parses text.
+
+t ::= import stdlib.text;
+o ::= import stdlib.optional;
+
+raw ::= " zutai,examples,zt ";
+parts ::= t.split "," (t.trim raw);
+upper ::= t.toUpper (t.join " | " parts);
+patched ::= t.replace "ZT" "Zutai" upper;
+parsed ::= o.withDefault 0 (t.parseInt "42");
+
+{
+  title = patched;
+  containsExamples = t.contains "EXAMPLES" patched;
+  length = t.length patched;
+  parsed = parsed;
+}
