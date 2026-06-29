@@ -22,6 +22,10 @@ const INVALID_LAMBDA_TIGHT_DOT: &str =
     include_str!("../../../fixtures/invalid/lambda_tight_dot.zt");
 const INVALID_LIST_MISSING_SEMICOLON: &str =
     include_str!("../../../fixtures/invalid/list_missing_semicolon.zt");
+const INVALID_LOCAL_BINDING_DOUBLE_COLON: &str =
+    include_str!("../../../fixtures/invalid/local_binding_double_colon.zt");
+const INVALID_MISSING_FIELD_AFTER_ACCESS: &str =
+    include_str!("../../../fixtures/invalid/missing_field_after_access.zt");
 const INVALID_MIXED_PIPELINE: &str = include_str!("../../../fixtures/invalid/mixed_pipeline.zt");
 const INVALID_RECORD_FIELD_COLON: &str =
     include_str!("../../../fixtures/invalid/record_field_colon.zt");
@@ -29,8 +33,14 @@ const INVALID_RECORD_PATTERN_MISSING_SEMICOLON: &str =
     include_str!("../../../fixtures/invalid/record_pattern_missing_semicolon.zt");
 const INVALID_TOP_LEVEL_SINGLE_COLON: &str =
     include_str!("../../../fixtures/invalid/top_level_single_colon.zt");
+const INVALID_STALE_TYPE_DECLARATION: &str =
+    include_str!("../../../fixtures/invalid/stale_type_declaration.zt");
+const INVALID_TAGGED_VALUE_PAYLOAD_COLON: &str =
+    include_str!("../../../fixtures/invalid/tagged_value_payload_colon.zt");
 const INVALID_TYPE_FIELD_EQUALS: &str =
     include_str!("../../../fixtures/invalid/type_field_equals.zt");
+const INVALID_TYPE_UNION_PAYLOAD_EQUALS: &str =
+    include_str!("../../../fixtures/invalid/type_union_payload_equals.zt");
 const INVALID_UNCLOSED_RECORD: &str = include_str!("../../../fixtures/invalid/unclosed_record.zt");
 const INVALID_UNCLOSED_LIST: &str = include_str!("../../../fixtures/invalid/unclosed_list.zt");
 const INVALID_TRAILING_OPERATOR: &str =
@@ -82,6 +92,14 @@ fn reject_invalid_fixture_variants() {
             "invalid/list_missing_semicolon.zt",
             INVALID_LIST_MISSING_SEMICOLON,
         ),
+        (
+            "invalid/local_binding_double_colon.zt",
+            INVALID_LOCAL_BINDING_DOUBLE_COLON,
+        ),
+        (
+            "invalid/missing_field_after_access.zt",
+            INVALID_MISSING_FIELD_AFTER_ACCESS,
+        ),
         ("invalid/mixed_pipeline.zt", INVALID_MIXED_PIPELINE),
         ("invalid/record_field_colon.zt", INVALID_RECORD_FIELD_COLON),
         (
@@ -92,7 +110,19 @@ fn reject_invalid_fixture_variants() {
             "invalid/top_level_single_colon.zt",
             INVALID_TOP_LEVEL_SINGLE_COLON,
         ),
+        (
+            "invalid/stale_type_declaration.zt",
+            INVALID_STALE_TYPE_DECLARATION,
+        ),
+        (
+            "invalid/tagged_value_payload_colon.zt",
+            INVALID_TAGGED_VALUE_PAYLOAD_COLON,
+        ),
         ("invalid/type_field_equals.zt", INVALID_TYPE_FIELD_EQUALS),
+        (
+            "invalid/type_union_payload_equals.zt",
+            INVALID_TYPE_UNION_PAYLOAD_EQUALS,
+        ),
         ("invalid/unclosed_record.zt", INVALID_UNCLOSED_RECORD),
         ("invalid/unclosed_list.zt", INVALID_UNCLOSED_LIST),
         ("invalid/trailing_operator.zt", INVALID_TRAILING_OPERATOR),
@@ -125,6 +155,16 @@ fn invalid_fixtures_report_specific_error_kinds() {
             ParseErrorKind::MissingListItemSemicolon,
         ),
         (
+            "invalid/local_binding_double_colon.zt",
+            INVALID_LOCAL_BINDING_DOUBLE_COLON,
+            ParseErrorKind::LocalBindingDoubleColon,
+        ),
+        (
+            "invalid/missing_field_after_access.zt",
+            INVALID_MISSING_FIELD_AFTER_ACCESS,
+            ParseErrorKind::MissingFieldAfterAccess,
+        ),
+        (
             "invalid/mixed_pipeline.zt",
             INVALID_MIXED_PIPELINE,
             ParseErrorKind::MixedPipeline,
@@ -135,14 +175,34 @@ fn invalid_fixtures_report_specific_error_kinds() {
             ParseErrorKind::ValueRecordFieldUsesColon,
         ),
         (
+            "invalid/record_pattern_missing_semicolon.zt",
+            INVALID_RECORD_PATTERN_MISSING_SEMICOLON,
+            ParseErrorKind::MissingListItemSemicolon,
+        ),
+        (
             "invalid/top_level_single_colon.zt",
             INVALID_TOP_LEVEL_SINGLE_COLON,
             ParseErrorKind::TopLevelSingleColon,
         ),
         (
+            "invalid/stale_type_declaration.zt",
+            INVALID_STALE_TYPE_DECLARATION,
+            ParseErrorKind::StaleTypeDeclaration,
+        ),
+        (
+            "invalid/tagged_value_payload_colon.zt",
+            INVALID_TAGGED_VALUE_PAYLOAD_COLON,
+            ParseErrorKind::TaggedValuePayloadUsesColon,
+        ),
+        (
             "invalid/type_field_equals.zt",
             INVALID_TYPE_FIELD_EQUALS,
             ParseErrorKind::TypeRecordFieldUsesEquals,
+        ),
+        (
+            "invalid/type_union_payload_equals.zt",
+            INVALID_TYPE_UNION_PAYLOAD_EQUALS,
+            ParseErrorKind::TypeUnionPayloadUsesEquals,
         ),
         (
             "invalid/unclosed_record.zt",
@@ -154,10 +214,25 @@ fn invalid_fixtures_report_specific_error_kinds() {
             INVALID_UNCLOSED_LIST,
             ParseErrorKind::UnclosedDelimiter('{'),
         ),
+        (
+            "invalid/trailing_operator.zt",
+            INVALID_TRAILING_OPERATOR,
+            ParseErrorKind::TrailingOperator,
+        ),
     ] {
         let kinds = parse_kinds(src);
         assert_eq!(kinds.first(), Some(&kind), "{name}: {kinds:?}");
     }
+}
+
+#[test]
+fn optional_access_without_field_reports_specific_error() {
+    let kinds = parse_kinds("cfg ::= { server = #none; };\ncfg.server?.\n");
+    assert_eq!(
+        kinds.first(),
+        Some(&ParseErrorKind::MissingFieldAfterAccess),
+        "{kinds:?}"
+    );
 }
 
 #[test]

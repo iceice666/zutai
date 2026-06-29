@@ -118,6 +118,10 @@ fn replacement_for(kind: &ParseErrorKind) -> Option<(&'static str, &'static str)
         ParseErrorKind::ValueRecordFieldUsesColon => Some(("Use `=` for value record field", "=")),
         ParseErrorKind::TopLevelSingleColon => Some(("Use `::` for typed binding", "::")),
         ParseErrorKind::TypeRecordFieldUsesEquals => Some(("Use `:` for type record field", ":")),
+        ParseErrorKind::LocalBindingDoubleColon => Some(("Use `:` for typed local binding", ":")),
+        ParseErrorKind::TypeUnionPayloadUsesEquals => {
+            Some(("Use `:` for union variant payload", ":"))
+        }
         ParseErrorKind::MissingListItemSemicolon => {
             Some(("Insert missing list item semicolon", ";]"))
         }

@@ -1,0 +1,5 @@
+type Server = {
+  host : Text;
+};
+
+#unit

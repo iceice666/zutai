@@ -11,6 +11,12 @@ pub enum ParseErrorKind {
     ValueRecordFieldUsesColon,
     TopLevelSingleColon,
     TypeRecordFieldUsesEquals,
+    TrailingOperator,
+    MissingFieldAfterAccess,
+    LocalBindingDoubleColon,
+    TaggedValuePayloadUsesColon,
+    TypeUnionPayloadUsesEquals,
+    StaleTypeDeclaration,
     UnknownNumberPostfix,
     IntegerPostfixOnFloatLiteral,
     UnsignedPostfixOnNegative,
@@ -41,6 +47,16 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "value record fields use `=`, not `:`",
             ParseErrorKind::TopLevelSingleColon => "top-level typed bindings use `::`, not `:`",
             ParseErrorKind::TypeRecordFieldUsesEquals => "type record fields use `:`, not `=`",
+            ParseErrorKind::TrailingOperator => "binary operator requires a right-hand operand",
+            ParseErrorKind::MissingFieldAfterAccess => "field access requires a field name",
+            ParseErrorKind::LocalBindingDoubleColon => "local typed bindings use `:`, not `::`",
+            ParseErrorKind::TaggedValuePayloadUsesColon => {
+                "tagged values attach payloads without `:`"
+            }
+            ParseErrorKind::TypeUnionPayloadUsesEquals => "union variant payloads use `:`, not `=`",
+            ParseErrorKind::StaleTypeDeclaration => {
+                "type declarations use `Name :: type`, not `type Name =`"
+            }
             ParseErrorKind::UnknownNumberPostfix => "unknown numeric type postfix",
             ParseErrorKind::IntegerPostfixOnFloatLiteral => {
                 "integer type postfix on a non-integer literal"
@@ -71,6 +87,14 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "use `=` for value fields",
             ParseErrorKind::TopLevelSingleColon => "use `::` for a typed top-level binding",
             ParseErrorKind::TypeRecordFieldUsesEquals => "use `:` for type fields",
+            ParseErrorKind::TrailingOperator => "operator has no right-hand operand",
+            ParseErrorKind::MissingFieldAfterAccess => {
+                "expected a field name after this access operator"
+            }
+            ParseErrorKind::LocalBindingDoubleColon => "use `:` for a typed local binding",
+            ParseErrorKind::TaggedValuePayloadUsesColon => "remove `:` after this tag",
+            ParseErrorKind::TypeUnionPayloadUsesEquals => "use `:` for a variant payload type",
+            ParseErrorKind::StaleTypeDeclaration => "stale type declaration syntax starts here",
             ParseErrorKind::UnknownNumberPostfix => "not one of i8…f64",
             ParseErrorKind::IntegerPostfixOnFloatLiteral => "this body has a fraction or exponent",
             ParseErrorKind::UnsignedPostfixOnNegative => {
@@ -105,6 +129,22 @@ impl ParseErrorKind {
             ParseErrorKind::TypeRecordFieldUsesEquals => {
                 Some("write type records as `type { field : Type; }`")
             }
+            ParseErrorKind::TrailingOperator => {
+                Some("add the missing expression after the operator or remove the operator")
+            }
+            ParseErrorKind::MissingFieldAfterAccess => {
+                Some("write `value.field` or remove the trailing access operator")
+            }
+            ParseErrorKind::LocalBindingDoubleColon => {
+                Some("write `[name : Type = value; result]`")
+            }
+            ParseErrorKind::TaggedValuePayloadUsesColon => {
+                Some("write `#tag { field = value; }` or `#tag (value)`, not `#tag : ...`")
+            }
+            ParseErrorKind::TypeUnionPayloadUsesEquals => {
+                Some("write `#tag : Payload;` in union types")
+            }
+            ParseErrorKind::StaleTypeDeclaration => Some("write `Name :: type TypeExpr;`"),
             _ => None,
         }
     }
@@ -120,6 +160,14 @@ impl ParseErrorKind {
             ParseErrorKind::ValueRecordFieldUsesColon => "zutai::parse::value_record_field_colon",
             ParseErrorKind::TopLevelSingleColon => "zutai::parse::top_level_single_colon",
             ParseErrorKind::TypeRecordFieldUsesEquals => "zutai::parse::type_record_field_equals",
+            ParseErrorKind::TrailingOperator => "zutai::parse::trailing_operator",
+            ParseErrorKind::MissingFieldAfterAccess => "zutai::parse::missing_field_after_access",
+            ParseErrorKind::LocalBindingDoubleColon => "zutai::parse::local_binding_double_colon",
+            ParseErrorKind::TaggedValuePayloadUsesColon => {
+                "zutai::parse::tagged_value_payload_colon"
+            }
+            ParseErrorKind::TypeUnionPayloadUsesEquals => "zutai::parse::type_union_payload_equals",
+            ParseErrorKind::StaleTypeDeclaration => "zutai::parse::stale_type_declaration",
             ParseErrorKind::UnknownNumberPostfix => "zutai::parse::unknown_number_postfix",
             ParseErrorKind::IntegerPostfixOnFloatLiteral => {
                 "zutai::parse::integer_postfix_on_float_literal"

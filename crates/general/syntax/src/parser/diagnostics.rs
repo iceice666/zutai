@@ -81,6 +81,18 @@ impl<'a> Scanner<'a> {
                 continue;
             }
 
+            if self.starts_keyword_at(self.pos, "type")
+                && self.looks_like_stale_type_declaration(self.pos)
+            {
+                self.push(
+                    self.pos,
+                    self.pos + "type".len(),
+                    ParseErrorKind::StaleTypeDeclaration,
+                );
+                self.pos += "type".len();
+                continue;
+            }
+
             match self.bytes[self.pos] {
                 b'{' => self.open(Delim::Brace),
                 b'[' => self.open(Delim::Bracket),
@@ -101,17 +113,30 @@ impl<'a> Scanner<'a> {
                 b'\\' => self.scan_lambda(),
                 b'<' | b'>' | b'!' => self.scan_operator(),
                 b'|' => self.scan_pipeline(),
+                b'+' | b'*' | b'/' => {
+                    self.check_trailing_operator(self.pos, 1);
+                    self.pos += 1;
+                }
+                b'-' => {
+                    self.check_trailing_operator(self.pos, 1);
+                    self.pos += 1;
+                }
+                b'.' => self.scan_access_operator(1),
                 b'&' => {
                     if self.starts_with("&&") {
                         self.break_compare_chain();
+                        self.check_trailing_operator(self.pos, 2);
                         self.pos += 2;
                     } else {
                         self.pos += 1;
                     }
                 }
                 b'?' => {
-                    if self.starts_with("??") {
+                    if self.starts_with("?.") {
+                        self.scan_access_operator(2);
+                    } else if self.starts_with("??") {
                         self.break_compare_chain();
+                        self.check_trailing_operator(self.pos, 2);
                         self.pos += 2;
                     } else {
                         self.pos += 1;
@@ -172,12 +197,29 @@ impl<'a> Scanner<'a> {
     fn scan_colon(&mut self) {
         // `::` (top-level sig/alias) and `:=` (local do-block binding) are not
         // stray colons.
-        if self.starts_with("::") || self.starts_with(":=") {
+        if self.starts_with("::") {
+            if self.in_do_block() && self.looks_like_local_binding_double_colon(self.pos) {
+                self.push(
+                    self.pos,
+                    self.pos + 2,
+                    ParseErrorKind::LocalBindingDoubleColon,
+                );
+            }
+            self.pos += 2;
+            return;
+        }
+        if self.starts_with(":=") {
             self.pos += 2;
             return;
         }
 
-        if self.stack.is_empty() && self.looks_like_top_level_single_colon(self.pos) {
+        if !self.in_type_brace() && self.previous_atom_before(self.pos) {
+            self.push(
+                self.pos,
+                self.pos + 1,
+                ParseErrorKind::TaggedValuePayloadUsesColon,
+            );
+        } else if self.stack.is_empty() && self.looks_like_top_level_single_colon(self.pos) {
             self.push(self.pos, self.pos + 1, ParseErrorKind::TopLevelSingleColon);
         } else if self.in_value_brace() && self.looks_like_value_record_colon(self.pos) {
             self.push(
@@ -194,7 +236,13 @@ impl<'a> Scanner<'a> {
             self.pos += 2;
             return;
         }
-        if self.in_type_brace() && self.looks_like_type_record_equals(self.pos) {
+        if self.in_type_brace() && self.previous_atom_before(self.pos) {
+            self.push(
+                self.pos,
+                self.pos + 1,
+                ParseErrorKind::TypeUnionPayloadUsesEquals,
+            );
+        } else if self.in_type_brace() && self.looks_like_type_record_equals(self.pos) {
             self.push(
                 self.pos,
                 self.pos + 1,
@@ -235,6 +283,7 @@ impl<'a> Scanner<'a> {
                     segment.first_compare = Some(offset);
                 }
             }
+            self.check_trailing_operator(self.pos, len);
             self.pos += len;
         } else {
             self.pos += 1;
@@ -245,9 +294,11 @@ impl<'a> Scanner<'a> {
         if self.starts_with("|>") {
             self.note_pipeline(PipelineDir::Forward, self.pos);
             self.break_compare_chain();
+            self.check_trailing_operator(self.pos, 2);
             self.pos += 2;
         } else if self.starts_with("||") {
             self.break_compare_chain();
+            self.check_trailing_operator(self.pos, 2);
             self.pos += 2;
         } else {
             self.pos += 1;
@@ -367,6 +418,43 @@ impl<'a> Scanner<'a> {
         None
     }
 
+    fn scan_access_operator(&mut self, len: usize) {
+        if len == 1
+            && (self.starts_with("..")
+                || self.pos > 0 && self.bytes[self.pos - 1] == b'.'
+                || self.looks_like_lambda_dot(self.pos))
+        {
+            self.pos += 1;
+            return;
+        }
+        let after = self.skip_trivia_from(self.pos + len);
+        if after >= self.bytes.len()
+            || !self.src[after..]
+                .chars()
+                .next()
+                .is_some_and(crate::ident::is_ident_start)
+        {
+            self.push(
+                self.pos,
+                self.pos + len,
+                ParseErrorKind::MissingFieldAfterAccess,
+            );
+        }
+        self.pos += len;
+    }
+
+    fn check_trailing_operator(&mut self, start: usize, len: usize) {
+        if self.looks_like_parenthesized_operator_name(start, len) {
+            return;
+        }
+        let after = self.skip_trivia_from(start + len);
+        if after >= self.bytes.len()
+            || matches!(self.bytes[after], b';' | b'}' | b']' | b')' | b',')
+        {
+            self.push(start, start + len, ParseErrorKind::TrailingOperator);
+        }
+    }
+
     /// Every item in a value `{ ... }` (record field or list element) must end
     /// in `;`. If the last non-whitespace byte before `}` is neither the opening
     /// `{` (empty record) nor a `;`, an item terminator is missing.
@@ -438,6 +526,115 @@ impl<'a> Scanner<'a> {
 
     fn char_len_at(&self, offset: usize) -> usize {
         self.src[offset..].chars().next().map_or(1, char::len_utf8)
+    }
+
+    fn starts_keyword_at(&self, offset: usize, keyword: &str) -> bool {
+        if !self.starts_at(offset, keyword) {
+            return false;
+        }
+        let after = offset + keyword.len();
+        after >= self.bytes.len()
+            || !self.src[after..]
+                .chars()
+                .next()
+                .is_some_and(crate::ident::is_ident_continue)
+    }
+
+    fn skip_trivia_from(&self, mut offset: usize) -> usize {
+        while offset < self.bytes.len() {
+            if self.src[offset..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace)
+            {
+                offset += self.char_len_at(offset);
+            } else if self.starts_at(offset, "--[") {
+                offset += 3;
+                let mut depth = 1usize;
+                while offset < self.bytes.len() && depth > 0 {
+                    if self.starts_at(offset, "--[") {
+                        depth += 1;
+                        offset += 3;
+                    } else if self.starts_at(offset, "]--") {
+                        depth -= 1;
+                        offset += 3;
+                    } else {
+                        offset += self.char_len_at(offset);
+                    }
+                }
+                if depth > 0 {
+                    return self.bytes.len();
+                }
+            } else if self.starts_at(offset, "--|") || self.starts_at(offset, "--") {
+                while offset < self.bytes.len() && self.bytes[offset] != b'\n' {
+                    offset += self.char_len_at(offset);
+                }
+            } else {
+                break;
+            }
+        }
+        offset
+    }
+
+    fn previous_atom_before(&self, offset: usize) -> bool {
+        let Some(prev) = self.prev_non_ws(offset) else {
+            return false;
+        };
+        if !self.src.is_char_boundary(prev) {
+            return false;
+        }
+        let Some(prev_ch) = self.src[prev..].chars().next() else {
+            return false;
+        };
+        if !crate::ident::is_atom_continue(prev_ch) {
+            return false;
+        }
+        let mut start = prev;
+        while let Some((idx, ch)) = self.src[..start].char_indices().next_back() {
+            if crate::ident::is_atom_continue(ch) {
+                start = idx;
+            } else {
+                break;
+            }
+        }
+        self.src[..start]
+            .char_indices()
+            .next_back()
+            .is_some_and(|(_, ch)| ch == '#')
+    }
+
+    fn looks_like_lambda_dot(&self, offset: usize) -> bool {
+        let segment_start = self.src[..offset]
+            .rfind(['\n', ';', '{', '[', '(', '}', ']', ')'])
+            .map_or(0, |idx| idx + 1);
+        let Some(backslash) = self.src[segment_start..offset].rfind('\\') else {
+            return false;
+        };
+        let lambda_head = &self.src[segment_start + backslash + 1..offset];
+        !lambda_head.is_empty()
+            && !lambda_head.contains('.')
+            && lambda_head.chars().all(|ch| {
+                ch.is_whitespace()
+                    || crate::ident::is_ident_continue(ch)
+                    || matches!(ch, '_' | '(' | ')' | ',' | '{' | '}' | ';' | '#')
+            })
+    }
+
+    fn looks_like_parenthesized_operator_name(&self, start: usize, len: usize) -> bool {
+        self.prev_non_ws(start)
+            .is_some_and(|prev| self.bytes[prev] == b'(')
+            && self.skip_trivia_from(start + len) < self.bytes.len()
+            && self.bytes[self.skip_trivia_from(start + len)] == b')'
+    }
+
+    fn in_do_block(&self) -> bool {
+        matches!(
+            self.stack.last(),
+            Some(DelimFrame {
+                delim: Delim::Bracket,
+                ..
+            })
+        )
     }
 
     fn skip_line_comment(&mut self) {
@@ -580,6 +777,63 @@ impl<'a> Scanner<'a> {
                 .chars()
                 .next()
                 .is_some_and(crate::ident::is_ident_start)
+    }
+
+    fn looks_like_stale_type_declaration(&self, offset: usize) -> bool {
+        if !self.stack.is_empty() {
+            return false;
+        }
+        let line_start = self.src[..offset].rfind('\n').map_or(0, |idx| idx + 1);
+        if !self.src[line_start..offset].trim().is_empty() {
+            return false;
+        }
+        let mut cursor = self.skip_trivia_from(offset + "type".len());
+        if cursor >= self.bytes.len() {
+            return false;
+        }
+        let Some(first) = self.src[cursor..].chars().next() else {
+            return false;
+        };
+        if !crate::ident::is_ident_start(first) {
+            return false;
+        }
+        cursor += first.len_utf8();
+        while cursor < self.bytes.len() {
+            let Some(ch) = self.src[cursor..].chars().next() else {
+                break;
+            };
+            if crate::ident::is_ident_continue(ch) {
+                cursor += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        cursor = self.skip_trivia_from(cursor);
+        cursor < self.bytes.len() && self.bytes[cursor] == b'='
+    }
+
+    fn looks_like_local_binding_double_colon(&self, offset: usize) -> bool {
+        let start = self.src[..offset]
+            .rfind(['[', ';'])
+            .map_or(0, |idx| idx + 1);
+        let prefix = self.src[start..offset].trim();
+        if prefix.is_empty() {
+            return false;
+        }
+        let mut chars = prefix.chars();
+        if !chars.next().is_some_and(crate::ident::is_ident_start)
+            || !chars.all(crate::ident::is_ident_continue)
+        {
+            return false;
+        }
+        let mut cursor = offset + 2;
+        while cursor < self.bytes.len() && !matches!(self.bytes[cursor], b';' | b']') {
+            if self.bytes[cursor] == b'=' {
+                return true;
+            }
+            cursor += self.char_len_at(cursor);
+        }
+        false
     }
 
     fn looks_like_type_param_angle(&self, offset: usize) -> bool {

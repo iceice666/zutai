@@ -1,0 +1,2 @@
+cfg ::= { server = { port = 8080; }; };
+cfg.server.

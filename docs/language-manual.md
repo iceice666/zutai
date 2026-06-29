@@ -415,6 +415,12 @@ Common parse-diagnostic mistakes should receive specific messages when the parse
 - value-record field written with `:`
 - top-level typed binding written with single `:`
 - type-record field written with `=`
+- trailing binary operator without a right operand
+- field access written without a field name after `.` or `?.`
+- local typed binding written with `::` instead of `:`
+- tagged value payload written with `:`
+- union variant payload written with `=`
+- stale `type Name = ...` declaration syntax
 
 ## Further reading
 
