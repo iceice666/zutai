@@ -1,5 +1,5 @@
 -- Stream/list summary example
--- Usage: zutai run examples/stream_summary.zt
+-- Usage: zutai-cli run examples/stream_summary.zt
 -- Adapts a list to a stream, transforms it lazily, and summarizes it.
 
 s ::= import stdlib.stream;

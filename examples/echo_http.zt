@@ -1,5 +1,6 @@
 -- Recursive HTTP echo server
--- Usage: zutai run examples/echo_http.zt
+-- Usage: zutai-cli run examples/echo_http.zt
+-- Client: curl http://127.0.0.1:8080/
 -- Listens on port 8080, echoes each request line in an HTTP 200 response,
 -- then accepts the next connection.
 

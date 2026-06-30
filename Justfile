@@ -23,6 +23,20 @@ test *ARGS:
 native-examples:
     cargo test -p zutai-cli --test cli real_examples_check_run_and_compile_match -- --test-threads=1
 
+# Type-check every checked-in .zt example, including network demos.
+examples-check:
+    @for f in examples/*.zt; do \
+        echo "==> check $f"; \
+        cargo run -q -p zutai-cli -- check "$f"; \
+    done
+
+# Run examples that terminate without an external client.
+examples-run:
+    @for f in examples/service_health.zt examples/canary_forecast.zt examples/stdlib_pipeline.zt examples/stream_summary.zt examples/text_report.zt; do \
+        echo "==> run $f"; \
+        cargo run -q -p zutai-cli -- run "$f"; \
+    done
+
 # ── Lint & format ─────────────────────────────────────────────────────────────
 
 fmt:

@@ -1,5 +1,5 @@
 -- Text reporting example
--- Usage: zutai run examples/text_report.zt
+-- Usage: zutai-cli run examples/text_report.zt
 -- Splits, normalizes, replaces, joins, and parses text.
 
 t ::= import stdlib.text;

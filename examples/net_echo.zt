@@ -1,5 +1,6 @@
 -- Simple TCP line echo server (single request)
--- Usage: zutai run examples/net_echo.zt
+-- Usage: zutai-cli run examples/net_echo.zt
+-- Client: printf 'hello\n' | nc 127.0.0.1 7777
 -- Listens on port 7777, echoes one line, then exits.
 
 serveOnce :: Int -> Text ! {

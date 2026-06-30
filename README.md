@@ -50,7 +50,11 @@ Start with the language manual or documentation index:
 
 ## Examples
 
-Runnable `.zt` examples live under [examples](examples). The larger examples are:
+Runnable `.zt` examples live under [examples](examples). See the
+[examples guide](examples/README.md) for a suggested reading order, commands,
+and notes on the network examples that wait for a local client.
+
+The larger examples are:
 
 - [service_health.zt](examples/service_health.zt), backed by
   [service_health.zti](examples/service_health.zti), imports inert data,

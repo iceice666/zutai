@@ -1,5 +1,5 @@
 -- Canary forecast example
--- Usage: zutai run examples/canary_forecast.zt
+-- Usage: zutai-cli run examples/canary_forecast.zt
 -- Builds a bounded report from an infinite synthetic telemetry stream.
 
 s ::= import stdlib.stream;

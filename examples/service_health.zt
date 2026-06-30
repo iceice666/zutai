@@ -1,5 +1,5 @@
 -- Service health rollup
--- Usage: zutai run examples/service_health.zt
+-- Usage: zutai-cli run examples/service_health.zt
 -- Imports inert .zti data, validates it as typed records, and summarizes it.
 
 n ::= import stdlib.num;

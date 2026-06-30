@@ -1,5 +1,5 @@
 -- Stdlib pipeline example
--- Usage: zutai run examples/stdlib_pipeline.zt
+-- Usage: zutai-cli run examples/stdlib_pipeline.zt
 -- Uses explicit numeric, optional, and result helpers.
 
 n ::= import stdlib.num;
