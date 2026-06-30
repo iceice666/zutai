@@ -13,7 +13,7 @@
 //! value/module maps for the evaluator, witness export merging, and backend /
 //! evaluator gate predicates over completed staged output.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -149,28 +149,17 @@ impl Analysis {
     /// evaluates both, so they stay on the default TLC path (see
     /// `aot_reflection_program` for the broader compile-time fold gate).
     pub fn reflection_builtin_program(&self) -> Option<&'static str> {
-        if self
-            .import_modules
-            .values()
-            .any(|module| module.as_ref().reflection_builtin_program().is_some())
-        {
+        if self.import_modules.iter().any(|(source, module)| {
+            !is_stdlib_module(source, "reflect")
+                && module.as_ref().reflection_builtin_program().is_some()
+        }) {
             return Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             );
         }
-        let hir = &self.hir.as_ref()?.file;
-        let file = self.thir.as_ref()?.file.as_ref()?;
-        let uses_reflection = file.expr_arena.iter().any(|(_, expr)| {
-            let zutai_thir::ThirExprKind::BindingRef { binding, .. } = expr.kind else {
-                return false;
-            };
-            let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
-                return false;
-            };
-            hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
-                && (hir_binding.name == "fields" || hir_binding.name == "schema")
-        });
-        if uses_reflection {
+        if self.uses_reflection_builtin(&["fields", "schema"], false)
+            || self.uses_stdlib_reflect_call(&["fields", "schema"])
+        {
             Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             )
@@ -189,29 +178,17 @@ impl Analysis {
     /// `compile`/`dataflow` paths, never by the run-time evaluator routing, so
     /// `witness`/`variants` programs keep evaluating on the TLC path.
     pub fn aot_reflection_program(&self) -> Option<&'static str> {
-        if self
-            .import_modules
-            .values()
-            .any(|module| module.as_ref().aot_reflection_program().is_some())
-        {
+        if self.import_modules.iter().any(|(source, module)| {
+            !is_stdlib_module(source, "reflect")
+                && module.as_ref().aot_reflection_program().is_some()
+        }) {
             return Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             );
         }
-        let hir = &self.hir.as_ref()?.file;
-        let file = self.thir.as_ref()?.file.as_ref()?;
-        let uses_reflection = file.expr_arena.iter().any(|(_, expr)| match &expr.kind {
-            zutai_thir::ThirExprKind::WitnessReflect { .. } => true,
-            zutai_thir::ThirExprKind::BindingRef { binding, .. } => hir
-                .bindings
-                .get(binding.0 as usize)
-                .is_some_and(|hir_binding| {
-                    hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
-                        && matches!(hir_binding.name.as_str(), "fields" | "variants" | "schema")
-                }),
-            _ => false,
-        });
-        if uses_reflection {
+        if self.uses_reflection_builtin(&["fields", "variants", "schema"], true)
+            || self.uses_stdlib_reflect_call(&["fields", "variants", "schema"])
+        {
             Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             )
@@ -221,11 +198,10 @@ impl Analysis {
     }
 
     pub fn config_overlay_builtin_program(&self) -> Option<&'static str> {
-        if self
-            .import_modules
-            .values()
-            .any(|module| module.as_ref().config_overlay_builtin_program().is_some())
-        {
+        if self.import_modules.iter().any(|(source, module)| {
+            !is_stdlib_module(source, "config")
+                && module.as_ref().config_overlay_builtin_program().is_some()
+        }) {
             return Some(
                 "config overlay builtins could not be lowered to pure backend IR before Dataflow Core",
             );
@@ -249,6 +225,172 @@ impl Analysis {
         } else {
             None
         }
+    }
+
+    fn uses_reflection_builtin(&self, fields: &[&str], include_witness: bool) -> bool {
+        let Some(hir) = self.hir.as_ref().map(|lowered| &lowered.file) else {
+            return false;
+        };
+        let Some(file) = self.thir.as_ref().and_then(|thir| thir.file.as_ref()) else {
+            return false;
+        };
+        file.expr_arena.iter().any(|(_, expr)| match &expr.kind {
+            zutai_thir::ThirExprKind::WitnessReflect { .. } => include_witness,
+            zutai_thir::ThirExprKind::BindingRef { binding, .. } => hir
+                .bindings
+                .get(binding.0 as usize)
+                .is_some_and(|hir_binding| {
+                    hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                        && fields.contains(&hir_binding.name.as_str())
+                }),
+            _ => false,
+        })
+    }
+
+    fn uses_stdlib_reflect_call(&self, fields: &[&str]) -> bool {
+        let Some(hir) = self.hir.as_ref().map(|lowered| &lowered.file) else {
+            return false;
+        };
+        let Some(file) = self.thir.as_ref().and_then(|thir| thir.file.as_ref()) else {
+            return false;
+        };
+        file.expr_arena.iter().any(|(_, expr)| {
+            let zutai_thir::ThirExprKind::Apply { func, .. } = expr.kind else {
+                return false;
+            };
+            thir_expr_is_stdlib_reflect_alias(hir, file, func, fields, &mut FxHashSet::default())
+        })
+    }
+}
+
+fn is_stdlib_module(source: &zutai_thir::ImportKey, module: &str) -> bool {
+    matches!(source, zutai_hir::HirImportSource::Path(parts)
+        if matches!(parts.as_slice(), [root, name] if root == "stdlib" && name == module))
+}
+
+fn stdlib_module_field<'a>(
+    hir: &zutai_hir::HirFile,
+    expr: zutai_hir::HirExprId,
+    module: &str,
+    fields: &'a [&'a str],
+    seen: &mut rustc_hash::FxHashSet<zutai_hir::BindingId>,
+) -> Option<&'a str> {
+    match &hir.expr_arena[expr].kind {
+        zutai_hir::HirExprKind::Access { receiver, field } if fields.contains(&field.as_str()) => {
+            expr_is_stdlib_import(hir, *receiver, module, seen)
+                .then(|| {
+                    fields
+                        .iter()
+                        .copied()
+                        .find(|candidate| *candidate == field.as_str())
+                })
+                .flatten()
+        }
+        zutai_hir::HirExprKind::BindingRef(binding) => {
+            if !seen.insert(*binding) {
+                return None;
+            }
+            value_decl_expr(hir, *binding)
+                .and_then(|value| stdlib_module_field(hir, value, module, fields, seen))
+        }
+        _ => None,
+    }
+}
+
+fn expr_is_stdlib_import(
+    hir: &zutai_hir::HirFile,
+    expr: zutai_hir::HirExprId,
+    module: &str,
+    seen: &mut rustc_hash::FxHashSet<zutai_hir::BindingId>,
+) -> bool {
+    match &hir.expr_arena[expr].kind {
+        zutai_hir::HirExprKind::Import(zutai_hir::HirImportSource::Path(parts)) => {
+            matches!(parts.as_slice(), [root, name] if root == "stdlib" && name == module)
+        }
+        zutai_hir::HirExprKind::BindingRef(binding) => {
+            if !seen.insert(*binding) {
+                return false;
+            }
+            value_decl_expr(hir, *binding)
+                .is_some_and(|value| expr_is_stdlib_import(hir, value, module, seen))
+        }
+        _ => false,
+    }
+}
+
+fn value_decl_expr(
+    hir: &zutai_hir::HirFile,
+    binding: zutai_hir::BindingId,
+) -> Option<zutai_hir::HirExprId> {
+    hir.decls.iter().find_map(|decl_id| {
+        let decl = &hir.decl_arena[*decl_id];
+        if decl.binding != binding {
+            return None;
+        }
+        let zutai_hir::HirDeclKind::Value { value, .. } = decl.kind else {
+            return None;
+        };
+        Some(value)
+    })
+}
+
+fn thir_decl_exprs(
+    file: &zutai_thir::ThirFile,
+    binding: zutai_hir::BindingId,
+) -> Vec<zutai_thir::ThirExprId> {
+    file.decls
+        .iter()
+        .find_map(|decl_id| {
+            let decl = &file.decl_arena[*decl_id];
+            if decl.binding != binding {
+                return None;
+            }
+            match &decl.kind {
+                zutai_thir::ThirDeclKind::Value { value, .. } => Some(vec![*value]),
+                zutai_thir::ThirDeclKind::Function { clauses, .. } => Some(
+                    clauses
+                        .iter()
+                        .flat_map(|clause| {
+                            clause.guard.into_iter().chain(std::iter::once(clause.body))
+                        })
+                        .collect(),
+                ),
+                _ => Some(Vec::new()),
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn thir_expr_is_stdlib_reflect_alias(
+    hir: &zutai_hir::HirFile,
+    file: &zutai_thir::ThirFile,
+    expr: zutai_thir::ThirExprId,
+    fields: &[&str],
+    seen_bindings: &mut FxHashSet<zutai_hir::BindingId>,
+) -> bool {
+    if stdlib_module_field(
+        hir,
+        file.expr_arena[expr].source,
+        "reflect",
+        fields,
+        &mut FxHashSet::default(),
+    )
+    .is_some()
+    {
+        return true;
+    }
+    match &file.expr_arena[expr].kind {
+        zutai_thir::ThirExprKind::BindingRef { binding, .. } => {
+            if seen_bindings.insert(*binding) {
+                for body in thir_decl_exprs(file, *binding) {
+                    if thir_expr_is_stdlib_reflect_alias(hir, file, body, fields, seen_bindings) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
     }
 }
 
@@ -734,6 +876,138 @@ mod tests {
             "{:?}",
             analysis.diagnostics
         );
+    }
+
+    #[test]
+    fn stdlib_list_import_resolves_without_base() {
+        let analysis = analyze(
+            "l ::= import stdlib.list;\n\
+             c ::= import stdlib.cmp;\n\
+             l.sum (l.take 3 (l.sortBy c.compareInt {3; 1; 2; 4;})) + l.product {2; 3;}",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_data_import_resolves_without_base() {
+        let analysis = analyze(
+            "d ::= import stdlib.data;\n\
+             value ::= d.record { d.fieldOf \"port\" (d.int 8080); };\n\
+             match d.field \"port\" value { | #ok { value = found; } => d.asInt found; | #err { error = error; } => #err { error = error; }; }",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_validate_import_resolves_without_base() {
+        let analysis = analyze(
+            "v ::= import stdlib.validate;\n\
+             length (v.errors (v.map3 (\\a b c. a + b + c) (v.valid 1) (v.intRange \"x\" 0 10 20) (v.required \"name\" (#none))))",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_config_import_resolves_and_overlay_alias_typechecks() {
+        let analysis = analyze(
+            "cfg ::= import stdlib.config;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             base :: Server = { host = \"127.0.0.1\"; port = 8080; };\n\
+             (cfg.overlay { port = 9090; } base).port",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn destructured_stdlib_config_overlay_shadows_builtin_and_typechecks() {
+        let analysis = analyze(
+            "{ overlay; } ::= import stdlib.config;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             base :: Server = { host = \"127.0.0.1\"; port = 8080; };\n\
+             (overlay { port = 9090; } base).port",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors(), "{:?}", analysis.diagnostics);
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn stdlib_reflect_import_resolves_without_base() {
+        let analysis = analyze(
+            "refl ::= import stdlib.reflect;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             length ((refl.schema Server).fields ?? {;})",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+        assert!(analysis.reflection_builtin_program().is_some());
+        assert!(analysis.aot_reflection_program().is_some());
+    }
+
+    #[test]
+    fn destructured_stdlib_reflect_alias_use_triggers_reflection_gate() {
+        let analysis = analyze(
+            "{ schema; } ::= import stdlib.reflect;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             length ((schema Server).fields ?? {;})",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.reflection_builtin_program().is_some());
+        assert!(analysis.aot_reflection_program().is_some());
+    }
+
+    #[test]
+    fn unused_destructured_stdlib_reflect_import_does_not_trip_backend_gate() {
+        let analysis = analyze("{ schema; } ::= import stdlib.reflect;\n1");
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.reflection_builtin_program().is_none());
+        assert!(analysis.aot_reflection_program().is_none());
+    }
+
+    #[test]
+    fn unused_stdlib_config_and_reflect_imports_do_not_trip_backend_gates() {
+        let analysis = analyze("cfg ::= import stdlib.config;\nrefl ::= import stdlib.reflect;\n1");
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(analysis.config_overlay_builtin_program().is_none());
+        assert!(analysis.reflection_builtin_program().is_none());
+        assert!(analysis.aot_reflection_program().is_none());
     }
 
     #[test]

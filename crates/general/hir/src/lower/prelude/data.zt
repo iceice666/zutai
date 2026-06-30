@@ -1,0 +1,84 @@
+-- Canonical source for first-order Data helpers.
+-- Explicit import only: `d ::= import stdlib.data`; these names are not ambient.
+r ::= import stdlib.result;
+DataField :: type { name : Text; value : Data; };
+Data :: type {
+  #bool : { value : Bool; };
+  #int : { value : Int; };
+  #float : { value : Float; };
+  #text : { value : Text; };
+  #atom : { value : Text; };
+  #list : { items : List Data; };
+  #record : { fields : List DataField; };
+  #tagged : { payload : Data; tag : Text; };
+};
+DecodeError :: type {
+  #expected : { expected : Text; actual : Text; };
+  #missingField : { name : Text; };
+  #indexOutOfBounds : { index : Int; };
+  #custom : { message : Text; };
+};
+Result :: <E, A> type r.Result E A;
+bool :: Bool -> Data
+  = value => #bool { value = value; };
+int :: Int -> Data
+  = value => #int { value = value; };
+float :: Float -> Data
+  = value => #float { value = value; };
+text :: Text -> Data
+  = value => #text { value = value; };
+atom :: Text -> Data
+  = value => #atom { value = value; };
+list :: List Data -> Data
+  = items => #list { items = items; };
+record :: List DataField -> Data
+  = fields => #record { fields = fields; };
+tagged :: Text -> Data -> Data
+  = tag payload => #tagged { tag = tag; payload = payload; };
+fieldOf :: Text -> Data -> DataField
+  = name value => { name = name; value = value; };
+kind :: Data -> Text
+  = data => match data { | #bool { value = _; } => "bool"; | #int { value = _; } => "int"; | #float { value = _; } => "float"; | #text { value = _; } => "text"; | #atom { value = _; } => "atom"; | #list { items = _; } => "list"; | #record { fields = _; } => "record"; | #tagged { tag = _; payload = _; } => "tagged"; };
+expectedError :: Text -> Data -> DecodeError
+  = name data => #expected { expected = name; actual = kind data; };
+missingFieldError :: Text -> DecodeError
+  = name => #missingField { name = name; };
+indexOutOfBoundsError :: Int -> DecodeError
+  = index => #indexOutOfBounds { index = index; };
+expected :: <A> Text -> Data -> Result DecodeError A
+  = name data => #err { error = expectedError name data; };
+asBool :: Data -> Result DecodeError Bool
+  = data => match data { | #bool { value = value; } => #ok { value = value; }; | _ => expected "bool" data; };
+asInt :: Data -> Result DecodeError Int
+  = data => match data { | #int { value = value; } => #ok { value = value; }; | _ => expected "int" data; };
+asFloat :: Data -> Result DecodeError Float
+  = data => match data { | #float { value = value; } => #ok { value = value; }; | _ => expected "float" data; };
+asText :: Data -> Result DecodeError Text
+  = data => match data { | #text { value = value; } => #ok { value = value; }; | _ => expected "text" data; };
+asAtom :: Data -> Result DecodeError Text
+  = data => match data { | #atom { value = value; } => #ok { value = value; }; | _ => expected "atom" data; };
+asList :: Data -> Result DecodeError (List Data)
+  = data => match data { | #list { items = items; } => #ok { value = items; }; | _ => expected "list" data; };
+asRecord :: Data -> Result DecodeError (List DataField)
+  = data => match data { | #record { fields = fields; } => #ok { value = fields; }; | _ => expected "record" data; };
+asTagged :: Data -> Result DecodeError { tag : Text; payload : Data; }
+  = data => match data { | #tagged { tag = tag; payload = payload; } => #ok { value = { tag = tag; payload = payload; }; }; | _ => expected "tagged" data; };
+findField :: Text -> List DataField -> Data?
+  = name fields => match fields { | {;} => #none; | {field; ...rest} => if field.name == name then #some (field.value) else findField name rest; };
+field :: Text -> Data -> Result DecodeError Data
+  = name data => match asRecord data { | #err { error = error; } => #err { error = error; }; | #ok { value = fields; } => match findField name fields { | #none => #err { error = missingFieldError name; }; | #some (value) => #ok { value = value; }; }; };
+fieldMaybe :: Text -> Data -> Result DecodeError (Data?)
+  = name data => match asRecord data { | #err { error = error; } => #err { error = error; }; | #ok { value = fields; } => match findField name fields { | #none => #ok { value = #none; }; | #some (value) => #ok { value = #some (value); }; }; };
+atList :: Int -> List Data -> Result DecodeError Data
+  = index items => if index < 0 then #err { error = indexOutOfBoundsError index; } else match items { | {;} => #err { error = indexOutOfBoundsError index; }; | {head; ...tail} => if index == 0 then #ok { value = head; } else atList (index - 1) tail; };
+at :: Int -> Data -> Result DecodeError Data
+  = index data => match asList data { | #err { error = error; } => #err { error = error; }; | #ok { value = items; } => atList index items; };
+tag :: Data -> Result DecodeError Text
+  = data => match asTagged data { | #err { error = error; } => #err { error = error; }; | #ok { value = parts; } => #ok { value = parts.tag; }; };
+payload :: Data -> Result DecodeError Data
+  = data => match asTagged data { | #err { error = error; } => #err { error = error; }; | #ok { value = parts; } => #ok { value = parts.payload; }; };
+mapListItems :: <A> (Data -> Result DecodeError A) -> List Data -> Result DecodeError (List A)
+  = f items => match items { | {;} => #ok { value = listEmpty (); }; | {head; ...tail} => match f head { | #err { error = error; } => #err { error = error; }; | #ok { value = value; } => match mapListItems f tail { | #err { error = error; } => #err { error = error; }; | #ok { value = values; } => #ok { value = listCons value values; }; }; }; };
+mapList :: <A> (Data -> Result DecodeError A) -> Data -> Result DecodeError (List A)
+  = f data => match asList data { | #err { error = error; } => #err { error = error; }; | #ok { value = items; } => mapListItems f items; };
+{ Data = Data; DataField = DataField; DecodeError = DecodeError; Result = Result; bool = bool; int = int; float = float; text = text; atom = atom; list = list; record = record; tagged = tagged; fieldOf = fieldOf; kind = kind; asBool = asBool; asInt = asInt; asFloat = asFloat; asText = asText; asAtom = asAtom; asList = asList; asRecord = asRecord; asTagged = asTagged; field = field; field? = fieldMaybe; at = at; tag = tag; payload = payload; mapList = mapList; }

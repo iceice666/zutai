@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-28)
+## Status (2026-06-30)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
 "Post-V3 readiness audit"). v1 semantics are complete, and native support is
@@ -24,15 +24,19 @@ B (small function prelude), C (minimal `List` verbs), D (Optional helpers),
 E (Result and Validation helpers), F (Numeric helpers), G (Text helpers), and
 H (Comparator helpers) **landed 2026-06-28** (see `docs/ARCHIVED.md` for the
 per-slice summaries). This is stdlib work, not Track 2, and does not reopen any
-core language boundary. Track 2 remains demand-gated.
+core language boundary. The 2026-06-30 explicit stdlib expansion added
+`stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
+`stdlib.validate` as embedded opt-in modules; see `docs/ARCHIVED.md` for the
+milestone summary. Track 2 remains demand-gated.
 
 ## Source prelude / stdlib status
 
 _No active source-prelude/stdlib usability milestone is scoped._ Slices B-H
-landed 2026-06-28 and are archived in `docs/ARCHIVED.md`: small function
-helpers, minimal ambient/importable `List` verbs, and explicit
-`stdlib.optional`, `stdlib.result`, `stdlib.num`, `stdlib.text`, and
-`stdlib.cmp`.
+landed 2026-06-28 and the explicit stdlib expansion landed 2026-06-30; both are
+archived in `docs/ARCHIVED.md`: small function helpers, minimal
+ambient/importable `List` verbs, explicit `stdlib.optional`, `stdlib.result`,
+`stdlib.num`, `stdlib.text`, `stdlib.cmp`, and the explicit `stdlib.config`,
+`stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate` modules.
 
 Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic

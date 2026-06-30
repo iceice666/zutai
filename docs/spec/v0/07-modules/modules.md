@@ -63,7 +63,8 @@ filesystem and is not subject to the path-relative subtree confinement that
 quoted-string imports use. An unknown `<name>` is a precise diagnostic
 (`unknown stdlib module: stdlib.<name>`). Currently provided embedded modules
 are `stdlib.stream`, `stdlib.prelude`, `stdlib.optional`, `stdlib.result`,
-`stdlib.num`, `stdlib.text`, and `stdlib.cmp`.
+`stdlib.num`, `stdlib.text`, `stdlib.cmp`, `stdlib.config`,
+`stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate`.
 
 ### Selective binding (destructuring import)
 

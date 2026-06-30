@@ -5,8 +5,9 @@
 Accepted and implemented through the current source-prelude / stdlib-H baseline:
 ambient `stream.zt` and `prelude.zt` are live, and the explicit
 `stdlib.optional`, `stdlib.result`, `stdlib.num`, `stdlib.text`, and
-`stdlib.cmp` modules are shipped. Folding config/reflection into source stdlib
-modules remains deferred; see *Build order* below.
+`stdlib.cmp` modules are shipped. The explicit `stdlib.config`,
+`stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate` modules
+are also embedded and importable; none of those larger surfaces becomes ambient.
 
 The prelude is the set of names in scope in every `.zt` module without an
 explicit `import`. Its source layer is deliberately small; its intrinsic layer
@@ -88,11 +89,12 @@ Rationale:
 Excluded from the prelude on purpose:
 
 - `foldr`, `zip`, `flatten`, `reverse`, `take`, `drop`, search/sort/grouping
-  helpers, and numeric aggregates remain explicit `list` work.
-- `text`, `num`, `optional`, `result`, and `cmp` are explicit imports.
-- Future `reflect`/`config` source modules should also be explicit. The current
-  intrinsic compatibility names are not shipped `stdlib.reflect` or
-  `stdlib.config` modules.
+  helpers, and numeric aggregates remain explicit `stdlib.list` work.
+- `text`, `num`, `optional`, `result`, `cmp`, `data`, and `validate` are
+  explicit imports.
+- `reflect` and `config` have explicit modules, but the ambient intrinsic
+  compatibility names remain compiler-backed gates rather than source-prelude
+  helpers.
 
 Naming note: the list-specialized `map`/`fold` may later become the
 witness-dispatched `Functor`/`Foldable` methods once v1 constraints land
@@ -166,11 +168,12 @@ is the module export; the ambient path reads only the declarations). Stream
 `map`/`filter`/`fold`/`uncons` are intentionally qualified-only to keep the
 ambient names bound to `List`.
 
-The source prelude **must not** add aliases or wrappers for backend-gated
-reflection/config intrinsics. `fields`/`variants`/`schema`/`witness` and
+The ambient source prelude **must not** add aliases or wrappers for backend-gated
+reflection/config intrinsics. `stdlib.reflect` and `stdlib.config` now provide
+explicit wrappers, and the compiler gates recognize their qualified/destructured
+aliases. The unqualified compatibility names `fields`/`variants`/`schema` and
 `overlay`/`overlayDeep` keep their existing intrinsic fold-or-reject / AOT-gate
-behavior until a future `stdlib.reflect` or `stdlib.config` source module is
-scoped.
+behavior. `witness C @T` remains syntax, not a first-class function.
 
 ## Error-handling boundary
 
@@ -219,7 +222,8 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
 7. `cmp`. *(landed as slice H: explicit import only via `stdlib.cmp`; concrete
    `compareInt`/`compareFloat`/`compareText` and comparator combinators are
    source definitions; generic witness-dispatched `compare` remains deferred)*
-8. Fold `config`/`reflect` under the import scheme. *(deferred: today these
-   names remain intrinsic compatibility surfaces; do not claim
-   `stdlib.config`/`stdlib.reflect` modules until embedded source modules
-   exist.)*
+8. Larger explicit stdlib modules. *(landed 2026-06-30: `stdlib.config` and
+   `stdlib.reflect` wrap the existing compiler-gated intrinsics without becoming
+   ambient; `stdlib.list`, `stdlib.data`, and `stdlib.validate` add the opt-in
+   toolbox/data/validation surfaces over existing source features and bridge
+   intrinsics.)*

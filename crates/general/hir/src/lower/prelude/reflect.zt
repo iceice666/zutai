@@ -1,0 +1,14 @@
+-- Canonical source for reflection helpers.
+-- Explicit import only: `refl ::= import stdlib.reflect`; these names are not ambient.
+-- `witness C @T` stays syntax, not a first-class record field.
+SchemaKind :: type { #record; #union; };
+SchemaField :: type { name : Text; type : Text; optional : Bool; };
+SchemaVariant :: type { name : Text; fields : List SchemaField; };
+Schema :: type { kind : SchemaKind; fields? : List SchemaField; variants? : List SchemaVariant; };
+fieldsReflect :: Type -> List { name : Text; Type : Type; optional : Bool; }
+  = ty => fields ty;
+variantsReflect :: Type -> List { name : Text; fields : List { name : Text; Type : Type; optional : Bool; }; }
+  = ty => variants ty;
+schemaReflect :: Type -> Schema
+  = ty => schema ty;
+{ SchemaKind = SchemaKind; SchemaField = SchemaField; SchemaVariant = SchemaVariant; Schema = Schema; fields = fieldsReflect; variants = variantsReflect; schema = schemaReflect; }

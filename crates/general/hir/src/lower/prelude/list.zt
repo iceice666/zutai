@@ -1,0 +1,78 @@
+-- Canonical source for expanded List helpers.
+-- Explicit import only: `l ::= import stdlib.list`; these names are not ambient.
+c ::= import stdlib.cmp;
+empty :: <A> Unit -> List A
+  = _ => listEmpty ();
+singleton :: <A> A -> List A
+  = value => listCons value (listEmpty ());
+cons :: <A> A -> List A -> List A
+  = head tail => listCons head tail;
+fold :: <A, B> (B -> A -> B) -> B -> List A -> B
+  = f z xs => listFoldlStrict f z xs;
+foldl' :: <A, B> (B -> A -> B) -> B -> List A -> B
+  = f z xs => listFoldlStrict f z xs;
+foldr :: <A, B> (A -> B -> B) -> B -> List A -> B
+  = f z xs => match xs { | {;} => z; | {h; ...t} => f h (foldr f z t); };
+uncons :: <A> List A -> { #none; #some : { head : A; tail : List A; }; }
+  = xs => match xs { | {;} => #none; | {h; ...t} => #some { head = h; tail = t; }; };
+head? :: <A> List A -> A?
+  = xs => match uncons xs { | #none => #none; | #some { head = h; tail = _; } => #some (h); };
+tail? :: <A> List A -> (List A)?
+  = xs => match uncons xs { | #none => #none; | #some { head = _; tail = t; } => #some (t); };
+length :: <A> List A -> Int
+  = xs => fold (\acc _. acc + 1) 0 xs;
+append :: <A> List A -> List A -> List A
+  = xs ys => match xs { | {;} => ys; | {h; ...t} => listCons h (append t ys); };
+map :: <A, B> (A -> B) -> List A -> List B
+  = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (map f t); };
+filter :: <A> (A -> Bool) -> List A -> List A
+  = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then listCons h (filter p t) else filter p t; };
+reverse :: <A> List A -> List A
+  = xs => fold (\acc x. listCons x acc) (listEmpty ()) xs;
+flatten :: <A> List (List A) -> List A
+  = xs => foldr append (listEmpty ()) xs;
+zip :: <A, B> List A -> List B -> List (A, B)
+  = xs ys => match xs { | {;} => listEmpty (); | {x; ...xt} => match ys { | {;} => listEmpty (); | {y; ...yt} => listCons (x, y) (zip xt yt); }; };
+zipWith :: <A, B, C> (A -> B -> C) -> List A -> List B -> List C
+  = f xs ys => match xs { | {;} => listEmpty (); | {x; ...xt} => match ys { | {;} => listEmpty (); | {y; ...yt} => listCons (f x y) (zipWith f xt yt); }; };
+enumerateFrom :: <A> Int -> List A -> List (Int, A)
+  = index xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (index, h) (enumerateFrom (index + 1) t); };
+enumerate :: <A> List A -> List (Int, A)
+  = xs => enumerateFrom 0 xs;
+take :: <A> Int -> List A -> List A
+  = count xs => if count < 1 then listEmpty () else match xs { | {;} => listEmpty (); | {h; ...t} => listCons h (take (count - 1) t); };
+drop :: <A> Int -> List A -> List A
+  = count xs => if count < 1 then xs else match xs { | {;} => listEmpty (); | {_h; ...t} => drop (count - 1) t; };
+takeWhile :: <A> (A -> Bool) -> List A -> List A
+  = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then listCons h (takeWhile p t) else listEmpty (); };
+dropWhile :: <A> (A -> Bool) -> List A -> List A
+  = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then dropWhile p t else xs; };
+span :: <A> (A -> Bool) -> List A -> { prefix : List A; suffix : List A; }
+  = p xs => { prefix = takeWhile p xs; suffix = dropWhile p xs; };
+any :: <A> (A -> Bool) -> List A -> Bool
+  = p xs => match xs { | {;} => false; | {h; ...t} => if p h then true else any p t; };
+all :: <A> (A -> Bool) -> List A -> Bool
+  = p xs => match xs { | {;} => true; | {h; ...t} => if p h then all p t else false; };
+find :: <A> (A -> Bool) -> List A -> A?
+  = p xs => match xs { | {;} => #none; | {h; ...t} => if p h then #some (h) else find p t; };
+partition :: <A> (A -> Bool) -> List A -> { yes : List A; no : List A; }
+  = p xs => match xs { | {;} => { yes = listEmpty (); no = listEmpty (); }; | {h; ...t} => [ rest := partition p t; if p h then { yes = listCons h rest.yes; no = rest.no; } else { yes = rest.yes; no = listCons h rest.no; } ]; };
+range :: Int -> Int -> List Int
+  = start stop => if start >= stop then listEmpty () else listCons start (range (start + 1) stop);
+sum :: List Int -> Int
+  = xs => fold (\acc x. acc + x) 0 xs;
+product :: List Int -> Int
+  = xs => fold (\acc x. acc * x) 1 xs;
+insertBy :: <A> (A -> A -> c.Ordering) -> A -> List A -> List A
+  = compare value xs => match xs { | {;} => listCons value (listEmpty ()); | {h; ...t} => if c.isGt (compare h value) then listCons value xs else listCons h (insertBy compare value t); };
+sortBy :: <A> (A -> A -> c.Ordering) -> List A -> List A
+  = compare xs => fold (\acc x. insertBy compare x acc) (listEmpty ()) xs;
+takeRun :: <A> (A -> A -> Bool) -> A -> List A -> List A
+  = same first xs => match xs { | {;} => listEmpty (); | {h; ...t} => if same first h then listCons h (takeRun same first t) else listEmpty (); };
+dropRun :: <A> (A -> A -> Bool) -> A -> List A -> List A
+  = same first xs => match xs { | {;} => listEmpty (); | {h; ...t} => if same first h then dropRun same first t else xs; };
+groupBy :: <A> (A -> A -> Bool) -> List A -> List (List A)
+  = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (listCons h (takeRun same h t)) (groupBy same (dropRun same h t)); };
+dedupBy :: <A> (A -> A -> Bool) -> List A -> List A
+  = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons h (dedupBy same (dropRun same h t)); };
+{ empty = empty; singleton = singleton; cons = cons; fold = fold; foldl' = foldl'; foldr = foldr; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; reverse = reverse; flatten = flatten; zip = zip; zipWith = zipWith; enumerate = enumerate; take = take; drop = drop; takeWhile = takeWhile; dropWhile = dropWhile; span = span; any = any; all = all; find = find; partition = partition; range = range; sum = sum; product = product; sortBy = sortBy; groupBy = groupBy; dedupBy = dedupBy; }

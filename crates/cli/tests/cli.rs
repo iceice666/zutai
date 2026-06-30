@@ -360,6 +360,141 @@ fn compile_stdlib_text_cmp_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_LIST_TOOLBOX_SRC: &str = "l ::= import stdlib.list;\n\
+c ::= import stdlib.cmp;\n\
+sorted ::= l.sortBy c.compareInt {3; 1; 2; 2; 3;};\n\
+unique ::= l.dedupBy (\\a b. a == b) sorted;\n\
+l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique\n";
+
+#[test]
+fn compile_stdlib_list_toolbox_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_list_toolbox", STDLIB_LIST_TOOLBOX_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_list_toolbox_oracle.zt",
+        STDLIB_LIST_TOOLBOX_SRC,
+    );
+    assert_eq!(native.trim(), "45");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_DATA_DECODE_SRC: &str = "d ::= import stdlib.data;\n\
+value ::= d.record { d.fieldOf \"port\" (d.int 8080); d.fieldOf \"items\" (d.list { d.int 1; d.int 2; }); };\n\
+port ::= match d.field \"port\" value { | #ok { value = found; } => match d.asInt found { | #ok { value = n; } => n; | #err { error = _; } => 0; }; | #err { error = _; } => 0; };\n\
+missing ::= match d.field \"missing\" value { | #ok { value = _; } => 0; | #err { error = #missingField { name = _; }; } => 5; | #err { error = _; } => 0; };\n\
+items ::= match d.field \"items\" value { | #ok { value = found; } => match d.mapList d.asInt found { | #ok { value = xs; } => fold (\\acc x. acc + x) 0 xs; | #err { error = _; } => 0; }; | #err { error = _; } => 0; };\n\
+port + missing + items\n";
+
+#[test]
+fn compile_stdlib_data_decode_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_data_decode", STDLIB_DATA_DECODE_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_data_decode_oracle.zt",
+        STDLIB_DATA_DECODE_SRC,
+    );
+    assert_eq!(native.trim(), "8088");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_VALIDATE_SRC: &str = "v ::= import stdlib.validate;\n\
+missing :: Text? = #none;\n\
+checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\
+asResult ::= v.toResult checked;\n\
+length (v.errors checked) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }\n";
+
+#[test]
+fn compile_stdlib_validate_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_validate", STDLIB_VALIDATE_SRC);
+    let interp = run_stdout("cli_test_stdlib_validate_oracle.zt", STDLIB_VALIDATE_SRC);
+    assert_eq!(native.trim(), "4");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_CONFIG_ALIAS_SRC: &str = "cfg ::= import stdlib.config;\n\
+{ overlayDeep; } ::= import stdlib.config;\n\
+Server :: type { host : Text; port : Int; nested : { tls : Bool; }; };\n\
+base :: Server = { host = \"127.0.0.1\"; port = 8080; nested = { tls = false; }; };\n\
+shallow ::= cfg.overlay { port = 9090; } base;\n\
+deep ::= overlayDeep { nested = { tls = true; }; } shallow;\n\
+deep.port + if deep.nested.tls then 1 else 0\n";
+
+#[test]
+fn compile_stdlib_config_alias_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_config_alias", STDLIB_CONFIG_ALIAS_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_config_alias_oracle.zt",
+        STDLIB_CONFIG_ALIAS_SRC,
+    );
+    assert_eq!(native.trim(), "9091");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_REFLECT_SCHEMA_SRC: &str = "refl ::= import stdlib.reflect;\n\
+Server :: type { host : Text; port : Int; };\n\
+Action :: type { #quit; #spawn : { command : Text; }; };\n\
+length ((refl.schema Server).fields ?? {;}) + length (refl.variants Action)\n";
+
+#[test]
+fn compile_stdlib_reflect_schema_folds_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_reflect_schema", STDLIB_REFLECT_SCHEMA_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_reflect_schema_oracle.zt",
+        STDLIB_REFLECT_SCHEMA_SRC,
+    );
+    assert_eq!(native.trim(), "4");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_CONFIG_REFLECT_UNUSED_SRC: &str =
+    "cfg ::= import stdlib.config;\nrefl ::= import stdlib.reflect;\n1\n";
+
+#[test]
+fn compile_unused_stdlib_config_reflect_imports_do_not_reject() {
+    let native = compile_bin_stdout(
+        "cli_test_stdlib_config_reflect_unused",
+        STDLIB_CONFIG_REFLECT_UNUSED_SRC,
+    );
+    let interp = run_stdout(
+        "cli_test_stdlib_config_reflect_unused_oracle.zt",
+        STDLIB_CONFIG_REFLECT_UNUSED_SRC,
+    );
+    assert_eq!(native.trim(), "1");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_stdlib_expansion_emits_llvm_without_native_toolchain() {
+    for (name, src) in [
+        ("stdlib_list_toolbox_llvm.zt", STDLIB_LIST_TOOLBOX_SRC),
+        ("stdlib_data_decode_llvm.zt", STDLIB_DATA_DECODE_SRC),
+        ("stdlib_validate_llvm.zt", STDLIB_VALIDATE_SRC),
+        ("stdlib_config_alias_llvm.zt", STDLIB_CONFIG_ALIAS_SRC),
+        ("stdlib_reflect_schema_llvm.zt", STDLIB_REFLECT_SCHEMA_SRC),
+        (
+            "stdlib_config_reflect_unused_llvm.zt",
+            STDLIB_CONFIG_REFLECT_UNUSED_SRC,
+        ),
+    ] {
+        let llvm = compile_stdout(name, src);
+        assert!(llvm.contains("define i32 @main"), "{name}: {llvm}");
+    }
+}
+
+#[test]
+fn compile_stdlib_reflect_fields_alias_type_result_is_rejected() {
+    let path = write_tmp(
+        "cli_test_stdlib_reflect_fields_alias_type.zt",
+        "{ fields; } ::= import stdlib.reflect;\n\
+         Server :: type { host : Text; };\n\
+         fields Server\n",
+    );
+    cli()
+        .arg("compile")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
 // Release slice R0: one CLI acceptance pack for the shipped V3 + stdlib-H
 // envelope. It intentionally crosses `check`, interpreter `run`, and native
 // `compile --emit=bin`: ambient source preludes, explicit stdlib modules, codata

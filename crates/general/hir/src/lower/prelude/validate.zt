@@ -1,0 +1,44 @@
+-- Canonical source for validation helpers.
+-- Explicit import only: `v ::= import stdlib.validate`; these names are not ambient.
+r ::= import stdlib.result;
+ValidationError :: type {
+  #required : { field : Text; };
+  #invalid : { field : Text; message : Text; };
+  #outOfRange : { field : Text; min : Int; max : Int; actual : Int; };
+  #custom : { message : Text; };
+};
+Validation :: <E, A> type r.Validation E A;
+Result :: <E, A> type r.Result E A;
+valid :: <A> A -> Validation ValidationError A
+  = value => #valid { value = value; };
+invalid :: <A> List ValidationError -> Validation ValidationError A
+  = errs => #invalid { errors = errs; };
+errors :: <A> Validation ValidationError A -> List ValidationError
+  = validation => match validation { | #valid { value = _; } => listEmpty (); | #invalid { errors = errs; } => errs; };
+map :: <A, B> (A -> B) -> Validation ValidationError A -> Validation ValidationError B
+  = f validation => match validation { | #valid { value = value; } => #valid { value = f value; }; | #invalid { errors = errs; } => #invalid { errors = errs; }; };
+map2 :: <A, B, C> (A -> B -> C) -> Validation ValidationError A -> Validation ValidationError B -> Validation ValidationError C
+  = f left right => match left { | #valid { value = a; } => match right { | #valid { value = b; } => #valid { value = f a b; }; | #invalid { errors = rightErrors; } => #invalid { errors = rightErrors; }; }; | #invalid { errors = leftErrors; } => match right { | #valid { value = _; } => #invalid { errors = leftErrors; }; | #invalid { errors = rightErrors; } => #invalid { errors = append leftErrors rightErrors; }; }; };
+map3 :: <A, B, C, D> (A -> B -> C -> D) -> Validation ValidationError A -> Validation ValidationError B -> Validation ValidationError C -> Validation ValidationError D
+  = f a b c => map2 (\g value. g value) (map2 f a b) c;
+required :: <A> Text -> A? -> Validation ValidationError A
+  = field value => match value { | #none => invalid { #required { field = field; }; }; | #some (actual) => valid actual; };
+satisfy :: <A> Text -> Text -> (A -> Bool) -> A -> Validation ValidationError A
+  = field message predicate value => if predicate value then valid value else invalid { #invalid { field = field; message = message; }; };
+nonEmptyText :: Text -> Text -> Validation ValidationError Text
+  = field value => satisfy field "must not be empty" (\text. __textLength text > 0) value;
+intRange :: Text -> Int -> Int -> Int -> Validation ValidationError Int
+  = field min max value => if value < min then invalid { #outOfRange { field = field; min = min; max = max; actual = value; }; } else (if value > max then invalid { #outOfRange { field = field; min = min; max = max; actual = value; }; } else valid value);
+containsText :: Text -> List Text -> Bool
+  = needle values => match values { | {;} => false; | {head; ...tail} => if head == needle then true else containsText needle tail; };
+containsInt :: Int -> List Int -> Bool
+  = needle values => match values { | {;} => false; | {head; ...tail} => if head == needle then true else containsInt needle tail; };
+oneOfText :: Text -> List Text -> Text -> Validation ValidationError Text
+  = field choices value => satisfy field "must be one of the allowed text values" (\candidate. containsText candidate choices) value;
+oneOfInt :: Text -> List Int -> Int -> Validation ValidationError Int
+  = field choices value => satisfy field "must be one of the allowed int values" (\candidate. containsInt candidate choices) value;
+toResult :: <A> Validation ValidationError A -> Result (List ValidationError) A
+  = validation => match validation { | #valid { value = value; } => #ok { value = value; }; | #invalid { errors = errs; } => #err { error = errs; }; };
+fromResult :: <A> Result (List ValidationError) A -> Validation ValidationError A
+  = result => match result { | #ok { value = value; } => #valid { value = value; }; | #err { error = errs; } => #invalid { errors = errs; }; };
+{ ValidationError = ValidationError; Validation = Validation; Result = Result; valid = valid; invalid = invalid; errors = errors; map = map; map2 = map2; map3 = map3; required = required; satisfy = satisfy; nonEmptyText = nonEmptyText; intRange = intRange; oneOfText = oneOfText; oneOfInt = oneOfInt; toResult = toResult; fromResult = fromResult; }

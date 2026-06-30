@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for post-v0 library design.
+Accepted and implemented as an explicit embedded source module:
+`cfg ::= import stdlib.config`. The ambient compatibility names `overlay` and
+`overlayDeep` still exist, but nothing from `stdlib.config` becomes ambient.
 
 This module supports layered configuration without making merge behavior part of core record syntax.
 
@@ -21,13 +23,28 @@ Post-v0 record update belongs to the core expression language. Config overlay be
 The config API uses ordinary standard-library bindings, not keywords:
 
 ```zt
-overlay
-overlayDeep
-Patch
-DeepPatch
+cfg ::= import stdlib.config;
+
+cfg.overlay
+cfg.overlayDeep
+cfg.Patch
+cfg.DeepPatch
 ```
 
 `Patch` and `DeepPatch` are type-level schema utilities. They may be compiler-backed type constructors if the implementation needs that, but they should still be exposed as library names.
+
+Module-qualified and destructured aliases are recognized by THIR call lowering:
+
+```zt
+{ overlayDeep; } ::= import stdlib.config;
+
+overlayDeep { nested = { tls = true; }; } base
+```
+
+Supported full applications with record-literal patches lower exactly like the
+ambient builtin forms before TLC/Dataflow lowering. Partial overlay values,
+unsupported patch shapes, and unsupported optional nested-record deep overlays
+remain backend-gated.
 
 ## Shallow overlay
 

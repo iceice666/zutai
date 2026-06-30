@@ -68,7 +68,12 @@ pub fn export_type_value(file: &ThirFile, tid: TypeId) -> Result<ImportedType, E
                 });
             }
             let mut seen = FxHashSet::default();
-            let body = export(file, &aliases, body_ty, &mut seen)?;
+            seen.insert(binding);
+            let mut subst = FxHashMap::default();
+            for param in params {
+                subst.insert(*param, ImportedType::TyVar(param.0 & !TYVAR_INFER_TAG));
+            }
+            let body = export_typecon_body(file, &aliases, body_ty, &mut seen, &subst)?;
             let param_ids = params
                 .iter()
                 .map(|p| p.0 & !TYVAR_INFER_TAG)
@@ -87,6 +92,150 @@ pub fn export_type_value(file: &ThirFile, tid: TypeId) -> Result<ImportedType, E
         }
     }
     export_type(file, tid)
+}
+
+fn export_typecon_body(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    ty: TypeId,
+    seen: &mut FxHashSet<BindingId>,
+    subst: &FxHashMap<BindingId, ImportedType>,
+) -> Result<ImportedType, ExportUnsupported> {
+    match file.type_arena[ty.0 as usize].kind.clone() {
+        TypeKind::TypeVar(binding) => subst
+            .get(&binding)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| export(file, aliases, ty, &mut FxHashSet::default())),
+        TypeKind::AliasApply { binding, args } if aliases.params.contains_key(&binding) => {
+            let exported_args = args
+                .iter()
+                .map(|arg| export_typecon_body(file, aliases, *arg, seen, subst))
+                .collect::<Result<Vec<_>, _>>()?;
+            if seen.contains(&binding) {
+                let ctor = file.binding_names[binding.0 as usize].clone();
+                return Ok(ImportedType::ConApply {
+                    ctor,
+                    args: exported_args,
+                });
+            }
+            let Some(params) = aliases.params.get(&binding) else {
+                return Ok(ImportedType::Unknown);
+            };
+            let Some(body) = aliases.bodies.get(&binding).copied() else {
+                return Ok(ImportedType::Unknown);
+            };
+            let mut nested_subst = subst.clone();
+            for (param, arg) in params.iter().copied().zip(exported_args) {
+                nested_subst.insert(param, arg);
+            }
+            seen.insert(binding);
+            let result = export_typecon_body(file, aliases, body, seen, &nested_subst);
+            seen.remove(&binding);
+            result
+        }
+        TypeKind::Alias(binding) => {
+            if !seen.insert(binding) {
+                return Ok(ImportedType::Unknown);
+            }
+            let result = aliases
+                .bodies
+                .get(&binding)
+                .copied()
+                .map(|body| export_typecon_body(file, aliases, body, seen, subst))
+                .unwrap_or_else(|| Ok(ImportedType::Unknown));
+            seen.remove(&binding);
+            result
+        }
+        TypeKind::Bool | TypeKind::True | TypeKind::False => Ok(ImportedType::Bool),
+        TypeKind::Int => Ok(ImportedType::Int),
+        TypeKind::Float => Ok(ImportedType::Float),
+        TypeKind::FixedNum(fw) => Ok(ImportedType::FixedNum(fw)),
+        TypeKind::Text => Ok(ImportedType::Text),
+        TypeKind::Posit(spec) => Ok(ImportedType::Posit(spec)),
+        TypeKind::Opaque(_) => Ok(ImportedType::Unknown),
+        TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
+        TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export_typecon_body(
+            file, aliases, inner, seen, subst,
+        )?))),
+        TypeKind::Optional(inner) => Ok(ImportedType::Optional(Box::new(export_typecon_body(
+            file, aliases, inner, seen, subst,
+        )?))),
+        TypeKind::Maybe(inner) => Ok(ImportedType::Maybe(Box::new(export_typecon_body(
+            file, aliases, inner, seen, subst,
+        )?))),
+        TypeKind::Record(fields, tail) => {
+            if tail != RowTail::Closed {
+                return Err(ExportUnsupported {
+                    reason: "cannot export an open record type across a module boundary",
+                });
+            }
+            fields
+                .iter()
+                .map(|field| {
+                    Ok(ImportedField {
+                        name: field.name.clone(),
+                        optional: field.optional,
+                        ty: export_typecon_body(file, aliases, field.ty, seen, subst)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(ImportedType::Record)
+        }
+        TypeKind::Tuple(items) => items
+            .iter()
+            .map(|item| match item {
+                TypeTupleItem::Named { name, ty, .. } => Ok(ImportedTupleItem::Named {
+                    name: name.clone(),
+                    ty: export_typecon_body(file, aliases, *ty, seen, subst)?,
+                }),
+                TypeTupleItem::Positional(ty) => Ok(ImportedTupleItem::Positional(
+                    export_typecon_body(file, aliases, *ty, seen, subst)?,
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(ImportedType::Tuple),
+        TypeKind::Union(variants, tail) => {
+            if tail != RowTail::Closed {
+                return Err(ExportUnsupported {
+                    reason: "cannot export an open union type across a module boundary",
+                });
+            }
+            variants
+                .iter()
+                .map(|variant| {
+                    Ok(crate::import::ImportedUnionVariant {
+                        name: variant.name.clone(),
+                        payload: variant
+                            .payload
+                            .map(|payload| {
+                                export_typecon_body(file, aliases, payload, seen, subst)
+                                    .map(Box::new)
+                            })
+                            .transpose()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(ImportedType::Union)
+        }
+        TypeKind::InferVar(v) => Ok(ImportedType::TyVar(v | TYVAR_INFER_TAG)),
+        TypeKind::ForAll { body, .. } => export_typecon_body(file, aliases, body, seen, subst),
+        TypeKind::Function { from, to } => Ok(ImportedType::Function {
+            from: Box::new(export_typecon_body(file, aliases, from, seen, subst)?),
+            to: Box::new(export_typecon_body(file, aliases, to, seen, subst)?),
+        }),
+        TypeKind::Type(_) => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
+        TypeKind::AliasApply { .. }
+        | TypeKind::Apply { .. }
+        | TypeKind::Con(_)
+        | TypeKind::Patch { .. } => Ok(ImportedType::Unknown),
+        TypeKind::Effect { .. } | TypeKind::Never => Err(ExportUnsupported {
+            reason: "effect types cannot cross a module boundary in this phase",
+        }),
+        TypeKind::Error => Err(ExportUnsupported {
+            reason: "imported module has an unresolved type",
+        }),
+    }
 }
 
 /// Whether `ty` uses any binding in `params` in type-constructor position — the

@@ -1,7 +1,8 @@
 use super::*;
 
 struct OverlayApply {
-    builtin: HirExprId,
+    builtin: BindingId,
+    source: HirExprId,
     patch: HirExprId,
     deep: bool,
 }
@@ -165,26 +166,113 @@ impl<'hir> Lowerer<'hir> {
         else {
             return None;
         };
-        let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
-            return None;
-        };
-        let binding_info = &self.hir.bindings[binding.0 as usize];
-        if binding_info.kind != BindingKind::BuiltinValue {
-            return None;
-        }
-        match binding_info.name.as_str() {
+        let (binding, source, name) = self.overlay_builtin_or_stdlib_alias(builtin)?;
+        match name {
             "overlay" => Some(OverlayApply {
-                builtin,
+                builtin: binding,
+                source,
                 patch,
                 deep: false,
             }),
             "overlayDeep" => Some(OverlayApply {
-                builtin,
+                builtin: binding,
+                source,
                 patch,
                 deep: true,
             }),
             _ => None,
         }
+    }
+
+    fn overlay_builtin_or_stdlib_alias(
+        &self,
+        expr: HirExprId,
+    ) -> Option<(BindingId, HirExprId, &'static str)> {
+        if let HirExprKind::BindingRef(binding) = self.hir_expr(expr).kind.clone() {
+            let binding_info = &self.hir.bindings[binding.0 as usize];
+            if binding_info.kind == BindingKind::BuiltinValue {
+                return match binding_info.name.as_str() {
+                    "overlay" => Some((binding, expr, "overlay")),
+                    "overlayDeep" => Some((binding, expr, "overlayDeep")),
+                    _ => None,
+                };
+            }
+        }
+        let field = self.stdlib_config_overlay_field(expr, &mut FxHashSet::default())?;
+        let binding = self.builtin_binding(field)?;
+        Some((binding, expr, field))
+    }
+
+    fn stdlib_config_overlay_field(
+        &self,
+        expr: HirExprId,
+        seen: &mut FxHashSet<BindingId>,
+    ) -> Option<&'static str> {
+        match &self.hir_expr(expr).kind {
+            HirExprKind::Access { receiver, field }
+                if matches!(field.as_str(), "overlay" | "overlayDeep") =>
+            {
+                if self.expr_is_stdlib_import(*receiver, "config", seen) {
+                    Some(if field == "overlay" {
+                        "overlay"
+                    } else {
+                        "overlayDeep"
+                    })
+                } else {
+                    None
+                }
+            }
+            HirExprKind::BindingRef(binding) => {
+                if !seen.insert(*binding) {
+                    return None;
+                }
+                let value = self.value_decl_expr(*binding)?;
+                self.stdlib_config_overlay_field(value, seen)
+            }
+            _ => None,
+        }
+    }
+
+    fn expr_is_stdlib_import(
+        &self,
+        expr: HirExprId,
+        module: &str,
+        seen: &mut FxHashSet<BindingId>,
+    ) -> bool {
+        match &self.hir_expr(expr).kind {
+            HirExprKind::Import(zutai_hir::HirImportSource::Path(parts)) => {
+                matches!(parts.as_slice(), [root, name] if root == "stdlib" && name == module)
+            }
+            HirExprKind::BindingRef(binding) => {
+                if !seen.insert(*binding) {
+                    return false;
+                }
+                self.value_decl_expr(*binding)
+                    .is_some_and(|value| self.expr_is_stdlib_import(value, module, seen))
+            }
+            _ => false,
+        }
+    }
+
+    fn value_decl_expr(&self, binding: BindingId) -> Option<HirExprId> {
+        self.hir.decls.iter().find_map(|decl_id| {
+            let decl = self.hir_decl(*decl_id);
+            if decl.binding != binding {
+                return None;
+            }
+            let HirDeclKind::Value { value, .. } = decl.kind else {
+                return None;
+            };
+            Some(value)
+        })
+    }
+
+    fn builtin_binding(&self, name: &str) -> Option<BindingId> {
+        self.hir
+            .bindings
+            .iter()
+            .position(|binding| binding.kind == BindingKind::BuiltinValue && binding.name == name)
+            .map(|index| BindingId(index as u32))
     }
 
     fn lower_overlay_apply_expr(
@@ -197,14 +285,11 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         let OverlayApply {
             builtin,
+            source,
             patch,
             deep,
         } = overlay;
-        let HirExprKind::BindingRef(binding) = self.hir_expr(builtin).kind.clone() else {
-            return self.error_expr(id, span);
-        };
-        let builtin_ref =
-            self.lower_binding_ref(builtin, binding, self.hir_expr(builtin).span, true);
+        let builtin_ref = self.lower_binding_ref(source, builtin, self.hir_expr(source).span, true);
         let base_expr = self.infer_expr(base);
         let target = self.expr(base_expr).ty;
         let patch_ty = self.patch_type(target, deep, span);

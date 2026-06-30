@@ -488,7 +488,8 @@ impl Resolver<'_> {
 /// Resolved from in-binary source so there is no filesystem stdlib root or
 /// install path. `stream` and `prelude` share their source with the ambient
 /// prelude (`zutai_hir::STREAM_MODULE_SRC` / `PRELUDE_MODULE_SRC`), while
-/// `optional`, `result`, `num`, `text`, and `cmp` are explicit-import-only.
+/// `optional`, `result`, `num`, `text`, `cmp`, `config`, `reflect`, `list`,
+/// `data`, and `validate` are explicit-import-only.
 fn stdlib_source(name: &str) -> Option<&'static str> {
     match name {
         "stream" => Some(zutai_hir::STREAM_MODULE_SRC),
@@ -498,6 +499,11 @@ fn stdlib_source(name: &str) -> Option<&'static str> {
         "num" => Some(zutai_hir::NUM_MODULE_SRC),
         "text" => Some(zutai_hir::TEXT_MODULE_SRC),
         "cmp" => Some(zutai_hir::CMP_MODULE_SRC),
+        "config" => Some(zutai_hir::CONFIG_MODULE_SRC),
+        "reflect" => Some(zutai_hir::REFLECT_MODULE_SRC),
+        "list" => Some(zutai_hir::LIST_MODULE_SRC),
+        "data" => Some(zutai_hir::DATA_MODULE_SRC),
+        "validate" => Some(zutai_hir::VALIDATE_MODULE_SRC),
         _ => None,
     }
 }

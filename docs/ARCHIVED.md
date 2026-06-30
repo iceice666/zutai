@@ -67,6 +67,11 @@ slice E)", "Numeric helpers (stdlib slice F)", "Text helpers (stdlib slice G)",
 pattern tests now short-circuit variant/list payload destructuring before
 binding; real examples check/run/native-compile parity is covered; see "Native
 pattern-test short-circuiting" below)._
+The same 2026-06-30 baseline also includes the explicit stdlib expansion:
+`stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
+`stdlib.validate` are embedded importable modules, with config/reflect compiler
+gates recognizing qualified and destructured aliases; see "Explicit stdlib
+expansion" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -191,6 +196,30 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Explicit stdlib expansion ✅
+
+_Completed 2026-06-30. Ships five opt-in embedded standard-library modules
+without adding new ambient names._
+
+- **Embedded modules.** `stdlib.config`, `stdlib.reflect`, `stdlib.list`,
+  `stdlib.data`, and `stdlib.validate` are registered through
+  `semantic/src/import.rs` and backed by canonical `.zt` sources in
+  `crates/general/hir/src/lower/prelude/`.
+- **Compiler-gated aliases.** `stdlib.config` module-qualified and destructured
+  `overlay`/`overlayDeep` calls lower to the existing builtin overlay shape for
+  supported record-literal patches. `stdlib.reflect` aliases trigger the same
+  THIR-oracle and AOT fold-or-reject routing as the ambient reflection names,
+  while unused imports/re-exports do not gate backend compilation.
+- **Pure toolbox modules.** `stdlib.list` adds the larger list toolbox;
+  `stdlib.data` adds structured first-order decoders over
+  `stdlib.result.Result`; `stdlib.validate` adds accumulating structured
+  validation over `stdlib.result.Validation`.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-semantic stdlib_ -- --nocapture`,
+  `cargo test -p zutai-eval imports::stdlib_ -- --nocapture`,
+  `nix develop --command cargo test -p zutai-cli --test cli compile_stdlib_ -- --test-threads=1 --nocapture`,
+  and `nix develop --command cargo test --workspace -- --test-threads=1`.
 
 ### Native pattern-test short-circuiting ✅
 

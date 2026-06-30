@@ -553,6 +553,58 @@ fn stdlib_cmp_qualified_members_evaluate() {
     assert_eq!(run(src), Value::Bool(true));
 }
 
+#[test]
+fn stdlib_list_toolbox_members_evaluate() {
+    let src = "l ::= import stdlib.list;\n\
+               c ::= import stdlib.cmp;\n\
+               sorted ::= l.sortBy c.compareInt {3; 1; 2; 2; 3;};\n\
+               unique ::= l.dedupBy (\\a b. a == b) sorted;\n\
+               l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique";
+    assert_eq!(run(src), Value::Int(45));
+}
+
+#[test]
+fn stdlib_data_decode_members_evaluate() {
+    let src = "d ::= import stdlib.data;\n\
+               value ::= d.record { d.fieldOf \"port\" (d.int 8080); d.fieldOf \"items\" (d.list { d.int 1; d.int 2; }); };\n\
+               port ::= match d.field \"port\" value { | #ok { value = found; } => match d.asInt found { | #ok { value = n; } => n; | #err { error = _; } => 0; }; | #err { error = _; } => 0; };\n\
+               missing ::= match d.field \"missing\" value { | #ok { value = _; } => 0; | #err { error = #missingField { name = _; }; } => 5; | #err { error = _; } => 0; };\n\
+               items ::= match d.field \"items\" value { | #ok { value = found; } => match d.mapList d.asInt found { | #ok { value = xs; } => fold (\\acc x. acc + x) 0 xs; | #err { error = _; } => 0; }; | #err { error = _; } => 0; };\n\
+               port + missing + items";
+    assert_eq!(run(src), Value::Int(8088));
+}
+
+#[test]
+fn stdlib_validate_members_accumulate_errors() {
+    let src = "v ::= import stdlib.validate;\n\
+               missing :: Text? = #none;\n\
+               checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\
+               asResult ::= v.toResult checked;\n\
+               length (v.errors checked) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }";
+    assert_eq!(run(src), Value::Int(4));
+}
+
+#[test]
+fn stdlib_config_overlay_alias_evaluates() {
+    let src = "cfg ::= import stdlib.config;\n\
+               { overlayDeep; } ::= import stdlib.config;\n\
+               Server :: type { host : Text; port : Int; nested : { tls : Bool; }; };\n\
+               base :: Server = { host = \"127.0.0.1\"; port = 8080; nested = { tls = false; }; };\n\
+               shallow ::= cfg.overlay { port = 9090; } base;\n\
+               deep ::= overlayDeep { nested = { tls = true; }; } shallow;\n\
+               deep.port + if deep.nested.tls then 1 else 0";
+    assert_eq!(run(src), Value::Int(9091));
+}
+
+#[test]
+fn stdlib_reflect_alias_evaluates() {
+    let src = "refl ::= import stdlib.reflect;\n\
+               Server :: type { host : Text; port : Int; };\n\
+               Action :: type { #quit; #spawn : { command : Text; }; };\n\
+               length (refl.fields Server) + length ((refl.schema Server).fields ?? {;}) + length (refl.variants Action)";
+    assert_eq!(run(src), Value::Int(6));
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

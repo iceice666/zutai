@@ -1,0 +1,7 @@
+-- Canonical source for config helpers.
+-- Explicit import only: `cfg ::= import stdlib.config`; these names are not ambient.
+overlayConfig :: <T> Patch T -> T -> T
+  = patch base => overlay patch base;
+overlayDeepConfig :: <T> DeepPatch T -> T -> T
+  = patch base => overlayDeep patch base;
+{ Patch = Patch; DeepPatch = DeepPatch; overlay = overlayConfig; overlayDeep = overlayDeepConfig; }

@@ -92,6 +92,39 @@ pub const TEXT_MODULE_SRC: &str = include_str!("prelude/text.zt");
 /// not injected as an ambient prelude; comparator helper names exist only
 /// through explicit import or destructuring.
 pub const CMP_MODULE_SRC: &str = include_str!("prelude/cmp.zt");
+///
+/// Canonical source for the config helper module.
+///
+/// Explicit import only: `import stdlib.config` exports the final record. It is
+/// not injected as an ambient prelude; public config helper names exist only
+/// through explicit import or destructuring.
+pub const CONFIG_MODULE_SRC: &str = include_str!("prelude/config.zt");
+///
+/// Canonical source for the reflection helper module.
+///
+/// Explicit import only: `import stdlib.reflect` exports the final record. It is
+/// not injected as an ambient prelude; reflection helper names exist only
+/// through explicit import or destructuring.
+pub const REFLECT_MODULE_SRC: &str = include_str!("prelude/reflect.zt");
+///
+/// Canonical source for the expanded List helper module.
+///
+/// Explicit import only: `import stdlib.list` exports the final record. It is
+/// not injected as an ambient prelude; unqualified ambient `map`/`fold` remain
+/// the focused prelude names unless this module is intentionally destructured.
+pub const LIST_MODULE_SRC: &str = include_str!("prelude/list.zt");
+///
+/// Canonical source for first-order `Data` construction and decode helpers.
+///
+/// Explicit import only: `import stdlib.data` exports the final record. It is
+/// not injected as an ambient prelude.
+pub const DATA_MODULE_SRC: &str = include_str!("prelude/data.zt");
+///
+/// Canonical source for validation helpers.
+///
+/// Explicit import only: `import stdlib.validate` exports the final record. It
+/// is not injected as an ambient prelude.
+pub const VALIDATE_MODULE_SRC: &str = include_str!("prelude/validate.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())
@@ -358,13 +391,23 @@ impl Lowerer {
         let id = BindingId(self.bindings.len() as u32);
         let scope = self.scopes.last_mut().expect("scope stack is never empty");
         if let Some(first) = scope.names.get(&name).copied() {
-            self.diagnostics.push(HirDiagnostic {
-                kind: HirDiagnosticKind::DuplicateBinding {
-                    name: name.clone(),
-                    first_span: self.bindings[first.0 as usize].span,
-                },
-                span,
-            });
+            if self.bindings[first.0 as usize].kind == BindingKind::BuiltinValue
+                && kind != BindingKind::BuiltinValue
+                && matches!(
+                    name.as_str(),
+                    "overlay" | "overlayDeep" | "fields" | "variants" | "schema"
+                )
+            {
+                scope.names.insert(name.clone(), id);
+            } else {
+                self.diagnostics.push(HirDiagnostic {
+                    kind: HirDiagnosticKind::DuplicateBinding {
+                        name: name.clone(),
+                        first_span: self.bindings[first.0 as usize].span,
+                    },
+                    span,
+                });
+            }
         } else {
             scope.names.insert(name.clone(), id);
         }
