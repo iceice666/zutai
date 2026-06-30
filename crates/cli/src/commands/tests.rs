@@ -28,6 +28,7 @@ fn runtime_link_flags_never_request_non_pie() {
 #[test]
 fn linux_runtime_link_flags_request_pie() {
     assert!(runtime_link_flags().contains(&"-pie"));
+    assert!(!shared_runtime_link_flags().contains(&"-pie"));
 }
 
 #[test]
@@ -123,6 +124,10 @@ fn output_path_for_derives_default_paths() {
     assert_eq!(
         output_path_for("main.zt", None, EmitMode::Bin),
         PathBuf::from("main")
+    );
+    assert_eq!(
+        output_path_for("main.zt", None, EmitMode::Lib),
+        PathBuf::from(format!("libmain{}", shared_library_extension()))
     );
     assert_eq!(
         output_path_for("main.zt", Some("custom.out"), EmitMode::Bin),

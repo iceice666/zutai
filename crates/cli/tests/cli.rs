@@ -43,6 +43,14 @@ fn zt_string_literal(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+fn shared_library_extension() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => ".dylib",
+        "windows" => ".dll",
+        _ => ".so",
+    }
+}
+
 fn compile_stdout(name: &str, content: &str) -> String {
     let path = write_tmp(name, content);
     let output = cli()
@@ -3075,6 +3083,65 @@ fn compile_emit_bin_runs() {
     let output = StdCommand::new(&out).output().unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "42\n");
+}
+
+#[test]
+fn compile_emit_lib_exports_json_entry_for_host() {
+    let path = write_tmp(
+        "cli_test_compile_emit_lib.zt",
+        "{ host = \"localhost\"; port = 8000 + 80; mode = #prod; }\n",
+    );
+    let out = std::env::temp_dir().join(format!(
+        "cli_test_compile_emit_lib{}",
+        shared_library_extension()
+    ));
+    cli()
+        .arg("compile")
+        .arg("--emit=lib")
+        .arg(&path)
+        .arg("-o")
+        .arg(out.to_str().unwrap())
+        .assert()
+        .success();
+    assert!(std::fs::metadata(&out).unwrap().len() > 0);
+
+    let harness = write_tmp(
+        "cli_test_compile_emit_lib_harness.c",
+        r#"
+#include <stdint.h>
+#include <stdio.h>
+
+int64_t zutai_entry_json(void);
+int64_t zutai_text_len(int64_t value);
+int64_t zutai_text_ptr(int64_t value);
+
+int main(void) {
+  int64_t json = zutai_entry_json();
+  const void *ptr = (const void *)(uintptr_t)zutai_text_ptr(json);
+  size_t len = (size_t)zutai_text_len(json);
+  return fwrite(ptr, 1, len, stdout) == len ? 0 : 2;
+}
+"#,
+    );
+    let exe = write_tmp("cli_test_compile_emit_lib_harness", "");
+    let lib_dir = out.parent().unwrap();
+    let status = StdCommand::new("clang")
+        .arg(&harness)
+        .arg(&out)
+        .arg(format!("-Wl,-rpath,{}", lib_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .status()
+        .unwrap();
+    assert!(status.success(), "host harness failed to link: {status}");
+
+    let output = StdCommand::new(&exe).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"host": "localhost", "mode": "#prod", "port": 8080})
+    );
 }
 
 #[test]

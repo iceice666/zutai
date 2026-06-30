@@ -563,3 +563,29 @@ pub(crate) fn emit_main(out: &mut String, entry_name: &str, entry_desc: &str) {
     out.push_str("  call void @zutai.print_text(i64 %newline)\n");
     out.push_str("  ret i32 0\n}\n");
 }
+
+// ── Native library exports ───────────────────────────────────────────────────
+
+pub(crate) fn emit_library_exports(out: &mut String, entry_name: &str, entry_desc: &str) {
+    let entry = mangle(entry_name);
+
+    out.push_str("define i64 @zutai_entry() {\n");
+    out.push_str(&format!("  %result = call i64 @{}()\n", entry));
+    out.push_str("  ret i64 %result\n}\n\n");
+
+    out.push_str("define i64 @zutai_entry_descriptor() {\n");
+    let mut tmp = 0u64;
+    let desc = emit_symbol_ptr_to_i64(out, &mut tmp, entry_desc);
+    out.push_str(&format!("  ret i64 {}\n", desc));
+    out.push_str("}\n\n");
+
+    out.push_str("define i64 @zutai_entry_json() {\n");
+    let mut tmp = 0u64;
+    out.push_str(&format!("  %result = call i64 @{}()\n", entry));
+    let desc = emit_symbol_ptr_to_i64(out, &mut tmp, entry_desc);
+    out.push_str(&format!(
+        "  %json = call i64 @zutai.to_json(i64 %result, i64 {})\n",
+        desc
+    ));
+    out.push_str("  ret i64 %json\n}\n");
+}

@@ -2,16 +2,17 @@
 
 This document specifies the v0 runtime library and the binary ABI of compiled
 Zutai general-mode (`.zt`) programs. It is the design contract for the final
-pipeline layer: turning `zutai-codegen` LLVM IR into an object or native binary
-that links against `libzutai_rt`.
+pipeline layer: turning `zutai-codegen` LLVM IR into an object, native binary,
+or native library that links against `libzutai_rt`.
 
 > **Status: Phase 18 implemented for the v0 ABI surface.** The `zutai-rt`
 > crate defines the runtime symbols; codegen emits the D-0003 uniform closure
 > ABI, dense per-union variant tags, static `DfTy` descriptors, and a
-> type-directed `@main`; `compile --emit=llvm|obj|bin` selects LLVM text,
-> object, or native binary output. Object mode uses
+> type-directed `@main`; `compile --emit=llvm|obj|bin|lib` selects LLVM text,
+> object, native binary, or native shared-library output. Object mode uses
 > `llc -filetype=obj -relocation-model=pic`; Linux binary mode requests
-> `clang -pie` and is verified by the native binary matrix.
+> `clang -pie`; library mode exports `zutai_entry*` host symbols and a
+> descriptor-backed `serde_json` bridge.
 
 ## Pipeline position
 
@@ -20,7 +21,7 @@ Source → HIR → THIR → TLC → DC → ANF → SSA → LLVM IR  (text)
                                                   ↓  llc/clang: assemble
                                               object file
                                                   ↓  link against libzutai_rt
-                                            native executable
+                                     native executable / shared library
 ```
 
 The runtime/ABI layer is everything below the dotted line: the toolchain driver
@@ -429,13 +430,31 @@ does neither; the default-on conservative collector is the committed endpoint.
 
 - `--emit=llvm` (default; write `.ll` text or stdout),
 - `--emit=obj` (invoke `llc -filetype=obj -relocation-model=pic -o <out> <ll>` → object file),
-- `--emit=bin` (assemble, then link against `libzutai_rt` → native executable).
+- `--emit=bin` (assemble, then link against `libzutai_rt` → native executable),
+- `--emit=lib` (assemble, then link against `libzutai_rt` → native shared library).
 
 The driver discovers `clang`/`llc` from `PATH` (overridable via
 `ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and emits a precise, actionable
 diagnostic when the toolchain is absent rather than failing opaquely. The Rust
 runtime archive is built by `cargo` and located via the workspace target tree.
-On Linux the linker shape is `clang <obj> <libzutai_rt.a> -pie -lpthread -ldl -lm -o <out>`.
+On Linux the binary linker shape is
+`clang <obj> <libzutai_rt.a> -pie -lpthread -ldl -lm -o <out>`. Shared-library
+mode uses the platform shared-library flag (`-shared` on Linux, `-dynamiclib` on
+macOS) and force-loads the runtime archive so host-facing helper aliases are
+exported with the generated entry symbols.
+
+Library-mode LLVM omits `main` and exports:
+
+- `zutai_entry() -> i64` — evaluate the program and return the raw v0 ABI value.
+- `zutai_entry_descriptor() -> i64` — return the static descriptor pointer for
+  the entry type.
+- `zutai_entry_json() -> i64` — evaluate the program, serialize the entry value
+  through the runtime `serde_json` bridge, and return a runtime `Text` object.
+
+Host code can read the returned JSON bytes through the C-friendly
+`zutai_text_ptr(i64) -> i64` and `zutai_text_len(i64) -> i64` aliases, or call
+`zutai_to_json(value, descriptor)` directly after using `zutai_entry()` and
+`zutai_entry_descriptor()`.
 
 ---
 
@@ -464,6 +483,8 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.variant_value` | `i64 (i64 v)` | Variant payload. |
 | `zutai.coalesce` | `i64 (i64 v, i64 fallback)` | Unwrap one `Optional`/`Maybe` layer or use `fallback`. |
 | `zutai.text_from_global` | `i64 (i64 ptr, i64 len)` | Wrap a static UTF-8 constant. |
+| `zutai.text_ptr` / `zutai_text_ptr` | `i64 (i64 text)` | Return the UTF-8 byte pointer stored in a runtime `Text`; the underscore alias is host-FFI friendly. |
+| `zutai.text_len` / `zutai_text_len` | `i64 (i64 text)` | Return the UTF-8 byte length stored in a runtime `Text`; the underscore alias is host-FFI friendly. |
 | `zutai.text_concat` | `i64 (i64 a, i64 b)` | Allocate concatenated text. |
 | `zutai.print_i64` | `void (i64 v)` | Print an integer. |
 | `zutai.print_bool` | `void (i64 v)` | Print a boolean. |
@@ -471,6 +492,7 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.print_text` | `void (i64 v)` | Print text; also the v0 `io.print` handler. |
 | `zutai.print_posit` | `void (i64 value, i64 nbits, i64 es)` | Print a posit by static spec. |
 | `zutai.show` | `void (i64 value, i64 descriptor)` | Type-directed render (records/tuples/lists/variants/optionals/posits). |
+| `zutai.to_json` / `zutai_to_json` | `i64 (i64 value, i64 descriptor)` | Type-directed natural JSON serialization via `serde_json`; returns a runtime `Text`; the underscore alias is host-FFI friendly. |
 | `exit` | `i64 (i64 code)` | libc; abnormal termination. |
 
 Closure application is emitted inline (D-0003); no `zutai.apply` symbol is
@@ -512,14 +534,16 @@ either operation before the runtime boundary.
   descriptors, `zutai.show` entry rendering, closure ABI calls, slot-indexed
   records, residual-effect rejection, and PIE-safe static-address materialization
   with no `ptrtoint (ptr @...)` constant-expression form.
-- **Native driver tests.** `compile --emit=obj` / `--emit=bin` tests run when
+- **Native driver tests.** `compile --emit=obj` / `--emit=bin` / `--emit=lib` tests run when
   `llc`/`clang` are available and skip cleanly when the host lacks that
   toolchain. The Linux binary matrix covers primitive, record, tuple, union,
-  text, atom, and posit entry values.
+  text, atom, and posit entry values; the library test links a C host harness
+  against the shared library and reads `zutai_entry_json` through
+  `zutai_text_ptr`/`zutai_text_len`.
 - **ABI unit tests** in `zutai-rt`: record set/get round-trip by slot, record
   update immutability, list build/traverse, variant tag/value, coalesce on each
   optional shape, text concat, closure capture + curried application, posit
-  rendering, and type-directed `show`.
+  rendering, type-directed `show`, and descriptor-backed JSON serialization.
 
 Gate: `cargo test --workspace` plus `cargo clippy --workspace --all-targets`
 and `cargo fmt --check`; native object/binary execution is toolchain-gated.

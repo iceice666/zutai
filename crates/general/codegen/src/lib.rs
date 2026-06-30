@@ -22,6 +22,27 @@ use crate::preamble::*;
 
 /// Emit a complete LLVM IR `.ll` file from an SSA module.
 pub fn emit_llvm(module: &SsaModule) -> String {
+    emit_llvm_artifact(module, ArtifactKind::Executable)
+}
+
+/// Emit LLVM IR for a native library artifact.
+///
+/// The library form intentionally omits `main` and instead exports:
+///
+/// - `zutai_entry() -> i64` — raw v0 ABI value,
+/// - `zutai_entry_descriptor() -> i64` — static descriptor pointer as an `i64`,
+/// - `zutai_entry_json() -> i64` — JSON text value serialized through `serde_json`.
+pub fn emit_llvm_library(module: &SsaModule) -> String {
+    emit_llvm_artifact(module, ArtifactKind::Library)
+}
+
+#[derive(Clone, Copy)]
+enum ArtifactKind {
+    Executable,
+    Library,
+}
+
+fn emit_llvm_artifact(module: &SsaModule, artifact: ArtifactKind) -> String {
     let mut out = String::with_capacity(8192);
     emit_preamble(&mut out);
     emit_type_decls(&mut out);
@@ -36,7 +57,10 @@ pub fn emit_llvm(module: &SsaModule) -> String {
         emit_func_def(&mut out, func);
     }
 
-    emit_main(&mut out, &module.entry.name, &entry_desc);
+    match artifact {
+        ArtifactKind::Executable => emit_main(&mut out, &module.entry.name, &entry_desc),
+        ArtifactKind::Library => emit_library_exports(&mut out, &module.entry.name, &entry_desc),
+    }
     out
 }
 

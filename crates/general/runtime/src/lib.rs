@@ -1124,6 +1124,27 @@ pub extern "C" fn text_from_global(ptr: i64, len: i64) -> i64 {
     note_tag(TAG_TEXT);
     p as i64
 }
+
+#[unsafe(export_name = "zutai.text_len")]
+pub extern "C" fn text_len(value: i64) -> i64 {
+    unsafe { word(value, 1) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn zutai_text_len(value: i64) -> i64 {
+    text_len(value)
+}
+
+#[unsafe(export_name = "zutai.text_ptr")]
+pub extern "C" fn text_ptr(value: i64) -> i64 {
+    unsafe { word(value, 2) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn zutai_text_ptr(value: i64) -> i64 {
+    text_ptr(value)
+}
+
 /// Build a free-standing atom value. Atoms carry their source spelling for
 /// `show`; dense variant tags remain raw integer indices.
 #[unsafe(export_name = "zutai.atom_from_global")]
@@ -1776,6 +1797,22 @@ pub extern "C" fn show(value: i64, descriptor: i64) {
     out_bytes(out.as_bytes());
 }
 
+/// Type-directed natural JSON serialization. Returns a runtime `Text` object
+/// containing compact JSON bytes produced by `serde_json`.
+#[unsafe(export_name = "zutai.to_json")]
+pub extern "C" fn to_json(value: i64, descriptor: i64) -> i64 {
+    let json = unsafe { json_value(value, descriptor as *const i64) }
+        .unwrap_or_else(|message| runtime_error(message));
+    let rendered = serde_json::to_string(&json)
+        .unwrap_or_else(|_| runtime_error("failed to serialize runtime value to JSON"));
+    text_from_string(rendered)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn zutai_to_json(value: i64, descriptor: i64) -> i64 {
+    to_json(value, descriptor)
+}
+
 fn push_quoted(out: &mut String, s: &str) {
     out.push('"');
     for ch in s.chars() {
@@ -1798,6 +1835,166 @@ unsafe fn name_at(desc: *const i64, off: usize) -> &'static str {
         let ptr = *desc.add(off) as *const u8;
         let len = *desc.add(off + 1) as usize;
         str::from_utf8(slice::from_raw_parts(ptr, len)).unwrap_or("?")
+    }
+}
+
+
+/// # Safety
+/// `value` must be an Optional/Maybe storage value.
+unsafe fn wrapper_is_present(value: i64) -> bool {
+    unsafe { header_tag(word(value, 0)) == TAG_VARIANT }
+}
+
+/// # Safety
+/// `value` must be a present Optional/Maybe storage value.
+unsafe fn wrapper_payload(value: i64) -> i64 {
+    unsafe { word(word(value, 2), 1) }
+}
+
+/// # Safety
+/// `value` must match the type described by `desc`.
+unsafe fn json_value(value: i64, desc: *const i64) -> Result<serde_json::Value, &'static str> {
+    use serde_json::{Map, Number, Value as J};
+
+    unsafe {
+        match *desc {
+            DESC_INT => Ok(J::Number(Number::from(value))),
+            DESC_BOOL => Ok(J::Bool(value != 0)),
+            DESC_FLOAT => {
+                let value = f64::from_bits(value as u64);
+                Number::from_f64(value)
+                    .map(J::Number)
+                    .ok_or("cannot serialize non-finite float to JSON")
+            }
+            DESC_POSIT => Ok(J::String(fmt_posit(value, *desc.add(1), *desc.add(2)))),
+            DESC_TEXT => Ok(J::String(text_json_string(value)?)),
+            DESC_ATOM => Ok(J::String(format!("#{}", text_json_string(value)?))),
+            DESC_LIST => {
+                let elem = *desc.add(1) as *const i64;
+                let mut items = Vec::new();
+                let mut node = value;
+                while header_tag(word(node, 0)) == TAG_CONS {
+                    items.push(json_value(word(node, 1), elem)?);
+                    node = word(node, 2);
+                }
+                Ok(J::Array(items))
+            }
+            DESC_OPTIONAL => json_wrapper(value, *desc.add(1) as *const i64, "some", "none"),
+            DESC_MAYBE => json_wrapper(value, *desc.add(1) as *const i64, "present", "absent"),
+            DESC_RECORD => json_record(value, desc),
+            DESC_TUPLE => json_tuple_array(value, desc),
+            DESC_VARIANT => {
+                if header_tag(word(value, 0)) == TAG_TEXT {
+                    return Ok(J::String(format!("#{}", text_json_string(value)?)));
+                }
+                if header_tag(word(value, 0)) != TAG_VARIANT {
+                    return Err("cannot serialize malformed tagged value to JSON");
+                }
+                let tag = word(value, 1) as usize;
+                let n = *desc.add(1) as usize;
+                if tag >= n {
+                    return Err("cannot serialize tagged value with out-of-range tag");
+                }
+                let base = 2 + tag * 3;
+                let tag_name = name_at(desc, base).to_string();
+                let payload_desc = *desc.add(base + 2);
+                let payload = if payload_desc == 0 {
+                    J::Null
+                } else {
+                    json_tag_payload(word(value, 2), payload_desc as *const i64)?
+                };
+                let mut map = Map::with_capacity(2);
+                map.insert("tag".to_string(), J::String(tag_name));
+                map.insert("payload".to_string(), payload);
+                Ok(J::Object(map))
+            }
+            _ => Err("cannot serialize non-data runtime value to JSON"),
+        }
+    }
+}
+
+/// # Safety
+/// `value` must be a runtime text object.
+unsafe fn text_json_string(value: i64) -> Result<String, &'static str> {
+    unsafe {
+        str::from_utf8(text_parts(value))
+            .map(str::to_string)
+            .map_err(|_| "cannot serialize non-UTF-8 text to JSON")
+    }
+}
+
+/// # Safety
+/// `value` must be Optional/Maybe storage for `inner_desc`.
+unsafe fn json_wrapper(
+    value: i64,
+    inner_desc: *const i64,
+    present_tag: &str,
+    absent_tag: &str,
+) -> Result<serde_json::Value, &'static str> {
+    use serde_json::{Map, Value as J};
+
+    unsafe {
+        if wrapper_is_present(value) {
+            let payload = J::Array(vec![json_value(wrapper_payload(value), inner_desc)?]);
+            let mut map = Map::with_capacity(2);
+            map.insert("tag".to_string(), J::String(present_tag.to_string()));
+            map.insert("payload".to_string(), payload);
+            Ok(J::Object(map))
+        } else {
+            Ok(J::String(format!("#{absent_tag}")))
+        }
+    }
+}
+
+/// # Safety
+/// `value` must be a record object matching `desc`.
+unsafe fn json_record(value: i64, desc: *const i64) -> Result<serde_json::Value, &'static str> {
+    let mut map = serde_json::Map::new();
+    unsafe {
+        let n = *desc.add(1) as usize;
+        for i in 0..n {
+            let base = 2 + i * 3;
+            map.insert(
+                name_at(desc, base).to_string(),
+                json_value(word(value, 1 + i), *desc.add(base + 2) as *const i64)?,
+            );
+        }
+    }
+    Ok(serde_json::Value::Object(map))
+}
+
+/// # Safety
+/// `value` must be a tuple object matching `desc`.
+unsafe fn json_tuple_array(
+    value: i64,
+    desc: *const i64,
+) -> Result<serde_json::Value, &'static str> {
+    unsafe {
+        let n = *desc.add(1) as usize;
+        let mut items = Vec::with_capacity(n);
+        for i in 0..n {
+            let base = 2 + i * 4;
+            items.push(json_value(
+                word(value, 1 + i),
+                *desc.add(base + 3) as *const i64,
+            )?);
+        }
+        Ok(serde_json::Value::Array(items))
+    }
+}
+
+/// # Safety
+/// `payload` must match `desc`, which is a union member payload descriptor.
+unsafe fn json_tag_payload(
+    payload: i64,
+    desc: *const i64,
+) -> Result<serde_json::Value, &'static str> {
+    unsafe {
+        match *desc {
+            DESC_RECORD => json_record(payload, desc),
+            DESC_TUPLE => json_tuple_array(payload, desc),
+            _ => json_value(payload, desc),
+        }
     }
 }
 

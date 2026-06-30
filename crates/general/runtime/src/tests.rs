@@ -14,6 +14,12 @@ fn render_str(value: i64, desc: &[i64]) -> String {
     out
 }
 
+fn json_out(value: i64, desc: &[i64]) -> serde_json::Value {
+    let text = to_json(value, desc.as_ptr() as i64);
+    let bytes = unsafe { text_parts(text) };
+    serde_json::from_slice(bytes).expect("runtime JSON bridge must emit valid JSON")
+}
+
 fn text(s: &str) -> i64 {
     text_from_global(s.as_ptr() as i64, s.len() as i64)
 }
@@ -144,6 +150,89 @@ fn optional_and_maybe_render() {
         variant_new(1, t)
     };
     assert_eq!(render_str(present, &maybe_d), "#present (9)");
+}
+
+
+#[test]
+fn json_bridge_serializes_scalars_lists_records_and_atoms() {
+    let int_d = [DESC_INT];
+    let atom_d = [DESC_ATOM];
+    let list_d = [DESC_LIST, int_d.as_ptr() as i64];
+    assert_eq!(
+        json_out(list_cons(1, list_cons(2, list_nil())), &list_d),
+        serde_json::json!([1, 2])
+    );
+    assert_eq!(json_out(text("prod"), &atom_d), serde_json::json!("#prod"));
+
+    let text_d = [DESC_TEXT];
+    let rec_d = [
+        DESC_RECORD,
+        3,
+        b"host".as_ptr() as i64,
+        4,
+        text_d.as_ptr() as i64,
+        b"mode".as_ptr() as i64,
+        4,
+        atom_d.as_ptr() as i64,
+        b"port".as_ptr() as i64,
+        4,
+        int_d.as_ptr() as i64,
+    ];
+    let r = record_new(3);
+    record_set(r, 0, text("localhost"));
+    record_set(r, 1, text("prod"));
+    record_set(r, 2, 8080);
+    assert_eq!(
+        json_out(r, &rec_d),
+        serde_json::json!({"host": "localhost", "mode": "#prod", "port": 8080})
+    );
+}
+
+#[test]
+fn json_bridge_serializes_optional_and_variant_payload_shapes() {
+    let int_d = [DESC_INT];
+    let opt_d = [DESC_OPTIONAL, int_d.as_ptr() as i64];
+    assert_eq!(json_out(text("none"), &opt_d), serde_json::json!("#none"));
+    let some = {
+        let t = tuple_new(1);
+        tuple_set(t, 0, 7);
+        variant_new(1, t)
+    };
+    assert_eq!(
+        json_out(some, &opt_d),
+        serde_json::json!({"tag": "some", "payload": [7]})
+    );
+
+    let tup_d = [
+        DESC_TUPLE,
+        2,
+        0,
+        0,
+        0,
+        int_d.as_ptr() as i64,
+        0,
+        0,
+        0,
+        int_d.as_ptr() as i64,
+    ];
+    let union_d = [
+        DESC_VARIANT,
+        2,
+        b"red".as_ptr() as i64,
+        3,
+        0,
+        b"pair".as_ptr() as i64,
+        4,
+        tup_d.as_ptr() as i64,
+    ];
+    assert_eq!(json_out(text("red"), &union_d), serde_json::json!("#red"));
+    let pair = tuple_new(2);
+    tuple_set(pair, 0, 1);
+    tuple_set(pair, 1, 2);
+    assert_eq!(
+        json_out(variant_new(1, pair), &union_d),
+        serde_json::json!({"tag": "pair", "payload": [1, 2]})
+    );
 }
 
 #[test]

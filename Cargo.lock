@@ -1472,6 +1472,7 @@ name = "zutai-rt"
 version = "0.1.0"
 dependencies = [
  "fast-posit",
+ "serde_json",
  "zutai-eval",
  "zutai-im",
  "zutai-syntax",

@@ -334,6 +334,35 @@ fn unicode_identifiers_emit_ascii_llvm_names() {
 }
 
 #[test]
+fn library_artifact_exports_entry_descriptor_and_json_without_main() {
+    let module = test_module(
+        Vec::new(),
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: Vec::new(),
+                terminator: SsaTerminator::Return(SsaValue::Lit(DfLit::Int(42))),
+            }],
+        },
+        DfTy::Int,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm_library(&module);
+    assert!(llvm.contains("define i64 @zutai_entry()"), "{llvm}");
+    assert!(
+        llvm.contains("define i64 @zutai_entry_descriptor()"),
+        "{llvm}"
+    );
+    assert!(llvm.contains("define i64 @zutai_entry_json()"), "{llvm}");
+    assert!(llvm.contains("declare i64 @zutai.to_json(i64, i64)"));
+    assert!(llvm.contains("call i64 @zutai.to_json"), "{llvm}");
+    assert!(!llvm.contains("define i32 @main"), "{llvm}");
+}
+
+#[test]
 fn closure_apply_loads_code_and_passes_self() {
     let module = test_module(
         Vec::new(),

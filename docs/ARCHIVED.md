@@ -80,6 +80,10 @@ expansion" below. A follow-up stdlib crate extraction moved embedded `.zt`
 sources and module metadata into `zutai-stdlib`, while preserving the old
 `zutai_hir::*_MODULE_SRC` Rust re-exports and all user-facing import behavior;
 see "Stdlib crate extraction" below.
+The 2026-07-01 baseline adds native shared-library artifacts:
+`compile --emit=lib` links a platform shared library that exports raw, descriptor,
+and JSON entry points, with the JSON path backed by the runtime's descriptor
+walker and `serde_json`; see "Native library artifacts and JSON bridge" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -204,6 +208,29 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Native library artifacts and JSON bridge ✅
+
+_Completed 2026-07-01. Adds a native library artifact mode on top of the existing
+AOT backend and exposes the same natural JSON boundary used by the interpreter._
+
+- CLI `compile --emit=lib` now emits library-shaped LLVM, assembles it with
+  `llc`, builds `libzutai_rt`, and links a platform shared library
+  (`.so`/`.dylib`/`.dll`) with the runtime archive force-loaded so host symbols
+  are exported.
+- Library-shaped codegen omits `main` and exports `zutai_entry()`,
+  `zutai_entry_descriptor()`, and `zutai_entry_json()`. The JSON entry evaluates
+  the program and calls runtime `zutai.to_json` with the static entry
+  descriptor.
+- `zutai-rt` owns the descriptor-backed JSON bridge using `serde_json`, matching
+  the documented natural JSON shapes for records, lists, atoms, optional/maybe
+  wrappers, and tagged union payloads. It also exports C-friendly
+  `zutai_text_ptr` / `zutai_text_len` aliases for host code reading returned
+  runtime `Text`.
+- Verification: `library_artifact_exports_entry_descriptor_and_json_without_main`,
+  runtime JSON bridge unit tests, and
+  `compile_emit_lib_exports_json_entry_for_host`, which links a C harness
+  against the produced shared library and reads `zutai_entry_json`.
 
 ### Unicode source/native hardening ✅
 

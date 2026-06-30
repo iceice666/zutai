@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-06-30)
+## Status (2026-07-01)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
 "Post-V3 readiness audit"). v1 semantics are complete, and native support is
@@ -27,7 +27,9 @@ per-slice summaries). This is stdlib work, not Track 2, and does not reopen any
 core language boundary. The 2026-06-30 explicit stdlib expansion added
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` as embedded opt-in modules; see `docs/ARCHIVED.md` for the
-milestone summary. Track 2 remains demand-gated.
+milestone summary. The 2026-07-01 native library artifact mode
+(`compile --emit=lib`) and runtime `serde_json` bridge are also archived; they
+do not leave an active native backlog item. Track 2 remains demand-gated.
 
 ## Source prelude / stdlib status
 

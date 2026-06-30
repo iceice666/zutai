@@ -55,6 +55,7 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare void @zutai.print_float(i64)\n");
     out.push_str("declare void @zutai.print_posit(i64, i64, i64)\n");
     out.push_str("declare void @zutai.show(i64, i64)\n");
+    out.push_str("declare i64 @zutai.to_json(i64, i64)\n");
 
     // Host capability operations
     out.push_str("declare i64 @zutai.host.io_print(i64)\n");

@@ -27,7 +27,7 @@ Source → HIR → THIR → TLC
                         ↓  SSA→LLVM
                     LLVM IR
                         ↓  llc/clang + libzutai_rt
-                    Object / native binary
+                    Object / native binary / native library
 ```
 
 - **HIR** — resolved, source-preserving, not fully typed. Produced by `zutai-hir`.
@@ -39,6 +39,6 @@ Source → HIR → THIR → TLC
 - **Dataflow Core** — graph IR where sharing and recursion are structurally explicit. A node may be referenced by many consumers (sharing); a cycle represents recursion. Laziness = graph reachability from the output root. Produced by `zutai-dataflow`.
 - **ANF** — linear schedule of `let`/`letrec` bindings with one operation per binding. Every sub-expression is named. SCCs from the DC graph become `letrec` groups. Produced by `zutai-anf`.
 - **SSA** — basic blocks with phi-nodes. Standard form for LLVM emission. Produced by `zutai-ssa`.
-- **LLVM IR / native output** — final backend target. `zutai-codegen` emits LLVM text with runtime descriptors; `zutai-cli compile --emit=llvm|obj|bin` writes IR, objects, or linked native binaries when the host LLVM toolchain is available.
+- **LLVM IR / native output** — final backend target. `zutai-codegen` emits LLVM text with runtime descriptors; `zutai-cli compile --emit=llvm|obj|bin|lib` writes IR, objects, linked native binaries, or linked native shared libraries when the host LLVM toolchain is available.
 - **Semantic facade** (`zutai-semantic`) — wires parse, HIR, THIR, and TLC into one staged API; owns filesystem/module-graph analysis (imports, caches, cycles, witness merging) and cross-stage gate predicates. Passes live in the IR crate they transform.
 - **Reference evaluators** (`zutai-eval`) — semantics oracles over completed typed IR. The default `run`/`repl` path is TLC-first for executable value programs; the THIR evaluator remains the regression oracle and the runtime `Type`/reflection boundary until TLC represents type values directly. All evaluators refuse programs that are not fully type-checked.

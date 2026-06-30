@@ -45,6 +45,7 @@ enum CompileEmit {
     Llvm,
     Obj,
     Bin,
+    Lib,
 }
 
 impl From<CompileEmit> for commands::EmitMode {
@@ -53,6 +54,7 @@ impl From<CompileEmit> for commands::EmitMode {
             CompileEmit::Llvm => commands::EmitMode::Llvm,
             CompileEmit::Obj => commands::EmitMode::Obj,
             CompileEmit::Bin => commands::EmitMode::Bin,
+            CompileEmit::Lib => commands::EmitMode::Lib,
         }
     }
 }
@@ -83,7 +85,7 @@ enum Commands {
     Compile {
         /// Path to the .zt file
         path: String,
-        /// Output file path (default: stdout for LLVM, derived path for obj/bin)
+        /// Output file path (default: stdout for LLVM, derived path for native artifacts)
         #[arg(short)]
         output: Option<String>,
         /// Artifact to emit

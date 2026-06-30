@@ -13,11 +13,33 @@ pub(super) fn output_path_for(input: &str, output_path: Option<&str>, emit: Emit
     }
     let mut out = PathBuf::from(input);
     match emit {
-        EmitMode::Llvm => out.set_extension("ll"),
-        EmitMode::Obj => out.set_extension("o"),
-        EmitMode::Bin => out.set_extension(""),
+        EmitMode::Llvm => {
+            out.set_extension("ll");
+        }
+        EmitMode::Obj => {
+            out.set_extension("o");
+        }
+        EmitMode::Bin => {
+            out.set_extension("");
+        }
+        EmitMode::Lib => {
+            let stem = out
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("zutai");
+            let file_name = format!("lib{}{}", stem, shared_library_extension());
+            out.set_file_name(file_name);
+        }
     };
     out
+}
+
+pub(super) fn shared_library_extension() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => ".dylib",
+        "windows" => ".dll",
+        _ => ".so",
+    }
 }
 
 pub(super) fn tool_name(env_name: &str, fallback_env: &str, default: &'static str) -> String {
@@ -155,6 +177,14 @@ pub(super) fn runtime_link_flags() -> &'static [&'static str] {
     }
 }
 
+pub(super) fn shared_runtime_link_flags() -> &'static [&'static str] {
+    match std::env::consts::OS {
+        "linux" => &["-lpthread", "-ldl", "-lm"],
+        "macos" => &[],
+        _ => &[],
+    }
+}
+
 pub(super) fn link_binary(obj: &Path, runtime: &Path, out: &Path) -> Result<(), Box<dyn Error>> {
     let clang = tool_name("ZUTAI_CLANG", "CLANG", "clang");
     let mut command = Command::new(&clang);
@@ -164,4 +194,38 @@ pub(super) fn link_binary(obj: &Path, runtime: &Path, out: &Path) -> Result<(), 
     }
     command.arg("-o").arg(out);
     run_tool(&mut command, &clang, "linking native binary")
+}
+
+pub(super) fn link_shared_library(
+    obj: &Path,
+    runtime: &Path,
+    out: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let clang = tool_name("ZUTAI_CLANG", "CLANG", "clang");
+    let mut command = Command::new(&clang);
+    match std::env::consts::OS {
+        "macos" => {
+            command.arg("-dynamiclib");
+        }
+        _ => {
+            command.arg("-shared");
+        }
+    }
+    command.arg(obj);
+    match std::env::consts::OS {
+        "macos" => {
+            command.arg(format!("-Wl,-force_load,{}", runtime.display()));
+        }
+        _ => {
+            command
+                .arg("-Wl,--whole-archive")
+                .arg(runtime)
+                .arg("-Wl,--no-whole-archive");
+        }
+    }
+    for flag in shared_runtime_link_flags() {
+        command.arg(flag);
+    }
+    command.arg("-o").arg(out);
+    run_tool(&mut command, &clang, "linking native library")
 }

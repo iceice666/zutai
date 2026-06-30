@@ -21,6 +21,7 @@ pub(crate) enum EmitMode {
     Llvm,
     Obj,
     Bin,
+    Lib,
 }
 
 const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
@@ -497,7 +498,7 @@ fn extern_witness_tables(
     Ok((concrete, conditional))
 }
 
-/// Compile a `.zt` file. LLVM emits text; object/binary modes invoke the host LLVM toolchain.
+/// Compile a `.zt` file. LLVM emits text; native artifact modes invoke the host LLVM toolchain.
 pub(crate) fn run_compile(
     path: &str,
     output_path: Option<&str>,
@@ -641,7 +642,10 @@ pub(crate) fn run_compile(
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
-    let llvm_ir = zutai_codegen::emit_llvm(&ssa);
+    let llvm_ir = match emit {
+        EmitMode::Lib => zutai_codegen::emit_llvm_library(&ssa),
+        EmitMode::Llvm | EmitMode::Obj | EmitMode::Bin => zutai_codegen::emit_llvm(&ssa),
+    };
 
     match emit {
         EmitMode::Llvm => match output_path {
@@ -662,6 +666,15 @@ pub(crate) fn run_compile(
             assemble_object(&ll, &obj)?;
             let rt = build_runtime_archive()?;
             link_binary(&obj, rt.path(), &out)?;
+        }
+        EmitMode::Lib => {
+            let out = output_path_for(path, output_path, EmitMode::Lib);
+            let ll = out.with_extension("ll");
+            let obj = out.with_extension("o");
+            fs::write(&ll, &llvm_ir)?;
+            assemble_object(&ll, &obj)?;
+            let rt = build_runtime_archive()?;
+            link_shared_library(&obj, rt.path(), &out)?;
         }
     }
     Ok(())
