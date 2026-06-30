@@ -48,6 +48,20 @@ Start with the language manual or documentation index:
 - [Zutai v0 language specification](docs/spec/v0/00-index.md)
 - [Final design statement](docs/spec/v0/01-overview/final-design-statement.md)
 
+## Examples
+
+Runnable `.zt` examples live under [examples](examples). The larger examples are:
+
+- [service_health.zt](examples/service_health.zt), backed by
+  [service_health.zti](examples/service_health.zti), imports inert data,
+  validates typed service records, and produces an operational rollup.
+- [canary_forecast.zt](examples/canary_forecast.zt) builds a bounded canary
+  report from an infinite synthetic telemetry stream.
+
+Smaller stdlib-focused snippets include [stdlib_pipeline.zt](examples/stdlib_pipeline.zt),
+[stream_summary.zt](examples/stream_summary.zt), and
+[text_report.zt](examples/text_report.zt).
+
 ## Development
 
 This project is a Rust workspace.

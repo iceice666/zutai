@@ -63,7 +63,10 @@ function prelude (stdlib slice B)", "Minimal List verbs (stdlib slice C)",
 "Optional helpers (stdlib slice D)", "Result and Validation helpers (stdlib
 slice E)", "Numeric helpers (stdlib slice F)", "Text helpers (stdlib slice G)",
 "Comparator helpers (stdlib slice H)", "Native-link test race fix", and
-"Release acceptance pack (release slice R0)")._
+"Release acceptance pack (release slice R0)"), and 2026-06-30 (native SSA
+pattern tests now short-circuit variant/list payload destructuring before
+binding; real examples check/run/native-compile parity is covered; see "Native
+pattern-test short-circuiting" below)._
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -188,6 +191,26 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Native pattern-test short-circuiting ✅
+
+_Completed 2026-06-30. Fixes a backend safety bug found while turning real
+examples into native regression coverage._
+
+- **Short-circuit pattern tests.** SSA match lowering now emits control-flow
+  tests for variants and list-cons patterns before destructuring payloads,
+  heads, or tails. A failed `#some` arm no longer reads a `#none` atom as a
+  variant payload, and list cons tests no longer read nil heads/tails on the
+  failure path.
+- **Real examples native gate.** `crates/cli/tests/cli.rs`
+  `real_examples_check_run_and_compile_match` checks, interprets, native
+  compiles, runs, and compares `examples/service_health.zt` and
+  `examples/canary_forecast.zt`.
+- **Verification.** Targeted gates passed:
+  `cargo test -p zutai-ssa`,
+  `nix develop --command cargo test -p zutai-cli --test cli real_examples_check_run_and_compile_match -- --test-threads=1`,
+  and
+  `nix develop --command cargo test -p zutai-cli --test cli compiled_show_fixtures_match_eval_tlc_oracle -- --test-threads=1`.
 
 ### Release acceptance pack (release slice R0) ✅
 
@@ -2335,4 +2358,3 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   match exhaustiveness, lambda lowering, no-signature function inference,
   predicative polymorphism, imports, constraints, witnesses, and operator
   witness dispatch.
-

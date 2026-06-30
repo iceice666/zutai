@@ -1,0 +1,100 @@
+-- Service health rollup
+-- Usage: zutai run examples/service_health.zt
+-- Imports inert .zti data, validates it as typed records, and summarizes it.
+
+n ::= import stdlib.num;
+r ::= import stdlib.result;
+t ::= import stdlib.text;
+
+Tier :: type { #edge; #core; #batch; };
+Action :: type { #ignore; #watch; #page; };
+ValidationState :: type { #clean; #needsReview; };
+BudgetState :: type { #withinBudget; #overBudget; };
+
+Service :: type {
+  name : Text;
+  tier : Tier;
+  requests : Int;
+  errors : Int;
+  latencyMs : Int;
+  enabled : Bool;
+  owner : Text;
+};
+
+Snapshot :: type {
+  generatedAt : Text;
+  alertBudget : Int;
+  services : List Service;
+};
+
+Summary :: type {
+  name : Text;
+  tier : Tier;
+  owner : Text;
+  score : Int;
+  action : Action;
+};
+
+snapshot :: Snapshot = import "service_health.zti";
+
+serviceScore :: Service -> Int
+  = svc => n.clamp 0 100 (svc.errors * 10 + svc.latencyMs / 10);
+
+serviceAction :: Service -> Action
+  = svc => if svc.enabled then
+      if serviceScore svc > 80 then #page else #watch
+    else
+      #ignore;
+
+summarize :: Service -> Summary
+  = svc => [
+    score := serviceScore svc;
+    action := serviceAction svc;
+    owner := t.toUpper svc.owner;
+    { name = svc.name; tier = svc.tier; owner = owner; score = score; action = action; }
+  ];
+
+validateService :: Service -> r.Validation Text Service
+  = svc => if svc.requests < 0 then
+      r.invalid { svc.name; }
+    else if svc.errors < 0 then
+      r.invalid { svc.name; }
+    else if svc.errors > svc.requests then
+      r.invalid { svc.name; }
+    else
+      r.valid svc;
+
+isEnabled :: Service -> Bool
+  = svc => svc.enabled;
+
+isCritical :: Service -> Bool
+  = svc => svc.enabled && serviceScore svc > 80;
+
+appendValidationErrors :: List Text -> Service -> List Text
+  = errs svc => append errs (r.errors (validateService svc));
+
+addErrors :: Int -> Service -> Int
+  = acc svc => acc + svc.errors;
+
+maxServiceScore :: Int -> Service -> Int
+  = acc svc => n.max acc (serviceScore svc);
+
+activeServices :: List Service = filter isEnabled snapshot.services;
+criticalServices :: List Service = filter isCritical snapshot.services;
+validationErrors :: List Text = fold appendValidationErrors {;} snapshot.services;
+totalErrors :: Int = fold addErrors 0 snapshot.services;
+worstScore :: Int = fold maxServiceScore 0 snapshot.services;
+budgetState :: BudgetState = if totalErrors <= snapshot.alertBudget then #withinBudget else #overBudget;
+validationState :: ValidationState = if length validationErrors == 0 then #clean else #needsReview;
+
+{
+  generatedAt = snapshot.generatedAt;
+  activeCount = length activeServices;
+  criticalCount = length criticalServices;
+  totalErrors = totalErrors;
+  worstScore = worstScore;
+  budget = budgetState;
+  validation = validationState;
+  invalidServices = validationErrors;
+  summaries = map summarize snapshot.services;
+}

@@ -101,20 +101,7 @@ pub(super) fn lower_match_arm_test(
         arm_label.to_string()
     };
 
-    match emit_pattern_test(&arm.pattern, scrutinee, fb, ctx) {
-        Some(cond) => fb.finish_and_start(
-            SsaTerminator::Branch {
-                cond,
-                then_label: guard_label.clone(),
-                else_label: next_label.to_string(),
-            },
-            guard_label.clone(),
-        ),
-        None => fb.finish_and_start(
-            SsaTerminator::Jump(guard_label.clone()),
-            guard_label.clone(),
-        ),
-    }
+    emit_pattern_branch(&arm.pattern, scrutinee, &guard_label, next_label, fb, ctx);
 
     if let Some(guard) = &arm.guard {
         bind_pattern(&arm.pattern, scrutinee, &mut fb.active, &mut ctx.fresh);
@@ -130,42 +117,40 @@ pub(super) fn lower_match_arm_test(
     }
 }
 
-pub(super) fn emit_pattern_test(
+pub(super) fn emit_pattern_branch(
     pattern: &AnfPattern,
     scrutinee: &SsaValue,
+    success_label: &str,
+    failure_label: &str,
     fb: &mut FuncBuilder,
     ctx: &mut Ctx,
-) -> Option<SsaValue> {
+) {
     match pattern {
-        AnfPattern::Wildcard | AnfPattern::Bind(_) => None,
-        AnfPattern::Lit(lit) => Some(emit_value_eq(
-            scrutinee.clone(),
-            SsaValue::Lit(lit.clone()),
-            fb,
-            ctx,
-        )),
-        AnfPattern::Atom(name) => Some(emit_value_eq(
-            scrutinee.clone(),
-            SsaValue::Lit(DfLit::Atom(name.clone())),
-            fb,
-            ctx,
-        )),
+        AnfPattern::Wildcard | AnfPattern::Bind(_) => jump_to(success_label, fb),
+        AnfPattern::Lit(lit) => {
+            let cond = emit_value_eq(scrutinee.clone(), SsaValue::Lit(lit.clone()), fb, ctx);
+            branch_to(cond, success_label, failure_label, fb);
+        }
+        AnfPattern::Atom(name) => {
+            let cond = emit_value_eq(
+                scrutinee.clone(),
+                SsaValue::Lit(DfLit::Atom(name.clone())),
+                fb,
+                ctx,
+            );
+            branch_to(cond, success_label, failure_label, fb);
+        }
         AnfPattern::Tuple(items) => {
-            let mut combined = None;
+            let mut parts = Vec::with_capacity(items.len());
             for (i, item) in items.iter().enumerate() {
                 let inner = match item {
                     AnfTuplePatItem::Named { pattern, .. }
                     | AnfTuplePatItem::Positional(pattern) => pattern,
                 };
                 let field = emit_select_for_pattern(scrutinee.clone(), i, fb, ctx);
-                combined = combine_optional_conditions(
-                    combined,
-                    emit_pattern_test(inner, &field, fb, ctx),
-                    fb,
-                    ctx,
-                );
+                parts.push((inner, field));
             }
-            combined
+            emit_pattern_sequence(parts, success_label, failure_label, fb, ctx);
         }
         AnfPattern::ListNil => {
             let is_nil = ctx.fresh.next_label("list_is_nil");
@@ -176,7 +161,7 @@ pub(super) fn emit_pattern_test(
                     args: vec![scrutinee.clone()],
                 },
             });
-            Some(SsaValue::Reg(is_nil))
+            branch_to(SsaValue::Reg(is_nil), success_label, failure_label, fb);
         }
         AnfPattern::ListCons { head, tail } => {
             let is_nil = ctx.fresh.next_label("list_is_nil");
@@ -193,6 +178,8 @@ pub(super) fn emit_pattern_test(
                 fb,
                 ctx,
             );
+            let cons_label = ctx.fresh.next_label("list_cons_pat");
+            branch_to(not_nil, &cons_label, failure_label, fb);
             let head_value = emit_list_part_for_pattern(
                 scrutinee.clone(),
                 DfListPrimOp::Head,
@@ -207,31 +194,21 @@ pub(super) fn emit_pattern_test(
                 fb,
                 ctx,
             );
-            let with_head = combine_optional_conditions(
-                Some(not_nil),
-                emit_pattern_test(head, &head_value, fb, ctx),
+            emit_pattern_sequence(
+                vec![(head.as_ref(), head_value), (tail.as_ref(), tail_value)],
+                success_label,
+                failure_label,
                 fb,
                 ctx,
             );
-            combine_optional_conditions(
-                with_head,
-                emit_pattern_test(tail, &tail_value, fb, ctx),
-                fb,
-                ctx,
-            )
         }
         AnfPattern::Record(fields) => {
-            let mut combined = None;
+            let mut parts = Vec::with_capacity(fields.len());
             for (slot, inner) in fields {
                 let field = emit_select_for_pattern(scrutinee.clone(), *slot, fb, ctx);
-                combined = combine_optional_conditions(
-                    combined,
-                    emit_pattern_test(inner, &field, fb, ctx),
-                    fb,
-                    ctx,
-                );
+                parts.push((inner, field));
             }
-            combined
+            emit_pattern_sequence(parts, success_label, failure_label, fb, ctx);
         }
         AnfPattern::Variant {
             tag_index, pattern, ..
@@ -249,6 +226,8 @@ pub(super) fn emit_pattern_test(
                 fb,
                 ctx,
             );
+            let payload_label = ctx.fresh.next_label("variant_payload_pat");
+            branch_to(tag_matches, &payload_label, failure_label, fb);
             let payload = ctx.fresh.next_label("variant_payload");
             fb.push(SsaInstr {
                 dest: payload.clone(),
@@ -256,13 +235,53 @@ pub(super) fn emit_pattern_test(
                     scrutinee: scrutinee.clone(),
                 },
             });
-            combine_optional_conditions(
-                Some(tag_matches),
-                emit_pattern_test(pattern, &SsaValue::Reg(payload), fb, ctx),
+            emit_pattern_branch(
+                pattern,
+                &SsaValue::Reg(payload),
+                success_label,
+                failure_label,
                 fb,
                 ctx,
-            )
+            );
         }
+    }
+}
+
+fn jump_to(label: &str, fb: &mut FuncBuilder) {
+    fb.finish_and_start(SsaTerminator::Jump(label.to_string()), label.to_string());
+}
+
+fn branch_to(cond: SsaValue, success_label: &str, failure_label: &str, fb: &mut FuncBuilder) {
+    fb.finish_and_start(
+        SsaTerminator::Branch {
+            cond,
+            then_label: success_label.to_string(),
+            else_label: failure_label.to_string(),
+        },
+        success_label.to_string(),
+    );
+}
+
+fn emit_pattern_sequence(
+    parts: Vec<(&AnfPattern, SsaValue)>,
+    success_label: &str,
+    failure_label: &str,
+    fb: &mut FuncBuilder,
+    ctx: &mut Ctx,
+) {
+    let last = parts.len().saturating_sub(1);
+    if parts.is_empty() {
+        jump_to(success_label, fb);
+        return;
+    }
+
+    for (index, (pattern, value)) in parts.into_iter().enumerate() {
+        let next_label = if index == last {
+            success_label.to_string()
+        } else {
+            ctx.fresh.next_label("pat_next")
+        };
+        emit_pattern_branch(pattern, &value, &next_label, failure_label, fb, ctx);
     }
 }
 
@@ -317,30 +336,6 @@ pub(super) fn emit_value_eq(
         },
     });
     SsaValue::Reg(dest)
-}
-
-pub(super) fn combine_optional_conditions(
-    lhs: Option<SsaValue>,
-    rhs: Option<SsaValue>,
-    fb: &mut FuncBuilder,
-    ctx: &mut Ctx,
-) -> Option<SsaValue> {
-    match (lhs, rhs) {
-        (None, None) => None,
-        (Some(cond), None) | (None, Some(cond)) => Some(cond),
-        (Some(lhs), Some(rhs)) => {
-            let dest = ctx.fresh.next_label("pat_and");
-            fb.push(SsaInstr {
-                dest: dest.clone(),
-                op: SsaOp::Builtin {
-                    op: DfBuiltinOp::And,
-                    lhs,
-                    rhs,
-                },
-            });
-            Some(SsaValue::Reg(dest))
-        }
-    }
 }
 
 // ── Pattern binding ────────────────────────────────────────────────────────────

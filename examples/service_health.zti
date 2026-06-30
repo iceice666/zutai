@@ -1,0 +1,34 @@
+{
+  generatedAt = "2026-06-28T09:30:00Z";
+  alertBudget = 25;
+
+  services = [
+    {
+      name = "api";
+      tier = #edge;
+      requests = 1200;
+      errors = 9;
+      latencyMs = 180;
+      enabled = true;
+      owner = "platform";
+    };
+    {
+      name = "search";
+      tier = #core;
+      requests = 980;
+      errors = 31;
+      latencyMs = 420;
+      enabled = true;
+      owner = "search";
+    };
+    {
+      name = "worker";
+      tier = #batch;
+      requests = 300;
+      errors = 0;
+      latencyMs = 95;
+      enabled = false;
+      owner = "ops";
+    };
+  ];
+}

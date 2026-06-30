@@ -1,0 +1,59 @@
+-- Canary forecast example
+-- Usage: zutai run examples/canary_forecast.zt
+-- Builds a bounded report from an infinite synthetic telemetry stream.
+
+s ::= import stdlib.stream;
+n ::= import stdlib.num;
+c ::= import stdlib.cmp;
+
+Risk :: type { #steady; #elevated; #hot; };
+
+Reading :: type {
+  minute : Int;
+  rps : Int;
+  errorRate : Int;
+  latencyMs : Int;
+};
+
+readingAt :: Int -> Reading
+  = minute => {
+    minute = minute;
+    rps = 120 + minute * 17;
+    errorRate = n.rem (minute * 7) 6;
+    latencyMs = 140 + n.rem (minute * minute) 90;
+  };
+
+telemetryFrom :: Int -> s.Stream Reading
+  = minute => stream {
+    yield readingAt minute;
+    yield from telemetryFrom (minute + 1);
+  };
+
+riskScore :: Reading -> Int
+  = reading => n.clamp 0 100 (reading.errorRate * 12 + reading.latencyMs / 5);
+
+riskBand :: Int -> Risk
+  = score => if score >= 80 then #hot else (if score >= 50 then #elevated else #steady);
+
+readingMinute :: Reading -> Int
+  = reading => reading.minute;
+
+chooseFirstHot :: Reading? -> Reading -> Reading?
+  = current reading => match current {
+    | #some (found) => #some (found);
+    | #none => if riskBand (riskScore reading) == #hot then #some (reading) else #none;
+  };
+
+window :: List Reading = s.takeList 8 (telemetryFrom 0);
+scores :: List Int = map riskScore window;
+peakScore :: Int = fold (\peak score. n.max peak score) 0 scores;
+firstHot :: Reading? = fold chooseFirstHot #none window;
+
+{
+  minutes = map readingMinute window;
+  scores = scores;
+  peakScore = peakScore;
+  band = riskBand peakScore;
+  hotterThanNinety = c.isGt (c.compareInt peakScore 90);
+  firstHot = firstHot;
+}

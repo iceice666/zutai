@@ -1,6 +1,9 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::{path::Path, process::Command as StdCommand};
+use std::{
+    path::{Path, PathBuf},
+    process::Command as StdCommand,
+};
 
 fn cli() -> Command {
     Command::cargo_bin("zutai-cli").unwrap()
@@ -20,6 +23,19 @@ fn general_fixture(name: &str) -> String {
         .join(name)
         .to_str()
         .expect("fixture path must be UTF-8")
+        .to_owned()
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn example_fixture(name: &str) -> String {
+    workspace_root()
+        .join("examples")
+        .join(name)
+        .to_str()
+        .expect("example path must be UTF-8")
         .to_owned()
 }
 
@@ -69,11 +85,47 @@ fn run_stdout(name: &str, content: &str) -> String {
     String::from_utf8(output).expect("run output should be UTF-8")
 }
 
+fn run_path_stdout(path: &str) -> String {
+    let output = cli()
+        .arg("run")
+        .arg(path)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).expect("run output should be UTF-8")
+}
+
+fn compile_path_bin_stdout(name: &str, path: &str) -> String {
+    let out = write_tmp(name, "");
+    cli()
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success();
+    let output = StdCommand::new(&out).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
 fn check_passes(name: &str, content: &str) {
     let path = write_tmp(name, content);
     cli()
         .arg("check")
         .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
+
+fn check_path_passes(path: &str) {
+    cli()
+        .arg("check")
+        .arg(path)
         .assert()
         .success()
         .stdout(predicate::str::contains("check passed"));
@@ -139,6 +191,40 @@ fn run_stream_generator_folds_codata_stream() {
         .assert()
         .success()
         .stdout(predicate::str::contains("6"));
+}
+
+#[test]
+fn real_examples_check_run_and_compile_match() {
+    let cases = [
+        (
+            "service_health.zt",
+            [
+                "activeCount = 2",
+                "budget = #overBudget",
+                "validation = #clean",
+            ],
+        ),
+        (
+            "canary_forecast.zt",
+            ["band = #hot", "peakScore = 93", "hotterThanNinety = true"],
+        ),
+    ];
+
+    for (name, snippets) in cases {
+        let path = example_fixture(name);
+        check_path_passes(&path);
+
+        let rendered = run_path_stdout(&path);
+        for snippet in snippets {
+            assert!(
+                rendered.contains(snippet),
+                "{name} output should contain `{snippet}`; got {rendered}"
+            );
+        }
+
+        let native = compile_path_bin_stdout(&format!("cli_test_example_{name}"), &path);
+        assert_eq!(native, rendered, "{name} native output must match run");
+    }
 }
 
 // V3-G1: `Stream A` is demand-driven codata (`Unit -> StreamCell A`). A finite
