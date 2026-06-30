@@ -260,9 +260,17 @@ General mode is pure and lazy. Unused bindings are not evaluated, and function a
 
 Zutai has static typing with inference, explicit parametric generics, and first-class compile-time `Type` values. A value of type `Type` describes a type; type values can be bound, passed to type-level functions, imported from `.zt` modules, and used in annotations, but they are not serializable final outputs.
 
-Built-in type values include `Type`, `Unit`, `Text`, `Bool`, `Int`, `Float`, fixed-width integer and float names (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`), posit scalar names (`Posit32`, `Posit64`, `Posit32eN`, `Posit64eN`), and `List`. `Unit` is the empty-tuple type `()`, whose only value is `()`.
+Ambient type values include `Type`, `Unit`, `Text`, `Bool`, `Int`, `Float`,
+fixed-width integer and float names (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`,
+`u32`, `u64`, `f32`, `f64`), posit scalar names (`Posit32`, `Posit64`,
+`Posit32eN`, `Posit64eN`), and the standard data/container type constructors
+`List`, `Optional`, `Maybe`, `Patch`, and `DeepPatch`. The source prelude also
+provides `Data`, `DataField`, `Stream`, `StreamEff`, and `Step`. `Unit` is the
+empty-tuple type `()`, whose only value is `()`.
 
-The ambient prelude also provides `Data` and `DataField` for dynamic load results. `Data` is a first-order tagged envelope with scalar, list, record, and tagged-value cases; `load.zt` rejects functions, `Type` values, witnesses, and other non-serializable final values.
+`Data` is a first-order tagged envelope with scalar, list, record, and
+tagged-value cases; `load.zt` rejects functions, `Type` values, witnesses, and
+other non-serializable final values.
 
 Annotations use `::`:
 
@@ -384,7 +392,7 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 | [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, while residual/partial overlay forms remain backend-gated |
 | [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 | Dynamic data loading | `loadZti path`, `loadZt path`, or `perform load.zti path` / `perform load.zt path` | explicit host capability/effect; `run` and compiled binaries dispatch runtime-selected `.zti`/`.zt` loads to a first-order `Data` envelope; handlers can intercept operations before the host boundary |
-| [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }`, `yield from`, and `Stream A` | `Stream A` is demand-driven **codata** (`Unit -> { #nil; #cons : { head; tail }; }`), not a memoizing lazy list; pure finite *and* infinite generators type-check and evaluate on both the interpreter and native backend. Effectful generators (`yield perform op`) run under a granting handler — reference-interpreter support plus native support for the `io.print`-backed cell idiom; non-`io.print` resource effects (`fs.read`, clocks, randomness) are reference-interpreter only and rejected before native lowering. `finally`, cooperative cancellation, and the granting-handler resource-lifetime contract are supported on the interpreter; native lowering of resource effects stays gated by committed design |
+| [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }`, tail `yield from`, and `Stream A` | `Stream A` is demand-driven **codata** (`Unit -> { #nil; #cons : { head; tail }; }`), not a memoizing lazy list; pure finite *and* infinite generators type-check and evaluate on both the interpreter and native backend. Tail `yield from` lowers; non-tail delegation is deliberately refused. Effectful generators (`yield perform op`) run under a granting handler — reference-interpreter support plus native support for the `io.print`-backed cell idiom; non-`io.print` resource effects (`fs.read`, clocks, randomness) are reference-interpreter only and rejected before native lowering. `finally`, cooperative cancellation, and the granting-handler resource-lifetime contract are supported on the interpreter; native lowering of resource effects stays gated by committed design |
 
 ## Errors and diagnostics
 

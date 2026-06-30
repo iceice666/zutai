@@ -2,11 +2,17 @@
 
 ## Status
 
-Accepted for post-v0 library design. Implementation is staged; see *Build order* below.
+Accepted and implemented through the current source-prelude / stdlib-H baseline:
+ambient `stream.zt` and `prelude.zt` are live, and the explicit
+`stdlib.optional`, `stdlib.result`, `stdlib.num`, `stdlib.text`, and
+`stdlib.cmp` modules are shipped. Folding config/reflection into source stdlib
+modules remains deferred; see *Build order* below.
 
-The prelude is the small set of names that are in scope in every `.zt` module without an
-explicit `import`. It is the only auto-imported tier; everything else is an explicit
-[module](00-index.md).
+The prelude is the set of names in scope in every `.zt` module without an
+explicit `import`. Its source layer is deliberately small; its intrinsic layer
+also carries compiler-backed compatibility names until those surfaces can move
+behind explicit source modules. Everything outside those two layers is an
+explicit [module](00-index.md).
 
 ## Two layers behind one scope
 
@@ -33,10 +39,10 @@ type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
 lowerer with their declarations injected as a fallback
 (`crates/general/hir/src/lower/prelude/`):
 
-- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Stream`,
-  `StreamEff`, `Step`, and the non-conflicting combinators `empty`/`cons`/
-  `singleton`/`unfold`/`take`/`drop`/`toList`/`fromList`/`takeList` are in scope
-  without an import (V3-G2);
+- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Data`,
+  `DataField`, `Stream`, `StreamEff`, `Step`, and the non-conflicting
+  combinators `empty`/`cons`/`singleton`/`unfold`/`take`/`drop`/`toList`/
+  `fromList`/`takeList` are in scope without an import (V3-G2);
 - the *function/list* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
   `id`/`const`/`compose`/`flip` and the `List` verbs `fold`/`foldl'`/`map`/
   `filter`/`length`/`append`/`uncons`/`head?`/`tail?` are in scope without an
@@ -50,13 +56,17 @@ in one program.
 
 ## Contents
 
-The prelude is deliberately focused — only what every pipeline needs:
+The source prelude is deliberately focused; the full ambient scope also includes
+compiler-backed compatibility names from the intrinsic layer:
 
 ```text
-Types        Type Text Bool Int Float List Optional Maybe   (intrinsic)
-Stream       Stream StreamEff Step; empty cons singleton unfold
+Types        Type Text Bool Int Float List Optional Maybe
+             Patch DeepPatch                                (intrinsic)
+Stream       Data DataField Stream StreamEff Step; empty cons singleton unfold
              take drop toList fromList takeList             (ambient source prelude)
-Effect       print                                           (intrinsic)
+Host/effects print; loadZti loadZt                           (intrinsic)
+Reflect      fields variants schema                          (intrinsic)
+Config       overlay overlayDeep                             (intrinsic)
 Function     id const compose flip                           (ambient source prelude)
 List verbs   fold foldl' map filter length append uncons head? tail?
                                                              (ambient source prelude)
@@ -69,14 +79,20 @@ Rationale:
 - The **list verbs** are the advertised idiom (`docs/spec/v0/05-type-system/lists.md`):
   `items |> filter pred |> map f |> fold step init`. `fold` is the strict left fold.
 - `id` is the no-op combinator pipelines and higher-order functions reach for.
-- `print` is the one host effect (`io.print`); it stays a pipeline-friendly tap.
+- `print` is the one ambient host effect (`io.print`); it stays a
+  pipeline-friendly tap. Reflection/config/dynamic-load names are compatibility
+  surfaces with their own fold-or-reject or host-boundary gates, not source
+  prelude helpers. `Data` and `DataField` live in the stream prelude because
+  dynamic `loadZti`/`loadZt` returns that envelope.
 
 Excluded from the prelude on purpose:
 
 - `foldr`, `zip`, `flatten`, `reverse`, `take`, `drop`, search/sort/grouping
   helpers, and numeric aggregates remain explicit `list` work.
-- All of `text`, `num`, `optional`, `result`, `cmp`, and `reflect` are explicit
-  imports (`num`/`optional`/`result` are landed explicit modules).
+- `text`, `num`, `optional`, `result`, and `cmp` are explicit imports.
+- Future `reflect`/`config` source modules should also be explicit. The current
+  intrinsic compatibility names are not shipped `stdlib.reflect` or
+  `stdlib.config` modules.
 
 Naming note: the list-specialized `map`/`fold` may later become the
 witness-dispatched `Functor`/`Foldable` methods once v1 constraints land
@@ -150,9 +166,11 @@ is the module export; the ambient path reads only the declarations). Stream
 `map`/`filter`/`fold`/`uncons` are intentionally qualified-only to keep the
 ambient names bound to `List`.
 
-The prelude **must not** re-export backend-gated intrinsics (`fields`, `schema`,
-or residual/partial `overlay`/`overlayDeep` forms): they stay behind explicit
-`reflect`/`config` imports until their full backend lowering is available.
+The source prelude **must not** add aliases or wrappers for backend-gated
+reflection/config intrinsics. `fields`/`variants`/`schema`/`witness` and
+`overlay`/`overlayDeep` keep their existing intrinsic fold-or-reject / AOT-gate
+behavior until a future `stdlib.reflect` or `stdlib.config` source module is
+scoped.
 
 ## Error-handling boundary
 
@@ -201,4 +219,7 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
 7. `cmp`. *(landed as slice H: explicit import only via `stdlib.cmp`; concrete
    `compareInt`/`compareFloat`/`compareText` and comparator combinators are
    source definitions; generic witness-dispatched `compare` remains deferred)*
-8. Fold `config`/`reflect` under the import scheme.
+8. Fold `config`/`reflect` under the import scheme. *(deferred: today these
+   names remain intrinsic compatibility surfaces; do not claim
+   `stdlib.config`/`stdlib.reflect` modules until embedded source modules
+   exist.)*

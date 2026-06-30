@@ -1479,6 +1479,20 @@ as the Phase 34 GC.
   `Free Op A` data plus a driver loop and wires it past the residual gate; the
   representation it would target is now proven to lower and run.
 
+### Doc reconciliation (2026-06-24 audit) ✅
+
+_Completed 2026-06-24. Surfaced by the V1→V2 readiness audit; this was a
+documentation-only correction pass, with no implementation change._
+
+- **Forward-dated ARCHIVED stamps.** Nine `2026-06-25` stamps in
+  `docs/ARCHIVED.md` (the "Current baseline" Last-updated note plus eight
+  completed-milestone entries) were one day ahead of the authoritative date and
+  were corrected to 2026-06-24.
+- **Higher-rank support level.** `docs/v2_spec/05-higher-rank-polymorphism.md`
+  "Support Level" understated support as reference-interpreter only; native
+  rank-2 lambda-arg parity is tested by
+  `compiled_rank2_lambda_arg_matches_oracle` and was documented.
+
 ### V2-A: Explicit universe-level syntax ✅
 
 _Completed 2026-06-24. Implements the v2 spec §"Explicit Level Syntax"
@@ -2321,5 +2335,4 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
   match exhaustiveness, lambda lowering, no-signature function inference,
   predicative polymorphism, imports, constraints, witnesses, and operator
   witness dispatch.
-
 

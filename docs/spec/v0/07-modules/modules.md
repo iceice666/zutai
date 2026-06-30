@@ -61,7 +61,9 @@ s.map f (s.singleton 1)
 the module source is built into the compiler. Resolution does not consult the
 filesystem and is not subject to the path-relative subtree confinement that
 quoted-string imports use. An unknown `<name>` is a precise diagnostic
-(`unknown stdlib module: stdlib.<name>`). Currently `stdlib.stream` is provided.
+(`unknown stdlib module: stdlib.<name>`). Currently provided embedded modules
+are `stdlib.stream`, `stdlib.prelude`, `stdlib.optional`, `stdlib.result`,
+`stdlib.num`, `stdlib.text`, and `stdlib.cmp`.
 
 ### Selective binding (destructuring import)
 

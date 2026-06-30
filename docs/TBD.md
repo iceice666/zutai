@@ -26,75 +26,15 @@ H (Comparator helpers) **landed 2026-06-28** (see `docs/ARCHIVED.md` for the
 per-slice summaries). This is stdlib work, not Track 2, and does not reopen any
 core language boundary. Track 2 remains demand-gated.
 
-## Source prelude / stdlib active work
+## Source prelude / stdlib status
 
-Goal: make the planned source prelude real without changing V0–V3 core
-semantics. Source definitions are the specification; compiler intrinsics are
-allowed only as verified optimizations of the same binding or for operations
-that source cannot yet express safely.
+_No active source-prelude/stdlib usability milestone is scoped._ Slices B-H
+landed 2026-06-28 and are archived in `docs/ARCHIVED.md`: small function
+helpers, minimal ambient/importable `List` verbs, and explicit
+`stdlib.optional`, `stdlib.result`, `stdlib.num`, `stdlib.text`, and
+`stdlib.cmp`.
 
-### B — Small function prelude ✅
-
-_Landed 2026-06-28. `prelude.zt` ships `id`/`const`/`compose`/`flip` as ambient
-source declarations (HIR-lowerer fallback, importable as `stdlib.prelude`);
-user bindings shadow the prelude; interpreter/TLC/native agree on
-representative higher-order uses. See `docs/ARCHIVED.md` "Small function prelude
-(stdlib slice B)" for the summary._
-
-### C — Minimal `List` verbs ✅
-
-_Landed 2026-06-28. `prelude.zt` now ships ambient/importable `List` verbs
-`fold`/`foldl'`/`map`/`filter`/`length`/`append`/`uncons`/`head?`/`tail?`, backed
-by list nil/cons patterns through THIR/TLC/eval/native and a strict
-`listFoldlStrict` bridge. Stream `map`/`filter`/`fold`/`uncons` remain available
-through `import stdlib.stream`. See `docs/ARCHIVED.md` "Minimal List verbs
-(stdlib slice C)" for the summary._
-
-### D — Optional helpers ✅
-
-_Landed 2026-06-28. `optional.zt` ships explicit-import-only helpers
-`map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList` over `Optional`; the
-module is available as `import stdlib.optional` and is not injected into the
-ambient prelude, so `List` `map`/`filter` remain the unqualified defaults. See
-`docs/ARCHIVED.md` "Optional helpers (stdlib slice D)" for the summary._
-
-### E — Result and Validation helpers ✅
-
-_Landed 2026-06-28. `result.zt` ships explicit-import-only `Result` and
-`Validation` helpers: `ok`/`err`/`valid`/`invalid`/`map`/`map2`/`mapErr`/
-`andThen`/`withDefault`/`errors`. The module is available as
-`import stdlib.result` and is not injected into the ambient prelude. See
-`docs/ARCHIVED.md` "Result and Validation helpers (stdlib slice E)" for the
-summary._
-
-### F — Numeric helpers ✅
-
-_Landed 2026-06-28. `num.zt` ships explicit-import-only helpers
-`min`/`max`/`abs`/`clamp`/`pow`/`rem`/`gcd`/`toFloat`/`round`/`truncate`.
-The module is available as `import stdlib.num` and is not injected into the
-ambient prelude. Checked scalar bridge intrinsics cover remainder, power,
-conversions, and checked abs on interpreter/TLC/native paths. See
-`docs/ARCHIVED.md` "Numeric helpers (stdlib slice F)" for the summary._
-
-### G — Text helpers ✅
-
-_Landed 2026-06-28. `text.zt` ships explicit-import-only helpers
-`length`/`split`/`join`/`trim`/`toUpper`/`toLower`/`contains`/`replace`/`show`/
-`parseInt`/`parseFloat`. The module is available as `import stdlib.text` and is
-not injected into the ambient prelude. Scalar bridge intrinsics cover runtime
-string operations and numeric parsing on interpreter/TLC/native paths. See
-`docs/ARCHIVED.md` "Text helpers (stdlib slice G)" for the summary._
-
-### H — Comparator helpers ✅
-
-_Landed 2026-06-28. `cmp.zt` ships explicit-import-only `Ordering` plus
-`lt`/`eq`/`gt`/`isLt`/`isEq`/`isGt`/`reverse`/`then`/`by` and concrete
-`compareInt`/`compareFloat`/`compareText` comparators. The module is available
-as `import stdlib.cmp` and is not injected into the ambient prelude. Generic
-witness-dispatched `compare` remains deferred. See `docs/ARCHIVED.md`
-"Comparator helpers (stdlib slice H)" for the summary._
-
-Non-goals after stdlib usability: non-tail generator `yield from`,
+Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic
 witness-dispatched `compare`.
 
@@ -151,16 +91,3 @@ Now sequenced in the **V3 roadmap** (`docs/v3_spec/02-roadmap.md`). Summary:
   stays predicative), unforgeable capability tokens (v2 capabilities carry
   advisory authority), and nominal recursive types (v2 recursive types are
   equirecursive). Build one only when a concrete need drives it.
-
-## Doc reconciliation (2026-06-24 audit)
-
-Surfaced by the V1→V2 readiness audit; both resolved 2026-06-24:
-
-- **Forward-dated ARCHIVED stamps.** Nine `2026-06-25` stamps in
-  `docs/ARCHIVED.md` (the "Current baseline" Last-updated note plus eight
-  completed-milestone entries) were one day ahead of the authoritative date;
-  corrected to 2026-06-24.
-- **Higher-rank support level.** `docs/v2_spec/05-higher-rank-polymorphism.md`
-  "Support Level" understated support as reference-interpreter only; native
-  rank-2 lambda-arg parity is in fact tested
-  (`compiled_rank2_lambda_arg_matches_oracle`). Corrected.
