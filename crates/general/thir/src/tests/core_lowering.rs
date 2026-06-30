@@ -320,12 +320,10 @@ server with { missing = 1; }
 #[test]
 fn record_update_uninferred_receiver_requires_row_annotation() {
     let lowered = lower("f x = x with { host = \"localhost\"; };\nf");
-    assert!(
-        lowered
-            .diagnostics
-            .iter()
-            .any(|diagnostic| matches!(diagnostic.kind, ThirDiagnosticKind::RowAnnotationRequired))
-    );
+    assert!(lowered.diagnostics.iter().any(|diagnostic| matches!(
+        diagnostic.kind,
+        ThirDiagnosticKind::RowAnnotationRequired { field: None }
+    )));
 }
 
 #[test]

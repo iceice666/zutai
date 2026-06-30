@@ -66,7 +66,9 @@ slice E)", "Numeric helpers (stdlib slice F)", "Text helpers (stdlib slice G)",
 "Release acceptance pack (release slice R0)"), and 2026-06-30 (native SSA
 pattern tests now short-circuit variant/list payload destructuring before
 binding; real examples check/run/native-compile parity is covered; see "Native
-pattern-test short-circuiting" below)._
+pattern-test short-circuiting" below; DX polish added row diagnostic field
+context, nested-conditional parser help, `just native-examples`, and
+real-program style docs; see "DX polish slice" below)._
 The same 2026-06-30 baseline also includes the explicit stdlib expansion:
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` are embedded importable modules, with config/reflect compiler
@@ -220,6 +222,21 @@ without adding new ambient names._
   `cargo test -p zutai-eval imports::stdlib_ -- --nocapture`,
   `nix develop --command cargo test -p zutai-cli --test cli compile_stdlib_ -- --test-threads=1 --nocapture`,
   and `nix develop --command cargo test --workspace -- --test-threads=1`.
+
+### DX polish slice ✅
+
+_Completed 2026-06-30. Makes the real-example and diagnostic workflow easier to
+use without changing language semantics._
+
+- **Actionable row diagnostics.** `RowAnnotationRequired` now carries optional
+  field-access context, so `x.host`-style non-principal row inference tells
+  users to annotate the receiver or extract a typed helper.
+- **Example workflow.** `just native-examples` runs the real examples through
+  check/run/native-compile parity inside the repo's `nix develop` shell, and
+  missing native-tool errors point to tool env vars plus `nix develop`.
+- **Docs and parse help.** The language manual documents current real-program
+  style, and chained-comparison help now also shows the explicit parentheses
+  expected for nested conditionals.
 
 ### Native pattern-test short-circuiting ✅
 

@@ -188,7 +188,12 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
                 "union row tail `...{source}` overlaps explicit member `#{name}`: existing `{existing}`, incoming `{incoming}`"
             )
         }
-        RowAnnotationRequired => {
+        RowAnnotationRequired { field: Some(field) } => {
+            format!(
+                "field access `.{field}` needs a known record type; add a type annotation to the receiver or extract the lambda into a typed helper"
+            )
+        }
+        RowAnnotationRequired { field: None } => {
             "row-polymorphic inference is not principal here; add a type annotation".to_string()
         }
         EffectNotInRow { op } => {

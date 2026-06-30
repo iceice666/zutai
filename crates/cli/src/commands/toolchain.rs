@@ -33,7 +33,7 @@ pub(super) fn run_tool(
 ) -> Result<(), Box<dyn Error>> {
     let status = command.status().map_err(|err| {
         format!(
-            "compile error: required tool `{tool}` failed to start for {purpose}: {err}; install it or set ZUTAI_{}",
+            "compile error: required tool `{tool}` failed to start for {purpose}: {err}; install it, set ZUTAI_{}, or run from a dev shell that provides LLVM/native build tools (for this repo: `nix develop`)",
             tool.to_ascii_uppercase()
         )
     })?;

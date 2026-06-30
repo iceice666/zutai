@@ -372,7 +372,7 @@ impl<'hir> Lowerer<'hir> {
             let resolved = self.resolve(receiver_ty);
             if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
                 self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::RowAnnotationRequired,
+                    kind: ThirDiagnosticKind::RowAnnotationRequired { field: None },
                     span,
                 });
             } else {
@@ -451,7 +451,9 @@ impl<'hir> Lowerer<'hir> {
                 // Field access on an un-inferred value: row-polymorphic inference
                 // is not principal here, so an explicit annotation is required.
                 self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::RowAnnotationRequired,
+                    kind: ThirDiagnosticKind::RowAnnotationRequired {
+                        field: Some(field.to_string()),
+                    },
                     span,
                 });
             } else {

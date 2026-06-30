@@ -462,6 +462,15 @@ fn genuine_chained_comparison_still_rejected() {
 }
 
 #[test]
+fn chained_comparison_help_mentions_nested_conditional_parentheses() {
+    let help = ParseErrorKind::ChainedComparison
+        .help()
+        .expect("chained comparison should have help text");
+    assert!(help.contains("parenthesize comparisons explicitly"));
+    assert!(help.contains("else (if ... then ... else ...)"));
+}
+
+#[test]
 fn parse_pipeline_forward() {
     let e = parse_expr_str("x |> f");
     let (dir, lhs, rhs) = as_pipeline(&e);

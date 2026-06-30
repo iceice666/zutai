@@ -174,8 +174,11 @@ pub enum ThirDiagnosticKind {
         incoming: String,
     },
     /// Row-polymorphic inference is not principal here; an explicit type
-    /// annotation is required.
-    RowAnnotationRequired,
+    /// annotation is required. `field` is present for field-access cases such as
+    /// `x.host`, where the unknown receiver type blocks principal row inference.
+    RowAnnotationRequired {
+        field: Option<String>,
+    },
     EffectNotInRow {
         op: String,
     },

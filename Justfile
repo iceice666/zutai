@@ -19,6 +19,10 @@ build-release:
 test *ARGS:
     cargo nextest run --workspace {{ARGS}}
 
+# Check real examples through check/run/native compile parity.
+native-examples:
+    cargo test -p zutai-cli --test cli real_examples_check_run_and_compile_match -- --test-threads=1
+
 # ── Lint & format ─────────────────────────────────────────────────────────────
 
 fmt:

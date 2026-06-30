@@ -711,12 +711,11 @@ fn diagnostic_polish_union_spread_overlap_shows_existing_and_incoming() {
 #[test]
 fn field_access_on_uninferred_value_requires_annotation() {
     let lowered = lower("f x = x.host;\nf");
-    assert!(
-        lowered
-            .diagnostics
-            .iter()
-            .any(|d| matches!(d.kind, ThirDiagnosticKind::RowAnnotationRequired))
-    );
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::RowAnnotationRequired { field: Some(field) }
+            if field == "host"
+    )));
 }
 
 #[test]

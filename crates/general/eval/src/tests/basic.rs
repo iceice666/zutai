@@ -178,6 +178,21 @@ fn record_field_access() {
 }
 
 #[test]
+fn uninferred_record_field_access_reports_receiver_annotation_hint() {
+    let err = run_err("f x = x.host;\nf");
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages.iter().any(|message| {
+            message.contains("field access `.host` needs a known record type")
+                && message.contains("typed helper")
+        }),
+        "expected row annotation hint for `.host`, got {messages:?}"
+    );
+}
+
+#[test]
 fn record_equality() {
     assert_eq!(run("{ x = 1; } == { x = 1; }"), Value::Bool(true));
     assert_eq!(run("{ x = 1; } == { x = 2; }"), Value::Bool(false));

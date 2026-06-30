@@ -38,6 +38,31 @@ Zutai has two file modes.
 
 When `.zti` data is imported into `.zt`, `.zti` blocks become `.zt` records and `.zti` arrays become `.zt` lists.
 
+## Real-program style
+
+Larger programs usually pair inert `.zti` data with a typed `.zt`
+transformation. Import `.zti` at a typed boundary, then keep the rest of the
+program in named helpers with explicit input and output types. This gives row
+checking enough information for record projections and keeps diagnostics close
+to the helper that needs an annotation.
+
+Short module aliases keep pipelines readable in example-sized programs:
+`s ::= import stdlib.stream;`, `n ::= import stdlib.num;`,
+`t ::= import stdlib.text;`, `r ::= import stdlib.result;`, and
+`c ::= import stdlib.cmp;` are common local names. Larger opt-in surfaces often
+use `l ::= import stdlib.list;`, `d ::= import stdlib.data;`,
+`v ::= import stdlib.validate;`, `cfg ::= import stdlib.config;`, and
+`refl ::= import stdlib.reflect;`. Prefer typed projection or
+predicate helpers such as `isEnabled :: Service -> Bool = svc => svc.enabled;`
+before using them in `map`, `filter`, or stream/list folds.
+
+For nested conditionals inside expressions, use parentheses when the nesting
+would otherwise be visually ambiguous:
+
+```zt
+else (if score >= 50 then #elevated else #steady)
+```
+
 ## Lexical basics
 
 In `.zt`, whitespace separates tokens. `;` is the universal terminator/separator: every value-like top-level declaration ends in `;`, and a trailing `;` on an expression makes it a `()` statement. (Clause-functions, constraint definitions, and witness definitions instead end at the final clause `;` or the closing `}`/`derive`.)

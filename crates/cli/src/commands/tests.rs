@@ -130,6 +130,17 @@ fn output_path_for_derives_default_paths() {
     );
 }
 
+#[test]
+fn missing_native_tool_message_points_to_env_var_and_dev_shell() {
+    let mut command = Command::new("__zutai_missing_tool_for_test__");
+    let err = run_tool(&mut command, "llc", "assembling LLVM IR")
+        .expect_err("missing tool should fail before spawning");
+    let message = err.to_string();
+    assert!(message.contains("required tool `llc` failed to start"));
+    assert!(message.contains("ZUTAI_LLC"));
+    assert!(message.contains("nix develop"));
+}
+
 // ─── eval isolation unit tests ────────────────────────────────────────────────
 
 #[test]

@@ -62,6 +62,9 @@ Smaller stdlib-focused snippets include [stdlib_pipeline.zt](examples/stdlib_pip
 [stream_summary.zt](examples/stream_summary.zt), and
 [text_report.zt](examples/text_report.zt).
 
+For conventions used by larger examples, see the
+[real-program style](docs/language-manual.md#real-program-style) notes.
+
 ## Development
 
 This project is a Rust workspace.
