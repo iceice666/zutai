@@ -220,6 +220,14 @@ fn real_examples_check_run_and_compile_match() {
             "canary_forecast.zt",
             ["band = #hot", "peakScore = 93", "hotterThanNinety = true"],
         ),
+        (
+            "deploy_readiness.zt",
+            [
+                "gate = #hold",
+                "risk = 9",
+                "summary = \"PROD / payments-api / hold\"",
+            ],
+        ),
     ];
 
     for (name, snippets) in cases {

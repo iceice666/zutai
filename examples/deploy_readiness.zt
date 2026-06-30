@@ -1,0 +1,69 @@
+-- Deployment readiness example
+-- Usage: zutai-cli run examples/deploy_readiness.zt
+-- Imports inert rollout data, summarizes failed checks, and chooses a gate.
+
+n ::= import stdlib.num;
+t ::= import stdlib.text;
+
+Severity :: type { #info; #warn; #blocker; };
+Gate :: type { #ship; #hold; };
+
+Check :: type {
+  name : Text;
+  passed : Bool;
+  severity : Severity;
+  score : Int;
+};
+
+Plan :: type {
+  environment : Text;
+  target : Text;
+  owner : Text;
+  rolloutPercent : Int;
+  errorBudget : Int;
+  checks : List Check;
+};
+
+plan :: Plan = import "deploy_readiness.zti";
+
+isFailed :: Check -> Bool
+  = check => check.passed == false;
+
+isBlocking :: Check -> Bool
+  = check => isFailed check && check.severity == #blocker;
+
+riskStep :: Int -> Check -> Int
+  = acc check => if isFailed check then acc + check.score else acc;
+
+appendFailure :: List Text -> Check -> List Text
+  = names check => if isFailed check then append names { check.name; } else names;
+
+failedChecks :: List Text = fold appendFailure {;} plan.checks;
+blockingChecks :: List Check = filter isBlocking plan.checks;
+risk :: Int = fold riskStep 0 plan.checks;
+clampedRollout :: Int = n.clamp 0 100 plan.rolloutPercent;
+
+gate :: Gate = if length blockingChecks > 0 then
+    #hold
+  else if risk > plan.errorBudget then
+    #hold
+  else if clampedRollout > 50 then
+    #hold
+  else
+    #ship;
+
+summary ::= t.join " / " {
+  t.toUpper plan.environment;
+  plan.target;
+  if gate == #ship then "ready" else "hold";
+};
+
+{
+  target = plan.target;
+  owner = plan.owner;
+  rolloutPercent = clampedRollout;
+  failed = failedChecks;
+  risk = risk;
+  gate = gate;
+  summary = summary;
+}

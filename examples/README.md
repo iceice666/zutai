@@ -35,6 +35,7 @@ cargo run -q -p zutai-cli -- run examples/service_health.zt
 | --- | --- | --- |
 | `service_health.zt` + `service_health.zti` | Importing inert data, typed records, validation, rollups | Prints an operational summary record |
 | `canary_forecast.zt` | Infinite synthetic stream bounded by `takeList` | Prints a canary-risk report |
+| `deploy_readiness.zt` + `deploy_readiness.zti` | Rollout gating from inert config, failed-check rollups, and text summaries | Prints a deployment readiness record |
 | `stdlib_pipeline.zt` | `stdlib.num`, `stdlib.optional`, and `stdlib.result` pipelines | Prints one integer score |
 | `stream_summary.zt` | List-to-stream transformation and lazy stream summary | Prints items, sum, and count |
 | `text_report.zt` | `stdlib.text` normalization, replacement, joining, and parsing | Prints a text report record |

@@ -1,0 +1,28 @@
+{
+  environment = "prod";
+  target = "payments-api";
+  owner = "SRE 台北";
+  rolloutPercent = 35;
+  errorBudget = 8;
+
+  checks = [
+    {
+      name = "schema";
+      passed = true;
+      severity = #warn;
+      score = 2;
+    };
+    {
+      name = "load-test";
+      passed = false;
+      severity = #blocker;
+      score = 9;
+    };
+    {
+      name = "rollback";
+      passed = true;
+      severity = #info;
+      score = 1;
+    };
+  ];
+}
