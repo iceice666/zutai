@@ -89,9 +89,7 @@ impl ZtParseDiagnostic {
         let span = err.primary_span();
         let start = span.start as usize;
         let end = span.end as usize;
-        let clamped_start = start.min(contents.len());
-        let max_len = contents.len().saturating_sub(clamped_start);
-        let len = end.saturating_sub(start).max(1).min(max_len.max(1));
+        let (clamped_start, len) = clamp_source_span(contents, start, end);
         let label = err
             .labels
             .iter()
@@ -146,15 +144,36 @@ impl ZtSemanticDiagnostic {
     pub(crate) fn new(path: &str, contents: &str, message: String, start: u32, end: u32) -> Self {
         let start = start as usize;
         let end = end as usize;
-        let clamped_start = start.min(contents.len());
-        let max_len = contents.len().saturating_sub(clamped_start);
-        let len = end.saturating_sub(start).max(1).min(max_len.max(1));
+        let (clamped_start, len) = clamp_source_span(contents, start, end);
         Self {
             source_code: NamedSource::new(path, contents.to_string()),
             message,
             span: (clamped_start, len),
         }
     }
+}
+
+fn clamp_source_span(contents: &str, start: usize, end: usize) -> (usize, usize) {
+    let start = floor_char_boundary(contents, start.min(contents.len()));
+    let mut end = ceil_char_boundary(contents, end.min(contents.len()));
+    if end <= start {
+        end = ceil_char_boundary(contents, (start + 1).min(contents.len()));
+    }
+    (start, end.saturating_sub(start).max(1))
+}
+
+fn floor_char_boundary(s: &str, mut offset: usize) -> usize {
+    while offset > 0 && !s.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
+}
+
+fn ceil_char_boundary(s: &str, mut offset: usize) -> usize {
+    while offset < s.len() && !s.is_char_boundary(offset) {
+        offset += 1;
+    }
+    offset
 }
 
 impl Diagnostic for ZtSemanticDiagnostic {

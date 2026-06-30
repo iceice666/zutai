@@ -68,7 +68,10 @@ pattern tests now short-circuit variant/list payload destructuring before
 binding; real examples check/run/native-compile parity is covered; see "Native
 pattern-test short-circuiting" below; DX polish added row diagnostic field
 context, nested-conditional parser help, `just native-examples`, and
-real-program style docs; see "DX polish slice" below)._
+real-program style docs; see "DX polish slice" below; Unicode source/native
+hardening made `.zt` Unicode whitespace/comments diagnostic-safe and made LLVM
+name emission ASCII-safe for Unicode source identifiers; see "Unicode
+source/native hardening" below)._
 The same 2026-06-30 baseline also includes the explicit stdlib expansion:
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` are embedded importable modules, with config/reflect compiler
@@ -201,6 +204,31 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Unicode source/native hardening ✅
+
+_Completed 2026-06-30. Extends the earlier XID identifier support through
+Unicode whitespace, diagnostics, and native codegen naming._
+
+- **Source parsing and diagnostics.** General-mode trivia/fallback diagnostic
+  recovery now skips Unicode whitespace and nested comments at UTF-8 scalar
+  boundaries. The common diagnostic scanner treats Unicode identifier runs as
+  identifiers, allows Unicode inline whitespace after lambda dots, and clamps
+  emitted spans to UTF-8 character boundaries. Lossless tokenization classifies
+  Unicode whitespace as whitespace rather than `Unknown`.
+- **Immediate-mode docs/tests.** The `.zti` v0 grammar reference now matches the
+  implemented standard/SIMD behavior: field names and atom bodies use Unicode
+  UAX #31 classes with no normalization, and Unicode whitespace is accepted
+  outside strings on both parser backends.
+- **Native codegen.** LLVM name mangling now escapes non-ASCII source
+  identifiers to ASCII-only `_uHEX$` fragments, so Unicode function, binding,
+  parameter, and local names do not leak raw Unicode into LLVM symbols or
+  registers.
+- **Verification.** Targeted gates passed: `cargo fmt --check`,
+  `cargo test -p zutai-syntax`, `cargo test -p zutai-im-syntax`,
+  `cargo test -p zutai-im-simd`, `cargo test -p zutai-codegen`,
+  `nix develop --command cargo test -p zutai-cli unicode -- --nocapture`, and
+  `cargo test -p zutai-rt text`.
 
 ### Stdlib crate extraction ✅
 

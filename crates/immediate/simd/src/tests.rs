@@ -67,6 +67,11 @@ fn parse_unicode_names_and_atoms_match_winnow() {
 }
 
 #[test]
+fn parse_unicode_whitespace_matches_winnow() {
+    assert_same_as_winnow("\u{00A0}{\u{2003}名前\u{3000}=\u{00A0}\"ok\"\u{2003};\u{3000}}\u{00A0}");
+}
+
+#[test]
 fn rejects_top_level_non_block() {
     assert!(matches!(
         parse("[1;]").unwrap_err().kind,

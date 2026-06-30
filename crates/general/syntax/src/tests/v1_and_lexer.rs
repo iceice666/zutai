@@ -694,6 +694,75 @@ fn parse_unicode_ws_multi_byte_no_panic() {
 }
 
 #[test]
+fn parse_unicode_inline_ws_separates_top_level_application() {
+    let f = parse_ast_only("id ::= \\x. x;\nid\u{00A0}1")
+        .into_ast()
+        .expect("NBSP should separate application");
+    assert!(
+        matches!(f.final_expr, Expr::Apply { .. }),
+        "expected application, got {:?}",
+        f.final_expr
+    );
+}
+
+#[test]
+fn parse_lambda_dot_allows_unicode_inline_whitespace() {
+    let parsed = parse("id ::= \\x.\u{00A0}x;\nid 1");
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "unexpected diagnostics: {:?}",
+        parsed.diagnostics()
+    );
+}
+
+#[test]
+fn parse_unicode_comment_diagnostics_stay_on_char_boundaries() {
+    let src = "-- 註解 —\n{1; 2}";
+    let parsed = parse(src);
+    let diag = parsed
+        .diagnostics()
+        .first()
+        .expect("fixture should produce a parse diagnostic");
+    assert_eq!(diag.kind, ParseErrorKind::MissingListItemSemicolon);
+    let span = diag.primary_span();
+    assert!(src.is_char_boundary(span.start as usize), "{span:?}");
+    assert!(src.is_char_boundary(span.end as usize), "{span:?}");
+}
+
+#[test]
+fn parse_unicode_comments_as_trivia() {
+    let src = concat!(
+        "-- 行註解 café 🚀\n",
+        "--| 文件註解 日本語\n",
+        "--[ 外層 🧪 --[ 內層 한글 ]-- 結束 ]--\n",
+        "名前 ::= 41;\n",
+        "名前 + 1\n",
+    );
+    let parsed = parse_ast_only(src);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    assert!(parsed.ast().is_some());
+}
+
+#[test]
+fn tokenize_unicode_whitespace_as_whitespace() {
+    let tokens = tokenize("foo\u{3000}bar");
+    assert!(
+        tokens
+            .iter()
+            .any(|token| token.kind == SyntaxKind::Whitespace && token.text == "\u{3000}"),
+        "tokens: {tokens:?}"
+    );
+    assert!(
+        tokens.iter().all(|token| token.kind != SyntaxKind::Unknown),
+        "tokens: {tokens:?}"
+    );
+}
+
+#[test]
 fn parse_unicode_ident_atom_and_field_name() {
     let parsed = parse_ast_only("café ::= #café;\n{ café = café; }");
     assert!(

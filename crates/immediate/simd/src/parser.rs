@@ -392,6 +392,19 @@ impl<'a> Parser<'a> {
             cursor += 1;
         }
         self.cursor = cursor;
+        if cursor < sig.len()
+            && self.pos < sig[cursor]
+            && self.peek_char().is_some_and(|ch| !ch.is_whitespace())
+        {
+            return;
+        }
         self.pos = sig.get(cursor).copied().unwrap_or(self.bytes.len());
+        while self.peek_char().is_some_and(char::is_whitespace) {
+            self.pos += self.peek_char().map_or(1, char::len_utf8);
+        }
+        while cursor < sig.len() && sig[cursor] < self.pos {
+            cursor += 1;
+        }
+        self.cursor = cursor;
     }
 }

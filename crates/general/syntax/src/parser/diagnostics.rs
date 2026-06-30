@@ -93,6 +93,16 @@ impl<'a> Scanner<'a> {
                 continue;
             }
 
+            if self
+                .src
+                .get(self.pos..)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(crate::ident::is_ident_start)
+            {
+                self.scan_identifier_like();
+                continue;
+            }
+
             match self.bytes[self.pos] {
                 b'{' => self.open(Delim::Brace),
                 b'[' => self.open(Delim::Bracket),
@@ -261,7 +271,12 @@ impl<'a> Scanner<'a> {
         }
         if let Some(dot) = self.find_lambda_dot(lambda_start + 1, end) {
             let after = dot + 1;
-            if after >= self.bytes.len() || !self.bytes[after].is_ascii_whitespace() {
+            if after >= self.bytes.len()
+                || !self.src[after..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_whitespace)
+            {
                 self.push(dot, dot + 1, ParseErrorKind::LambdaDotNeedsWhitespace);
             }
         }
@@ -373,13 +388,30 @@ impl<'a> Scanner<'a> {
     }
 
     fn at_number_boundary(&self) -> bool {
-        self.pos == 0
-            || !(self.bytes[self.pos - 1].is_ascii_alphanumeric()
-                || self.bytes[self.pos - 1] == b'_')
+        self.previous_char_before(self.pos).is_none_or(|ch| {
+            !(ch.is_ascii_alphanumeric() || ch == '_' || crate::ident::is_ident_continue(ch))
+        })
     }
 
     fn consume_ascii_digits(&mut self) {
         while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            self.pos += 1;
+        }
+    }
+
+    fn scan_identifier_like(&mut self) {
+        self.pos += self.char_len_at(self.pos);
+        while self.pos < self.bytes.len() {
+            let Some(ch) = self.src[self.pos..].chars().next() else {
+                break;
+            };
+            if crate::ident::is_ident_continue(ch) || ch == '\'' {
+                self.pos += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if self.starts_with("?") && !self.starts_with("?.") && !self.starts_with("??") {
             self.pos += 1;
         }
     }
@@ -502,8 +534,10 @@ impl<'a> Scanner<'a> {
         if self.errors.len() >= MAX_DIAGNOSTICS {
             return;
         }
-        let clamped_start = start.min(self.bytes.len());
-        let clamped_end = end.min(self.bytes.len()).max(clamped_start);
+        let clamped_start = self.floor_char_boundary(start.min(self.bytes.len()));
+        let clamped_end = self
+            .ceil_char_boundary(end.min(self.bytes.len()))
+            .max(clamped_start);
         self.errors.push(ParseError::from_kind(
             Span::new(clamped_start, clamped_end),
             kind,
@@ -526,6 +560,26 @@ impl<'a> Scanner<'a> {
 
     fn char_len_at(&self, offset: usize) -> usize {
         self.src[offset..].chars().next().map_or(1, char::len_utf8)
+    }
+
+    fn previous_char_before(&self, offset: usize) -> Option<char> {
+        self.src[..offset].chars().next_back()
+    }
+
+    fn floor_char_boundary(&self, mut offset: usize) -> usize {
+        offset = offset.min(self.bytes.len());
+        while offset > 0 && !self.src.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        offset
+    }
+
+    fn ceil_char_boundary(&self, mut offset: usize) -> usize {
+        offset = offset.min(self.bytes.len());
+        while offset < self.bytes.len() && !self.src.is_char_boundary(offset) {
+            offset += 1;
+        }
+        offset
     }
 
     fn starts_keyword_at(&self, offset: usize, keyword: &str) -> bool {
@@ -639,7 +693,7 @@ impl<'a> Scanner<'a> {
 
     fn skip_line_comment(&mut self) {
         while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
-            self.pos += 1;
+            self.pos += self.char_len_at(self.pos);
         }
     }
 

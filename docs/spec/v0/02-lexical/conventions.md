@@ -2,13 +2,15 @@
 
 ### Whitespace
 
-Whitespace separates tokens but is otherwise insignificant outside strings.
+Unicode whitespace separates tokens but is otherwise insignificant outside strings.
 
 In `.zt`, `;` is the universal terminator/separator. Every top-level declaration ends in `;` (clause-functions, constraint definitions, and witness definitions are the exceptions: they end at the final clause `;` or the closing `}`/`derive`). Whitespace, including line boundaries, is otherwise insignificant outside strings.
 
 ### General-mode comments
 
-In `.zt`, comments are treated as whitespace outside strings.
+In `.zt`, comments are treated as whitespace outside strings. Comment contents
+are UTF-8 text and may contain any Unicode scalar values except the delimiters
+that end the comment form.
 
 Line comments begin with `--` and continue to the end of the line:
 

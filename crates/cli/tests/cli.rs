@@ -178,6 +178,18 @@ fn run_unicode_identifier_prints_result() {
 }
 
 #[test]
+fn run_unicode_fields_atoms_and_text_print_result() {
+    assert_eq!(
+        run_stdout(
+            "cli_test_unicode_fields_atoms_text.zt",
+            "設定 ::= { 名前 = \"こんにちは 🚀\"; 状態 = #稼働中; };\n\
+             if 設定.状態 == #稼働中 then 設定.名前 else \"bad\"\n",
+        ),
+        "\"こんにちは 🚀\"\n"
+    );
+}
+
+#[test]
 fn run_stream_generator_folds_codata_stream() {
     // `Stream A` is demand-driven codata, so a generator is observed by forcing
     // it (`s ()` yields a `#nil`/`#cons` cell), not printed as a list.
@@ -1805,6 +1817,38 @@ fn compile_valid_zt_file_emits_llvm_ir() {
         .success()
         .stdout(predicate::str::contains("define i64 @__entry"))
         .stdout(predicate::str::contains("call void @zutai.show"));
+}
+
+#[test]
+fn compile_unicode_identifiers_emit_ascii_llvm_ir() {
+    let llvm = compile_stdout(
+        "cli_test_compile_unicode_idents.zt",
+        "名前 :: Int -> Int\n  = 値 => 値 + 1;\n結果 ::= 名前 41;\n結果\n",
+    );
+
+    assert!(llvm.contains("define i64 @_u540d$_u524d$"));
+    assert!(llvm.contains("define i64 @_u7d50$_u679c$"));
+    assert!(llvm.contains("@zutai.closure._u540d$_u524d$"));
+    assert!(!llvm.contains("名前"), "{llvm}");
+    assert!(!llvm.contains("値"), "{llvm}");
+    assert!(!llvm.contains("結果"), "{llvm}");
+}
+
+#[test]
+fn compile_emit_bin_unicode_comments_identifiers_and_text_runs() {
+    let src = concat!(
+        "-- 行註解 café 🚀\n",
+        "--| 文件註解 日本語\n",
+        "--[ 外層 🧪 --[ 內層 한글 ]-- 結束 ]--\n",
+        "名前 :: Int -> Text\n",
+        "  = 値 => if 値 == 41 then \"こんにちは 🚀\" else \"bad\";\n",
+        "結果 ::= 名前 41;\n",
+        "結果\n",
+    );
+    assert_eq!(
+        compile_bin_stdout("cli_test_compile_bin_unicode_comments", src),
+        "\"こんにちは 🚀\"\n"
+    );
 }
 
 #[test]

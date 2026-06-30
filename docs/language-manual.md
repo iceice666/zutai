@@ -65,15 +65,13 @@ else (if score >= 50 then #elevated else #steady)
 
 ## Lexical basics
 
-In `.zt`, whitespace separates tokens. `;` is the universal terminator/separator: every value-like top-level declaration ends in `;`, and a trailing `;` on an expression makes it a `()` statement. (Clause-functions, constraint definitions, and witness definitions instead end at the final clause `;` or the closing `}`/`derive`.)
+In `.zt`, Unicode whitespace separates tokens. `;` is the universal terminator/separator: every value-like top-level declaration ends in `;`, and a trailing `;` on an expression makes it a `()` statement. (Clause-functions, constraint definitions, and witness definitions instead end at the final clause `;` or the closing `}`/`derive`.)
 
-`.zt` comments:
+`.zt` comments are treated as whitespace and may contain UTF-8 text:
 
 - Line comments begin with `--` and continue to the end of the line.
 - Block comments begin with `--[` and end with `]--`; block comments may nest.
 - Doc comments begin with `--|` and continue to the end of the line. In v0 they are lexically distinct but have no required semantic effect.
-
-**Known limitation:** multi-byte Unicode characters (box-drawing glyphs, en-dashes, em-dashes, etc.) inside line or block comments can cause the current parser to emit a misleading "parser stopped here" diagnostic that points to the next non-comment token rather than the comment itself. Restrict comment content to ASCII until this is resolved.
 
 Canonical `.zti` v0 has no comments.
 
@@ -81,7 +79,7 @@ Strings are double-quoted and JSON-like. Immediate mode numbers use JSON-style s
 
 Atoms use `#` in both modes, for example `#prod` and `#x86_64-linux`. The reserved literals `true` and `false` are booleans, not atoms.
 
-Binding identifiers and field names use Unicode UAX #31 XID letters/digits plus `_`, starting with an XID start scalar or `_`. Atoms use the same Unicode body shape and also allow `-`, for example `#x86_64-linux`; fields do not, so `cfg.target-triple` is subtraction, not one field access.
+Binding identifiers and field names use Unicode UAX #31 XID letters/digits plus `_`, starting with an XID start scalar or `_`. Atoms use the same Unicode body shape and also allow `-`, for example `#x86_64-linux`; fields do not, so `cfg.target-triple` is subtraction, not one field access. Identifiers are compared by Unicode scalar sequence; no normalization is applied.
 
 Type-valued bindings are uppercase, and runtime value bindings are lowercase. This is statically enforced: `Server :: type { ... };` is a type binding, while `server ::= ...;` is a runtime value binding.
 
@@ -107,7 +105,8 @@ Operator precedence, highest to lowest:
 
 ## Immediate mode `.zti`
 
-A `.zti` file is pure data. The top-level form must be a block:
+A `.zti` file is pure data. Unicode whitespace may separate tokens outside
+strings. The top-level form must be a block:
 
 ```zti
 {

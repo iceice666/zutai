@@ -85,7 +85,7 @@ fn current_offset(i: &&str) -> usize {
 // ---------------------------------------------------------------------------
 
 fn is_inline_whitespace(c: char) -> bool {
-    c == ' ' || c == '\t' || c == '\r'
+    c.is_whitespace() && c != '\n'
 }
 
 fn skip_line_comment(input: &mut &str) -> Result<()> {

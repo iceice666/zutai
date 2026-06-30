@@ -336,13 +336,13 @@ ListPattern
 
 ```ebnf
 Ident
-  ::= [A-Za-z_][A-Za-z0-9_]* ("'"*) "?"?
+  ::= ("_" | XID_Start) ("_" | XID_Continue)* ("'"*) "?"?
 
 FieldName
-  ::= [A-Za-z_][A-Za-z0-9_]* "?"?
+  ::= ("_" | XID_Start) ("_" | XID_Continue)* "?"?
 
 Atom
-  ::= "#" [A-Za-z_][A-Za-z0-9_-]*
+  ::= "#" ("_" | XID_Start) ("_" | XID_Continue | "-")*
 
 Number
   ::= NumericBody NumberTypePostfix?

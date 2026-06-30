@@ -244,6 +244,10 @@ impl<'a> Lexer<'a> {
                 self.consume_while(|c| matches!(c, ' ' | '\t' | '\r'));
                 SyntaxKind::Whitespace
             }
+            c if c.is_whitespace() => {
+                self.consume_while(|c| c.is_whitespace() && c != '\n');
+                SyntaxKind::Whitespace
+            }
             '"' => {
                 self.consume_string();
                 SyntaxKind::String

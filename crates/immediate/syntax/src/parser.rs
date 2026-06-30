@@ -3,18 +3,23 @@ use rustc_hash::FxHashSet;
 use winnow::Parser;
 use winnow::Result;
 use winnow::ascii::digit1;
-use winnow::ascii::multispace0;
 use winnow::combinator::{alt, delimited, eof, fail, not, opt, peek, preceded, repeat, terminated};
 use winnow::token::{one_of, take, take_till, take_while};
 
 use zutai_types::{Block, Pair, Value};
 
 pub fn parse(input: &mut &str) -> Result<Block> {
-    let block = (multispace0, parse_block, multispace0, eof)
+    let block = (ws, parse_block, ws, eof)
         .map(|(_, block, _, _)| block)
         .parse_next(input)?;
 
     Ok(block)
+}
+
+fn ws(input: &mut &str) -> Result<()> {
+    take_while(0.., char::is_whitespace)
+        .void()
+        .parse_next(input)
 }
 
 fn is_atom_body_continuation(c: char) -> bool {
@@ -34,7 +39,7 @@ pub fn parse_block(input: &mut &str) -> Result<Block> {
     '{'.parse_next(input)?;
 
     let pairs: Vec<Pair> = repeat(0.., parse_pair).parse_next(input)?;
-    multispace0.parse_next(input)?;
+    ws(input)?;
     '}'.parse_next(input)?;
 
     for pair in &pairs {
@@ -47,16 +52,7 @@ pub fn parse_block(input: &mut &str) -> Result<Block> {
 }
 
 pub fn parse_pair(input: &mut &str) -> Result<Pair> {
-    (
-        multispace0,
-        parse_field_name,
-        multispace0,
-        '=',
-        multispace0,
-        parse_value,
-        multispace0,
-        ';',
-    )
+    (ws, parse_field_name, ws, '=', ws, parse_value, ws, ';')
         .map(|(_, field_name, _, _, _, value, _, _)| Pair { field_name, value })
         .parse_next(input)
 }
@@ -66,14 +62,11 @@ pub fn parse_array(input: &mut &str) -> Result<Value> {
 
     let values = repeat(
         0..,
-        terminated(
-            (multispace0, parse_value, multispace0).map(|(_, value, _)| value),
-            ';',
-        ),
+        terminated((ws, parse_value, ws).map(|(_, value, _)| value), ';'),
     )
     .parse_next(input)?;
 
-    multispace0.parse_next(input)?;
+    ws(input)?;
     ']'.parse_next(input)?;
 
     Ok(Value::Array(values))

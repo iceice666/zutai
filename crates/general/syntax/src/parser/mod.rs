@@ -72,18 +72,29 @@ fn describe_parse_failure(input: &str, offset: usize) -> (Span, String) {
 
 /// Advance past whitespace, line comments, and block comments starting at `pos`.
 fn skip_trivia(input: &str, pos: usize) -> usize {
-    let bytes = input.as_bytes();
-    let mut i = pos;
+    let mut i = floor_char_boundary(input, pos);
     loop {
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
+        while i < input.len() && input[i..].chars().next().is_some_and(char::is_whitespace) {
+            i += input[i..].chars().next().map_or(1, char::len_utf8);
         }
         let rest = &input[i..];
         if rest.starts_with("--[") {
-            // Block comment: scan to the matching `]--`, else to end.
-            match rest.find("]--") {
-                Some(n) => i += n + 3,
-                None => return input.len(),
+            // Block comment: scan to the matching `]--`, nesting included.
+            i += 3;
+            let mut depth = 1usize;
+            while i < input.len() && depth > 0 {
+                if input[i..].starts_with("--[") {
+                    depth += 1;
+                    i += 3;
+                } else if input[i..].starts_with("]--") {
+                    depth -= 1;
+                    i += 3;
+                } else {
+                    i += input[i..].chars().next().map_or(1, char::len_utf8);
+                }
+            }
+            if depth > 0 {
+                return input.len();
             }
         } else if rest.starts_with("--") {
             match rest.find('\n') {
@@ -100,12 +111,12 @@ fn skip_trivia(input: &str, pos: usize) -> usize {
 fn token_at(input: &str, start: usize) -> String {
     let rest = &input[start..];
     let first = rest.chars().next().unwrap_or('\0');
-    let len = if first.is_alphanumeric() || first == '_' {
-        rest.find(|c: char| !(c.is_alphanumeric() || c == '_'))
+    let len = if crate::ident::is_ident_start(first) {
+        rest.find(|c: char| !crate::ident::is_ident_continue(c))
             .unwrap_or(rest.len())
     } else if first == '#' {
         let body = rest[1..]
-            .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+            .find(|c: char| !crate::ident::is_atom_continue(c))
             .map(|n| n + 1)
             .unwrap_or(rest.len());
         body.max(first.len_utf8())
@@ -133,6 +144,11 @@ fn clamp_char_boundary(s: &str, max: usize) -> usize {
         m -= 1;
     }
     m
+}
+
+/// Largest char-boundary offset in `s` that is `<= offset`.
+fn floor_char_boundary(s: &str, offset: usize) -> usize {
+    clamp_char_boundary(s, offset.min(s.len()))
 }
 
 /// Render control characters in a token snippet so messages stay on one line.

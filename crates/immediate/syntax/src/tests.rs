@@ -94,6 +94,26 @@ fn test_parse_block_and_array() {
     assert_eq!(input, "");
 }
 
+#[test]
+fn test_parse_unicode_field_names_atoms_and_strings() {
+    let mut input = "{ café = #déjà-vu; 名前 = \"こんにちは 🚀\"; }";
+    let parsed = parse(&mut input).unwrap();
+
+    assert_eq!(input, "");
+    assert_eq!(as_atom(field(&parsed, "café")), "déjà-vu");
+    assert_eq!(as_string(field(&parsed, "名前")), "こんにちは 🚀");
+}
+
+#[test]
+fn test_parse_unicode_whitespace() {
+    let source = "\u{00A0}{\u{2003}名前\u{3000}=\u{00A0}\"ok\"\u{2003};\u{3000}}\u{00A0}";
+    let mut input = source;
+    let parsed = parse(&mut input).unwrap();
+
+    assert_eq!(input, "");
+    assert_eq!(as_string(field(&parsed, "名前")), "ok");
+}
+
 fn field<'a>(block: &'a Block, name: &str) -> &'a Value {
     block
         .iter()

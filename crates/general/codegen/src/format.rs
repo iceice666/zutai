@@ -3,12 +3,29 @@ use zutai_ssa::*;
 
 /// Sanitise a Zutai identifier into a valid LLVM IR name.
 pub(crate) fn mangle(name: &str) -> String {
-    let sanitized = name
-        .replace(['-', '.', '='], "_")
-        .replace('?', "_Q")
-        .replace('!', "_B")
-        .replace('@', "_at_")
-        .replace('\'', "_prime");
+    let mut sanitized = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '$' => sanitized.push(ch),
+            '-' | '.' | '=' => sanitized.push('_'),
+            '?' => sanitized.push_str("_Q"),
+            '!' => sanitized.push_str("_B"),
+            '@' => sanitized.push_str("_at_"),
+            '\'' => sanitized.push_str("_prime"),
+            other => {
+                sanitized.push_str("_u");
+                sanitized.push_str(&format!("{:x}", other as u32));
+                sanitized.push('$');
+            }
+        }
+    }
+    if sanitized
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_digit())
+    {
+        sanitized.insert(0, '_');
+    }
     // `main` is the C entry symbol `emit_main` emits verbatim (`define i32
     // @main`); a user binding named `main` would redefine it. `$` cannot occur
     // in a source identifier (UAX #31 — only synthesized names like witness

@@ -33,11 +33,17 @@ value    ::= "true"
            | block
 
 atom       ::= "#" atom_body
-atom_body  ::= [A-Za-z_][A-Za-z0-9_-]*
-field_name ::= [A-Za-z_][A-Za-z0-9_]*
+atom_body  ::= ("_" | XID_Start) ("_" | XID_Continue | "-")*
+field_name ::= ("_" | XID_Start) ("_" | XID_Continue)*
 string     ::= JSON-style-string
 number     ::= JSON-style-number-without-type-postfix
 ```
+
+Unicode whitespace may separate tokens outside strings.
+
+Field names and atom bodies use Unicode UAX #31 identifier classes, matching
+general mode. They are compared by Unicode scalar sequence; no normalization is
+applied.
 
 Numeric type postfixes such as `1u8` and `3.14f64` are general-mode syntax only; `.zti` numbers remain JSON-style so immediate-mode data stays directly serializable.
 

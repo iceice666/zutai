@@ -285,6 +285,55 @@ fn top_level_function_emits_static_closure() {
 }
 
 #[test]
+fn unicode_identifiers_emit_ascii_llvm_names() {
+    let module = test_module(
+        vec![SsaDecl::Func(SsaFunc {
+            name: "名前".to_string(),
+            params: vec!["引数".to_string()],
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![SsaInstr {
+                    dest: "結果".to_string(),
+                    op: SsaOp::Builtin {
+                        op: DfBuiltinOp::Add,
+                        lhs: SsaValue::Reg("引数".to_string()),
+                        rhs: SsaValue::Lit(DfLit::Int(1)),
+                    },
+                }],
+                terminator: SsaTerminator::Return(SsaValue::Reg("結果".to_string())),
+            }],
+        })],
+        SsaFunc {
+            name: "__entry".to_string(),
+            params: Vec::new(),
+            blocks: vec![SsaBlock {
+                label: "entry".to_string(),
+                instructions: vec![SsaInstr {
+                    dest: "値".to_string(),
+                    op: SsaOp::CallKnown {
+                        func: "名前".to_string(),
+                        args: vec![SsaValue::Lit(DfLit::Int(41))],
+                        tail: false,
+                    },
+                }],
+                terminator: SsaTerminator::Return(SsaValue::Reg("値".to_string())),
+            }],
+        },
+        DfTy::Int,
+        Vec::new(),
+    );
+
+    let llvm = emit_llvm(&module);
+    assert!(llvm.contains("define i64 @_u540d$_u524d$(i64 %_u5f15$_u6570$)"));
+    assert!(llvm.contains("%_u7d50$_u679c$ = add i64 %_u5f15$_u6570$, 1"));
+    assert!(llvm.contains("%_u5024$ = call i64 @_u540d$_u524d$(i64 41)"));
+    assert!(!llvm.contains("名前"), "{llvm}");
+    assert!(!llvm.contains("引数"), "{llvm}");
+    assert!(!llvm.contains("結果"), "{llvm}");
+    assert!(!llvm.contains("値"), "{llvm}");
+}
+
+#[test]
 fn closure_apply_loads_code_and_passes_self() {
     let module = test_module(
         Vec::new(),
