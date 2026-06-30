@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 zutai-hir = { path = "../hir" }
+zutai-stdlib = { path = "../stdlib" }
 zutai-syntax = { path = "../syntax" }
 zutai-thir = { path = "../thir" }
 zutai-tlc = { path = "../tlc" }

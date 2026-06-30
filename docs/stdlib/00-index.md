@@ -30,6 +30,27 @@ Two principles govern what lives where:
   language *cannot* yet express (list spine access, strict `fold`, text char-ops,
   reflection, effect host ops) are true intrinsics.
 
+## Implementation home
+
+Embedded source modules live under `crates/general/stdlib/src/modules/` and are
+registered by the dependency-free `zutai-stdlib` crate. HIR consumes that
+registry for ambient source-prelude injection, while `zutai-semantic` consumes
+the same registry for `import stdlib.<name>` resolution. `zutai-hir` still
+re-exports the old `*_MODULE_SRC` constants for Rust-side compatibility, but
+`zutai-stdlib` is the source of truth.
+
+## Adding standard-library functionality
+
+1. Prefer a new or existing explicit `stdlib.<module>` source file; do not add
+   ambient names unless the prelude policy is deliberately changed.
+2. Keep public semantics in `.zt` whenever the language can express them. If an
+   operation needs compiler help, expose it through a source wrapper over a
+   private bridge such as `__moduleOp`.
+3. Classify support precisely in docs and tests: pure source, bridge-backed
+   native, compile-time fold/reject, or host/effectful.
+4. Update the `zutai-stdlib` registry, the module doc page, import/eval/native
+   coverage, and the implementation status notes together.
+
 ## Prelude
 
 See [Prelude](prelude.md) for the auto-imported set, the `prelude.zt` resolution

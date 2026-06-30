@@ -26,11 +26,13 @@ the `if`/`match` branching lives in the `.zt` source. See `docs/ARCHIVED.md`
 ## Two surfaces, one source
 
 The combinators live in one canonical file,
-`crates/general/hir/src/lower/prelude/stream.zt` (exposed to Rust as
-`zutai_hir::STREAM_MODULE_SRC`), which feeds both surfaces (V3-G6):
+`crates/general/stdlib/src/modules/stream.zt` (registered by `zutai-stdlib` and
+compatibly re-exported as `zutai_hir::STREAM_MODULE_SRC`), which feeds both
+surfaces (V3-G6):
 
-- **Ambient** (no import). The HIR lowerer `include_str!`s the file and injects
-  non-conflicting declarations as a fallback. Stream `empty`/`cons`/`singleton`/
+- **Ambient** (no import). The HIR lowerer reads the embedded source from
+  `zutai-stdlib` and injects non-conflicting declarations as a fallback. Stream
+  `empty`/`cons`/`singleton`/
   `unfold`/`take`/`drop`/`toList`/`fromList`/`takeList` resolve directly; a user
   or constraint-method binding of the same spelling still wins.
 - **Importable** (explicit). `import stdlib.stream` resolves to **embedded

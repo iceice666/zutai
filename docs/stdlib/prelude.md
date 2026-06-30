@@ -36,9 +36,9 @@ bridge `listFoldlStrict`; dynamic load `loadZti`/`loadZt`; and the internal
 numeric scalar bridge `__numAbs`/`__numRem`/`__numPow`/`__numToFloat`/
 `__numRound`/`__numTruncate` used by explicit `stdlib.num` — plus the builtin
 type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
-**source** layer is two ambient prelude files, both `include_str!`d in the HIR
-lowerer with their declarations injected as a fallback
-(`crates/general/hir/src/lower/prelude/`):
+**source** layer is two ambient prelude files owned by `zutai-stdlib` under
+`crates/general/stdlib/src/modules/`; the HIR lowerer injects their declarations
+as a fallback:
 
 - the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Data`,
   `DataField`, `Stream`, `StreamEff`, `Step`, and the non-conflicting

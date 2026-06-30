@@ -6,8 +6,8 @@ Accepted and implemented as an explicit embedded source module:
 `v ::= import stdlib.validate`. Validation is an opt-in errors-as-data surface,
 not an ambient prelude convention.
 
-The module source lives at `crates/general/hir/src/lower/prelude/validate.zt`
-and is registered as `zutai_hir::VALIDATE_MODULE_SRC`.
+The module source lives at `crates/general/stdlib/src/modules/validate.zt` and
+is registered by `zutai-stdlib` as `VALIDATE_MODULE_SRC`.
 
 ## Types
 

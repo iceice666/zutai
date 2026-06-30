@@ -6,8 +6,8 @@ Accepted and implemented as an explicit embedded source module:
 `d ::= import stdlib.data`. The module provides a first-order data envelope and
 structured decoding helpers; it is not ambient.
 
-The module source lives at `crates/general/hir/src/lower/prelude/data.zt` and is
-registered as `zutai_hir::DATA_MODULE_SRC`.
+The module source lives at `crates/general/stdlib/src/modules/data.zt` and is
+registered by `zutai-stdlib` as `DATA_MODULE_SRC`.
 
 ## Types
 

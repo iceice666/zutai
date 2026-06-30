@@ -1,0 +1,7 @@
+[package]
+name = "zutai-stdlib"
+description = "Embedded standard-library sources and registry for Zutai general mode (.zt)."
+edition.workspace = true
+version.workspace = true
+
+[dependencies]

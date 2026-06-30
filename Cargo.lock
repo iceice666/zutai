@@ -1431,6 +1431,7 @@ version = "0.1.0"
 dependencies = [
  "la-arena",
  "rustc-hash 2.1.2",
+ "zutai-stdlib",
  "zutai-syntax",
 ]
 
@@ -1483,6 +1484,7 @@ dependencies = [
  "rustc-hash 2.1.2",
  "zutai-hir",
  "zutai-im",
+ "zutai-stdlib",
  "zutai-syntax",
  "zutai-thir",
  "zutai-tlc",
@@ -1500,6 +1502,10 @@ dependencies = [
  "zutai-thir",
  "zutai-tlc",
 ]
+
+[[package]]
+name = "zutai-stdlib"
+version = "0.1.0"
 
 [[package]]
 name = "zutai-syntax"

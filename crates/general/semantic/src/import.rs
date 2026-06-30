@@ -485,27 +485,10 @@ impl Resolver<'_> {
 
 /// Embedded standard-library modules, addressed as `import stdlib.<name>`.
 ///
-/// Resolved from in-binary source so there is no filesystem stdlib root or
-/// install path. `stream` and `prelude` share their source with the ambient
-/// prelude (`zutai_hir::STREAM_MODULE_SRC` / `PRELUDE_MODULE_SRC`), while
-/// `optional`, `result`, `num`, `text`, `cmp`, `config`, `reflect`, `list`,
-/// `data`, and `validate` are explicit-import-only.
+/// Resolved from `zutai-stdlib` in-binary source so there is no filesystem
+/// stdlib root or install path.
 fn stdlib_source(name: &str) -> Option<&'static str> {
-    match name {
-        "stream" => Some(zutai_hir::STREAM_MODULE_SRC),
-        "prelude" => Some(zutai_hir::PRELUDE_MODULE_SRC),
-        "optional" => Some(zutai_hir::OPTIONAL_MODULE_SRC),
-        "result" => Some(zutai_hir::RESULT_MODULE_SRC),
-        "num" => Some(zutai_hir::NUM_MODULE_SRC),
-        "text" => Some(zutai_hir::TEXT_MODULE_SRC),
-        "cmp" => Some(zutai_hir::CMP_MODULE_SRC),
-        "config" => Some(zutai_hir::CONFIG_MODULE_SRC),
-        "reflect" => Some(zutai_hir::REFLECT_MODULE_SRC),
-        "list" => Some(zutai_hir::LIST_MODULE_SRC),
-        "data" => Some(zutai_hir::DATA_MODULE_SRC),
-        "validate" => Some(zutai_hir::VALIDATE_MODULE_SRC),
-        _ => None,
-    }
+    zutai_stdlib::source(name)
 }
 
 /// Whether `analysis` failed (at least in part) because of an import cycle.

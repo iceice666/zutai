@@ -22,13 +22,13 @@ pub use ir::{
     HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField,
     HirTypeTupleItem, HirUnionVariant,
 };
-pub use lower::{
-    CMP_MODULE_SRC, CONFIG_MODULE_SRC, DATA_MODULE_SRC, HirLowerOptions, LIST_MODULE_SRC,
-    LoweredHir, NUM_MODULE_SRC, OPTIONAL_MODULE_SRC, PRELUDE_MODULE_SRC, REFLECT_MODULE_SRC,
-    RESULT_MODULE_SRC, STREAM_MODULE_SRC, TEXT_MODULE_SRC, VALIDATE_MODULE_SRC, lower_file,
-    lower_file_with_options,
-};
+pub use lower::{HirLowerOptions, LoweredHir, lower_file, lower_file_with_options};
 pub use pass::{
     HirPass, HirPassReport, StructuralKeyValidationPass, run_default_passes, run_passes,
+};
+pub use zutai_stdlib::{
+    CMP_MODULE_SRC, CONFIG_MODULE_SRC, DATA_MODULE_SRC, LIST_MODULE_SRC, NUM_MODULE_SRC,
+    OPTIONAL_MODULE_SRC, PRELUDE_MODULE_SRC, REFLECT_MODULE_SRC, RESULT_MODULE_SRC,
+    STREAM_MODULE_SRC, TEXT_MODULE_SRC, VALIDATE_MODULE_SRC,
 };
 pub use zutai_syntax::numlit::NumberType;

@@ -73,7 +73,10 @@ The same 2026-06-30 baseline also includes the explicit stdlib expansion:
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` are embedded importable modules, with config/reflect compiler
 gates recognizing qualified and destructured aliases; see "Explicit stdlib
-expansion" below.
+expansion" below. A follow-up stdlib crate extraction moved embedded `.zt`
+sources and module metadata into `zutai-stdlib`, while preserving the old
+`zutai_hir::*_MODULE_SRC` Rust re-exports and all user-facing import behavior;
+see "Stdlib crate extraction" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -199,15 +202,32 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Stdlib crate extraction ✅
+
+_Completed 2026-06-30. Moves embedded standard-library source ownership out of
+HIR without changing language behavior._
+
+- **Dedicated registry crate.** `zutai-stdlib` owns the canonical embedded `.zt`
+  sources under `crates/general/stdlib/src/modules/` and exposes module metadata
+  for ambient vs explicit surfaces.
+- **Compiler wiring.** HIR consumes `zutai-stdlib` for the ambient `stream` and
+  `prelude` fallbacks, while `zutai-semantic` resolves `import stdlib.<name>`
+  through the same registry. `zutai-hir` keeps compatibility re-exports for the
+  old `*_MODULE_SRC` constants.
+- **Verification.** Targeted gates passed: `cargo test -p zutai-stdlib`,
+  `cargo test -p zutai-semantic stdlib_`,
+  `nix develop --command cargo test --workspace -- --test-threads=1`, and
+  `nix develop --command cargo clippy --workspace --all-targets`.
+
 ### Explicit stdlib expansion ✅
 
 _Completed 2026-06-30. Ships five opt-in embedded standard-library modules
 without adding new ambient names._
 
 - **Embedded modules.** `stdlib.config`, `stdlib.reflect`, `stdlib.list`,
-  `stdlib.data`, and `stdlib.validate` are registered through
-  `semantic/src/import.rs` and backed by canonical `.zt` sources in
-  `crates/general/hir/src/lower/prelude/`.
+  `stdlib.data`, and `stdlib.validate` are registered through the embedded
+  stdlib registry and backed by canonical `.zt` sources in
+  `crates/general/stdlib/src/modules/`.
 - **Compiler-gated aliases.** `stdlib.config` module-qualified and destructured
   `overlay`/`overlayDeep` calls lower to the existing builtin overlay shape for
   supported record-literal patches. `stdlib.reflect` aliases trigger the same
@@ -281,9 +301,10 @@ _Completed 2026-06-28. Ships the `stdlib.cmp` source module as an explicit
 import, not an ambient prelude. Generic witness-dispatched `compare` remains
 deferred; this slice supplies a concrete comparator vocabulary._
 
-- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/cmp.zt` is
-  embedded as `zutai_hir::CMP_MODULE_SRC` and registered only through
-  `semantic/src/import.rs` for `import stdlib.cmp`.
+- **Explicit embedded module.** `crates/general/stdlib/src/modules/cmp.zt` is
+  registered by `zutai-stdlib` as `CMP_MODULE_SRC`; `zutai-hir` keeps a
+  compatibility re-export. It is explicit import only through `import
+  stdlib.cmp`.
 - **Exports.** The module exports `Ordering`, `lt`, `eq`, `gt`, `isLt`, `isEq`,
   `isGt`, `reverse`, `then`, `by`, `compareInt`, `compareFloat`, and
   `compareText`. The public record field `then` maps to an internal `thenCmp`
@@ -299,9 +320,10 @@ _Completed 2026-06-28. Ships the `stdlib.text` source module as an explicit
 import, not an ambient prelude. Source-level names wrap internal scalar bridge
 primitives for operations the current source language cannot express safely._
 
-- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/text.zt` is
-  embedded as `zutai_hir::TEXT_MODULE_SRC` and registered only through
-  `semantic/src/import.rs` for `import stdlib.text`.
+- **Explicit embedded module.** `crates/general/stdlib/src/modules/text.zt` is
+  registered by `zutai-stdlib` as `TEXT_MODULE_SRC`; `zutai-hir` keeps a
+  compatibility re-export. It is explicit import only through `import
+  stdlib.text`.
 - **Exports.** The module exports `length`, `split`, `join`, `trim`, `toUpper`,
   `toLower`, `contains`, `replace`, `show`, `parseInt`, and `parseFloat`.
 - **Bridge/runtime support.** Internal `__text*` builtins and Dataflow/ANF/SSA/
@@ -320,10 +342,11 @@ _Completed 2026-06-28. Ships the `stdlib.num` source module as an explicit
 import, not an ambient prelude. The module is Int-first by design and keeps
 generic comparison/ordering in the separate planned `cmp` row._
 
-- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/num.zt` is
-  embedded as `zutai_hir::NUM_MODULE_SRC` and registered only through
-  `semantic/src/import.rs` for `import stdlib.num`; HIR ambient fallback
-  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Explicit embedded module.** `crates/general/stdlib/src/modules/num.zt` is
+  registered by `zutai-stdlib` as `NUM_MODULE_SRC`; `zutai-hir` keeps a
+  compatibility re-export. It is explicit import only through `import
+  stdlib.num`; HIR ambient fallback injection remains limited to
+  `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
 - **Exports.** The module exports exactly `min`/`max`/`abs`/`clamp`/`pow`/
   `rem`/`gcd`/`toFloat`/`round`/`truncate`.
 - **Checked scalar bridge.** Internal `__num*` builtins and Dataflow/ANF/SSA/
@@ -346,10 +369,11 @@ _Completed 2026-06-28. Ships the `stdlib.result` source module as an explicit
 import, not an ambient prelude. `Result` is the short-circuiting errors-as-data
 union, while `Validation` accumulates `List E` errors._
 
-- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/result.zt`
-  is embedded as `zutai_hir::RESULT_MODULE_SRC` and registered only through
-  `semantic/src/import.rs` for `import stdlib.result`; HIR ambient fallback
-  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Explicit embedded module.** `crates/general/stdlib/src/modules/result.zt`
+  is registered by `zutai-stdlib` as `RESULT_MODULE_SRC`; `zutai-hir` keeps a
+  compatibility re-export. It is explicit import only through `import
+  stdlib.result`; HIR ambient fallback injection remains limited to
+  `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
 - **Exports.** The module exports type constructors `Result`/`Validation` and
   the helper values `ok`/`err`/`valid`/`invalid`/`map`/`map2`/`mapErr`/
   `andThen`/`withDefault`/`errors`.
@@ -369,10 +393,11 @@ import, not an ambient prelude. Unqualified `map`/`filter` therefore keep their
 `List` prelude meaning unless a program intentionally destructures the optional
 module._
 
-- **Explicit embedded module.** `crates/general/hir/src/lower/prelude/optional.zt`
-  is embedded as `zutai_hir::OPTIONAL_MODULE_SRC` and registered only through
-  `semantic/src/import.rs` for `import stdlib.optional`; HIR ambient fallback
-  injection remains limited to `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
+- **Explicit embedded module.** `crates/general/stdlib/src/modules/optional.zt`
+  is registered by `zutai-stdlib` as `OPTIONAL_MODULE_SRC`; `zutai-hir` keeps a
+  compatibility re-export. It is explicit import only through `import
+  stdlib.optional`; HIR ambient fallback injection remains limited to
+  `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`.
 - **Exports.** The module exports `map`/`andThen`/`filter`/`withDefault`/
   `isSome`/`toList` over `Optional`.
 - **No new primitive.** The helpers use existing `Optional` syntax, `??`,
@@ -452,12 +477,13 @@ polymorphic function helpers `id`/`const`/`compose`/`flip`, ambient (no import)
 and importable as `stdlib.prelude`. Pure source-level stdlib — no new syntax, no
 new backend IR node, no intrinsics, no Track 2 boundary._
 
-- **Single-source file.** `crates/general/hir/src/lower/prelude/prelude.zt` holds
-  the four declarations plus a final record export. The HIR lowerer
-  `include_str!`s it (exposed as `zutai_hir::PRELUDE_MODULE_SRC`) and injects its
-  declarations as an ambient fallback, mirroring the stream prelude
-  (`STREAM_MODULE_SRC`). The ambient path reads only the declarations; the import
-  path (`import stdlib.prelude`) uses the final record as the module export.
+- **Single-source file.** `crates/general/stdlib/src/modules/prelude.zt` holds
+  the four declarations plus a final record export. The HIR lowerer reads it
+  through `zutai-stdlib` (compatibly re-exported by `zutai-hir` as
+  `PRELUDE_MODULE_SRC`) and injects its declarations as an ambient fallback,
+  mirroring the stream prelude (`STREAM_MODULE_SRC`). The ambient path reads
+  only the declarations; the import path (`import stdlib.prelude`) uses the
+  final record as the module export.
 - **Lowerer generalized.** `lower_file` was refactored to inject both source
   preludes through two helpers — `define_prelude_fallback` (register only names
   not already owned by user/constraint code) and `lower_prelude_if_referenced`
@@ -468,8 +494,8 @@ new backend IR node, no intrinsics, no Track 2 boundary._
   seeding — `top_env.rs`/`tlc_entry.rs` seed only intrinsics. Resolution stays
   `user > prelude > intrinsic / ambient fallback`: a user binding of the same
   name wins and raises no duplicate-binding diagnostic.
-- **Stdlib import.** `semantic/src/import.rs` `stdlib_source` gains `"prelude"`
-  → `PRELUDE_MODULE_SRC`, so `import stdlib.prelude` resolves with no filesystem
+- **Stdlib import.** The embedded stdlib registry gained `"prelude"` →
+  `PRELUDE_MODULE_SRC`, so `import stdlib.prelude` resolves with no filesystem
   base (same registry as `stdlib.stream`).
 - **Docs reconciled.** `docs/stdlib/00-index.md` and `docs/stdlib/prelude.md`
   listed `id`/`const`/`compose`/`flip` as ambient and dropped the stale "`fn`
@@ -990,9 +1016,9 @@ _Completed 2026-06-26. Closes the three V3-G6 import-ergonomics follow-ups
 gated out of the native backend (unchanged), so these run in `zutai-eval`._
 
 - **Embedded stdlib (`import stdlib.stream`).** A `stdlib.<name>` dotted import
-  resolves to in-binary source, addressed through a registry (`stdlib_source`,
-  seeded with `stream` = `zutai_hir::STREAM_MODULE_SRC`, one source of truth with
-  the ambient prelude). Resolution uses a synthetic cache key (`<stdlib>/<name>.zt`)
+  resolves to in-binary source, addressed through the embedded stdlib registry
+  (seeded with `stream` = `STREAM_MODULE_SRC`, one source of truth with the
+  ambient prelude). Resolution uses a synthetic cache key (`<stdlib>/<name>.zt`)
   so cycle detection and the analysis cache apply without touching the filesystem
   or the path-relative subtree-confinement check (`semantic/src/import.rs`). Unknown
   names give a precise `UnknownStdlibModule` diagnostic. `resolve_zt` was refactored
@@ -1092,7 +1118,7 @@ function + seed) — as both an ambient prelude combinator and an importable
 `stream.zt` export, closing the more valuable half of the deferred
 `empty`/`unfold` residual. `empty` stays deferred (precise diagnosis below)._
 
-- **Combinator + `Step` type.** `crates/general/hir/src/lower/prelude/stream.zt`
+- **Combinator + `Step` type.** `crates/general/stdlib/src/modules/stream.zt`
   gains `Step :: <S, A> type { #done; #yield : { item : A; next : S; }; }` and
   `unfold :: <S, A> (S -> Step S A) -> S -> Stream A = f s _ => match f s { … }`,
   demand-driven (the trailing `_ =>` thunk defers stepping until forced). The
@@ -1124,13 +1150,14 @@ ambient string. Unblocked by cross-module polymorphism (XM-1…3). Single source
 truth, both surfaces preserved; path-relative resolution (stdlib-root resolution
 stays deferred)._
 
-- **Single-source file.** `crates/general/hir/src/lower/prelude/stream.zt` holds
+- **Single-source file.** `crates/general/stdlib/src/modules/stream.zt` holds
   the `Stream` type plus the eight combinators (`cons`, `singleton`, `map`,
   `filter`, `take`, `drop`, `fold`, `uncons`) and ends in a record exporting all
-  eight. The HIR lowerer's ambient prelude now `include_str!`s this file (exposed
-  as `zutai_hir::STREAM_MODULE_SRC`) instead of an inline literal; the ambient path
-  reads only the *declarations* and ignores the final record, so ambient behavior
-  is byte-for-byte unchanged (the fallback still yields to user/constraint names).
+  eight. The HIR lowerer's ambient prelude now reads this file through
+  `zutai-stdlib` (compatibly re-exported by `zutai-hir` as `STREAM_MODULE_SRC`)
+  instead of an inline literal; the ambient path reads only the *declarations*
+  and ignores the final record, so ambient behavior is byte-for-byte unchanged
+  (the fallback still yields to user/constraint names).
   The import path uses the final record as the module's exported value, so
   `s ::= import "stream.zt"` gives `s.map`, `s.fold`, … qualified.
 - **Backend fix — cross-module global-ref compat.** The recursive `Stream` codata

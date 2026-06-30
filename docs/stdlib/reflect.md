@@ -6,8 +6,8 @@ Accepted and implemented as an explicit embedded source module:
 `refl ::= import stdlib.reflect`. The module wraps the existing reflection
 intrinsics without making new names ambient.
 
-The module source lives at `crates/general/hir/src/lower/prelude/reflect.zt` and
-is registered as `zutai_hir::REFLECT_MODULE_SRC`.
+The module source lives at `crates/general/stdlib/src/modules/reflect.zt` and is
+registered by `zutai-stdlib` as `REFLECT_MODULE_SRC`.
 
 ## API
 

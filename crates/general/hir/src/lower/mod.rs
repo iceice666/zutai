@@ -1,6 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use la_arena::Arena;
+use zutai_stdlib::{PRELUDE_MODULE_SRC, STREAM_MODULE_SRC};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
@@ -32,99 +33,6 @@ impl Default for HirLowerOptions {
         Self { run_passes: true }
     }
 }
-
-/// Canonical source for the codata `Stream` type and its combinators
-/// (`cons`/`singleton`/`map`/`filter`/`take`/`drop`/`fold`/`uncons`).
-///
-/// Single source of truth for two surfaces (V3-G6):
-/// - **Ambient prelude.** [`lower_file`] injects these *declarations* into every
-///   module as a fallback (user and constraint-method names of the same spelling
-///   win); each is lowered into a module only when that module references it. The
-///   final record expression is the export for the import surface and is ignored
-///   on this path.
-/// - **Importable module.** `s ::= import "stream.zt"` exports the final record, so
-///   a program can use `s.map`, `s.fold`, … qualified. The same constant backs a
-///   user-importable copy of the file in tests, keeping one source of truth.
-pub const STREAM_MODULE_SRC: &str = include_str!("prelude/stream.zt");
-///
-/// Canonical source for the small function prelude — the ordinary polymorphic
-/// helpers `id`/`const`/`compose`/`flip` (stdlib slice B).
-///
-/// Same two-surface model as `STREAM_MODULE_SRC`: [`lower_file`] injects the
-/// declarations as an ambient fallback (user/constraint names of the same
-/// spelling win; lowered only when referenced), and `import stdlib.prelude`
-/// exports the final record. Pure source-level stdlib — no intrinsics, no new
-/// syntax, no backend IR node.
-pub const PRELUDE_MODULE_SRC: &str = include_str!("prelude/prelude.zt");
-///
-/// Canonical source for the Optional helper module (stdlib slice D).
-///
-/// Explicit import only: `import stdlib.optional` exports the final record.
-/// Unlike `STREAM_MODULE_SRC` and `PRELUDE_MODULE_SRC`, this is not injected as
-/// an ambient fallback prelude, so unqualified `map`/`filter` keep their List
-/// prelude meaning unless the user explicitly destructures the module.
-pub const OPTIONAL_MODULE_SRC: &str = include_str!("prelude/optional.zt");
-///
-/// Canonical source for the Result and Validation helper module (stdlib slice E).
-///
-/// Explicit import only: `import stdlib.result` exports the final record. It is
-/// not injected as an ambient prelude, so `Result`/`Validation` and helper names
-/// exist only through explicit import or destructuring.
-pub const RESULT_MODULE_SRC: &str = include_str!("prelude/result.zt");
-///
-/// Canonical source for the numeric helper module (stdlib slice F).
-///
-/// Explicit import only: `import stdlib.num` exports the final record. It is
-/// not injected as an ambient prelude; public numeric helper names exist only
-/// through explicit import or destructuring.
-pub const NUM_MODULE_SRC: &str = include_str!("prelude/num.zt");
-///
-/// Canonical source for the text helper module (stdlib slice G).
-///
-/// Explicit import only: `import stdlib.text` exports the final record. It is
-/// not injected as an ambient prelude; public text helper names exist only
-/// through explicit import or destructuring.
-pub const TEXT_MODULE_SRC: &str = include_str!("prelude/text.zt");
-///
-/// Canonical source for the comparator helper module (stdlib slice H).
-///
-/// Explicit import only: `import stdlib.cmp` exports the final record. It is
-/// not injected as an ambient prelude; comparator helper names exist only
-/// through explicit import or destructuring.
-pub const CMP_MODULE_SRC: &str = include_str!("prelude/cmp.zt");
-///
-/// Canonical source for the config helper module.
-///
-/// Explicit import only: `import stdlib.config` exports the final record. It is
-/// not injected as an ambient prelude; public config helper names exist only
-/// through explicit import or destructuring.
-pub const CONFIG_MODULE_SRC: &str = include_str!("prelude/config.zt");
-///
-/// Canonical source for the reflection helper module.
-///
-/// Explicit import only: `import stdlib.reflect` exports the final record. It is
-/// not injected as an ambient prelude; reflection helper names exist only
-/// through explicit import or destructuring.
-pub const REFLECT_MODULE_SRC: &str = include_str!("prelude/reflect.zt");
-///
-/// Canonical source for the expanded List helper module.
-///
-/// Explicit import only: `import stdlib.list` exports the final record. It is
-/// not injected as an ambient prelude; unqualified ambient `map`/`fold` remain
-/// the focused prelude names unless this module is intentionally destructured.
-pub const LIST_MODULE_SRC: &str = include_str!("prelude/list.zt");
-///
-/// Canonical source for first-order `Data` construction and decode helpers.
-///
-/// Explicit import only: `import stdlib.data` exports the final record. It is
-/// not injected as an ambient prelude.
-pub const DATA_MODULE_SRC: &str = include_str!("prelude/data.zt");
-///
-/// Canonical source for validation helpers.
-///
-/// Explicit import only: `import stdlib.validate` exports the final record. It
-/// is not injected as an ambient prelude.
-pub const VALIDATE_MODULE_SRC: &str = include_str!("prelude/validate.zt");
 
 pub fn lower_file(file: &ast::File) -> LoweredHir {
     lower_file_with_options(file, HirLowerOptions::default())

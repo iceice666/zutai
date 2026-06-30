@@ -31,6 +31,9 @@ Source → HIR → THIR → TLC
 ```
 
 - **HIR** — resolved, source-preserving, not fully typed. Produced by `zutai-hir`.
+- **Standard library registry** — embedded `.zt` stdlib sources and module
+  metadata. Owned by `zutai-stdlib`; consumed by HIR for ambient source-prelude
+  injection and by `zutai-semantic` for `import stdlib.<name>`.
 - **THIR** — typed, source-preserving, error-tolerant. Carries spans on every node; produced even when type inference is incomplete. Foundation for LSP tooling (diagnostics, hover types, go-to-definition). Produced by `zutai-thir`.
 - **TLC** (Type Lambda Calculus) — fully elaborated; all inference variables resolved; polymorphism explicit via `TyLam`/`TyApp`; spans in a side-table only. Produced only when type checking succeeds. Clean input contract for all compilation stages. Produced by `zutai-tlc`. See [TLC IR design](tlc-core.md).
 - **Dataflow Core** — graph IR where sharing and recursion are structurally explicit. A node may be referenced by many consumers (sharing); a cycle represents recursion. Laziness = graph reachability from the output root. Produced by `zutai-dataflow`.
