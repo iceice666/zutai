@@ -31,6 +31,11 @@ milestone summary. The 2026-07-01 native library artifact mode
 (`compile --emit=lib`) and runtime `serde_json` bridge are also archived; they
 do not leave an active native backlog item. Track 2 remains demand-gated.
 
+## Native/interpreter parity backlog
+
+_No active native/interpreter parity backlog item is scoped._ The optional-field
+`Maybe` envelope gap landed 2026-06-30 and is archived in `docs/ARCHIVED.md`.
+
 ## Source prelude / stdlib status
 
 _No active source-prelude/stdlib usability milestone is scoped._ Slices B-H
@@ -64,16 +69,18 @@ Do not file these as missing native work:
   reject residual reflection (a raw `witness` dictionary or a `Type`-valued
   result) before lowering (`aot_reflection_program`). Fold-or-reject is the
   intended model.
-- **Rejecting unhandled non-`io.print` effects** at the backend is the committed
-  strict-AOT behavior.
+- **Rejecting unhandled or ungranted residual host effects** at the backend is
+  the committed strict-AOT behavior. Raw-cell effectful generators have native
+  parity for supported custom effects, ambient `io.print`, and standard host
+  operations that lower through the host boundary under an explicit grant.
 - **Annotation-required inference** where row/constraint inference is not
   principal is specified behavior (`docs/spec/v1/01-row-polymorphism.md`
   "Extended Inference").
-- **Cross-module witness exports** stay native-gated: imported witness
-  dictionaries execute through the interpreter today, while native builds reject
-  modules that export typeclass witnesses before Dataflow Core rather than
-  silently dropping dispatch state. Promote this only if a concrete native
-  module-witness use case requires it.
+- **Non-matchable cross-module witness exports** stay native-gated: concrete
+  imported witnesses and structurally matchable conditional witnesses lower
+  natively through extern witness tables, while higher-kinded or otherwise
+  non-dispatchable exported witness shapes still reject before Dataflow Core
+  rather than silently dropping dispatch state.
 
 ## Deferred beyond v2 (v3+)
 

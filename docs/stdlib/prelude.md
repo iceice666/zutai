@@ -193,7 +193,7 @@ earn an explicit `result` module, because effects do not cover:
 | Short-circuit / abort / capability | blessed | verbose |
 | Accumulate **all** errors (config normalize) | `fail` short-circuits | `Validation (List E)` |
 | Serialize errors across the `.zti` boundary | control, not data | ordinary union |
-| Compile to a backend binary today | handled effects lower natively (native effect parity, 2026-06-26); unhandled and non-`io.print` resource effects still gate at TLC→DC | pure, lowers now |
+| Compile to a backend binary today | handled effects lower natively for supported shapes; raw-cell generator effects cover custom operations and ambient `io.print`, and standard host operations lower through the host boundary when granted | pure, lowers now |
 
 So errors-as-data are an opt-in module, not prelude, and not the default. Native
 effect lowering has landed for handled effects, but accumulate-all error

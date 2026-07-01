@@ -6,12 +6,11 @@ appear under conditionals and recursion, so pure finite *and* infinite generator
 type-check and evaluate on both the interpreter and the native backend. Effectful
 generators run under a granting handler (V3-G4). **Native effect parity landed
 2026-06-26**: handled algebraic effects the lexical CPS path could not discharge
-now compile natively via the reify pass, and the supported `io.print`-backed
-effectful-generator idiom (raw cell type) matches the oracle natively.
-**Non-`io.print` resource effects** (`fs.read`, networking, clocks, randomness)
-remain reference-interpreter only and are rejected before native lowering by
-committed design — a separate case from the handled-effect parity, not a single
-"native lowering refused" gate.
+now compile natively via the reify pass, and the raw-cell effectful-generator
+idiom matches the oracle natively for supported custom effects and ambient
+`io.print`. Standard host operations (`fs.read`, networking, clocks, randomness,
+dynamic loads) deferred inside generator cells now lower through the native host
+boundary under the same explicit-grant policy as top-level host operations.
 
 ## Decisions
 
@@ -52,8 +51,9 @@ committed design — a separate case from the handled-effect parity, not a singl
   unwinding, and `finally` teardown all run under that handler. Dropped or
   unforced tails do not imply cell-level RAII. Interpreter support covers normal
   full consumption, partial consumption, cooperative cancellation, and nested
-  finalizer unwinding; lazy escapes refuse when forced outside the grant, and
-  native lowering of non-`io.print` resource-backed cells is explicitly gated.
+  finalizer unwinding; custom-effect lazy escapes refuse when forced outside the
+  grant, while standard host operations fall through to the host boundary when
+  granted.
 - **Ergonomic effectful-stream type landed** (V3-G4 follow-up, 2026-06-27, see
   `docs/ARCHIVED.md`): call-site effect-row inference (a pure/concrete argument
   unifies against an instantiated open-row parameter) plus the `StreamEff A e`
@@ -86,21 +86,24 @@ backend erasure.
 
 ## Effectful generators (V3-G4)
 
-Support level: **reference-interpreter support; native support only for `io.print`-
-backed cells** (raw-cell-type idiom, as of 2026-06-27). An effectful generator
-runs on the interpreter when its effects are *granted*, and the supported idiom —
+Support level: **reference-interpreter support plus native support for raw-cell
+effectful generators** (custom effects, ambient `io.print`, and standard host
+operations via the host boundary, as of 2026-06-30). An effectful generator runs
+when its effects are *granted*, and the supported idiom —
 `stream { yield perform … }` consumed strictly under a handler over a **raw cell
-type** (not the pure `Stream` alias) — compiles natively only when the cell-carried
-host effect is ambient `io.print`. The reify pass stores a compilable deferred
-`io.print` as strict `Computation`-data in the cell's effectful field (carrier on
-the field, not the demand thunk), so the cell is produced strictly and the effect
-fires when the consumer `bind`s it — matching the interpreter, which is also
-strict-at-force for effectful modules. Resource host operations (`fs.read`,
-networking, clocks, randomness) remain interpreter-only and are rejected before
-native lowering even when source-handled. Recursive/conditional effectful
-generators are rejected on both paths (a pure-typed producer cannot `perform`); a
-generator typed through the parametric prelude `Stream` alias remains a narrow
-native residual.
+type** (not the pure `Stream` alias) — compiles natively for custom effects and
+ambient `io.print`. The reify pass stores those source-handled deferred
+operations as
+strict `Computation`-data in the cell's effectful field (carrier on the field,
+not the demand thunk), so the cell is produced strictly and the effect fires when
+the consumer `bind`s it — matching the interpreter for supported shapes.
+Resource host operations (`fs.read`, networking, clocks, randomness, dynamic
+loads) deferred in generator cells lower to `HostOp`/host runtime calls when the
+backend entry boundary grants them, matching the interpreter's host-boundary
+behavior rather than extending source handlers across lazy cell fields.
+Recursive/conditional effectful generators are rejected on both paths when a
+pure-typed producer would need to `perform`; a generator typed through the
+parametric prelude `Stream` alias remains a narrow native residual.
 
 The mechanism reuses the existing effect machinery rather than a new effectful
 codata type. A `yield perform op …` defers the operation into a *lazy cell
@@ -122,17 +125,18 @@ Boundaries (each refused, never miscompiled):
   `Stream A = Unit -> StreamCell A` is rejected — the deferred effect cannot
   satisfy the pure thunk the alias demands. Effectful streams are not the pure
   `Stream` alias and do not interoperate with the pure prelude combinators.
-- **Lazy escape.** A consumer that *returns* an unforced effectful head or cell
-  outside the granting handler does not transfer the grant; forcing/displaying it
-  later hits runtime "unhandled effect" — a refusal, consistent with the spec's
-  demand-driven ordering of pure data construction.
-- **Native.** Any generator whose cells carry a non-`io.print` host-resource
-  effect is refused by the residual-effect gate
-  (`compile_resource_effectful_generator_stays_gated`).
+- **Lazy escape.** A consumer that *returns* an unforced custom-effect head or
+  cell outside the granting handler does not transfer the grant;
+  forcing/displaying it later hits runtime "unhandled effect" — a refusal,
+  consistent with the spec's demand-driven ordering of pure data construction.
+  Standard host operations instead use the host boundary when granted.
+- **Native host grants.** A generator cell carrying a standard host operation
+  still needs the backend entry-boundary grant; without it, the residual-effect
+  gate refuses before Dataflow Core.
 
-Resource host effects (`fs.read`, networking, clocks, randomness) therefore reach
-only the interpreter, behind an explicit handler that grants them; they have no
-native path. *Finalization* is supported via a `finally` handler clause (see
+Resource host effects (`fs.read`, networking, clocks, randomness, dynamic loads)
+therefore follow the same explicit host-boundary policy in generator cells as at
+top level. *Finalization* is supported via a `finally` handler clause (see
 below), and *cancellation* via the same handler's aborting clause (see
 "Cancellation"). General resource lifetime is now the dynamic-extent contract
 above, not cell-level RAII.

@@ -70,8 +70,26 @@ pattern-test short-circuiting" below; DX polish added row diagnostic field
 context, nested-conditional parser help, `just native-examples`, and
 real-program style docs; see "DX polish slice" below; Unicode source/native
 hardening made `.zt` Unicode whitespace/comments diagnostic-safe and made LLVM
-name emission ASCII-safe for Unicode source identifiers; see "Unicode
-source/native hardening" below)._
+name emission ASCII-safe for Unicode source identifiers; native effectful
+generator host-boundary parity now covers standard host operations in lazy cells
+while preserving custom/`io.print` handler parity; see
+"Unicode source/native hardening" and "Native effectful-generator
+host-boundary parity" below; native Text equality now compares runtime text
+contents instead of heap object identity; descriptor-backed native structural
+equality now covers records, lists, tuples, atoms, variants, and floats; native
+Float arithmetic/order now uses `f64` runtime helpers instead of integer ops on
+bit patterns; native Text ordering now compares text contents instead of pointer
+words; native logical `&&`/`||` now lower to control-flow matches instead of
+eager bitwise ops; defaulting `??` now lowers to control-flow matches so present
+values skip fallback evaluation; see "Native Text equality parity", "Native Text
+ordering parity", "Native structural equality parity", "Native Float scalar
+parity", "Native logical short-circuit parity", and "Native coalesce fallback
+parity" below; native atom-pattern tests now compare atom text contents so
+runtime-created host values such as `#none` match static atom patterns)._
+The same 2026-06-30 native parity pass also stores optional record fields as
+native `Maybe` envelopes, lowers `?.` to control-flow matches, and teaches
+runtime record rendering/equality to skip `#absent` fields and unwrap
+`#present` payloads; see "Native optional-field presence parity" below.
 The same 2026-06-30 baseline also includes the explicit stdlib expansion:
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` are embedded importable modules, with config/reflect compiler
@@ -132,9 +150,10 @@ walker and `serde_json`; see "Native library artifacts and JSON bridge" below.
   function / `Type` results. **`.zti` data imports and `.zt` pure value/function
   imports compile natively** via one-arena Dataflow Core merge (Phase A): imported
   modules are lowered into the same graph under a `$dep{idx}$` namespace prefix;
-  the root references the dep's module-value global (`$dep{idx}$$value`). Modules
-  that export typeclass witnesses are rejected before DC by the witness gate
-  (cross-module witness dispatch is still interpreter-only).
+  the root references the dep's module-value global (`$dep{idx}$$value`).
+  Imported concrete witnesses and structurally matchable conditional witnesses
+  compile natively through extern witness tables; higher-kinded or otherwise
+  non-matchable witness exports still reject before DC by the witness gate.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce
@@ -152,10 +171,14 @@ walker and `serde_json`; see "Native library artifacts and JSON bridge" below.
   the host `run`, `compile`, and `dataflow` paths dispatch ambient `io.print` at
   runtime instead of replaying compile-time captured output.
 - `compile` and `dataflow` no longer fold effectful entry programs through the
-  evaluator before Dataflow Core. Residual non-`io.print` effect markers and
-  unsupported effect rows stay gated by `residual_effect_reason` /
-  `zutai_dataflow::try_lower_tlc`; `io.print`-only function rows lower through
-  the runtime `HostPrint` path.
+  evaluator before Dataflow Core. Supported handled effects, including raw-cell
+  effectful generators for custom operations and ambient `io.print`, lower
+  through the backend `Computation`/host-driver paths. Resource-backed generator
+  cells carrying standard host operations such as `fs.read` now lower to the host
+  boundary under the same grant policy as top-level host operations, matching the
+  interpreter instead of extending a source handler across a lazy field.
+  Unhandled or ungranted residual host effects and unsupported effect rows stay
+  gated by `residual_effect_reason` / `zutai_dataflow::try_lower_tlc`.
 - `compile` and `dataflow` still fold renderable compile-time reflection
   programs through the THIR type-value evaluator before Dataflow Core.
   Reflection combined with effectful code remains rejected so AOT reflection does
@@ -231,6 +254,149 @@ AOT backend and exposes the same natural JSON boundary used by the interpreter._
   runtime JSON bridge unit tests, and
   `compile_emit_lib_exports_json_entry_for_host`, which links a C harness
   against the produced shared library and reads `zutai_entry_json`.
+
+### Native optional-field presence parity ✅
+
+_Completed 2026-06-30. Closes the native/interpreter mismatch where optional
+record fields could compile as raw present payloads instead of the interpreter's
+`Maybe` presence envelope._
+
+- Closed native records now store `field? : T` slots as `Maybe T`: omitted fields
+  become `#absent`, and present fields become `#present (value)`.
+- Record updates wrap writes to optional fields as `#present (value)` and
+  preserve untouched optional slots.
+- Source `?.` now lowers through TLC `Case` / Dataflow `Match`, preserving
+  `#none`/`#some` and `#absent`/`#present` presence instead of selecting through
+  an absent receiver.
+- Runtime record descriptors include an optional-field flag. Native `show` and
+  descriptor-backed equality skip absent optional slots and compare/render
+  present payloads as source-level field values.
+- Open-row literals and witness dictionary records keep their explicit runtime
+  slots, so optional-field completion for closed records does not disturb
+  slot-based witness dispatch or open-row monomorphization.
+- Verification: `compile_optional_field_access_matches_oracle`,
+  `compile_stdlib_optional_pipeline_matches_oracle`, imported witness native
+  oracle tests, and the full `cargo test --workspace` gate all pass.
+
+### Native coalesce fallback parity ✅
+
+_Completed 2026-06-30. Closes the evaluator/backend laziness mismatch where
+`value ?? fallback` could evaluate `fallback` even when `value` was `#some` or
+`#present`._
+
+- Source `??` now lowers from THIR to TLC `Case` control flow over
+  `#none`/`#absent` and `#some`/`#present`.
+- The TLC evaluator keeps a lazy fallback path for any residual
+  `BuiltinOp::Coalesce`.
+- Dataflow Core rewrites any residual TLC coalesce builtin into `Match`, so ANF
+  and SSA schedule the fallback only in the defaulting arms.
+- Native atom-pattern matching now uses runtime text/atom content equality, so
+  host-created optional `#none`/`#absent` values match the same arms as static
+  atom literals.
+- Native CLI coverage now compares compiled output against the interpreter
+  oracle for explicit `#some` and `#present` values whose fallback would divide
+  by zero if evaluated.
+
+### Native logical short-circuit parity ✅
+
+_Completed 2026-06-30. Closes native/interpreter mismatches where logical
+`&&`/`||` could compile as eager LLVM `and`/`or` operations and evaluate the RHS
+even when the reference interpreter short-circuited._
+
+- Source `&&`/`||` now lower from THIR to TLC `Case` control flow.
+- Dataflow Core also rewrites any residual TLC `BuiltinOp::And`/`BuiltinOp::Or`
+  into `Match`, covering internally synthesized boolean folds such as derived
+  witness code.
+- Native CLI coverage now compares compiled output against the interpreter
+  oracle for RHS division-by-zero sentinels: `false && ((1 / 0) == 0)` and
+  `true || ((1 / 0) == 0)` both skip the RHS.
+
+### Native Text ordering parity ✅
+
+_Completed 2026-06-30. Closes native/interpreter mismatches where `Text`
+`<`/`<=`/`>`/`>=` compiled to raw pointer/integer comparisons._
+
+- Dataflow Core routes Text ordering builtins through `TextPrim` nodes alongside
+  Text equality.
+- LLVM codegen emits runtime calls to `zutai.text_lt` / `zutai.text_le` /
+  `zutai.text_gt` / `zutai.text_ge`, which compare the underlying UTF-8 text
+  contents.
+- Verification: `compile_text_ordering_matches_oracle` covers lexical ordering,
+  equality-inclusive ordering, and a non-ASCII comparison against the interpreter
+  oracle.
+
+### Native Float scalar parity ✅
+
+_Completed 2026-06-30. Closes native/interpreter mismatches where Float
+arithmetic and ordered comparisons compiled to integer operations over raw
+`f64` bit patterns._
+
+- Dataflow Core routes Float `+`, `-`, `*`, `/`, `<`, `<=`, `>`, and `>=` through
+  numeric primitive helper nodes before the generic integer-builtin path.
+- LLVM codegen emits runtime calls to `zutai.float_*` helpers, which unpack the
+  ABI bits to `f64`, apply Rust/IEEE arithmetic or ordered comparison, and return
+  the proper Zutai ABI value.
+- Verification: `compile_float_arithmetic_and_ordering_matches_oracle` covers
+  arithmetic, division, ordered comparisons, and NaN ordered-comparison behavior
+  against the interpreter oracle.
+
+### Native structural equality parity ✅
+
+_Completed 2026-06-30. Extends native equality beyond raw word comparison for
+heap-shaped values, matching the interpreter's structural value equality for the
+supported backend value shapes._
+
+- ANF/SSA now carry a descriptor-backed `ValueEq` operation for equality and
+  inequality over floats, atoms, lists, optionals/maybes, records, tuples, and
+  variants.
+- LLVM codegen gives type descriptors stable `DfTyId`-derived names and emits
+  runtime `zutai.value_eq(lhs, rhs, descriptor)` calls for descriptor-backed
+  equality.
+- Runtime equality walks the same descriptor format as `zutai.show`, comparing
+  nested records/tuples/lists/variants recursively and using language-level
+  float equality instead of raw bit equality.
+- Verification: `compile_structural_equality_matches_oracle` compares records,
+  lists, tuples, atoms, and tagged unions between compiled native output and the
+  interpreter oracle.
+
+### Native Text equality parity ✅
+
+_Completed 2026-06-30. Closes a native/interpreter mismatch where `Text == Text`
+compiled to raw word/pointer equality instead of comparing text contents._
+
+- Dataflow Core now routes `Text` equality/inequality through `TextPrim` nodes.
+- LLVM codegen emits calls to runtime `zutai.text_eq` / `zutai.text_ne`, which
+  compare the UTF-8 byte slices behind the runtime `Text` values.
+- Verification: `compiled_resource_effectful_generator_text_equality_matches_oracle`
+  compares a `Text` returned through a generator-cell `fs.read` host boundary
+  against a literal, proving native output matches the interpreter oracle.
+
+### Native effectful-generator host-boundary parity ✅
+
+_Completed 2026-06-30. Extends native/interpreter parity for effectful generator
+cells so standard host operations deferred in cells lower through the host
+boundary, while custom effects and ambient `io.print` keep the source-handler
+`Computation` driver path._
+
+- **Backend-only effect boundary.** The backend path now lowers from a
+  pre-effect-erasure TLC shape, preserving deferred generator-cell performs for
+  the residual reifier without changing the interpreter oracle's eager TLC path.
+- **Effectful-cell reification.** The reifier accepts source-handled custom
+  operations in effectful codata fields, classifies `match` over an effectful
+  cell as effectful before pattern binders are marked, and binds
+  `Computation`-valued fields through the existing driver.
+- **Host-boundary cell effects.** Deferred standard host operations other than
+  `io.print` (for example `fs.read`) are no longer protected for source-handler
+  reification. They stay as ordinary `Perform` nodes under the lazy cell and
+  lower to `HostOp` when the backend entry boundary grants them, matching the
+  interpreter's host-boundary behavior for generator-cell fields.
+- **Verification.** `backend_resource_generator_host_op_uses_host_grant_boundary`
+  proves `fs.read` in a lazy generator cell is accepted with `HostEffectSet::ALL`
+  and still rejected without the host grant. `compiled_resource_effectful_generator_*`
+  proves compiled `fs.read` cells match the interpreter oracle, while
+  `compiled_effectful_generator*` and `compiled_finally_clause_matches_oracle`
+  prove custom handled generator cells and supported `finally` shapes still
+  compile to the interpreter value.
 
 ### Unicode source/native hardening ✅
 
@@ -603,8 +769,10 @@ Zutai can check, interpret, lower, compile, or deliberately refuse after V3._
   "path-relative only", "eight combinators", "no `s.Stream`", "pure lazy
   sequence"). `docs/v3_spec/01-generators.md` status now splits native handled-
   effect parity (landed 2026-06-26, `io.print`-backed idiom compiles natively)
-  from the non-`io.print` resource-effect backend gate, instead of collapsing
-  both into "native lowering refused". `docs/stdlib/00-index.md` and
+  from the then-current non-`io.print` resource-effect backend gate, instead of
+  collapsing both into "native lowering refused"; the 2026-06-30 host-boundary
+  parity follow-up later closed that native cell gap for standard host
+  operations. `docs/stdlib/00-index.md` and
   `docs/stdlib/prelude.md` corrected to state the actual ambient prelude
   (intrinsic layer + the ambient **stream** source prelude) and to mark the
   list-verb/`id` source prelude (`prelude.zt`) as still planned — the prior
@@ -624,9 +792,9 @@ Zutai can check, interpret, lower, compile, or deliberately refuse after V3._
   (`ambient_streameff_*`), `toList`/`fromList`/`takeList`, `empty` at
   `BindingRef`, effectful generator ordering, cancellation
   (`cancellation_*`), cross-boundary finalizer unwinding, resource lazy-escape
-  refusal, non-`io.print` resource backend rejection
-  (`compile_resource_effectful_generator_stays_gated`), dynamic `load.zti` /
-  `load.zt`, and default-on GC + `ZUTAI_GC=0` opt-out
+  refusal, the then-current non-`io.print` resource backend rejection (later
+  replaced by host-boundary parity tests), dynamic `load.zti` / `load.zt`, and
+  default-on GC + `ZUTAI_GC=0` opt-out
   (`compile_emit_bin_gc_is_default_on_with_opt_out`).
 - **Diagnostics quality.** Refusal paths were confirmed to refuse before the
   wrong backend stage with actionable messages (`unhandled effect`, residual-
@@ -674,9 +842,11 @@ a status/doc cutover, not a new collector implementation._
 
 ### Resource lifetime for effectful generators ✅
 
-_Completed 2026-06-27. Closes the remaining scoped V3-G4 lifetime follow-up with
-reference-interpreter support and explicit backend rejection for non-`io.print`
-resource effects._
+_Completed 2026-06-27. Closes the remaining scoped V3-G4 lifetime follow-up.
+The original milestone shipped with explicit backend rejection for
+non-`io.print` resource effects; the 2026-06-30 host-boundary parity follow-up
+later added native support for standard host operations deferred in generator
+cells._
 
 The granting handler's dynamic extent is the single owner of resource-backed
 stream lifetime: acquisition/step effects, normal full consumption, partial
@@ -688,12 +858,12 @@ Validation added oracle/refusal coverage in `crates/cli/tests/cli.rs`:
 `resource_generator_finalizes_once_on_legal_shapes` proves teardown runs exactly
 once on normal full consumption, early stop, cancellation, and nested-finalizer
 unwinding; `resource_generator_lazy_escape_is_rejected_at_force_boundary` proves
-an unforced effectful head returned outside the grant refuses when forced; and
-`compile_resource_effectful_generator_stays_gated` proves a source-handled
-`fs.read` generator still rejects on the native backend. The implementation gate
-lives in `crates/general/tlc/src/lower/effects/reify.rs`: effectful codata cells
-that carry non-`io.print` host-resource operations are left residual so the
-existing residual-effect gate rejects them before Dataflow Core.
+an unforced custom-effect head returned outside the grant refuses when forced.
+The 2026-06-30 host-boundary parity follow-up added
+`compiled_resource_effectful_generator_matches_host_boundary_oracle` and
+`compiled_resource_effectful_generator_used_in_consumer_matches_oracle`, proving
+standard host operations deferred in generator cells compile to the same
+host-boundary behavior as the interpreter.
 
 Non-goals remain unchanged: no asynchronous/preemptive cancellation, no ambient
 filesystem/clock/network/randomness iteration, no host iterator abstraction, no

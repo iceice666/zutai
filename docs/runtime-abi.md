@@ -178,6 +178,12 @@ declared order and emits the integer index. `record_new/set/get/update` and
 `str_hash`-keyed access is removed. Field *names* survive only in the type
 descriptor (D-0009) for rendering and debugging.
 
+Optional record fields use the same physical slot discipline, but their stored
+slot value is the presence envelope: `field? : T` stores `Maybe T`, with omitted
+fields as `#absent` and present fields as `#present (value)`. The descriptor's
+per-field optional flag tells `show` and `value_eq` to skip absent fields and
+unwrap present payloads when rendering/comparing source-level records.
+
 *Implementation impact:* `SsaOp::Select`/`RecordUpdate` must carry the resolved
 slot index (computed from the base's `DfTy`), not the field name string.
 
@@ -198,9 +204,9 @@ ZtVariant { i64 header; i64 tag; i64 payload; } // TAG_VARIANT
   `i64 zutai.variant_value(i64 v)`.
 - **Optional/Maybe** are ordinary variants: `#none`/`#some (v)` and
   `#absent`/`#present (v)`, matching the interpreter split documented in
-  `ARCHIVED.md`. `i64 zutai.coalesce(i64 v, i64 fallback)` inspects the tag and
-  returns the payload for `#some`/`#present`, else `fallback` — unwrapping
-  exactly one layer (parity with `eval_tlc.rs`).
+  `ARCHIVED.md`. Source `??` lowers to control flow so fallback expressions stay
+  lazy; the strict `i64 zutai.coalesce(i64 v, i64 fallback)` helper remains for
+  residual helper-shaped IR and unwraps exactly one layer.
 
 ### D-0006 — Text and atom ABI
 
@@ -380,7 +386,8 @@ Entry grammar (each entry is a small static `i64`/`i8` array):
 ```
 desc ::= INT | BOOL | FLOAT | TEXT | ATOM
        | POSIT   nbits es
-       | RECORD   n (name_ref, desc_ref)^n      -- field names + order preserved
+       | RECORD   n (name_ref, optional?, desc_ref)^n
+                    -- field names/order plus optional-slot storage flag
        | TUPLE    n (named?, name_ref, desc_ref)^n
        | LIST     desc_ref
        | OPTIONAL desc_ref                       -- fixed #none / #some rendering
