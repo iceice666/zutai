@@ -97,6 +97,7 @@ fn run_path_stdout(path: &str) -> String {
     let output = cli()
         .arg("run")
         .arg(path)
+        .current_dir(workspace_root())
         .assert()
         .success()
         .get_output()
@@ -113,9 +114,13 @@ fn compile_path_bin_stdout(name: &str, path: &str) -> String {
         .arg(path)
         .arg("-o")
         .arg(&out)
+        .current_dir(workspace_root())
         .assert()
         .success();
-    let output = StdCommand::new(&out).output().unwrap();
+    let output = StdCommand::new(&out)
+        .current_dir(workspace_root())
+        .output()
+        .unwrap();
     assert!(output.status.success(), "{output:?}");
     String::from_utf8(output.stdout).unwrap()
 }
@@ -234,6 +239,14 @@ fn real_examples_check_run_and_compile_match() {
                 "gate = #hold",
                 "risk = 9",
                 "summary = \"PROD / payments-api / hold\"",
+            ],
+        ),
+        (
+            "host_stream_read.zt",
+            [
+                "forcedFirstCell = true",
+                "sourceHandlerDidNotCaptureCell = true",
+                "skippedMissingTail = true",
             ],
         ),
     ];
