@@ -63,7 +63,8 @@ The larger examples are:
   report from an infinite synthetic telemetry stream.
 
 Smaller stdlib-focused snippets include [stdlib_pipeline.zt](examples/stdlib_pipeline.zt),
-[stream_summary.zt](examples/stream_summary.zt), and
+[stream_summary.zt](examples/stream_summary.zt),
+[host_stream_read.zt](examples/host_stream_read.zt), and
 [text_report.zt](examples/text_report.zt).
 
 For conventions used by larger examples, see the

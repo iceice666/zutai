@@ -116,4 +116,9 @@ Pure constructors such as `unfold` and `fromList` belong here now. Host-backed
 producers belong in explicit capability modules after Phase 27 and return or
 consume `Stream` only through capability-typed APIs. Filesystem, environment,
 clock, randomness, and future network-backed generation remain non-ambient host
-boundaries, not available functions in this module.
+boundaries, not available functions in this module. The runnable
+`examples/host_stream_read.zt` artifact demonstrates the rule for
+`stream { yield perform fs.read ... }`: forcing one lazy cell reads through the
+interpreter/native host boundary, a source handler around the stream does not
+capture that cell-level host operation, and an unforced missing tail is never
+read.

@@ -19,7 +19,7 @@ zutai-cli run examples/service_health.zt
 ```sh
 just examples-check      # type-check every .zt example, including network demos
 just examples-run        # run only examples that terminate on their own
-just native-examples     # check/run/native-compile parity for the larger pure demos
+just native-examples     # check/run/native-compile parity for larger examples
 ```
 
 Without `just`, use Cargo directly:
@@ -38,9 +38,17 @@ cargo run -q -p zutai-cli -- run examples/service_health.zt
 | `deploy_readiness.zt` + `deploy_readiness.zti` | Rollout gating from inert config, failed-check rollups, and text summaries | Prints a deployment readiness record |
 | `stdlib_pipeline.zt` | `stdlib.num`, `stdlib.optional`, and `stdlib.result` pipelines | Prints one integer score |
 | `stream_summary.zt` | List-to-stream transformation and lazy stream summary | Prints items, sum, and count |
+| `host_stream_read.zt` | `stream { yield perform fs.read ... }` in a lazy cell at the host boundary | Reads its own source, proves the missing tail is not forced, and matches `run`/native output |
 | `text_report.zt` | `stdlib.text` normalization, replacement, joining, and parsing | Prints a text report record |
 | `net_echo.zt` | Host network effects for one TCP request | Waits on port 7777 until a client sends a line |
 | `echo_http.zt` | Recursive host network effects for a tiny HTTP responder | Waits on port 8080 and keeps accepting clients |
+
+`host_stream_read.zt` should be run from the workspace root because its
+`fs.read` argument is an ordinary host path, not a source-relative import. The
+example wraps the stream in a source handler that would return `"handler-mock"`
+if it owned the lazy cell, then forces one cell and reads this source file
+through the host boundary instead. A second cell points at a missing file; the
+successful output is the laziness check.
 
 ## Network Demos
 

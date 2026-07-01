@@ -32,7 +32,7 @@ examples-check:
 
 # Run examples that terminate without an external client.
 examples-run:
-    @for f in examples/service_health.zt examples/canary_forecast.zt examples/deploy_readiness.zt examples/stdlib_pipeline.zt examples/stream_summary.zt examples/text_report.zt; do \
+    @for f in examples/service_health.zt examples/canary_forecast.zt examples/deploy_readiness.zt examples/stdlib_pipeline.zt examples/stream_summary.zt examples/host_stream_read.zt examples/text_report.zt; do \
         echo "==> run $f"; \
         cargo run -q -p zutai-cli -- run "$f"; \
     done
