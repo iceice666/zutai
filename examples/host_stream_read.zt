@@ -1,0 +1,37 @@
+-- Host-boundary stream read example
+-- Usage: zutai-cli run examples/host_stream_read.zt
+-- Run from the workspace root so fs.read can resolve sourcePath.
+--
+-- The first stream cell reads this file. The second cell names a missing file.
+-- The program succeeds because only the first cell is forced; a strict stream
+-- lowering would try the missing path and fail. The source handler deliberately
+-- returns "handler-mock", but standard host effects in lazy cells are served by
+-- the interpreter/native host boundary when the cell is forced.
+
+t ::= import stdlib.text;
+
+Cell :: type { #nil; #cons : { head : Text; tail : Unit -> Cell; }; };
+
+first :: (Unit -> Cell) -> Text ! { fs.read : Path -> Text; }
+  = s => match s () {
+    | #nil => "empty";
+    | #cons { head = h; tail = _; } => h;
+  };
+
+sourcePath :: Path = "examples/host_stream_read.zt";
+missingPath :: Path = "examples/host_stream_read.tail-must-stay-lazy";
+
+[
+  contents : Text = handle (first (stream {
+    yield perform fs.read sourcePath;
+    yield perform fs.read missingPath;
+  })) with {
+    fs.read = \path. resume "handler-mock";
+  };
+  {
+    forcedFirstCell = t.contains "Host-boundary stream read example" contents;
+    sourceHandlerDidNotCaptureCell = if contents == "handler-mock" then false else true;
+    skippedMissingTail = true;
+    bytesRead = t.length contents;
+  }
+]
