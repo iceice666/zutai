@@ -2128,11 +2128,12 @@ handle (sumEff (stream { yield perform tick 1; yield perform tick 2; yield perfo
 }
 
 #[test]
-fn compile_resource_effectful_generator_stays_gated() {
-    // Resource-backed generator cells are interpreter-only: even with an explicit
-    // source handler granting `fs.read`, native lowering must refuse the deferred
-    // non-`io.print` host operation instead of reifying it into a backend stream.
-    let data_path = write_tmp("cli_test_resource_gen_data.txt", "mock");
+fn compiled_resource_effectful_generator_matches_host_boundary_oracle() {
+    // Standard host operations deferred inside generator cells behave like the
+    // interpreter: a source handler around the generator does not become a
+    // cell-level capability. The host boundary handles `fs.read` when the cell
+    // field is forced, and native code must produce the same value.
+    let data_path = write_tmp("cli_test_resource_gen_data.txt", "native-file");
     let src = format!(
         r#"
 Cell :: type {{ #nil; #cons : {{ head : Text; tail : Unit -> Cell; }}; }};
@@ -2144,15 +2145,54 @@ handle (first (stream {{ yield perform fs.read "{}"; }})) with {{ fs.read = \pat
     );
     assert_eq!(
         run_stdout("cli_test_resource_gen_oracle.zt", &src),
-        "\"mock\"\n"
+        "\"native-file\"\n"
     );
-    let path = write_tmp("cli_test_resource_gen_compile_gated.zt", &src);
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("effect"));
+    assert_eq!(
+        compile_bin_stdout("cli_test_resource_gen_compiled", &src),
+        "\"native-file\"\n"
+    );
+}
+
+#[test]
+fn compiled_resource_effectful_generator_used_in_consumer_matches_oracle() {
+    // A consumer can use the head field before returning. The source io.print
+    // handler keeps stdout quiet; the fs.read cell still follows the interpreter
+    // host-boundary behavior, and native output must match it exactly.
+    let data_path = write_tmp("cli_test_resource_gen_strict_data.txt", "native-file");
+    let src = format!(
+        r#"
+Cell :: type {{ #nil; #cons : {{ head : Text; tail : Unit -> Cell; }}; }};
+consume :: (Unit -> Cell) -> Text ! {{ fs.read : Path -> Text; io.print : Text -> Text; }}
+  = s => match s () {{ | #nil => "empty"; | #cons {{ head = h; tail = t; }} => [ print h; h ]; }};
+handle (consume (stream {{ yield perform fs.read "{}"; }})) with {{ fs.read = \path. resume "mock"; io.print = \text. resume text; }}
+"#,
+        zt_string_literal(&data_path)
+    );
+    let run = run_stdout("cli_test_resource_gen_strict_oracle.zt", &src);
+    assert_eq!(
+        compile_bin_stdout("cli_test_resource_gen_strict_compiled", &src),
+        run
+    );
+}
+
+#[test]
+fn compiled_resource_effectful_generator_text_equality_matches_oracle() {
+    let data_path = write_tmp("cli_test_resource_gen_text_eq_data.txt", "native-file");
+    let src = format!(
+        r#"
+Cell :: type {{ #nil; #cons : {{ head : Text; tail : Unit -> Cell; }}; }};
+first :: (Unit -> Cell) -> Text ! {{ fs.read : Path -> Text; }}
+  = s => match s () {{ | #nil => "empty"; | #cons {{ head = h; tail = t; }} => h; }};
+handle (first (stream {{ yield perform fs.read "{}"; }})) with {{ fs.read = \path. resume "mock"; }} == "native-file"
+"#,
+        zt_string_literal(&data_path)
+    );
+    let run = run_stdout("cli_test_resource_gen_text_eq_oracle.zt", &src);
+    assert_eq!(run, "true\n");
+    assert_eq!(
+        compile_bin_stdout("cli_test_resource_gen_text_eq_compiled", &src),
+        run
+    );
 }
 
 #[test]
@@ -3209,6 +3249,123 @@ fn compile_emit_bin_text_runs() {
         compile_bin_stdout("cli_test_compile_emit_bin_text", "\"hello\"\n"),
         "\"hello\"\n"
     );
+}
+
+#[test]
+fn compile_structural_equality_matches_oracle() {
+    let src = r#"
+Shape :: type { #empty; #point : { x : Int; y : Int; }; };
+left :: Shape = #point { x = 1; y = 2; };
+right :: Shape = #point { x = 1; y = 2; };
+r ::= if { x = 1; y = (2, 3); } == { y = (2, 3); x = 1; } then 1 else 0;
+l ::= if {1; 2; 3;} != {1; 2; 4;} then 10 else 0;
+t ::= if (1, 2) == (1, 2) then 100 else 0;
+a ::= if #done == #done then 1000 else 0;
+u ::= if left == right then 10000 else 0;
+r + l + t + a + u
+"#;
+    let native = compile_bin_stdout("cli_test_structural_equality", src);
+    let interp = run_stdout("cli_test_structural_equality_oracle.zt", src);
+    assert_eq!(interp, "11111\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_float_arithmetic_and_ordering_matches_oracle() {
+    let src = r#"
+score ::= if 1.5 + 2.25 == 3.75 then 1 else 0;
+score2 ::= if 5.0 - 1.5 == 3.5 then 10 else 0;
+score3 ::= if 1.5 * 2.0 == 3.0 then 100 else 0;
+score4 ::= if 5.0 / 2.0 == 2.5 then 1000 else 0;
+score5 ::= if (1.5 < 2.0) && (2.0 <= 2.0) && (3.0 > 2.0) && (3.0 >= 3.0) then 10000 else 0;
+nan ::= 0.0 / 0.0;
+score6 ::= if nan < 1.0 then 0 else 100000;
+score + score2 + score3 + score4 + score5 + score6
+"#;
+    let native = compile_bin_stdout("cli_test_float_arithmetic_ordering", src);
+    let interp = run_stdout("cli_test_float_arithmetic_ordering_oracle.zt", src);
+    assert_eq!(interp, "111111\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_text_ordering_matches_oracle() {
+    let src = r#"
+score ::= if "alpha" < "beta" then 1 else 0;
+score2 ::= if "alpha" <= "alpha" then 10 else 0;
+score3 ::= if "zeta" > "eta" then 100 else 0;
+score4 ::= if "zeta" >= "zeta" then 1000 else 0;
+score5 ::= if "é" > "z" then 10000 else 0;
+score + score2 + score3 + score4 + score5
+"#;
+    let native = compile_bin_stdout("cli_test_text_ordering", src);
+    let interp = run_stdout("cli_test_text_ordering_oracle.zt", src);
+    assert_eq!(interp, "11111\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_logical_short_circuit_matches_oracle() {
+    let src = r#"
+score ::= if false && ((1 / 0) == 0) then 1 else 10;
+score2 ::= if true || ((1 / 0) == 0) then 100 else 0;
+score + score2
+"#;
+    let native = compile_bin_stdout("cli_test_logical_short_circuit", src);
+    let interp = run_stdout("cli_test_logical_short_circuit_oracle.zt", src);
+    assert_eq!(interp, "110\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_coalesce_skips_fallback_matches_oracle() {
+    let src = r#"
+explicit :: Int? = #some (9);
+maybe :: Maybe Int = #present (90);
+score ::= explicit ?? (1 / 0);
+score2 ::= maybe ?? (1 / 0);
+score + score2
+"#;
+    let native = compile_bin_stdout("cli_test_coalesce_skip_fallback", src);
+    let interp = run_stdout("cli_test_coalesce_skip_fallback_oracle.zt", src);
+    assert_eq!(interp, "99\n");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+#[test]
+fn compile_optional_field_access_matches_oracle() {
+    let src = r#"
+S :: type { p? : Int; q? : Int?; };
+absent :: S = {};
+present :: S = { p = 9; q = #none; };
+some :: S = { q = #some (5); };
+Inner :: type { v : Int; };
+Outer :: type { inner? : Inner; };
+outerAbsent :: Outer = {};
+outerPresent :: Outer = { inner = { v = 7; }; };
+U :: type { x : Int; y? : Int; };
+updatePresentBase :: U = { x = 1; y = 2; };
+updateAbsentBase :: U = { x = 1; };
+updatedPresent :: U = updatePresentBase with { x = 3; };
+updatedAbsent :: U = updateAbsentBase with { x = 3; };
+updatedSet :: U = updateAbsentBase with { y = 4; };
+{
+  absent = absent.p;
+  present = present.p;
+  nestedNone = present.q;
+  nestedSome = some.q;
+  defaulted = absent.p ?? 5;
+  lazy = present.p ?? (1 / 0);
+  updatePresent = updatedPresent.y;
+  updateAbsent = updatedAbsent.y;
+  updateSet = updatedSet.y;
+  chainAbsent = outerAbsent.inner?.v;
+  chainPresent = outerPresent.inner?.v;
+}
+"#;
+    let native = compile_bin_stdout("cli_test_optional_field_access", src);
+    let interp = run_stdout("cli_test_optional_field_access_oracle.zt", src);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
 #[test]

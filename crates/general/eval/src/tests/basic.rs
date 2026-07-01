@@ -656,6 +656,12 @@ fn coalesce_explicit_some_unwraps_value() {
 }
 
 #[test]
+fn coalesce_some_skips_fallback() {
+    let src = "x :: Int? = #some (9);\nx ?? (1 / 0)";
+    assert_eq!(run(src), Value::Int(9));
+}
+
+#[test]
 fn coalesce_explicit_some_text_unwraps() {
     let src = "x :: Text? = #some (\"hi\");\nx ?? \"def\"";
     assert_eq!(run(src), Value::Text("hi".into()));
@@ -677,6 +683,16 @@ fn coalesce_maybe_present_unwraps_value() {
 S :: type { p? : Int; };
 s :: S = { p = 9; };
 s.p ?? 5
+";
+    assert_eq!(run(src), Value::Int(9));
+}
+
+#[test]
+fn coalesce_present_skips_fallback() {
+    let src = "
+S :: type { p? : Int; };
+s :: S = { p = 9; };
+s.p ?? (1 / 0)
 ";
     assert_eq!(run(src), Value::Int(9));
 }

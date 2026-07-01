@@ -107,9 +107,11 @@ fn record_render_matches_display_spacing() {
         2,
         b"x".as_ptr() as i64,
         1,
+        0,
         int_d.as_ptr() as i64,
         b"y".as_ptr() as i64,
         1,
+        0,
         text_d.as_ptr() as i64,
     ];
     let r = record_new(2);
@@ -117,6 +119,32 @@ fn record_render_matches_display_spacing() {
     record_set(r, 1, text("hi"));
     // Two spaces after the `;` — exactly the interpreter's Display output.
     assert_eq!(render_str(r, &rec_d), "{ x = 5;  y = \"hi\" }");
+}
+
+#[test]
+fn optional_record_slots_render_like_source_fields() {
+    let int_d = [DESC_INT];
+    let rec_d = [
+        DESC_RECORD,
+        2,
+        b"p".as_ptr() as i64,
+        1,
+        1,
+        int_d.as_ptr() as i64,
+        b"q".as_ptr() as i64,
+        1,
+        1,
+        int_d.as_ptr() as i64,
+    ];
+    let present = {
+        let payload = tuple_new(1);
+        tuple_set(payload, 0, 9);
+        variant_new(1, payload)
+    };
+    let r = record_new(2);
+    record_set(r, 0, present);
+    record_set(r, 1, text("absent"));
+    assert_eq!(render_str(r, &rec_d), "{ p = 9 }");
 }
 
 #[test]
@@ -152,7 +180,6 @@ fn optional_and_maybe_render() {
     assert_eq!(render_str(present, &maybe_d), "#present (9)");
 }
 
-
 #[test]
 fn json_bridge_serializes_scalars_lists_records_and_atoms() {
     let int_d = [DESC_INT];
@@ -170,12 +197,15 @@ fn json_bridge_serializes_scalars_lists_records_and_atoms() {
         3,
         b"host".as_ptr() as i64,
         4,
+        0,
         text_d.as_ptr() as i64,
         b"mode".as_ptr() as i64,
         4,
+        0,
         atom_d.as_ptr() as i64,
         b"port".as_ptr() as i64,
         4,
+        0,
         int_d.as_ptr() as i64,
     ];
     let r = record_new(3);
@@ -284,6 +314,7 @@ fn variant_render_all_payload_shapes() {
         1,
         b"radius".as_ptr() as i64,
         6,
+        0,
         int_d.as_ptr() as i64,
     ];
     let circle_d = [

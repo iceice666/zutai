@@ -1,6 +1,6 @@
 // ── Additional lower/types.rs + lower/expr.rs + binop coverage ───────────────
 
-use super::tlc_of;
+use super::{backend_tlc_of, tlc_of};
 use crate::*;
 use zutai_syntax::posit::PositSpec;
 use zutai_thir::FixedWidth;
@@ -266,21 +266,30 @@ fn wildcard_lambda_param_uses_fresh_synthetic_binding() {
 }
 
 #[test]
-fn optional_access_lowers_to_get_field() {
-    // `cfg?.port` where cfg :: Config? → ThirExprKind::OptionalAccess → TlcExpr::GetField
+fn optional_access_lowers_to_case_with_get_field_branch() {
+    // `cfg?.port` where cfg :: Config? lowers to a wrapper-preserving Case;
+    // the present branch performs the actual record GetField.
     let m = tlc_of(
         "Config :: type { port : Int; };
 cfg :: Config? = #none;
 n :: Int? = cfg?.port;
 n",
     );
+    let has_case = m
+        .expr_arena
+        .iter()
+        .any(|(_, e)| matches!(e, TlcExpr::Case(_, _)));
     let has_get_field = m
         .expr_arena
         .iter()
         .any(|(_, e)| matches!(e, TlcExpr::GetField(_, _)));
     assert!(
+        has_case,
+        "expected OptionalAccess to lower to TlcExpr::Case"
+    );
+    assert!(
         has_get_field,
-        "expected TlcExpr::GetField from OptionalAccess"
+        "expected present branch to project the field"
     );
 }
 
@@ -356,31 +365,35 @@ fn comparison_binops_lower_to_builtin() {
 }
 
 #[test]
-fn logical_and_or_coalesce_lower_to_builtin() {
+fn logical_and_or_coalesce_lower_to_case() {
     let m = tlc_of("f x y = x && y;\nf true false");
     assert!(
         m.expr_arena
             .iter()
-            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::And, _, _))),
-        "expected Builtin(And)"
+            .any(|(_, e)| matches!(e, TlcExpr::Case(_, alts) if alts.iter().any(|alt| matches!(&alt.pat, TlcPat::Lit(Literal::Bool(false)))))),
+        "expected Case for &&"
     );
     let m = tlc_of("f x y = x || y;\nf true false");
     assert!(
         m.expr_arena
             .iter()
-            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Or, _, _))),
-        "expected Builtin(Or)"
+            .any(|(_, e)| matches!(e, TlcExpr::Case(_, alts) if alts.iter().any(|alt| matches!(&alt.pat, TlcPat::Lit(Literal::Bool(true)))))),
+        "expected Case for ||"
     );
-    // Coalesce (??) on an Optional record field — placed in a declaration body so
-    // TLC lowers it (the `final_expr` slot is not visited by the TLC lowerer).
     let m = tlc_of(
         "Server :: type { port? : Int; };\nget :: Server -> Int = \\s. s.port ?? 8080;\nget {}",
     );
     assert!(
         m.expr_arena
             .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Case(_, alts) if alts.iter().any(|alt| matches!(&alt.pat, TlcPat::Variant(tag, _) if tag == "some")))),
+        "expected Case for ??"
+    );
+    assert!(
+        !m.expr_arena
+            .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Coalesce, _, _))),
-        "expected Builtin(Coalesce)"
+        "?? must not lower to eager Builtin(Coalesce)"
     );
 }
 
@@ -607,6 +620,28 @@ result
     assert!(
         crate::residual_effect_reason(&m).is_none(),
         "handled multi-op program must leave no reachable effect markers or effect rows"
+    );
+}
+
+#[test]
+fn backend_resource_generator_host_op_uses_host_grant_boundary() {
+    let m = backend_tlc_of(
+        r#"
+Cell :: type { #nil; #cons : { head : Text; tail : Unit -> Cell; }; };
+first :: (Unit -> Cell) -> Text ! { fs.read : Path -> Text; }
+  = s => match s () { | #nil => "empty"; | #cons { head = h; tail = t; } => h; };
+handle (first (stream { yield perform fs.read "ignored"; })) with {
+  fs.read = \path. resume "mock";
+}
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason_with_grants(&m, HostEffectSet::ALL).is_none(),
+        "granted fs.read in a generator cell should lower to the host boundary"
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_some(),
+        "without a host grant, the deferred fs.read must still be gated"
     );
 }
 

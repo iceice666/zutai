@@ -434,6 +434,60 @@ fn optional_field_access_lowers_to_maybe_type() {
 }
 
 #[test]
+fn optional_record_literal_stores_maybe_slots() {
+    let g = dc_of("S :: type { p? : Int; q? : Int; };\ns :: S = { p = 9; };\ns");
+    let record_fields = g
+        .nodes
+        .iter()
+        .find_map(|(_, node)| match &node.kind {
+            DfNodeKind::Record(fields)
+                if fields.iter().any(|(name, _)| name == "p")
+                    && fields.iter().any(|(name, _)| name == "q") =>
+            {
+                Some(fields)
+            }
+            _ => None,
+        })
+        .expect("record literal");
+    assert_eq!(record_fields.len(), 2);
+
+    let p = record_fields
+        .iter()
+        .find(|(name, _)| name == "p")
+        .map(|(_, node)| *node)
+        .expect("p slot");
+    let q = record_fields
+        .iter()
+        .find(|(name, _)| name == "q")
+        .map(|(_, node)| *node)
+        .expect("q slot");
+    assert!(matches!(g.types[g.nodes[p].ty], DfTy::Maybe(_)));
+    assert!(matches!(
+        &g.nodes[p].kind,
+        DfNodeKind::Variant { tag, .. } if tag == "present"
+    ));
+    assert!(matches!(g.types[g.nodes[q].ty], DfTy::Maybe(_)));
+    assert!(matches!(
+        &g.nodes[q].kind,
+        DfNodeKind::Lit(DfLit::Atom(name)) if name == "absent"
+    ));
+}
+
+#[test]
+fn optional_access_lowers_to_match_node() {
+    let g = dc_of(
+        "Config :: type { port : Int; };
+cfg :: Config? = #none;
+cfg?.port",
+    );
+    let has_match = g
+        .nodes
+        .iter()
+        .any(|(_, node)| matches!(&node.kind, DfNodeKind::Match { .. }));
+    assert!(has_match, "optional access should lower to Match");
+}
+
+#[test]
 fn optional_value_lowers_to_optional_type() {
     let g = dc_of("x :: Int? = #none;\nx");
     assert!(
@@ -673,6 +727,38 @@ fn if_expression_produces_match_node() {
     assert!(has_match, "expected Match node from if desugaring");
 }
 
+#[test]
+fn logical_short_circuit_produces_match_node() {
+    let g = dc_of("f x y = x && y;\nf false true");
+    let has_match = g
+        .nodes
+        .iter()
+        .any(|(_, n)| matches!(&n.kind, DfNodeKind::Match { .. }));
+    let has_eager_and = g.nodes.iter().any(|(_, n)| {
+        matches!(
+            &n.kind,
+            DfNodeKind::Builtin(DfBuiltinOp::And | DfBuiltinOp::Or, _, _)
+        )
+    });
+    assert!(has_match, "expected Match node from logical short-circuit");
+    assert!(!has_eager_and, "logical short-circuit must not be eager");
+}
+
+#[test]
+fn coalesce_produces_match_node() {
+    let g = dc_of("x :: Int? = #some (9);\nx ?? 0");
+    let has_match = g
+        .nodes
+        .iter()
+        .any(|(_, n)| matches!(&n.kind, DfNodeKind::Match { .. }));
+    let has_eager_coalesce = g
+        .nodes
+        .iter()
+        .any(|(_, n)| matches!(&n.kind, DfNodeKind::Coalesce { .. }));
+    assert!(has_match, "expected Match node from coalesce");
+    assert!(!has_eager_coalesce, "coalesce fallback must not be eager");
+}
+
 // ── Recursive back-edge ───────────────────────────────────────────────────────
 
 #[test]
@@ -871,13 +957,18 @@ Eq @Int :: { eq = \a b. true; }
 "#,
     );
     // The witness decl should appear as a Value in globals (dict record).
-    let has_record_global = g
+    let record_fields = g
         .globals
         .values()
-        .any(|&node_id| matches!(&g.nodes[node_id].kind, DfNodeKind::Record(_)));
-    assert!(
-        has_record_global,
-        "expected a Record node among globals for the witness dict"
+        .find_map(|&node_id| match &g.nodes[node_id].kind {
+            DfNodeKind::Record(fields) => Some(fields),
+            _ => None,
+        })
+        .expect("expected a Record node among globals for the witness dict");
+    assert_eq!(
+        record_fields.len(),
+        1,
+        "witness dict record must retain its method field"
     );
 }
 

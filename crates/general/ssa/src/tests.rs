@@ -48,6 +48,7 @@ fn op_names(func: &SsaFunc) -> Vec<String> {
             SsaOp::Variant { .. } => "Variant".to_string(),
             SsaOp::VariantValue { .. } => "VariantValue".to_string(),
             SsaOp::Builtin { .. } => "Builtin".to_string(),
+            SsaOp::ValueEq { .. } => "ValueEq".to_string(),
             SsaOp::ListPrim { .. } => "ListPrim".to_string(),
             SsaOp::NumPrim { .. } => "NumPrim".to_string(),
             SsaOp::TextPrim { .. } => "TextPrim".to_string(),
@@ -403,6 +404,30 @@ fn match_expression_produces_multiple_blocks() {
     );
 }
 
+#[test]
+fn atom_patterns_use_text_equality() {
+    let src = "\
+x :: Int? = #none;
+match x {
+  | #none => 0;
+  | #some (value) => value;
+}";
+    let m = ssa_of(src);
+    let has_atom_text_eq = all_instructions(&m).iter().any(|instr| {
+        matches!(
+            &instr.op,
+            SsaOp::TextPrim {
+                op: DfTextPrimOp::Eq,
+                args
+            } if matches!(args.get(1), Some(SsaValue::Lit(DfLit::Atom(name))) if name == "none")
+        )
+    });
+    assert!(
+        has_atom_text_eq,
+        "atom patterns should compare atom text content, not raw pointers"
+    );
+}
+
 // ── Entry function return terminator ───────────────────────────────────────────
 
 #[test]
@@ -469,7 +494,7 @@ fn tail_if_has_phi_sunk_by_tco() {
 // ── Coalesce operator ─────────────────────────────────────────────────────────
 
 #[test]
-fn coalesce_produces_coalesce_op() {
+fn coalesce_lowers_to_branching_match() {
     let src = "\
 RawServer :: type {
   port? : Int;
@@ -478,10 +503,16 @@ server :: RawServer = {};
 server.port ?? 8080";
     let m = ssa_of(src);
     let ops = all_op_names(&m);
+    let funcs = all_funcs(&m);
+    let has_branching_match = funcs.iter().any(|func| func.blocks.len() >= 3);
     assert!(
-        ops.contains(&"Coalesce".to_string()),
-        "should have a Coalesce op: {:?}",
+        !ops.contains(&"Coalesce".to_string()),
+        "coalesce fallback must not lower to eager Coalesce op: {:?}",
         ops
+    );
+    assert!(
+        has_branching_match,
+        "coalesce should lower through branching match blocks"
     );
 }
 

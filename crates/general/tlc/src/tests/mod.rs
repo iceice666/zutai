@@ -22,6 +22,31 @@ pub(super) fn tlc_of(src: &str) -> TlcModule {
     lower_thir(thir.file.as_ref().expect("thir file should be complete"))
 }
 
+pub(super) fn backend_tlc_of(src: &str) -> TlcModule {
+    let parsed = zutai_syntax::parse(src);
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "hir errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "thir errors: {:?}",
+        thir.diagnostics
+    );
+    let mut module =
+        lower_thir_for_backend(thir.file.as_ref().expect("thir file should be complete"));
+    lower_effects_for_backend(&mut module);
+    module
+}
+
 pub(super) fn assert_no_data_loss(m: &TlcModule) {
     for (_, ty) in m.type_arena.iter() {
         match ty {
