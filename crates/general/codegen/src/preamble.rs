@@ -100,8 +100,18 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.num_to_float(i64)\n");
     out.push_str("declare i64 @zutai.num_round(i64)\n");
     out.push_str("declare i64 @zutai.num_truncate(i64)\n");
+    out.push_str("declare i64 @zutai.float_add(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_sub(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_mul(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_div(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_lt(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_le(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_gt(i64, i64)\n");
+    out.push_str("declare i64 @zutai.float_ge(i64, i64)\n");
     // Optional/Maybe operations
     out.push_str("declare i64 @zutai.coalesce(i64, i64)\n");
+    // Type-directed value operations
+    out.push_str("declare i64 @zutai.value_eq(i64, i64, i64)\n");
     // Variant operations
     out.push_str("declare i64 @zutai.variant_new(i64, i64)\n");
     out.push_str("declare i64 @zutai.variant_tag(i64)\n");
@@ -111,6 +121,12 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.text_from_global(i64, i64)\n");
     out.push_str("declare i64 @zutai.text_concat(i64, i64)\n");
     out.push_str("declare i64 @zutai.atom_from_global(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_eq(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_ne(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_lt(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_le(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_gt(i64, i64)\n");
+    out.push_str("declare i64 @zutai.text_ge(i64, i64)\n");
     out.push_str("declare i64 @zutai.text_length(i64)\n");
     out.push_str("declare i64 @zutai.text_split(i64, i64)\n");
     out.push_str("declare i64 @zutai.text_join(i64, i64)\n");

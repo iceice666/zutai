@@ -11,6 +11,10 @@ pub(crate) fn desc_ref(name: &str) -> StaticWord {
     ptr_word(name)
 }
 
+pub(crate) fn descriptor_name(ty_id: DfTyId) -> String {
+    format!("zutai.desc.ty{}", ty_id.into_raw().into_u32())
+}
+
 pub(crate) fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
     out.push_str("; ── Type descriptors ─────────────────────────────────────────\n\n");
     let mut emitter = DescriptorEmitter {
@@ -18,9 +22,12 @@ pub(crate) fn emit_descriptors(module: &SsaModule, out: &mut String) -> String {
         out,
         cache: FxHashMap::default(),
         strings: FxHashMap::default(),
-        next: 0,
     };
     let entry = emitter.emit(module.entry_ty_id);
+    let ty_ids: Vec<DfTyId> = module.types.iter().map(|(id, _)| id).collect();
+    for ty_id in ty_ids {
+        emitter.emit(ty_id);
+    }
     emitter.out.push('\n');
     entry
 }
@@ -30,7 +37,6 @@ pub(crate) struct DescriptorEmitter<'a, 'o> {
     out: &'o mut String,
     cache: FxHashMap<DfTyId, String>,
     strings: FxHashMap<String, String>,
-    next: usize,
 }
 
 impl<'a, 'o> DescriptorEmitter<'a, 'o> {
@@ -38,8 +44,7 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
         if let Some(name) = self.cache.get(&ty_id) {
             return name.clone();
         }
-        let name = format!("zutai.desc.{}", self.next);
-        self.next += 1;
+        let name = descriptor_name(ty_id);
         self.cache.insert(ty_id, name.clone());
 
         let ty = self.types[ty_id].clone();
@@ -65,13 +70,14 @@ impl<'a, 'o> DescriptorEmitter<'a, 'o> {
             DfTy::Optional(inner) => vec![i64_word(DESC_OPTIONAL), desc_ref(&self.emit(inner))],
             DfTy::Maybe(inner) => vec![i64_word(DESC_MAYBE), desc_ref(&self.emit(inner))],
             DfTy::Record(fields) => {
-                let mut words = Vec::with_capacity(2 + fields.len() * 3);
+                let mut words = Vec::with_capacity(2 + fields.len() * 4);
                 words.push(i64_word(DESC_RECORD));
                 words.push(i64_word(fields.len()));
                 for field in fields {
                     let (ptr, len) = self.string_ref(&field.name);
                     words.push(ptr);
                     words.push(i64_word(len));
+                    words.push(i64_word(field.optional as i64));
                     words.push(desc_ref(&self.emit(field.ty)));
                 }
                 words
@@ -197,6 +203,10 @@ pub(crate) fn collect_from_op(op: &SsaOp, constants: &mut Vec<Constant>) {
         SsaOp::Variant { value, .. } => collect_from_value(value, constants),
         SsaOp::VariantValue { scrutinee } => collect_from_value(scrutinee, constants),
         SsaOp::Builtin { op: _, lhs, rhs } => {
+            collect_from_value(lhs, constants);
+            collect_from_value(rhs, constants);
+        }
+        SsaOp::ValueEq { lhs, rhs, .. } => {
             collect_from_value(lhs, constants);
             collect_from_value(rhs, constants);
         }

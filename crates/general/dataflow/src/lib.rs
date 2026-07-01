@@ -169,11 +169,25 @@ pub enum DfNumPrimOp {
     ToFloat,
     Round,
     Truncate,
+    FloatAdd,
+    FloatSub,
+    FloatMul,
+    FloatDiv,
+    FloatLt,
+    FloatLe,
+    FloatGt,
+    FloatGe,
 }
 
 /// Scalar bridge primitives backing the explicit `stdlib.text` source module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DfTextPrimOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
     Length,
     Split,
     Join,

@@ -12,7 +12,8 @@ use zutai_types::Value;
 
 use crate::{
     DataflowGraph, DfBuiltinOp, DfLit, DfNode, DfNodeKind, DfPositOp, DfRecordField, DfTupleField,
-    DfTy, DfTyId, DfTyVar, ImportKind, ImportTarget, ModuleInput, NodeId, ProgramInput,
+    DfTupleNodeItem, DfTy, DfTyId, DfTyVar, ImportKind, ImportTarget, ModuleInput, NodeId,
+    ProgramInput,
 };
 
 mod expr;
@@ -63,6 +64,14 @@ fn record_slot(fields: &[DfRecordField], field: &str) -> usize {
     let mut names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
     names.sort_unstable();
     names.iter().position(|&name| name == field).unwrap_or(0)
+}
+
+fn row_is_open(row: &Row) -> bool {
+    match row {
+        Row::REmpty => false,
+        Row::RVar(_) => true,
+        Row::RExtend { tail, .. } => row_is_open(tail),
+    }
 }
 
 fn lower_posit_op(op: BuiltinOp) -> Option<DfPositOp> {
@@ -226,7 +235,7 @@ impl<'m> Lowerer<'m> {
                 self.alloc_node(DfNodeKind::List(nodes), ty, None)
             }
             Value::Block(block) => {
-                let mut fields: Vec<(String, NodeId)> = block
+                let fields: Vec<(String, NodeId)> = block
                     .iter()
                     .map(|pair| {
                         let field_ty = self
@@ -236,10 +245,136 @@ impl<'m> Lowerer<'m> {
                         (pair.field_name.clone(), node)
                     })
                     .collect();
-                fields.sort_by(|a, b| a.0.cmp(&b.0));
+                let fields = self.record_storage_fields(ty, fields, None);
                 self.alloc_node(DfNodeKind::Record(fields), ty, None)
             }
         }
+    }
+
+    fn record_storage_fields(
+        &mut self,
+        ty: DfTyId,
+        fields: Vec<(String, NodeId)>,
+        span: Option<Span>,
+    ) -> Vec<(String, NodeId)> {
+        let DfTy::Record(type_fields) = self.types[ty].clone() else {
+            let mut fields = fields;
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            return fields;
+        };
+        if type_fields.is_empty() && !fields.is_empty() {
+            let mut fields = fields;
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            return fields;
+        }
+
+        let mut provided: FxHashMap<String, NodeId> = fields.into_iter().collect();
+        let mut out = Vec::with_capacity(type_fields.len());
+        for field in type_fields {
+            let value = match provided.remove(&field.name) {
+                Some(value) if field.optional => self.make_maybe_present(value, field.ty, span),
+                Some(value) => value,
+                None if field.optional => self.make_maybe_absent(field.ty, span),
+                None => self.alloc_node(DfNodeKind::Error, field.ty, span),
+            };
+            out.push((field.name, value));
+        }
+        out
+    }
+
+    fn record_storage_fields_for_tlc_type(
+        &mut self,
+        tlc_ty: TlcTypeId,
+        df_ty: DfTyId,
+        fields: Vec<(String, NodeId)>,
+        span: Option<Span>,
+    ) -> Vec<(String, NodeId)> {
+        if self.tlc_record_type_is_open(tlc_ty, &mut FxHashSet::default()) {
+            let mut fields = fields;
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            fields
+        } else {
+            self.record_storage_fields(df_ty, fields, span)
+        }
+    }
+
+    fn tlc_record_type_is_open(
+        &self,
+        ty: TlcTypeId,
+        seen_aliases: &mut FxHashSet<BindingId>,
+    ) -> bool {
+        match self.module.type_arena[ty].clone() {
+            TlcType::Record(row) => row_is_open(&row),
+            TlcType::TyVar(TlcTypeVar::Named(binding), _) => {
+                let binding = BindingId(binding);
+                let Some(&body) = self.type_aliases.get(&binding) else {
+                    return false;
+                };
+                seen_aliases.insert(binding) && self.tlc_record_type_is_open(body, seen_aliases)
+            }
+            TlcType::TyLamK(_, _, body) | TlcType::TyApp(body, _) => {
+                self.tlc_record_type_is_open(body, seen_aliases)
+            }
+            _ => false,
+        }
+    }
+
+    fn record_storage_update_value(
+        &mut self,
+        record_ty: DfTyId,
+        field_name: &str,
+        value: NodeId,
+        span: Option<Span>,
+    ) -> NodeId {
+        let DfTy::Record(type_fields) = self.types[record_ty].clone() else {
+            return value;
+        };
+        let Some(field) = type_fields
+            .into_iter()
+            .find(|field| field.name == field_name)
+        else {
+            return value;
+        };
+        if field.optional {
+            self.make_maybe_present(value, field.ty, span)
+        } else {
+            value
+        }
+    }
+
+    fn make_maybe_absent(&mut self, inner_ty: DfTyId, span: Option<Span>) -> NodeId {
+        let maybe_ty = self.types.alloc(DfTy::Maybe(inner_ty));
+        self.alloc_node(
+            DfNodeKind::Lit(DfLit::Atom("absent".to_string())),
+            maybe_ty,
+            span,
+        )
+    }
+
+    fn make_maybe_present(
+        &mut self,
+        value: NodeId,
+        inner_ty: DfTyId,
+        span: Option<Span>,
+    ) -> NodeId {
+        let tuple_ty = self
+            .types
+            .alloc(DfTy::Tuple(vec![DfTupleField::Positional(inner_ty)]));
+        let payload = self.alloc_node(
+            DfNodeKind::Tuple(vec![DfTupleNodeItem::Positional(value)]),
+            tuple_ty,
+            span,
+        );
+        let maybe_ty = self.types.alloc(DfTy::Maybe(inner_ty));
+        self.alloc_node(
+            DfNodeKind::Variant {
+                tag: "present".to_string(),
+                tag_index: 1,
+                value: payload,
+            },
+            maybe_ty,
+            span,
+        )
     }
 
     fn record_slot_for_df_ty(&self, ty: DfTyId, field: &str) -> Option<usize> {

@@ -132,12 +132,7 @@ pub(super) fn emit_pattern_branch(
             branch_to(cond, success_label, failure_label, fb);
         }
         AnfPattern::Atom(name) => {
-            let cond = emit_value_eq(
-                scrutinee.clone(),
-                SsaValue::Lit(DfLit::Atom(name.clone())),
-                fb,
-                ctx,
-            );
+            let cond = emit_atom_eq(scrutinee.clone(), name, fb, ctx);
             branch_to(cond, success_label, failure_label, fb);
         }
         AnfPattern::Tuple(items) => {
@@ -333,6 +328,18 @@ pub(super) fn emit_value_eq(
             op: DfBuiltinOp::Eq,
             lhs,
             rhs,
+        },
+    });
+    SsaValue::Reg(dest)
+}
+
+fn emit_atom_eq(lhs: SsaValue, atom: &str, fb: &mut FuncBuilder, ctx: &mut Ctx) -> SsaValue {
+    let dest = ctx.fresh.next_label("pat_atom_eq");
+    fb.push(SsaInstr {
+        dest: dest.clone(),
+        op: SsaOp::TextPrim {
+            op: DfTextPrimOp::Eq,
+            args: vec![lhs, SsaValue::Lit(DfLit::Atom(atom.to_string()))],
         },
     });
     SsaValue::Reg(dest)

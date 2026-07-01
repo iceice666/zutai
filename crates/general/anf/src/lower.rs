@@ -10,7 +10,7 @@ use rustc_hash::FxHashMap;
 
 use zutai_dataflow::{
     DataflowGraph, DfBuiltinOp, DfLit, DfNodeKind, DfPattern, DfTupleNodeItem, DfTuplePatItem,
-    NodeId,
+    DfTy, NodeId,
 };
 
 use crate::{
@@ -203,10 +203,21 @@ impl<'g> BodyLowerer<'g> {
             DfNodeKind::Builtin(op, lhs, rhs) => {
                 let l = self.lower_to_atom(lhs);
                 let r = self.lower_to_atom(rhs);
-                AnfExpr::Builtin {
-                    op: lower_op(op),
-                    lhs: l,
-                    rhs: r,
+                if let Some(negated) = structural_eq_op(op)
+                    && structural_eq_ty(&self.graph.types[self.graph.nodes[lhs].ty])
+                {
+                    AnfExpr::ValueEq {
+                        negated,
+                        lhs: l,
+                        rhs: r,
+                        ty: self.graph.nodes[lhs].ty,
+                    }
+                } else {
+                    AnfExpr::Builtin {
+                        op: lower_op(op),
+                        lhs: l,
+                        rhs: r,
+                    }
                 }
             }
             DfNodeKind::ListPrim { op, args } => {
@@ -299,6 +310,28 @@ impl<'g> BodyLowerer<'g> {
 
 fn lower_lit(l: &DfLit) -> DfLit {
     l.clone()
+}
+
+fn structural_eq_op(op: DfBuiltinOp) -> Option<bool> {
+    match op {
+        DfBuiltinOp::Eq => Some(false),
+        DfBuiltinOp::Ne => Some(true),
+        _ => None,
+    }
+}
+
+fn structural_eq_ty(ty: &DfTy) -> bool {
+    matches!(
+        ty,
+        DfTy::Float
+            | DfTy::Atom
+            | DfTy::List(_)
+            | DfTy::Optional(_)
+            | DfTy::Maybe(_)
+            | DfTy::Record(_)
+            | DfTy::Tuple(_)
+            | DfTy::Union(_)
+    )
 }
 
 fn lower_op(op: DfBuiltinOp) -> DfBuiltinOp {

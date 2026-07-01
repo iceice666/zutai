@@ -1073,6 +1073,54 @@ pub extern "C" fn num_truncate(value: i64) -> i64 {
     )
 }
 
+fn float_bin(lhs: i64, rhs: i64, op: impl FnOnce(f64, f64) -> f64) -> i64 {
+    op(f64::from_bits(lhs as u64), f64::from_bits(rhs as u64)).to_bits() as i64
+}
+
+fn float_cmp(lhs: i64, rhs: i64, op: impl FnOnce(f64, f64) -> bool) -> i64 {
+    op(f64::from_bits(lhs as u64), f64::from_bits(rhs as u64)) as i64
+}
+
+#[unsafe(export_name = "zutai.float_add")]
+pub extern "C" fn float_add(lhs: i64, rhs: i64) -> i64 {
+    float_bin(lhs, rhs, |a, b| a + b)
+}
+
+#[unsafe(export_name = "zutai.float_sub")]
+pub extern "C" fn float_sub(lhs: i64, rhs: i64) -> i64 {
+    float_bin(lhs, rhs, |a, b| a - b)
+}
+
+#[unsafe(export_name = "zutai.float_mul")]
+pub extern "C" fn float_mul(lhs: i64, rhs: i64) -> i64 {
+    float_bin(lhs, rhs, |a, b| a * b)
+}
+
+#[unsafe(export_name = "zutai.float_div")]
+pub extern "C" fn float_div(lhs: i64, rhs: i64) -> i64 {
+    float_bin(lhs, rhs, |a, b| a / b)
+}
+
+#[unsafe(export_name = "zutai.float_lt")]
+pub extern "C" fn float_lt(lhs: i64, rhs: i64) -> i64 {
+    float_cmp(lhs, rhs, |a, b| a < b)
+}
+
+#[unsafe(export_name = "zutai.float_le")]
+pub extern "C" fn float_le(lhs: i64, rhs: i64) -> i64 {
+    float_cmp(lhs, rhs, |a, b| a <= b)
+}
+
+#[unsafe(export_name = "zutai.float_gt")]
+pub extern "C" fn float_gt(lhs: i64, rhs: i64) -> i64 {
+    float_cmp(lhs, rhs, |a, b| a > b)
+}
+
+#[unsafe(export_name = "zutai.float_ge")]
+pub extern "C" fn float_ge(lhs: i64, rhs: i64) -> i64 {
+    float_cmp(lhs, rhs, |a, b| a >= b)
+}
+
 // ── Variant ABI (D-0005 / D-0009, dense indices) ────────────────────────────────
 
 #[unsafe(export_name = "zutai.variant_new")]
@@ -1163,6 +1211,36 @@ pub extern "C" fn text_concat(a: i64, b: i64) -> i64 {
         std::ptr::copy_nonoverlapping(sb.as_ptr(), dst.add(sa.len()), sb.len());
         text_from_global(dst as i64, total as i64)
     }
+}
+
+#[unsafe(export_name = "zutai.text_eq")]
+pub extern "C" fn text_eq(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) == text_parts(b)) as i64 }
+}
+
+#[unsafe(export_name = "zutai.text_ne")]
+pub extern "C" fn text_ne(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) != text_parts(b)) as i64 }
+}
+
+#[unsafe(export_name = "zutai.text_lt")]
+pub extern "C" fn text_lt(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) < text_parts(b)) as i64 }
+}
+
+#[unsafe(export_name = "zutai.text_le")]
+pub extern "C" fn text_le(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) <= text_parts(b)) as i64 }
+}
+
+#[unsafe(export_name = "zutai.text_gt")]
+pub extern "C" fn text_gt(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) > text_parts(b)) as i64 }
+}
+
+#[unsafe(export_name = "zutai.text_ge")]
+pub extern "C" fn text_ge(a: i64, b: i64) -> i64 {
+    unsafe { (text_parts(a) >= text_parts(b)) as i64 }
 }
 
 #[unsafe(export_name = "zutai.text_length")]
@@ -1813,6 +1891,11 @@ pub extern "C" fn zutai_to_json(value: i64, descriptor: i64) -> i64 {
     to_json(value, descriptor)
 }
 
+#[unsafe(export_name = "zutai.value_eq")]
+pub extern "C" fn value_eq(lhs: i64, rhs: i64, descriptor: i64) -> i64 {
+    unsafe { value_equal(lhs, rhs, descriptor as *const i64) as i64 }
+}
+
 fn push_quoted(out: &mut String, s: &str) {
     out.push('"');
     for ch in s.chars() {
@@ -1838,6 +1921,78 @@ unsafe fn name_at(desc: *const i64, off: usize) -> &'static str {
     }
 }
 
+/// Type-directed equality, sharing the static descriptor format used by `show`.
+///
+/// # Safety
+/// `lhs` and `rhs` must match the type described by `desc`.
+unsafe fn value_equal(lhs: i64, rhs: i64, desc: *const i64) -> bool {
+    unsafe {
+        match *desc {
+            DESC_INT | DESC_BOOL | DESC_POSIT => lhs == rhs,
+            DESC_FLOAT => f64::from_bits(lhs as u64) == f64::from_bits(rhs as u64),
+            DESC_TEXT | DESC_ATOM => text_parts(lhs) == text_parts(rhs),
+            DESC_LIST => {
+                let elem = *desc.add(1) as *const i64;
+                let mut left = lhs;
+                let mut right = rhs;
+                loop {
+                    match (header_tag(word(left, 0)), header_tag(word(right, 0))) {
+                        (TAG_CONS, TAG_CONS) => {
+                            if !value_equal(word(left, 1), word(right, 1), elem) {
+                                return false;
+                            }
+                            left = word(left, 2);
+                            right = word(right, 2);
+                        }
+                        (TAG_NIL, TAG_NIL) => return true,
+                        _ => return false,
+                    }
+                }
+            }
+            DESC_OPTIONAL | DESC_MAYBE => {
+                let inner = *desc.add(1) as *const i64;
+                match (
+                    header_tag(word(lhs, 0)) == TAG_VARIANT,
+                    header_tag(word(rhs, 0)) == TAG_VARIANT,
+                ) {
+                    (true, true) => {
+                        value_equal(word(word(lhs, 2), 1), word(word(rhs, 2), 1), inner)
+                    }
+                    (false, false) => text_parts(lhs) == text_parts(rhs),
+                    _ => false,
+                }
+            }
+            DESC_RECORD => record_equal(lhs, rhs, desc),
+            DESC_TUPLE => {
+                let n = *desc.add(1) as usize;
+                (0..n).all(|i| {
+                    let base = 2 + i * 4;
+                    value_equal(
+                        word(lhs, 1 + i),
+                        word(rhs, 1 + i),
+                        *desc.add(base + 3) as *const i64,
+                    )
+                })
+            }
+            DESC_VARIANT => {
+                let lhs_text = header_tag(word(lhs, 0)) == TAG_TEXT;
+                let rhs_text = header_tag(word(rhs, 0)) == TAG_TEXT;
+                if lhs_text || rhs_text {
+                    return lhs_text && rhs_text && text_parts(lhs) == text_parts(rhs);
+                }
+                let lhs_tag = word(lhs, 1);
+                if lhs_tag != word(rhs, 1) {
+                    return false;
+                }
+                let base = 2 + lhs_tag as usize * 3;
+                let payload_desc = *desc.add(base + 2);
+                payload_desc == 0
+                    || value_equal(word(lhs, 2), word(rhs, 2), payload_desc as *const i64)
+            }
+            _ => lhs == rhs,
+        }
+    }
+}
 
 /// # Safety
 /// `value` must be an Optional/Maybe storage value.
@@ -1849,6 +2004,38 @@ unsafe fn wrapper_is_present(value: i64) -> bool {
 /// `value` must be a present Optional/Maybe storage value.
 unsafe fn wrapper_payload(value: i64) -> i64 {
     unsafe { word(word(value, 2), 1) }
+}
+
+/// # Safety
+/// `lhs` and `rhs` must be Optional/Maybe storage values with payloads described
+/// by `inner_desc`.
+unsafe fn wrapper_storage_equal(lhs: i64, rhs: i64, inner_desc: *const i64) -> bool {
+    unsafe {
+        match (wrapper_is_present(lhs), wrapper_is_present(rhs)) {
+            (true, true) => value_equal(wrapper_payload(lhs), wrapper_payload(rhs), inner_desc),
+            (false, false) => text_parts(lhs) == text_parts(rhs),
+            _ => false,
+        }
+    }
+}
+
+/// # Safety
+/// `lhs` and `rhs` must be record objects matching `desc`.
+unsafe fn record_equal(lhs: i64, rhs: i64, desc: *const i64) -> bool {
+    unsafe {
+        let n = *desc.add(1) as usize;
+        (0..n).all(|i| {
+            let base = 2 + i * 4;
+            let inner_desc = *desc.add(base + 3) as *const i64;
+            let left = word(lhs, 1 + i);
+            let right = word(rhs, 1 + i);
+            if *desc.add(base + 2) != 0 {
+                wrapper_storage_equal(left, right, inner_desc)
+            } else {
+                value_equal(left, right, inner_desc)
+            }
+        })
+    }
 }
 
 /// # Safety
@@ -1953,10 +2140,20 @@ unsafe fn json_record(value: i64, desc: *const i64) -> Result<serde_json::Value,
     unsafe {
         let n = *desc.add(1) as usize;
         for i in 0..n {
-            let base = 2 + i * 3;
+            let base = 2 + i * 4;
+            let optional = *desc.add(base + 2) != 0;
+            let slot = word(value, 1 + i);
+            if optional && !wrapper_is_present(slot) {
+                continue;
+            }
+            let field_value = if optional {
+                wrapper_payload(slot)
+            } else {
+                slot
+            };
             map.insert(
                 name_at(desc, base).to_string(),
-                json_value(word(value, 1 + i), *desc.add(base + 2) as *const i64)?,
+                json_value(field_value, *desc.add(base + 3) as *const i64)?,
             );
         }
     }
@@ -1998,26 +2195,41 @@ unsafe fn json_tag_payload(
     }
 }
 
-/// Render a record-shaped variant payload with the interpreter's tagged-record
-/// spacing (`;`-separated, one space), distinct from a standalone record.
+/// Render record fields. Optional slots use native storage `Maybe`: `#absent`
+/// is omitted, while `#present (x)` renders the payload as the field value.
 ///
 /// # Safety
 /// `value` is a record object and `desc` its `DESC_RECORD` descriptor.
-unsafe fn render_variant_named(out: &mut String, value: i64, desc: *const i64) {
+unsafe fn render_record_fields(
+    out: &mut String,
+    value: i64,
+    desc: *const i64,
+    tagged_payload_spacing: bool,
+) {
     unsafe {
         let n = *desc.add(1) as usize;
-        out.push('{');
+        let mut rendered = 0usize;
         for i in 0..n {
-            if i > 0 {
-                out.push(';');
+            let base = 2 + i * 4;
+            let optional = *desc.add(base + 2) != 0;
+            let slot = word(value, 1 + i);
+            if optional && !wrapper_is_present(slot) {
+                continue;
             }
-            let base = 2 + i * 3;
+            if rendered > 0 {
+                out.push_str(if tagged_payload_spacing { ";" } else { "; " });
+            }
+            rendered += 1;
             out.push(' ');
             out.push_str(name_at(desc, base));
             out.push_str(" = ");
-            render(out, word(value, 1 + i), *desc.add(base + 2) as *const i64);
+            let field_value = if optional {
+                wrapper_payload(slot)
+            } else {
+                slot
+            };
+            render(out, field_value, *desc.add(base + 3) as *const i64);
         }
-        out.push_str(" }");
     }
 }
 
@@ -2075,18 +2287,8 @@ unsafe fn render(out: &mut String, value: i64, desc: *const i64) {
                 }
             }
             DESC_RECORD => {
-                let n = *desc.add(1) as usize;
                 out.push('{');
-                for i in 0..n {
-                    if i > 0 {
-                        out.push_str("; ");
-                    }
-                    let base = 2 + i * 3;
-                    out.push(' ');
-                    out.push_str(name_at(desc, base));
-                    out.push_str(" = ");
-                    render(out, word(value, 1 + i), *desc.add(base + 2) as *const i64);
-                }
+                render_record_fields(out, value, desc, false);
                 out.push_str(" }");
             }
             DESC_TUPLE => {
@@ -2122,7 +2324,11 @@ unsafe fn render(out: &mut String, value: i64, desc: *const i64) {
                         let pval = word(value, 2);
                         out.push(' ');
                         match *pdesc {
-                            DESC_RECORD => render_variant_named(out, pval, pdesc),
+                            DESC_RECORD => {
+                                out.push('{');
+                                render_record_fields(out, pval, pdesc, true);
+                                out.push_str(" }");
+                            }
                             DESC_TUPLE => render(out, pval, pdesc),
                             _ => {
                                 out.push('(');

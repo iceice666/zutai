@@ -28,6 +28,29 @@ impl<'a> TlcEvaluator<'a> {
                 }),
             });
         }
+        if op == BuiltinOp::Coalesce {
+            let lhs_control = self.eval_control(lhs_id, &env, resume.clone())?;
+            return self.bind_control(lhs_control, move |lhs, this| match lhs {
+                Value::Nothing => this.eval_control(rhs_id, &env, resume.clone()),
+                Value::Atom(a) if a.as_ref() == "none" || a.as_ref() == "absent" => {
+                    this.eval_control(rhs_id, &env, resume.clone())
+                }
+                Value::TaggedValue { tag, .. }
+                    if tag.as_ref() == "none" || tag.as_ref() == "absent" =>
+                {
+                    this.eval_control(rhs_id, &env, resume.clone())
+                }
+                Value::TaggedValue { tag, payload }
+                    if tag.as_ref() == "some" || tag.as_ref() == "present" =>
+                {
+                    force_tlc_tagged_slot(&payload, &this).map(EvalControl::Value)
+                }
+                other => Err(EvalError::TypeMismatch {
+                    expected: "Optional or Maybe",
+                    found: value_type_name(&other),
+                }),
+            });
+        }
 
         let lhs_control = self.eval_control(lhs_id, &env, resume.clone())?;
         self.bind_control(lhs_control, move |lhs, this| {
@@ -35,15 +58,14 @@ impl<'a> TlcEvaluator<'a> {
             let lhs_saved = lhs.clone();
             let resume_for_rhs = resume.clone();
             this.bind_control(rhs_control, move |rhs, this| {
-                let (lhs_value, rhs_value) =
-                    if matches!(op, BuiltinOp::Eq | BuiltinOp::Ne | BuiltinOp::Coalesce) {
-                        (
-                            tlc_force_deep(lhs_saved.clone(), &this)?,
-                            tlc_force_deep(rhs, &this)?,
-                        )
-                    } else {
-                        (lhs_saved.clone(), rhs)
-                    };
+                let (lhs_value, rhs_value) = if matches!(op, BuiltinOp::Eq | BuiltinOp::Ne) {
+                    (
+                        tlc_force_deep(lhs_saved.clone(), &this)?,
+                        tlc_force_deep(rhs, &this)?,
+                    )
+                } else {
+                    (lhs_saved.clone(), rhs)
+                };
                 if let Some((method, negate)) = this.imported_operator_method(op, lhs_id) {
                     let rhs_for_method = rhs_value.clone();
                     let resume_for_method = resume_for_rhs.clone();
@@ -259,6 +281,19 @@ pub(super) fn eval_builtin(op: BuiltinOp, lhs: Value, rhs: Value) -> Result<Valu
                 found: value_type_name(&other),
             }),
         },
+    }
+}
+
+fn force_tlc_tagged_slot(
+    payload: &Rc<Vec<(Rc<str>, Thunk)>>,
+    evaluator: &TlcEvaluator<'_>,
+) -> Result<Value, EvalError> {
+    match payload.iter().find(|(name, _)| name.as_ref() == "0") {
+        Some((_, thunk)) => thunk.force_tlc(evaluator),
+        None => Err(EvalError::TypeMismatch {
+            expected: "Tuple slot 0",
+            found: "TaggedValue",
+        }),
     }
 }
 

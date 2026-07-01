@@ -19,9 +19,18 @@ impl<'module> EffectElaborator<'module> {
         ops: &[TlcHandleClause],
         parent_handlers: &[TlcHandleClause],
     ) -> bool {
-        // A `finally` teardown is interpreter-only: never elaborate a handle
-        // carrying one into the CPS/native path (it is refused before lowering).
+        // A `finally` teardown is not handled by the lexical CPS pass. The native
+        // compile path desugars it before re-running effect lowering, while the
+        // shared lowering leaves it residual for the interpreter oracle.
         if finally.is_some() {
+            return false;
+        }
+        let has_deferred_handled_perform = if self.preserve_deferred_performs {
+            self.expr_has_deferred_handled_perform_thunk(expr, ops)
+        } else {
+            self.expr_has_deferred_handled_perform_arg(expr, ops)
+        };
+        if has_deferred_handled_perform {
             return false;
         }
         let mut saw_perform = false;
@@ -98,6 +107,81 @@ impl<'module> EffectElaborator<'module> {
             }),
             TlcExpr::Var(_) | TlcExpr::Lit(_) | TlcExpr::Import(_) => true,
         }
+    }
+
+    fn expr_has_deferred_handled_perform_arg(
+        &self,
+        id: TlcExprId,
+        ops: &[TlcHandleClause],
+    ) -> bool {
+        let mut seen = rustc_hash::FxHashSet::default();
+        let mut stack = vec![id];
+        while let Some(cur) = stack.pop() {
+            if !seen.insert(cur) {
+                continue;
+            }
+            match &self.module.expr_arena[cur] {
+                TlcExpr::App(func, arg) => {
+                    if self.expr_has_deferred_handled_perform_thunk(*arg, ops) {
+                        return true;
+                    }
+                    stack.push(*func);
+                    stack.push(*arg);
+                }
+                other => {
+                    let mut children = Vec::new();
+                    crate::monomorphize::push_child_exprs(other, &mut children);
+                    stack.extend(children);
+                }
+            }
+        }
+        false
+    }
+
+    fn expr_has_deferred_handled_perform_thunk(
+        &self,
+        id: TlcExprId,
+        ops: &[TlcHandleClause],
+    ) -> bool {
+        let mut seen = rustc_hash::FxHashSet::default();
+        let mut stack = vec![(id, false)];
+        while let Some((cur, under_lam)) = stack.pop() {
+            if !seen.insert((cur, under_lam)) {
+                continue;
+            }
+            match &self.module.expr_arena[cur] {
+                TlcExpr::Perform { op, .. }
+                    if under_lam
+                        && ops.iter().any(|clause| clause.op == *op)
+                        && super::deferred_perform_needs_reifier(op) =>
+                {
+                    return true;
+                }
+                TlcExpr::Lam(_, _, body) => {
+                    stack.push((*body, true));
+                }
+                TlcExpr::Handle {
+                    expr,
+                    value,
+                    finally,
+                    ..
+                } => {
+                    stack.push((*expr, under_lam));
+                    if let Some(value) = value {
+                        stack.push((*value, under_lam));
+                    }
+                    if let Some(finally) = finally {
+                        stack.push((*finally, under_lam));
+                    }
+                }
+                other => {
+                    let mut children = Vec::new();
+                    crate::monomorphize::push_child_exprs(other, &mut children);
+                    stack.extend(children.into_iter().map(|child| (child, under_lam)));
+                }
+            }
+        }
+        false
     }
 
     pub(super) fn handler_clause_contains_resume(&self, id: TlcExprId) -> bool {

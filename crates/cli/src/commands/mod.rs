@@ -360,13 +360,12 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
 
 // ── Module-import program assembly ─────────────────────────────────────────────
 
-/// Reject reason when native lowering cannot safely link an imported `.zt`
-/// module: a module that exports typeclass witnesses is dispatched dynamically by
-/// the interpreter, but the importer's TLC carries no static reference to those
-/// witness globals, so a native build would silently drop them. Gate such
-/// programs to the interpreter rather than miscompile.
-const IMPORT_WITNESS_REASON: &str = "native backend does not support importing modules that export typeclass \
-    instances yet. Use `zutai run` (interpreter)";
+/// Reject reason when native lowering cannot safely link an imported witness
+/// export: concrete and structurally matchable conditional witnesses lower
+/// through extern tables, but higher-kinded / non-matchable shapes still have no
+/// static dispatch key the backend can preserve.
+const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or \
+    otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
 
 /// Collect the transitive `.zt` dependency analyses of `analysis` in topological
 /// order (post-order DFS), so a dependency always precedes the modules that
@@ -574,9 +573,13 @@ pub(crate) fn run_compile(
     // eliminated effect markers or mapped ambient `io.print` to the runtime
     // HostPrint path.
     let mut module = if extern_witnesses.is_empty() && extern_conditionals.is_empty() {
-        zutai_tlc::lower_thir(thir)
+        zutai_tlc::lower_thir_for_backend(thir)
     } else {
-        zutai_tlc::lower_thir_with_extern_witnesses(thir, extern_witnesses, extern_conditionals)
+        zutai_tlc::lower_thir_with_extern_witnesses_for_backend(
+            thir,
+            extern_witnesses,
+            extern_conditionals,
+        )
     };
     // Backend-only: lower handled effects (finally, recursive/higher-order, …)
     // that `lower_thir` leaves residual for the interpreter oracle.
@@ -744,9 +747,9 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     };
 
     let mut module = if extern_witnesses_df.is_empty() && extern_conditionals_df.is_empty() {
-        zutai_tlc::lower_thir(thir)
+        zutai_tlc::lower_thir_for_backend(thir)
     } else {
-        zutai_tlc::lower_thir_with_extern_witnesses(
+        zutai_tlc::lower_thir_with_extern_witnesses_for_backend(
             thir,
             extern_witnesses_df,
             extern_conditionals_df,

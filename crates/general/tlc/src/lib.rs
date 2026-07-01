@@ -15,7 +15,10 @@ pub use ir::{
     TlcExpr, TlcExprId, TlcHandleClause, TlcModule, TlcPat, TlcPatItem, TlcTupleField,
     TlcTupleItem, TlcType, TlcTypeId, TlcTypeVar,
 };
-pub use lower::{ExternConditionalWitness, lower_thir, lower_thir_with_extern_witnesses};
+pub use lower::{
+    ExternConditionalWitness, lower_thir, lower_thir_for_backend, lower_thir_with_extern_witnesses,
+    lower_thir_with_extern_witnesses_for_backend,
+};
 pub use monomorphize::{monomorphize_open_row_selects, reachable_exprs};
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
 
@@ -34,11 +37,11 @@ pub fn lower_effects_for_backend(module: &mut TlcModule) {
     // Desugar `finally` first, then re-run the lexical effect passes so the
     // freshly-introduced inner handles are inlined/elaborated like any other,
     // then reify whatever residual handled effects remain, then erase cleared
-    // rows. `inline`/`elaborate` already ran once in `lower_thir`; re-running is
-    // idempotent on the already-lowered parts and discharges the new handles.
+    // rows. The backend inliner preserves deferred generator-cell performs for
+    // the reifier instead of using the interpreter-oriented eager inline path.
     module.desugar_finally();
-    module.inline_effectful_calls();
-    module.elaborate_effects();
+    module.inline_effectful_calls_preserving_deferred_performs();
+    module.elaborate_effects_preserving_deferred_performs();
     module.reify_residual_effects();
     if residual_effect_reason(module).is_none() {
         module.erase_effects();
@@ -80,21 +83,6 @@ pub fn residual_effect_reason_with_grants(
     {
         return Some(
             "a `finally` handler clause is interpreter-only; native compilation of resource-finalization handlers is not supported",
-        );
-    }
-
-    if module.final_expr.is_some_and(|expr| {
-        let mut visited = FxHashSet::default();
-        reachable_resource_codata_host_effect(module, expr, &mut visited)
-    }) || module.decls.iter().any(|&decl_id| {
-        let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
-            return false;
-        };
-        let mut visited = FxHashSet::default();
-        reachable_resource_codata_host_effect(module, body, &mut visited)
-    }) {
-        return Some(
-            "resource-backed effectful generator cells carrying non-io.print host effects are interpreter-only; native lowering is not supported",
         );
     }
 
@@ -224,53 +212,6 @@ pub fn contains_host_io_print(module: &TlcModule) -> bool {
             };
             reachable_host_io_print(module, body, &mut FxHashSet::default())
         })
-}
-
-fn expr_reaches_non_print_host_perform(
-    module: &TlcModule,
-    id: TlcExprId,
-    visited: &mut FxHashSet<TlcExprId>,
-) -> bool {
-    if !visited.insert(id) {
-        return false;
-    }
-    match &module.expr_arena[id] {
-        TlcExpr::Perform { op, .. } => {
-            HostOp::from_name(op).is_some_and(|host_op| host_op != HostOp::IoPrint)
-        }
-        TlcExpr::Lam(..) => false,
-        other => {
-            let mut children = Vec::new();
-            crate::monomorphize::push_child_exprs(other, &mut children);
-            children
-                .into_iter()
-                .any(|child| expr_reaches_non_print_host_perform(module, child, visited))
-        }
-    }
-}
-
-fn reachable_resource_codata_host_effect(
-    module: &TlcModule,
-    id: TlcExprId,
-    visited: &mut FxHashSet<TlcExprId>,
-) -> bool {
-    if !visited.insert(id) {
-        return false;
-    }
-    if let TlcExpr::Variant(_, payload) = module.expr_arena[id]
-        && let TlcExpr::Record(fields) = &module.expr_arena[payload]
-        && fields.iter().any(|(_, value)| {
-            let mut field_seen = FxHashSet::default();
-            expr_reaches_non_print_host_perform(module, *value, &mut field_seen)
-        })
-    {
-        return true;
-    }
-    let mut children = Vec::new();
-    crate::monomorphize::push_child_exprs(&module.expr_arena[id], &mut children);
-    children
-        .into_iter()
-        .any(|child| reachable_resource_codata_host_effect(module, child, visited))
 }
 
 fn reachable_expr_has_effect(

@@ -32,6 +32,20 @@ pub fn lower_thir(file: &ThirFile) -> TlcModule {
     }
     module
 }
+
+/// Lower THIR to the pre-backend TLC shape.
+///
+/// Unlike [`lower_thir`], this does not run shared lexical effect inlining or
+/// erasure. The native compile/dataflow path calls [`crate::lower_effects_for_backend`]
+/// afterwards so effectful generator cells can be routed through the residual
+/// reifier instead of being inlined for the interpreter oracle.
+pub fn lower_thir_for_backend(file: &ThirFile) -> TlcModule {
+    let mut lowerer = Lowerer::new(file);
+    let mut module = lowerer.lower_file();
+    module.apply_entry_capabilities();
+    module
+}
+
 /// Lower a THIR file to TLC with extern witness information from imported dep modules.
 ///
 /// `extern_witnesses` is a list of `(constraint_name, target_key_str, dc_global_name)` triples
@@ -57,6 +71,20 @@ pub fn lower_thir_with_extern_witnesses(
     if crate::residual_effect_reason(&module).is_none() {
         module.erase_effects();
     }
+    module
+}
+
+/// Backend variant of [`lower_thir_with_extern_witnesses`].
+pub fn lower_thir_with_extern_witnesses_for_backend(
+    file: &ThirFile,
+    extern_witnesses: Vec<(String, String, String)>,
+    extern_conditionals: Vec<ExternConditionalWitness>,
+) -> TlcModule {
+    let mut lowerer = Lowerer::new(file);
+    lowerer.extern_witnesses = extern_witnesses;
+    lowerer.extern_conditionals = extern_conditionals;
+    let mut module = lowerer.lower_file();
+    module.apply_entry_capabilities();
     module
 }
 

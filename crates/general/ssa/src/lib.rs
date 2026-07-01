@@ -111,6 +111,13 @@ pub enum SsaOp {
         lhs: SsaValue,
         rhs: SsaValue,
     },
+    /// Type-directed structural equality/inequality via the runtime descriptor.
+    ValueEq {
+        negated: bool,
+        lhs: SsaValue,
+        rhs: SsaValue,
+        ty: DfTyId,
+    },
     /// Scalar list-bridge primitive: a single runtime `zutai.list_*` call.
     ListPrim {
         op: DfListPrimOp,

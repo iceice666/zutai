@@ -29,7 +29,15 @@ pub(super) fn check_record_literal(
         if let Some(type_field) = type_fields.iter().find(|field| field.name == *name)
             && let Some(value_ty) = child_ty(graph, *value)
         {
-            check_same_type(graph, owner, "field", type_field.ty, value_ty, errors);
+            if type_field.optional {
+                let DfTy::Maybe(inner) = &graph.types[value_ty] else {
+                    unexpected_type(owner, "field", "Maybe", value_ty, errors);
+                    continue;
+                };
+                check_same_type(graph, owner, "field", type_field.ty, *inner, errors);
+            } else {
+                check_same_type(graph, owner, "field", type_field.ty, value_ty, errors);
+            }
         }
     }
 }
@@ -59,7 +67,15 @@ pub(super) fn check_record_update(
     for (name, _, value) in updates {
         if let Some(type_field) = result_fields.iter().find(|field| field.name == *name) {
             if let Some(value_ty) = child_ty(graph, *value) {
-                check_same_type(graph, owner, "update", type_field.ty, value_ty, errors);
+                if type_field.optional {
+                    let DfTy::Maybe(inner) = &graph.types[value_ty] else {
+                        unexpected_type(owner, "update", "Maybe", value_ty, errors);
+                        continue;
+                    };
+                    check_same_type(graph, owner, "update", type_field.ty, *inner, errors);
+                } else {
+                    check_same_type(graph, owner, "update", type_field.ty, value_ty, errors);
+                }
             }
         } else {
             errors.push(ValidationError::MissingRequiredField {
@@ -359,6 +375,60 @@ pub(super) fn check_num_prim(
                 result_ty,
                 "Int",
                 |ty| matches!(ty, DfTy::Int),
+                errors,
+            );
+        }
+        DfNumPrimOp::FloatAdd
+        | DfNumPrimOp::FloatSub
+        | DfNumPrimOp::FloatMul
+        | DfNumPrimOp::FloatDiv => {
+            for arg in args {
+                if let Some(arg_ty) = child_ty(graph, *arg) {
+                    expect_type_kind(
+                        graph,
+                        owner,
+                        "arg",
+                        arg_ty,
+                        "Float",
+                        |ty| matches!(ty, DfTy::Float),
+                        errors,
+                    );
+                }
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Float",
+                |ty| matches!(ty, DfTy::Float),
+                errors,
+            );
+        }
+        DfNumPrimOp::FloatLt
+        | DfNumPrimOp::FloatLe
+        | DfNumPrimOp::FloatGt
+        | DfNumPrimOp::FloatGe => {
+            for arg in args {
+                if let Some(arg_ty) = child_ty(graph, *arg) {
+                    expect_type_kind(
+                        graph,
+                        owner,
+                        "arg",
+                        arg_ty,
+                        "Float",
+                        |ty| matches!(ty, DfTy::Float),
+                        errors,
+                    );
+                }
+            }
+            expect_type_kind(
+                graph,
+                owner,
+                "type",
+                result_ty,
+                "Bool",
+                |ty| matches!(ty, DfTy::Bool | DfTy::True | DfTy::False),
                 errors,
             );
         }

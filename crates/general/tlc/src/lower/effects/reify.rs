@@ -620,6 +620,9 @@ impl<'m> Reifier<'m> {
         if self.subtree_has_comp_binder(id) {
             return true;
         }
+        if self.node_is_eff_cell_case(id) {
+            return true;
+        }
         let fn_set = &self.ctx().fn_set;
         let handle_ops = &self.ctx().handle_ops;
         self.subtree_is_effectful(id, fn_set, handle_ops)
@@ -875,6 +878,7 @@ impl<'m> Reifier<'m> {
                 TlcExpr::Perform { .. } | TlcExpr::Handle { .. } | TlcExpr::Resume { .. } => {
                     return true;
                 }
+                TlcExpr::Case(..) if self.node_is_eff_cell_case(cur) => return true,
                 // A *call* to an effectful callee is a computation; a bare
                 // effectful-function value reference (bound to a local, passed as
                 // an argument) is just a closure and stays pure.
@@ -929,6 +933,16 @@ impl<'m> Reifier<'m> {
                 _ => return None,
             }
         }
+    }
+
+    /// Whether `id` is a `case`/`match` over a codata cell whose fields were
+    /// rewritten to `Computation` values for this reification scope.
+    fn node_is_eff_cell_case(&self, id: TlcExprId) -> bool {
+        let TlcExpr::Case(scrut, _) = self.module.expr_arena[id] else {
+            return false;
+        };
+        self.cell_identity(self.expr_ty(scrut))
+            .is_some_and(|cell_id| self.eff_fields.contains_key(&cell_id))
     }
 
     /// Collect each handled op's argument/resume types from its perform sites.

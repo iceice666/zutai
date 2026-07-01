@@ -1,4 +1,4 @@
-use crate::descriptors::llvm_string_bytes;
+use crate::descriptors::{descriptor_name, llvm_string_bytes};
 use crate::preamble::{posit_op_is_cmp, posit_op_name};
 use zutai_ssa::*;
 
@@ -375,6 +375,25 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 ));
             }
         }
+        SsaOp::ValueEq {
+            negated,
+            lhs,
+            rhs,
+            ty,
+        } => {
+            let lhs = emit_value_operand(out, tmp, lhs);
+            let rhs = emit_value_operand(out, tmp, rhs);
+            let desc = emit_symbol_ptr_to_i64(out, tmp, &descriptor_name(*ty));
+            let eq = alloc_tmp(tmp);
+            out.push_str(&format!(
+                "  {eq} = call i64 @zutai.value_eq(i64 {lhs}, i64 {rhs}, i64 {desc})\n"
+            ));
+            if *negated {
+                out.push_str(&format!("  %{dest} = xor i64 {eq}, 1\n"));
+            } else {
+                out.push_str(&format!("  %{dest} = add i64 {eq}, 0\n"));
+            }
+        }
 
         // ── List bridge primitives ──────────────────────────────────────────
         SsaOp::ListPrim { op, args } => {
@@ -413,6 +432,14 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 DfNumPrimOp::ToFloat => "zutai.num_to_float",
                 DfNumPrimOp::Round => "zutai.num_round",
                 DfNumPrimOp::Truncate => "zutai.num_truncate",
+                DfNumPrimOp::FloatAdd => "zutai.float_add",
+                DfNumPrimOp::FloatSub => "zutai.float_sub",
+                DfNumPrimOp::FloatMul => "zutai.float_mul",
+                DfNumPrimOp::FloatDiv => "zutai.float_div",
+                DfNumPrimOp::FloatLt => "zutai.float_lt",
+                DfNumPrimOp::FloatLe => "zutai.float_le",
+                DfNumPrimOp::FloatGt => "zutai.float_gt",
+                DfNumPrimOp::FloatGe => "zutai.float_ge",
             };
             let arglist = operands
                 .iter()
@@ -432,6 +459,12 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 .map(|a| emit_value_operand(out, tmp, a))
                 .collect();
             let callee = match op {
+                DfTextPrimOp::Eq => "zutai.text_eq",
+                DfTextPrimOp::Ne => "zutai.text_ne",
+                DfTextPrimOp::Lt => "zutai.text_lt",
+                DfTextPrimOp::Le => "zutai.text_le",
+                DfTextPrimOp::Gt => "zutai.text_gt",
+                DfTextPrimOp::Ge => "zutai.text_ge",
                 DfTextPrimOp::Length => "zutai.text_length",
                 DfTextPrimOp::Split => "zutai.text_split",
                 DfTextPrimOp::Join => "zutai.text_join",

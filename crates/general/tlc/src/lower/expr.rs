@@ -8,12 +8,34 @@ use zutai_thir::{
 
 use crate::ir::{
     BuiltinOp, Literal, PrimTy, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
-    TlcTupleItem, TlcType, TlcTypeId,
+    TlcTupleField, TlcTupleItem, TlcType, TlcTypeId,
 };
 
 use super::Lowerer;
 type ForallLambdaDict = (BindingId, BindingId, TlcTypeId);
 type ForallLambdaLayer = Vec<(BindingId, Vec<ForallLambdaDict>)>;
+
+#[derive(Clone, Copy)]
+enum WrapperKind {
+    Optional,
+    Maybe,
+}
+
+impl WrapperKind {
+    fn absent_tag(self) -> &'static str {
+        match self {
+            WrapperKind::Optional => "none",
+            WrapperKind::Maybe => "absent",
+        }
+    }
+
+    fn present_tag(self) -> &'static str {
+        match self {
+            WrapperKind::Optional => "some",
+            WrapperKind::Maybe => "present",
+        }
+    }
+}
 
 impl<'thir> Lowerer<'thir> {
     pub(super) fn lower_expr(&mut self, id: ThirExprId) -> TlcExprId {
@@ -93,12 +115,19 @@ impl<'thir> Lowerer<'thir> {
             }
             ThirExprKind::OptionalAccess { receiver, field } => {
                 let recv = self.lower_expr(receiver);
-                self.alloc_expr(TlcExpr::GetField(recv, field), tlc_ty, span)
+                self.lower_optional_access(receiver, recv, field, tlc_ty, thir_ty, span)
             }
             ThirExprKind::Binary { op, lhs, rhs } => {
                 let lhs_tlc = self.lower_expr(lhs);
                 let rhs_tlc = self.lower_expr(rhs);
                 let lhs_ty = self.thir.expr_arena[lhs].ty;
+
+                if matches!(op, BinOp::And | BinOp::Or) {
+                    return self.lower_logical_short_circuit(op, lhs_tlc, rhs_tlc, tlc_ty, span);
+                }
+                if op == BinOp::Coalesce {
+                    return self.lower_coalesce(lhs_tlc, rhs_tlc, tlc_ty, span);
+                }
 
                 if op == BinOp::Ne {
                     if let Some(expr) = self
@@ -643,6 +672,198 @@ impl<'thir> Lowerer<'thir> {
         let guard = clause.guard.map(|g| self.lower_expr(g));
         let body = self.lower_expr(clause.body);
         TlcAlt { pat, guard, body }
+    }
+
+    fn lower_logical_short_circuit(
+        &mut self,
+        op: BinOp,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        ty: TlcTypeId,
+        span: Span,
+    ) -> TlcExprId {
+        let true_lit = self.alloc_expr(TlcExpr::Lit(Literal::Bool(true)), ty, span);
+        let false_lit = self.alloc_expr(TlcExpr::Lit(Literal::Bool(false)), ty, span);
+        let alts = match op {
+            BinOp::And => vec![
+                TlcAlt {
+                    pat: TlcPat::Lit(Literal::Bool(true)),
+                    guard: None,
+                    body: rhs,
+                },
+                TlcAlt {
+                    pat: TlcPat::Lit(Literal::Bool(false)),
+                    guard: None,
+                    body: false_lit,
+                },
+            ],
+            BinOp::Or => vec![
+                TlcAlt {
+                    pat: TlcPat::Lit(Literal::Bool(true)),
+                    guard: None,
+                    body: true_lit,
+                },
+                TlcAlt {
+                    pat: TlcPat::Lit(Literal::Bool(false)),
+                    guard: None,
+                    body: rhs,
+                },
+            ],
+            _ => unreachable!("only logical operators short-circuit"),
+        };
+        self.alloc_expr(TlcExpr::Case(lhs, alts), ty, span)
+    }
+
+    fn lower_coalesce(
+        &mut self,
+        value: TlcExprId,
+        fallback: TlcExprId,
+        ty: TlcTypeId,
+        span: Span,
+    ) -> TlcExprId {
+        let some_binding = self.fresh_synth_binding();
+        let some_value = self.alloc_expr(TlcExpr::Var(some_binding), ty, span);
+        let present_binding = self.fresh_synth_binding();
+        let present_value = self.alloc_expr(TlcExpr::Var(present_binding), ty, span);
+        self.alloc_expr(
+            TlcExpr::Case(
+                value,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Atom("none".to_string()),
+                        guard: None,
+                        body: fallback,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Atom("absent".to_string()),
+                        guard: None,
+                        body: fallback,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant("none".to_string(), Box::new(TlcPat::Wildcard)),
+                        guard: None,
+                        body: fallback,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant("absent".to_string(), Box::new(TlcPat::Wildcard)),
+                        guard: None,
+                        body: fallback,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant(
+                            "some".to_string(),
+                            Box::new(TlcPat::Record(vec![(
+                                "0".to_string(),
+                                TlcPat::Bind(some_binding),
+                            )])),
+                        ),
+                        guard: None,
+                        body: some_value,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant(
+                            "present".to_string(),
+                            Box::new(TlcPat::Record(vec![(
+                                "0".to_string(),
+                                TlcPat::Bind(present_binding),
+                            )])),
+                        ),
+                        guard: None,
+                        body: present_value,
+                    },
+                ],
+            ),
+            ty,
+            span,
+        )
+    }
+
+    fn lower_optional_access(
+        &mut self,
+        receiver: ThirExprId,
+        recv: TlcExprId,
+        field: String,
+        ty: TlcTypeId,
+        result_thir_ty: TypeId,
+        span: Span,
+    ) -> TlcExprId {
+        let receiver_ty = self.thir.expr_arena[receiver].ty;
+        let Some((wrapper, inner_thir_ty)) = self.thir_wrapper_inner(receiver_ty) else {
+            return self.alloc_expr(TlcExpr::GetField(recv, field), ty, span);
+        };
+        let Some((_, result_inner_ty)) = self.thir_wrapper_inner(result_thir_ty) else {
+            return self.alloc_expr(TlcExpr::GetField(recv, field), ty, span);
+        };
+
+        let inner_tlc_ty = self.lower_type(inner_thir_ty);
+        let result_inner_tlc_ty = self.lower_type(result_inner_ty);
+        let bind = self.fresh_synth_binding();
+        let bound_record = self.alloc_expr(TlcExpr::Var(bind), inner_tlc_ty, span);
+        let projected = self.alloc_expr(
+            TlcExpr::GetField(bound_record, field),
+            result_inner_tlc_ty,
+            span,
+        );
+        let tuple_ty = self.alloc_type(TlcType::Tuple(vec![TlcTupleField::Positional(
+            result_inner_tlc_ty,
+        )]));
+        let payload = self.alloc_expr(
+            TlcExpr::Tuple(vec![TlcTupleItem::Positional(projected)]),
+            tuple_ty,
+            span,
+        );
+        let present_body = self.alloc_expr(
+            TlcExpr::Variant(wrapper.present_tag().to_string(), payload),
+            ty,
+            span,
+        );
+        let absent_body = self.alloc_expr(
+            TlcExpr::Lit(Literal::Atom(wrapper.absent_tag().to_string())),
+            ty,
+            span,
+        );
+
+        self.alloc_expr(
+            TlcExpr::Case(
+                recv,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Atom(wrapper.absent_tag().to_string()),
+                        guard: None,
+                        body: absent_body,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant(
+                            wrapper.absent_tag().to_string(),
+                            Box::new(TlcPat::Wildcard),
+                        ),
+                        guard: None,
+                        body: absent_body,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant(
+                            wrapper.present_tag().to_string(),
+                            Box::new(TlcPat::Record(vec![("0".to_string(), TlcPat::Bind(bind))])),
+                        ),
+                        guard: None,
+                        body: present_body,
+                    },
+                ],
+            ),
+            ty,
+            span,
+        )
+    }
+
+    fn thir_wrapper_inner(&self, ty: TypeId) -> Option<(WrapperKind, TypeId)> {
+        match self.thir.type_arena[ty.0 as usize].kind {
+            TypeKind::Optional(inner) => Some((WrapperKind::Optional, inner)),
+            TypeKind::Maybe(inner) => Some((WrapperKind::Maybe, inner)),
+            TypeKind::Alias(binding) => self
+                .type_alias_body(binding)
+                .and_then(|body| self.thir_wrapper_inner(body)),
+            _ => None,
+        }
     }
 
     pub(super) fn lower_pat(&mut self, id: ThirPatId) -> TlcPat {

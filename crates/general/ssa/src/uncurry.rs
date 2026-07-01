@@ -182,6 +182,7 @@ fn op_values(op: &SsaOp) -> Vec<&SsaValue> {
         SsaOp::Variant { value, .. } => vec![value],
         SsaOp::VariantValue { scrutinee } => vec![scrutinee],
         SsaOp::Builtin { lhs, rhs, .. } => vec![lhs, rhs],
+        SsaOp::ValueEq { lhs, rhs, .. } => vec![lhs, rhs],
         SsaOp::ListPrim { args, .. }
         | SsaOp::NumPrim { args, .. }
         | SsaOp::TextPrim { args, .. } => args.iter().collect(),

@@ -68,6 +68,10 @@ pub(super) fn free_vars_expr(expr: &AnfExpr) -> FxHashSet<String> {
             .union(&free_vars_atom(rhs))
             .cloned()
             .collect(),
+        AnfExpr::ValueEq { lhs, rhs, .. } => free_vars_atom(lhs)
+            .union(&free_vars_atom(rhs))
+            .cloned()
+            .collect(),
         AnfExpr::Variant { value, .. } => free_vars_atom(value),
         AnfExpr::HostOp { value, .. } => free_vars_atom(value),
         AnfExpr::Error => FxHashSet::default(),

@@ -3,8 +3,8 @@ use rustc_hash::FxHashSet;
 use zutai_tlc::{BuiltinOp, PrimTy, TlcExpr, TlcExprId, TlcTupleItem, TlcType};
 
 use crate::{
-    DfArm, DfBuiltinOp, DfListPrimOp, DfNodeKind, DfNumPrimOp, DfTextPrimOp, DfTupleNodeItem,
-    NodeId,
+    DfArm, DfBuiltinOp, DfListPrimOp, DfLit, DfNodeKind, DfNumPrimOp, DfPattern, DfTextPrimOp,
+    DfTupleNodeItem, NodeId,
 };
 
 use super::*;
@@ -167,11 +167,15 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::Record(fields) => {
-                let mut df_fields: Vec<(String, NodeId)> = fields
+                let df_fields: Vec<(String, NodeId)> = fields
                     .iter()
                     .map(|(name, expr_id)| (name.clone(), self.lower_expr(*expr_id)))
                     .collect();
-                df_fields.sort_by(|a, b| a.0.cmp(&b.0));
+                let df_fields = if let Some(tlc_ty) = self.module.expr_types.get(&id).copied() {
+                    self.record_storage_fields_for_tlc_type(tlc_ty, df_ty, df_fields, span)
+                } else {
+                    self.record_storage_fields(df_ty, df_fields, span)
+                };
                 self.alloc_node(DfNodeKind::Record(df_fields), df_ty, span)
             }
 
@@ -181,7 +185,13 @@ impl<'m> Lowerer<'m> {
                 let updates: Vec<(String, usize, NodeId)> = fields
                     .iter()
                     .map(|(name, expr_id)| {
-                        let value = self.lower_expr(*expr_id);
+                        let raw_value = self.lower_expr(*expr_id);
+                        let value = self.record_storage_update_value(
+                            df_ty,
+                            name,
+                            raw_value,
+                            self.module.spans.get(expr_id).copied().or(span),
+                        );
                         let slot = result_ty
                             .and_then(|ty| {
                                 self.record_slot_for_tlc_type(ty, name, &mut FxHashSet::default())
@@ -236,13 +246,29 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::Builtin(op, lhs, rhs) => {
+                if let Some(node) = self.lower_bool_short_circuit(op, lhs, rhs, df_ty, span) {
+                    return node;
+                }
+                if let Some(node) = self.lower_coalesce(op, lhs, rhs, df_ty, span) {
+                    return node;
+                }
+
                 let lhs_node = self.lower_expr(lhs);
                 let rhs_node = self.lower_expr(rhs);
-                if op == BuiltinOp::Coalesce {
+                if let Some(float_op) = self.lower_float_builtin_op(op, lhs) {
                     self.alloc_node(
-                        DfNodeKind::Coalesce {
-                            value: lhs_node,
-                            fallback: rhs_node,
+                        DfNodeKind::NumPrim {
+                            op: float_op,
+                            args: vec![lhs_node, rhs_node],
+                        },
+                        df_ty,
+                        span,
+                    )
+                } else if let Some(text_op) = self.lower_text_builtin_op(op, lhs) {
+                    self.alloc_node(
+                        DfNodeKind::TextPrim {
+                            op: text_op,
+                            args: vec![lhs_node, rhs_node],
                         },
                         df_ty,
                         span,
@@ -414,6 +440,113 @@ impl<'m> Lowerer<'m> {
         ))
     }
 
+    fn lower_bool_short_circuit(
+        &mut self,
+        op: BuiltinOp,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        df_ty: crate::DfTyId,
+        span: Option<Span>,
+    ) -> Option<NodeId> {
+        if !matches!(op, BuiltinOp::And | BuiltinOp::Or) {
+            return None;
+        }
+
+        let scrutinee = self.lower_expr(lhs);
+        let lit = |this: &mut Self, value| {
+            this.alloc_node(DfNodeKind::Lit(DfLit::Bool(value)), df_ty, span)
+        };
+        let arms = match op {
+            BuiltinOp::And => vec![
+                DfArm {
+                    pattern: DfPattern::Lit(DfLit::Bool(true)),
+                    guard: None,
+                    body: self.lower_expr(rhs),
+                },
+                DfArm {
+                    pattern: DfPattern::Lit(DfLit::Bool(false)),
+                    guard: None,
+                    body: lit(self, false),
+                },
+            ],
+            BuiltinOp::Or => vec![
+                DfArm {
+                    pattern: DfPattern::Lit(DfLit::Bool(true)),
+                    guard: None,
+                    body: lit(self, true),
+                },
+                DfArm {
+                    pattern: DfPattern::Lit(DfLit::Bool(false)),
+                    guard: None,
+                    body: self.lower_expr(rhs),
+                },
+            ],
+            _ => unreachable!("only logical operators short-circuit"),
+        };
+
+        Some(self.alloc_node(DfNodeKind::Match { scrutinee, arms }, df_ty, span))
+    }
+
+    fn lower_coalesce(
+        &mut self,
+        op: BuiltinOp,
+        value: TlcExprId,
+        fallback: TlcExprId,
+        df_ty: crate::DfTyId,
+        span: Option<Span>,
+    ) -> Option<NodeId> {
+        if op != BuiltinOp::Coalesce {
+            return None;
+        }
+
+        let scrutinee = self.lower_expr(value);
+        let scrutinee_ty = self.nodes[scrutinee].ty;
+        let fallback = self.lower_expr(fallback);
+        let some_bind = self.alloc_node(DfNodeKind::Bind, df_ty, None);
+        let present_bind = self.alloc_node(DfNodeKind::Bind, df_ty, None);
+        let payload_slot =
+            |bind| DfPattern::Record(vec![("0".to_string(), 0, DfPattern::Bind(bind))]);
+        let variant = |this: &Self, tag: &str, pattern| DfPattern::Variant {
+            tag: tag.to_string(),
+            tag_index: this.variant_tag_index_for_df_ty(scrutinee_ty, tag),
+            pattern: Box::new(pattern),
+        };
+        let arms = vec![
+            DfArm {
+                pattern: DfPattern::Atom("none".to_string()),
+                guard: None,
+                body: fallback,
+            },
+            DfArm {
+                pattern: DfPattern::Atom("absent".to_string()),
+                guard: None,
+                body: fallback,
+            },
+            DfArm {
+                pattern: variant(self, "none", DfPattern::Wildcard),
+                guard: None,
+                body: fallback,
+            },
+            DfArm {
+                pattern: variant(self, "absent", DfPattern::Wildcard),
+                guard: None,
+                body: fallback,
+            },
+            DfArm {
+                pattern: variant(self, "some", payload_slot(some_bind)),
+                guard: None,
+                body: some_bind,
+            },
+            DfArm {
+                pattern: variant(self, "present", payload_slot(present_bind)),
+                guard: None,
+                body: present_bind,
+            },
+        ];
+
+        Some(self.alloc_node(DfNodeKind::Match { scrutinee, arms }, df_ty, span))
+    }
+
     /// Lower a saturated application of a text bridge builtin to a primitive
     /// node. Returns `None` for any other callee or an under-saturated call.
     fn try_lower_text_prim(
@@ -533,5 +666,50 @@ impl<'m> Lowerer<'m> {
         };
         let op = lower_posit_op(op)?;
         Some(DfBuiltinOp::Posit { op, spec })
+    }
+
+    pub(super) fn lower_text_builtin_op(
+        &self,
+        op: BuiltinOp,
+        lhs: TlcExprId,
+    ) -> Option<DfTextPrimOp> {
+        let op = match op {
+            BuiltinOp::Eq => DfTextPrimOp::Eq,
+            BuiltinOp::Ne => DfTextPrimOp::Ne,
+            BuiltinOp::Lt => DfTextPrimOp::Lt,
+            BuiltinOp::Le => DfTextPrimOp::Le,
+            BuiltinOp::Gt => DfTextPrimOp::Gt,
+            BuiltinOp::Ge => DfTextPrimOp::Ge,
+            _ => return None,
+        };
+        let ty = self.module.expr_types.get(&lhs)?;
+        match &self.module.type_arena[*ty] {
+            TlcType::Prim(PrimTy::Str) | TlcType::Singleton(zutai_tlc::Literal::Str(_)) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub(super) fn lower_float_builtin_op(
+        &self,
+        op: BuiltinOp,
+        lhs: TlcExprId,
+    ) -> Option<DfNumPrimOp> {
+        let ty = self.module.expr_types.get(&lhs)?;
+        let (TlcType::Prim(PrimTy::Float) | TlcType::Singleton(zutai_tlc::Literal::Float(_))) =
+            self.module.type_arena[*ty]
+        else {
+            return None;
+        };
+        match op {
+            BuiltinOp::Add => Some(DfNumPrimOp::FloatAdd),
+            BuiltinOp::Sub => Some(DfNumPrimOp::FloatSub),
+            BuiltinOp::Mul => Some(DfNumPrimOp::FloatMul),
+            BuiltinOp::Div => Some(DfNumPrimOp::FloatDiv),
+            BuiltinOp::Lt => Some(DfNumPrimOp::FloatLt),
+            BuiltinOp::Le => Some(DfNumPrimOp::FloatLe),
+            BuiltinOp::Gt => Some(DfNumPrimOp::FloatGt),
+            BuiltinOp::Ge => Some(DfNumPrimOp::FloatGe),
+            _ => None,
+        }
     }
 }

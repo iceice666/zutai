@@ -9,7 +9,14 @@ mod rewrite;
 
 use zutai_hir::BindingId;
 
-use crate::ir::{TlcAlt, TlcDecl, TlcExpr, TlcExprId, TlcModule, TlcTupleItem};
+use crate::ir::{HostOp, TlcAlt, TlcDecl, TlcExpr, TlcExprId, TlcModule, TlcTupleItem};
+
+fn deferred_perform_needs_reifier(op: &str) -> bool {
+    !matches!(
+        HostOp::from_name(op),
+        Some(host_op) if host_op != HostOp::IoPrint
+    )
+}
 
 impl TlcModule {
     /// Elaborate handled TLC effect markers into pure TLC terms.
@@ -19,21 +26,16 @@ impl TlcModule {
     /// resume lambda; unmatched operations remain as `Perform` so the existing
     /// Dataflow gate rejects them.
     pub fn elaborate_effects(&mut self) {
-        let mut elaborator = EffectElaborator::new(self);
-        let decls = elaborator.module.decls.clone();
-        for decl_id in decls {
-            let body = match elaborator.module.decl_arena[decl_id] {
-                TlcDecl::Value { body, .. } => body,
-                TlcDecl::TypeAlias { .. } => continue,
-            };
-            let rewritten = elaborator.elaborate_expr(body);
-            if let TlcDecl::Value { body, .. } = &mut elaborator.module.decl_arena[decl_id] {
-                *body = rewritten;
-            }
-        }
-        if let Some(final_expr) = elaborator.module.final_expr {
-            elaborator.module.final_expr = Some(elaborator.elaborate_expr(final_expr));
-        }
+        let mut elaborator = EffectElaborator::new(self, false);
+        elaborator.run();
+    }
+
+    /// Backend variant of [`elaborate_effects`]: leave handles residual when a
+    /// handled operation is deferred behind a lambda/thunk, so the residual
+    /// reifier can preserve dynamic handler scope for effectful generator cells.
+    pub fn elaborate_effects_preserving_deferred_performs(&mut self) {
+        let mut elaborator = EffectElaborator::new(self, true);
+        elaborator.run();
     }
 }
 type Kont<'kont> = Box<dyn FnOnce(&mut EffectElaborator<'_>, TlcExprId) -> TlcExprId + 'kont>;
@@ -42,10 +44,11 @@ struct EffectElaborator<'module> {
     module: &'module mut TlcModule,
     used_bindings: FxHashSet<BindingId>,
     next_fresh: u32,
+    preserve_deferred_performs: bool,
 }
 
 impl<'module> EffectElaborator<'module> {
-    fn new(module: &'module mut TlcModule) -> Self {
+    fn new(module: &'module mut TlcModule, preserve_deferred_performs: bool) -> Self {
         let mut used_bindings = FxHashSet::default();
         for (_, decl) in module.decl_arena.iter() {
             let binding = match decl {
@@ -60,6 +63,24 @@ impl<'module> EffectElaborator<'module> {
             module,
             used_bindings,
             next_fresh: u32::MAX,
+            preserve_deferred_performs,
+        }
+    }
+
+    fn run(&mut self) {
+        let decls = self.module.decls.clone();
+        for decl_id in decls {
+            let body = match self.module.decl_arena[decl_id] {
+                TlcDecl::Value { body, .. } => body,
+                TlcDecl::TypeAlias { .. } => continue,
+            };
+            let rewritten = self.elaborate_expr(body);
+            if let TlcDecl::Value { body, .. } = &mut self.module.decl_arena[decl_id] {
+                *body = rewritten;
+            }
+        }
+        if let Some(final_expr) = self.module.final_expr {
+            self.module.final_expr = Some(self.elaborate_expr(final_expr));
         }
     }
 

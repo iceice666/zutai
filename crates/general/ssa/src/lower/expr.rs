@@ -199,6 +199,17 @@ pub(super) fn lower_expr(dest: &str, expr: &AnfExpr, fb: &mut FuncBuilder, ctx: 
             lhs: lower_atom_value(lhs, fb, ctx),
             rhs: lower_atom_value(rhs, fb, ctx),
         },
+        AnfExpr::ValueEq {
+            negated,
+            lhs,
+            rhs,
+            ty,
+        } => SsaOp::ValueEq {
+            negated: *negated,
+            lhs: lower_atom_value(lhs, fb, ctx),
+            rhs: lower_atom_value(rhs, fb, ctx),
+            ty: *ty,
+        },
 
         AnfExpr::ListPrim { op, args } => SsaOp::ListPrim {
             op: *op,

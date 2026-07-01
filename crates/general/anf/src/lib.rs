@@ -93,6 +93,13 @@ pub enum AnfExpr {
         lhs: AnfAtom,
         rhs: AnfAtom,
     },
+    /// Type-directed structural equality/inequality for heap-shaped values.
+    ValueEq {
+        negated: bool,
+        lhs: AnfAtom,
+        rhs: AnfAtom,
+        ty: DfTyId,
+    },
     /// Scalar list-bridge primitive; all operands are atoms.
     ListPrim {
         op: DfListPrimOp,

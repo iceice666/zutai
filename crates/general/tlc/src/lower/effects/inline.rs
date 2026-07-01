@@ -38,7 +38,19 @@ impl TlcModule {
     /// can discharge the relocated `perform`s, then drop the now-dead callees.
     ///
     pub fn inline_effectful_calls(&mut self) {
-        let mut inliner = EffectInliner::new(self);
+        let mut inliner = EffectInliner::new(self, false);
+        if inliner.inlinable.is_empty() {
+            return;
+        }
+        inliner.run();
+    }
+
+    /// Backend variant of [`inline_effectful_calls`]: leave calls intact when an
+    /// argument is a lambda/thunk carrying a deferred `perform`, so the residual
+    /// reifier can preserve the surrounding source handler for effectful
+    /// generator cells.
+    pub fn inline_effectful_calls_preserving_deferred_performs(&mut self) {
+        let mut inliner = EffectInliner::new(self, true);
         if inliner.inlinable.is_empty() {
             return;
         }
@@ -58,10 +70,11 @@ struct EffectInliner<'m> {
     used_bindings: FxHashSet<BindingId>,
     next_fresh: u32,
     inlinable: FxHashMap<BindingId, InlineTarget>,
+    preserve_deferred_perform_args: bool,
 }
 
 impl<'m> EffectInliner<'m> {
-    fn new(module: &'m mut crate::ir::TlcModule) -> Self {
+    fn new(module: &'m mut crate::ir::TlcModule, preserve_deferred_perform_args: bool) -> Self {
         let mut used_bindings = FxHashSet::default();
         for (_, decl) in module.decl_arena.iter() {
             match decl {
@@ -108,6 +121,7 @@ impl<'m> EffectInliner<'m> {
             used_bindings,
             next_fresh: u32::MAX,
             inlinable: candidates,
+            preserve_deferred_perform_args,
         }
     }
 
@@ -309,11 +323,61 @@ impl<'m> EffectInliner<'m> {
                         return None;
                     }
                     args.reverse();
+                    if self.preserve_deferred_perform_args
+                        && args.iter().any(|arg| self.contains_deferred_perform(*arg))
+                    {
+                        return None;
+                    }
                     return Some((*binding, args));
                 }
                 _ => return None,
             }
         }
+    }
+
+    /// Whether an argument is a value that defers an effect behind a lambda, such
+    /// as a generator thunk `\_. #cons { head = perform op ... }`. Inlining the
+    /// consumer would hide the effect from the residual reifier and tempt the
+    /// lexical CPS pass to drop the surrounding source handler. Leave these calls
+    /// intact so the reifier can preserve dynamic handler semantics.
+    fn contains_deferred_perform(&self, id: TlcExprId) -> bool {
+        let mut seen = FxHashSet::default();
+        let mut stack = vec![(id, false)];
+        while let Some((cur, under_lam)) = stack.pop() {
+            if !seen.insert((cur, under_lam)) {
+                continue;
+            }
+            match &self.module.expr_arena[cur] {
+                TlcExpr::Perform { op, .. }
+                    if under_lam && super::deferred_perform_needs_reifier(op) =>
+                {
+                    return true;
+                }
+                TlcExpr::Lam(_, _, body) => {
+                    stack.push((*body, true));
+                }
+                TlcExpr::Handle {
+                    expr,
+                    value,
+                    finally,
+                    ..
+                } => {
+                    stack.push((*expr, under_lam));
+                    if let Some(value) = value {
+                        stack.push((*value, under_lam));
+                    }
+                    if let Some(finally) = finally {
+                        stack.push((*finally, under_lam));
+                    }
+                }
+                other => {
+                    let mut children = Vec::new();
+                    push_child_exprs(other, &mut children);
+                    stack.extend(children.into_iter().map(|child| (child, under_lam)));
+                }
+            }
+        }
+        false
     }
 
     fn inline_call(
