@@ -463,6 +463,39 @@ Host code can read the returned JSON bytes through the C-friendly
 `zutai_to_json(value, descriptor)` directly after using `zutai_entry()` and
 `zutai_entry_descriptor()`.
 
+**Rust host-call pattern.** Load the produced shared library with `libloading`,
+`dlopen`, or the platform equivalent, resolve symbols once, and keep the raw
+entry value paired with its descriptor. Prefer `zutai_entry_json()` when the host
+only needs natural JSON; use `zutai_to_json(value, descriptor)` when it also
+needs to inspect or cache the raw value:
+
+```rust
+type Entry = unsafe extern "C" fn() -> i64;
+type ToJson = unsafe extern "C" fn(i64, i64) -> i64;
+type TextAccess = unsafe extern "C" fn(i64) -> i64;
+
+let entry: Entry = load_symbol("zutai_entry");
+let entry_descriptor: Entry = load_symbol("zutai_entry_descriptor");
+let entry_json: Entry = load_symbol("zutai_entry_json");
+let to_json: ToJson = load_symbol("zutai_to_json");
+let text_ptr: TextAccess = load_symbol("zutai_text_ptr");
+let text_len: TextAccess = load_symbol("zutai_text_len");
+
+let value = unsafe { entry() };
+let descriptor = unsafe { entry_descriptor() };
+
+let json_text = unsafe { entry_json() };
+let json_text_again = unsafe { to_json(value, descriptor) };
+
+let ptr = unsafe { text_ptr(json_text) } as *const u8;
+let len = unsafe { text_len(json_text) } as usize;
+let json_bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+```
+
+The JSON bytes are owned by the loaded Zutai runtime. Copy them into host-owned
+storage before unloading the library or before handing them to code that outlives
+the runtime call boundary.
+
 ---
 
 ## Runtime symbol table (the contract `libzutai_rt` implements)
@@ -544,9 +577,11 @@ either operation before the runtime boundary.
 - **Native driver tests.** `compile --emit=obj` / `--emit=bin` / `--emit=lib` tests run when
   `llc`/`clang` are available and skip cleanly when the host lacks that
   toolchain. The Linux binary matrix covers primitive, record, tuple, union,
-  text, atom, and posit entry values; the library test links a C host harness
-  against the shared library and reads `zutai_entry_json` through
-  `zutai_text_ptr`/`zutai_text_len`.
+  text, atom, and posit entry values; library coverage links a C host harness
+  against a shared library and includes a Rust host integration test that
+  compiles `examples/deploy_readiness.zt`, loads the library, calls
+  `zutai_entry()`, `zutai_entry_descriptor()`, and `zutai_entry_json()`, and
+  compares the parsed JSON with `zutai json examples/deploy_readiness.zt`.
 - **ABI unit tests** in `zutai-rt`: record set/get round-trip by slot, record
   update immutability, list build/traverse, variant tag/value, coalesce on each
   optional shape, text concat, closure capture + curried application, posit

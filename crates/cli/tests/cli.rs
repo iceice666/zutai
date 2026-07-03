@@ -1,5 +1,10 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+#[cfg(unix)]
+use std::{
+    ffi::{CStr, CString},
+    os::unix::ffi::OsStrExt,
+};
 use std::{
     path::{Path, PathBuf},
     process::Command as StdCommand,
@@ -49,6 +54,29 @@ fn shared_library_extension() -> &'static str {
         "windows" => ".dll",
         _ => ".so",
     }
+}
+
+#[cfg(unix)]
+fn configured_tool(env_name: &str, fallback_env: &str, default: &'static str) -> String {
+    std::env::var(env_name)
+        .or_else(|_| std::env::var(fallback_env))
+        .unwrap_or_else(|_| default.to_string())
+}
+
+#[cfg(unix)]
+fn command_starts(tool: &str) -> bool {
+    StdCommand::new(tool)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(unix)]
+fn native_emit_toolchain_available() -> bool {
+    command_starts(&configured_tool("ZUTAI_LLC", "LLC", "llc"))
+        && command_starts(&configured_tool("ZUTAI_CLANG", "CLANG", "clang"))
 }
 
 fn compile_stdout(name: &str, content: &str) -> String {
@@ -3194,6 +3222,161 @@ int main(void) {
     assert_eq!(
         json,
         serde_json::json!({"host": "localhost", "mode": "#prod", "port": 8080})
+    );
+}
+
+#[cfg(unix)]
+struct SharedLibrary {
+    handle: *mut libc::c_void,
+}
+
+#[cfg(unix)]
+impl SharedLibrary {
+    fn open(path: &Path) -> Self {
+        let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        let handle = unsafe { libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        assert!(
+            !handle.is_null(),
+            "failed to open {}: {}",
+            path.display(),
+            dl_error()
+        );
+        Self { handle }
+    }
+
+    fn symbol<T: Copy>(&self, name: &str) -> T {
+        let c_name = CString::new(name).unwrap();
+        unsafe {
+            libc::dlerror();
+        }
+        let symbol = unsafe { libc::dlsym(self.handle, c_name.as_ptr()) };
+        let error = unsafe { libc::dlerror() };
+        assert!(
+            error.is_null(),
+            "failed to load symbol `{name}`: {}",
+            dl_error_from(error)
+        );
+        assert!(!symbol.is_null(), "symbol `{name}` resolved to null");
+        unsafe { std::mem::transmute_copy(&symbol) }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for SharedLibrary {
+    fn drop(&mut self) {
+        let rc = unsafe { libc::dlclose(self.handle) };
+        assert_eq!(rc, 0, "failed to close shared library: {}", dl_error());
+    }
+}
+
+#[cfg(unix)]
+fn dl_error() -> String {
+    let error = unsafe { libc::dlerror() };
+    dl_error_from(error)
+}
+
+#[cfg(unix)]
+fn dl_error_from(error: *mut libc::c_char) -> String {
+    if error.is_null() {
+        "unknown dynamic loader error".to_string()
+    } else {
+        unsafe { CStr::from_ptr(error) }
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+#[cfg(unix)]
+type EntryFn = unsafe extern "C" fn() -> i64;
+#[cfg(unix)]
+type UnaryAbiFn = unsafe extern "C" fn(i64) -> i64;
+#[cfg(unix)]
+type ToJsonFn = unsafe extern "C" fn(i64, i64) -> i64;
+
+#[cfg(unix)]
+fn runtime_text_to_string(value: i64, text_ptr: UnaryAbiFn, text_len: UnaryAbiFn) -> String {
+    let ptr = unsafe { text_ptr(value) } as *const u8;
+    let len = unsafe { text_len(value) } as usize;
+    assert!(
+        !ptr.is_null() || len == 0,
+        "runtime Text had null bytes pointer with nonzero length"
+    );
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    std::str::from_utf8(bytes)
+        .expect("runtime JSON Text must be UTF-8")
+        .to_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn deploy_readiness_emit_lib_rust_host_json_matches_cli_json() {
+    if !native_emit_toolchain_available() {
+        eprintln!("skipping --emit=lib Rust host test: llc/clang unavailable");
+        return;
+    }
+
+    let root = workspace_root();
+    let source = "examples/deploy_readiness.zt";
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let out = std::env::temp_dir().join(format!(
+        "libcli_test_deploy_readiness_{unique}{}",
+        shared_library_extension()
+    ));
+
+    cli()
+        .arg("compile")
+        .arg("--emit=lib")
+        .arg(source)
+        .arg("-o")
+        .arg(out.to_str().unwrap())
+        .current_dir(&root)
+        .assert()
+        .success();
+    assert!(std::fs::metadata(&out).unwrap().len() > 0);
+
+    let expected_stdout = cli()
+        .arg("json")
+        .arg(source)
+        .current_dir(&root)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let expected_json: serde_json::Value = serde_json::from_slice(&expected_stdout).unwrap();
+
+    let library = SharedLibrary::open(&out);
+    let entry: EntryFn = library.symbol("zutai_entry");
+    let entry_descriptor: EntryFn = library.symbol("zutai_entry_descriptor");
+    let entry_json: EntryFn = library.symbol("zutai_entry_json");
+    let to_json: ToJsonFn = library.symbol("zutai_to_json");
+    let text_ptr: UnaryAbiFn = library.symbol("zutai_text_ptr");
+    let text_len: UnaryAbiFn = library.symbol("zutai_text_len");
+
+    let value = unsafe { entry() };
+    let descriptor = unsafe { entry_descriptor() };
+    assert_ne!(value, 0, "zutai_entry returned a null raw ABI value");
+    assert_ne!(
+        descriptor, 0,
+        "zutai_entry_descriptor returned a null descriptor pointer"
+    );
+
+    let json_from_pair_text =
+        runtime_text_to_string(unsafe { to_json(value, descriptor) }, text_ptr, text_len);
+    let json_from_entry_text = runtime_text_to_string(unsafe { entry_json() }, text_ptr, text_len);
+    let json_from_pair: serde_json::Value = serde_json::from_str(&json_from_pair_text).unwrap();
+    let json_from_entry: serde_json::Value = serde_json::from_str(&json_from_entry_text).unwrap();
+
+    assert_eq!(
+        json_from_pair, expected_json,
+        "zutai_to_json(zutai_entry(), zutai_entry_descriptor()) must match `zutai json`"
+    );
+    assert_eq!(
+        json_from_entry, expected_json,
+        "zutai_entry_json() must match `zutai json`"
     );
 }
 
