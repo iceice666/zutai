@@ -9,10 +9,11 @@
 -- the interpreter/native host boundary when the cell is forced.
 
 t ::= import stdlib.text;
+fs ::= import stdlib.fs;
 
 Cell :: type { #nil; #cons : { head : Text; tail : Unit -> Cell; }; };
 
-first :: (Unit -> Cell) -> Text ! { fs.read : Path -> Text; }
+first :: (Unit -> Cell) -> fs.WholeRead Text
   = s => match s () {
     | #nil => "empty";
     | #cons { head = h; tail = _; } => h;

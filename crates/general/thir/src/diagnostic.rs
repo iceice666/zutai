@@ -10,6 +10,7 @@ pub struct ThirDiagnostic {
 pub enum RowOverlapItem {
     RecordField,
     UnionMember,
+    EffectOperation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

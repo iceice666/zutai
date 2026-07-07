@@ -619,36 +619,52 @@ fn parse_select_fields(input: &mut &str) -> Result<Vec<SelectField>> {
 }
 
 fn parse_effect_row(input: &mut &str) -> Result<EffectRow> {
-    let ((ops, tail), span) = spanned(parse_effect_row_inner).parse_next(input)?;
-    Ok(EffectRow { ops, tail, span })
+    let ((ops, spreads, tail), span) = spanned(parse_effect_row_inner).parse_next(input)?;
+    Ok(EffectRow {
+        ops,
+        spreads,
+        tail,
+        span,
+    })
 }
 
-fn parse_effect_row_inner(input: &mut &str) -> Result<(Vec<EffectOp>, Option<RowTail>)> {
+fn parse_effect_row_inner(
+    input: &mut &str,
+) -> Result<(Vec<EffectOp>, Vec<RowTail>, Option<RowTail>)> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut ops = vec![];
+    let mut spreads = vec![];
     let mut tail = None;
     loop {
         ws(input)?;
         if input.starts_with('}') {
             break;
         }
-        // An open row tail `...e` (row variable) or `...` (anonymous open),
-        // mirroring record/union rows. A tail is terminal: consume an optional
-        // trailing separator, then the row must close.
+        // An effect row can contain named spreads (`...FsRead;`) before its
+        // final tail. The final `...e`/`...`/`...FsRead` item is terminal.
         if input.starts_with("...") {
-            tail = Some(parse_row_tail(input)?);
+            let parsed_tail = parse_row_tail(input)?;
             ws(input)?;
-            if input.starts_with(';') {
+            let had_separator = if input.starts_with(';') {
                 ';'.parse_next(input)?;
+                true
             } else if input.starts_with(',') {
                 ','.parse_next(input)?;
-            }
+                true
+            } else {
+                false
+            };
             ws(input)?;
-            if !input.starts_with('}') {
+            if input.starts_with('}') {
+                tail = Some(parsed_tail);
+                break;
+            }
+            if !had_separator {
                 return fail.parse_next(input);
             }
-            break;
+            spreads.push(parsed_tail);
+            continue;
         }
         ops.push(parse_effect_op(input)?);
         ws(input)?;
@@ -662,7 +678,7 @@ fn parse_effect_row_inner(input: &mut &str) -> Result<(Vec<EffectOp>, Option<Row
     }
     ws(input)?;
     '}'.parse_next(input)?;
-    Ok((ops, tail))
+    Ok((ops, spreads, tail))
 }
 
 fn parse_effect_op(input: &mut &str) -> Result<EffectOp> {

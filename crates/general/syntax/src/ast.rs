@@ -259,8 +259,13 @@ pub struct EffectOp {
 #[derive(Debug, PartialEq)]
 pub struct EffectRow {
     pub ops: Vec<EffectOp>,
+    /// Named effect-row spreads written before the final tail, such as
+    /// `{ ...FsRead; ...e; }`. Each spread is resolved in HIR; non-final
+    /// anonymous or row-variable spreads are rejected later.
+    pub spreads: Vec<RowTail>,
     /// An optional open row tail `...e` (a row variable) or `...` (anonymous
-    /// open), mirroring record/union row tails. `None` is a closed row.
+    /// open), or a final named spread `...FsRead`, mirroring record/union row
+    /// tails. `None` is a closed row.
     pub tail: Option<RowTail>,
     pub span: Span,
 }

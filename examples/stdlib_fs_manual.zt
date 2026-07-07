@@ -5,8 +5,6 @@
 fs ::= import stdlib.fs;
 t ::= import stdlib.text;
 
-WriteTextRequest :: type { contents : Text; writer : Writer; };
-
 outPath :: Path = "examples/stdlib_fs_manual.out";
 
 lineOr :: Text -> Text? -> Text
@@ -15,7 +13,7 @@ lineOr :: Text -> Text? -> Text
     | #none => fallback;
   };
 
-main :: { read : FsRead; write : FsWrite; } -> { doubleCloseOk : Bool; summary : Text; } ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { doubleCloseOk : Bool; summary : Text; }
   = caps => [
     writer := fs.openWrite caps.write outPath;
     wrote := [

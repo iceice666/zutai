@@ -33,6 +33,31 @@ No `!` suffix means the function is pure and cannot perform effects.
 
 An effect row contains operation names. Operation names may be plain identifiers or dotted capability operation names. Operations may use compact standard aliases such as `fail ParseError`, or explicit operation types such as `fs.read : Path -> Text`.
 
+Effect rows may also spread a named effect type alias. This keeps larger rows
+readable while preserving the same checked operation set:
+
+```zt
+FsReadEffects :: type Unit ! { fs.read : Path -> Text; };
+FsWriteEffects :: type Unit ! { fs.write : WriteAllRequest -> Unit; };
+FsFileEffects :: type Unit ! { ...FsReadEffects; ...FsWriteEffects; };
+
+loadAndLog :: Path -> Text ! { ...FsReadEffects; log Text; }
+```
+
+A final open row tail can still follow named spreads for row-polymorphic
+signatures:
+
+```zt
+withRead :: <A, e> (Path -> A ! { ...FsReadEffects; ...e; }) -> A ! { ...FsReadEffects; ...e; }
+```
+
+For result-position reuse, define an effectful type alias:
+
+```zt
+FsFile :: <A> type A ! { ...FsFileEffects; };
+main :: { read : FsRead; write : FsWrite; } -> FsFile Text
+```
+
 ---
 
 ## Performing Operations

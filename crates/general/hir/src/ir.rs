@@ -480,8 +480,13 @@ pub enum HirRowTailKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirEffectRow {
     pub ops: Vec<HirEffectOp>,
+    /// Named effect-row spreads written before the final tail. HIR keeps the
+    /// same row-tail resolution shape so THIR can reject non-final row variables
+    /// precisely and expand named effect aliases.
+    pub spreads: Vec<HirRowTail>,
     /// An optional open row tail `...e`/`...`, resolved the same way as
-    /// record/union tails (`HirRowTail`). `None` is a closed row.
+    /// record/union tails (`HirRowTail`), or a final named spread. `None` is a
+    /// closed row.
     pub tail: Option<HirRowTail>,
     pub span: Span,
 }

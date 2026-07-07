@@ -95,6 +95,39 @@ fn anonymous_effect_row_tail_lowers_to_open() {
 }
 
 #[test]
+fn effect_row_named_spread_resolves_to_type_alias() {
+    let lowered = lower(
+        r#"
+ReadPack :: type Unit ! { fs.read : Path -> Text; };
+f :: <e> (Int ! { ...ReadPack; ...e; }) -> Int
+  = x => x;
+f
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
+    let HirDeclKind::Function { sig: Some(sig), .. } = &decl.kind else {
+        panic!("expected Function, got {:?}", decl.kind);
+    };
+    let HirTypeKind::Arrow { from, .. } = type_kind(&lowered.file, *sig) else {
+        panic!("expected Arrow sig");
+    };
+    let HirTypeKind::Effect { row, .. } = type_kind(&lowered.file, *from) else {
+        panic!("expected an effectful parameter type");
+    };
+    assert_eq!(row.spreads.len(), 1);
+    assert!(
+        matches!(row.spreads[0].kind, HirRowTailKind::Spread(_)),
+        "named type must lower to an effect-row spread, got {:?}",
+        row.spreads[0].kind
+    );
+    assert!(matches!(
+        row.tail.as_ref().map(|t| &t.kind),
+        Some(HirRowTailKind::Var(_))
+    ));
+}
+
+#[test]
 fn named_union_row_tail_resolves_to_type_alias_as_spread() {
     let lowered =
         lower("Shape :: type { #dev; #test; };\nOpen :: type { ...Shape; #prod; };\nOpen");

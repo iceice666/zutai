@@ -5,7 +5,7 @@
 fs ::= import stdlib.fs;
 t ::= import stdlib.text;
 
-WriteTextRequest :: type { contents : Text; writer : Writer; };
+WriteTextEffects :: type fs.WriteTextEffects;
 
 outPath :: Path = "examples/stdlib_fs_lines.out";
 
@@ -21,14 +21,14 @@ isNone :: Text? -> Bool
     | #some (_) => false;
   };
 
-writeLines :: FsWrite -> Writer -> Unit ! { fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; }
+writeLines :: FsWrite -> Writer -> Unit ! { ...WriteTextEffects; fs.flush : Writer -> Unit; }
   = cap writer => [
     fs.writeText cap writer "alpha\n";
     fs.writeText cap writer "beta\n";
     fs.flush cap writer
   ];
 
-readSummary :: FsRead -> Reader -> Text ! { fs.readLine : Reader -> Text?; }
+readSummary :: FsRead -> Reader -> fs.ReadLine Text
   = cap reader => [
     first := fs.readLine cap reader;
     second := fs.readLine cap reader;
@@ -40,7 +40,7 @@ readSummary :: FsRead -> Reader -> Text ! { fs.readLine : Reader -> Text?; }
     }
   ];
 
-main :: { read : FsRead; write : FsWrite; } -> { path : Text; summary : Text; } ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { path : Text; summary : Text; }
   = caps => [
     wrote := fs.withWriter caps.write outPath (writeLines caps.write);
     summary := [

@@ -37,6 +37,13 @@ pub enum ImportedType {
     Optional(Box<ImportedType>),
     Maybe(Box<ImportedType>),
     Record(Vec<ImportedField>),
+    /// A module import whose runtime value has type `value`, plus type-only
+    /// exports available to annotation-position access (`m.Type`). These
+    /// exports are not fields of the runtime record value.
+    WithTypeExports {
+        value: Box<ImportedType>,
+        types: Vec<ImportedField>,
+    },
     Tuple(Vec<ImportedTupleItem>),
     Union(Vec<ImportedUnionVariant>),
     /// A function value crossing a module boundary.  The evaluator stamps a

@@ -866,9 +866,37 @@ handle (forward (\_. perform tick ()) ()) with { tick = \_. resume 5; }
 }
 
 #[test]
-fn effect_row_spread_of_named_type_is_refused() {
-    // `...Shape` (spreading a named type's row) is not supported for effect rows —
-    // refused precisely, never silently dropped to a closed row.
+fn effect_row_spread_of_named_effect_type_expands() {
+    let file = completed_file(
+        r#"
+ReadPack :: type Unit ! { fs.read : Path -> Text; };
+f :: Path -> Text ! { ...ReadPack; }
+  = path => perform fs.read path;
+f
+"#,
+    );
+    let row = file.type_arena.iter().find_map(|ty| match &ty.kind {
+        TypeKind::Effect { row, .. } if row.find("fs.read").is_some() => Some(row),
+        _ => None,
+    });
+    assert!(row.is_some(), "expected expanded fs.read effect row");
+}
+
+#[test]
+fn effect_row_spread_can_compose_with_row_variable_tail() {
+    let lowered = lower(
+        r#"
+ReadPack :: type Unit ! { fs.read : Path -> Text; };
+forward :: <e> (Unit -> Text ! { ...ReadPack; ...e; }) -> Unit -> Text ! { ...ReadPack; ...e; }
+  = f => f;
+forward
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+}
+
+#[test]
+fn effect_row_spread_of_non_effect_type_is_refused() {
     let lowered = lower(
         r#"
 Shape :: type { a : Int; };
@@ -881,7 +909,7 @@ f
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
             ThirDiagnosticKind::InvalidTypeExpression { reason }
-                if reason.contains("effect-row spread")
+                if reason.contains("requires a named effect type")
         )),
         "{:?}",
         lowered.diagnostics

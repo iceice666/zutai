@@ -6,12 +6,20 @@
 
 t ::= import stdlib.text;
 
-loop :: Int -> Text ! {
+HttpConnectionEffects :: type Unit ! {
   net.accept : Int -> Int;
   net.read : Int -> Text;
   net.write : Text -> Unit;
   net.close : Int -> Unit;
-}
+};
+HttpServerEffects :: type Unit ! {
+  net.listen : Int -> Int;
+  ...HttpConnectionEffects;
+};
+HttpConnection :: <A> type A ! { ...HttpConnectionEffects; };
+HttpServer :: <A> type A ! { ...HttpServerEffects; };
+
+loop :: Int -> HttpConnection Text
   = listener => [
     conn := perform net.accept listener;
     requestLine := perform net.read conn;
@@ -24,13 +32,7 @@ loop :: Int -> Text ! {
     loop listener
   ];
 
-serve :: Int -> Text ! {
-  net.listen : Int -> Int;
-  net.accept : Int -> Int;
-  net.read : Int -> Text;
-  net.write : Text -> Unit;
-  net.close : Int -> Unit;
-}
+serve :: Int -> HttpServer Text
   = port => [
     listener := perform net.listen port;
     loop listener

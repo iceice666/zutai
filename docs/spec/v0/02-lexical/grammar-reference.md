@@ -284,7 +284,15 @@ TypeSelect
   ::= "select" TypePostfix SelectFields
 
 EffectRow
-  ::= "{" EffectOp (("," | ";") EffectOp)* ("," | ";")? "}"
+  ::= "{" (EffectRowItem (("," | ";") EffectRowItem)* ("," | ";")?)? "}"
+
+EffectRowItem
+  ::= EffectOp
+   | EffectRowTail
+
+EffectRowTail
+  ::= "..."
+   | "..." Ident
 
 EffectOp
   ::= EffectPath
@@ -383,6 +391,7 @@ Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `impo
 - A value-record field written `name =;` is field-pun shorthand for `name = name;`: the omitted value is the identifier `name`. It applies to record literals and record-update (`with`) fields.
 - In type position, `{ field : Type; }` is a record type and `{ #tag; }` is a union type.
 - Record row tails (`...;` or `...Rest;`) are last and unique. Union row tails/spreads are also unique and may appear among variants.
+- Effect rows accept named effect-type spreads (`...Name;`) before the final row tail. Anonymous tails and row-variable tails (`...;`, `...e;`) are final.
 - Function application by whitespace is left-associative. At delimiter depth zero, a newline stops application unless an enclosing operator production consumes it.
 - `|>` and `<|` chains are left-associative but cannot mix directions in a single chain.
 - `??` is right-associative. Comparisons are non-associative: write `(a < b) && (b < c)`, not `a < b < c`.

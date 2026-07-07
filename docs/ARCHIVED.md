@@ -106,6 +106,9 @@ The 2026-07-07 baseline adds the scoped text filesystem IO slice: opaque
 `Reader`/`Writer` support types, explicit `stdlib.fs`, granted host operations
 for line readers and text writers, runtime handle tables, and render gates for
 opaque handles; see "Scoped filesystem IO foundation" below.
+The same 2026-07-07 usability pass adds named effect-row alias spreads and
+stdlib filesystem effect aliases, so large effect rows can be factored without
+changing their checked operation set; see "Effect-row alias spreads" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -125,9 +128,9 @@ opaque handles; see "Scoped filesystem IO foundation" below.
 - THIR covers v0 plus implemented v1/v2/v3-adjacent semantics:
   row-polymorphic records/unions, `select`, constraints/witnesses, `derive`,
   method-level type params, higher-kinded constraints, algebraic-effect typing,
-  higher-rank annotation checking, predicative inference, guarded recursive type
-  aliases, stream-backed generator sugar, and standard host capability/effect-row
-  checking.
+  named effect-row alias spreads, higher-rank annotation checking, predicative
+  inference, guarded recursive type aliases, stream-backed generator sugar, and
+  standard host capability/effect-row checking.
 - TLC covers row variables, effect rows, explicit dictionary passing, witnessed
   operator lowering, source effect markers, higher-rank `ForAll`/`TyLam`/`TyApp`
   elaboration, CPS elaboration for handled effects, equirecursive alias identity,
@@ -235,6 +238,27 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Effect-row alias spreads and filesystem effect aliases ✅
+
+_Completed 2026-07-07. Adds source ergonomics for large effect rows without
+changing the effect checker's operation model._
+
+- Effect rows now accept named effect-type spreads before the final row tail,
+  e.g. `! { ...ReadEffects; ...e; }`. HIR preserves spread items separately from
+  the final tail, and THIR expands only spreads that resolve to named effect
+  type aliases.
+- Non-final anonymous/open row tails are rejected precisely, non-effect spreads
+  report `effect-row spread requires a named effect type`, and spread overlaps
+  with already-listed operations report the spread source plus existing/incoming
+  operation shapes.
+- `stdlib.fs` now exports closed operation packs such as
+  `ScopedReadWriteEffects` and result aliases such as `ScopedReadWrite A` and
+  `WholeFile A`. The filesystem examples use those aliases instead of carrying
+  seven-operation rows inline; network examples use local effect aliases.
+- Verification: syntax effect-row spread parsing, HIR spread resolution, THIR
+  spread expansion/composition/rejection tests, `stdlib.fs` check, and updated
+  example checks for filesystem, host-stream, and network examples.
 
 ### Scoped filesystem IO foundation ✅
 
@@ -1140,12 +1164,13 @@ Mechanics (mirroring `RowTail` handling for records/unions):
 - **HIR**: `HirEffectRow` gains a `tail`; `lower_effect_row` resolves it via the
   existing `lower_row_tail` (so `...e` → `Var`, `...Shape` → `Spread`, `...` →
   `Anonymous`).
-- **THIR**: `lower_effect_row` calls a new `lower_effect_row_tail` — `Var → Param`,
-  `Anonymous`/`Unresolved → Open`, and `Spread →` refused precisely
-  (`InvalidTypeExpression`, "effect-row spread is not supported; use a row variable
-  (...e) or an explicit op list"). Effect rows unify by exact-tail equality
-  (`effect_rows_unify`), so a rigid row variable threads through a signature like a
-  record/union row variable and effects can never be silently dropped.
+- **THIR**: `lower_effect_row` calls `lower_effect_row_tail` — `Var → Param`,
+  `Anonymous`/`Unresolved → Open`. At this milestone, `Spread` was refused
+  precisely; the 2026-07-07 effect-row alias-spread milestone later enabled
+  named effect-type spreads while preserving the same row-variable behavior.
+  Effect rows unify by exact-tail equality (`effect_rows_unify`), so a rigid row
+  variable threads through a signature like a record/union row variable and
+  effects can never be silently dropped.
 - **TLC**: `collect_sig_row_params` gains a `TypeKind::Effect` arm (mirroring the
   THIR collector) so an effect-row row-variable param is quantified with **row
   kind**, not ground — keeping binder kind consistent with its `RVar` use.
@@ -1153,11 +1178,10 @@ Mechanics (mirroring `RowTail` handling for records/unions):
 Tests: HIR `effect_row_tail_resolves_to_type_param_as_var` /
 `anonymous_effect_row_tail_lowers_to_open`; THIR
 `open_effect_row_tail_in_annotation_type_checks` /
-`effect_row_spread_of_named_type_is_refused`; eval
-`row_polymorphic_effect_signature_lowers_through_tlc`. **Still open** (the next
-step toward the ergonomic effectful-stream type): call-site effect-row inference (a
-pure argument unifying against an open-row parameter — exact-tail unification
-rejects it today) and the `StreamEff` alias itself.
+`effect_row_spread_of_non_effect_type_is_refused`; eval
+`row_polymorphic_effect_signature_lowers_through_tlc`. At the time, the next
+step toward the ergonomic effectful-stream type was call-site effect-row
+inference plus the `StreamEff` alias; both landed in later milestones.
 
 ### V3-G4 follow-up: `finally` finalization clause ✅
 

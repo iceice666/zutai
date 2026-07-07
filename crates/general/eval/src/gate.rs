@@ -188,6 +188,17 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
                 "union row tail `...{source}` overlaps explicit member `#{name}`: existing `{existing}`, incoming `{incoming}`"
             )
         }
+        OverlappingRowField {
+            item: RowOverlapItem::EffectOperation,
+            source,
+            name,
+            existing,
+            incoming,
+        } => {
+            format!(
+                "effect row spread `...{source}` overlaps explicit operation `{name}`: existing `{existing}`, incoming `{incoming}`"
+            )
+        }
         RowAnnotationRequired { field: Some(field) } => {
             format!(
                 "field access `.{field}` needs a known record type; add a type annotation to the receiver or extract the lambda into a typed helper"

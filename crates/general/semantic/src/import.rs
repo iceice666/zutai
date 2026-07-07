@@ -427,7 +427,9 @@ impl Resolver<'_> {
                 );
             };
             let final_ty = file.expr_arena[file.final_expr].ty;
-            zutai_thir::export_type(file, final_ty).map(|ty| enrich_with_type_denotations(ty, file))
+            zutai_thir::export_type(file, final_ty)
+                .map(|ty| enrich_with_type_denotations(ty, file))
+                .map(|ty| attach_type_only_exports(ty, file))
         };
 
         match exported {
@@ -617,6 +619,14 @@ fn imported_type_key(ty: &ImportedType) -> String {
             parts.sort();
             format!("{{{}}}", parts.join(","))
         }
+        ImportedType::WithTypeExports { value, types } => {
+            let mut parts: Vec<String> = types
+                .iter()
+                .map(|field| format!("{}:{}", field.name, imported_type_key(&field.ty)))
+                .collect();
+            parts.sort();
+            format!("{}+types{{{}}}", imported_type_key(value), parts.join(","))
+        }
         ImportedType::Tuple(items) => {
             let parts: Vec<String> = items
                 .iter()
@@ -790,5 +800,35 @@ fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) -> ImportedTy
             ImportedType::Record(fields)
         }
         other => other,
+    }
+}
+
+/// Attach top-level type aliases to a module import as annotation-only exports.
+/// These names are intentionally not added to the runtime value's record type,
+/// so importing a module for effectful functions does not force the evaluator
+/// down the TypeValue/reflection path.
+fn attach_type_only_exports(ty: ImportedType, file: &ThirFile) -> ImportedType {
+    let mut types = Vec::new();
+    for (_, decl) in file.decl_arena.iter() {
+        if !matches!(decl.kind, ThirDeclKind::TypeAlias { .. }) {
+            continue;
+        }
+        let name = file.binding_names[decl.binding.0 as usize].clone();
+        if let Ok(denotation) = zutai_thir::export_type_alias_value(file, decl.binding) {
+            types.push(ImportedField {
+                name,
+                optional: false,
+                ty: ImportedType::Type(Box::new(denotation)),
+            });
+        }
+    }
+
+    if types.is_empty() {
+        ty
+    } else {
+        ImportedType::WithTypeExports {
+            value: Box::new(ty),
+            types,
+        }
     }
 }

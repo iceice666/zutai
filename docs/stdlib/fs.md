@@ -15,27 +15,45 @@ It is not ambient. Existing compiler-backed `fs.read`, `fs.write`, `load.zti`,
 - `Reader` and `Writer` are opaque host support types. Source can pass them to
   the functions that produced them, but cannot inspect or construct them.
 - `Path` is the existing text-shaped host path support type.
-- `WriteTextRequest = { contents : Text; writer : Writer; }`
-- `WriteAllRequest = { contents : Text; path : Path; }`
+- Request record shapes for `fs.writeText` and `fs.write` are private to the
+  module because they contain opaque host handles.
 
 Opaque handles are not renderable program outputs and are rejected by the CLI
 render/JSON gates and native entry gate.
+
+`stdlib.fs` also exports effect aliases for common signatures:
+
+| Name | Meaning |
+| --- | --- |
+| `ReadLine A` | `A ! { fs.readLine : Reader -> Text?; }` |
+| `WriteText A` | `A ! { fs.writeText : WriteTextRequest -> Unit; }` |
+| `ScopedRead A` | `A ! { fs.openRead; fs.readLine; fs.closeRead; }` |
+| `ScopedWrite A` | `A ! { fs.openWrite; fs.writeText; fs.flush; fs.closeWrite; }` |
+| `ScopedReadWrite A` | Combined scoped read/write row. |
+| `WholeRead A` | `A ! { fs.read : Path -> Text; }` |
+| `WholeWrite A` | `A ! { fs.write : WriteAllRequest -> Unit; }` |
+| `WholeFile A` | Combined whole-file read/write row. |
+
+Closed operation packs such as `ScopedReadWriteEffects` are exported for
+composition with `...Pack` row spreads. Row spreads currently name simple local
+aliases, so bind a short alias first when composing an imported pack:
+`LocalEffects :: type fs.ScopedReadWriteEffects;`.
 
 ## API
 
 | Name | Type | Notes |
 | --- | --- | --- |
-| `openRead` | `FsRead -> Path -> Reader` | Opens a text reader; requires `fs.openRead`. |
-| `readLine` | `FsRead -> Reader -> Text?` | Reads one UTF-8 line; strips one trailing `\n` and one optional preceding `\r`; EOF is `#none`. |
-| `closeRead` | `FsRead -> Reader -> Unit` | Idempotent for known handles. |
-| `openWrite` | `FsWrite -> Path -> Writer` | Creates or truncates a text writer. |
-| `writeText` | `FsWrite -> Writer -> Text -> Unit` | Writes bytes exactly; no implicit newline. |
-| `flush` | `FsWrite -> Writer -> Unit` | Explicit flush. |
-| `closeWrite` | `FsWrite -> Writer -> Unit` | Flushes before close; idempotent for known handles. |
-| `withReader` | `FsRead -> Path -> (Reader -> A ! {...}) -> A` | Bracket helper; closes in `finally` when the callback settles. |
-| `withWriter` | `FsWrite -> Path -> (Writer -> A ! {...}) -> A` | Bracket helper; closes in `finally` when the callback settles. |
-| `readAll` | `FsRead -> Path -> Text` | Compatibility wrapper over existing `fs.read`. |
-| `writeAll` | `FsWrite -> Path -> Text -> Unit` | Compatibility wrapper over existing `fs.write`. |
+| `openRead` | `FsRead -> Path -> Reader ! { fs.openRead : Path -> Reader; }` | Opens a text reader. |
+| `readLine` | `FsRead -> Reader -> ReadLine Text?` | Reads one UTF-8 line; strips one trailing `\n` and one optional preceding `\r`; EOF is `#none`. |
+| `closeRead` | `FsRead -> Reader -> Unit ! { fs.closeRead : Reader -> Unit; }` | Idempotent for known handles. |
+| `openWrite` | `FsWrite -> Path -> Writer ! { fs.openWrite : Path -> Writer; }` | Creates or truncates a text writer. |
+| `writeText` | `FsWrite -> Writer -> Text -> WriteText Unit` | Writes bytes exactly; no implicit newline. |
+| `flush` | `FsWrite -> Writer -> Unit ! { fs.flush : Writer -> Unit; }` | Explicit flush. |
+| `closeWrite` | `FsWrite -> Writer -> Unit ! { fs.closeWrite : Writer -> Unit; }` | Flushes before close; idempotent for known handles. |
+| `withReader` | `FsRead -> Path -> (Reader -> A ! { ...ReadLineEffects; ...e; }) -> A ! { ...ScopedReadEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
+| `withWriter` | `FsWrite -> Path -> (Writer -> A ! { ...WriteTextEffects; fs.flush : Writer -> Unit; ...e; }) -> A ! { ...ScopedWriteEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
+| `readAll` | `FsRead -> Path -> WholeRead Text` | Compatibility wrapper over existing `fs.read`. |
+| `writeAll` | `FsWrite -> Path -> Text -> WholeWrite Unit` | Compatibility wrapper over existing `fs.write`. |
 
 The first slice is synchronous and text-only. Append, seek, binary bytes, async,
 and nonblocking IO remain out of scope.
@@ -56,11 +74,10 @@ scope:
 
 ```zt
 fs ::= import stdlib.fs;
-WriteTextRequest :: type { contents : Text; writer : Writer; };
 
 path :: Path = "examples/stdlib_fs_lines.out";
 
-main :: { read : FsRead; write : FsWrite; } -> Text ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite Text
   = caps => [
     fs.withWriter caps.write path (\writer. [
       fs.writeText caps.write writer "alpha\n";
@@ -82,11 +99,10 @@ explicit flush or close points:
 
 ```zt
 fs ::= import stdlib.fs;
-WriteTextRequest :: type { contents : Text; writer : Writer; };
 
 path :: Path = "examples/stdlib_fs_manual.out";
 
-main :: { read : FsRead; write : FsWrite; } -> Text? ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite Text?
   = caps => [
     writer := fs.openWrite caps.write path;
     fs.writeText caps.write writer "manual\n";
@@ -107,11 +123,10 @@ existing `fs.read`/`fs.write` behavior behind explicit `stdlib.fs` names:
 
 ```zt
 fs ::= import stdlib.fs;
-WriteAllRequest :: type { contents : Text; path : Path; };
 
 path :: Path = "examples/stdlib_fs_whole_file.out";
 
-main :: { read : FsRead; write : FsWrite; } -> Bool ! { fs.write : WriteAllRequest -> Unit; fs.read : Path -> Text; }
+main :: { read : FsRead; write : FsWrite; } -> fs.WholeFile Bool
   = caps => [
     fs.writeAll caps.write path "contents\n";
     fs.readAll caps.read path == "contents\n"

@@ -12,9 +12,15 @@ impl Lowerer {
                 span: op.span,
             })
             .collect();
+        let spreads = row
+            .spreads
+            .iter()
+            .map(|tail| self.lower_row_tail(tail))
+            .collect();
         let tail = row.tail.as_ref().map(|tail| self.lower_row_tail(tail));
         HirEffectRow {
             ops,
+            spreads,
             tail,
             span: row.span,
         }

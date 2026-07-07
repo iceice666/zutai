@@ -158,6 +158,12 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            ImportedType::WithTypeExports { value, types } => {
+                if let Some(src) = source {
+                    self.register_imported_type_exports(src, types, span);
+                }
+                self.intern_imported_type_with_source(value, source, span)
+            }
             ImportedType::Tuple(items) => {
                 let items = items
                     .iter()
@@ -315,6 +321,54 @@ impl<'hir> Lowerer<'hir> {
                     binding
                 };
                 RowTail::Param(binding)
+            }
+        }
+    }
+
+    fn register_imported_type_exports(
+        &mut self,
+        source: &HirImportSource,
+        fields: &[crate::import::ImportedField],
+        span: Span,
+    ) {
+        let mut pending_ctors: FxHashMap<String, FxHashMap<u32, BindingId>> = FxHashMap::default();
+        if self.current_import_decl.is_some() {
+            for field in fields {
+                if let ImportedType::Type(inner) = &field.ty
+                    && let ImportedType::TypeCon { params, .. } = &**inner
+                    && !self
+                        .import_type_constructors
+                        .contains_key(&(source.clone(), field.name.clone()))
+                {
+                    let param_map =
+                        self.predeclare_imported_constructor(source, &field.name, params);
+                    pending_ctors.insert(field.name.clone(), param_map);
+                }
+            }
+        }
+
+        for field in fields {
+            let ImportedType::Type(inner) = &field.ty else {
+                continue;
+            };
+            match &**inner {
+                ImportedType::TypeCon { body, .. } => {
+                    if let Some(param_map) = pending_ctors.remove(&field.name) {
+                        self.finalize_imported_constructor(
+                            &field.name,
+                            param_map,
+                            body,
+                            source,
+                            span,
+                        );
+                    }
+                }
+                _ => {
+                    let denotation =
+                        self.intern_imported_type_with_source(inner, Some(source), span);
+                    self.import_type_denotations
+                        .insert((source.clone(), field.name.clone()), denotation);
+                }
             }
         }
     }

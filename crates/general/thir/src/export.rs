@@ -102,6 +102,67 @@ pub fn export_type_value(file: &ThirFile, tid: TypeId) -> Result<ImportedType, E
     export_type(file, tid)
 }
 
+/// Export a top-level type alias binding as a type-value denotation without
+/// requiring the module's final runtime value to contain a `TypeValue` field.
+pub fn export_type_alias_value(
+    file: &ThirFile,
+    binding: BindingId,
+) -> Result<ImportedType, ExportUnsupported> {
+    let aliases = build_alias_map(file);
+    export_alias_binding_value(file, &aliases, binding)
+}
+
+fn export_alias_binding_value(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    binding: BindingId,
+) -> Result<ImportedType, ExportUnsupported> {
+    if let Some(params) = aliases.params.get(&binding)
+        && !params.is_empty()
+    {
+        return export_type_constructor(file, aliases, binding, params);
+    }
+    let Some(body) = aliases.bodies.get(&binding).copied() else {
+        return Err(ExportUnsupported {
+            reason: "type alias binding has no body",
+        });
+    };
+    export(file, aliases, body, &mut FxHashSet::default())
+}
+
+fn export_type_constructor(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    binding: BindingId,
+    params: &[BindingId],
+) -> Result<ImportedType, ExportUnsupported> {
+    let body_ty = aliases.bodies[&binding];
+    // Refuse higher-kinded constructor parameters: the descriptor carries only
+    // ground type parameters in this phase.
+    let param_set: FxHashSet<BindingId> = params.iter().copied().collect();
+    let mut visited = FxHashSet::default();
+    if body_applies_param(file, body_ty, &param_set, &mut visited) {
+        return Err(ExportUnsupported {
+            reason: "higher-kinded imported type-constructor parameter",
+        });
+    }
+    let mut seen = FxHashSet::default();
+    seen.insert(binding);
+    let mut subst = FxHashMap::default();
+    for param in params {
+        subst.insert(*param, ImportedType::TyVar(param.0 & !TYVAR_INFER_TAG));
+    }
+    let body = export_typecon_body(file, aliases, body_ty, &mut seen, &subst)?;
+    let param_ids = params
+        .iter()
+        .map(|p| p.0 & !TYVAR_INFER_TAG)
+        .collect::<Vec<_>>();
+    Ok(ImportedType::TypeCon {
+        params: param_ids,
+        body: Box::new(body),
+    })
+}
+
 fn export_typecon_body(
     file: &ThirFile,
     aliases: &AliasMap,
@@ -288,6 +349,13 @@ fn body_applies_param(
         TypeKind::Function { from, to } => {
             body_applies_param(file, from, params, visited)
                 || body_applies_param(file, to, params, visited)
+        }
+        TypeKind::Effect { base, row } => {
+            body_applies_param(file, base, params, visited)
+                || row.ops.iter().any(|op| {
+                    body_applies_param(file, op.param, params, visited)
+                        || body_applies_param(file, op.result, params, visited)
+                })
         }
         TypeKind::Record(fields, _) => fields
             .iter()

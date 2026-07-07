@@ -186,20 +186,9 @@ impl<'hir> Lowerer<'hir> {
                             .invalid_type("type field access on unknown binding", access_span);
                     }
                 };
-                // Walk to the record fields of that type.
-                let fields = match self.record_fields(receiver_ty, access_span) {
-                    Some(f) => f,
-                    None => {
-                        return self
-                            .invalid_type("type field access on non-record type", access_span);
-                    }
-                };
-                let Some(record_field) = fields.iter().find(|f| f.name == *field).cloned() else {
-                    return self.invalid_type("unknown type field", access_span);
-                };
-                // If this binding is a known import and the field carries a
-                // registered type denotation, return the concrete type so that
-                // annotation-position use (`x : serverLib.Server`) type-checks.
+                // Type-only exports may not be fields of the runtime imported
+                // record. Check the import metadata before requiring a value
+                // field of the same name.
                 if let Some(import_source) = self.binding_import_key.get(&binding).cloned() {
                     if let Some(&denotation) = self
                         .import_type_denotations
@@ -228,6 +217,17 @@ impl<'hir> Lowerer<'hir> {
                         return self.error_type;
                     }
                 }
+                // Walk to the record fields of that type.
+                let fields = match self.record_fields(receiver_ty, access_span) {
+                    Some(f) => f,
+                    None => {
+                        return self
+                            .invalid_type("type field access on non-record type", access_span);
+                    }
+                };
+                let Some(record_field) = fields.iter().find(|f| f.name == *field).cloned() else {
+                    return self.invalid_type("unknown type field", access_span);
+                };
                 record_field.ty
             }
             HirTypeKind::UniverseLevel(level) => {
@@ -296,7 +296,7 @@ impl<'hir> Lowerer<'hir> {
     }
 
     pub(in crate::lower) fn lower_effect_row(&mut self, row: &HirEffectRow) -> EffectRow {
-        let ops = row
+        let mut ops: Vec<EffectOp> = row
             .ops
             .iter()
             .map(|op| {
@@ -354,35 +354,110 @@ impl<'hir> Lowerer<'hir> {
                 }
             })
             .collect();
-        EffectRow {
-            ops,
-            tail: self.lower_effect_row_tail(row.tail.as_ref()),
+        for spread in &row.spreads {
+            self.lower_effect_row_spread(spread, &mut ops);
+        }
+        let tail = self.lower_effect_row_tail(row.tail.as_ref(), &mut ops);
+        EffectRow { ops, tail }
+    }
+
+    fn lower_effect_row_spread(&mut self, spread: &HirRowTail, ops: &mut Vec<EffectOp>) {
+        match &spread.kind {
+            HirRowTailKind::Spread(binding) => {
+                let tail = self.expand_effect_row_spread(*binding, spread.span, ops);
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "effect-row spread with an open tail must be the final row tail",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowTailKind::Anonymous | HirRowTailKind::Var(_) => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason: "effect-row tail must appear last",
+                    },
+                    span: spread.span,
+                });
+            }
+            HirRowTailKind::Unresolved(_) => {}
         }
     }
 
     /// Lower an effect-row tail. A row variable `...e` becomes a rigid `Param`
     /// (threaded through signatures by exact-tail unification, like record/union
     /// row variables); anonymous `...` / an unresolved name becomes `Open`. A
-    /// `...Shape` spread of a named type is not supported for effect rows — it is
-    /// refused precisely rather than silently dropped.
-    fn lower_effect_row_tail(&mut self, tail: Option<&HirRowTail>) -> RowTail {
+    /// final `...Name` spread of a named effect type expands that type's row.
+    fn lower_effect_row_tail(
+        &mut self,
+        tail: Option<&HirRowTail>,
+        ops: &mut Vec<EffectOp>,
+    ) -> RowTail {
         let Some(tail) = tail else {
             return RowTail::Closed;
         };
         match &tail.kind {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
-            HirRowTailKind::Spread(_) => {
+            HirRowTailKind::Spread(binding) => {
+                self.expand_effect_row_spread(*binding, tail.span, ops)
+            }
+        }
+    }
+
+    fn expand_effect_row_spread(
+        &mut self,
+        binding: BindingId,
+        span: Span,
+        ops: &mut Vec<EffectOp>,
+    ) -> RowTail {
+        let source = self.hir.bindings[binding.0 as usize].name.clone();
+        let spread = self.alias_or_builtin_type(binding, span);
+        let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), span);
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Effect { row, .. } => {
+                for incoming in row.ops {
+                    if let Some(existing) = ops.iter().find(|op| op.name == incoming.name).cloned()
+                    {
+                        let existing = self.effect_op_type_name(&existing);
+                        let incoming_name = self.effect_op_type_name(&incoming);
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::OverlappingRowField {
+                                item: RowOverlapItem::EffectOperation,
+                                source: source.clone(),
+                                name: incoming.name.clone(),
+                                existing,
+                                incoming: incoming_name,
+                            },
+                            span,
+                        });
+                    } else {
+                        ops.push(incoming);
+                    }
+                }
+                row.tail
+            }
+            TypeKind::Error => RowTail::Closed,
+            _ => {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::InvalidTypeExpression {
-                        reason:
-                            "effect-row spread is not supported; use a row variable (...e) or an explicit op list",
+                        reason: "effect-row spread requires a named effect type",
                     },
-                    span: tail.span,
+                    span,
                 });
                 RowTail::Closed
             }
         }
+    }
+
+    fn effect_op_type_name(&mut self, op: &EffectOp) -> String {
+        format!(
+            "{} -> {}",
+            self.type_name(op.param),
+            self.type_name(op.result)
+        )
     }
 
     pub(in crate::lower) fn lower_type_record_field(

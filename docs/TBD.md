@@ -31,14 +31,17 @@ milestone summary. The 2026-07-01 native library artifact mode
 (`compile --emit=lib`) and runtime `serde_json` bridge are also archived; they
 do not leave an active native backlog item. The 2026-07-07 scoped filesystem IO
 foundation (`Reader`/`Writer`, explicit `stdlib.fs`, text line/read-write host
-ops) is also archived and leaves append/seek/binary/async IO intentionally
-unscoped. Track 2 remains demand-gated.
+ops) and effect-row alias-spread ergonomics are also archived and leave
+append/seek/binary/async IO intentionally unscoped. Track 2 remains
+demand-gated.
 
 ## Native/interpreter parity backlog
 
 _No active native/interpreter parity backlog items._ The optional-field `Maybe`
 envelope gap landed 2026-06-30 and the explicit `stdlib.fs` helper-import
 native lowering gap landed 2026-07-07; both are archived in `docs/ARCHIVED.md`.
+Effect-row alias spreads and filesystem effect aliases also landed 2026-07-07
+and are archived.
 
 ## Source prelude / stdlib status
 
