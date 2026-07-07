@@ -26,11 +26,136 @@ pub(crate) enum EmitMode {
 
 const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
     "compiled entry point returns Type, which cannot be shown by the v0 runtime ABI";
+const UNSUPPORTED_OPAQUE_ENTRY_REASON: &str = "compiled entry point returns an opaque host handle, which cannot be shown by the v0 runtime ABI";
 
 fn unsupported_thir_entry_type_reason(thir: &zutai_thir::ThirFile) -> Option<&'static str> {
-    let final_ty = thir.expr_arena[thir.final_expr].ty;
+    fn alias_body(
+        thir: &zutai_thir::ThirFile,
+        binding: zutai_hir::BindingId,
+    ) -> Option<zutai_thir::TypeId> {
+        thir.decl_arena.iter().find_map(|(_, decl)| {
+            if decl.binding == binding
+                && let zutai_thir::ThirDeclKind::TypeAlias { ty, .. } = decl.kind
+            {
+                Some(ty)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn resolve_alias(
+        thir: &zutai_thir::ThirFile,
+        mut ty: zutai_thir::TypeId,
+    ) -> zutai_thir::TypeId {
+        let mut seen = rustc_hash::FxHashSet::default();
+        loop {
+            if !seen.insert(ty) {
+                return ty;
+            }
+            match thir.type_arena[ty.0 as usize].kind {
+                zutai_thir::TypeKind::Alias(binding) => match alias_body(thir, binding) {
+                    Some(body) => ty = body,
+                    None => return ty,
+                },
+                _ => return ty,
+            }
+        }
+    }
+
+    fn is_capability_type(thir: &zutai_thir::ThirFile, ty: zutai_thir::TypeId) -> bool {
+        let ty = resolve_alias(thir, ty);
+        matches!(
+            &thir.type_arena[ty.0 as usize].kind,
+            zutai_thir::TypeKind::Opaque(name)
+                if zutai_hir::ir::HOST_CAPABILITY_TYPE_NAMES.contains(&name.as_str())
+        )
+    }
+
+    fn is_capability_record(thir: &zutai_thir::ThirFile, ty: zutai_thir::TypeId) -> bool {
+        let ty = resolve_alias(thir, ty);
+        match &thir.type_arena[ty.0 as usize].kind {
+            zutai_thir::TypeKind::Record(fields, zutai_thir::RowTail::Closed) => {
+                !fields.is_empty()
+                    && fields
+                        .iter()
+                        .all(|field| is_capability_type(thir, field.ty))
+            }
+            _ => false,
+        }
+    }
+
+    fn rendered_entry_type(
+        thir: &zutai_thir::ThirFile,
+        mut ty: zutai_thir::TypeId,
+    ) -> zutai_thir::TypeId {
+        loop {
+            let resolved = resolve_alias(thir, ty);
+            match thir.type_arena[resolved.0 as usize].kind {
+                zutai_thir::TypeKind::Function { from, to }
+                    if is_capability_type(thir, from) || is_capability_record(thir, from) =>
+                {
+                    ty = to;
+                }
+                _ => return resolved,
+            }
+        }
+    }
+
+    fn contains_opaque(
+        thir: &zutai_thir::ThirFile,
+        ty: zutai_thir::TypeId,
+        seen: &mut rustc_hash::FxHashSet<zutai_thir::TypeId>,
+    ) -> bool {
+        let ty = resolve_alias(thir, ty);
+        if !seen.insert(ty) {
+            return false;
+        }
+        match &thir.type_arena[ty.0 as usize].kind {
+            zutai_thir::TypeKind::Opaque(_) => true,
+            zutai_thir::TypeKind::List(inner)
+            | zutai_thir::TypeKind::Optional(inner)
+            | zutai_thir::TypeKind::Maybe(inner)
+            | zutai_thir::TypeKind::Patch { target: inner, .. } => {
+                contains_opaque(thir, *inner, seen)
+            }
+            zutai_thir::TypeKind::Record(fields, _) => fields
+                .iter()
+                .any(|field| contains_opaque(thir, field.ty, seen)),
+            zutai_thir::TypeKind::Tuple(items) => items.iter().any(|item| {
+                let ty = match item {
+                    zutai_thir::TypeTupleItem::Named { ty, .. }
+                    | zutai_thir::TypeTupleItem::Positional(ty) => *ty,
+                };
+                contains_opaque(thir, ty, seen)
+            }),
+            zutai_thir::TypeKind::Union(variants, _) => variants.iter().any(|variant| {
+                variant
+                    .payload
+                    .is_some_and(|ty| contains_opaque(thir, ty, seen))
+            }),
+            zutai_thir::TypeKind::Effect { base, .. } => contains_opaque(thir, *base, seen),
+            zutai_thir::TypeKind::Function { .. } => false,
+            zutai_thir::TypeKind::Alias(_)
+            | zutai_thir::TypeKind::AliasApply { .. }
+            | zutai_thir::TypeKind::Apply { .. }
+            | zutai_thir::TypeKind::Con(_)
+            | zutai_thir::TypeKind::ForAll { .. }
+            | zutai_thir::TypeKind::TypeVar(_)
+            | zutai_thir::TypeKind::InferVar(_) => false,
+            _ => false,
+        }
+    }
+
+    let final_ty = rendered_entry_type(thir, thir.expr_arena[thir.final_expr].ty);
     let kind = &thir.type_arena.get(final_ty.0 as usize)?.kind;
-    matches!(kind, zutai_thir::TypeKind::Type(_)).then_some(UNSUPPORTED_TYPE_ENTRY_REASON)
+    if matches!(kind, zutai_thir::TypeKind::Type(_)) {
+        Some(UNSUPPORTED_TYPE_ENTRY_REASON)
+    } else if contains_opaque(thir, final_ty, &mut rustc_hash::FxHashSet::default()) {
+        Some(UNSUPPORTED_OPAQUE_ENTRY_REASON)
+    } else {
+        None
+    }
 }
 
 pub(crate) fn run_bare_path(path: &str) -> Result<(), Box<dyn Error>> {
@@ -101,8 +226,28 @@ pub(crate) fn eval_isolated(contents: &str, base: Option<&Path>) -> EvalOutcome 
     let contents = contents.to_owned();
     let base = base.map(Path::to_path_buf);
     run_isolated(move || {
+        reject_unsupported_render_entry(&contents, base.as_deref())?;
         zutai_eval::eval_with_base(&contents, base.as_deref()).map(|v| v.to_string())
     })
+}
+
+fn reject_unsupported_render_entry(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<(), zutai_eval::EvalError> {
+    let analysis = zutai_semantic::analyze_with_base(
+        contents,
+        base,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    let Some(thir) = analysis.thir.as_ref().and_then(|thir| thir.file.as_ref()) else {
+        return Ok(());
+    };
+    if let Some(reason) = unsupported_thir_entry_type_reason(thir) {
+        Err(zutai_eval::EvalError::NotRunnable(vec![reason.to_string()]))
+    } else {
+        Ok(())
+    }
 }
 
 // ─── subcommand implementations ───────────────────────────────────────────────
@@ -270,6 +415,7 @@ pub(crate) fn run_json(path: &str) -> Result<(), Box<dyn Error>> {
             let owned_contents = contents.clone();
             let owned_base = base.map(Path::to_path_buf);
             let outcome = run_isolated(move || {
+                reject_unsupported_render_entry(&owned_contents, owned_base.as_deref())?;
                 zutai_eval::eval_with_base(&owned_contents, owned_base.as_deref())
                     .and_then(|value| value.to_json())
                     .map(|json| {
@@ -434,15 +580,13 @@ fn build_module_imports<'a>(
 /// every import map).
 fn dep_module_inputs<'a>(
     dep_analyses: &'a [std::rc::Rc<zutai_semantic::Analysis>],
+    dep_modules: &'a [zutai_tlc::TlcModule],
     ptr_to_idx: &std::collections::HashMap<*const zutai_semantic::Analysis, usize>,
 ) -> Vec<zutai_dataflow::ModuleInput<'a>> {
     dep_analyses
         .iter()
-        .map(|dep| {
-            let module = dep
-                .tlc
-                .as_ref()
-                .expect("dependency with no TLC must be filtered by collect_dep_analyses");
+        .zip(dep_modules.iter())
+        .map(|(dep, module)| {
             let hir_bindings = dep
                 .hir
                 .as_ref()
@@ -454,6 +598,26 @@ fn dep_module_inputs<'a>(
                 hir_bindings,
                 imports,
             }
+        })
+        .collect()
+}
+
+/// Clone dependency TLC modules and run the backend effect-lowering pass on each
+/// one. Semantic analysis keeps interpreter-oriented TLC; native lowering needs
+/// the same `finally`/residual-effect rewrite that the root module receives.
+fn backend_dep_modules(
+    dep_analyses: &[std::rc::Rc<zutai_semantic::Analysis>],
+) -> Vec<zutai_tlc::TlcModule> {
+    dep_analyses
+        .iter()
+        .map(|dep| {
+            let mut module = dep
+                .tlc
+                .as_ref()
+                .expect("dependency with no TLC must be filtered by collect_dep_analyses")
+                .clone();
+            zutai_tlc::lower_effects_for_backend(&mut module);
+            module
         })
         .collect()
 }
@@ -568,6 +732,7 @@ pub(crate) fn run_compile(
             std::process::exit(1);
         }
     };
+    let dep_modules = backend_dep_modules(&dep_analyses);
 
     // TLC lowering. Effectful programs enter DC only when TLC lowering has
     // eliminated effect markers or mapped ambient `io.print` to the runtime
@@ -629,7 +794,7 @@ pub(crate) fn run_compile(
             hir_bindings,
             imports: build_module_imports(&analysis, &ptr_to_idx),
         },
-        deps: dep_module_inputs(&dep_analyses, &ptr_to_idx),
+        deps: dep_module_inputs(&dep_analyses, &dep_modules, &ptr_to_idx),
     };
     let graph =
         match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {
@@ -745,6 +910,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
     };
+    let dep_modules = backend_dep_modules(&dep_analyses);
 
     let mut module = if extern_witnesses_df.is_empty() && extern_conditionals_df.is_empty() {
         zutai_tlc::lower_thir_for_backend(thir)
@@ -798,7 +964,7 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
             hir_bindings,
             imports: build_module_imports(&analysis, &ptr_to_idx),
         },
-        deps: dep_module_inputs(&dep_analyses, &ptr_to_idx),
+        deps: dep_module_inputs(&dep_analyses, &dep_modules, &ptr_to_idx),
     };
     let graph =
         match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {

@@ -646,6 +646,44 @@ handle (first (stream { yield perform fs.read "ignored"; })) with {
 }
 
 #[test]
+fn backend_scoped_fs_host_ops_use_host_grant_boundary() {
+    let m = backend_tlc_of(
+        r#"
+readFirst :: Path -> Text? ! { fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+  = path => [
+    reader := perform fs.openRead path;
+    line := perform fs.readLine reader;
+    closed := perform fs.closeRead reader;
+    line
+  ];
+readFirst "Cargo.toml"
+"#,
+    );
+    assert!(
+        crate::residual_effect_reason(&m).is_some(),
+        "without host grants, scoped fs ops must be gated"
+    );
+    let grants = HostEffectSet::AMBIENT
+        .with(HostOp::FsOpenRead)
+        .with(HostOp::FsReadLine)
+        .with(HostOp::FsCloseRead);
+    assert!(
+        crate::residual_effect_reason_with_grants(&m, grants).is_none(),
+        "granted scoped fs read ops should lower to the host boundary"
+    );
+}
+
+#[test]
+fn backend_stdlib_fs_module_lowers_under_host_grants() {
+    let m = backend_tlc_of(zutai_hir::FS_MODULE_SRC);
+    let reason = crate::residual_effect_reason_with_grants(&m, HostEffectSet::ALL);
+    assert!(
+        reason.is_none(),
+        "stdlib.fs should not leave ungranted residual effects after backend lowering: {reason:?}"
+    );
+}
+
+#[test]
 fn nested_handlers_forward_to_outer_scope() {
     let m = tlc_of(
         r#"

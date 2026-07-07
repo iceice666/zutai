@@ -540,7 +540,12 @@ pub(super) fn check_node_type_compat(
         DfNodeKind::HostOp { op, arg } => {
             if let Some(arg_ty) = child_ty(graph, *arg) {
                 match op {
-                    HostOp::FsRead | HostOp::EnvGet | HostOp::LoadZti | HostOp::LoadZt
+                    HostOp::FsRead
+                    | HostOp::FsOpenRead
+                    | HostOp::FsOpenWrite
+                    | HostOp::EnvGet
+                    | HostOp::LoadZti
+                    | HostOp::LoadZt
                         if !matches!(&graph.types[arg_ty], DfTy::Text) =>
                     {
                         unexpected_type(owner, "arg", "Text", arg_ty, errors);
@@ -551,6 +556,17 @@ pub(super) fn check_node_type_compat(
                     HostOp::ClockNow | HostOp::RngNext if !matches!(&graph.types[arg_ty], DfTy::Tuple(items) if items.is_empty()) =>
                     {
                         unexpected_type(owner, "arg", "Unit", arg_ty, errors);
+                    }
+                    HostOp::FsReadLine | HostOp::FsCloseRead if !matches!(&graph.types[arg_ty], DfTy::Opaque(name) if name == "Reader") =>
+                    {
+                        unexpected_type(owner, "arg", "Reader", arg_ty, errors);
+                    }
+                    HostOp::FsFlush | HostOp::FsCloseWrite if !matches!(&graph.types[arg_ty], DfTy::Opaque(name) if name == "Writer") =>
+                    {
+                        unexpected_type(owner, "arg", "Writer", arg_ty, errors);
+                    }
+                    HostOp::FsWriteText if !matches!(&graph.types[arg_ty], DfTy::Record(_)) => {
+                        unexpected_type(owner, "arg", "record", arg_ty, errors);
                     }
                     HostOp::IoPrint if !matches!(&graph.types[arg_ty], DfTy::Text) => {
                         unexpected_type(owner, "arg", "Text", arg_ty, errors);
@@ -572,7 +588,25 @@ pub(super) fn check_node_type_compat(
                         unexpected_type(owner, "type", "Text", node.ty, errors);
                     }
                 }
-                HostOp::FsWrite => {
+                HostOp::FsOpenRead => {
+                    if !matches!(&graph.types[node.ty], DfTy::Opaque(name) if name == "Reader") {
+                        unexpected_type(owner, "type", "Reader", node.ty, errors);
+                    }
+                }
+                HostOp::FsReadLine => match &graph.types[node.ty] {
+                    DfTy::Optional(inner) if matches!(&graph.types[*inner], DfTy::Text) => {}
+                    _ => unexpected_type(owner, "type", "Text?", node.ty, errors),
+                },
+                HostOp::FsOpenWrite => {
+                    if !matches!(&graph.types[node.ty], DfTy::Opaque(name) if name == "Writer") {
+                        unexpected_type(owner, "type", "Writer", node.ty, errors);
+                    }
+                }
+                HostOp::FsWrite
+                | HostOp::FsCloseRead
+                | HostOp::FsWriteText
+                | HostOp::FsFlush
+                | HostOp::FsCloseWrite => {
                     if !matches!(&graph.types[node.ty], DfTy::Tuple(items) if items.is_empty()) {
                         unexpected_type(owner, "type", "Unit", node.ty, errors);
                     }

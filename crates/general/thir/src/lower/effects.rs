@@ -71,6 +71,14 @@ impl<'hir> Lowerer<'hir> {
         let text = self.text_type(span);
         let unit = self.unit_type(span);
         let int = self.int_type(span);
+        let reader = self.alloc_type(Type {
+            kind: TypeKind::Opaque("Reader".to_string()),
+            span,
+        });
+        let writer = self.alloc_type(Type {
+            kind: TypeKind::Opaque("Writer".to_string()),
+            span,
+        });
         let maybe_text = self.alloc_type(Type {
             kind: TypeKind::Optional(text),
             span,
@@ -95,6 +103,26 @@ impl<'hir> Lowerer<'hir> {
             ),
             span,
         });
+        let write_text_arg = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![
+                    TypeRecordField {
+                        name: "contents".to_string(),
+                        optional: false,
+                        ty: text,
+                        span,
+                    },
+                    TypeRecordField {
+                        name: "writer".to_string(),
+                        optional: false,
+                        ty: writer,
+                        span,
+                    },
+                ],
+                RowTail::Closed,
+            ),
+            span,
+        });
         let mut ops = vec![
             EffectOp {
                 name: "io.print".to_string(),
@@ -111,6 +139,48 @@ impl<'hir> Lowerer<'hir> {
             EffectOp {
                 name: "fs.write".to_string(),
                 param: write_arg,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "fs.openRead".to_string(),
+                param: text,
+                result: reader,
+                span,
+            },
+            EffectOp {
+                name: "fs.readLine".to_string(),
+                param: reader,
+                result: maybe_text,
+                span,
+            },
+            EffectOp {
+                name: "fs.closeRead".to_string(),
+                param: reader,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "fs.openWrite".to_string(),
+                param: text,
+                result: writer,
+                span,
+            },
+            EffectOp {
+                name: "fs.writeText".to_string(),
+                param: write_text_arg,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "fs.flush".to_string(),
+                param: writer,
+                result: unit,
+                span,
+            },
+            EffectOp {
+                name: "fs.closeWrite".to_string(),
+                param: writer,
                 result: unit,
                 span,
             },

@@ -286,6 +286,124 @@ readFile "{path}"
     assert_eq!(run(&src), Value::Text("host-read".into()));
 }
 
+fn zt_string_literal(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn expect_some_text(value: Value, expected: &str) {
+    let Value::TaggedValue { tag, payload } = value else {
+        panic!("expected #some tagged value, got {value:?}");
+    };
+    assert_eq!(tag.as_ref(), "some");
+    let Some((_, thunk)) = payload.first() else {
+        panic!("expected #some payload");
+    };
+    assert_eq!(thunk.peek(), Some(Value::Text(expected.into())));
+}
+
+fn expect_none(value: Value) {
+    assert_eq!(value, Value::Atom("none".into()));
+}
+
+#[test]
+fn stdlib_fs_imports_effectful_handle_helpers() {
+    assert_eq!(run("fs ::= import stdlib.fs;\n1"), Value::Int(1));
+}
+
+#[test]
+fn scoped_fs_handles_write_read_lines_and_eof() {
+    let path = std::env::temp_dir().join("zutai_eval_scoped_fs_roundtrip.txt");
+    let path = zt_string_literal(path.to_str().unwrap());
+    let src = format!(
+        r#"
+RoundTrip :: type {{ first : Text?; second : Text?; eof : Text?; }};
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+writeTextRequest :: Writer -> Text -> WriteTextRequest
+  = writer contents => {{ contents = contents; writer = writer; }};
+roundTrip :: Path -> RoundTrip ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }}
+  = path => [
+    writer := perform fs.openWrite path;
+    wrote := perform fs.writeText (writeTextRequest writer "alpha\nbeta\n");
+    closedWriter := perform fs.closeWrite writer;
+    reader := perform fs.openRead path;
+    first := perform fs.readLine reader;
+    second := perform fs.readLine reader;
+    eof := perform fs.readLine reader;
+    closedReader := perform fs.closeRead reader;
+    {{ first = first; second = second; eof = eof; }}
+  ];
+roundTrip "{path}"
+"#
+    );
+    let value = run(&src);
+    expect_some_text(record_field_value(&value, "first"), "alpha");
+    expect_some_text(record_field_value(&value, "second"), "beta");
+    expect_none(record_field_value(&value, "eof"));
+}
+
+#[test]
+fn scoped_fs_handles_double_close_is_unit() {
+    let path = std::env::temp_dir().join("zutai_eval_scoped_fs_double_close.txt");
+    let path = zt_string_literal(path.to_str().unwrap());
+    let src = format!(
+        r#"
+closeTwice :: Path -> Text ! {{ fs.openWrite : Path -> Writer; fs.closeWrite : Writer -> Unit; }}
+  = path => [
+    writer := perform fs.openWrite path;
+    first := perform fs.closeWrite writer;
+    second := perform fs.closeWrite writer;
+    "ok"
+  ];
+closeTwice "{path}"
+"#
+    );
+    assert_eq!(run(&src), Value::Text("ok".into()));
+}
+
+#[test]
+fn scoped_fs_handles_fail_after_close() {
+    let path = std::env::temp_dir().join("zutai_eval_scoped_fs_after_close.txt");
+    let path = zt_string_literal(path.to_str().unwrap());
+    let src = format!(
+        r#"
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+writeTextRequest :: Writer -> Text -> WriteTextRequest
+  = writer contents => {{ contents = contents; writer = writer; }};
+bad :: Path -> Unit ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.closeWrite : Writer -> Unit; }}
+  = path => [
+    writer := perform fs.openWrite path;
+    closed := perform fs.closeWrite writer;
+    perform fs.writeText (writeTextRequest writer "late")
+  ];
+bad "{path}"
+"#
+    );
+    match run_err(&src) {
+        EvalError::EffectfulNotExecutable(msg) => assert!(msg.contains("closed"), "{msg}"),
+        other => panic!("expected after-close runtime error, got {other:?}"),
+    }
+}
+
+#[test]
+fn whole_file_fs_read_write_compatibility_still_works() {
+    let path = std::env::temp_dir().join("zutai_eval_fs_compat.txt");
+    let path = zt_string_literal(path.to_str().unwrap());
+    let src = format!(
+        r#"
+WriteRequest :: type {{ contents : Text; path : Path; }};
+writeRequest :: Path -> Text -> WriteRequest
+  = path contents => {{ contents = contents; path = path; }};
+compat :: Path -> Text ! {{ fs.write : WriteRequest -> Unit; fs.read : Path -> Text; }}
+  = path => [
+    wrote := perform fs.write (writeRequest path "compat");
+    perform fs.read path
+  ];
+compat "{path}"
+"#
+    );
+    assert_eq!(run(&src), Value::Text("compat".into()));
+}
+
 #[test]
 fn top_level_net_http_echo_effects_are_handled_by_host_boundary() {
     let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();

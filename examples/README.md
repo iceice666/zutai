@@ -39,16 +39,20 @@ cargo run -q -p zutai-cli -- run examples/service_health.zt
 | `stdlib_pipeline.zt` | `stdlib.num`, `stdlib.optional`, and `stdlib.result` pipelines | Prints one integer score |
 | `stream_summary.zt` | List-to-stream transformation and lazy stream summary | Prints items, sum, and count |
 | `host_stream_read.zt` | `stream { yield perform fs.read ... }` in a lazy cell at the host boundary | Reads its own source, proves the missing tail is not forced, and matches `run`/native output |
+| `stdlib_fs_lines.zt` | `stdlib.fs` `withWriter`/`withReader` bracket helpers | Writes two lines, reads them back, and confirms EOF as `#none` |
+| `stdlib_fs_manual.zt` | Manual `openWrite`/`writeText`/`flush`/`closeWrite` and `openRead`/`readLine`/`closeRead` | Shows explicit handle lifetime and idempotent double close |
+| `stdlib_fs_whole_file.zt` | `stdlib.fs` `writeAll`/`readAll` compatibility wrappers | Writes and reads a whole text file through the old `fs.write`/`fs.read` host boundary |
 | `text_report.zt` | `stdlib.text` normalization, replacement, joining, and parsing | Prints a text report record |
 | `net_echo.zt` | Host network effects for one TCP request | Waits on port 7777 until a client sends a line |
 | `echo_http.zt` | Recursive host network effects for a tiny HTTP responder | Waits on port 8080 and keeps accepting clients |
 
-`host_stream_read.zt` should be run from the workspace root because its
-`fs.read` argument is an ordinary host path, not a source-relative import. The
-example wraps the stream in a source handler that would return `"handler-mock"`
-if it owned the lazy cell, then forces one cell and reads this source file
-through the host boundary instead. A second cell points at a missing file; the
-successful output is the laziness check.
+The filesystem examples should be run from the workspace root because host
+`Path` values are ordinary process-relative paths, not source-relative imports.
+`host_stream_read.zt` wraps a stream in a source handler that would return
+`"handler-mock"` if it owned the lazy cell, then forces one cell and reads this
+source file through the host boundary instead. A second cell points at a missing
+file; the successful output is the laziness check. The `stdlib_fs_*.zt`
+examples create ignored `examples/*.out` files.
 
 ## Network Demos
 
@@ -98,6 +102,7 @@ just browser-demo 127.0.0.1:9000
 
 ## Generated Artifacts
 
-Native compilation may leave generated files such as `examples/*.ll`,
-`examples/*.o`, `examples/net_echo`, or `examples/echo_http`. They are ignored by
-git and can be deleted when you no longer need them.
+Native compilation and filesystem examples may leave generated files such as
+`examples/*.ll`, `examples/*.o`, `examples/*.out`, `examples/net_echo`, or
+`examples/echo_http`. They are ignored by git and can be deleted when you no
+longer need them.

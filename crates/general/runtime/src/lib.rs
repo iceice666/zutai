@@ -23,7 +23,8 @@ use zutai_eval::{EvalError, Value as EvalValue};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
-use std::io::{BufRead, BufReader};
+use std::fs::File;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{TcpListener, TcpStream};
 use std::slice;
 use std::str;
@@ -1604,6 +1605,7 @@ fn data_from_eval_value(value: &EvalValue) -> Result<i64, EvalError> {
         | EvalValue::TypeValue(_)
         | EvalValue::WitnessDict(_)
         | EvalValue::TlcClosure(_)
+        | EvalValue::HostHandle(_)
         | EvalValue::Builtin(_)
         | EvalValue::BuiltinPartial { .. } => Err(EvalError::EffectfulNotExecutable(
             "load.zt final value is not first-order serializable data".to_string(),
@@ -1640,6 +1642,132 @@ pub extern "C" fn host_fs_write(request: i64) -> i64 {
         if let Err(err) = std::fs::write(path, contents) {
             runtime_error(&format!("fs.write failed for {path:?}: {err}"));
         }
+    }
+    tuple_new(0)
+}
+
+// ── Scoped filesystem text handles ─────────────────────────────────────────────
+
+static FS_READERS: Mutex<Vec<Option<BufReader<File>>>> = Mutex::new(Vec::new());
+static FS_WRITERS: Mutex<Vec<Option<BufWriter<File>>>> = Mutex::new(Vec::new());
+static FS_NEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+fn fs_alloc_id() -> u64 {
+    FS_NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[unsafe(export_name = "zutai.host.fs_open_read")]
+pub extern "C" fn host_fs_open_read(path: i64) -> i64 {
+    let path = unsafe {
+        str::from_utf8(text_parts(path))
+            .unwrap_or_else(|_| runtime_error("fs.openRead path is not UTF-8"))
+    };
+    let file = File::open(path).unwrap_or_else(|err| runtime_error(&format!("fs.openRead: {err}")));
+    let id = fs_alloc_id();
+    let mut readers = FS_READERS.lock().unwrap();
+    while readers.len() <= id as usize {
+        readers.push(None);
+    }
+    readers[id as usize] = Some(BufReader::new(file));
+    id as i64
+}
+
+#[unsafe(export_name = "zutai.host.fs_read_line")]
+pub extern "C" fn host_fs_read_line(reader_id: i64) -> i64 {
+    let mut readers = FS_READERS.lock().unwrap();
+    let reader = readers
+        .get_mut(reader_id as usize)
+        .and_then(|slot| slot.as_mut())
+        .unwrap_or_else(|| runtime_error(&format!("fs.readLine: reader {reader_id} not found")));
+    let mut line = String::new();
+    let bytes = reader
+        .read_line(&mut line)
+        .unwrap_or_else(|err| runtime_error(&format!("fs.readLine: {err}")));
+    if bytes == 0 {
+        optional_text(None)
+    } else {
+        optional_text(Some(strip_read_line_ending(&line).to_string()))
+    }
+}
+
+fn strip_read_line_ending(line: &str) -> &str {
+    let Some(stripped) = line.strip_suffix('\n') else {
+        return line;
+    };
+    stripped.strip_suffix('\r').unwrap_or(stripped)
+}
+
+#[unsafe(export_name = "zutai.host.fs_close_read")]
+pub extern "C" fn host_fs_close_read(reader_id: i64) -> i64 {
+    let mut readers = FS_READERS.lock().unwrap();
+    let slot = readers
+        .get_mut(reader_id as usize)
+        .unwrap_or_else(|| runtime_error(&format!("fs.closeRead: reader {reader_id} not found")));
+    *slot = None;
+    tuple_new(0)
+}
+
+#[unsafe(export_name = "zutai.host.fs_open_write")]
+pub extern "C" fn host_fs_open_write(path: i64) -> i64 {
+    let path = unsafe {
+        str::from_utf8(text_parts(path))
+            .unwrap_or_else(|_| runtime_error("fs.openWrite path is not UTF-8"))
+    };
+    let file =
+        File::create(path).unwrap_or_else(|err| runtime_error(&format!("fs.openWrite: {err}")));
+    let id = fs_alloc_id();
+    let mut writers = FS_WRITERS.lock().unwrap();
+    while writers.len() <= id as usize {
+        writers.push(None);
+    }
+    writers[id as usize] = Some(BufWriter::new(file));
+    id as i64
+}
+
+#[unsafe(export_name = "zutai.host.fs_write_text")]
+pub extern "C" fn host_fs_write_text(request: i64) -> i64 {
+    unsafe {
+        // `{ contents : Text; writer : Writer; }` is slot-sorted by name.
+        let contents = str::from_utf8(text_parts(word(request, 1)))
+            .unwrap_or_else(|_| runtime_error("fs.writeText contents are not UTF-8"));
+        let writer_id = word(request, 2);
+        let mut writers = FS_WRITERS.lock().unwrap();
+        let writer = writers
+            .get_mut(writer_id as usize)
+            .and_then(|slot| slot.as_mut())
+            .unwrap_or_else(|| {
+                runtime_error(&format!("fs.writeText: writer {writer_id} not found"))
+            });
+        writer
+            .write_all(contents.as_bytes())
+            .unwrap_or_else(|err| runtime_error(&format!("fs.writeText: {err}")));
+    }
+    tuple_new(0)
+}
+
+#[unsafe(export_name = "zutai.host.fs_flush")]
+pub extern "C" fn host_fs_flush(writer_id: i64) -> i64 {
+    let mut writers = FS_WRITERS.lock().unwrap();
+    let writer = writers
+        .get_mut(writer_id as usize)
+        .and_then(|slot| slot.as_mut())
+        .unwrap_or_else(|| runtime_error(&format!("fs.flush: writer {writer_id} not found")));
+    writer
+        .flush()
+        .unwrap_or_else(|err| runtime_error(&format!("fs.flush: {err}")));
+    tuple_new(0)
+}
+
+#[unsafe(export_name = "zutai.host.fs_close_write")]
+pub extern "C" fn host_fs_close_write(writer_id: i64) -> i64 {
+    let mut writers = FS_WRITERS.lock().unwrap();
+    let slot = writers
+        .get_mut(writer_id as usize)
+        .unwrap_or_else(|| runtime_error(&format!("fs.closeWrite: writer {writer_id} not found")));
+    if let Some(mut writer) = slot.take() {
+        writer
+            .flush()
+            .unwrap_or_else(|err| runtime_error(&format!("fs.closeWrite: {err}")));
     }
     tuple_new(0)
 }

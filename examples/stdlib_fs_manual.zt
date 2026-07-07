@@ -1,0 +1,51 @@
+-- Manual scoped filesystem handle example
+-- Usage: zutai-cli run examples/stdlib_fs_manual.zt
+-- Shows explicit open/flush/close calls. Double close is intentionally allowed.
+
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
+
+WriteTextRequest :: type { contents : Text; writer : Writer; };
+
+outPath :: Path = "examples/stdlib_fs_manual.out";
+
+lineOr :: Text -> Text? -> Text
+  = fallback value => match value {
+    | #some (line) => line;
+    | #none => fallback;
+  };
+
+main :: { read : FsRead; write : FsWrite; } -> { doubleCloseOk : Bool; summary : Text; } ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+  = caps => [
+    writer := fs.openWrite caps.write outPath;
+    wrote := [
+      fs.writeText caps.write writer "manual-one\n";
+      fs.writeText caps.write writer "manual-two\n";
+      fs.flush caps.write writer;
+      fs.closeWrite caps.write writer;
+      fs.closeWrite caps.write writer
+    ];
+    [
+      wrote;
+      [
+        reader := fs.openRead caps.read outPath;
+        first := fs.readLine caps.read reader;
+        second := fs.readLine caps.read reader;
+        summary := t.join " | " {
+          lineOr "<missing>" first;
+          lineOr "<missing>" second;
+        };
+        [
+          summary;
+          fs.closeRead caps.read reader;
+          fs.closeRead caps.read reader;
+          {
+            doubleCloseOk = true;
+            summary = summary;
+          }
+        ]
+      ]
+    ]
+  ];
+
+main

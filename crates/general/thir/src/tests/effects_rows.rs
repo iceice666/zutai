@@ -378,6 +378,30 @@ readConfig
 }
 
 #[test]
+fn scoped_reader_writer_host_ops_typecheck() {
+    completed_file(
+        r#"
+WriteTextRequest :: type { contents : Text; writer : Writer; };
+openRead :: FsRead -> Path -> Reader ! { fs.openRead : Path -> Reader; }
+  = fs path => perform fs.openRead path;
+readLine :: FsRead -> Reader -> Text? ! { fs.readLine : Reader -> Text?; }
+  = fs reader => perform fs.readLine reader;
+closeRead :: FsRead -> Reader -> Unit ! { fs.closeRead : Reader -> Unit; }
+  = fs reader => perform fs.closeRead reader;
+openWrite :: FsWrite -> Path -> Writer ! { fs.openWrite : Path -> Writer; }
+  = fs path => perform fs.openWrite path;
+writeText :: FsWrite -> WriteTextRequest -> Unit ! { fs.writeText : WriteTextRequest -> Unit; }
+  = fs req => perform fs.writeText req;
+flush :: FsWrite -> Writer -> Unit ! { fs.flush : Writer -> Unit; }
+  = fs writer => perform fs.flush writer;
+closeWrite :: FsWrite -> Writer -> Unit ! { fs.closeWrite : Writer -> Unit; }
+  = fs writer => perform fs.closeWrite writer;
+openRead
+"#,
+    );
+}
+
+#[test]
 fn standard_host_ops_still_require_declared_function_effect_rows() {
     rejects_with(
         r#"
@@ -386,6 +410,18 @@ bad :: Path -> Text ! {}
 bad
 "#,
         |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fs.read"),
+    );
+}
+
+#[test]
+fn scoped_host_ops_still_require_declared_function_effect_rows() {
+    rejects_with(
+        r#"
+bad :: Path -> Reader ! {}
+  = path => perform fs.openRead path;
+bad
+"#,
+        |kind| matches!(kind, ThirDiagnosticKind::EffectNotInRow { op } if op == "fs.openRead"),
     );
 }
 

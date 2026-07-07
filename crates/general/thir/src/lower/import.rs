@@ -2,10 +2,10 @@ use rustc_hash::FxHashMap;
 use zutai_hir::{BindingId, BindingKind, HirExprId, HirImportSource};
 use zutai_syntax::Span;
 
-use crate::import::{ImportedTupleItem, ImportedType};
+use crate::import::{ImportedRowTail, ImportedTupleItem, ImportedType};
 use crate::ir::{
-    Kind, RowTail, ThirDecl, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, Type, TypeId,
-    TypeKind, TypeRecordField, TypeTupleItem,
+    EffectOp, EffectRow, Kind, RowTail, ThirDecl, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind,
+    Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
 };
 
 use super::Lowerer;
@@ -27,6 +27,11 @@ impl<'hir> Lowerer<'hir> {
         match self.imports.get(source).cloned() {
             Some(desc) => {
                 self.import_tyvar_cache.clear();
+                self.import_rowvar_cache = self
+                    .import_rowvar_caches
+                    .get(source)
+                    .cloned()
+                    .unwrap_or_default();
                 let ty = self.intern_imported_type_with_source(&desc, Some(source), span);
                 self.alloc_expr(ThirExpr {
                     source: id,
@@ -58,6 +63,10 @@ impl<'hir> Lowerer<'hir> {
             ImportedType::FixedNum(fw) => self.fixed_num_type(*fw, span),
             ImportedType::Posit(spec) => self.posit_type(*spec, span),
             ImportedType::Text => self.text_type(span),
+            ImportedType::Opaque(name) => self.alloc_type(Type {
+                kind: TypeKind::Opaque(name.clone()),
+                span,
+            }),
             ImportedType::Atom(name) => self.alloc_type(Type {
                 kind: TypeKind::Atom(name.clone()),
                 span,
@@ -193,6 +202,26 @@ impl<'hir> Lowerer<'hir> {
                     span,
                 })
             }
+            ImportedType::Effect { base, ops, tail } => {
+                let base = self.intern_imported_type_with_source(base, source, span);
+                let ops = ops
+                    .iter()
+                    .map(|op| EffectOp {
+                        name: op.name.clone(),
+                        param: self.intern_imported_type_with_source(&op.param, source, span),
+                        result: self.intern_imported_type_with_source(&op.result, source, span),
+                        span,
+                    })
+                    .collect();
+                let tail = self.intern_imported_row_tail(*tail);
+                self.alloc_type(Type {
+                    kind: TypeKind::Effect {
+                        base,
+                        row: EffectRow { ops, tail },
+                    },
+                    span,
+                })
+            }
             ImportedType::Type(_) => {
                 // A `Type`-kinded value at top-level (not in a record field).
                 // No denotation registration here — the field-name context is
@@ -267,6 +296,26 @@ impl<'hir> Lowerer<'hir> {
             // `Unknown` so any application is refused rather than mistyped.
             ImportedType::TypeCon { .. } => self.fresh_infer_var(span),
             ImportedType::Unknown => self.fresh_infer_var(span),
+        }
+    }
+
+    fn intern_imported_row_tail(&mut self, tail: ImportedRowTail) -> RowTail {
+        match tail {
+            ImportedRowTail::Closed => RowTail::Closed,
+            ImportedRowTail::Open => RowTail::Open,
+            ImportedRowTail::Param(id) => {
+                let binding = if let Some(&binding) = self.import_rowvar_cache.get(&id) {
+                    binding
+                } else {
+                    let binding = self.alloc_synthetic_binding(
+                        format!("__import_row_{id}"),
+                        BindingKind::TypeParam,
+                    );
+                    self.import_rowvar_cache.insert(id, binding);
+                    binding
+                };
+                RowTail::Param(binding)
+            }
         }
     }
 

@@ -22,8 +22,8 @@ use std::rc::Rc;
 use zutai_hir::{BindingId, HirExprKind, HirFile, HirImportSource};
 use zutai_syntax::Span;
 use zutai_thir::{
-    ImportKey, ImportedField, ImportedTupleItem, ImportedType, ThirDeclKind, ThirExprKind,
-    ThirFile, WitnessPattern, export_witness_pattern,
+    ImportKey, ImportedField, ImportedRowTail, ImportedTupleItem, ImportedType, ThirDeclKind,
+    ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern,
 };
 
 use crate::{Analysis, AnalysisOptions};
@@ -601,6 +601,7 @@ fn imported_type_key(ty: &ImportedType) -> String {
         ImportedType::FixedNum(fw) => fw.name().to_string(),
         ImportedType::Posit(spec) => spec.type_name(),
         ImportedType::Text => "Text".to_string(),
+        ImportedType::Opaque(name) => format!("opaque:{name}"),
         ImportedType::Atom(name) => format!("#{name}"),
         ImportedType::List(inner) => format!("[{}]", imported_type_key(inner)),
         ImportedType::Optional(inner) => format!("{}?", imported_type_key(inner)),
@@ -640,6 +641,26 @@ fn imported_type_key(ty: &ImportedType) -> String {
         }
         ImportedType::Function { from, to } => {
             format!("({}->{})", imported_type_key(from), imported_type_key(to))
+        }
+        ImportedType::Effect { base, ops, tail } => {
+            let ops = ops
+                .iter()
+                .map(|op| {
+                    format!(
+                        "{}:{}->{}",
+                        op.name,
+                        imported_type_key(&op.param),
+                        imported_type_key(&op.result)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let tail = match tail {
+                ImportedRowTail::Closed => String::new(),
+                ImportedRowTail::Open => "...".to_string(),
+                ImportedRowTail::Param(id) => format!("...#{id}"),
+            };
+            format!("{}!{{{}{tail}}}", imported_type_key(base), ops)
         }
         ImportedType::Type(inner) => format!("Type({})", imported_type_key(inner)),
         ImportedType::TypeCon { params, body } => {

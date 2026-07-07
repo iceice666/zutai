@@ -533,6 +533,13 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.print_posit` | `void (i64 value, i64 nbits, i64 es)` | Print a posit by static spec. |
 | `zutai.show` | `void (i64 value, i64 descriptor)` | Type-directed render (records/tuples/lists/variants/optionals/posits). |
 | `zutai.to_json` / `zutai_to_json` | `i64 (i64 value, i64 descriptor)` | Type-directed natural JSON serialization via `serde_json`; returns a runtime `Text`; the underscore alias is host-FFI friendly. |
+| `zutai.host.fs_open_read` | `i64 (i64 path)` | Open a UTF-8 path for text reads; returns an opaque `Reader` handle id. |
+| `zutai.host.fs_read_line` | `i64 (i64 reader)` | Read one UTF-8 line as `Text?`; strips one trailing LF and optional CR; EOF returns `#none`. |
+| `zutai.host.fs_close_read` | `i64 (i64 reader)` | Close a known reader id; idempotent for known handles. |
+| `zutai.host.fs_open_write` | `i64 (i64 path)` | Create/truncate a UTF-8 path for text writes; returns an opaque `Writer` handle id. |
+| `zutai.host.fs_write_text` | `i64 (i64 request)` | Write request record `{ contents; writer }`; writes bytes exactly, no newline. |
+| `zutai.host.fs_flush` | `i64 (i64 writer)` | Flush a known writer id. |
+| `zutai.host.fs_close_write` | `i64 (i64 writer)` | Flush and close a known writer id; idempotent for known handles. |
 | `exit` | `i64 (i64 code)` | libc; abnormal termination. |
 
 Closure application is emitted inline (D-0003); no `zutai.apply` symbol is
@@ -561,10 +568,17 @@ value, so direct `print "x"`, higher-order `apply print`, and explicit
 appears before the final `zutai.show` rendering in `@main`.
 
 Non-ambient standard host operations lower through explicit `HostOp` helpers
-when granted by the CLI boundary: `fs.read`, `fs.write`, `env.get`,
-`clock.now`, `rng.next`, `load.zti`, and `load.zt`. Dynamic `load.zti` /
-`load.zt` return the source-level `Data` envelope; source handlers can intercept
-either operation before the runtime boundary.
+when granted by the CLI boundary: `fs.read`, `fs.write`, `fs.openRead`,
+`fs.readLine`, `fs.closeRead`, `fs.openWrite`, `fs.writeText`, `fs.flush`,
+`fs.closeWrite`, `env.get`, `clock.now`, `rng.next`, `load.zti`, and `load.zt`.
+Dynamic `load.zti` / `load.zt` return the source-level `Data` envelope; source
+handlers can intercept either operation before the runtime boundary.
+
+The scoped filesystem helpers store `BufReader<File>` / `BufWriter<File>` in
+runtime handle tables and pass opaque integer ids through compiled code. Unknown
+ids abort with a host-boundary diagnostic; closing a known already-closed handle
+returns `Unit`. `closeWrite` flushes before closing. The runtime ABI remains
+text-only and synchronous for this slice.
 
 ---
 

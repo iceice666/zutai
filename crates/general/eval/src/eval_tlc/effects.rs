@@ -1,7 +1,8 @@
 use super::*;
 use rustc_hash::FxHashMap;
 use std::cell::Cell;
-use std::io::{BufRead, BufReader, Write};
+use std::fs::File;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,9 +16,18 @@ static CONNECTIONS: LazyLock<Mutex<FxHashMap<u64, TcpStream>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
 static CURRENT_CONNECTION: AtomicU64 = AtomicU64::new(0);
 static NEXT_NET_ID: AtomicU64 = AtomicU64::new(1);
+static READERS: LazyLock<Mutex<FxHashMap<u64, Option<BufReader<File>>>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+static WRITERS: LazyLock<Mutex<FxHashMap<u64, Option<BufWriter<File>>>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+static NEXT_FS_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_net_id() -> u64 {
     NEXT_NET_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn next_fs_id() -> u64 {
+    NEXT_FS_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 impl<'a> TlcEvaluator<'a> {
@@ -545,6 +555,150 @@ fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Val
             })?;
             Ok(Value::Tuple(Rc::from([])))
         }
+        "fs.openRead" => {
+            let Value::Text(path) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            let file = File::open(path.as_ref()).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.openRead failed: {err}"))
+            })?;
+            let id = next_fs_id();
+            READERS.lock().insert(id, Some(BufReader::new(file)));
+            Ok(Value::HostHandle(HostHandle {
+                kind: HostHandleKind::Reader,
+                id: id as i64,
+            }))
+        }
+        "fs.readLine" => {
+            let handle = expect_host_handle(arg, HostHandleKind::Reader, "Reader")?;
+            let mut readers = READERS.lock();
+            let Some(slot) = readers.get_mut(&(handle.id as u64)) else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.readLine: reader {} not found",
+                    handle.id
+                )));
+            };
+            let Some(reader) = slot.as_mut() else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.readLine: reader {} is closed",
+                    handle.id
+                )));
+            };
+            let mut line = String::new();
+            let bytes = reader.read_line(&mut line).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.readLine failed: {err}"))
+            })?;
+            if bytes == 0 {
+                Ok(Value::Atom(Rc::from("none")))
+            } else {
+                let trimmed = strip_read_line_ending(&line);
+                Ok(tagged_slot_value(
+                    "some",
+                    Value::Text(Rc::from(trimmed.to_string())),
+                ))
+            }
+        }
+        "fs.closeRead" => {
+            let handle = expect_host_handle(arg, HostHandleKind::Reader, "Reader")?;
+            let mut readers = READERS.lock();
+            let Some(slot) = readers.get_mut(&(handle.id as u64)) else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.closeRead: reader {} not found",
+                    handle.id
+                )));
+            };
+            *slot = None;
+            Ok(Value::Tuple(Rc::from([])))
+        }
+        "fs.openWrite" => {
+            let Value::Text(path) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Text",
+                    found: value_type_name(&arg),
+                });
+            };
+            let file = File::create(path.as_ref()).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.openWrite failed: {err}"))
+            })?;
+            let id = next_fs_id();
+            WRITERS.lock().insert(id, Some(BufWriter::new(file)));
+            Ok(Value::HostHandle(HostHandle {
+                kind: HostHandleKind::Writer,
+                id: id as i64,
+            }))
+        }
+        "fs.writeText" => {
+            let Value::Record(fields) = arg else {
+                return Err(EvalError::TypeMismatch {
+                    expected: "Record",
+                    found: value_type_name(&arg),
+                });
+            };
+            let contents = force_record_text(&fields, "contents", evaluator)?;
+            let handle = force_record_host_handle(
+                &fields,
+                "writer",
+                evaluator,
+                HostHandleKind::Writer,
+                "Writer",
+            )?;
+            let mut writers = WRITERS.lock();
+            let Some(slot) = writers.get_mut(&(handle.id as u64)) else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.writeText: writer {} not found",
+                    handle.id
+                )));
+            };
+            let Some(writer) = slot.as_mut() else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.writeText: writer {} is closed",
+                    handle.id
+                )));
+            };
+            writer.write_all(contents.as_bytes()).map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.writeText failed: {err}"))
+            })?;
+            Ok(Value::Tuple(Rc::from([])))
+        }
+        "fs.flush" => {
+            let handle = expect_host_handle(arg, HostHandleKind::Writer, "Writer")?;
+            let mut writers = WRITERS.lock();
+            let Some(slot) = writers.get_mut(&(handle.id as u64)) else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.flush: writer {} not found",
+                    handle.id
+                )));
+            };
+            let Some(writer) = slot.as_mut() else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.flush: writer {} is closed",
+                    handle.id
+                )));
+            };
+            writer.flush().map_err(|err| {
+                EvalError::EffectfulNotExecutable(format!("fs.flush failed: {err}"))
+            })?;
+            Ok(Value::Tuple(Rc::from([])))
+        }
+        "fs.closeWrite" => {
+            let handle = expect_host_handle(arg, HostHandleKind::Writer, "Writer")?;
+            let mut writers = WRITERS.lock();
+            let Some(slot) = writers.get_mut(&(handle.id as u64)) else {
+                return Err(EvalError::EffectfulNotExecutable(format!(
+                    "fs.closeWrite: writer {} not found",
+                    handle.id
+                )));
+            };
+            if let Some(mut writer) = slot.take() {
+                writer.flush().map_err(|err| {
+                    EvalError::EffectfulNotExecutable(format!("fs.closeWrite flush failed: {err}"))
+                })?;
+            }
+            Ok(Value::Tuple(Rc::from([])))
+        }
         "env.get" => {
             let Value::Text(name) = arg else {
                 return Err(EvalError::TypeMismatch {
@@ -721,6 +875,13 @@ fn data_from_zti_block(block: &zutai_im::Block) -> Value {
     data_tagged("record", vec![("fields", data_list(fields))])
 }
 
+fn strip_read_line_ending(line: &str) -> &str {
+    let Some(stripped) = line.strip_suffix('\n') else {
+        return line;
+    };
+    stripped.strip_suffix('\r').unwrap_or(stripped)
+}
+
 fn data_from_zti_value(value: &zutai_im::Value) -> Value {
     match value {
         zutai_im::Value::True => data_tagged("bool", vec![("value", Value::Bool(true))]),
@@ -818,6 +979,7 @@ fn data_from_value(value: &Value) -> Result<Value, EvalError> {
         | Value::TypeValue(_)
         | Value::WitnessDict(_)
         | Value::TlcClosure(_)
+        | Value::HostHandle(_)
         | Value::Builtin(_)
         | Value::BuiltinPartial { .. } => Err(EvalError::EffectfulNotExecutable(
             "load.zt final value is not first-order serializable data".to_string(),
@@ -868,6 +1030,36 @@ fn force_record_text(
             found: value_type_name(&other),
         }),
     }
+}
+
+fn expect_host_handle(
+    value: Value,
+    kind: HostHandleKind,
+    expected: &'static str,
+) -> Result<HostHandle, EvalError> {
+    match value {
+        Value::HostHandle(handle) if handle.kind == kind => Ok(handle),
+        other => Err(EvalError::TypeMismatch {
+            expected,
+            found: value_type_name(&other),
+        }),
+    }
+}
+
+fn force_record_host_handle(
+    fields: &[(Rc<str>, Thunk)],
+    name: &str,
+    evaluator: TlcEvaluator<'_>,
+    kind: HostHandleKind,
+    expected: &'static str,
+) -> Result<HostHandle, EvalError> {
+    let Some((_, thunk)) = fields.iter().find(|(field, _)| field.as_ref() == name) else {
+        return Err(EvalError::TypeMismatch {
+            expected: "Record field",
+            found: "Record",
+        });
+    };
+    expect_host_handle(thunk.force_tlc(&evaluator)?, kind, expected)
 }
 
 fn next_rng() -> i64 {

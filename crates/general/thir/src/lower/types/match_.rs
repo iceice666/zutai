@@ -226,6 +226,16 @@ impl<'hir> Lowerer<'hir> {
         let result = match (ek, fk) {
             (TypeKind::Error, _) | (_, TypeKind::Error) => true,
             (_, TypeKind::Never) => true,
+            (TypeKind::Bool, TypeKind::Bool)
+            | (TypeKind::Text, TypeKind::Text)
+            | (TypeKind::Int, TypeKind::Int)
+            | (TypeKind::Float, TypeKind::Float)
+            | (TypeKind::True, TypeKind::True)
+            | (TypeKind::False, TypeKind::False) => true,
+            (TypeKind::FixedNum(expected), TypeKind::FixedNum(found)) => expected == found,
+            (TypeKind::Posit(expected), TypeKind::Posit(found)) => expected == found,
+            (TypeKind::Atom(expected), TypeKind::Atom(found)) => expected == found,
+            (TypeKind::Opaque(expected), TypeKind::Opaque(found)) => expected == found,
 
             // Solve InferVars: if either side is an unsolved InferVar, unify
             // and treat as matching (errors emitted inside unify on conflicts).

@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-07-01)
+## Status (2026-07-07)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
 "Post-V3 readiness audit"). v1 semantics are complete, and native support is
@@ -29,12 +29,16 @@ core language boundary. The 2026-06-30 explicit stdlib expansion added
 `stdlib.validate` as embedded opt-in modules; see `docs/ARCHIVED.md` for the
 milestone summary. The 2026-07-01 native library artifact mode
 (`compile --emit=lib`) and runtime `serde_json` bridge are also archived; they
-do not leave an active native backlog item. Track 2 remains demand-gated.
+do not leave an active native backlog item. The 2026-07-07 scoped filesystem IO
+foundation (`Reader`/`Writer`, explicit `stdlib.fs`, text line/read-write host
+ops) is also archived and leaves append/seek/binary/async IO intentionally
+unscoped. Track 2 remains demand-gated.
 
 ## Native/interpreter parity backlog
 
-_No active native/interpreter parity backlog item is scoped._ The optional-field
-`Maybe` envelope gap landed 2026-06-30 and is archived in `docs/ARCHIVED.md`.
+_No active native/interpreter parity backlog items._ The optional-field `Maybe`
+envelope gap landed 2026-06-30 and the explicit `stdlib.fs` helper-import
+native lowering gap landed 2026-07-07; both are archived in `docs/ARCHIVED.md`.
 
 ## Source prelude / stdlib status
 
@@ -42,8 +46,9 @@ _No active source-prelude/stdlib usability milestone is scoped._ Slices B-H
 landed 2026-06-28 and the explicit stdlib expansion landed 2026-06-30; both are
 archived in `docs/ARCHIVED.md`: small function helpers, minimal
 ambient/importable `List` verbs, explicit `stdlib.optional`, `stdlib.result`,
-`stdlib.num`, `stdlib.text`, `stdlib.cmp`, and the explicit `stdlib.config`,
-`stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate` modules.
+`stdlib.num`, `stdlib.text`, `stdlib.cmp`, explicit `stdlib.fs`, and the
+explicit `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
+`stdlib.validate` modules.
 
 Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic

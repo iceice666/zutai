@@ -24,6 +24,13 @@ fn text(s: &str) -> i64 {
     text_from_global(s.as_ptr() as i64, s.len() as i64)
 }
 
+fn write_text_request(writer: i64, contents: &str) -> i64 {
+    let request = record_new(2);
+    record_set(request, 0, text(contents));
+    record_set(request, 1, writer);
+    request
+}
+
 #[test]
 fn num_bridge_helpers_return_values() {
     assert_eq!(num_abs(-5), 5);
@@ -409,6 +416,86 @@ fn bool_render() {
     let bool_d = [DESC_BOOL];
     assert_eq!(render_str(1, &bool_d), "true");
     assert_eq!(render_str(0, &bool_d), "false");
+}
+
+#[test]
+fn fs_handle_runtime_write_flush_close_read_eof_and_double_close() {
+    let path = std::env::temp_dir().join("zutai_rt_scoped_fs_roundtrip.txt");
+    let path_text = text(path.to_str().unwrap());
+
+    let writer = host_fs_open_write(path_text);
+    assert!(writer > 0);
+    host_fs_write_text(write_text_request(writer, "one\ntwo\r\n"));
+    host_fs_flush(writer);
+    host_fs_close_write(writer);
+    host_fs_close_write(writer);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\ntwo\r\n");
+
+    let reader = host_fs_open_read(path_text);
+    assert!(reader > 0);
+    let text_d = [DESC_TEXT];
+    let opt_text_d = [DESC_OPTIONAL, text_d.as_ptr() as i64];
+    assert_eq!(
+        render_str(host_fs_read_line(reader), &opt_text_d),
+        "#some (\"one\")"
+    );
+    assert_eq!(
+        render_str(host_fs_read_line(reader), &opt_text_d),
+        "#some (\"two\")"
+    );
+    assert_eq!(render_str(host_fs_read_line(reader), &opt_text_d), "#none");
+    host_fs_close_read(reader);
+    host_fs_close_read(reader);
+}
+
+fn run_runtime_child(case: &str) -> std::process::Output {
+    std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("tests::runtime_child_scoped_fs_error")
+        .arg("--exact")
+        .arg("--nocapture")
+        .env("ZUTAI_RT_CHILD", case)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn runtime_child_scoped_fs_error() {
+    match std::env::var("ZUTAI_RT_CHILD").as_deref() {
+        Ok("invalid_reader") => {
+            host_fs_read_line(9_999_999);
+        }
+        Ok("invalid_utf8") => {
+            let path = std::env::temp_dir().join("zutai_rt_scoped_fs_invalid_utf8.txt");
+            std::fs::write(&path, [0xff]).unwrap();
+            let reader = host_fs_open_read(text(path.to_str().unwrap()));
+            host_fs_read_line(reader);
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn fs_handle_runtime_invalid_handle_diagnostic() {
+    let output = run_runtime_child("invalid_reader");
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("fs.readLine: reader 9999999 not found"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn fs_handle_runtime_utf8_error_diagnostic() {
+    let output = run_runtime_child("invalid_utf8");
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("fs.readLine:"), "{stderr}");
+    assert!(
+        stderr.contains("UTF-8") || stderr.contains("utf-8"),
+        "{stderr}"
+    );
 }
 
 // ── Arena cap + accounting (D-0008 release valve) ───────────────────────────────

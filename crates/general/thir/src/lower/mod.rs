@@ -135,6 +135,13 @@ struct Lowerer<'hir> {
     /// occurrences of one exported variable share a var (`∀A. A -> A` stays
     /// `?a -> ?a`). Cleared before interning each import binding's type.
     import_tyvar_cache: FxHashMap<u32, TypeId>,
+    /// Per-import row-parameter cache for exported row variables (`...e`).
+    /// Shared row tails in one imported signature must map to one synthetic
+    /// rigid parameter so call-site instantiation preserves sharing.
+    import_rowvar_cache: FxHashMap<u32, BindingId>,
+    /// Row-parameter caches captured during import predeclaration and replayed
+    /// when the corresponding import expression is lowered later.
+    import_rowvar_caches: FxHashMap<ImportKey, FxHashMap<u32, BindingId>>,
     /// For each import binding, the inference variables interned from its exported
     /// type parameters (`ImportedType::TyVar`) — the *only* vars to generalize.
     /// `Unknown` positions (un-exportable types) are deliberately excluded so they

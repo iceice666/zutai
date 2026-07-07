@@ -99,6 +99,81 @@ readFile "Cargo.toml"
 }
 
 #[test]
+fn granted_scoped_fs_host_effects_lower_to_host_ops() {
+    let parsed = zutai_syntax::parse(
+        r#"
+WriteTextRequest :: type { contents : Text; writer : Writer; };
+writeTextRequest :: Writer -> Text -> WriteTextRequest
+  = writer contents => { contents = contents; writer = writer; };
+roundTrip :: Path -> Text? ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+  = path => [
+    writer := perform fs.openWrite path;
+    wrote := perform fs.writeText (writeTextRequest writer "alpha\n");
+    flushed := perform fs.flush writer;
+    closedWriter := perform fs.closeWrite writer;
+    reader := perform fs.openRead path;
+    line := perform fs.readLine reader;
+    closedReader := perform fs.closeRead reader;
+    line
+  ];
+roundTrip "target/zutai-dataflow-scoped-fs.txt"
+"#,
+    );
+    assert!(
+        !parsed.has_errors(),
+        "parse errors: {:?}",
+        parsed.diagnostics()
+    );
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    assert!(
+        hir.diagnostics.is_empty(),
+        "HIR errors: {:?}",
+        hir.diagnostics
+    );
+    let thir = zutai_thir::lower_hir(&hir.file);
+    assert!(
+        thir.diagnostics.is_empty(),
+        "THIR errors: {:?}",
+        thir.diagnostics
+    );
+    let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file should be complete"));
+    try_lower_tlc(&tlc, &hir.file.bindings).expect_err("scoped fs ops need explicit host grants");
+    let grants = zutai_tlc::HostEffectSet::AMBIENT
+        .with(zutai_tlc::HostOp::FsOpenWrite)
+        .with(zutai_tlc::HostOp::FsWriteText)
+        .with(zutai_tlc::HostOp::FsFlush)
+        .with(zutai_tlc::HostOp::FsCloseWrite)
+        .with(zutai_tlc::HostOp::FsOpenRead)
+        .with(zutai_tlc::HostOp::FsReadLine)
+        .with(zutai_tlc::HostOp::FsCloseRead);
+    let graph = try_lower_tlc_with_host_grants(&tlc, &hir.file.bindings, grants)
+        .expect("granted scoped fs ops should lower");
+    for op in [
+        zutai_tlc::HostOp::FsOpenWrite,
+        zutai_tlc::HostOp::FsWriteText,
+        zutai_tlc::HostOp::FsFlush,
+        zutai_tlc::HostOp::FsCloseWrite,
+        zutai_tlc::HostOp::FsOpenRead,
+        zutai_tlc::HostOp::FsReadLine,
+        zutai_tlc::HostOp::FsCloseRead,
+    ] {
+        assert!(
+            graph.nodes.iter().any(|(_, node)| {
+                matches!(
+                    node.kind,
+                    DfNodeKind::HostOp {
+                        op: found,
+                        ..
+                    } if found == op
+                )
+            }),
+            "expected {op:?} HostOp in graph: {graph:#?}"
+        );
+    }
+    validate(&graph).expect("granted scoped fs graph should validate");
+}
+
+#[test]
 fn ambient_io_print_lowers_to_runtime_host_print() {
     let g = dc_of(r#"print "x""#);
     assert!(

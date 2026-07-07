@@ -1,0 +1,29 @@
+-- Whole-file compatibility wrapper example
+-- Usage: zutai-cli run examples/stdlib_fs_whole_file.zt
+-- `readAll` and `writeAll` stay source wrappers over existing fs.read/fs.write.
+
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
+
+WriteAllRequest :: type { contents : Text; path : Path; };
+
+outPath :: Path = "examples/stdlib_fs_whole_file.out";
+
+main :: { read : FsRead; write : FsWrite; } -> { bytes : Int; exact : Bool; mentionsSecond : Bool; } ! { fs.write : WriteAllRequest -> Unit; fs.read : Path -> Text; }
+  = caps => [
+    expected := "whole-file-one\nwhole-file-two\n";
+    wrote := fs.writeAll caps.write outPath expected;
+    [
+      wrote;
+      [
+        actual := fs.readAll caps.read outPath;
+        {
+          bytes = t.length actual;
+          exact = actual == expected;
+          mentionsSecond = t.contains "two" actual;
+        }
+      ]
+    ]
+  ];
+
+main

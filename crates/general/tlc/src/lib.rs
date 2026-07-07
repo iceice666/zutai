@@ -109,19 +109,133 @@ pub fn residual_effect_reason_with_grants(
     // inlining can leave an inlined-away callee's effectful function type orphaned
     // in the arena (la_arena never removes nodes); such dead types must not reject
     // a program whose live code is effect-free, matching the interpreter.
-    let reachable = crate::monomorphize::reachable_exprs(module);
-    if reachable.iter().any(|id| {
-        module.expr_types.get(id).is_some_and(|&ty| {
-            let mut seen = FxHashSet::default();
-            type_has_unsupported_effect(module, ty, grants, &mut seen)
-        })
-    }) {
+    let final_has_unsupported_type = module.final_expr.is_some_and(|expr| {
+        let mut visited = FxHashSet::default();
+        reachable_expr_type_has_unsupported_effect(module, expr, &mut visited, grants, true)
+    });
+    let decl_has_unsupported_type = module.decls.iter().any(|&decl_id| {
+        let TlcDecl::Value { body, .. } = module.decl_arena[decl_id] else {
+            return false;
+        };
+        let mut visited = FxHashSet::default();
+        reachable_expr_type_has_unsupported_effect(module, body, &mut visited, grants, true)
+    });
+    if final_has_unsupported_type || decl_has_unsupported_type {
         return Some(
             "unsupported effectful function types remain after TLC lowering; compile/dataflow effect lowering is not implemented yet or the host capability was not granted",
         );
     }
 
     None
+}
+
+fn reachable_expr_type_has_unsupported_effect(
+    module: &TlcModule,
+    id: TlcExprId,
+    visited: &mut FxHashSet<(TlcExprId, bool)>,
+    grants: HostEffectSet,
+    check_current_type: bool,
+) -> bool {
+    if !visited.insert((id, check_current_type)) {
+        return false;
+    }
+    if check_current_type
+        && !matches!(module.expr_arena[id], TlcExpr::Import(_))
+        && module.expr_types.get(&id).is_some_and(|&ty| {
+            let mut seen = FxHashSet::default();
+            type_has_unsupported_effect(module, ty, grants, &mut seen)
+        })
+    {
+        return true;
+    }
+
+    match &module.expr_arena[id] {
+        TlcExpr::Var(_) | TlcExpr::Lit(_) | TlcExpr::Import(_) => false,
+        TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) => {
+            reachable_expr_type_has_unsupported_effect(module, *body, visited, grants, true)
+        }
+        TlcExpr::TyApp(body, _) => {
+            reachable_expr_type_has_unsupported_effect(module, *body, visited, grants, false)
+        }
+        TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+            reachable_expr_type_has_unsupported_effect(module, *func, visited, grants, false)
+                || reachable_expr_type_has_unsupported_effect(module, *arg, visited, grants, true)
+        }
+        TlcExpr::Let { value, body, .. } => {
+            reachable_expr_type_has_unsupported_effect(module, *value, visited, grants, true)
+                || reachable_expr_type_has_unsupported_effect(module, *body, visited, grants, true)
+        }
+        TlcExpr::Letrec { bindings, body } => {
+            bindings.iter().any(|(_, _, value)| {
+                reachable_expr_type_has_unsupported_effect(module, *value, visited, grants, true)
+            }) || reachable_expr_type_has_unsupported_effect(module, *body, visited, grants, true)
+        }
+        TlcExpr::Case(scrutinee, alts) => {
+            reachable_expr_type_has_unsupported_effect(module, *scrutinee, visited, grants, true)
+                || alts.iter().any(|alt| {
+                    alt.guard.is_some_and(|guard| {
+                        reachable_expr_type_has_unsupported_effect(
+                            module, guard, visited, grants, true,
+                        )
+                    }) || reachable_expr_type_has_unsupported_effect(
+                        module, alt.body, visited, grants, true,
+                    )
+                })
+        }
+        TlcExpr::Record(fields) => fields.iter().any(|(_, value)| {
+            reachable_expr_type_has_unsupported_effect(module, *value, visited, grants, true)
+        }),
+        TlcExpr::RecordUpdate { receiver, fields } => {
+            reachable_expr_type_has_unsupported_effect(module, *receiver, visited, grants, true)
+                || fields.iter().any(|(_, value)| {
+                    reachable_expr_type_has_unsupported_effect(
+                        module, *value, visited, grants, true,
+                    )
+                })
+        }
+        TlcExpr::GetField(base, _) => {
+            reachable_expr_type_has_unsupported_effect(module, *base, visited, grants, false)
+        }
+        TlcExpr::Tuple(items) => items.iter().any(|item| match item {
+            TlcTupleItem::Named { value, .. } | TlcTupleItem::Positional(value) => {
+                reachable_expr_type_has_unsupported_effect(module, *value, visited, grants, true)
+            }
+        }),
+        TlcExpr::List(items) | TlcExpr::Sequence(items) => items.iter().any(|item| {
+            reachable_expr_type_has_unsupported_effect(module, *item, visited, grants, true)
+        }),
+        TlcExpr::Variant(_, payload) | TlcExpr::Resume { value: payload } => {
+            reachable_expr_type_has_unsupported_effect(module, *payload, visited, grants, true)
+        }
+        TlcExpr::Perform { arg, .. } => {
+            reachable_expr_type_has_unsupported_effect(module, *arg, visited, grants, true)
+        }
+        TlcExpr::Handle {
+            expr,
+            value,
+            finally,
+            ops,
+        } => {
+            reachable_expr_type_has_unsupported_effect(module, *expr, visited, grants, true)
+                || value.is_some_and(|value| {
+                    reachable_expr_type_has_unsupported_effect(module, value, visited, grants, true)
+                })
+                || finally.is_some_and(|finally| {
+                    reachable_expr_type_has_unsupported_effect(
+                        module, finally, visited, grants, true,
+                    )
+                })
+                || ops.iter().any(|clause| {
+                    reachable_expr_type_has_unsupported_effect(
+                        module,
+                        clause.body,
+                        visited,
+                        grants,
+                        true,
+                    )
+                })
+        }
+    }
 }
 
 fn row_has_unsupported_effect(row: &Row, grants: HostEffectSet) -> bool {
@@ -131,7 +245,10 @@ fn row_has_unsupported_effect(row: &Row, grants: HostEffectSet) -> bool {
             HostOp::from_name(label).is_none_or(|op| !grants.contains(op))
                 || row_has_unsupported_effect(tail, grants)
         }
-        Row::RVar(_) => true,
+        // Row variables are type-level openness, not runtime effects. Concrete
+        // residual `perform`/`handle` nodes are checked separately above, and
+        // concrete row entries still gate when the host capability is absent.
+        Row::RVar(_) => false,
     }
 }
 

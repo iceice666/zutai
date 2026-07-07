@@ -231,6 +231,10 @@ pub(super) fn value_type_name(v: &Value) -> &'static str {
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",
+        Value::HostHandle(handle) => match handle.kind {
+            HostHandleKind::Reader => "Reader",
+            HostHandleKind::Writer => "Writer",
+        },
         Value::WitnessDict(_) => "WitnessDict",
     }
 }

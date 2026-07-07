@@ -61,6 +61,13 @@ pub(crate) fn emit_runtime_decls(out: &mut String) {
     out.push_str("declare i64 @zutai.host.io_print(i64)\n");
     out.push_str("declare i64 @zutai.host.fs_read(i64)\n");
     out.push_str("declare i64 @zutai.host.fs_write(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_open_read(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_read_line(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_close_read(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_open_write(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_write_text(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_flush(i64)\n");
+    out.push_str("declare i64 @zutai.host.fs_close_write(i64)\n");
     out.push_str("declare i64 @zutai.host.env_get(i64)\n");
     out.push_str("declare i64 @zutai.host.clock_now(i64)\n");
     out.push_str("declare i64 @zutai.host.rng_next(i64)\n");

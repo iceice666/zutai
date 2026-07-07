@@ -102,6 +102,10 @@ The 2026-07-01 baseline adds native shared-library artifacts:
 `compile --emit=lib` links a platform shared library that exports raw, descriptor,
 and JSON entry points, with the JSON path backed by the runtime's descriptor
 walker and `serde_json`; see "Native library artifacts and JSON bridge" below.
+The 2026-07-07 baseline adds the scoped text filesystem IO slice: opaque
+`Reader`/`Writer` support types, explicit `stdlib.fs`, granted host operations
+for line readers and text writers, runtime handle tables, and render gates for
+opaque handles; see "Scoped filesystem IO foundation" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -231,6 +235,38 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Scoped filesystem IO foundation ✅
+
+_Completed 2026-07-07. Adds the first IO redesign slice: explicit text reader
+and writer handles without making filesystem access ambient._
+
+- `Reader` and `Writer` are seeded as opaque host support types. The CLI render
+  and JSON paths, native entry-type gate, evaluator JSON bridge, and `load.zt`
+  data export all reject opaque host handles as final data.
+- `stdlib.fs` is an explicit importable module exposing `openRead`, `readLine`,
+  `closeRead`, `openWrite`, `writeText`, `flush`, `closeWrite`, `withReader`,
+  `withWriter`, `readAll`, and `writeAll`. `readAll`/`writeAll` remain wrappers
+  over existing `fs.read`/`fs.write`; no new filesystem names are ambient.
+- THIR/TLC/Dataflow/SSA/codegen understand the new host operations and grant
+  mapping. Read operations require `FsRead`; write operations require `FsWrite`.
+  Existing whole-file `fs.read` / `fs.write`, dynamic load, and `io.print`
+  behavior are unchanged.
+- Native dependency lowering now runs the backend effect pass over imported TLC
+  modules, and `finally`-only brackets desugar without leaving empty residual
+  handlers. Programs importing `stdlib.fs` helper records, including
+  `withReader`/`withWriter`, lower natively to the scoped host-operation
+  boundary under explicit grants.
+- The native runtime stores `BufReader<File>` and `BufWriter<File>` in handle
+  tables. `readLine` returns `Text?`, strips one trailing LF plus optional CR,
+  reports invalid UTF-8 as a host-boundary error, and returns `#none` at EOF.
+  `writeText` writes bytes exactly, `flush` is explicit, and `closeWrite`
+  flushes before closing. Known double-close returns `Unit`; unknown ids error.
+- Verification: THIR effect-row tests, TLC grant gating, Dataflow validation,
+  evaluator scoped read/write tests, runtime handle-table/error tests, CLI
+  `stdlib.fs` bracket-helper run/check/LLVM tests, CLI direct-helper LLVM tests,
+  CLI opaque-output tests, and existing whole-file filesystem compatibility
+  tests.
 
 ### Native library artifacts and JSON bridge ✅
 

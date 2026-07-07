@@ -161,6 +161,13 @@ pub enum HostOp {
     IoPrint,
     FsRead,
     FsWrite,
+    FsOpenRead,
+    FsReadLine,
+    FsCloseRead,
+    FsOpenWrite,
+    FsWriteText,
+    FsFlush,
+    FsCloseWrite,
     EnvGet,
     ClockNow,
     RngNext,
@@ -173,10 +180,17 @@ pub enum HostOp {
     NetClose,
 }
 impl HostOp {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 20] = [
         Self::IoPrint,
         Self::FsRead,
         Self::FsWrite,
+        Self::FsOpenRead,
+        Self::FsReadLine,
+        Self::FsCloseRead,
+        Self::FsOpenWrite,
+        Self::FsWriteText,
+        Self::FsFlush,
+        Self::FsCloseWrite,
         Self::EnvGet,
         Self::ClockNow,
         Self::RngNext,
@@ -194,6 +208,13 @@ impl HostOp {
             Self::IoPrint => "io.print",
             Self::FsRead => "fs.read",
             Self::FsWrite => "fs.write",
+            Self::FsOpenRead => "fs.openRead",
+            Self::FsReadLine => "fs.readLine",
+            Self::FsCloseRead => "fs.closeRead",
+            Self::FsOpenWrite => "fs.openWrite",
+            Self::FsWriteText => "fs.writeText",
+            Self::FsFlush => "fs.flush",
+            Self::FsCloseWrite => "fs.closeWrite",
             Self::EnvGet => "env.get",
             Self::ClockNow => "clock.now",
             Self::RngNext => "rng.next",
@@ -209,8 +230,12 @@ impl HostOp {
     pub const fn capability_type(self) -> &'static str {
         match self {
             Self::IoPrint => "IoPrint",
-            Self::FsRead => "FsRead",
-            Self::FsWrite => "FsWrite",
+            Self::FsRead | Self::FsOpenRead | Self::FsReadLine | Self::FsCloseRead => "FsRead",
+            Self::FsWrite
+            | Self::FsOpenWrite
+            | Self::FsWriteText
+            | Self::FsFlush
+            | Self::FsCloseWrite => "FsWrite",
             Self::EnvGet => "Env",
             Self::ClockNow => "Clock",
             Self::RngNext => "Rng",
@@ -233,34 +258,41 @@ impl HostOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HostEffectSet(u16);
+pub struct HostEffectSet(u32);
 
 impl HostEffectSet {
     pub const EMPTY: Self = Self(0);
-    pub const AMBIENT: Self = Self(1 << HostOp::IoPrint as u16);
+    pub const AMBIENT: Self = Self(1 << HostOp::IoPrint as u32);
     pub const ALL: Self = Self(
-        (1 << HostOp::IoPrint as u16)
-            | (1 << HostOp::FsRead as u16)
-            | (1 << HostOp::FsWrite as u16)
-            | (1 << HostOp::EnvGet as u16)
-            | (1 << HostOp::ClockNow as u16)
-            | (1 << HostOp::RngNext as u16)
-            | (1 << HostOp::LoadZti as u16)
-            | (1 << HostOp::LoadZt as u16)
-            | (1 << HostOp::NetListen as u16)
-            | (1 << HostOp::NetAccept as u16)
-            | (1 << HostOp::NetRead as u16)
-            | (1 << HostOp::NetWrite as u16)
-            | (1 << HostOp::NetClose as u16),
+        (1 << HostOp::IoPrint as u32)
+            | (1 << HostOp::FsRead as u32)
+            | (1 << HostOp::FsWrite as u32)
+            | (1 << HostOp::FsOpenRead as u32)
+            | (1 << HostOp::FsReadLine as u32)
+            | (1 << HostOp::FsCloseRead as u32)
+            | (1 << HostOp::FsOpenWrite as u32)
+            | (1 << HostOp::FsWriteText as u32)
+            | (1 << HostOp::FsFlush as u32)
+            | (1 << HostOp::FsCloseWrite as u32)
+            | (1 << HostOp::EnvGet as u32)
+            | (1 << HostOp::ClockNow as u32)
+            | (1 << HostOp::RngNext as u32)
+            | (1 << HostOp::LoadZti as u32)
+            | (1 << HostOp::LoadZt as u32)
+            | (1 << HostOp::NetListen as u32)
+            | (1 << HostOp::NetAccept as u32)
+            | (1 << HostOp::NetRead as u32)
+            | (1 << HostOp::NetWrite as u32)
+            | (1 << HostOp::NetClose as u32),
     );
 
     pub fn with(mut self, op: HostOp) -> Self {
-        self.0 |= 1 << (op as u16);
+        self.0 |= 1 << (op as u32);
         self
     }
 
     pub fn contains(self, op: HostOp) -> bool {
-        self.0 & (1 << (op as u16)) != 0
+        self.0 & (1 << (op as u32)) != 0
     }
 }
 
@@ -461,7 +493,7 @@ pub enum TlcDecl {
 
 // ── Module ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TlcModule {
     pub decls: Vec<TlcDeclId>,
     pub decl_arena: Arena<TlcDecl>,

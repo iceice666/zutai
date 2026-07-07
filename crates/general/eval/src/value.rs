@@ -78,6 +78,8 @@ pub enum Value {
     },
     /// Internal missing-field sentinel, not the public Optional `#none` case.
     Nothing,
+    /// Opaque host resource handle used by explicit host effects.
+    HostHandle(HostHandle),
     /// A resolved constraint witness dictionary mapping method/operator name to
     /// the evaluated closure for that field.  Injected into the environment at
     /// bounded call sites so that method dispatch inside the body can fall back
@@ -94,6 +96,18 @@ pub enum Value {
         func: BuiltinFn,
         args: SmallVec<[Thunk; 2]>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostHandle {
+    pub kind: HostHandleKind,
+    pub id: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostHandleKind {
+    Reader,
+    Writer,
 }
 
 /// A compiler-provided builtin function. `print` is re-pointed to the
@@ -506,6 +520,9 @@ impl Value {
             Value::Text(s) => Ok(J::String(s.to_string())),
             Value::Atom(a) => Ok(J::String(format!("#{a}"))),
             Value::Nothing => Ok(J::Null),
+            Value::HostHandle(_) => Err(EvalError::Internal(
+                "cannot serialize opaque host handle to JSON",
+            )),
             Value::List(items) => {
                 let mut out = Vec::with_capacity(items.len());
                 for item in items.iter() {
@@ -689,6 +706,10 @@ fn runtime_value_type_name(v: &Value) -> &'static str {
         Value::TypeValue(_) => "Type",
         Value::TaggedValue { .. } => "TaggedValue",
         Value::Nothing => "Nothing",
+        Value::HostHandle(handle) => match handle.kind {
+            HostHandleKind::Reader => "Reader",
+            HostHandleKind::Writer => "Writer",
+        },
         Value::WitnessDict(_) => "WitnessDict",
     }
 }
@@ -736,6 +757,7 @@ impl PartialEq for Value {
             (Value::Text(a), Value::Text(b)) => a == b,
             (Value::Atom(a), Value::Atom(b)) => a == b,
             (Value::Nothing, Value::Nothing) => true,
+            (Value::HostHandle(a), Value::HostHandle(b)) => a == b,
             (Value::TypeValue(a), Value::TypeValue(b)) => a == b,
             (Value::List(a), Value::List(b)) => a.len() == b.len()
                 && a.iter().zip(b.iter()).all(
@@ -814,6 +836,9 @@ pub fn values_equal(
         (Value::Text(x), Value::Text(y)) => Ok(x == y),
         (Value::Atom(x), Value::Atom(y)) => Ok(x == y),
         (Value::Nothing, Value::Nothing) => Ok(true),
+        (Value::HostHandle(_), _) | (_, Value::HostHandle(_)) => Err(EvalError::Internal(
+            "equality on opaque host handle (unreachable in well-typed code)",
+        )),
         (Value::List(a), Value::List(b)) => {
             if a.len() != b.len() {
                 return Ok(false);
@@ -951,6 +976,10 @@ impl fmt::Display for Value {
             }
             Value::Atom(a) => write!(f, "#{a}"),
             Value::Nothing => write!(f, "#absent"),
+            Value::HostHandle(handle) => match handle.kind {
+                HostHandleKind::Reader => write!(f, "<Reader>"),
+                HostHandleKind::Writer => write!(f, "<Writer>"),
+            },
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, t) in items.iter().enumerate() {

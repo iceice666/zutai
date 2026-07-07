@@ -247,6 +247,74 @@ fn run_stream_generator_folds_codata_stream() {
 }
 
 #[test]
+fn run_rejects_reader_output_before_rendering() {
+    let path = write_tmp(
+        "cli_test_reader_output.zt",
+        r#"perform fs.openRead "ignored.txt""#,
+    );
+    cli()
+        .arg("run")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("opaque host handle"));
+}
+
+#[test]
+fn json_rejects_writer_output_before_serializing() {
+    let path = write_tmp(
+        "cli_test_writer_output.zt",
+        r#"perform fs.openWrite "ignored.txt""#,
+    );
+    cli()
+        .arg("json")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("opaque host handle"));
+}
+
+#[test]
+fn run_stdlib_fs_bracket_helpers_write_read_lines_and_eof() {
+    let data_path = write_tmp("cli_test_stdlib_fs_bracket_run.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+main :: {{ read : FsRead; write : FsWrite; }} -> Text ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }}
+  = caps => [
+    fs.withWriter caps.write "{}" (\writer. [
+      fs.writeText caps.write writer "one\n";
+      fs.writeText caps.write writer "two\n"
+    ]);
+    fs.withReader caps.read "{}" (\reader. [
+      first := fs.readLine caps.read reader;
+      second := fs.readLine caps.read reader;
+      eof := fs.readLine caps.read reader;
+      match first {{
+        | #some (a) => match second {{
+            | #some (b) => match eof {{
+                | #none => if a == "one" && b == "two" then "ok" else "bad-lines";
+                | #some (_) => "bad-eof";
+              }};
+            | #none => "bad-second";
+          }};
+        | #none => "bad-first";
+      }}
+    ])
+  ];
+main
+"#,
+        zt_string_literal(&data_path),
+        zt_string_literal(&data_path)
+    );
+    assert_eq!(
+        run_stdout("cli_test_stdlib_fs_bracket_run.zt", &source),
+        "\"ok\"\n"
+    );
+}
+
+#[test]
 fn real_examples_check_run_and_compile_match() {
     let cases = [
         (
@@ -276,6 +344,26 @@ fn real_examples_check_run_and_compile_match() {
                 "sourceHandlerDidNotCaptureCell = true",
                 "skippedMissingTail = true",
             ],
+        ),
+        (
+            "stdlib_fs_lines.zt",
+            [
+                "path = \"examples/stdlib_fs_lines.out\"",
+                "summary = \"alpha | beta | eof\"",
+                "alpha | beta",
+            ],
+        ),
+        (
+            "stdlib_fs_manual.zt",
+            [
+                "doubleCloseOk = true",
+                "summary = \"manual-one | manual-two\"",
+                "manual-one | manual-two",
+            ],
+        ),
+        (
+            "stdlib_fs_whole_file.zt",
+            ["exact = true", "mentionsSecond = true", "bytes = 30"],
         ),
     ];
 
@@ -4710,6 +4798,113 @@ main
         compile_bin_stdout("cli_test_cap_curried", &source),
         "\"curried\"\n"
     );
+}
+
+#[test]
+fn check_stdlib_fs_bracket_helpers_typecheck() {
+    let path = write_tmp("cli_test_stdlib_fs_bracket_typecheck.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+main :: {{ read : FsRead; write : FsWrite; }} -> Text? ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }}
+  = caps => [
+    wrote := fs.withWriter caps.write "{}" (\writer. [
+      first := fs.writeText caps.write writer "one\n";
+      fs.writeText caps.write writer "two\n"
+    ]);
+    fs.withReader caps.read "{}" (\reader. [
+      first := fs.readLine caps.read reader;
+      second := fs.readLine caps.read reader;
+      fs.readLine caps.read reader
+    ])
+  ];
+main
+"#,
+        zt_string_literal(&path),
+        zt_string_literal(&path)
+    );
+    check_passes("cli_test_stdlib_fs_bracket_typecheck.zt", &source);
+}
+
+#[test]
+fn compile_stdlib_fs_bracket_helpers_emit_scoped_host_ops() {
+    let path = write_tmp("cli_test_stdlib_fs_bracket_compile.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+main :: {{ read : FsRead; write : FsWrite; }} -> Text? ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }}
+  = caps => [
+    fs.withWriter caps.write "{}" (\writer. [
+      fs.writeText caps.write writer "one\n";
+      fs.writeText caps.write writer "two\n"
+    ]);
+    fs.withReader caps.read "{}" (\reader. [
+      first := fs.readLine caps.read reader;
+      second := fs.readLine caps.read reader;
+      fs.readLine caps.read reader
+    ])
+  ];
+main
+"#,
+        zt_string_literal(&path),
+        zt_string_literal(&path)
+    );
+    let llvm = compile_stdout("cli_test_stdlib_fs_bracket_compile.zt", &source);
+    for helper in [
+        "@zutai.host.fs_open_write",
+        "@zutai.host.fs_write_text",
+        "@zutai.host.fs_close_write",
+        "@zutai.host.fs_open_read",
+        "@zutai.host.fs_read_line",
+        "@zutai.host.fs_close_read",
+    ] {
+        assert!(llvm.contains(helper), "missing {helper} in:\n{llvm}");
+    }
+}
+
+#[test]
+fn compile_stdlib_fs_direct_helpers_emit_scoped_host_ops() {
+    let path = write_tmp("cli_test_stdlib_fs_direct_compile.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+WriteTextRequest :: type {{ contents : Text; writer : Writer; }};
+main :: {{ read : FsRead; write : FsWrite; }} -> Text? ! {{ fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }}
+  = caps => [
+    writer := fs.openWrite caps.write "{}";
+    closedWriter := [
+      fs.writeText caps.write writer "one\n";
+      fs.flush caps.write writer;
+      fs.closeWrite caps.write writer
+    ];
+    reader := fs.openRead caps.read "{}";
+    line := fs.readLine caps.read reader;
+    closedReader := fs.closeRead caps.read reader;
+    [
+      closedWriter;
+      closedReader;
+      line
+    ]
+  ];
+main
+"#,
+        zt_string_literal(&path),
+        zt_string_literal(&path)
+    );
+    let llvm = compile_stdout("cli_test_stdlib_fs_direct_compile.zt", &source);
+    for helper in [
+        "@zutai.host.fs_open_write",
+        "@zutai.host.fs_write_text",
+        "@zutai.host.fs_flush",
+        "@zutai.host.fs_close_write",
+        "@zutai.host.fs_open_read",
+        "@zutai.host.fs_read_line",
+        "@zutai.host.fs_close_read",
+    ] {
+        assert!(llvm.contains(helper), "missing {helper} in:\n{llvm}");
+    }
 }
 
 #[test]

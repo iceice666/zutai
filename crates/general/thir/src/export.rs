@@ -15,8 +15,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::BindingId;
 
-use crate::import::{ImportedField, ImportedTupleItem, ImportedType, ImportedUnionVariant};
-use crate::ir::{RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
+use crate::import::{
+    ImportedEffectOp, ImportedField, ImportedRowTail, ImportedTupleItem, ImportedType,
+    ImportedUnionVariant,
+};
+use crate::ir::{EffectRow, RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
 
 /// A type that cannot be exported across a module import in this phase.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +35,11 @@ const TYVAR_INFER_TAG: u32 = 1 << 31;
 /// Convert `ty` (a type in `file`'s arena) into a neutral [`ImportedType`].
 pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUnsupported> {
     let aliases = build_alias_map(file);
+    if has_opaque_data_leaf(file, &aliases, ty, false, &mut FxHashSet::default()) {
+        return Err(ExportUnsupported {
+            reason: "opaque host handles cannot cross a module boundary",
+        });
+    }
     let mut seen = FxHashSet::default();
     export(file, &aliases, ty, &mut seen)
 }
@@ -153,7 +161,7 @@ fn export_typecon_body(
         TypeKind::FixedNum(fw) => Ok(ImportedType::FixedNum(fw)),
         TypeKind::Text => Ok(ImportedType::Text),
         TypeKind::Posit(spec) => Ok(ImportedType::Posit(spec)),
-        TypeKind::Opaque(_) => Ok(ImportedType::Unknown),
+        TypeKind::Opaque(name) => Ok(ImportedType::Opaque(name)),
         TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
         TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export_typecon_body(
             file, aliases, inner, seen, subst,
@@ -224,13 +232,18 @@ fn export_typecon_body(
             from: Box::new(export_typecon_body(file, aliases, from, seen, subst)?),
             to: Box::new(export_typecon_body(file, aliases, to, seen, subst)?),
         }),
+        TypeKind::Effect { base, row } => Ok(ImportedType::Effect {
+            base: Box::new(export_typecon_body(file, aliases, base, seen, subst)?),
+            ops: export_effect_row_typecon_body(file, aliases, &row, seen, subst)?,
+            tail: export_row_tail(row.tail)?,
+        }),
         TypeKind::Type(_) => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
         TypeKind::AliasApply { .. }
         | TypeKind::Apply { .. }
         | TypeKind::Con(_)
         | TypeKind::Patch { .. } => Ok(ImportedType::Unknown),
-        TypeKind::Effect { .. } | TypeKind::Never => Err(ExportUnsupported {
-            reason: "effect types cannot cross a module boundary in this phase",
+        TypeKind::Never => Err(ExportUnsupported {
+            reason: "never types cannot cross a module boundary in this phase",
         }),
         TypeKind::Error => Err(ExportUnsupported {
             reason: "imported module has an unresolved type",
@@ -316,6 +329,138 @@ fn build_alias_map(file: &ThirFile) -> AliasMap {
     AliasMap { bodies, params }
 }
 
+fn export_effect_row_typecon_body(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    row: &EffectRow,
+    seen: &mut FxHashSet<BindingId>,
+    subst: &FxHashMap<BindingId, ImportedType>,
+) -> Result<Vec<ImportedEffectOp>, ExportUnsupported> {
+    row.ops
+        .iter()
+        .map(|op| {
+            Ok(ImportedEffectOp {
+                name: op.name.clone(),
+                param: export_typecon_body(file, aliases, op.param, seen, subst)?,
+                result: export_typecon_body(file, aliases, op.result, seen, subst)?,
+            })
+        })
+        .collect()
+}
+
+fn export_effect_row(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    row: &EffectRow,
+    seen: &mut FxHashSet<BindingId>,
+) -> Result<Vec<ImportedEffectOp>, ExportUnsupported> {
+    row.ops
+        .iter()
+        .map(|op| {
+            Ok(ImportedEffectOp {
+                name: op.name.clone(),
+                param: export(file, aliases, op.param, seen)?,
+                result: export(file, aliases, op.result, seen)?,
+            })
+        })
+        .collect()
+}
+
+fn export_row_tail(tail: RowTail) -> Result<ImportedRowTail, ExportUnsupported> {
+    match tail {
+        RowTail::Closed => Ok(ImportedRowTail::Closed),
+        RowTail::Open => Ok(ImportedRowTail::Open),
+        RowTail::Param(binding) => Ok(ImportedRowTail::Param(binding.0 & !TYVAR_INFER_TAG)),
+        RowTail::Infer(_) => Err(ExportUnsupported {
+            reason: "unresolved row variable in exported type",
+        }),
+    }
+}
+
+fn has_opaque_data_leaf(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    ty: TypeId,
+    under_function: bool,
+    seen: &mut FxHashSet<TypeId>,
+) -> bool {
+    if !seen.insert(ty) {
+        return false;
+    }
+    match file.type_arena[ty.0 as usize].kind.clone() {
+        TypeKind::Opaque(_) => !under_function,
+        TypeKind::Alias(binding) => aliases
+            .bodies
+            .get(&binding)
+            .is_some_and(|body| has_opaque_data_leaf(file, aliases, *body, under_function, seen)),
+        TypeKind::AliasApply { binding, args } => {
+            if let (Some(params), Some(body)) =
+                (aliases.params.get(&binding), aliases.bodies.get(&binding))
+            {
+                let mut subst = FxHashMap::default();
+                for (param, arg) in params.iter().copied().zip(args) {
+                    subst.insert(param, arg);
+                }
+                has_opaque_data_leaf_subst(file, aliases, *body, under_function, seen, &subst)
+            } else {
+                args.into_iter()
+                    .any(|arg| has_opaque_data_leaf(file, aliases, arg, under_function, seen))
+            }
+        }
+        TypeKind::List(inner)
+        | TypeKind::Optional(inner)
+        | TypeKind::Maybe(inner)
+        | TypeKind::Patch { target: inner, .. } => {
+            has_opaque_data_leaf(file, aliases, inner, under_function, seen)
+        }
+        TypeKind::Record(fields, _) => fields
+            .iter()
+            .any(|field| has_opaque_data_leaf(file, aliases, field.ty, under_function, seen)),
+        TypeKind::Tuple(items) => items.iter().any(|item| {
+            let inner = match item {
+                TypeTupleItem::Named { ty, .. } | TypeTupleItem::Positional(ty) => *ty,
+            };
+            has_opaque_data_leaf(file, aliases, inner, under_function, seen)
+        }),
+        TypeKind::Union(variants, _) => variants.iter().any(|variant| {
+            variant.payload.is_some_and(|payload| {
+                has_opaque_data_leaf(file, aliases, payload, under_function, seen)
+            })
+        }),
+        TypeKind::Function { from, to } => {
+            has_opaque_data_leaf(file, aliases, from, true, seen)
+                || has_opaque_data_leaf(file, aliases, to, true, seen)
+        }
+        TypeKind::Effect { base, row } => {
+            has_opaque_data_leaf(file, aliases, base, under_function, seen)
+                || row.ops.iter().any(|op| {
+                    has_opaque_data_leaf(file, aliases, op.param, true, seen)
+                        || has_opaque_data_leaf(file, aliases, op.result, true, seen)
+                })
+        }
+        TypeKind::ForAll { body, .. } => {
+            has_opaque_data_leaf(file, aliases, body, under_function, seen)
+        }
+        _ => false,
+    }
+}
+
+fn has_opaque_data_leaf_subst(
+    file: &ThirFile,
+    aliases: &AliasMap,
+    ty: TypeId,
+    under_function: bool,
+    seen: &mut FxHashSet<TypeId>,
+    subst: &FxHashMap<BindingId, TypeId>,
+) -> bool {
+    match file.type_arena[ty.0 as usize].kind.clone() {
+        TypeKind::TypeVar(binding) => subst
+            .get(&binding)
+            .is_some_and(|arg| has_opaque_data_leaf(file, aliases, *arg, under_function, seen)),
+        _ => has_opaque_data_leaf(file, aliases, ty, under_function, seen),
+    }
+}
+
 fn export(
     file: &ThirFile,
     aliases: &AliasMap,
@@ -331,7 +476,7 @@ fn export(
         TypeKind::FixedNum(fw) => Ok(ImportedType::FixedNum(fw)),
         TypeKind::Posit(spec) => Ok(ImportedType::Posit(spec)),
         TypeKind::Text => Ok(ImportedType::Text),
-        TypeKind::Opaque(_) => Ok(ImportedType::Unknown),
+        TypeKind::Opaque(name) => Ok(ImportedType::Opaque(name)),
         TypeKind::Atom(name) => Ok(ImportedType::Atom(name)),
         TypeKind::List(inner) => Ok(ImportedType::List(Box::new(export(
             file, aliases, inner, seen,
@@ -442,6 +587,11 @@ fn export(
             from: Box::new(export(file, aliases, from, seen)?),
             to: Box::new(export(file, aliases, to, seen)?),
         }),
+        TypeKind::Effect { base, row } => Ok(ImportedType::Effect {
+            base: Box::new(export(file, aliases, base, seen)?),
+            ops: export_effect_row(file, aliases, &row, seen)?,
+            tail: export_row_tail(row.tail)?,
+        }),
         // `Type` has no payload — the denotation is recovered separately by
         // the semantic layer from the module's final-expression value (the
         // `ThirExprKind::TypeValue(tid)` for that field).  Here we emit a bare
@@ -449,8 +599,8 @@ fn export(
         // semantic crate overwrites it with the real denotation after walking
         // the final expression.
         TypeKind::Type(_) => Ok(ImportedType::Type(Box::new(ImportedType::Unknown))),
-        TypeKind::Effect { .. } | TypeKind::Never => Err(ExportUnsupported {
-            reason: "effect types cannot cross a module boundary in this phase",
+        TypeKind::Never => Err(ExportUnsupported {
+            reason: "never types cannot cross a module boundary in this phase",
         }),
         TypeKind::Error => Err(ExportUnsupported {
             reason: "imported module has an unresolved type",

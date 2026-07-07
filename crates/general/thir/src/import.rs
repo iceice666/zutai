@@ -31,6 +31,7 @@ pub enum ImportedType {
     FixedNum(FixedWidth),
     Posit(PositSpec),
     Text,
+    Opaque(String),
     Atom(String),
     List(Box<ImportedType>),
     Optional(Box<ImportedType>),
@@ -44,6 +45,13 @@ pub enum ImportedType {
     Function {
         from: Box<ImportedType>,
         to: Box<ImportedType>,
+    },
+    /// Effectful computation type (`A ! { op : P -> R; ...e; }`) nested inside
+    /// an imported function signature.
+    Effect {
+        base: Box<ImportedType>,
+        ops: Vec<ImportedEffectOp>,
+        tail: ImportedRowTail,
     },
     /// A type-value field carrying its denotation.  Enables annotation-position
     /// use (`x : serverLib.Server`) by threading the concrete type through the
@@ -97,6 +105,20 @@ pub struct ImportedField {
     pub name: String,
     pub optional: bool,
     pub ty: ImportedType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedEffectOp {
+    pub name: String,
+    pub param: ImportedType,
+    pub result: ImportedType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportedRowTail {
+    Closed,
+    Open,
+    Param(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]

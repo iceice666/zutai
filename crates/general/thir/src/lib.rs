@@ -17,7 +17,9 @@ mod tests;
 
 pub use diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 pub use export::{ExportUnsupported, export_type, export_type_value};
-pub use import::{ImportKey, ImportedField, ImportedTupleItem, ImportedType};
+pub use import::{
+    ImportKey, ImportedEffectOp, ImportedField, ImportedRowTail, ImportedTupleItem, ImportedType,
+};
 pub use ir::{
     EffectOp, EffectRow, FixedWidth, Kind, RowTail, ThirClause, ThirConstraintMethod, ThirDecl,
     ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind, ThirFile, ThirHandleClause,

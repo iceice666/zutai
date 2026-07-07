@@ -29,10 +29,15 @@ impl<'hir> Lowerer<'hir> {
             };
 
             self.import_tyvar_cache.clear();
+            self.import_rowvar_cache.clear();
             // Imported parametric constructors are defined here (once); the later
             // re-intern when the `Import` expr is lowered must not redefine them.
             self.current_import_decl = Some(*decl_id);
             let ty = self.intern_imported_type_with_source(&desc, Some(source), decl.span);
+            if !self.import_rowvar_cache.is_empty() {
+                self.import_rowvar_caches
+                    .insert(source.clone(), self.import_rowvar_cache.clone());
+            }
             self.current_import_decl = None;
             self.value_types.insert(decl.binding, ty);
             self.binding_import_key.insert(decl.binding, source.clone());

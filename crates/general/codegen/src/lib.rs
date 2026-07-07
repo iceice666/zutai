@@ -66,6 +66,45 @@ fn emit_llvm_artifact(module: &SsaModule, artifact: ArtifactKind) -> String {
 
 /// Return why the module's entry value cannot be rendered by the native ABI.
 pub fn unsupported_entry_type_reason(module: &SsaModule) -> Option<&'static str> {
+    fn contains_opaque(
+        types: &DfTypes,
+        ty: &DfTy,
+        seen: &mut rustc_hash::FxHashSet<DfTyId>,
+    ) -> bool {
+        match ty {
+            DfTy::Opaque(_) => true,
+            DfTy::List(inner) | DfTy::Optional(inner) | DfTy::Maybe(inner) => {
+                seen.insert(*inner) && contains_opaque(types, &types[*inner], seen)
+            }
+            DfTy::Record(fields) => fields.iter().any(|field| {
+                seen.insert(field.ty) && contains_opaque(types, &types[field.ty], seen)
+            }),
+            DfTy::Union(variants) => variants.iter().any(|variant| {
+                seen.insert(variant.ty) && contains_opaque(types, &types[variant.ty], seen)
+            }),
+            DfTy::Tuple(fields) => fields.iter().any(|field| {
+                let ty = match field {
+                    DfTupleField::Named { ty, .. } | DfTupleField::Positional(ty) => *ty,
+                };
+                seen.insert(ty) && contains_opaque(types, &types[ty], seen)
+            }),
+            DfTy::Fun(from, to) => {
+                (seen.insert(*from) && contains_opaque(types, &types[*from], seen))
+                    || (seen.insert(*to) && contains_opaque(types, &types[*to], seen))
+            }
+            DfTy::TyFun(_, body) => {
+                seen.insert(*body) && contains_opaque(types, &types[*body], seen)
+            }
+            DfTy::TyApp(func, args) => {
+                (seen.insert(*func) && contains_opaque(types, &types[*func], seen))
+                    || args
+                        .iter()
+                        .any(|arg| seen.insert(*arg) && contains_opaque(types, &types[*arg], seen))
+            }
+            _ => false,
+        }
+    }
+
     match &module.entry_ty {
         DfTy::Fun(_, _) => Some(
             "compiled entry point returns a function, which cannot be shown by the v0 runtime ABI",
@@ -73,6 +112,9 @@ pub fn unsupported_entry_type_reason(module: &SsaModule) -> Option<&'static str>
         DfTy::Type => {
             Some("compiled entry point returns Type, which cannot be shown by the v0 runtime ABI")
         }
+        ty if contains_opaque(&module.types, ty, &mut rustc_hash::FxHashSet::default()) => Some(
+            "compiled entry point returns an opaque host handle, which cannot be shown by the v0 runtime ABI",
+        ),
         _ => None,
     }
 }

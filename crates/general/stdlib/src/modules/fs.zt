@@ -1,0 +1,37 @@
+-- Scoped filesystem helpers over explicit host capabilities.
+-- Explicit import only: `fs ::= import stdlib.fs`; these names are not ambient.
+WriteTextRequest :: type { contents : Text; writer : Writer; };
+WriteAllRequest :: type { contents : Text; path : Path; };
+writeTextRequest :: Writer -> Text -> WriteTextRequest
+  = writer contents => { contents = contents; writer = writer; };
+writeAllRequest :: Path -> Text -> WriteAllRequest
+  = path contents => { contents = contents; path = path; };
+openRead :: FsRead -> Path -> Reader ! { fs.openRead : Path -> Reader; }
+  = fs path => perform fs.openRead path;
+readLine :: FsRead -> Reader -> Text? ! { fs.readLine : Reader -> Text?; }
+  = fs reader => perform fs.readLine reader;
+closeRead :: FsRead -> Reader -> Unit ! { fs.closeRead : Reader -> Unit; }
+  = fs reader => perform fs.closeRead reader;
+openWrite :: FsWrite -> Path -> Writer ! { fs.openWrite : Path -> Writer; }
+  = fs path => perform fs.openWrite path;
+writeText :: FsWrite -> Writer -> Text -> Unit ! { fs.writeText : WriteTextRequest -> Unit; }
+  = fs writer contents => perform fs.writeText (writeTextRequest writer contents);
+flush :: FsWrite -> Writer -> Unit ! { fs.flush : Writer -> Unit; }
+  = fs writer => perform fs.flush writer;
+closeWrite :: FsWrite -> Writer -> Unit ! { fs.closeWrite : Writer -> Unit; }
+  = fs writer => perform fs.closeWrite writer;
+withReader :: <A, e> FsRead -> Path -> (Reader -> A ! { fs.readLine : Reader -> Text?; ...e; }) -> A ! { fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; ...e; }
+  = fs path body => [
+    reader := openRead fs path;
+    handle body reader with { finally = closeRead fs reader; }
+  ];
+withWriter :: <A, e> FsWrite -> Path -> (Writer -> A ! { fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; ...e; }) -> A ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; ...e; }
+  = fs path body => [
+    writer := openWrite fs path;
+    handle body writer with { finally = closeWrite fs writer; }
+  ];
+readAll :: FsRead -> Path -> Text ! { fs.read : Path -> Text; }
+  = fs path => perform fs.read path;
+writeAll :: FsWrite -> Path -> Text -> Unit ! { fs.write : WriteAllRequest -> Unit; }
+  = fs path contents => perform fs.write (writeAllRequest path contents);
+{ openRead = openRead; readLine = readLine; closeRead = closeRead; openWrite = openWrite; writeText = writeText; flush = flush; closeWrite = closeWrite; withReader = withReader; withWriter = withWriter; readAll = readAll; writeAll = writeAll; }

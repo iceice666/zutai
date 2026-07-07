@@ -184,6 +184,28 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
 
+            (TypeKind::Alias(b1), TypeKind::Alias(b2)) if b1 == b2 => {}
+
+            (TypeKind::Alias(binding), _) => {
+                if !seen_alias_pairs.insert((binding, binding)) {
+                    return;
+                }
+                match self.aliases.get(&binding).copied() {
+                    Some(body) => self.unify_inner(body, t2, span, seen_alias_pairs),
+                    None => self.type_mismatch(t1, t2, span),
+                }
+            }
+
+            (_, TypeKind::Alias(binding)) => {
+                if !seen_alias_pairs.insert((binding, binding)) {
+                    return;
+                }
+                match self.aliases.get(&binding).copied() {
+                    Some(body) => self.unify_inner(t1, body, span, seen_alias_pairs),
+                    None => self.type_mismatch(t1, t2, span),
+                }
+            }
+
             (TypeKind::Function { from: f1, to: r1 }, TypeKind::Function { from: f2, to: r2 }) => {
                 self.unify_inner(f1, f2, span, seen_alias_pairs);
                 self.unify_inner(r1, r2, span, seen_alias_pairs);

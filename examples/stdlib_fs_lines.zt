@@ -1,0 +1,56 @@
+-- Scoped filesystem line IO example
+-- Usage: zutai-cli run examples/stdlib_fs_lines.zt
+-- Writes two text lines, reads them back with bracket helpers, and confirms EOF.
+
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
+
+WriteTextRequest :: type { contents : Text; writer : Writer; };
+
+outPath :: Path = "examples/stdlib_fs_lines.out";
+
+lineOr :: Text -> Text? -> Text
+  = fallback value => match value {
+    | #some (line) => line;
+    | #none => fallback;
+  };
+
+isNone :: Text? -> Bool
+  = value => match value {
+    | #none => true;
+    | #some (_) => false;
+  };
+
+writeLines :: FsWrite -> Writer -> Unit ! { fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; }
+  = cap writer => [
+    fs.writeText cap writer "alpha\n";
+    fs.writeText cap writer "beta\n";
+    fs.flush cap writer
+  ];
+
+readSummary :: FsRead -> Reader -> Text ! { fs.readLine : Reader -> Text?; }
+  = cap reader => [
+    first := fs.readLine cap reader;
+    second := fs.readLine cap reader;
+    eof := fs.readLine cap reader;
+    t.join " | " {
+      lineOr "<missing>" first;
+      lineOr "<missing>" second;
+      if isNone eof then "eof" else "extra";
+    }
+  ];
+
+main :: { read : FsRead; write : FsWrite; } -> { path : Text; summary : Text; } ! { fs.openWrite : Path -> Writer; fs.writeText : WriteTextRequest -> Unit; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; fs.openRead : Path -> Reader; fs.readLine : Reader -> Text?; fs.closeRead : Reader -> Unit; }
+  = caps => [
+    wrote := fs.withWriter caps.write outPath (writeLines caps.write);
+    summary := [
+      wrote;
+      fs.withReader caps.read outPath (readSummary caps.read)
+    ];
+    {
+      path = "examples/stdlib_fs_lines.out";
+      summary = summary;
+    }
+  ];
+
+main

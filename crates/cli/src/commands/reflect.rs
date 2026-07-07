@@ -291,6 +291,7 @@ pub(super) fn value_to_source(value: &zutai_eval::Value) -> Option<String> {
         | zutai_eval::Value::TypeValue(_)
         | zutai_eval::Value::WitnessDict(_)
         | zutai_eval::Value::TlcClosure(_)
+        | zutai_eval::Value::HostHandle(_)
         | zutai_eval::Value::Builtin(_)
         | zutai_eval::Value::BuiltinPartial { .. } => None,
     }
@@ -327,6 +328,7 @@ pub(super) fn value_contains_type(value: &zutai_eval::Value) -> bool {
         | zutai_eval::Value::Closure(_)
         | zutai_eval::Value::WitnessDict(_)
         | zutai_eval::Value::TlcClosure(_)
+        | zutai_eval::Value::HostHandle(_)
         | zutai_eval::Value::Builtin(_)
         | zutai_eval::Value::BuiltinPartial { .. } => false,
     }

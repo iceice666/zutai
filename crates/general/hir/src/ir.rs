@@ -57,7 +57,7 @@ pub const HOST_CAPABILITY_TYPE_NAMES: &[&str] = &[
 /// Standard support type names needed by v2 host operation signatures. `Path`
 /// and `Instant` are represented as `Text` at runtime in the v2 implementation;
 /// `Unit` is the existing empty tuple type.
-pub const HOST_SUPPORT_TYPE_NAMES: &[&str] = &["Unit", "Path", "Instant"];
+pub const HOST_SUPPORT_TYPE_NAMES: &[&str] = &["Unit", "Path", "Instant", "Reader", "Writer"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingId(pub u32);

@@ -7,7 +7,7 @@
 //! it desugars to
 //!
 //! ```text
-//! let r = (handle expr with { value = v; op = … }) in [ t; r ]
+//! let r = (handle expr with { value = v; op = … }) in [ r; t; r ]
 //! ```
 //!
 //! The inner `handle` (now without `finally`) is elaborated/reified by the normal
@@ -62,17 +62,26 @@ impl TlcModule {
             let result_ty = self.expr_types[&handle_id];
             let span = self.spans.get(&handle_id).copied().unwrap_or_default();
 
-            // Inner handle without the finally clause.
-            let inner = self.expr_arena.alloc(TlcExpr::Handle {
-                expr,
-                value,
-                finally: None,
-                ops,
-            });
-            self.expr_types.insert(inner, result_ty);
-            self.spans.insert(inner, span);
+            // Inner computation without the finally clause. A finally-only
+            // handle has no operation or value behavior, so avoid creating an
+            // empty residual `Handle` node that the backend would later reject.
+            let inner = if ops.is_empty() && value.is_none() {
+                expr
+            } else {
+                let inner = self.expr_arena.alloc(TlcExpr::Handle {
+                    expr,
+                    value,
+                    finally: None,
+                    ops,
+                });
+                self.expr_types.insert(inner, result_ty);
+                self.spans.insert(inner, span);
+                inner
+            };
 
-            // r : result; body = [ teardown; r ].
+            // r : result; body = [ r; teardown; r ]. The leading `r` forces
+            // the handled callback value to settle before teardown. The final
+            // `r` returns the memoized result after cleanup.
             let r = loop {
                 let b = BindingId(next_fresh);
                 next_fresh = next_fresh.saturating_sub(1);
@@ -80,12 +89,15 @@ impl TlcModule {
                     break b;
                 }
             };
-            let r_var = self.expr_arena.alloc(TlcExpr::Var(r));
-            self.expr_types.insert(r_var, result_ty);
-            self.spans.insert(r_var, span);
-            let seq = self
-                .expr_arena
-                .alloc(TlcExpr::Sequence(vec![teardown, r_var]));
+            let force_r_var = self.expr_arena.alloc(TlcExpr::Var(r));
+            self.expr_types.insert(force_r_var, result_ty);
+            self.spans.insert(force_r_var, span);
+            let result_r_var = self.expr_arena.alloc(TlcExpr::Var(r));
+            self.expr_types.insert(result_r_var, result_ty);
+            self.spans.insert(result_r_var, span);
+            let seq =
+                self.expr_arena
+                    .alloc(TlcExpr::Sequence(vec![force_r_var, teardown, result_r_var]));
             self.expr_types.insert(seq, result_ty);
             self.spans.insert(seq, span);
 
