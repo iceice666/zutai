@@ -240,6 +240,34 @@ Eff :: <e> type Unit ! { ...FsRead; ...e; };
 }
 
 #[test]
+fn v1_effect_row_qualified_spread_before_tail_parses() {
+    let f = parse_str(
+        r#"
+Eff :: <e> type Unit ! { ...fs.ReadEffects; ...e; };
+1
+"#,
+    );
+    let Decl::TypeAlias { ty, .. } = decl_by(&f, "Eff") else {
+        panic!("expected type alias");
+    };
+    let TypeExpr::Effect { effects, .. } = ty else {
+        panic!("expected effect type");
+    };
+    assert_eq!(effects.spreads.len(), 1);
+    let RowTail::Qualified { path, .. } = &effects.spreads[0] else {
+        panic!("expected qualified spread, got {:?}", effects.spreads[0]);
+    };
+    assert_eq!(
+        path.iter().map(String::as_str).collect::<Vec<_>>(),
+        ["fs", "ReadEffects"]
+    );
+    assert!(matches!(
+        effects.tail.as_ref(),
+        Some(RowTail::Named { name, .. }) if name == "e"
+    ));
+}
+
+#[test]
 fn v1_effect_row_requires_operation_separators() {
     assert!(parse("parse :: Text -> Config ! { fail ParseError warn Diagnostic }\n  = text => text;\nparse").has_errors());
 }

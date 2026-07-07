@@ -244,10 +244,10 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 _Completed 2026-07-07. Adds source ergonomics for large effect rows without
 changing the effect checker's operation model._
 
-- Effect rows now accept named effect-type spreads before the final row tail,
-  e.g. `! { ...ReadEffects; ...e; }`. HIR preserves spread items separately from
-  the final tail, and THIR expands only spreads that resolve to named effect
-  type aliases.
+- Effect rows now accept named and qualified effect-type spreads before the
+  final row tail, e.g. `! { ...ReadEffects; ...fs.ReadEffects; ...e; }`. HIR
+  preserves spread items separately from the final tail, and THIR expands only
+  spreads that resolve to effect type aliases.
 - Non-final anonymous/open row tails are rejected precisely, non-effect spreads
   report `effect-row spread requires a named effect type`, and spread overlaps
   with already-listed operations report the spread source plus existing/incoming
@@ -257,8 +257,9 @@ changing the effect checker's operation model._
   `WholeFile A`. The filesystem examples use those aliases instead of carrying
   seven-operation rows inline; network examples use local effect aliases.
 - Verification: syntax effect-row spread parsing, HIR spread resolution, THIR
-  spread expansion/composition/rejection tests, `stdlib.fs` check, and updated
-  example checks for filesystem, host-stream, and network examples.
+  spread expansion/composition/rejection tests including imported qualified
+  spreads with open tails, `stdlib.fs` check, and updated example checks for
+  filesystem, host-stream, and network examples.
 
 ### Scoped filesystem IO foundation ✅
 

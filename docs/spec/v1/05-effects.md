@@ -33,19 +33,22 @@ No `!` suffix means the function is pure and cannot perform effects.
 
 An effect row contains operation names. Operation names may be plain identifiers or dotted capability operation names. Operations may use compact standard aliases such as `fail ParseError`, or explicit operation types such as `fs.read : Path -> Text`.
 
-Effect rows may also spread a named effect type alias. This keeps larger rows
-readable while preserving the same checked operation set:
+Effect rows may also spread a named effect type alias, including a qualified
+type alias exported by an imported module. This keeps larger rows readable while
+preserving the same checked operation set:
 
 ```zt
 FsReadEffects :: type Unit ! { fs.read : Path -> Text; };
 FsWriteEffects :: type Unit ! { fs.write : WriteAllRequest -> Unit; };
 FsFileEffects :: type Unit ! { ...FsReadEffects; ...FsWriteEffects; };
+LogEffects :: type Unit ! { log Text; };
+fs ::= import stdlib.fs;
 
-loadAndLog :: Path -> Text ! { ...FsReadEffects; log Text; }
+loadAndLog :: Path -> Text ! { ...fs.WholeReadEffects; ...LogEffects; }
 ```
 
-A final open row tail can still follow named spreads for row-polymorphic
-signatures:
+A final open row tail can still follow named or qualified spreads for
+row-polymorphic signatures:
 
 ```zt
 withRead :: <A, e> (Path -> A ! { ...FsReadEffects; ...e; }) -> A ! { ...FsReadEffects; ...e; }

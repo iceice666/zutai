@@ -128,6 +128,45 @@ f
 }
 
 #[test]
+fn effect_row_qualified_spread_lowers_to_type_access() {
+    let lowered = lower(
+        r#"
+fs ::= import stdlib.fs;
+f :: <e> (Int ! { ...fs.WriteTextEffects; ...e; }) -> Int
+  = x => x;
+f
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
+    let HirDeclKind::Function { sig: Some(sig), .. } = &decl.kind else {
+        panic!("expected Function, got {:?}", decl.kind);
+    };
+    let HirTypeKind::Arrow { from, .. } = type_kind(&lowered.file, *sig) else {
+        panic!("expected Arrow sig");
+    };
+    let HirTypeKind::Effect { row, .. } = type_kind(&lowered.file, *from) else {
+        panic!("expected an effectful parameter type");
+    };
+    assert_eq!(row.spreads.len(), 1);
+    let HirRowTailKind::QualifiedSpread { ty, source } = &row.spreads[0].kind else {
+        panic!(
+            "qualified imported type must lower to a qualified spread, got {:?}",
+            row.spreads[0].kind
+        );
+    };
+    assert_eq!(source, "fs.WriteTextEffects");
+    let HirTypeKind::Access { field, .. } = type_kind(&lowered.file, *ty) else {
+        panic!("expected type access for qualified spread");
+    };
+    assert_eq!(field, "WriteTextEffects");
+    assert!(matches!(
+        row.tail.as_ref().map(|t| &t.kind),
+        Some(HirRowTailKind::Var(_))
+    ));
+}
+
+#[test]
 fn named_union_row_tail_resolves_to_type_alias_as_spread() {
     let lowered =
         lower("Shape :: type { #dev; #test; };\nOpen :: type { ...Shape; #prod; };\nOpen");

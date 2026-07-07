@@ -55,8 +55,53 @@ impl Lowerer {
                     HirRowTailKind::Unresolved(name.clone())
                 }
             },
+            ast::RowTail::Qualified { path, .. } => HirRowTailKind::QualifiedSpread {
+                ty: self.lower_qualified_row_spread(path, span),
+                source: path.join("."),
+            },
         };
         HirRowTail { kind, span }
+    }
+
+    fn lower_qualified_row_spread(&mut self, path: &[String], span: Span) -> HirTypeId {
+        let Some(first) = path.first() else {
+            return self.alloc_type(HirTypeExpr {
+                kind: HirTypeKind::UnresolvedIdent(String::new()),
+                span,
+            });
+        };
+        let head = match self.resolve(first) {
+            Some(binding) if self.bindings[binding.0 as usize].kind == BindingKind::LevelParam => {
+                self.diagnostics.push(HirDiagnostic {
+                    kind: HirDiagnosticKind::LevelVarAsType {
+                        name: first.clone(),
+                    },
+                    span,
+                });
+                HirTypeKind::UnresolvedIdent(first.clone())
+            }
+            Some(binding) => HirTypeKind::BindingRef(binding),
+            None => {
+                self.diagnostics.push(HirDiagnostic {
+                    kind: HirDiagnosticKind::UnknownIdentifier {
+                        name: first.clone(),
+                    },
+                    span,
+                });
+                HirTypeKind::UnresolvedIdent(first.clone())
+            }
+        };
+        let mut current = self.alloc_type(HirTypeExpr { kind: head, span });
+        for field in &path[1..] {
+            current = self.alloc_type(HirTypeExpr {
+                kind: HirTypeKind::Access {
+                    receiver: current,
+                    field: field.clone(),
+                },
+                span,
+            });
+        }
+        current
     }
 
     pub(super) fn lower_pattern(&mut self, pattern: &ast::Pattern) -> HirPatId {

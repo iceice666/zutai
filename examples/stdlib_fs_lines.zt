@@ -5,8 +5,6 @@
 fs ::= import stdlib.fs;
 t ::= import stdlib.text;
 
-WriteTextEffects :: type fs.WriteTextEffects;
-
 outPath :: Path = "examples/stdlib_fs_lines.out";
 
 lineOr :: Text -> Text? -> Text
@@ -21,7 +19,7 @@ isNone :: Text? -> Bool
     | #some (_) => false;
   };
 
-writeLines :: FsWrite -> Writer -> Unit ! { ...WriteTextEffects; fs.flush : Writer -> Unit; }
+writeLines :: FsWrite -> Writer -> Unit ! { ...fs.WriteTextEffects; fs.flush : Writer -> Unit; }
   = cap writer => [
     fs.writeText cap writer "alpha\n";
     fs.writeText cap writer "beta\n";

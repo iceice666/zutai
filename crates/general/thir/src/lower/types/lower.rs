@@ -364,7 +364,22 @@ impl<'hir> Lowerer<'hir> {
     fn lower_effect_row_spread(&mut self, spread: &HirRowTail, ops: &mut Vec<EffectOp>) {
         match &spread.kind {
             HirRowTailKind::Spread(binding) => {
-                let tail = self.expand_effect_row_spread(*binding, spread.span, ops);
+                let source = self.binding_name(*binding).to_string();
+                let spread_ty = self.alias_or_builtin_type(*binding, spread.span);
+                let tail = self.expand_effect_row_spread_type(source, spread_ty, spread.span, ops);
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "effect-row spread with an open tail must be the final row tail",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowTailKind::QualifiedSpread { ty, source } => {
+                let spread_ty = self.lower_type(*ty);
+                let tail =
+                    self.expand_effect_row_spread_type(source.clone(), spread_ty, spread.span, ops);
                 if tail != RowTail::Closed {
                     self.diagnostics.push(ThirDiagnostic {
                         kind: ThirDiagnosticKind::InvalidTypeExpression {
@@ -402,19 +417,24 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
             HirRowTailKind::Spread(binding) => {
-                self.expand_effect_row_spread(*binding, tail.span, ops)
+                let source = self.binding_name(*binding).to_string();
+                let spread_ty = self.alias_or_builtin_type(*binding, tail.span);
+                self.expand_effect_row_spread_type(source, spread_ty, tail.span, ops)
+            }
+            HirRowTailKind::QualifiedSpread { ty, source } => {
+                let spread_ty = self.lower_type(*ty);
+                self.expand_effect_row_spread_type(source.clone(), spread_ty, tail.span, ops)
             }
         }
     }
 
-    fn expand_effect_row_spread(
+    fn expand_effect_row_spread_type(
         &mut self,
-        binding: BindingId,
+        source: String,
+        spread: TypeId,
         span: Span,
         ops: &mut Vec<EffectOp>,
     ) -> RowTail {
-        let source = self.hir.bindings[binding.0 as usize].name.clone();
-        let spread = self.alias_or_builtin_type(binding, span);
         let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), span);
         match self.ty(resolved).kind.clone() {
             TypeKind::Effect { row, .. } => {
@@ -487,44 +507,56 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
             HirRowTailKind::Spread(binding) => {
-                let source = self.hir.bindings[binding.0 as usize].name.clone();
+                let source = self.binding_name(*binding).to_string();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
-                let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), tail.span);
-                match self.ty(resolved).kind.clone() {
-                    TypeKind::Record(spread_fields, spread_tail) => {
-                        for sf in spread_fields {
-                            if let Some(existing) =
-                                fields.iter().find(|f| f.name == sf.name).cloned()
-                            {
-                                let existing = self.record_field_type_name(&existing);
-                                let incoming = self.record_field_type_name(&sf);
-                                self.diagnostics.push(ThirDiagnostic {
-                                    kind: ThirDiagnosticKind::OverlappingRowField {
-                                        item: RowOverlapItem::RecordField,
-                                        source: source.clone(),
-                                        name: sf.name.clone(),
-                                        existing,
-                                        incoming,
-                                    },
-                                    span: tail.span,
-                                });
-                            } else {
-                                fields.push(sf);
-                            }
-                        }
-                        spread_tail
-                    }
-                    TypeKind::Error => RowTail::Closed,
-                    _ => {
+                self.expand_record_row_spread_type(source, spread, tail.span, fields)
+            }
+            HirRowTailKind::QualifiedSpread { ty, source } => {
+                let spread = self.lower_type(*ty);
+                self.expand_record_row_spread_type(source.clone(), spread, tail.span, fields)
+            }
+        }
+    }
+
+    fn expand_record_row_spread_type(
+        &mut self,
+        source: String,
+        spread: TypeId,
+        span: Span,
+        fields: &mut Vec<TypeRecordField>,
+    ) -> RowTail {
+        let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), span);
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Record(spread_fields, spread_tail) => {
+                for sf in spread_fields {
+                    if let Some(existing) = fields.iter().find(|f| f.name == sf.name).cloned() {
+                        let existing = self.record_field_type_name(&existing);
+                        let incoming = self.record_field_type_name(&sf);
                         self.diagnostics.push(ThirDiagnostic {
-                            kind: ThirDiagnosticKind::InvalidTypeExpression {
-                                reason: "record spread requires a record type",
+                            kind: ThirDiagnosticKind::OverlappingRowField {
+                                item: RowOverlapItem::RecordField,
+                                source: source.clone(),
+                                name: sf.name.clone(),
+                                existing,
+                                incoming,
                             },
-                            span: tail.span,
+                            span,
                         });
-                        RowTail::Closed
+                    } else {
+                        fields.push(sf);
                     }
                 }
+                spread_tail
+            }
+            TypeKind::Error => RowTail::Closed,
+            _ => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason: "record spread requires a record type",
+                    },
+                    span,
+                });
+                RowTail::Closed
             }
         }
     }
@@ -542,44 +574,56 @@ impl<'hir> Lowerer<'hir> {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
             HirRowTailKind::Spread(binding) => {
-                let source = self.hir.bindings[binding.0 as usize].name.clone();
+                let source = self.binding_name(*binding).to_string();
                 let spread = self.alias_or_builtin_type(*binding, tail.span);
-                let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), tail.span);
-                match self.ty(resolved).kind.clone() {
-                    TypeKind::Union(spread_variants, spread_tail) => {
-                        for sv in spread_variants {
-                            if let Some(existing) =
-                                variants.iter().find(|v| v.name == sv.name).cloned()
-                            {
-                                let existing = self.union_variant_type_name(&existing);
-                                let incoming = self.union_variant_type_name(&sv);
-                                self.diagnostics.push(ThirDiagnostic {
-                                    kind: ThirDiagnosticKind::OverlappingRowField {
-                                        item: RowOverlapItem::UnionMember,
-                                        source: source.clone(),
-                                        name: sv.name.clone(),
-                                        existing,
-                                        incoming,
-                                    },
-                                    span: tail.span,
-                                });
-                            } else {
-                                variants.push(sv);
-                            }
-                        }
-                        spread_tail
-                    }
-                    TypeKind::Error => RowTail::Closed,
-                    _ => {
+                self.expand_union_row_spread_type(source, spread, tail.span, variants)
+            }
+            HirRowTailKind::QualifiedSpread { ty, source } => {
+                let spread = self.lower_type(*ty);
+                self.expand_union_row_spread_type(source.clone(), spread, tail.span, variants)
+            }
+        }
+    }
+
+    fn expand_union_row_spread_type(
+        &mut self,
+        source: String,
+        spread: TypeId,
+        span: Span,
+        variants: &mut Vec<UnionVariant>,
+    ) -> RowTail {
+        let resolved = self.resolve_alias(spread, &mut FxHashSet::default(), span);
+        match self.ty(resolved).kind.clone() {
+            TypeKind::Union(spread_variants, spread_tail) => {
+                for sv in spread_variants {
+                    if let Some(existing) = variants.iter().find(|v| v.name == sv.name).cloned() {
+                        let existing = self.union_variant_type_name(&existing);
+                        let incoming = self.union_variant_type_name(&sv);
                         self.diagnostics.push(ThirDiagnostic {
-                            kind: ThirDiagnosticKind::InvalidTypeExpression {
-                                reason: "union spread requires a union type",
+                            kind: ThirDiagnosticKind::OverlappingRowField {
+                                item: RowOverlapItem::UnionMember,
+                                source: source.clone(),
+                                name: sv.name.clone(),
+                                existing,
+                                incoming,
                             },
-                            span: tail.span,
+                            span,
                         });
-                        RowTail::Closed
+                    } else {
+                        variants.push(sv);
                     }
                 }
+                spread_tail
+            }
+            TypeKind::Error => RowTail::Closed,
+            _ => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::InvalidTypeExpression {
+                        reason: "union spread requires a union type",
+                    },
+                    span,
+                });
+                RowTail::Closed
             }
         }
     }

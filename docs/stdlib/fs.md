@@ -35,9 +35,8 @@ render/JSON gates and native entry gate.
 | `WholeFile A` | Combined whole-file read/write row. |
 
 Closed operation packs such as `ScopedReadWriteEffects` are exported for
-composition with `...Pack` row spreads. Row spreads currently name simple local
-aliases, so bind a short alias first when composing an imported pack:
-`LocalEffects :: type fs.ScopedReadWriteEffects;`.
+composition with row spreads, including qualified imported spreads such as
+`...fs.ScopedReadWriteEffects;`.
 
 ## API
 

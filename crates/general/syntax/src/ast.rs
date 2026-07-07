@@ -569,12 +569,15 @@ pub struct TypeRecordField {
 pub enum RowTail {
     Anonymous { span: Span },
     Named { name: String, span: Span },
+    Qualified { path: Vec<String>, span: Span },
 }
 
 impl RowTail {
     pub fn span(&self) -> Span {
         match self {
-            RowTail::Anonymous { span } | RowTail::Named { span, .. } => *span,
+            RowTail::Anonymous { span }
+            | RowTail::Named { span, .. }
+            | RowTail::Qualified { span, .. } => *span,
         }
     }
 }

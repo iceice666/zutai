@@ -865,6 +865,86 @@ handle (forward (\_. perform tick ()) ()) with { tick = \_. resume 5; }
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 }
 
+fn lower_with_fs_write_text_import(src: &str) -> LoweredThir {
+    let parsed = zutai_syntax::parse(src);
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
+
+    let mut imports = rustc_hash::FxHashMap::default();
+    imports.insert(
+        zutai_hir::HirImportSource::Path(vec!["stdlib".to_string(), "fs".to_string()]),
+        ImportedType::WithTypeExports {
+            value: Box::new(ImportedType::Record(vec![])),
+            types: vec![ImportedField {
+                name: "WriteTextEffects".to_string(),
+                optional: false,
+                ty: ImportedType::Type(Box::new(ImportedType::Effect {
+                    base: Box::new(ImportedType::Tuple(vec![])),
+                    ops: vec![ImportedEffectOp {
+                        name: "fs.writeText".to_string(),
+                        param: ImportedType::Text,
+                        result: ImportedType::Tuple(vec![]),
+                    }],
+                    tail: ImportedRowTail::Closed,
+                })),
+            }],
+        },
+    );
+    lower_hir_with_options(
+        &hir.file,
+        ThirLowerOptions {
+            imports,
+            ..ThirLowerOptions::default()
+        },
+    )
+}
+
+#[test]
+fn effect_row_spread_of_imported_effect_type_expands() {
+    let lowered = lower_with_fs_write_text_import(
+        r#"
+fs ::= import stdlib.fs;
+f :: Int -> Int ! { ...fs.WriteTextEffects; }
+  = x => x;
+f
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let file = lowered.file.expect("valid THIR should be produced");
+    let row = file.type_arena.iter().find_map(|ty| match &ty.kind {
+        TypeKind::Effect { row, .. } if row.find("fs.writeText").is_some() => Some(row),
+        _ => None,
+    });
+    assert!(row.is_some(), "expected imported fs.writeText effect row");
+}
+
+#[test]
+fn imported_effect_row_spread_composes_with_open_tail() {
+    let lowered = lower_with_fs_write_text_import(
+        r#"
+fs ::= import stdlib.fs;
+forward :: <e> (Unit -> Int ! { ...fs.WriteTextEffects; ...e; }) -> Unit -> Int ! { ...fs.WriteTextEffects; ...e; }
+  = f => f;
+forward
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let file = lowered.file.expect("valid THIR should be produced");
+    let row = file.type_arena.iter().find_map(|ty| match &ty.kind {
+        TypeKind::Effect { row, .. }
+            if row.find("fs.writeText").is_some() && matches!(row.tail, RowTail::Param(_)) =>
+        {
+            Some(row)
+        }
+        _ => None,
+    });
+    assert!(
+        row.is_some(),
+        "expected imported fs.writeText effect row with open tail"
+    );
+}
+
 #[test]
 fn effect_row_spread_of_named_effect_type_expands() {
     let file = completed_file(

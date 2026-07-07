@@ -795,6 +795,9 @@ fn write_row_tail(f: &mut fmt::Formatter<'_>, tail: Option<&RowTail>, indent: &s
     match tail {
         Some(RowTail::Anonymous { .. }) => writeln!(f, "{indent}└─ ..."),
         Some(RowTail::Named { name, .. }) => writeln!(f, "{indent}└─ ...{name}"),
+        Some(RowTail::Qualified { path, .. }) => {
+            writeln!(f, "{indent}└─ ...{}", path.join("."))
+        }
         None => Ok(()),
     }
 }

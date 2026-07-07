@@ -472,6 +472,9 @@ pub enum HirRowTailKind {
     Var(BindingId),
     /// Spread `...Shape` of a named record/union type into this row.
     Spread(BindingId),
+    /// Qualified spread such as `...m.Shape`, lowered as a type-position
+    /// access expression so THIR can resolve imported type exports.
+    QualifiedSpread { ty: HirTypeId, source: String },
     /// `...Name` whose `Name` did not resolve to a type parameter or a type.
     Unresolved(String),
 }

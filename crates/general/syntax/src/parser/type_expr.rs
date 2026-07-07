@@ -564,10 +564,27 @@ fn parse_type_union_positional_payload(input: &mut &str) -> Result<TypeExpr> {
 fn parse_row_tail(input: &mut &str) -> Result<RowTail> {
     let (_, start_span) = spanned("...").parse_next(input)?;
     if let Ok((name, name_span)) = spanned(parse_ident).parse_next(input) {
-        return Ok(RowTail::Named {
-            name,
-            span: start_span.merge(name_span),
-        });
+        let mut path = vec![name];
+        let mut span = start_span.merge(name_span);
+        loop {
+            let checkpoint = *input;
+            ws(input)?;
+            if input.starts_with('.') && !input.starts_with("..") {
+                '.'.parse_next(input)?;
+                ws(input)?;
+                let (field, field_span) = spanned(parse_field_name).parse_next(input)?;
+                path.push(field);
+                span = span.merge(field_span);
+            } else {
+                *input = checkpoint;
+                break;
+            }
+        }
+        if path.len() > 1 {
+            return Ok(RowTail::Qualified { path, span });
+        }
+        let name = path.pop().expect("path contains first segment");
+        return Ok(RowTail::Named { name, span });
     }
     Ok(RowTail::Anonymous { span: start_span })
 }
