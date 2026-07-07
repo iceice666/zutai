@@ -961,6 +961,21 @@ pub extern "C" fn list_cons(head: i64, tail: i64) -> i64 {
     p as i64
 }
 
+#[unsafe(export_name = "zutai.list_append")]
+pub extern "C" fn list_append(xs: i64, ys: i64) -> i64 {
+    let mut heads = Vec::new();
+    let mut cur = xs;
+    while list_is_nil(cur) == 0 {
+        heads.push(list_head(cur));
+        cur = list_tail(cur);
+    }
+    let mut out = ys;
+    for head in heads.into_iter().rev() {
+        out = list_cons(head, out);
+    }
+    out
+}
+
 /// `1` (Bool true) for the nil sentinel, `0` for a cons cell. Backs the
 /// `listIsNil` bridge primitive; the result is a plain untagged-i64 Bool.
 #[unsafe(export_name = "zutai.list_is_nil")]

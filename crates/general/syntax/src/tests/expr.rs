@@ -130,8 +130,8 @@ fn parse_record_value() {
     let e = parse_expr_str("{ host = \"localhost\"; port = 8080; }");
     let fields = as_record(&e);
     assert_eq!(fields.len(), 2);
-    assert_eq!(as_str_val(field_val(fields, "host")), "localhost");
-    assert_eq!(as_int(field_val(fields, "port")), 8080);
+    assert_eq!(as_str_val(field_val(&fields, "host")), "localhost");
+    assert_eq!(as_int(field_val(&fields, "port")), 8080);
 }
 
 #[test]
@@ -149,8 +149,8 @@ fn parse_record_field_pun() {
     let e = parse_expr_str("{ host =; port =; }");
     let fields = as_record(&e);
     assert_eq!(fields.len(), 2);
-    assert_eq!(as_ident(field_val(fields, "host")), "host");
-    assert_eq!(as_ident(field_val(fields, "port")), "port");
+    assert_eq!(as_ident(field_val(&fields, "host")), "host");
+    assert_eq!(as_ident(field_val(&fields, "port")), "port");
 }
 
 #[test]
@@ -167,8 +167,8 @@ fn parse_record_field_pun_mixed_with_explicit() {
     let e = parse_expr_str("{ host =; port = 8080; }");
     let fields = as_record(&e);
     assert_eq!(fields.len(), 2);
-    assert_eq!(as_ident(field_val(fields, "host")), "host");
-    assert_eq!(as_int(field_val(fields, "port")), 8080);
+    assert_eq!(as_ident(field_val(&fields, "host")), "host");
+    assert_eq!(as_int(field_val(&fields, "port")), 8080);
 }
 
 #[test]
@@ -196,8 +196,8 @@ fn parse_list_value() {
     let e = parse_expr_str("{1; 2; 3;}");
     let items = as_list(&e);
     assert_eq!(items.len(), 3);
-    assert_eq!(as_int(&items[0]), 1);
-    assert_eq!(as_int(&items[2]), 3);
+    assert_eq!(as_int(items[0]), 1);
+    assert_eq!(as_int(items[2]), 3);
 }
 
 #[test]

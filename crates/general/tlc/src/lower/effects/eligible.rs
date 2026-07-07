@@ -65,6 +65,10 @@ impl<'module> EffectElaborator<'module> {
                 self.handler_clause_is_elaboratable(*lhs, parent_handlers)
                     && self.handler_clause_is_elaboratable(*rhs, parent_handlers)
             }
+            TlcExpr::ListAppend(left, right) => {
+                self.handler_clause_is_elaboratable(*left, parent_handlers)
+                    && self.handler_clause_is_elaboratable(*right, parent_handlers)
+            }
             TlcExpr::Sequence(items) | TlcExpr::List(items) => items
                 .iter()
                 .all(|item| self.handler_clause_is_elaboratable(*item, parent_handlers)),
@@ -193,7 +197,9 @@ impl<'module> EffectElaborator<'module> {
             TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
                 self.handler_clause_contains_resume(*body)
             }
-            TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+            TlcExpr::App(func, arg)
+            | TlcExpr::Builtin(_, func, arg)
+            | TlcExpr::ListAppend(func, arg) => {
                 self.handler_clause_contains_resume(*func)
                     || self.handler_clause_contains_resume(*arg)
             }
@@ -293,6 +299,15 @@ impl<'module> EffectElaborator<'module> {
                 self.expr_is_elaboratable_handle_body(*lhs, ops, parent_handlers, saw_perform)
                     && self.expr_is_elaboratable_handle_body(
                         *rhs,
+                        ops,
+                        parent_handlers,
+                        saw_perform,
+                    )
+            }
+            TlcExpr::ListAppend(left, right) => {
+                self.expr_is_elaboratable_handle_body(*left, ops, parent_handlers, saw_perform)
+                    && self.expr_is_elaboratable_handle_body(
+                        *right,
                         ops,
                         parent_handlers,
                         saw_perform,
@@ -422,6 +437,10 @@ impl<'module> EffectElaborator<'module> {
             }),
             TlcExpr::Builtin(_, lhs, rhs) => {
                 self.expr_is_direct_sequence_safe(*lhs) && self.expr_is_direct_sequence_safe(*rhs)
+            }
+            TlcExpr::ListAppend(left, right) => {
+                self.expr_is_direct_sequence_safe(*left)
+                    && self.expr_is_direct_sequence_safe(*right)
             }
             TlcExpr::Var(_) | TlcExpr::Lit(_) | TlcExpr::Import(_) => true,
         }

@@ -677,7 +677,7 @@ fn diagnostic_polish_record_spread_overlap_shows_existing_and_incoming() {
     let lowered = lower(
         r#"
 Base :: type { host : Text; port : Int; };
-Bad :: type { host : Int; ...Base; };
+Bad :: type { host : Int; * Base; };
 Bad
 "#,
     );
@@ -694,6 +694,72 @@ Bad
             && existing == "host : Int"
             && incoming == "host : Text"
     )));
+}
+
+#[test]
+fn value_record_spread_typechecks_with_closed_record() {
+    completed_file(
+        r#"
+base ::= { host = "h"; port = 80; };
+copy :: { host : Text; port : Int; } = { * base; port = 8080; };
+copy
+"#,
+    );
+}
+
+#[test]
+fn value_record_spread_rejects_open_row_operand() {
+    let lowered = lower(
+        r#"
+copy :: <Rest> { host : Text; ...Rest; } -> { host : Text; }
+  = x => { * x; };
+copy
+"#,
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::InvalidTypeExpression { reason }
+                if *reason == "record value spread requires a closed record type"
+        )),
+        "{:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn value_record_spread_checks_projected_field_types() {
+    let lowered = lower(
+        r#"
+base ::= { port = "bad"; };
+x :: { port : Int; } = { * base; };
+x
+"#,
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Text"
+        )),
+        "{:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn value_list_spread_typechecks_and_rejects_non_list_operand() {
+    completed_file("xs ::= {2; 3;};\nys :: List Int = {1; * xs; 4;};\nys");
+
+    let lowered = lower("bad :: List Int = {1; * 2;};\nbad");
+    assert!(
+        lowered.diagnostics.iter().any(
+            |d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected.starts_with("List") && found == "Int")
+        ),
+        "{:?}",
+        lowered.diagnostics
+    );
 }
 
 #[test]
@@ -731,13 +797,13 @@ fn union_spread_merges_members_into_new_union() {
     // `Shape3D` spreads `Shape`; `#a` only type-checks against it if the spread
     // merged `Shape`'s members.
     completed_file(
-        "Shape :: type { #a; #b; };\nShape3D :: type { ...Shape; #c; };\nx :: Shape3D = #a;\nx",
+        "Shape :: type { #a; #b; };\nShape3D :: type { * Shape; #c; };\nx :: Shape3D = #a;\nx",
     );
 }
 
 #[test]
 fn diagnostic_polish_union_spread_overlap_shows_existing_and_incoming() {
-    let lowered = lower("Shape :: type { #a; #b; };\nBad :: type { #a; ...Shape; };\nBad");
+    let lowered = lower("Shape :: type { #a; #b; };\nBad :: type { #a; * Shape; };\nBad");
     assert!(lowered.diagnostics.iter().any(|d| matches!(
         &d.kind,
         ThirDiagnosticKind::OverlappingRowField {
@@ -914,7 +980,7 @@ fn effect_row_spread_of_imported_effect_type_expands() {
     let lowered = lower_with_fs_write_text_import(
         r#"
 fs ::= import stdlib.fs;
-f :: Int -> Int ! { ...fs.WriteTextEffects; }
+f :: Int -> Int ! { * fs.WriteTextEffects; }
   = x => x;
 f
 "#,
@@ -933,7 +999,7 @@ fn imported_effect_row_spread_composes_with_open_tail() {
     let lowered = lower_with_fs_write_text_import(
         r#"
 fs ::= import stdlib.fs;
-forward :: <e> (Unit -> Int ! { ...fs.WriteTextEffects; ...e; }) -> Unit -> Int ! { ...fs.WriteTextEffects; ...e; }
+forward :: <e> (Unit -> Int ! { * fs.WriteTextEffects; ...e; }) -> Unit -> Int ! { * fs.WriteTextEffects; ...e; }
   = f => f;
 forward
 "#,
@@ -959,7 +1025,7 @@ fn effect_row_spread_of_named_effect_type_expands() {
     let file = completed_file(
         r#"
 ReadPack :: type Unit ! { fs.read : Path -> Text; };
-f :: Path -> Text ! { ...ReadPack; }
+f :: Path -> Text ! { * ReadPack; }
   = path => perform fs.read path;
 f
 "#,
@@ -976,7 +1042,7 @@ fn effect_row_spread_can_compose_with_row_variable_tail() {
     let lowered = lower(
         r#"
 ReadPack :: type Unit ! { fs.read : Path -> Text; };
-forward :: <e> (Unit -> Text ! { ...ReadPack; ...e; }) -> Unit -> Text ! { ...ReadPack; ...e; }
+forward :: <e> (Unit -> Text ! { * ReadPack; ...e; }) -> Unit -> Text ! { * ReadPack; ...e; }
   = f => f;
 forward
 "#,
@@ -989,7 +1055,7 @@ fn effect_row_spread_of_non_effect_type_is_refused() {
     let lowered = lower(
         r#"
 Shape :: type { a : Int; };
-f :: Int -> Int ! { ...Shape; }
+f :: Int -> Int ! { * Shape; }
   = x => x;
 f
 "#,

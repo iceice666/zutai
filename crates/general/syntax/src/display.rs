@@ -1,8 +1,9 @@
 use std::fmt;
 
 use crate::ast::{
-    Decl, Expr, File, FuncClause, GenStmt, ImportSource, Level, Pattern, PipelineDir, RowTail,
-    TupleItem, TuplePatternItem, TypeExpr, TypeParam, TypeTupleItem,
+    Decl, Expr, File, FuncClause, GenStmt, ImportSource, Level, ListItem, Pattern, PipelineDir,
+    RecordItem, RowSpread, RowTail, TupleItem, TuplePatternItem, TypeExpr, TypeParam,
+    TypeTupleItem,
 };
 
 impl fmt::Display for File {
@@ -178,15 +179,23 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             write_expr(f, payload, &format!("{indent}└─ "), &format!("{indent}   "))
         }
         Expr::Ident { name, .. } => writeln!(f, "{prefix}Ident({name})"),
-        Expr::Record { fields, .. } => {
+        Expr::Record { items, .. } => {
             writeln!(f, "{prefix}Record")?;
-            for field in fields {
-                write_expr(
-                    f,
-                    &field.value,
-                    &format!("{indent}├─ {}: ", field.name),
-                    &format!("{indent}│  "),
-                )?;
+            for item in items {
+                match item {
+                    RecordItem::Field(field) => write_expr(
+                        f,
+                        &field.value,
+                        &format!("{indent}├─ {}: ", field.name),
+                        &format!("{indent}│  "),
+                    )?,
+                    RecordItem::Spread(spread) => write_expr(
+                        f,
+                        &spread.value,
+                        &format!("{indent}├─ * "),
+                        &format!("{indent}│  "),
+                    )?,
+                }
             }
             Ok(())
         }
@@ -230,7 +239,29 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
         Expr::List { items, .. } => {
             writeln!(f, "{prefix}List")?;
             for item in items {
-                write_expr(f, item, &format!("{indent}├─ "), &format!("{indent}│  "))?;
+                match item {
+                    ListItem::Item(expr) => {
+                        write_expr(f, expr, &format!("{indent}├─ "), &format!("{indent}│  "))?
+                    }
+                    ListItem::Spread(spread) => write_expr(
+                        f,
+                        &spread.value,
+                        &format!("{indent}├─ * "),
+                        &format!("{indent}│  "),
+                    )?,
+                }
+            }
+            Ok(())
+        }
+        Expr::SpreadOnly { spreads, .. } => {
+            writeln!(f, "{prefix}SpreadOnly")?;
+            for spread in spreads {
+                write_expr(
+                    f,
+                    &spread.value,
+                    &format!("{indent}├─ * "),
+                    &format!("{indent}│  "),
+                )?;
             }
             Ok(())
         }
@@ -600,8 +631,16 @@ fn write_type_expr(
         TypeExpr::Atom { name, .. } => writeln!(f, "{prefix}TyAtom(#{name})"),
         TypeExpr::True(_) => writeln!(f, "{prefix}TyTrue"),
         TypeExpr::False(_) => writeln!(f, "{prefix}TyFalse"),
-        TypeExpr::Record { fields, tail, .. } => {
+        TypeExpr::Record {
+            fields,
+            spreads,
+            tail,
+            ..
+        } => {
             writeln!(f, "{prefix}TyRecord")?;
+            for spread in spreads {
+                write_row_spread(f, spread, indent)?;
+            }
             for field in fields {
                 let opt = if field.optional { "?" } else { "" };
                 write_type_expr(
@@ -613,8 +652,16 @@ fn write_type_expr(
             }
             write_row_tail(f, tail.as_ref(), indent)
         }
-        TypeExpr::Union { variants, tail, .. } => {
+        TypeExpr::Union {
+            variants,
+            spreads,
+            tail,
+            ..
+        } => {
             writeln!(f, "{prefix}TyUnion")?;
+            for spread in spreads {
+                write_row_spread(f, spread, indent)?;
+            }
             for v in variants {
                 if let Some(payload) = &v.payload {
                     write_type_expr(
@@ -795,9 +842,13 @@ fn write_row_tail(f: &mut fmt::Formatter<'_>, tail: Option<&RowTail>, indent: &s
     match tail {
         Some(RowTail::Anonymous { .. }) => writeln!(f, "{indent}└─ ..."),
         Some(RowTail::Named { name, .. }) => writeln!(f, "{indent}└─ ...{name}"),
-        Some(RowTail::Qualified { path, .. }) => {
-            writeln!(f, "{indent}└─ ...{}", path.join("."))
-        }
         None => Ok(()),
+    }
+}
+
+fn write_row_spread(f: &mut fmt::Formatter<'_>, spread: &RowSpread, indent: &str) -> fmt::Result {
+    match spread {
+        RowSpread::Named { name, .. } => writeln!(f, "{indent}├─ * {name}"),
+        RowSpread::Qualified { path, .. } => writeln!(f, "{indent}├─ * {}", path.join(".")),
     }
 }

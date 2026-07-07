@@ -7,21 +7,21 @@ writeTextRequest :: Writer -> Text -> WriteTextRequest
 writeAllRequest :: Path -> Text -> WriteAllRequest
   = path contents => { contents = contents; path = path; };
 ReadLineEffects :: type Unit ! { fs.readLine : Reader -> Text?; };
-ScopedReadEffects :: type Unit ! { fs.openRead : Path -> Reader; ...ReadLineEffects; fs.closeRead : Reader -> Unit; };
+ScopedReadEffects :: type Unit ! { fs.openRead : Path -> Reader; * ReadLineEffects; fs.closeRead : Reader -> Unit; };
 WriteTextEffects :: type Unit ! { fs.writeText : WriteTextRequest -> Unit; };
-ScopedWriteEffects :: type Unit ! { fs.openWrite : Path -> Writer; ...WriteTextEffects; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; };
-ScopedReadWriteEffects :: type Unit ! { ...ScopedReadEffects; ...ScopedWriteEffects; };
+ScopedWriteEffects :: type Unit ! { fs.openWrite : Path -> Writer; * WriteTextEffects; fs.flush : Writer -> Unit; fs.closeWrite : Writer -> Unit; };
+ScopedReadWriteEffects :: type Unit ! { * ScopedReadEffects; * ScopedWriteEffects; };
 WholeReadEffects :: type Unit ! { fs.read : Path -> Text; };
 WholeWriteEffects :: type Unit ! { fs.write : WriteAllRequest -> Unit; };
-WholeFileEffects :: type Unit ! { ...WholeReadEffects; ...WholeWriteEffects; };
-ReadLine :: <A> type A ! { ...ReadLineEffects; };
-WriteText :: <A> type A ! { ...WriteTextEffects; };
-ScopedRead :: <A> type A ! { ...ScopedReadEffects; };
-ScopedWrite :: <A> type A ! { ...ScopedWriteEffects; };
-ScopedReadWrite :: <A> type A ! { ...ScopedReadWriteEffects; };
-WholeRead :: <A> type A ! { ...WholeReadEffects; };
-WholeWrite :: <A> type A ! { ...WholeWriteEffects; };
-WholeFile :: <A> type A ! { ...WholeFileEffects; };
+WholeFileEffects :: type Unit ! { * WholeReadEffects; * WholeWriteEffects; };
+ReadLine :: <A> type A ! { * ReadLineEffects; };
+WriteText :: <A> type A ! { * WriteTextEffects; };
+ScopedRead :: <A> type A ! { * ScopedReadEffects; };
+ScopedWrite :: <A> type A ! { * ScopedWriteEffects; };
+ScopedReadWrite :: <A> type A ! { * ScopedReadWriteEffects; };
+WholeRead :: <A> type A ! { * WholeReadEffects; };
+WholeWrite :: <A> type A ! { * WholeWriteEffects; };
+WholeFile :: <A> type A ! { * WholeFileEffects; };
 openRead :: FsRead -> Path -> Reader ! { fs.openRead : Path -> Reader; }
   = fs path => perform fs.openRead path;
 readLine :: FsRead -> Reader -> ReadLine Text?
@@ -36,12 +36,12 @@ flush :: FsWrite -> Writer -> Unit ! { fs.flush : Writer -> Unit; }
   = fs writer => perform fs.flush writer;
 closeWrite :: FsWrite -> Writer -> Unit ! { fs.closeWrite : Writer -> Unit; }
   = fs writer => perform fs.closeWrite writer;
-withReader :: <A, e> FsRead -> Path -> (Reader -> A ! { ...ReadLineEffects; ...e; }) -> A ! { ...ScopedReadEffects; ...e; }
+withReader :: <A, e> FsRead -> Path -> (Reader -> A ! { * ReadLineEffects; ...e; }) -> A ! { * ScopedReadEffects; ...e; }
   = fs path body => [
     reader := openRead fs path;
     handle body reader with { finally = closeRead fs reader; }
   ];
-withWriter :: <A, e> FsWrite -> Path -> (Writer -> A ! { ...WriteTextEffects; fs.flush : Writer -> Unit; ...e; }) -> A ! { ...ScopedWriteEffects; ...e; }
+withWriter :: <A, e> FsWrite -> Path -> (Writer -> A ! { * WriteTextEffects; fs.flush : Writer -> Unit; ...e; }) -> A ! { * ScopedWriteEffects; ...e; }
   = fs path body => [
     writer := openWrite fs path;
     handle body writer with { finally = closeWrite fs writer; }

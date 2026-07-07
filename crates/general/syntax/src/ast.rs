@@ -174,6 +174,24 @@ pub struct RecordField {
     pub span: Span,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ValueSpread {
+    pub value: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RecordItem {
+    Field(RecordField),
+    Spread(ValueSpread),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ListItem {
+    Item(Expr),
+    Spread(ValueSpread),
+}
+
 /// A statement inside a `stream { … }` generator block. Richer-`yield` (V3-G3)
 /// lets `yield` appear under conditionals and recursion; each statement desugars
 /// onto the codata `Stream` cell with no second iterator abstraction.
@@ -260,12 +278,10 @@ pub struct EffectOp {
 pub struct EffectRow {
     pub ops: Vec<EffectOp>,
     /// Named effect-row spreads written before the final tail, such as
-    /// `{ ...FsRead; ...e; }`. Each spread is resolved in HIR; non-final
-    /// anonymous or row-variable spreads are rejected later.
-    pub spreads: Vec<RowTail>,
+    /// `{ * FsRead; ...e; }`. Each spread is resolved in HIR.
+    pub spreads: Vec<RowSpread>,
     /// An optional open row tail `...e` (a row variable) or `...` (anonymous
-    /// open), or a final named spread `...FsRead`, mirroring record/union row
-    /// tails. `None` is a closed row.
+    /// open). `None` is a closed row.
     pub tail: Option<RowTail>,
     pub span: Span,
 }
@@ -321,7 +337,7 @@ pub enum Expr {
         span: Span,
     },
     Record {
-        fields: Vec<RecordField>,
+        items: Vec<RecordItem>,
         span: Span,
     },
     RecordUpdate {
@@ -334,7 +350,11 @@ pub enum Expr {
         span: Span,
     },
     List {
-        items: Vec<Expr>,
+        items: Vec<ListItem>,
+        span: Span,
+    },
+    SpreadOnly {
+        spreads: Vec<ValueSpread>,
         span: Span,
     },
     Generator {
@@ -439,6 +459,7 @@ impl Expr {
             | Expr::RecordUpdate { span, .. }
             | Expr::Tuple { span, .. }
             | Expr::List { span, .. }
+            | Expr::SpreadOnly { span, .. }
             | Expr::Generator { span, .. }
             | Expr::Block { span, .. }
             | Expr::Lambda { span, .. }
@@ -569,15 +590,26 @@ pub struct TypeRecordField {
 pub enum RowTail {
     Anonymous { span: Span },
     Named { name: String, span: Span },
-    Qualified { path: Vec<String>, span: Span },
 }
 
 impl RowTail {
     pub fn span(&self) -> Span {
         match self {
-            RowTail::Anonymous { span }
-            | RowTail::Named { span, .. }
-            | RowTail::Qualified { span, .. } => *span,
+            RowTail::Anonymous { span } | RowTail::Named { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RowSpread {
+    Named { name: String, span: Span },
+    Qualified { path: Vec<String>, span: Span },
+}
+
+impl RowSpread {
+    pub fn span(&self) -> Span {
+        match self {
+            RowSpread::Named { span, .. } | RowSpread::Qualified { span, .. } => *span,
         }
     }
 }
@@ -600,11 +632,13 @@ pub enum TypeExpr {
     },
     Record {
         fields: Vec<TypeRecordField>,
+        spreads: Vec<RowSpread>,
         tail: Option<RowTail>,
         span: Span,
     },
     Union {
         variants: Vec<UnionVariant>,
+        spreads: Vec<RowSpread>,
         tail: Option<RowTail>,
         span: Span,
     },

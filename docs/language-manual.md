@@ -287,7 +287,7 @@ larger rows or wrapped in a result-position alias:
 
 ```zt
 FsReadEffects :: type Unit ! { fs.read : Path -> Text; };
-FsReadResult :: <A> type A ! { ...FsReadEffects; };
+FsReadResult :: <A> type A ! { * FsReadEffects; };
 
 load :: Path -> FsReadResult Text
   = path => perform fs.read path;
@@ -427,7 +427,7 @@ These features are not v0 core. Their syntax is specified in the linked v1 or po
 | [Selective projection](spec/v1/01-row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
 | [Constraints/witnesses/derive](spec/v1/03-constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; native support covers direct/bounded/conditional/operator/method-level witnesses plus imported concrete and structurally matchable conditional witnesses. Higher-kinded execution and non-matchable cross-module witness exports remain check-only/native-gated |
 | [Reflection](spec/v1/04-metaprogramming.md) | `fields T`, `variants T`, `schema T`, `witness C @T`, or explicit `refl.fields T` / `refl.schema T` through `import stdlib.reflect` | THIR/TLC/evaluator support; compile/dataflow fold supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
-| [Algebraic effects](spec/v1/05-effects.md) | `! { ... }`, named and qualified row spreads `...Effects` / `...m.Effects`, effect result aliases, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
+| [Algebraic effects](spec/v1/05-effects.md) | `! { ... }`, named and qualified row spreads `* Effects` / `* m.Effects`, effect result aliases, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
 | [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch`; `cfg.overlay patch base` through `import stdlib.config` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, including module-qualified/destructured `stdlib.config` aliases, while residual/partial overlay forms remain backend-gated |
 | [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 | Dynamic data loading | `loadZti path`, `loadZt path`, or `perform load.zti path` / `perform load.zt path` | explicit host capability/effect; `run` and compiled binaries dispatch runtime-selected `.zti`/`.zt` loads to a first-order `Data` envelope; handlers can intercept operations before the host boundary |

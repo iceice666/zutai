@@ -220,6 +220,11 @@ impl<'module> EffectElaborator<'module> {
                     .collect();
                 self.alloc_like(id, TlcExpr::List(items), self.expr_ty(id))
             }
+            TlcExpr::ListAppend(left, right) => {
+                let left = self.elaborate_expr(left);
+                let right = self.elaborate_expr(right);
+                self.alloc_like(id, TlcExpr::ListAppend(left, right), self.expr_ty(id))
+            }
             TlcExpr::Builtin(op, lhs, rhs) => {
                 let lhs = self.elaborate_expr(lhs);
                 let rhs = self.elaborate_expr(rhs);

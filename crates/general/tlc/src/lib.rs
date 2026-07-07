@@ -157,7 +157,9 @@ fn reachable_expr_type_has_unsupported_effect(
         TlcExpr::TyApp(body, _) => {
             reachable_expr_type_has_unsupported_effect(module, *body, visited, grants, false)
         }
-        TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+        TlcExpr::App(func, arg)
+        | TlcExpr::Builtin(_, func, arg)
+        | TlcExpr::ListAppend(func, arg) => {
             reachable_expr_type_has_unsupported_effect(module, *func, visited, grants, false)
                 || reachable_expr_type_has_unsupported_effect(module, *arg, visited, grants, true)
         }
@@ -356,7 +358,9 @@ fn reachable_expr_has_effect(
         TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
             reachable_expr_has_effect(module, *body, visited, grants)
         }
-        TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+        TlcExpr::App(func, arg)
+        | TlcExpr::Builtin(_, func, arg)
+        | TlcExpr::ListAppend(func, arg) => {
             reachable_expr_has_effect(module, *func, visited, grants)
                 || reachable_expr_has_effect(module, *arg, visited, grants)
         }
@@ -434,7 +438,9 @@ fn reachable_host_io_print(
         TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
             reachable_host_io_print(module, *body, visited)
         }
-        TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+        TlcExpr::App(func, arg)
+        | TlcExpr::Builtin(_, func, arg)
+        | TlcExpr::ListAppend(func, arg) => {
             reachable_host_io_print(module, *func, visited)
                 || reachable_host_io_print(module, *arg, visited)
         }

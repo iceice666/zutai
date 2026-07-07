@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn structural_key_hir_error_stops_before_thir() {
-        let analysis = analyze("{ a = 1; a = 2; }");
+        let analysis = analyze("T :: type { a : Int; a : Text; };\nT");
 
         assert!(!analysis.has_parse_errors());
         assert!(analysis.has_hir_errors());
@@ -619,7 +619,7 @@ mod tests {
             matches!(
                 diagnostic.kind,
                 SemanticDiagnosticKind::Hir(zutai_hir::HirDiagnostic {
-                    kind: zutai_hir::HirDiagnosticKind::DuplicateRecordField { .. },
+                    kind: zutai_hir::HirDiagnosticKind::DuplicateTypeRecordField { .. },
                     ..
                 })
             )

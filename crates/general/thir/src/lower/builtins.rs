@@ -57,6 +57,7 @@ impl<'hir> Lowerer<'hir> {
             "overlayDeep" => Some(self.overlay_builtin_type(span, true)),
             "listEmpty" => Some(self.list_empty_builtin_type(span)),
             "listCons" => Some(self.list_cons_builtin_type(span)),
+            "listAppend" => Some(self.list_append_builtin_type(span)),
             "listIsNil" => Some(self.list_is_nil_builtin_type(span)),
             "listHead" => Some(self.list_head_builtin_type(span)),
             "listTail" => Some(self.list_tail_builtin_type(span)),
@@ -212,6 +213,31 @@ impl<'hir> Lowerer<'hir> {
         self.alloc_type(Type {
             kind: TypeKind::Function {
                 from: elem,
+                to: tail,
+            },
+            span,
+        })
+    }
+
+    /// `listAppend :: <A> List A -> List A -> List A` — concatenate two builtin
+    /// lists. Used internally by list spread lowering; also seeded as a bridge
+    /// primitive for the standard library implementation.
+    pub(in crate::lower) fn list_append_builtin_type(&mut self, span: Span) -> TypeId {
+        let elem = self.fresh_infer_var(span);
+        let list = self.alloc_type(Type {
+            kind: TypeKind::List(elem),
+            span,
+        });
+        let tail = self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
+                to: list,
+            },
+            span,
+        });
+        self.alloc_type(Type {
+            kind: TypeKind::Function {
+                from: list,
                 to: tail,
             },
             span,

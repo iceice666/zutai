@@ -109,6 +109,11 @@ impl<'thir> Lowerer<'thir> {
                 let tlc_items: Vec<TlcExprId> = items.iter().map(|&e| self.lower_expr(e)).collect();
                 self.alloc_expr(TlcExpr::List(tlc_items), tlc_ty, span)
             }
+            ThirExprKind::ListAppend { left, right } => {
+                let left = self.lower_expr(left);
+                let right = self.lower_expr(right);
+                self.alloc_expr(TlcExpr::ListAppend(left, right), tlc_ty, span)
+            }
             ThirExprKind::Access { receiver, field } => {
                 let recv = self.lower_expr(receiver);
                 self.alloc_expr(TlcExpr::GetField(recv, field), tlc_ty, span)

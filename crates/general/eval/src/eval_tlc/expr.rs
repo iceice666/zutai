@@ -146,6 +146,18 @@ impl<'a> TlcEvaluator<'a> {
             }
             TlcExpr::Tuple(items) => self.eval_tuple(items, env.clone(), resume),
             TlcExpr::List(items) => self.eval_list(items, env.clone(), resume),
+            TlcExpr::ListAppend(left, right) => {
+                let env_for_right = env.clone();
+                let resume_for_right = resume.clone();
+                let left_control = self.eval_control(left, env, resume)?;
+                self.bind_control(left_control, move |left_value, this| {
+                    let right_control =
+                        this.eval_control(right, &env_for_right, resume_for_right.clone())?;
+                    this.bind_control(right_control, move |right_value, _| {
+                        append_list_values(left_value.clone(), right_value).map(EvalControl::Value)
+                    })
+                })
+            }
 
             TlcExpr::GetField(expr_id, field) => {
                 let recv_ty = self

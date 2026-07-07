@@ -40,24 +40,24 @@ preserving the same checked operation set:
 ```zt
 FsReadEffects :: type Unit ! { fs.read : Path -> Text; };
 FsWriteEffects :: type Unit ! { fs.write : WriteAllRequest -> Unit; };
-FsFileEffects :: type Unit ! { ...FsReadEffects; ...FsWriteEffects; };
+FsFileEffects :: type Unit ! { * FsReadEffects; * FsWriteEffects; };
 LogEffects :: type Unit ! { log Text; };
 fs ::= import stdlib.fs;
 
-loadAndLog :: Path -> Text ! { ...fs.WholeReadEffects; ...LogEffects; }
+loadAndLog :: Path -> Text ! { * fs.WholeReadEffects; * LogEffects; }
 ```
 
 A final open row tail can still follow named or qualified spreads for
 row-polymorphic signatures:
 
 ```zt
-withRead :: <A, e> (Path -> A ! { ...FsReadEffects; ...e; }) -> A ! { ...FsReadEffects; ...e; }
+withRead :: <A, e> (Path -> A ! { * FsReadEffects; ...e; }) -> A ! { * FsReadEffects; ...e; }
 ```
 
 For result-position reuse, define an effectful type alias:
 
 ```zt
-FsFile :: <A> type A ! { ...FsFileEffects; };
+FsFile :: <A> type A ! { * FsFileEffects; };
 main :: { read : FsRead; write : FsWrite; } -> FsFile Text
 ```
 

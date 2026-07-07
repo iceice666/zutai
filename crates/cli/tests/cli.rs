@@ -2978,14 +2978,14 @@ fn compiled_variants_reflection_matches_oracle() {
 
 #[test]
 fn compiled_union_extension_matches_oracle() {
-    // Union extension (`...Shape` spreading an existing union into a new one)
+    // Union extension (`* Shape` spreading an existing union into a new one)
     // was listed as check-plus-interpreter only, but the spread members keep
     // their tags through TLC->DC, so both construction and tag dispatch across
     // the extended union compile with full parity. Cover a spread member
     // (`#square` from `Shape`) and a freshly added member (`#sphere`).
     let src = r#"
 Shape :: type { #circle: { radius : Int; }; #square: { side : Int; }; };
-Shape3D :: type { ...Shape; #sphere: { radius : Int; }; };
+Shape3D :: type { * Shape; #sphere: { radius : Int; }; };
 f :: Shape3D -> Int
   = #circle { radius = r; } => r;
   = #square { side = s; } => s + 100;

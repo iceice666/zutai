@@ -32,8 +32,8 @@ use crate::{
     thunk::Thunk,
     value::{
         BuiltinFn, Closure, HostHandleKind, ModuleId, RuntimeType, TupleField, Value,
-        eval_num_builtin_values, eval_text_builtin_values, overlay_value, update_record_value,
-        values_equal,
+        append_list_values, eval_num_builtin_values, eval_text_builtin_values, overlay_value,
+        update_record_value, values_equal,
     },
 };
 

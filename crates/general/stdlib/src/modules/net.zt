@@ -5,15 +5,15 @@ AcceptEffects :: type Unit ! { net.accept : Int -> Int; };
 ReadEffects :: type Unit ! { net.read : Int -> Text; };
 WriteEffects :: type Unit ! { net.write : Text -> Unit; };
 CloseEffects :: type Unit ! { net.close : Int -> Unit; };
-ConnectionEffects :: type Unit ! { ...AcceptEffects; ...ReadEffects; ...WriteEffects; ...CloseEffects; };
-ServerEffects :: type Unit ! { ...ListenEffects; ...ConnectionEffects; };
-Listen :: <A> type A ! { ...ListenEffects; };
-Accept :: <A> type A ! { ...AcceptEffects; };
-Read :: <A> type A ! { ...ReadEffects; };
-Write :: <A> type A ! { ...WriteEffects; };
-Close :: <A> type A ! { ...CloseEffects; };
-Connection :: <A> type A ! { ...ConnectionEffects; };
-Server :: <A> type A ! { ...ServerEffects; };
+ConnectionEffects :: type Unit ! { * AcceptEffects; * ReadEffects; * WriteEffects; * CloseEffects; };
+ServerEffects :: type Unit ! { * ListenEffects; * ConnectionEffects; };
+Listen :: <A> type A ! { * ListenEffects; };
+Accept :: <A> type A ! { * AcceptEffects; };
+Read :: <A> type A ! { * ReadEffects; };
+Write :: <A> type A ! { * WriteEffects; };
+Close :: <A> type A ! { * CloseEffects; };
+Connection :: <A> type A ! { * ConnectionEffects; };
+Server :: <A> type A ! { * ServerEffects; };
 listen :: Net -> Int -> Listen Int
   = net port => perform net.listen port;
 accept :: Net -> Int -> Accept Int

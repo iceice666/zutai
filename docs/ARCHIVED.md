@@ -269,7 +269,7 @@ _Completed 2026-07-07. Adds source ergonomics for large effect rows without
 changing the effect checker's operation model._
 
 - Effect rows now accept named and qualified effect-type spreads before the
-  final row tail, e.g. `! { ...ReadEffects; ...fs.ReadEffects; ...e; }`. HIR
+  final row tail, e.g. `! { * ReadEffects; * fs.ReadEffects; ...e; }`. HIR
   preserves spread items separately from the final tail, and THIR expands only
   spreads that resolve to effect type aliases.
 - Non-final anonymous/open row tails are rejected precisely, non-effect spreads
@@ -1186,9 +1186,9 @@ Mechanics (mirroring `RowTail` handling for records/unions):
 - **Syntax**: `ast::EffectRow` gains a `tail: Option<RowTail>`; `parse_effect_row`
   parses a terminal `...e`/`...` tail (reusing `parse_row_tail`), with an optional
   trailing separator before `}`.
-- **HIR**: `HirEffectRow` gains a `tail`; `lower_effect_row` resolves it via the
-  existing `lower_row_tail` (so `...e` → `Var`, `...Shape` → `Spread`, `...` →
-  `Anonymous`).
+- **HIR**: `HirEffectRow` gains a `tail`; `lower_effect_row` resolves row tails
+  through `lower_row_tail` (`...e` → `Var`, `...` → `Anonymous`) and resolves
+  explicit row spreads (`* Shape`) separately.
 - **THIR**: `lower_effect_row` calls `lower_effect_row_tail` — `Var → Param`,
   `Anonymous`/`Unresolved → Open`. At this milestone, `Spread` was refused
   precisely; the 2026-07-07 effect-row alias-spread milestone later enabled

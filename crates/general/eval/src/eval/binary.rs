@@ -73,6 +73,11 @@ impl<'a> Evaluator<'a> {
                     }),
                 }
             }
+            BuiltinFn::ListAppend => {
+                let left = args[0].force(self)?;
+                let right = args[1].force(self)?;
+                append_list_values(left, right)
+            }
             BuiltinFn::ListIsNil => match args[0].force(self)? {
                 Value::List(items) => Ok(Value::Bool(items.is_empty())),
                 other => Err(EvalError::TypeMismatch {

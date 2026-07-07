@@ -157,13 +157,21 @@ fn resolves_function_type_params_in_signature_and_body_type_form() {
 }
 
 #[test]
-fn reports_duplicate_value_record_fields() {
+fn allows_duplicate_value_record_fields_for_later_wins() {
     let lowered = lower("{ a = 1; a = 2; }");
 
-    assert!(matches!(
-        lowered.diagnostics.first().map(|diagnostic| &diagnostic.kind),
-        Some(HirDiagnosticKind::DuplicateRecordField { name, .. }) if name == "a"
-    ));
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::Record(items) = &expr.kind else {
+        panic!("expected record, got {:?}", expr.kind);
+    };
+    assert_eq!(
+        items
+            .iter()
+            .filter(|item| matches!(item, HirRecordItem::Field(_)))
+            .count(),
+        2
+    );
 }
 
 #[test]

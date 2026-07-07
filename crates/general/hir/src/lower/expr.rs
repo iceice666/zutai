@@ -137,16 +137,16 @@ impl Lowerer {
     fn gen_cons(&mut self, head: HirExprId, tail: HirExprId, span: Span) -> HirExprId {
         let payload = self.alloc_expr(HirExpr {
             kind: HirExprKind::Record(vec![
-                HirRecordField {
+                HirRecordItem::Field(HirRecordField {
                     name: "head".to_string(),
                     value: head,
                     span,
-                },
-                HirRecordField {
+                }),
+                HirRecordItem::Field(HirRecordField {
                     name: "tail".to_string(),
                     value: tail,
                     span,
-                },
+                }),
             ]),
             span,
         });
@@ -191,13 +191,19 @@ impl Lowerer {
                 payload: self.lower_expr(payload),
             },
             ast::Expr::Ident { name, span } => self.lower_ident(name, *span),
-            ast::Expr::Record { fields, .. } => HirExprKind::Record(
-                fields
+            ast::Expr::Record { items, .. } => HirExprKind::Record(
+                items
                     .iter()
-                    .map(|field| HirRecordField {
-                        name: field.name.clone(),
-                        value: self.lower_expr(&field.value),
-                        span: field.span,
+                    .map(|item| match item {
+                        ast::RecordItem::Field(field) => HirRecordItem::Field(HirRecordField {
+                            name: field.name.clone(),
+                            value: self.lower_expr(&field.value),
+                            span: field.span,
+                        }),
+                        ast::RecordItem::Spread(spread) => HirRecordItem::Spread(HirValueSpread {
+                            value: self.lower_expr(&spread.value),
+                            span: spread.span,
+                        }),
                     })
                     .collect(),
             ),
@@ -230,9 +236,27 @@ impl Lowerer {
                     })
                     .collect(),
             ),
-            ast::Expr::List { items, .. } => {
-                HirExprKind::List(items.iter().map(|item| self.lower_expr(item)).collect())
-            }
+            ast::Expr::List { items, .. } => HirExprKind::List(
+                items
+                    .iter()
+                    .map(|item| match item {
+                        ast::ListItem::Item(expr) => HirListItem::Item(self.lower_expr(expr)),
+                        ast::ListItem::Spread(spread) => HirListItem::Spread(HirValueSpread {
+                            value: self.lower_expr(&spread.value),
+                            span: spread.span,
+                        }),
+                    })
+                    .collect(),
+            ),
+            ast::Expr::SpreadOnly { spreads, .. } => HirExprKind::SpreadOnly(
+                spreads
+                    .iter()
+                    .map(|spread| HirValueSpread {
+                        value: self.lower_expr(&spread.value),
+                        span: spread.span,
+                    })
+                    .collect(),
+            ),
             ast::Expr::Generator { body, span } => {
                 return self.lower_generator(body, *span);
             }

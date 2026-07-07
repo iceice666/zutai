@@ -239,6 +239,10 @@ pub enum ThirExprKind {
     },
     Tuple(Vec<ThirTupleItem>),
     List(Vec<ThirExprId>),
+    ListAppend {
+        left: ThirExprId,
+        right: ThirExprId,
+    },
     Block {
         bindings: Vec<ThirLocalBinding>,
         result: ThirExprId,

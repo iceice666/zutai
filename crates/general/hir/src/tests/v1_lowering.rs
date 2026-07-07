@@ -9,7 +9,7 @@ fn h13_anonymous_row_tail_type_lowers_to_open_record() {
         panic!("expected TypeAlias, got {:?}", decl.kind);
     };
     let ty = &lowered.file.type_arena[ty];
-    let HirTypeKind::Record { fields, tail } = &ty.kind else {
+    let HirTypeKind::Record { fields, tail, .. } = &ty.kind else {
         panic!("expected Record, got {:?}", ty.kind);
     };
     assert_eq!(fields.len(), 1);
@@ -99,7 +99,7 @@ fn effect_row_named_spread_resolves_to_type_alias() {
     let lowered = lower(
         r#"
 ReadPack :: type Unit ! { fs.read : Path -> Text; };
-f :: <e> (Int ! { ...ReadPack; ...e; }) -> Int
+f :: <e> (Int ! { * ReadPack; ...e; }) -> Int
   = x => x;
 f
 "#,
@@ -117,7 +117,7 @@ f
     };
     assert_eq!(row.spreads.len(), 1);
     assert!(
-        matches!(row.spreads[0].kind, HirRowTailKind::Spread(_)),
+        matches!(row.spreads[0].kind, HirRowSpreadKind::Spread(_)),
         "named type must lower to an effect-row spread, got {:?}",
         row.spreads[0].kind
     );
@@ -128,11 +128,36 @@ f
 }
 
 #[test]
+fn record_row_spread_resolves_to_type_alias() {
+    let lowered = lower("Base :: type { host : Text; };\nT :: type { * Base; port : Int; };\nT");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
+    let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {
+        panic!("expected TypeAlias, got {:?}", decl.kind);
+    };
+    let HirTypeKind::Record {
+        fields,
+        spreads,
+        tail,
+    } = type_kind(&lowered.file, ty)
+    else {
+        panic!("expected record");
+    };
+    assert_eq!(fields[0].name, "port");
+    assert!(tail.is_none());
+    assert!(
+        matches!(spreads[0].kind, HirRowSpreadKind::Spread(_)),
+        "named type must lower to a row spread, got {:?}",
+        spreads[0].kind
+    );
+}
+
+#[test]
 fn effect_row_qualified_spread_lowers_to_type_access() {
     let lowered = lower(
         r#"
 fs ::= import stdlib.fs;
-f :: <e> (Int ! { ...fs.WriteTextEffects; ...e; }) -> Int
+f :: <e> (Int ! { * fs.WriteTextEffects; ...e; }) -> Int
   = x => x;
 f
 "#,
@@ -149,7 +174,7 @@ f
         panic!("expected an effectful parameter type");
     };
     assert_eq!(row.spreads.len(), 1);
-    let HirRowTailKind::QualifiedSpread { ty, source } = &row.spreads[0].kind else {
+    let HirRowSpreadKind::QualifiedSpread { ty, source } = &row.spreads[0].kind else {
         panic!(
             "qualified imported type must lower to a qualified spread, got {:?}",
             row.spreads[0].kind
@@ -167,9 +192,8 @@ f
 }
 
 #[test]
-fn named_union_row_tail_resolves_to_type_alias_as_spread() {
-    let lowered =
-        lower("Shape :: type { #dev; #test; };\nOpen :: type { ...Shape; #prod; };\nOpen");
+fn explicit_union_row_spread_resolves_to_type_alias() {
+    let lowered = lower("Shape :: type { #dev; #test; };\nOpen :: type { * Shape; #prod; };\nOpen");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
     let decl = &lowered.file.decl_arena[lowered.file.decls[1]];
     let HirDeclKind::TypeAlias { ty, .. } = decl.kind else {
@@ -177,17 +201,19 @@ fn named_union_row_tail_resolves_to_type_alias_as_spread() {
     };
     let HirTypeKind::Union {
         variants,
-        tail: Some(tail),
+        spreads,
+        tail,
     } = type_kind(&lowered.file, ty)
     else {
-        panic!("expected open union");
+        panic!("expected union");
     };
     assert_eq!(variants.len(), 1);
     assert_eq!(variants[0].name, "prod");
+    assert!(tail.is_none());
     assert!(
-        matches!(tail.kind, HirRowTailKind::Spread(_)),
-        "named type spread must lower to a spread tail, got {:?}",
-        tail.kind
+        matches!(spreads[0].kind, HirRowSpreadKind::Spread(_)),
+        "named type spread must lower to a row spread, got {:?}",
+        spreads[0].kind
     );
 }
 
@@ -197,6 +223,18 @@ fn row_tail_naming_a_value_is_an_invalid_target() {
     assert!(
         lowered.diagnostics.iter().any(
             |d| matches!(&d.kind, HirDiagnosticKind::InvalidRowTailTarget { name } if name == "x")
+        ),
+        "{:?}",
+        lowered.diagnostics
+    );
+}
+
+#[test]
+fn row_tail_naming_a_type_alias_is_an_invalid_target() {
+    let lowered = lower("Base :: type { host : Text; };\nT :: type { ...Base; };\nT");
+    assert!(
+        lowered.diagnostics.iter().any(
+            |d| matches!(&d.kind, HirDiagnosticKind::InvalidRowTailTarget { name } if name == "Base")
         ),
         "{:?}",
         lowered.diagnostics

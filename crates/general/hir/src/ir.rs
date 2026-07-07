@@ -22,6 +22,7 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "overlayDeep",
     "listEmpty",
     "listCons",
+    "listAppend",
     "listIsNil",
     "listHead",
     "listTail",
@@ -211,13 +212,14 @@ pub enum HirExprKind {
     },
     BindingRef(BindingId),
     UnresolvedIdent(String),
-    Record(Vec<HirRecordField>),
+    Record(Vec<HirRecordItem>),
     RecordUpdate {
         receiver: HirExprId,
         fields: Vec<HirRecordField>,
     },
     Tuple(Vec<HirTupleItem>),
-    List(Vec<HirExprId>),
+    List(Vec<HirListItem>),
+    SpreadOnly(Vec<HirValueSpread>),
     Block {
         bindings: Vec<HirLocalBinding>,
         result: HirExprId,
@@ -281,6 +283,24 @@ pub struct HirRecordField {
     pub name: String,
     pub value: HirExprId,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirValueSpread {
+    pub value: HirExprId,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirRecordItem {
+    Field(HirRecordField),
+    Spread(HirValueSpread),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirListItem {
+    Item(HirExprId),
+    Spread(HirValueSpread),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -366,10 +386,12 @@ pub enum HirTypeKind {
     UnresolvedIdent(String),
     Record {
         fields: Vec<HirTypeRecordField>,
+        spreads: Vec<HirRowSpread>,
         tail: Option<HirRowTail>,
     },
     Union {
         variants: Vec<HirUnionVariant>,
+        spreads: Vec<HirRowSpread>,
         tail: Option<HirRowTail>,
     },
     Tuple(Vec<HirTypeTupleItem>),
@@ -470,12 +492,21 @@ pub enum HirRowTailKind {
     Anonymous,
     /// Named row variable `...Rest` resolved to an in-scope type parameter.
     Var(BindingId),
-    /// Spread `...Shape` of a named record/union type into this row.
+    /// `...Name` whose `Name` did not resolve to a type parameter.
+    Unresolved(String),
+}
+
+/// A named or qualified `* Type` spread inside a record, union, or effect row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirRowSpread {
+    pub kind: HirRowSpreadKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirRowSpreadKind {
     Spread(BindingId),
-    /// Qualified spread such as `...m.Shape`, lowered as a type-position
-    /// access expression so THIR can resolve imported type exports.
     QualifiedSpread { ty: HirTypeId, source: String },
-    /// `...Name` whose `Name` did not resolve to a type parameter or a type.
     Unresolved(String),
 }
 
@@ -483,13 +514,10 @@ pub enum HirRowTailKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirEffectRow {
     pub ops: Vec<HirEffectOp>,
-    /// Named effect-row spreads written before the final tail. HIR keeps the
-    /// same row-tail resolution shape so THIR can reject non-final row variables
-    /// precisely and expand named effect aliases.
-    pub spreads: Vec<HirRowTail>,
+    /// Named effect-row spreads written before the final tail.
+    pub spreads: Vec<HirRowSpread>,
     /// An optional open row tail `...e`/`...`, resolved the same way as
-    /// record/union tails (`HirRowTail`), or a final named spread. `None` is a
-    /// closed row.
+    /// record/union tails (`HirRowTail`). `None` is a closed row.
     pub tail: Option<HirRowTail>,
     pub span: Span,
 }

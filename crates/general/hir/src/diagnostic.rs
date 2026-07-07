@@ -55,8 +55,8 @@ pub enum HirDiagnosticKind {
         name: String,
         first_span: Span,
     },
-    /// A named row tail `...Name` resolves to a binding that is neither a type
-    /// parameter (row variable) nor a type (spread).
+    /// A named row tail `...Name` must resolve to an in-scope type parameter.
+    /// Type aliases now use explicit row-spread syntax, `* Name`.
     InvalidRowTailTarget {
         name: String,
     },

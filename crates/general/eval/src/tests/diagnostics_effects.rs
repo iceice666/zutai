@@ -38,12 +38,12 @@ f t
 fn diagnostic_polish_eval_row_tail_overlap_message() {
     let src = r#"
 Base :: type { host : Text; port : Int; };
-Bad :: type { host : Int; ...Base; };
+Bad :: type { host : Int; * Base; };
 Bad
 "#;
     let msgs = type_check_messages(src);
     assert!(msgs.iter().any(|m| {
-        m == "record row tail `...Base` overlaps explicit field `host`: existing `host : Int`, incoming `host : Text`"
+        m == "record row spread `* Base` overlaps explicit field `host`: existing `host : Int`, incoming `host : Text`"
     }));
 }
 

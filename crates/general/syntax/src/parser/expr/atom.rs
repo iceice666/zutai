@@ -3,7 +3,8 @@ use winnow::Result;
 use winnow::combinator::{fail, peek};
 
 use crate::ast::{
-    Expr, FuncClause, GenStmt, HandleClause, LocalBinding, RecordField, SelectField, TupleItem,
+    Expr, FuncClause, GenStmt, HandleClause, ListItem, LocalBinding, RecordField, RecordItem,
+    SelectField, TupleItem, ValueSpread,
 };
 use crate::span::Span;
 
@@ -228,69 +229,17 @@ fn parse_record_or_list_inner(input: &mut &str, options: ExprOptions) -> Result<
     if input.starts_with('}') {
         '}'.parse_next(input)?;
         return Ok(Expr::Record {
-            fields: vec![],
+            items: vec![],
             span: Span::new(0, 0),
         });
     }
 
-    let is_record = {
-        let mut tmp = *input;
-        if let Ok(_name) = parse_value_field_name(&mut tmp) {
-            tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
-            tmp.starts_with('=') && !tmp.starts_with("==")
-        } else {
-            false
-        }
-    };
-
-    if is_record {
-        parse_record_value_tail(input, "", options)
-    } else {
-        parse_brace_list_tail(input, options)
-    }
-}
-
-fn parse_record_value_tail(input: &mut &str, _start: &str, options: ExprOptions) -> Result<Expr> {
     let _guard = enter_delimiter();
-    let mut fields = vec![];
-    loop {
-        ws(input)?;
-        if input.starts_with('}') {
-            break;
-        }
-        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
-        ws(input)?;
-        if input.starts_with('=') && !input.starts_with("==") {
-            '='.parse_next(input)?;
-        } else {
-            return fail.parse_next(input);
-        }
-        ws(input)?;
-        let value = if input.starts_with(';') {
-            // Field-pun shorthand: `name =;` is sugar for `name = name;`.
-            Expr::Ident {
-                name: name.clone(),
-                span: name_span,
-            }
-        } else {
-            super::parse_expr_with_options(input, options)?
-        };
-        ws(input)?;
-        ';'.parse_next(input)?;
-        let span = name_span.merge(value.span());
-        fields.push(RecordField { name, value, span });
-    }
-    ws(input)?;
-    let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
-    let span = Span::new(0, end_span.end as usize);
-    Ok(Expr::Record { fields, span })
-}
-
-/// List tail of `{ ... }` (the opening `{` is already consumed): zero or more
-/// `;`-terminated bare expressions. A lone `;` (`{;}`) yields the empty list.
-fn parse_brace_list_tail(input: &mut &str, options: ExprOptions) -> Result<Expr> {
-    let _guard = enter_delimiter();
-    let mut items = vec![];
+    let mut record_items = vec![];
+    let mut list_items = vec![];
+    let mut spread_only = vec![];
+    let mut kind = None;
+    let mut empty_list_marker = false;
     loop {
         ws(input)?;
         if input.starts_with('}') {
@@ -299,19 +248,121 @@ fn parse_brace_list_tail(input: &mut &str, options: ExprOptions) -> Result<Expr>
         // A bare `;` is a separator with no element — this is what distinguishes
         // the empty list `{;}` from the empty record `{}`.
         if input.starts_with(';') {
+            if kind == Some(ContainerKind::Record) {
+                return fail.parse_next(input);
+            }
+            empty_list_marker = true;
+            kind.get_or_insert(ContainerKind::List);
             ';'.parse_next(input)?;
             continue;
         }
-        let e = super::parse_expr_with_options(input, options)?;
-        ws(input)?;
-        ';'.parse_next(input)?;
-        items.push(e);
+        if input.starts_with('*') {
+            let spread = parse_value_spread(input, options)?;
+            ws(input)?;
+            ';'.parse_next(input)?;
+            match kind {
+                Some(ContainerKind::Record) => record_items.push(RecordItem::Spread(spread)),
+                Some(ContainerKind::List) => list_items.push(ListItem::Spread(spread)),
+                None => spread_only.push(spread),
+            }
+            continue;
+        }
+        if looks_like_record_field(input) {
+            if kind == Some(ContainerKind::List) {
+                return fail.parse_next(input);
+            }
+            if kind.is_none() {
+                record_items.extend(spread_only.drain(..).map(RecordItem::Spread));
+                kind = Some(ContainerKind::Record);
+            }
+            record_items.push(RecordItem::Field(parse_record_field(input, options)?));
+        } else {
+            if kind == Some(ContainerKind::Record) {
+                return fail.parse_next(input);
+            }
+            if kind.is_none() {
+                list_items.extend(spread_only.drain(..).map(ListItem::Spread));
+                kind = Some(ContainerKind::List);
+            }
+            let e = super::parse_expr_with_options(input, options)?;
+            ws(input)?;
+            ';'.parse_next(input)?;
+            list_items.push(ListItem::Item(e));
+        }
     }
+    ws(input)?;
     let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
-    Ok(Expr::List {
-        items,
-        span: Span::new(0, end_span.end as usize),
-    })
+    let span = Span::new(0, end_span.end as usize);
+    match kind {
+        Some(ContainerKind::Record) => Ok(Expr::Record {
+            items: record_items,
+            span,
+        }),
+        Some(ContainerKind::List) => Ok(Expr::List {
+            items: list_items,
+            span,
+        }),
+        None if !spread_only.is_empty() => Ok(Expr::SpreadOnly {
+            spreads: spread_only,
+            span,
+        }),
+        None if empty_list_marker => Ok(Expr::List {
+            items: vec![],
+            span,
+        }),
+        None => Ok(Expr::Record {
+            items: vec![],
+            span,
+        }),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContainerKind {
+    Record,
+    List,
+}
+
+fn looks_like_record_field(input: &str) -> bool {
+    let mut tmp = input;
+    if parse_value_field_name(&mut tmp).is_ok() {
+        tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
+        tmp.starts_with('=') && !tmp.starts_with("==")
+    } else {
+        false
+    }
+}
+
+fn parse_record_field(input: &mut &str, options: ExprOptions) -> Result<RecordField> {
+    let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
+    ws(input)?;
+    if input.starts_with('=') && !input.starts_with("==") {
+        '='.parse_next(input)?;
+    } else {
+        return fail.parse_next(input);
+    }
+    ws(input)?;
+    let value = if input.starts_with(';') {
+        // Field-pun shorthand: `name =;` is sugar for `name = name;`.
+        Expr::Ident {
+            name: name.clone(),
+            span: name_span,
+        }
+    } else {
+        super::parse_expr_with_options(input, options)?
+    };
+    ws(input)?;
+    ';'.parse_next(input)?;
+    let span = name_span.merge(value.span());
+    Ok(RecordField { name, value, span })
+}
+
+fn parse_value_spread(input: &mut &str, options: ExprOptions) -> Result<ValueSpread> {
+    let (_, star_span) = spanned('*').parse_next(input)?;
+    ws(input)?;
+    let value = super::parse_expr_with_options(input, options)?;
+    let span = star_span.merge(value.span());
+    Ok(ValueSpread { value, span })
 }
 
 /// `[ ... ]` is a serial do-block: local bindings (`name := e;` /

@@ -245,6 +245,18 @@ impl<'m> Lowerer<'m> {
                 self.alloc_node(DfNodeKind::List(df_items), df_ty, span)
             }
 
+            TlcExpr::ListAppend(left, right) => {
+                let args = vec![self.lower_expr(left), self.lower_expr(right)];
+                self.alloc_node(
+                    DfNodeKind::ListPrim {
+                        op: DfListPrimOp::Append,
+                        args,
+                    },
+                    df_ty,
+                    span,
+                )
+            }
+
             TlcExpr::Builtin(op, lhs, rhs) => {
                 if let Some(node) = self.lower_bool_short_circuit(op, lhs, rhs, df_ty, span) {
                     return node;
@@ -345,7 +357,7 @@ impl<'m> Lowerer<'m> {
     }
 
     /// Lower a saturated application of a list-bridge builtin (`listEmpty`,
-    /// `listCons`, `listIsNil`, `listHead`, `listTail`) to a primitive node.
+    /// `listCons`, `listAppend`, `listIsNil`, `listHead`, `listTail`) to a primitive node.
     /// Returns `None` for any other callee or an under-saturated call, so the
     /// caller falls back to the ordinary closure `Apply` path.
     fn try_lower_list_bridge(
@@ -378,6 +390,7 @@ impl<'m> Lowerer<'m> {
                 return Some(self.alloc_node(DfNodeKind::List(Vec::new()), df_ty, span));
             }
             ("listCons", 2) => DfListPrimOp::Cons,
+            ("listAppend", 2) => DfListPrimOp::Append,
             ("listIsNil", 1) => DfListPrimOp::IsNil,
             ("listHead", 1) => DfListPrimOp::Head,
             ("listTail", 1) => DfListPrimOp::Tail,
@@ -606,6 +619,7 @@ impl<'m> Lowerer<'m> {
         match b.name.as_str() {
             "listEmpty" => Some("listEmpty"),
             "listCons" => Some("listCons"),
+            "listAppend" => Some("listAppend"),
             "listIsNil" => Some("listIsNil"),
             "listHead" => Some("listHead"),
             "listTail" => Some("listTail"),

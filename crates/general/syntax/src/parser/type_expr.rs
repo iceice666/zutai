@@ -3,8 +3,8 @@ use winnow::Result;
 use winnow::combinator::fail;
 
 use crate::ast::{
-    EffectOp, EffectRow, Level, RowTail, SelectField, TypeExpr, TypeRecordField, TypeTupleItem,
-    UnionVariant,
+    EffectOp, EffectRow, Level, RowSpread, RowTail, SelectField, TypeExpr, TypeRecordField,
+    TypeTupleItem, UnionVariant,
 };
 use crate::span::Span;
 
@@ -337,19 +337,33 @@ fn parse_type_braced(input: &mut &str) -> Result<TypeExpr> {
 // ---------------------------------------------------------------------------
 
 fn parse_type_record(input: &mut &str) -> Result<TypeExpr> {
-    let ((fields, tail), span) = spanned(parse_type_record_inner).parse_next(input)?;
-    Ok(TypeExpr::Record { fields, tail, span })
+    let ((fields, spreads, tail), span) = spanned(parse_type_record_inner).parse_next(input)?;
+    Ok(TypeExpr::Record {
+        fields,
+        spreads,
+        tail,
+        span,
+    })
 }
 
-fn parse_type_record_inner(input: &mut &str) -> Result<(Vec<TypeRecordField>, Option<RowTail>)> {
+fn parse_type_record_inner(
+    input: &mut &str,
+) -> Result<(Vec<TypeRecordField>, Vec<RowSpread>, Option<RowTail>)> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut fields = vec![];
+    let mut spreads = vec![];
     let mut tail = None;
     loop {
         ws(input)?;
         if input.starts_with('}') {
             break;
+        }
+        if input.starts_with('*') {
+            spreads.push(parse_row_spread(input)?);
+            ws(input)?;
+            ';'.parse_next(input)?;
+            continue;
         }
         if input.starts_with("...") {
             if tail.is_some() {
@@ -406,7 +420,7 @@ fn parse_type_record_inner(input: &mut &str) -> Result<(Vec<TypeRecordField>, Op
     }
     ws(input)?;
     '}'.parse_next(input)?;
-    Ok((fields, tail))
+    Ok((fields, spreads, tail))
 }
 
 // ---------------------------------------------------------------------------
@@ -414,23 +428,33 @@ fn parse_type_record_inner(input: &mut &str) -> Result<(Vec<TypeRecordField>, Op
 // ---------------------------------------------------------------------------
 
 fn parse_type_union(input: &mut &str) -> Result<TypeExpr> {
-    let ((variants, tail), span) = spanned(parse_type_union_inner).parse_next(input)?;
+    let ((variants, spreads, tail), span) = spanned(parse_type_union_inner).parse_next(input)?;
     Ok(TypeExpr::Union {
         variants,
+        spreads,
         tail,
         span,
     })
 }
 
-fn parse_type_union_inner(input: &mut &str) -> Result<(Vec<UnionVariant>, Option<RowTail>)> {
+fn parse_type_union_inner(
+    input: &mut &str,
+) -> Result<(Vec<UnionVariant>, Vec<RowSpread>, Option<RowTail>)> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut variants = vec![];
+    let mut spreads = vec![];
     let mut tail = None;
     loop {
         ws(input)?;
         if input.starts_with('}') {
             break;
+        }
+        if input.starts_with('*') {
+            spreads.push(parse_row_spread(input)?);
+            ws(input)?;
+            ';'.parse_next(input)?;
+            continue;
         }
         if input.starts_with("...") {
             if tail.is_some() {
@@ -473,7 +497,7 @@ fn parse_type_union_inner(input: &mut &str) -> Result<(Vec<UnionVariant>, Option
     }
     ws(input)?;
     '}'.parse_next(input)?;
-    Ok((variants, tail))
+    Ok((variants, spreads, tail))
 }
 
 // ---------------------------------------------------------------------------
@@ -564,29 +588,42 @@ fn parse_type_union_positional_payload(input: &mut &str) -> Result<TypeExpr> {
 fn parse_row_tail(input: &mut &str) -> Result<RowTail> {
     let (_, start_span) = spanned("...").parse_next(input)?;
     if let Ok((name, name_span)) = spanned(parse_ident).parse_next(input) {
-        let mut path = vec![name];
-        let mut span = start_span.merge(name_span);
-        loop {
-            let checkpoint = *input;
-            ws(input)?;
-            if input.starts_with('.') && !input.starts_with("..") {
-                '.'.parse_next(input)?;
-                ws(input)?;
-                let (field, field_span) = spanned(parse_field_name).parse_next(input)?;
-                path.push(field);
-                span = span.merge(field_span);
-            } else {
-                *input = checkpoint;
-                break;
-            }
-        }
-        if path.len() > 1 {
-            return Ok(RowTail::Qualified { path, span });
-        }
-        let name = path.pop().expect("path contains first segment");
-        return Ok(RowTail::Named { name, span });
+        return Ok(RowTail::Named {
+            name,
+            span: start_span.merge(name_span),
+        });
     }
     Ok(RowTail::Anonymous { span: start_span })
+}
+
+fn parse_row_spread(input: &mut &str) -> Result<RowSpread> {
+    let (_, start_span) = spanned('*').parse_next(input)?;
+    ws(input)?;
+    let (name, name_span) = spanned(parse_ident).parse_next(input)?;
+    let mut path = vec![name];
+    let mut span = start_span.merge(name_span);
+    loop {
+        let checkpoint = *input;
+        ws(input)?;
+        if input.starts_with('.') && !input.starts_with("..") {
+            '.'.parse_next(input)?;
+            ws(input)?;
+            let (field, field_span) = spanned(parse_field_name).parse_next(input)?;
+            path.push(field);
+            span = span.merge(field_span);
+        } else {
+            *input = checkpoint;
+            break;
+        }
+    }
+    if path.len() > 1 {
+        Ok(RowSpread::Qualified { path, span })
+    } else {
+        Ok(RowSpread::Named {
+            name: path.pop().expect("path contains first segment"),
+            span,
+        })
+    }
 }
 
 fn parse_type_select(input: &mut &str) -> Result<TypeExpr> {
@@ -647,7 +684,7 @@ fn parse_effect_row(input: &mut &str) -> Result<EffectRow> {
 
 fn parse_effect_row_inner(
     input: &mut &str,
-) -> Result<(Vec<EffectOp>, Vec<RowTail>, Option<RowTail>)> {
+) -> Result<(Vec<EffectOp>, Vec<RowSpread>, Option<RowTail>)> {
     '{'.parse_next(input)?;
     let _guard = enter_delimiter();
     let mut ops = vec![];
@@ -658,11 +695,27 @@ fn parse_effect_row_inner(
         if input.starts_with('}') {
             break;
         }
-        // An effect row can contain named spreads (`...FsRead;`) before its
-        // final tail. The final `...e`/`...`/`...FsRead` item is terminal.
+        if input.starts_with('*') {
+            let spread = parse_row_spread(input)?;
+            ws(input)?;
+            if input.starts_with(';') {
+                ';'.parse_next(input)?;
+            } else if input.starts_with(',') {
+                ','.parse_next(input)?;
+            } else {
+                return fail.parse_next(input);
+            }
+            spreads.push(spread);
+            continue;
+        }
+        // The final `...e` / `...` row tail is terminal.
         if input.starts_with("...") {
             let parsed_tail = parse_row_tail(input)?;
             ws(input)?;
+            if input.starts_with('}') {
+                tail = Some(parsed_tail);
+                break;
+            }
             let had_separator = if input.starts_with(';') {
                 ';'.parse_next(input)?;
                 true
@@ -673,15 +726,14 @@ fn parse_effect_row_inner(
                 false
             };
             ws(input)?;
+            if !had_separator {
+                return fail.parse_next(input);
+            }
             if input.starts_with('}') {
                 tail = Some(parsed_tail);
                 break;
             }
-            if !had_separator {
-                return fail.parse_next(input);
-            }
-            spreads.push(parsed_tail);
-            continue;
+            return fail.parse_next(input);
         }
         ops.push(parse_effect_op(input)?);
         ws(input)?;

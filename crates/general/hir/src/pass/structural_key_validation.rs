@@ -18,7 +18,8 @@ impl HirPass for StructuralKeyValidationPass {
     fn run(&mut self, file: &mut HirFile, diagnostics: &mut Vec<HirDiagnostic>) {
         for (_, expr) in file.expr_arena.iter() {
             match &expr.kind {
-                HirExprKind::Record(fields) | HirExprKind::RecordUpdate { fields, .. } => {
+                HirExprKind::Record(_) => {}
+                HirExprKind::RecordUpdate { fields, .. } => {
                     validate_record_fields(fields, diagnostics);
                 }
                 HirExprKind::Tuple(items) => {
@@ -61,6 +62,13 @@ impl HirPass for StructuralKeyValidationPass {
 }
 
 fn validate_record_fields(fields: &[HirRecordField], diagnostics: &mut Vec<HirDiagnostic>) {
+    validate_record_fields_iter(fields.iter(), diagnostics);
+}
+
+fn validate_record_fields_iter<'a>(
+    fields: impl Iterator<Item = &'a HirRecordField>,
+    diagnostics: &mut Vec<HirDiagnostic>,
+) {
     let mut seen = FxHashMap::default();
     for field in fields {
         if let Some(first_span) = seen.get(&field.name).copied() {

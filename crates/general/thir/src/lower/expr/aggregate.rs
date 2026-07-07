@@ -1,29 +1,39 @@
 use super::*;
 
+#[derive(Clone)]
+struct LoweredRecordEntry {
+    name: String,
+    value: ThirExprId,
+    ty: TypeId,
+    span: Span,
+    from_spread: bool,
+}
+
 impl<'hir> Lowerer<'hir> {
     pub(super) fn infer_record_expr(
         &mut self,
         id: HirExprId,
-        fields: &[HirRecordField],
+        items: &[HirRecordItem],
         span: Span,
     ) -> ThirExprId {
-        let mut thir_fields = Vec::with_capacity(fields.len());
-        let mut type_fields = Vec::with_capacity(fields.len());
-        for field in fields {
-            let value = self.infer_expr(field.value);
-            let ty = self.expr(value).ty;
-            thir_fields.push(ThirRecordField {
-                name: field.name.clone(),
-                value,
-                span: field.span,
-            });
-            type_fields.push(TypeRecordField {
-                name: field.name.clone(),
+        let entries = self.lower_record_items(id, items, None, span);
+        let thir_fields = entries
+            .iter()
+            .map(|entry| ThirRecordField {
+                name: entry.name.clone(),
+                value: entry.value,
+                span: entry.span,
+            })
+            .collect();
+        let type_fields = entries
+            .iter()
+            .map(|entry| TypeRecordField {
+                name: entry.name.clone(),
                 optional: false,
-                ty,
-                span: field.span,
-            });
-        }
+                ty: entry.ty,
+                span: entry.span,
+            })
+            .collect();
         let ty = self.alloc_type(Type {
             kind: TypeKind::Record(type_fields, RowTail::Closed),
             span,
@@ -212,37 +222,121 @@ impl<'hir> Lowerer<'hir> {
     pub(super) fn infer_list_expr(
         &mut self,
         id: HirExprId,
-        items: &[HirExprId],
+        items: &[HirListItem],
         span: Span,
     ) -> ThirExprId {
-        let Some((first, rest)) = items.split_first() else {
+        if items.is_empty() {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::EmptyListNeedsType,
+                span,
+            });
+            return self.error_expr(id, span);
+        }
+
+        let mut item_ty = None;
+        let mut chunk = Vec::new();
+        let mut parts = Vec::new();
+        let mut saw_spread = false;
+
+        for item in items {
+            match item {
+                HirListItem::Item(value) => {
+                    let lowered = if let Some(ty) = item_ty {
+                        self.check_expr(*value, ty)
+                    } else {
+                        let lowered = self.infer_expr(*value);
+                        item_ty = Some(self.expr(lowered).ty);
+                        lowered
+                    };
+                    chunk.push(lowered);
+                }
+                HirListItem::Spread(spread) => {
+                    saw_spread = true;
+                    if let Some(ty) = item_ty {
+                        let list_ty = self.alloc_type(Type {
+                            kind: TypeKind::List(ty),
+                            span: spread.span,
+                        });
+                        self.flush_list_chunk(id, &mut chunk, list_ty, span, &mut parts);
+                        parts.push(self.check_expr(spread.value, list_ty));
+                    } else {
+                        self.flush_list_chunk_if_typed(id, &mut chunk, item_ty, span, &mut parts);
+                        let spread_value = self.infer_expr(spread.value);
+                        let spread_ty = self.expr(spread_value).ty;
+                        let Some(spread_item_ty) = self.list_item_type(spread_ty, spread.span)
+                        else {
+                            let found = self.type_name(spread_ty);
+                            self.diagnostics.push(ThirDiagnostic {
+                                kind: ThirDiagnosticKind::ExpectedList { found },
+                                span: spread.span,
+                            });
+                            continue;
+                        };
+                        item_ty = Some(spread_item_ty);
+                        parts.push(spread_value);
+                    }
+                }
+            }
+        }
+
+        let Some(item_ty) = item_ty else {
             self.diagnostics.push(ThirDiagnostic {
                 kind: ThirDiagnosticKind::EmptyListNeedsType,
                 span,
             });
             return self.error_expr(id, span);
         };
-        let first = self.infer_expr(*first);
-        let item_ty = self.expr(first).ty;
-        let mut lowered_items = Vec::with_capacity(items.len());
-        lowered_items.push(first);
-        lowered_items.extend(rest.iter().map(|item| self.check_expr(*item, item_ty)));
         let ty = self.alloc_type(Type {
             kind: TypeKind::List(item_ty),
             span,
         });
-        self.alloc_expr(ThirExpr {
-            source: id,
-            ty,
-            kind: ThirExprKind::List(lowered_items),
+        if !saw_spread {
+            return self.alloc_expr(ThirExpr {
+                source: id,
+                ty,
+                kind: ThirExprKind::List(chunk),
+                span,
+            });
+        }
+        self.flush_list_chunk(id, &mut chunk, ty, span, &mut parts);
+        self.list_expr_from_parts(id, parts, ty, span)
+    }
+
+    pub(super) fn check_spread_only_expr(
+        &mut self,
+        id: HirExprId,
+        spreads: &[HirValueSpread],
+        expected: TypeId,
+    ) -> ThirExprId {
+        let span = self.hir_expr(id).span;
+        let resolved = self.resolve_alias_for_expr(expected);
+        let resolved = self.resolve(resolved);
+        if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::SpreadOnlyLiteralNeedsType,
+                span,
+            });
+            return self.error_expr(id, span);
+        }
+        if self.record_row(expected, span).is_some() {
+            let items: Vec<_> = spreads.iter().cloned().map(HirRecordItem::Spread).collect();
+            return self.check_record_expr(id, &items, expected);
+        }
+        if self.list_item_type(expected, span).is_some() {
+            let items: Vec<_> = spreads.iter().cloned().map(HirListItem::Spread).collect();
+            return self.check_list_expr(id, &items, expected);
+        }
+        self.diagnostics.push(ThirDiagnostic {
+            kind: ThirDiagnosticKind::SpreadOnlyLiteralNeedsType,
             span,
-        })
+        });
+        self.error_expr(id, span)
     }
 
     pub(super) fn check_list_expr(
         &mut self,
         id: HirExprId,
-        items: &[HirExprId],
+        items: &[HirListItem],
         expected: TypeId,
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
@@ -254,22 +348,102 @@ impl<'hir> Lowerer<'hir> {
             });
             return self.infer_list_expr(id, items, span);
         };
-        let items = items
-            .iter()
-            .map(|item| self.check_expr(*item, item_ty))
-            .collect();
-        self.alloc_expr(ThirExpr {
+        let mut chunk = Vec::new();
+        let mut parts = Vec::new();
+        let mut saw_spread = false;
+        for item in items {
+            match item {
+                HirListItem::Item(value) => chunk.push(self.check_expr(*value, item_ty)),
+                HirListItem::Spread(spread) => {
+                    saw_spread = true;
+                    self.flush_list_chunk(id, &mut chunk, expected, span, &mut parts);
+                    parts.push(self.check_expr(spread.value, expected));
+                }
+            }
+        }
+        if !saw_spread {
+            return self.alloc_expr(ThirExpr {
+                source: id,
+                ty: expected,
+                kind: ThirExprKind::List(chunk),
+                span,
+            });
+        }
+        self.flush_list_chunk(id, &mut chunk, expected, span, &mut parts);
+        self.list_expr_from_parts(id, parts, expected, span)
+    }
+
+    fn flush_list_chunk_if_typed(
+        &mut self,
+        id: HirExprId,
+        chunk: &mut Vec<ThirExprId>,
+        item_ty: Option<TypeId>,
+        span: Span,
+        parts: &mut Vec<ThirExprId>,
+    ) {
+        if let Some(item_ty) = item_ty {
+            let list_ty = self.alloc_type(Type {
+                kind: TypeKind::List(item_ty),
+                span,
+            });
+            self.flush_list_chunk(id, chunk, list_ty, span, parts);
+        }
+    }
+
+    fn flush_list_chunk(
+        &mut self,
+        id: HirExprId,
+        chunk: &mut Vec<ThirExprId>,
+        list_ty: TypeId,
+        span: Span,
+        parts: &mut Vec<ThirExprId>,
+    ) {
+        if chunk.is_empty() {
+            return;
+        }
+        let items = std::mem::take(chunk);
+        parts.push(self.alloc_expr(ThirExpr {
             source: id,
-            ty: expected,
+            ty: list_ty,
             kind: ThirExprKind::List(items),
             span,
-        })
+        }));
+    }
+
+    fn list_expr_from_parts(
+        &mut self,
+        id: HirExprId,
+        mut parts: Vec<ThirExprId>,
+        ty: TypeId,
+        span: Span,
+    ) -> ThirExprId {
+        if parts.is_empty() {
+            return self.alloc_expr(ThirExpr {
+                source: id,
+                ty,
+                kind: ThirExprKind::List(Vec::new()),
+                span,
+            });
+        }
+        let mut current = parts.remove(0);
+        for right in parts {
+            current = self.alloc_expr(ThirExpr {
+                source: id,
+                ty,
+                kind: ThirExprKind::ListAppend {
+                    left: current,
+                    right,
+                },
+                span,
+            });
+        }
+        current
     }
 
     pub(super) fn check_record_expr(
         &mut self,
         id: HirExprId,
-        fields: &[HirRecordField],
+        items: &[HirRecordItem],
         expected: TypeId,
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
@@ -279,14 +453,15 @@ impl<'hir> Lowerer<'hir> {
                 kind: ThirDiagnosticKind::ExpectedRecord { found },
                 span,
             });
-            return self.infer_record_expr(id, fields, span);
+            return self.infer_record_expr(id, items, span);
         };
 
         let expected_by_name: FxHashMap<_, _> = expected_fields
             .iter()
             .map(|field| (field.name.as_str(), field))
             .collect();
-        let actual_names: FxHashSet<_> = fields.iter().map(|field| field.name.as_str()).collect();
+        let entries = self.lower_record_items(id, items, Some(&expected_by_name), span);
+        let actual_names: FxHashSet<_> = entries.iter().map(|field| field.name.as_str()).collect();
 
         for expected_field in &expected_fields {
             if !expected_field.optional && !actual_names.contains(expected_field.name.as_str()) {
@@ -299,48 +474,36 @@ impl<'hir> Lowerer<'hir> {
             }
         }
 
-        let mut thir_fields = Vec::with_capacity(fields.len());
-        // Extra actual fields not named by `expected`: rejected for a closed or
-        // rigid row, discarded for an anonymous open row, and captured by a
-        // flexible row variable so a named tail preserves them.
         let mut captured_extras: Vec<TypeRecordField> = Vec::new();
-        for field in fields {
-            let Some(expected_field) = expected_by_name.get(field.name.as_str()) else {
-                let value = self.infer_expr(field.value);
-                match expected_tail {
-                    RowTail::Open => {}
-                    RowTail::Infer(_) => captured_extras.push(TypeRecordField {
-                        name: field.name.clone(),
-                        optional: false,
-                        ty: self.expr(value).ty,
-                        span: field.span,
-                    }),
-                    RowTail::Closed | RowTail::Param(_) => {
-                        self.diagnostics.push(ThirDiagnostic {
-                            kind: ThirDiagnosticKind::UnexpectedRecordField {
-                                name: field.name.clone(),
-                            },
-                            span: field.span,
-                        });
-                    }
+        for entry in &entries {
+            let expected_ty = expected_by_name
+                .get(entry.name.as_str())
+                .map(|field| field.ty);
+            if let Some(expected_ty) = expected_ty {
+                if entry.from_spread && !self.type_matches(expected_ty, entry.ty) {
+                    self.type_mismatch(expected_ty, entry.ty, entry.span);
                 }
-                thir_fields.push(ThirRecordField {
-                    name: field.name.clone(),
-                    value,
-                    span: field.span,
-                });
                 continue;
-            };
-            let value = self.check_expr(field.value, expected_field.ty);
-            thir_fields.push(ThirRecordField {
-                name: field.name.clone(),
-                value,
-                span: field.span,
-            });
+            }
+            match expected_tail {
+                RowTail::Open => {}
+                RowTail::Infer(_) => captured_extras.push(TypeRecordField {
+                    name: entry.name.clone(),
+                    optional: false,
+                    ty: entry.ty,
+                    span: entry.span,
+                }),
+                RowTail::Closed | RowTail::Param(_) => {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::UnexpectedRecordField {
+                            name: entry.name.clone(),
+                        },
+                        span: entry.span,
+                    });
+                }
+            }
         }
 
-        // Solve a flexible expected tail with whatever the literal supplied beyond
-        // the named fields, so a row-polymorphic call preserves the extras.
         if let RowTail::Infer(r) = expected_tail {
             self.row_subst.insert(
                 r,
@@ -351,12 +514,127 @@ impl<'hir> Lowerer<'hir> {
             );
         }
 
+        let thir_fields = entries
+            .into_iter()
+            .map(|entry| ThirRecordField {
+                name: entry.name,
+                value: entry.value,
+                span: entry.span,
+            })
+            .collect();
         self.alloc_expr(ThirExpr {
             source: id,
             ty: expected,
             kind: ThirExprKind::Record(thir_fields),
             span,
         })
+    }
+
+    fn lower_record_items(
+        &mut self,
+        id: HirExprId,
+        items: &[HirRecordItem],
+        expected_by_name: Option<&FxHashMap<&str, &TypeRecordField>>,
+        span: Span,
+    ) -> Vec<LoweredRecordEntry> {
+        let mut entries = Vec::with_capacity(items.len());
+        for item in items {
+            match item {
+                HirRecordItem::Field(field) => {
+                    let expected = expected_by_name
+                        .and_then(|fields| fields.get(field.name.as_str()))
+                        .map(|field| field.ty);
+                    let value = if let Some(expected) = expected {
+                        self.check_expr(field.value, expected)
+                    } else {
+                        self.infer_expr(field.value)
+                    };
+                    let ty = self.expr(value).ty;
+                    self.insert_record_entry(
+                        &mut entries,
+                        LoweredRecordEntry {
+                            name: field.name.clone(),
+                            value,
+                            ty,
+                            span: field.span,
+                            from_spread: false,
+                        },
+                    );
+                }
+                HirRecordItem::Spread(spread) => {
+                    self.lower_record_value_spread(id, spread, &mut entries, span);
+                }
+            }
+        }
+        entries
+    }
+
+    fn lower_record_value_spread(
+        &mut self,
+        id: HirExprId,
+        spread: &HirValueSpread,
+        entries: &mut Vec<LoweredRecordEntry>,
+        span: Span,
+    ) {
+        let value = self.infer_expr(spread.value);
+        let value_ty = self.expr(value).ty;
+        let Some((fields, tail)) = self.record_row(value_ty, spread.span) else {
+            let found = self.type_name(value_ty);
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::ExpectedRecord { found },
+                span: spread.span,
+            });
+            return;
+        };
+        if tail != RowTail::Closed {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::InvalidTypeExpression {
+                    reason: "record value spread requires a closed record type",
+                },
+                span: spread.span,
+            });
+            return;
+        }
+        for field in fields {
+            let field_ty = if field.optional {
+                self.maybe_type(field.ty, field.span)
+            } else {
+                field.ty
+            };
+            let access = self.alloc_expr(ThirExpr {
+                source: id,
+                ty: field_ty,
+                kind: ThirExprKind::Access {
+                    receiver: value,
+                    field: field.name.clone(),
+                },
+                span,
+            });
+            self.insert_record_entry(
+                entries,
+                LoweredRecordEntry {
+                    name: field.name,
+                    value: access,
+                    ty: field_ty,
+                    span: field.span,
+                    from_spread: true,
+                },
+            );
+        }
+    }
+
+    fn insert_record_entry(
+        &mut self,
+        entries: &mut Vec<LoweredRecordEntry>,
+        entry: LoweredRecordEntry,
+    ) {
+        if let Some(existing) = entries
+            .iter()
+            .position(|candidate| candidate.name == entry.name)
+        {
+            entries.remove(existing);
+        }
+        entries.push(entry);
     }
 
     pub(super) fn lower_record_update_expr(

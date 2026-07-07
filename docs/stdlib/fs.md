@@ -36,7 +36,7 @@ render/JSON gates and native entry gate.
 
 Closed operation packs such as `ScopedReadWriteEffects` are exported for
 composition with row spreads, including qualified imported spreads such as
-`...fs.ScopedReadWriteEffects;`.
+`* fs.ScopedReadWriteEffects;`.
 
 ## API
 
@@ -49,8 +49,8 @@ composition with row spreads, including qualified imported spreads such as
 | `writeText` | `FsWrite -> Writer -> Text -> WriteText Unit` | Writes bytes exactly; no implicit newline. |
 | `flush` | `FsWrite -> Writer -> Unit ! { fs.flush : Writer -> Unit; }` | Explicit flush. |
 | `closeWrite` | `FsWrite -> Writer -> Unit ! { fs.closeWrite : Writer -> Unit; }` | Flushes before close; idempotent for known handles. |
-| `withReader` | `FsRead -> Path -> (Reader -> A ! { ...ReadLineEffects; ...e; }) -> A ! { ...ScopedReadEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
-| `withWriter` | `FsWrite -> Path -> (Writer -> A ! { ...WriteTextEffects; fs.flush : Writer -> Unit; ...e; }) -> A ! { ...ScopedWriteEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
+| `withReader` | `FsRead -> Path -> (Reader -> A ! { * ReadLineEffects; ...e; }) -> A ! { * ScopedReadEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
+| `withWriter` | `FsWrite -> Path -> (Writer -> A ! { * WriteTextEffects; fs.flush : Writer -> Unit; ...e; }) -> A ! { * ScopedWriteEffects; ...e; }` | Bracket helper; closes in `finally` when the callback settles. |
 | `readAll` | `FsRead -> Path -> WholeRead Text` | Compatibility wrapper over existing `fs.read`. |
 | `writeAll` | `FsWrite -> Path -> Text -> WholeWrite Unit` | Compatibility wrapper over existing `fs.write`. |
 

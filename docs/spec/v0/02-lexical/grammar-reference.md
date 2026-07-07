@@ -389,11 +389,11 @@ Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `impo
 - The container glyph picks the shape: `{ … }` is a parallel container — a record (`name = value;` entries) or a list (bare `value;` entries) — while `[ … ]` is a serial do-block (local bindings followed by a tail expression that is the block's value).
 - The scope picks the binding operator: top-level (the parallel/letrec scope) uses `::=` (inferred) and `:: T =` (typed); a local binding inside a `[ … ]` do-block uses `:=` (inferred) and `: T =` (typed). Mnemonic: `::` is top-level, `:` is local.
 - `:` is type binding; `=` is value or pattern binding. Type record fields, type tuple fields, and union payload annotations use `:`. Value records, tuples, witness fields, and patterns use `=`.
-- In expression position, `{}` is the empty value record and `{;}` is the empty list. A non-empty `{ ... }` is a value record when its first item starts as `FieldName =`; otherwise it is a list of `;`-terminated expressions. A `[ ... ]` is a do-block; an empty `[]` is the empty do-block.
+- In expression position, `{}` is the empty value record and `{;}` is the empty list. A non-empty `{ ... }` is a value record when its non-spread items start as `FieldName =`; otherwise it is a list of `;`-terminated expressions. Value records and lists accept spread items (`* record;`, `* list;`) in item order. A spread-only literal (`{ * x; }`) requires an expected record/list type. A `[ ... ]` is a do-block; an empty `[]` is the empty do-block.
 - A value-record field written `name =;` is field-pun shorthand for `name = name;`: the omitted value is the identifier `name`. It applies to record literals and record-update (`with`) fields.
 - In type position, `{ field : Type; }` is a record type and `{ #tag; }` is a union type.
-- Record row tails/spreads (`...;`, `...Rest;`, or `...m.Shape;`) are last and unique. Union row tails/spreads are also unique and may appear among variants.
-- Effect rows accept named or qualified effect-type spreads (`...Name;`, `...m.Name;`) before the final row tail. Anonymous tails and row-variable tails (`...;`, `...e;`) are final.
+- Record row tails (`...;`, `...Rest;`) are final and unique. Named/qualified row spreads use explicit `* Shape;` / `* m.Shape;`; union row spreads may appear among variants.
+- Effect rows accept named or qualified effect-type spreads (`* Name;`, `* m.Name;`) before the final row tail. Anonymous tails and row-variable tails (`...;`, `...e;`) are final.
 - Function application by whitespace is left-associative. At delimiter depth zero, a newline stops application unless an enclosing operator production consumes it.
 - `|>` and `<|` chains are left-associative but cannot mix directions in a single chain.
 - `??` is right-associative. Comparisons are non-associative: write `(a < b) && (b < c)`, not `a < b < c`.

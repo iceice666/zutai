@@ -2,7 +2,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use zutai_hir::{
     BindingId, BindingKind, HirDeclKind, HirExprId, HirExprKind, HirHandleClause, HirHandleOp,
-    HirLocalBinding, HirRecordField, HirSelectField, HirTupleItem,
+    HirListItem, HirLocalBinding, HirRecordField, HirRecordItem, HirSelectField, HirTupleItem,
+    HirValueSpread,
 };
 use zutai_syntax::Span;
 use zutai_syntax::ast;
@@ -28,6 +29,7 @@ impl<'hir> Lowerer<'hir> {
         match &expr.kind {
             HirExprKind::Record(fields) => self.check_record_expr(id, fields, expected),
             HirExprKind::List(items) => self.check_list_expr(id, items, expected),
+            HirExprKind::SpreadOnly(spreads) => self.check_spread_only_expr(id, spreads, expected),
             HirExprKind::Tuple(items) => self.check_tuple_expr(id, items, expected),
             HirExprKind::Block { bindings, result } => {
                 self.lower_block_expr(id, bindings, *result, Some(expected))
@@ -183,6 +185,13 @@ impl<'hir> Lowerer<'hir> {
             }
             HirExprKind::Tuple(items) => self.infer_tuple_expr(id, items, expr.span),
             HirExprKind::List(items) => self.infer_list_expr(id, items, expr.span),
+            HirExprKind::SpreadOnly(_) => {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::SpreadOnlyLiteralNeedsType,
+                    span: expr.span,
+                });
+                self.error_expr(id, expr.span)
+            }
             HirExprKind::TypeForm(ty) => {
                 let value = self.lower_type(*ty);
                 // The type value `value` inhabits the universe `type_universe(value)`

@@ -379,6 +379,7 @@ pub enum TlcExpr {
     GetField(TlcExprId, String),
     Tuple(Vec<TlcTupleItem>),
     List(Vec<TlcExprId>),
+    ListAppend(TlcExprId, TlcExprId),
     Builtin(BuiltinOp, TlcExprId, TlcExprId),
     Import(HirImportSource),
     /// Inject a value into a sum / union arm: `#dev` or `(#circle, …)`.

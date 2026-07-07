@@ -17,10 +17,11 @@ pub use diagnostic::{HirDiagnostic, HirDiagnosticKind};
 pub use ir::{
     BUILTIN_VALUE_NAMES, Binding, BindingId, BindingKind, HirClause, HirDecl, HirDeclId,
     HirDeclKind, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind, HirFile,
-    HirHandleClause, HirHandleOp, HirImportSource, HirLevel, HirLocalBinding, HirPat, HirPatId,
-    HirPatKind, HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind, HirSelectField,
-    HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField,
-    HirTypeTupleItem, HirUnionVariant,
+    HirHandleClause, HirHandleOp, HirImportSource, HirLevel, HirListItem, HirLocalBinding, HirPat,
+    HirPatId, HirPatKind, HirRecordField, HirRecordItem, HirRecordPatField, HirRowSpread,
+    HirRowSpreadKind, HirRowTail, HirRowTailKind, HirSelectField, HirTupleItem, HirTuplePatItem,
+    HirTypeExpr, HirTypeId, HirTypeKind, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant,
+    HirValueSpread,
 };
 pub use lower::{HirLowerOptions, LoweredHir, lower_file, lower_file_with_options};
 pub use pass::{

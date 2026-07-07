@@ -150,6 +150,11 @@ impl<'a> TlcEvaluator<'a> {
                     }),
                 }
             }
+            BuiltinFn::ListAppend => {
+                let left = args[0].force_tlc(&self)?;
+                let right = args[1].force_tlc(&self)?;
+                Ok(EvalControl::Value(append_list_values(left, right)?))
+            }
             BuiltinFn::ListIsNil => match args[0].force_tlc(&self)? {
                 Value::List(items) => Ok(EvalControl::Value(Value::Bool(items.is_empty()))),
                 other => Err(EvalError::TypeMismatch {

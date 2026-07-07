@@ -410,6 +410,7 @@ pub(crate) fn emit_instr(out: &mut String, instr: &SsaInstr, tmp: &mut u64) {
                 .collect();
             let (callee, operands) = match op {
                 DfListPrimOp::Cons => ("zutai.list_cons", operands.as_slice()),
+                DfListPrimOp::Append => ("zutai.list_append", operands.as_slice()),
                 DfListPrimOp::IsNil => ("zutai.list_is_nil", operands.as_slice()),
                 DfListPrimOp::Head => ("zutai.list_head", operands.as_slice()),
                 DfListPrimOp::Tail => ("zutai.list_tail", operands.as_slice()),

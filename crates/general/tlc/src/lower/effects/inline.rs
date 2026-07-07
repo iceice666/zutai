@@ -250,6 +250,11 @@ impl<'m> EffectInliner<'m> {
                     .collect();
                 self.alloc_from(id, TlcExpr::List(items))
             }
+            TlcExpr::ListAppend(left, right) => {
+                let left = self.inline_expr(left);
+                let right = self.inline_expr(right);
+                self.alloc_from(id, TlcExpr::ListAppend(left, right))
+            }
             TlcExpr::Builtin(op, lhs, rhs) => {
                 let lhs = self.inline_expr(lhs);
                 let rhs = self.inline_expr(rhs);
@@ -569,6 +574,11 @@ impl<'m> EffectInliner<'m> {
                     .map(|item| self.freshen_expr(item, subst))
                     .collect(),
             ),
+            TlcExpr::ListAppend(left, right) => {
+                let left = self.freshen_expr(left, subst);
+                let right = self.freshen_expr(right, subst);
+                TlcExpr::ListAppend(left, right)
+            }
             TlcExpr::Builtin(op, lhs, rhs) => {
                 let lhs = self.freshen_expr(lhs, subst);
                 let rhs = self.freshen_expr(rhs, subst);

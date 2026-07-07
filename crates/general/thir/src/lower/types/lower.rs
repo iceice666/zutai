@@ -5,18 +5,29 @@ impl<'hir> Lowerer<'hir> {
         let ty = self.hir_type(id);
         match &ty.kind {
             HirTypeKind::BindingRef(binding) => self.alias_or_builtin_type(*binding, ty.span),
-            HirTypeKind::Record { fields, tail } => {
+            HirTypeKind::Record {
+                fields,
+                spreads,
+                tail,
+            } => {
                 let mut thir_fields: Vec<TypeRecordField> = fields
                     .iter()
                     .map(|field| self.lower_type_record_field(field))
                     .collect();
+                for spread in spreads {
+                    self.lower_record_spread(spread, &mut thir_fields);
+                }
                 let row_tail = self.lower_record_tail(tail.as_ref(), &mut thir_fields);
                 self.alloc_type(Type {
                     kind: TypeKind::Record(thir_fields, row_tail),
                     span: ty.span,
                 })
             }
-            HirTypeKind::Union { variants, tail } => {
+            HirTypeKind::Union {
+                variants,
+                spreads,
+                tail,
+            } => {
                 let mut thir_variants: Vec<UnionVariant> = variants
                     .iter()
                     .map(|v: &HirUnionVariant| UnionVariant {
@@ -27,6 +38,9 @@ impl<'hir> Lowerer<'hir> {
                         span: v.span,
                     })
                     .collect();
+                for spread in spreads {
+                    self.lower_union_spread(spread, &mut thir_variants);
+                }
                 let row_tail = self.lower_union_tail(tail.as_ref(), &mut thir_variants);
                 self.alloc_type(Type {
                     kind: TypeKind::Union(thir_variants, row_tail),
@@ -361,9 +375,9 @@ impl<'hir> Lowerer<'hir> {
         EffectRow { ops, tail }
     }
 
-    fn lower_effect_row_spread(&mut self, spread: &HirRowTail, ops: &mut Vec<EffectOp>) {
+    fn lower_effect_row_spread(&mut self, spread: &HirRowSpread, ops: &mut Vec<EffectOp>) {
         match &spread.kind {
-            HirRowTailKind::Spread(binding) => {
+            HirRowSpreadKind::Spread(binding) => {
                 let source = self.binding_name(*binding).to_string();
                 let spread_ty = self.alias_or_builtin_type(*binding, spread.span);
                 let tail = self.expand_effect_row_spread_type(source, spread_ty, spread.span, ops);
@@ -376,7 +390,7 @@ impl<'hir> Lowerer<'hir> {
                     });
                 }
             }
-            HirRowTailKind::QualifiedSpread { ty, source } => {
+            HirRowSpreadKind::QualifiedSpread { ty, source } => {
                 let spread_ty = self.lower_type(*ty);
                 let tail =
                     self.expand_effect_row_spread_type(source.clone(), spread_ty, spread.span, ops);
@@ -389,26 +403,17 @@ impl<'hir> Lowerer<'hir> {
                     });
                 }
             }
-            HirRowTailKind::Anonymous | HirRowTailKind::Var(_) => {
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::InvalidTypeExpression {
-                        reason: "effect-row tail must appear last",
-                    },
-                    span: spread.span,
-                });
-            }
-            HirRowTailKind::Unresolved(_) => {}
+            HirRowSpreadKind::Unresolved(_) => {}
         }
     }
 
     /// Lower an effect-row tail. A row variable `...e` becomes a rigid `Param`
     /// (threaded through signatures by exact-tail unification, like record/union
-    /// row variables); anonymous `...` / an unresolved name becomes `Open`. A
-    /// final `...Name` spread of a named effect type expands that type's row.
+    /// row variables); anonymous `...` / an unresolved name becomes `Open`.
     fn lower_effect_row_tail(
         &mut self,
         tail: Option<&HirRowTail>,
-        ops: &mut Vec<EffectOp>,
+        _ops: &mut Vec<EffectOp>,
     ) -> RowTail {
         let Some(tail) = tail else {
             return RowTail::Closed;
@@ -416,15 +421,6 @@ impl<'hir> Lowerer<'hir> {
         match &tail.kind {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
-            HirRowTailKind::Spread(binding) => {
-                let source = self.binding_name(*binding).to_string();
-                let spread_ty = self.alias_or_builtin_type(*binding, tail.span);
-                self.expand_effect_row_spread_type(source, spread_ty, tail.span, ops)
-            }
-            HirRowTailKind::QualifiedSpread { ty, source } => {
-                let spread_ty = self.lower_type(*ty);
-                self.expand_effect_row_spread_type(source.clone(), spread_ty, tail.span, ops)
-            }
         }
     }
 
@@ -492,13 +488,49 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Lower a record row tail, expanding `...Shape` spreads into `fields` and
-    /// returning the resulting `RowTail`. Anonymous `...` becomes `Open`; a
-    /// `<Rest>` row variable becomes a rigid `Param`.
+    fn lower_record_spread(&mut self, spread: &HirRowSpread, fields: &mut Vec<TypeRecordField>) {
+        match &spread.kind {
+            HirRowSpreadKind::Spread(binding) => {
+                let source = self.binding_name(*binding).to_string();
+                let spread_ty = self.alias_or_builtin_type(*binding, spread.span);
+                let tail =
+                    self.expand_record_row_spread_type(source, spread_ty, spread.span, fields);
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "record spread requires a closed record type",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowSpreadKind::QualifiedSpread { ty, source } => {
+                let spread_ty = self.lower_type(*ty);
+                let tail = self.expand_record_row_spread_type(
+                    source.clone(),
+                    spread_ty,
+                    spread.span,
+                    fields,
+                );
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "record spread requires a closed record type",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowSpreadKind::Unresolved(_) => {}
+        }
+    }
+
+    /// Lower a record row tail. Anonymous `...` becomes `Open`; a `<Rest>` row
+    /// variable becomes a rigid `Param`.
     pub(in crate::lower) fn lower_record_tail(
         &mut self,
         tail: Option<&HirRowTail>,
-        fields: &mut Vec<TypeRecordField>,
+        _fields: &mut Vec<TypeRecordField>,
     ) -> RowTail {
         let Some(tail) = tail else {
             return RowTail::Closed;
@@ -506,15 +538,6 @@ impl<'hir> Lowerer<'hir> {
         match &tail.kind {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
-            HirRowTailKind::Spread(binding) => {
-                let source = self.binding_name(*binding).to_string();
-                let spread = self.alias_or_builtin_type(*binding, tail.span);
-                self.expand_record_row_spread_type(source, spread, tail.span, fields)
-            }
-            HirRowTailKind::QualifiedSpread { ty, source } => {
-                let spread = self.lower_type(*ty);
-                self.expand_record_row_spread_type(source.clone(), spread, tail.span, fields)
-            }
         }
     }
 
@@ -561,11 +584,48 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    /// Lower a union row tail, expanding `...Shape` spreads into `variants`.
+    fn lower_union_spread(&mut self, spread: &HirRowSpread, variants: &mut Vec<UnionVariant>) {
+        match &spread.kind {
+            HirRowSpreadKind::Spread(binding) => {
+                let source = self.binding_name(*binding).to_string();
+                let spread_ty = self.alias_or_builtin_type(*binding, spread.span);
+                let tail =
+                    self.expand_union_row_spread_type(source, spread_ty, spread.span, variants);
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "union spread requires a closed union type",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowSpreadKind::QualifiedSpread { ty, source } => {
+                let spread_ty = self.lower_type(*ty);
+                let tail = self.expand_union_row_spread_type(
+                    source.clone(),
+                    spread_ty,
+                    spread.span,
+                    variants,
+                );
+                if tail != RowTail::Closed {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::InvalidTypeExpression {
+                            reason: "union spread requires a closed union type",
+                        },
+                        span: spread.span,
+                    });
+                }
+            }
+            HirRowSpreadKind::Unresolved(_) => {}
+        }
+    }
+
+    /// Lower a union row tail.
     pub(in crate::lower) fn lower_union_tail(
         &mut self,
         tail: Option<&HirRowTail>,
-        variants: &mut Vec<UnionVariant>,
+        _variants: &mut Vec<UnionVariant>,
     ) -> RowTail {
         let Some(tail) = tail else {
             return RowTail::Closed;
@@ -573,15 +633,6 @@ impl<'hir> Lowerer<'hir> {
         match &tail.kind {
             HirRowTailKind::Anonymous | HirRowTailKind::Unresolved(_) => RowTail::Open,
             HirRowTailKind::Var(binding) => RowTail::Param(*binding),
-            HirRowTailKind::Spread(binding) => {
-                let source = self.binding_name(*binding).to_string();
-                let spread = self.alias_or_builtin_type(*binding, tail.span);
-                self.expand_union_row_spread_type(source, spread, tail.span, variants)
-            }
-            HirRowTailKind::QualifiedSpread { ty, source } => {
-                let spread = self.lower_type(*ty);
-                self.expand_union_row_spread_type(source.clone(), spread, tail.span, variants)
-            }
         }
     }
 

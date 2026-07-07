@@ -290,7 +290,13 @@ impl<'hir> Lowerer<'hir> {
             }
             HirExprKind::Apply { func, arg } => self.max_resumes(*func) + self.max_resumes(*arg),
             HirExprKind::Binary { lhs, rhs, .. } => self.max_resumes(*lhs) + self.max_resumes(*rhs),
-            HirExprKind::Record(fields) => fields.iter().map(|f| self.max_resumes(f.value)).sum(),
+            HirExprKind::Record(items) => items
+                .iter()
+                .map(|item| match item {
+                    HirRecordItem::Field(field) => self.max_resumes(field.value),
+                    HirRecordItem::Spread(spread) => self.max_resumes(spread.value),
+                })
+                .sum(),
             HirExprKind::RecordUpdate { receiver, fields } => {
                 self.max_resumes(*receiver)
                     + fields
@@ -306,7 +312,17 @@ impl<'hir> Lowerer<'hir> {
                     }
                 })
                 .sum(),
-            HirExprKind::List(items) => items.iter().map(|&e| self.max_resumes(e)).sum(),
+            HirExprKind::List(items) => items
+                .iter()
+                .map(|item| match item {
+                    HirListItem::Item(value) => self.max_resumes(*value),
+                    HirListItem::Spread(spread) => self.max_resumes(spread.value),
+                })
+                .sum(),
+            HirExprKind::SpreadOnly(spreads) => spreads
+                .iter()
+                .map(|spread| self.max_resumes(spread.value))
+                .sum(),
             HirExprKind::TaggedValue { payload, .. } => self.max_resumes(*payload),
             HirExprKind::Select { receiver, .. }
             | HirExprKind::Access { receiver, .. }

@@ -666,7 +666,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Open record `{ host: Text; …; }` | `RecordT(RExtend("host", Text, RVar(r)))` | 3 |
 | Named row tail `...Rest` | `RVar(Rest)` in `Row` | 3 |
 | Open union `type { #a; ...Rest; }` | `VariantT(RExtend("a", …, RVar(r)))` | 3 |
-| Union extension `...Shape` | row spread, resolved at elaboration | 3 |
+| Union extension `* Shape` | row spread, resolved at elaboration | 3 |
 | HKT param `F :: Type -> Type` | `ForAll(F, Type0 -> Type0, body)` | 1+3 |
 | Constraint `<A: Eq>` | extra dict `Lam(dict: {eq: A -> A -> Bool}, …)` | 5 |
 | Witness `Eq @Int :: { … }` / operator method `(==)` | `Record([("eq", Var(eqIntImpl))])`; operator fields use names like `"=="` and calls lower through `GetField` + `App` | 5 |

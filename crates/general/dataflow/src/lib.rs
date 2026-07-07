@@ -150,6 +150,8 @@ pub enum DfBuiltinOp {
 pub enum DfListPrimOp {
     /// `listCons : A -> List A -> List A` — prepend (2 args: head, tail).
     Cons,
+    /// `listAppend : List A -> List A -> List A` — concatenate (2 args).
+    Append,
     /// `listIsNil : List A -> Bool` — emptiness test (1 arg).
     IsNil,
     /// `listHead : List A -> A` — first element (1 arg).

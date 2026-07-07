@@ -217,7 +217,9 @@ impl<'module> EffectElaborator<'module> {
             TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
                 self.handler_expr_contains_control(*body)
             }
-            TlcExpr::App(func, arg) | TlcExpr::Builtin(_, func, arg) => {
+            TlcExpr::App(func, arg)
+            | TlcExpr::Builtin(_, func, arg)
+            | TlcExpr::ListAppend(func, arg) => {
                 self.handler_expr_contains_control(*func)
                     || self.handler_expr_contains_control(*arg)
             }
@@ -513,6 +515,13 @@ impl<'module> EffectElaborator<'module> {
                     })
                     .collect();
                 self.alloc_like(id, TlcExpr::List(items), self.expr_ty(id))
+            }
+            TlcExpr::ListAppend(left, right) => {
+                let left =
+                    self.rewrite_handler_expr(left, resume_lam, result_ty, subst, parent_handlers);
+                let right =
+                    self.rewrite_handler_expr(right, resume_lam, result_ty, subst, parent_handlers);
+                self.alloc_like(id, TlcExpr::ListAppend(left, right), self.expr_ty(id))
             }
             TlcExpr::Variant(tag, payload) => {
                 let payload = self.rewrite_handler_expr(

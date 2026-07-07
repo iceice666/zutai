@@ -77,9 +77,15 @@ fn as_ident(e: &Expr) -> &str {
     }
 }
 
-fn as_record(e: &Expr) -> &Vec<RecordField> {
+fn as_record(e: &Expr) -> Vec<&RecordField> {
     match e {
-        Expr::Record { fields, .. } => fields,
+        Expr::Record { items, .. } => items
+            .iter()
+            .filter_map(|item| match item {
+                RecordItem::Field(field) => Some(field),
+                RecordItem::Spread(_) => None,
+            })
+            .collect(),
         other => panic!("expected Record, got {other:?}"),
     }
 }
@@ -93,9 +99,15 @@ fn as_record_update(e: &Expr) -> (&Expr, &Vec<RecordField>) {
     }
 }
 
-fn as_list(e: &Expr) -> &Vec<Expr> {
+fn as_list(e: &Expr) -> Vec<&Expr> {
     match e {
-        Expr::List { items, .. } => items,
+        Expr::List { items, .. } => items
+            .iter()
+            .filter_map(|item| match item {
+                ListItem::Item(expr) => Some(expr),
+                ListItem::Spread(_) => None,
+            })
+            .collect(),
         other => panic!("expected List, got {other:?}"),
     }
 }
@@ -137,7 +149,7 @@ fn as_access(e: &Expr) -> (&Expr, &str) {
     }
 }
 
-fn field_val<'a>(rec: &'a [RecordField], name: &str) -> &'a Expr {
+fn field_val<'a>(rec: &'a [&'a RecordField], name: &str) -> &'a Expr {
     rec.iter()
         .find(|f| f.name == name)
         .map(|f| &f.value)

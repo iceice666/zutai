@@ -29,6 +29,51 @@ fn v1_record_row_tails_parse() {
 }
 
 #[test]
+fn v1_explicit_row_spreads_parse() {
+    let e = parse_expr_str("type { * Base; host : Text; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Record {
+                fields,
+                spreads,
+                tail,
+                ..
+            } => {
+                assert_eq!(fields[0].name, "host");
+                assert!(tail.is_none());
+                assert!(matches!(&spreads[0], RowSpread::Named { name, .. } if name == "Base"));
+            }
+            other => panic!("expected TyRecord, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+
+    let e = parse_expr_str("type { * m.Base; #extra; }");
+    match e {
+        Expr::TypeForm { ty, .. } => match ty.as_ref() {
+            TypeExpr::Union {
+                variants,
+                spreads,
+                tail,
+                ..
+            } => {
+                assert_eq!(variants[0].name, "extra");
+                assert!(tail.is_none());
+                let RowSpread::Qualified { path, .. } = &spreads[0] else {
+                    panic!("expected qualified spread");
+                };
+                assert_eq!(
+                    path.iter().map(String::as_str).collect::<Vec<_>>(),
+                    ["m", "Base"]
+                );
+            }
+            other => panic!("expected TyUnion, got {other:?}"),
+        },
+        other => panic!("expected TypeForm, got {other:?}"),
+    }
+}
+
+#[test]
 fn v1_row_tail_overlapping_record_field_rejected() {
     assert!(parse("T :: type { host : Text; ...host; }\n1").has_errors());
 }
@@ -37,6 +82,7 @@ fn v1_row_tail_overlapping_record_field_rejected() {
 fn v1_record_row_tail_must_be_last_and_unique() {
     assert!(parse("T :: type { ...Rest; host : Text; }\n1").has_errors());
     assert!(parse("T :: type { ...A; ...B; }\n1").has_errors());
+    assert!(parse("T :: type { ...m.Base; }\n1").has_errors());
 }
 
 #[test]
@@ -61,11 +107,17 @@ fn v1_union_row_tails_and_spreads_parse() {
         other => panic!("expected TypeForm, got {other:?}"),
     }
 
-    let e = parse_expr_str("type { ...Shape; #sphere: { radius : Float; }; }");
+    let e = parse_expr_str("type { * Shape; #sphere: { radius : Float; }; }");
     match e {
         Expr::TypeForm { ty, .. } => match ty.as_ref() {
-            TypeExpr::Union { variants, tail, .. } => {
-                assert!(matches!(tail, Some(RowTail::Named { name, .. }) if name == "Shape"));
+            TypeExpr::Union {
+                variants,
+                spreads,
+                tail,
+                ..
+            } => {
+                assert!(tail.is_none());
+                assert!(matches!(&spreads[0], RowSpread::Named { name, .. } if name == "Shape"));
                 assert_eq!(variants[0].name, "sphere");
                 let payload = variants[0].payload.as_deref().expect("payload");
                 assert!(
@@ -106,6 +158,30 @@ fn v1_value_select_preserves_field_order() {
         }
         other => panic!("expected Select, got {other:?}"),
     }
+}
+
+#[test]
+fn v1_value_spreads_parse() {
+    let e = parse_expr_str("{ * base; port = 8080; }");
+    let Expr::Record { items, .. } = e else {
+        panic!("expected record spread literal");
+    };
+    assert!(matches!(items[0], RecordItem::Spread(_)));
+    assert!(matches!(&items[1], RecordItem::Field(field) if field.name == "port"));
+
+    let e = parse_expr_str("{ 1; * xs; 4; }");
+    let Expr::List { items, .. } = e else {
+        panic!("expected list spread literal");
+    };
+    assert!(matches!(items[0], ListItem::Item(_)));
+    assert!(matches!(items[1], ListItem::Spread(_)));
+    assert!(matches!(items[2], ListItem::Item(_)));
+
+    let e = parse_expr_str("{ * x; }");
+    assert!(matches!(e, Expr::SpreadOnly { .. }));
+
+    assert!(parse("x ::= { a = 1; 2; };\nx").has_errors());
+    assert!(parse("x ::= { 1; a = 2; };\nx").has_errors());
 }
 
 #[test]
@@ -218,7 +294,7 @@ Eff :: type Unit ! { tick; fs.read : Path -> Text; fail Error };
 fn v1_effect_row_named_spread_before_tail_parses() {
     let f = parse_str(
         r#"
-Eff :: <e> type Unit ! { ...FsRead; ...e; };
+Eff :: <e> type Unit ! { * FsRead; ...e; };
 1
 "#,
     );
@@ -231,7 +307,7 @@ Eff :: <e> type Unit ! { ...FsRead; ...e; };
     assert_eq!(effects.spreads.len(), 1);
     assert!(matches!(
         &effects.spreads[0],
-        RowTail::Named { name, .. } if name == "FsRead"
+        RowSpread::Named { name, .. } if name == "FsRead"
     ));
     assert!(matches!(
         effects.tail.as_ref(),
@@ -243,7 +319,7 @@ Eff :: <e> type Unit ! { ...FsRead; ...e; };
 fn v1_effect_row_qualified_spread_before_tail_parses() {
     let f = parse_str(
         r#"
-Eff :: <e> type Unit ! { ...fs.ReadEffects; ...e; };
+Eff :: <e> type Unit ! { * fs.ReadEffects; ...e; };
 1
 "#,
     );
@@ -254,7 +330,7 @@ Eff :: <e> type Unit ! { ...fs.ReadEffects; ...e; };
         panic!("expected effect type");
     };
     assert_eq!(effects.spreads.len(), 1);
-    let RowTail::Qualified { path, .. } = &effects.spreads[0] else {
+    let RowSpread::Qualified { path, .. } = &effects.spreads[0] else {
         panic!("expected qualified spread, got {:?}", effects.spreads[0]);
     };
     assert_eq!(

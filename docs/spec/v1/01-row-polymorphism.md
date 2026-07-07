@@ -195,12 +195,12 @@ Union extension spreads an existing union type into a new union type and then ad
 
 ```zt
 Shape3D :: type {
-  ...Shape;
+  * Shape;
   #sphere: { radius : Float; };
 }
 ```
 
-Here `...Shape;` means "include the members of the existing union type `Shape`." This is distinct from `...Rest;`, where `Rest` is a row variable introduced by a polymorphic type parameter list.
+Here `* Shape;` means "include the members of the existing union type `Shape`." This is distinct from `...Rest;`, where `Rest` is a row variable introduced by a polymorphic type parameter list.
 
 ---
 

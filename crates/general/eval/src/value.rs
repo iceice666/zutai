@@ -131,6 +131,7 @@ pub enum BuiltinFn {
     /// (defined only on a non-nil list); `fromList` guards them with `listIsNil`.
     ListEmpty,
     ListCons,
+    ListAppend,
     ListIsNil,
     ListHead,
     ListTail,
@@ -171,6 +172,7 @@ impl BuiltinFn {
             "overlayDeep" => Some(BuiltinFn::OverlayDeep),
             "listEmpty" => Some(BuiltinFn::ListEmpty),
             "listCons" => Some(BuiltinFn::ListCons),
+            "listAppend" => Some(BuiltinFn::ListAppend),
             "listIsNil" => Some(BuiltinFn::ListIsNil),
             "listHead" => Some(BuiltinFn::ListHead),
             "listTail" => Some(BuiltinFn::ListTail),
@@ -221,6 +223,7 @@ impl BuiltinFn {
             | BuiltinFn::TextParseInt
             | BuiltinFn::TextParseFloat => 1,
             BuiltinFn::ListCons
+            | BuiltinFn::ListAppend
             | BuiltinFn::NumRem
             | BuiltinFn::NumPow
             | BuiltinFn::TextSplit
@@ -242,6 +245,7 @@ impl BuiltinFn {
             BuiltinFn::OverlayDeep => "overlayDeep",
             BuiltinFn::ListEmpty => "listEmpty",
             BuiltinFn::ListCons => "listCons",
+            BuiltinFn::ListAppend => "listAppend",
             BuiltinFn::ListIsNil => "listIsNil",
             BuiltinFn::ListHead => "listHead",
             BuiltinFn::ListTail => "listTail",
@@ -615,6 +619,25 @@ pub(crate) fn update_record_value(
         }
     }
     Value::Record(Rc::new(fields))
+}
+
+pub(crate) fn append_list_values(left: Value, right: Value) -> Result<Value, EvalError> {
+    let Value::List(left_items) = left else {
+        return Err(EvalError::TypeMismatch {
+            expected: "List",
+            found: runtime_value_type_name(&left),
+        });
+    };
+    let Value::List(right_items) = right else {
+        return Err(EvalError::TypeMismatch {
+            expected: "List",
+            found: runtime_value_type_name(&right),
+        });
+    };
+    let mut elems = Vec::with_capacity(left_items.len() + right_items.len());
+    elems.extend(left_items.iter().cloned());
+    elems.extend(right_items.iter().cloned());
+    Ok(Value::List(Rc::from(elems)))
 }
 
 pub(crate) fn overlay_value<F>(

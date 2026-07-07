@@ -43,6 +43,7 @@ pub enum ThirDiagnosticKind {
         found: String,
     },
     EmptyListNeedsType,
+    SpreadOnlyLiteralNeedsType,
     TupleArityMismatch {
         expected: usize,
         found: usize,

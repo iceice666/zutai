@@ -15,7 +15,7 @@ impl Lowerer {
         let spreads = row
             .spreads
             .iter()
-            .map(|tail| self.lower_row_tail(tail))
+            .map(|spread| self.lower_row_spread(spread))
             .collect();
         let tail = row.tail.as_ref().map(|tail| self.lower_row_tail(tail));
         HirEffectRow {
@@ -26,9 +26,8 @@ impl Lowerer {
         }
     }
 
-    /// Lower a row tail, distinguishing a row variable (`...Rest`, an in-scope
-    /// type parameter) from a named-type spread (`...Shape`). A tail naming a
-    /// non-type binding is reported as an invalid row-tail target.
+    /// Lower a row tail. Named tails must resolve to in-scope type parameters;
+    /// named/qualified type spreads use separate `* Name` syntax.
     pub(super) fn lower_row_tail(&mut self, tail: &ast::RowTail) -> HirRowTail {
         let span = tail.span();
         let kind = match tail {
@@ -36,9 +35,6 @@ impl Lowerer {
             ast::RowTail::Named { name, .. } => match self.resolve(name) {
                 Some(binding) => match self.bindings[binding.0 as usize].kind {
                     BindingKind::TypeParam => HirRowTailKind::Var(binding),
-                    BindingKind::TopType | BindingKind::BuiltinType => {
-                        HirRowTailKind::Spread(binding)
-                    }
                     _ => {
                         self.diagnostics.push(HirDiagnostic {
                             kind: HirDiagnosticKind::InvalidRowTailTarget { name: name.clone() },
@@ -55,12 +51,40 @@ impl Lowerer {
                     HirRowTailKind::Unresolved(name.clone())
                 }
             },
-            ast::RowTail::Qualified { path, .. } => HirRowTailKind::QualifiedSpread {
+        };
+        HirRowTail { kind, span }
+    }
+
+    pub(super) fn lower_row_spread(&mut self, spread: &ast::RowSpread) -> HirRowSpread {
+        let span = spread.span();
+        let kind = match spread {
+            ast::RowSpread::Named { name, .. } => match self.resolve(name) {
+                Some(binding) => match self.bindings[binding.0 as usize].kind {
+                    BindingKind::TopType | BindingKind::BuiltinType => {
+                        HirRowSpreadKind::Spread(binding)
+                    }
+                    _ => {
+                        self.diagnostics.push(HirDiagnostic {
+                            kind: HirDiagnosticKind::InvalidRowTailTarget { name: name.clone() },
+                            span,
+                        });
+                        HirRowSpreadKind::Unresolved(name.clone())
+                    }
+                },
+                None => {
+                    self.diagnostics.push(HirDiagnostic {
+                        kind: HirDiagnosticKind::UnknownIdentifier { name: name.clone() },
+                        span,
+                    });
+                    HirRowSpreadKind::Unresolved(name.clone())
+                }
+            },
+            ast::RowSpread::Qualified { path, .. } => HirRowSpreadKind::QualifiedSpread {
                 ty: self.lower_qualified_row_spread(path, span),
                 source: path.join("."),
             },
         };
-        HirRowTail { kind, span }
+        HirRowSpread { kind, span }
     }
 
     fn lower_qualified_row_spread(&mut self, path: &[String], span: Span) -> HirTypeId {
@@ -194,7 +218,12 @@ impl Lowerer {
                     HirTypeKind::UnresolvedIdent(name.clone())
                 }
             },
-            ast::TypeExpr::Record { fields, tail, .. } => {
+            ast::TypeExpr::Record {
+                fields,
+                spreads,
+                tail,
+                ..
+            } => {
                 let fields = fields
                     .iter()
                     .map(|field| HirTypeRecordField {
@@ -204,10 +233,23 @@ impl Lowerer {
                         span: field.span,
                     })
                     .collect();
+                let spreads = spreads
+                    .iter()
+                    .map(|spread| self.lower_row_spread(spread))
+                    .collect();
                 let tail = tail.as_ref().map(|tail| self.lower_row_tail(tail));
-                HirTypeKind::Record { fields, tail }
+                HirTypeKind::Record {
+                    fields,
+                    spreads,
+                    tail,
+                }
             }
-            ast::TypeExpr::Union { variants, tail, .. } => {
+            ast::TypeExpr::Union {
+                variants,
+                spreads,
+                tail,
+                ..
+            } => {
                 let variants = variants
                     .iter()
                     .map(|v| HirUnionVariant {
@@ -216,8 +258,16 @@ impl Lowerer {
                         span: v.span,
                     })
                     .collect();
+                let spreads = spreads
+                    .iter()
+                    .map(|spread| self.lower_row_spread(spread))
+                    .collect();
                 let tail = tail.as_ref().map(|tail| self.lower_row_tail(tail));
-                HirTypeKind::Union { variants, tail }
+                HirTypeKind::Union {
+                    variants,
+                    spreads,
+                    tail,
+                }
             }
             ast::TypeExpr::Tuple { items, .. } => HirTypeKind::Tuple(
                 items

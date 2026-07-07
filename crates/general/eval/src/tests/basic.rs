@@ -227,6 +227,18 @@ fn record_update_replaces_only_named_field() {
 }
 
 #[test]
+fn record_value_spread_merges_left_to_right() {
+    let v = run(r#"
+base ::= { host = "h"; port = 80; };
+extra ::= { debug = true; port = 443; };
+{ * base; * extra; port = 8080; }
+"#);
+    assert_eq!(record_field_value(&v, "host"), Value::Text("h".into()));
+    assert_eq!(record_field_value(&v, "debug"), Value::Bool(true));
+    assert_eq!(record_field_value(&v, "port"), Value::Int(8080));
+}
+
+#[test]
 fn record_update_does_not_force_unchanged_fields() {
     let src = r#"
 bad :: Int = bad;
@@ -405,6 +417,12 @@ fn list_equality() {
     // Lists require trailing `;` in Zutai syntax.
     assert_eq!(run("{1; 2; 3;} == {1; 2; 3;}"), Value::Bool(true));
     assert_eq!(run("{1; 2; 3;} == {1; 2; 4;}"), Value::Bool(false));
+}
+
+#[test]
+fn list_value_spread_concatenates_in_place() {
+    let src = "xs ::= {2; 3;};\n{1; * xs; 4;} == {1; 2; 3; 4;}";
+    assert_eq!(run(src), Value::Bool(true));
 }
 
 #[test]

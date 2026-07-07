@@ -9,10 +9,11 @@ use crate::diagnostic::{HirDiagnostic, HirDiagnosticKind};
 use crate::ir::{
     Binding, BindingId, BindingKind, HirClause, HirConstraintMethod, HirDecl, HirDeclId,
     HirDeclKind, HirDeriveRecipe, HirEffectOp, HirEffectRow, HirExpr, HirExprId, HirExprKind,
-    HirFile, HirHandleClause, HirHandleOp, HirImportSource, HirLevel, HirLocalBinding, HirPat,
-    HirPatId, HirPatKind, HirRecordField, HirRecordPatField, HirRowTail, HirRowTailKind,
-    HirSelectField, HirTupleItem, HirTuplePatItem, HirTypeExpr, HirTypeId, HirTypeKind,
-    HirTypeParam, HirTypeRecordField, HirTypeTupleItem, HirUnionVariant, HirWitnessField,
+    HirFile, HirHandleClause, HirHandleOp, HirImportSource, HirLevel, HirListItem, HirLocalBinding,
+    HirPat, HirPatId, HirPatKind, HirRecordField, HirRecordItem, HirRecordPatField, HirRowSpread,
+    HirRowSpreadKind, HirRowTail, HirRowTailKind, HirSelectField, HirTupleItem, HirTuplePatItem,
+    HirTypeExpr, HirTypeId, HirTypeKind, HirTypeParam, HirTypeRecordField, HirTypeTupleItem,
+    HirUnionVariant, HirValueSpread, HirWitnessField,
 };
 use crate::pass::{HirPassReport, run_default_passes};
 

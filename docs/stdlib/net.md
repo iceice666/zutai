@@ -30,7 +30,7 @@ the existing host-operation behavior.
 | `Server A` | `A ! { net.listen; net.accept; net.read; net.write; net.close; }` |
 
 Closed operation packs such as `ConnectionEffects` and `ServerEffects` are
-exported for composition with `...Pack` row spreads.
+exported for composition with `* Pack` row spreads.
 
 ## API
 

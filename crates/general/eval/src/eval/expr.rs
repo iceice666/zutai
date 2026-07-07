@@ -146,6 +146,11 @@ impl<'a> Evaluator<'a> {
                     .collect();
                 Ok(Value::List(thunks))
             }
+            ThirExprKind::ListAppend { left, right } => {
+                let left_value = self.eval(*left, env)?;
+                let right_value = self.eval(*right, env)?;
+                append_list_values(left_value, right_value)
+            }
             ThirExprKind::Record(fields) => {
                 let vec: Vec<(Rc<str>, Thunk)> = fields
                     .iter()

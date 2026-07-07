@@ -70,6 +70,9 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         ExpectedTuple { found } => format!("expected tuple, found {found}"),
         ExpectedOptionalOrMaybe { found } => format!("expected Optional or Maybe, found {found}"),
         EmptyListNeedsType => "empty list needs a type annotation".to_string(),
+        SpreadOnlyLiteralNeedsType => {
+            "spread-only literal needs an expected record or list type".to_string()
+        }
         TupleArityMismatch { expected, found } => {
             format!("tuple arity mismatch: expected {expected}, found {found}")
         }
@@ -174,7 +177,7 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
             incoming,
         } => {
             format!(
-                "record row tail `...{source}` overlaps explicit field `{name}`: existing `{existing}`, incoming `{incoming}`"
+                "record row spread `* {source}` overlaps explicit field `{name}`: existing `{existing}`, incoming `{incoming}`"
             )
         }
         OverlappingRowField {
@@ -185,7 +188,7 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
             incoming,
         } => {
             format!(
-                "union row tail `...{source}` overlaps explicit member `#{name}`: existing `{existing}`, incoming `{incoming}`"
+                "union row spread `* {source}` overlaps explicit member `#{name}`: existing `{existing}`, incoming `{incoming}`"
             )
         }
         OverlappingRowField {
@@ -196,7 +199,7 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
             incoming,
         } => {
             format!(
-                "effect row spread `...{source}` overlaps explicit operation `{name}`: existing `{existing}`, incoming `{incoming}`"
+                "effect row spread `* {source}` overlaps explicit operation `{name}`: existing `{existing}`, incoming `{incoming}`"
             )
         }
         RowAnnotationRequired { field: Some(field) } => {
@@ -253,7 +256,9 @@ pub fn describe_hir_diagnostic(d: &zutai_hir::HirDiagnostic) -> String {
             format!("duplicate field `{name}` in select projection")
         }
         InvalidRowTailTarget { name } => {
-            format!("row tail `...{name}` is neither a row variable nor a spreadable type")
+            format!(
+                "row tail `...{name}` must name a row variable; use `* {name}` to spread a type"
+            )
         }
         ResumeOutsideHandler => "resume outside an operation handler clause".to_string(),
         NonTailYieldFrom => {
@@ -372,6 +377,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
                 }
             }
             ThirExprKind::List(items) => stack.extend(items.iter().copied()),
+            ThirExprKind::ListAppend { left, right } => stack.extend([*left, *right]),
             ThirExprKind::TaggedValue { payload, .. } => stack.push(*payload),
             ThirExprKind::Perform { arg, .. } => stack.push(*arg),
             ThirExprKind::Resume { value } => stack.push(*value),

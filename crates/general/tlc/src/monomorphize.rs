@@ -528,6 +528,11 @@ fn clone_expr(
                 .collect();
             TlcExpr::List(es2)
         }
+        TlcExpr::ListAppend(l, r) => {
+            let l2 = clone_expr(module, l, v, rest, tmemo);
+            let r2 = clone_expr(module, r, v, rest, tmemo);
+            TlcExpr::ListAppend(l2, r2)
+        }
         TlcExpr::Builtin(op, l, r) => {
             let l2 = clone_expr(module, l, v, rest, tmemo);
             let r2 = clone_expr(module, r, v, rest, tmemo);
@@ -676,7 +681,7 @@ pub(crate) fn push_child_exprs(expr: &TlcExpr, out: &mut Vec<TlcExprId>) {
         TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {
             out.push(*body)
         }
-        TlcExpr::App(f, a) | TlcExpr::Builtin(_, f, a) => {
+        TlcExpr::App(f, a) | TlcExpr::Builtin(_, f, a) | TlcExpr::ListAppend(f, a) => {
             out.push(*f);
             out.push(*a);
         }
