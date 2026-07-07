@@ -199,7 +199,7 @@ pub fn kw<'i>(keyword: &'static str) -> impl Parser<&'i str, (), winnow::error::
 fn is_op_continuation(c: char) -> bool {
     matches!(
         c,
-        '=' | ':' | '?' | '.' | '>' | '<' | '|' | '&' | '+' | '-' | '*' | '/'
+        '=' | ':' | '?' | '.' | '>' | '<' | '|' | '&' | '+' | '-' | '*' | '/' | '%'
     )
 }
 

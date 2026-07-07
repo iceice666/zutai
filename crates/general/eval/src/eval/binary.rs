@@ -294,6 +294,21 @@ impl<'a> Evaluator<'a> {
                 (Value::Int(_), Value::Int(0)) => Err(EvalError::DivByZero),
                 _ => numeric_binop(lv, rv, i64::checked_div, f64::div, "/"),
             },
+            BinOp::Rem => match (lv, rv) {
+                (Value::Int(_), Value::Int(0)) => Err(EvalError::RemByZero),
+                (Value::Int(a), Value::Int(b)) => a
+                    .checked_rem(b)
+                    .map(Value::Int)
+                    .ok_or(EvalError::IntOverflow("%")),
+                (a, b) => Err(EvalError::TypeMismatch {
+                    expected: "Int",
+                    found: if matches!(a, Value::Int(_)) {
+                        value_type_name(&b)
+                    } else {
+                        value_type_name(&a)
+                    },
+                }),
+            },
             BinOp::Eq => {
                 if let Some(v) =
                     self.try_operator_dispatch(BinOp::Eq, self.expr(lhs).ty, &lv, &rv, env)?

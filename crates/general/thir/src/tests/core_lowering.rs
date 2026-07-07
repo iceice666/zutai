@@ -90,6 +90,22 @@ fn fixed_width_arithmetic_is_rejected() {
 }
 
 #[test]
+fn remainder_requires_int_operands() {
+    let file = completed_file("17 % 5");
+    assert!(matches!(final_type_kind(&file), TypeKind::Int));
+
+    let lowered = lower("1.0 % 2.0");
+    assert!(lowered.file.is_none());
+    assert!(lowered.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            &diagnostic.kind,
+            ThirDiagnosticKind::TypeMismatch { expected, found }
+                if expected == "Int" && found == "Float"
+        )
+    }));
+}
+
+#[test]
 fn fixed_width_integer_literals_are_range_checked() {
     let lowered = lower("256u8");
     assert!(lowered.file.is_none());

@@ -90,6 +90,7 @@ pub enum SyntaxKind {
     PostfixedNumber = 64,
     SelectOperator = 65,
     Caret = 66,
+    Percent = 67,
 }
 
 impl SyntaxKind {
@@ -162,6 +163,7 @@ impl SyntaxKind {
             64 => Self::PostfixedNumber,
             65 => Self::SelectOperator,
             66 => Self::Caret,
+            67 => Self::Percent,
             _ => Self::Unknown,
         }
     }
@@ -293,6 +295,7 @@ impl<'a> Lexer<'a> {
             '+' => self.bump(SyntaxKind::Plus),
             '*' => self.bump(SyntaxKind::Star),
             '/' => self.bump(SyntaxKind::Slash),
+            '%' => self.bump(SyntaxKind::Percent),
             '&' if self.starts_with("&&") => self.bump_n(2, SyntaxKind::AmpAmp),
             '!' if self.starts_with("!=") => self.bump_n(2, SyntaxKind::BangEq),
             '!' => self.bump(SyntaxKind::Bang),

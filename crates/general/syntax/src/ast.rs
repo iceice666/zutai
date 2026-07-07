@@ -235,6 +235,7 @@ pub struct LocalBinding {
 pub enum BinOp {
     Mul,
     Div,
+    Rem,
     Add,
     Sub,
     Eq,

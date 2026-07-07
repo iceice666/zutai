@@ -47,7 +47,7 @@ main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { path : Text;
     ];
     {
       path = "examples/stdlib_fs_lines.out";
-      summary = summary;
+      summary =;
     }
   ];
 

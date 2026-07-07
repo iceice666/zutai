@@ -113,6 +113,9 @@ The same 2026-07-07 stdlib network pass adds `Net` as an explicit host
 capability type and `stdlib.net` as the source module for existing TCP
 `net.listen`/`net.accept`/`net.read`/`net.write`/`net.close` host effects; see
 "Explicit network helpers" below.
+The 2026-07-08 ergonomics pass adds ambient/importable prelude `not` and the
+general-mode `%` integer remainder operator; see "Boolean/remainder ergonomics"
+below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -242,6 +245,27 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Boolean/remainder ergonomics ✅
+
+_Completed 2026-07-08. Adds shallow, non-macro source ergonomics for common
+boolean and integer predicates._
+
+- `not :: Bool -> Bool` is now an ambient source-prelude helper and an exported
+  `stdlib.prelude` member. It remains an ordinary source binding, so user code
+  can shadow it just like `id`, `compose`, or `map`.
+- `%` is accepted at the same precedence as `*` and `/` and type-checks as
+  checked integer remainder. It lowers through TLC as `Builtin(Rem)` and through
+  Dataflow/codegen as the existing `NumPrim(Rem)` runtime helper, preserving
+  checked remainder-by-zero behavior.
+- The real examples now use `not` and `%` where they remove boilerplate, while
+  leaving selective record projection and field-section sugar as separate future
+  ergonomics.
+- Verification: `cargo test -p zutai-syntax`, targeted THIR/TLC/eval/dataflow
+  tests for `%` and `not`, `cargo test -p zutai-codegen`, `just examples-check`,
+  and `just examples-run`. The CLI native example parity gate was attempted but
+  this shell lacks `llc`; run it inside `nix develop` for the full binary link
+  gate.
 
 ### Explicit network helpers ✅
 

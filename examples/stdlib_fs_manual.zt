@@ -39,7 +39,7 @@ main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { doubleCloseO
           fs.closeRead caps.read reader;
           {
             doubleCloseOk = true;
-            summary = summary;
+            summary =;
           }
         ]
       ]

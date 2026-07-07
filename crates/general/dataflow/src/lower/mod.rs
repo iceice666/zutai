@@ -47,6 +47,7 @@ fn lower_builtin_op(op: BuiltinOp) -> DfBuiltinOp {
         BuiltinOp::Sub => DfBuiltinOp::Sub,
         BuiltinOp::Mul => DfBuiltinOp::Mul,
         BuiltinOp::Div => DfBuiltinOp::Div,
+        BuiltinOp::Rem => unreachable!("Rem lowers through the numeric bridge"),
         BuiltinOp::Eq => DfBuiltinOp::Eq,
         BuiltinOp::Ne => DfBuiltinOp::Ne,
         BuiltinOp::Lt => DfBuiltinOp::Lt,
@@ -86,7 +87,7 @@ fn lower_posit_op(op: BuiltinOp) -> Option<DfPositOp> {
         BuiltinOp::Le => Some(DfPositOp::Le),
         BuiltinOp::Gt => Some(DfPositOp::Gt),
         BuiltinOp::Ge => Some(DfPositOp::Ge),
-        BuiltinOp::And | BuiltinOp::Or | BuiltinOp::Coalesce => None,
+        BuiltinOp::Rem | BuiltinOp::And | BuiltinOp::Or | BuiltinOp::Coalesce => None,
     }
 }
 

@@ -8,7 +8,7 @@ numbers ::= {1; 2; 3; 4; 5; 6;};
 
 doubledEvens ::= numbers
   |> s.fromList
-  |> s.filter (\x. x - (x / 2) * 2 == 0)
+  |> s.filter (\x. x % 2 == 0)
   |> s.map (\x. x * 2)
   |> s.take 3;
 
@@ -16,7 +16,7 @@ sum ::= s.fold (\acc x. acc + x) 0 doubledEvens;
 items ::= s.toList doubledEvens;
 
 {
-  items = items;
-  sum = sum;
+  items =;
+  sum =;
   count = length items;
 }

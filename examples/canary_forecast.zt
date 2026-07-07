@@ -17,10 +17,10 @@ Reading :: type {
 
 readingAt :: Int -> Reading
   = minute => {
-    minute = minute;
+    minute =;
     rps = 120 + minute * 17;
-    errorRate = n.rem (minute * 7) 6;
-    latencyMs = 140 + n.rem (minute * minute) 90;
+    errorRate = (minute * 7) % 6;
+    latencyMs = 140 + (minute * minute) % 90;
   };
 
 telemetryFrom :: Int -> s.Stream Reading
@@ -51,9 +51,9 @@ firstHot :: Reading? = fold chooseFirstHot #none window;
 
 {
   minutes = map readingMinute window;
-  scores = scores;
-  peakScore = peakScore;
+  scores =;
+  peakScore =;
   band = riskBand peakScore;
   hotterThanNinety = c.isGt (c.compareInt peakScore 90);
-  firstHot = firstHot;
+  firstHot =;
 }

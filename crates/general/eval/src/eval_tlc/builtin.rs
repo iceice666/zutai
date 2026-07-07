@@ -250,6 +250,21 @@ pub(super) fn eval_builtin(op: BuiltinOp, lhs: Value, rhs: Value) -> Result<Valu
             }
             int_float_op(lhs, rhs, "div", |a, b| a.checked_div(b), |a, b| a / b)
         }
+        BuiltinOp::Rem => match (lhs, rhs) {
+            (Value::Int(_), Value::Int(0)) => Err(EvalError::RemByZero),
+            (Value::Int(a), Value::Int(b)) => a
+                .checked_rem(b)
+                .map(Value::Int)
+                .ok_or(EvalError::IntOverflow("%")),
+            (a, b) => Err(EvalError::TypeMismatch {
+                expected: "Int",
+                found: if matches!(a, Value::Int(_)) {
+                    value_type_name(&b)
+                } else {
+                    value_type_name(&a)
+                },
+            }),
+        },
         BuiltinOp::Eq => Ok(Value::Bool(structural_eq(&lhs, &rhs))),
         BuiltinOp::Ne => Ok(Value::Bool(!structural_eq(&lhs, &rhs))),
         BuiltinOp::Lt => compare_op(lhs, rhs, std::cmp::Ordering::Less, false),

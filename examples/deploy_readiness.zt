@@ -27,7 +27,7 @@ Plan :: type {
 plan :: Plan = import "deploy_readiness.zti";
 
 isFailed :: Check -> Bool
-  = check => check.passed == false;
+  = check => not check.passed;
 
 isBlocking :: Check -> Bool
   = check => isFailed check && check.severity == #blocker;
@@ -63,7 +63,7 @@ summary ::= t.join " / " {
   owner = plan.owner;
   rolloutPercent = clampedRollout;
   failed = failedChecks;
-  risk = risk;
-  gate = gate;
-  summary = summary;
+  risk =;
+  gate =;
+  summary =;
 }

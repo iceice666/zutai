@@ -18,6 +18,7 @@ impl<'hir> Lowerer<'hir> {
             ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => {
                 self.lower_arithmetic_expr(id, op, lhs, rhs, span)
             }
+            ast::BinOp::Rem => self.lower_remainder_expr(id, lhs, rhs, span),
             ast::BinOp::Coalesce => self.lower_coalesce_expr(id, lhs, rhs, span),
         }
     }
@@ -107,6 +108,19 @@ impl<'hir> Lowerer<'hir> {
         // After possible unification, use the resolved type for the result.
         let result_ty = self.resolve(lhs_ty);
         self.alloc_binary_expr(id, op, lhs, rhs, result_ty, span)
+    }
+
+    pub(super) fn lower_remainder_expr(
+        &mut self,
+        id: HirExprId,
+        lhs: HirExprId,
+        rhs: HirExprId,
+        span: Span,
+    ) -> ThirExprId {
+        let int_ty = self.int_type(span);
+        let lhs = self.check_expr(lhs, int_ty);
+        let rhs = self.check_expr(rhs, int_ty);
+        self.alloc_binary_expr(id, ast::BinOp::Rem, lhs, rhs, int_ty, span)
     }
 
     pub(super) fn lower_coalesce_expr(
@@ -214,6 +228,7 @@ fn bin_op_name(op: ast::BinOp) -> &'static str {
     match op {
         ast::BinOp::Mul => "*",
         ast::BinOp::Div => "/",
+        ast::BinOp::Rem => "%",
         ast::BinOp::Add => "+",
         ast::BinOp::Sub => "-",
         ast::BinOp::Eq => "==",

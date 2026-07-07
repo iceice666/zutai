@@ -294,7 +294,7 @@ n",
 }
 
 #[test]
-fn sub_mul_div_binops_lower_to_builtin() {
+fn sub_mul_div_rem_binops_lower_to_builtin() {
     let m = tlc_of("f x y = x - y;\nf 5 3");
     assert!(
         m.expr_arena
@@ -315,6 +315,13 @@ fn sub_mul_div_binops_lower_to_builtin() {
             .iter()
             .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Div, _, _))),
         "expected Builtin(Div)"
+    );
+    let m = tlc_of("f x y = x % y;\nf 7 3");
+    assert!(
+        m.expr_arena
+            .iter()
+            .any(|(_, e)| matches!(e, TlcExpr::Builtin(BuiltinOp::Rem, _, _))),
+        "expected Builtin(Rem)"
     );
 }
 

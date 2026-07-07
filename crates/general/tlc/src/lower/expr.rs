@@ -1134,6 +1134,7 @@ fn binop_to_builtin(op: BinOp) -> BuiltinOp {
         BinOp::Sub => BuiltinOp::Sub,
         BinOp::Mul => BuiltinOp::Mul,
         BinOp::Div => BuiltinOp::Div,
+        BinOp::Rem => BuiltinOp::Rem,
         BinOp::Eq => BuiltinOp::Eq,
         BinOp::Ne => BuiltinOp::Ne,
         BinOp::Lt => BuiltinOp::Lt,

@@ -431,6 +431,21 @@ fn binary_add_produces_builtin_node() {
 }
 
 #[test]
+fn binary_remainder_lowers_to_num_prim_node() {
+    let g = dc_of("f a b = a % b;\nf 17 5");
+    let has_rem = g.nodes.iter().any(|(_, n)| {
+        matches!(
+            &n.kind,
+            DfNodeKind::NumPrim {
+                op: DfNumPrimOp::Rem,
+                ..
+            }
+        )
+    });
+    assert!(has_rem, "expected NumPrim(Rem) node for '%'");
+}
+
+#[test]
 fn operator_witness_equality_lowers_to_select_apply_not_builtin() {
     let g = dc_of(
         r#"

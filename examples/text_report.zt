@@ -15,5 +15,5 @@ parsed ::= o.withDefault 0 (t.parseInt "42");
   title = patched;
   containsExamples = t.contains "EXAMPLES" patched;
   length = t.length patched;
-  parsed = parsed;
+  parsed =;
 }

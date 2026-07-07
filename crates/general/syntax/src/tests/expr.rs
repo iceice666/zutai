@@ -381,7 +381,7 @@ fn question_mark_suffix_does_not_steal_optional_chain() {
 
 #[test]
 fn parse_mul_binds_tighter_than_add() {
-    // 1 + 2 * 3 → 1 + (2 * 3)
+    // 1 + 2 * 3 -> 1 + (2 * 3)
     let e = parse_expr_str("1 + 2 * 3");
     let (op, lhs, rhs) = as_binary(&e);
     assert_eq!(op, BinOp::Add);
@@ -393,8 +393,23 @@ fn parse_mul_binds_tighter_than_add() {
 }
 
 #[test]
+fn parse_remainder_at_mul_precedence() {
+    let e = parse_expr_str("1 + 5 % 2 * 3");
+    let (op, lhs, rhs) = as_binary(&e);
+    assert_eq!(op, BinOp::Add);
+    assert_eq!(as_int(lhs), 1);
+    let (op2, lhs2, rhs2) = as_binary(rhs);
+    assert_eq!(op2, BinOp::Mul);
+    let (op3, lhs3, rhs3) = as_binary(lhs2);
+    assert_eq!(op3, BinOp::Rem);
+    assert_eq!(as_int(lhs3), 5);
+    assert_eq!(as_int(rhs3), 2);
+    assert_eq!(as_int(rhs2), 3);
+}
+
+#[test]
 fn parse_left_assoc_add() {
-    // 1 + 2 + 3 → (1 + 2) + 3
+    // 1 + 2 + 3 -> (1 + 2) + 3
     let e = parse_expr_str("1 + 2 + 3");
     let (_, lhs, rhs) = as_binary(&e);
     assert_eq!(as_int(rhs), 3);

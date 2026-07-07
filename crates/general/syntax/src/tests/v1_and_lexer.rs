@@ -667,7 +667,7 @@ fn parse_lossless_traversal_covers_from_raw() {
         // Keywords (13-25)
         "type match if then else import true false select perform handle with resume\n",
         // Punctuation and multi-char operators
-        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > >>= -> ?? ?. ? + - * / && != ! ^ @ $\n",
+        "{ } [ ] ( ) ; , . :: := : == => = |> || | <| <= < >= > >>= -> ?? ?. ? + - * / % && != ! ^ @ $\n",
         // Comments (on their own line so the lexer doesn't swallow the operators above)
         "--[ block comment ]--\n",
         "--|  doc comment\n",
@@ -687,6 +687,7 @@ fn parse_lossless_traversal_covers_from_raw() {
     assert!(kinds.contains(&SyntaxKind::KeywordType), "type keyword");
     assert!(kinds.contains(&SyntaxKind::Integer), "integer literal");
     assert!(kinds.contains(&SyntaxKind::At), "@ token");
+    assert!(kinds.contains(&SyntaxKind::Percent), "% token");
     assert!(kinds.contains(&SyntaxKind::ColonColon), "::");
     assert!(kinds.contains(&SyntaxKind::KeywordSelect), "select keyword");
     assert!(kinds.contains(&SyntaxKind::SelectOperator), ">>=");

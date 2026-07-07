@@ -465,6 +465,7 @@ pub enum BuiltinOp {
     Sub,
     Mul,
     Div,
+    Rem,
     Eq,
     Ne,
     Lt,

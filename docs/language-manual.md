@@ -92,7 +92,7 @@ Operator precedence, highest to lowest:
 | ---------: | ------------------------------------------------------------------------ | ------------------------- |
 |          1 | field access `x.y`, optional chaining `x?.y`, postfix optional type `T?` | left / postfix            |
 |          2 | function application `f x`                                               | left                      |
-|          3 | `*`, `/`                                                                 | left                      |
+|          3 | `*`, `/`, `%`                                                            | left                      |
 |          4 | `+`, `-`                                                                 | left                      |
 |          5 | comparison `==`, `!=`, `<`, `<=`, `>`, `>=`                              | non-associative           |
 |          6 | `&&`                                                                     | left                      |
@@ -102,7 +102,7 @@ Operator precedence, highest to lowest:
 |         10 | function type `->`                                                       | right                     |
 |         11 | `if`, `match`, `\` bodies                                               | syntax-delimited          |
 
-`??` is right-associative. `|>` and `<|` must not mix without parentheses. v0 has no unary operators: negation is part of a numeric literal, such as `-10` or `x * -1`.
+`??` is right-associative. `|>` and `<|` must not mix without parentheses. `%` is integer remainder. v0 has no unary operators: negation is part of a numeric literal, such as `-10` or `x * -1`. Use the ambient prelude helper `not` for boolean negation.
 
 ## Immediate mode `.zti`
 

@@ -87,7 +87,7 @@ Add
   ::= Mul (("+" | "-") Mul)*
 
 Mul
-  ::= SelectOp (("*" | "/") SelectOp)*
+  ::= SelectOp (("*" | "/" | "%") SelectOp)*
 
 SelectOp
   ::= Application (">>=" SelectFields)*

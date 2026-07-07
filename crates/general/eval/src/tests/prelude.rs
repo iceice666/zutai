@@ -33,6 +33,13 @@ fn prelude_flip_swaps_two_arguments() {
 }
 
 #[test]
+fn prelude_not_negates_bool() {
+    assert_eq!(run("not false"), Value::Bool(true));
+    assert_eq!(run("not true"), Value::Bool(false));
+    assert_eq!(run("not (1 == 2)"), Value::Bool(true));
+}
+
+#[test]
 fn prelude_compose_is_curried_when_partially_applied() {
     // compose f g yields a function; applying it later must work on both paths.
     assert_eq!(
@@ -49,6 +56,7 @@ fn prelude_thir_oracle_matches_tlc_path() {
         "const 5 \"x\"",
         "compose (\\x. x + 1) (\\x. x * 2) 3",
         "flip (\\x y. x - y) 3 10",
+        "not false",
         "compose (\\x. x + 1) (\\x. x * 2) (id 10)",
     ];
     for src in srcs {

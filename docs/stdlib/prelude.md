@@ -45,7 +45,7 @@ as a fallback:
   combinators `empty`/`cons`/`singleton`/`unfold`/`take`/`drop`/`toList`/
   `fromList`/`takeList` are in scope without an import (V3-G2);
 - the *function/list* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
-  `id`/`const`/`compose`/`flip` and the `List` verbs `fold`/`foldl'`/`map`/
+  `id`/`const`/`compose`/`flip`/`not` and the `List` verbs `fold`/`foldl'`/`map`/
   `filter`/`length`/`append`/`uncons`/`head?`/`tail?` are in scope without an
   import (stdlib slices B/C).
 
@@ -68,7 +68,7 @@ Stream       Data DataField Stream StreamEff Step; empty cons singleton unfold
 Host/effects print; loadZti loadZt                           (intrinsic)
 Reflect      fields variants schema                          (intrinsic)
 Config       overlay overlayDeep                             (intrinsic)
-Function     id const compose flip                           (ambient source prelude)
+Function     id const compose flip not                       (ambient source prelude)
 List verbs   fold foldl' map filter length append uncons head? tail?
                                                              (ambient source prelude)
 ```
@@ -206,7 +206,7 @@ collection remains a distinct idiom that `Validation (List E)` covers cleanly
    in source. *(landed as slice C: ambient/importable `List` verbs in
    `prelude.zt`)*
 2. `prelude.zt` resolution. *(landed for the function prelude:
-   `id`/`const`/`compose`/`flip` and the slice C list verbs as ambient source
+   `id`/`const`/`compose`/`flip`/`not` and the slice C list verbs as ambient source
    declarations via HIR-lowerer injection, importable as `stdlib.prelude`)*
 3. `optional`. *(landed as slice D: explicit import only via
    `stdlib.optional`; not ambient, so unqualified `map`/`filter` stay the List

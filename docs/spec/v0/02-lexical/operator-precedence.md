@@ -6,7 +6,7 @@ From highest to lowest:
 | ---------: | ------------------------------------------------------------------------ | ------------------------- |
 |          1 | field access `x.y`, optional chaining `x?.y`, postfix optional type `T?` | left / postfix            |
 |          2 | function application `f x`                                               | left                      |
-|          3 | `*`, `/`                                                                 | left                      |
+|          3 | `*`, `/`, `%`                                                            | left                      |
 |          4 | `+`, `-`                                                                 | left                      |
 |          5 | comparison `==`, `!=`, `<`, `<=`, `>`, `>=`                              | non-associative           |
 |          6 | `&&`                                                                     | left                      |

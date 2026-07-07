@@ -50,6 +50,17 @@ fn int_div_by_zero() {
 }
 
 #[test]
+fn int_remainder() {
+    assert_eq!(run("17 % 5"), Value::Int(2));
+    assert_eq!(run("1 + 5 % 2 * 3"), Value::Int(4));
+}
+
+#[test]
+fn int_remainder_by_zero() {
+    assert_eq!(run_err("1 % 0"), EvalError::RemByZero);
+}
+
+#[test]
 fn thir_int_arithmetic_overflow_reports_operator() {
     assert_eq!(
         eval_thir_file("9223372036854775807 + 1").unwrap_err(),

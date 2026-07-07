@@ -22,6 +22,8 @@ compose :: <A, B, C> (B -> C) -> (A -> B) -> A -> C
   = f g x => f (g x);
 flip :: <A, B, C> (A -> B -> C) -> B -> A -> C
   = f x y => f y x;
+not :: Bool -> Bool
+  = value => if value then false else true;
 fold :: <A, B> (B -> A -> B) -> B -> List A -> B
   = f z xs => listFoldlStrict f z xs;
 foldl' :: <A, B> (B -> A -> B) -> B -> List A -> B
@@ -40,4 +42,4 @@ map :: <A, B> (A -> B) -> List A -> List B
   = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (map f t); };
 filter :: <A> (A -> Bool) -> List A -> List A
   = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then listCons h (filter p t) else filter p t; };
-{ id = id; const = const; compose = compose; flip = flip; fold = fold; foldl' = foldl'; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; }
+{ id = id; const = const; compose = compose; flip = flip; not = not; fold = fold; foldl' = foldl'; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; }

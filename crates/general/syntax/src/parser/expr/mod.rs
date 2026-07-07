@@ -266,7 +266,7 @@ fn parse_add_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
 }
 
 // ---------------------------------------------------------------------------
-// Level 3: `*` `/` (left-assoc)
+// Level 3: `*` `/` `%` (left-assoc)
 // ---------------------------------------------------------------------------
 
 fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
@@ -280,6 +280,9 @@ fn parse_mul_level(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         } else if input.starts_with('/') {
             '/'.parse_next(input)?;
             BinOp::Div
+        } else if input.starts_with('%') {
+            '%'.parse_next(input)?;
+            BinOp::Rem
         } else {
             *input = ws_checkpoint;
             break;

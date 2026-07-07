@@ -267,7 +267,16 @@ impl<'m> Lowerer<'m> {
 
                 let lhs_node = self.lower_expr(lhs);
                 let rhs_node = self.lower_expr(rhs);
-                if let Some(float_op) = self.lower_float_builtin_op(op, lhs) {
+                if op == BuiltinOp::Rem {
+                    self.alloc_node(
+                        DfNodeKind::NumPrim {
+                            op: DfNumPrimOp::Rem,
+                            args: vec![lhs_node, rhs_node],
+                        },
+                        df_ty,
+                        span,
+                    )
+                } else if let Some(float_op) = self.lower_float_builtin_op(op, lhs) {
                     self.alloc_node(
                         DfNodeKind::NumPrim {
                             op: float_op,
@@ -719,6 +728,7 @@ impl<'m> Lowerer<'m> {
             BuiltinOp::Sub => Some(DfNumPrimOp::FloatSub),
             BuiltinOp::Mul => Some(DfNumPrimOp::FloatMul),
             BuiltinOp::Div => Some(DfNumPrimOp::FloatDiv),
+            BuiltinOp::Rem => None,
             BuiltinOp::Lt => Some(DfNumPrimOp::FloatLt),
             BuiltinOp::Le => Some(DfNumPrimOp::FloatLe),
             BuiltinOp::Gt => Some(DfNumPrimOp::FloatGt),

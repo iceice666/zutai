@@ -63,7 +63,7 @@ Auto-imported names: the intrinsic prelude (`print`; reflection `fields`
 prelude (`Data` `DataField` `Stream` `StreamEff` `Step` and the
 non-conflicting combinators `empty` `cons` `singleton` `unfold` `take` `drop`
 `toList` `fromList` `takeList`), and the ambient **function/list** prelude (`id` `const`
-`compose` `flip`; `fold`/`foldl'` `map` `filter` `length` `append` `uncons`
+`compose` `flip` `not`; `fold`/`foldl'` `map` `filter` `length` `append` `uncons`
 `head?` `tail?` over `List`). Stream `map`/`filter`/`fold`/`uncons` remain
 available through `import stdlib.stream`; a user binding of the same spelling
 always shadows the ambient fallback.
