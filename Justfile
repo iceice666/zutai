@@ -37,6 +37,21 @@ examples-run:
         cargo run -q -p zutai-cli -- run "$f"; \
     done
 
+# Compile deploy_readiness.zt as a native library and serve a tiny browser page.
+browser-demo ADDR="127.0.0.1:8787":
+    @set -euo pipefail; \
+    case "$(uname -s)" in \
+        Darwin) ext=".dylib" ;; \
+        MINGW*|MSYS*|CYGWIN*) ext=".dll" ;; \
+        *) ext=".so" ;; \
+    esac; \
+    mkdir -p target/browser-demo; \
+    lib="target/browser-demo/libdeploy_readiness$ext"; \
+    host="target/browser-demo/zutai-browser-demo-host"; \
+    cargo run -q -p zutai-cli -- compile --emit=lib examples/deploy_readiness.zt -o "$lib"; \
+    rustc --edition=2024 examples/browser_demo/host.rs -o "$host"; \
+    exec "$host" "$lib" "{{ADDR}}"
+
 # ── Lint & format ─────────────────────────────────────────────────────────────
 
 fmt:

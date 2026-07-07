@@ -79,6 +79,23 @@ Then request it from another terminal:
 curl http://127.0.0.1:8080/
 ```
 
+## Browser Demo
+
+Start a local page backed by the compiled deployment-readiness example:
+
+```sh
+just browser-demo
+```
+
+The recipe compiles `examples/deploy_readiness.zt` with `--emit=lib`, builds the
+standalone Rust host in `examples/browser_demo/host.rs`, and serves
+`http://127.0.0.1:8787/` plus `http://127.0.0.1:8787/api/deploy-readiness`.
+Pass a different bind address as the first recipe argument:
+
+```sh
+just browser-demo 127.0.0.1:9000
+```
+
 ## Generated Artifacts
 
 Native compilation may leave generated files such as `examples/*.ll`,
