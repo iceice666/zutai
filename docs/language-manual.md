@@ -52,7 +52,8 @@ Short module aliases keep pipelines readable in example-sized programs:
 `c ::= import stdlib.cmp;` are common local names. Larger opt-in surfaces often
 use `l ::= import stdlib.list;`, `d ::= import stdlib.data;`,
 `v ::= import stdlib.validate;`, `cfg ::= import stdlib.config;`, and
-`refl ::= import stdlib.reflect;`. Prefer typed projection or
+`refl ::= import stdlib.reflect;`. Network examples use
+`net ::= import stdlib.net;`. Prefer typed projection or
 predicate helpers such as `isEnabled :: Service -> Bool = svc => svc.enabled;`
 before using them in `map`, `filter`, or stream/list folds.
 

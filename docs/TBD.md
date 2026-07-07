@@ -33,7 +33,10 @@ do not leave an active native backlog item. The 2026-07-07 scoped filesystem IO
 foundation (`Reader`/`Writer`, explicit `stdlib.fs`, text line/read-write host
 ops) and effect-row alias-spread ergonomics are also archived and leave
 append/seek/binary/async IO intentionally unscoped. Track 2 remains
-demand-gated.
+demand-gated. The same-day explicit `stdlib.net` helper module is archived as a
+factoring layer over the already-implemented TCP host effects; it leaves richer
+network API design such as socket options, async/nonblocking IO, binary bytes,
+and address selection intentionally unscoped.
 
 ## Native/interpreter parity backlog
 
@@ -51,7 +54,8 @@ archived in `docs/ARCHIVED.md`: small function helpers, minimal
 ambient/importable `List` verbs, explicit `stdlib.optional`, `stdlib.result`,
 `stdlib.num`, `stdlib.text`, `stdlib.cmp`, explicit `stdlib.fs`, and the
 explicit `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
-`stdlib.validate` modules.
+`stdlib.validate` modules. Explicit `stdlib.net` is also archived as the current
+TCP host-effect helper module.
 
 Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic

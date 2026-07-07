@@ -1,0 +1,27 @@
+-- Explicit network helpers over host TCP effects.
+-- Explicit import only: `net ::= import stdlib.net`; these names are not ambient.
+ListenEffects :: type Unit ! { net.listen : Int -> Int; };
+AcceptEffects :: type Unit ! { net.accept : Int -> Int; };
+ReadEffects :: type Unit ! { net.read : Int -> Text; };
+WriteEffects :: type Unit ! { net.write : Text -> Unit; };
+CloseEffects :: type Unit ! { net.close : Int -> Unit; };
+ConnectionEffects :: type Unit ! { ...AcceptEffects; ...ReadEffects; ...WriteEffects; ...CloseEffects; };
+ServerEffects :: type Unit ! { ...ListenEffects; ...ConnectionEffects; };
+Listen :: <A> type A ! { ...ListenEffects; };
+Accept :: <A> type A ! { ...AcceptEffects; };
+Read :: <A> type A ! { ...ReadEffects; };
+Write :: <A> type A ! { ...WriteEffects; };
+Close :: <A> type A ! { ...CloseEffects; };
+Connection :: <A> type A ! { ...ConnectionEffects; };
+Server :: <A> type A ! { ...ServerEffects; };
+listen :: Net -> Int -> Listen Int
+  = net port => perform net.listen port;
+accept :: Net -> Int -> Accept Int
+  = net listener => perform net.accept listener;
+read :: Net -> Int -> Read Text
+  = net conn => perform net.read conn;
+write :: Net -> Text -> Write Unit
+  = net contents => perform net.write contents;
+close :: Net -> Int -> Close Unit
+  = net conn => perform net.close conn;
+{ listen = listen; accept = accept; read = read; write = write; close = close; }

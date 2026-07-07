@@ -4,38 +4,29 @@
 -- Listens on port 8080, echoes each request line in an HTTP 200 response,
 -- then accepts the next connection.
 
+net ::= import stdlib.net;
 t ::= import stdlib.text;
 
-HttpConnectionEffects :: type Unit ! {
-  net.accept : Int -> Int;
-  net.read : Int -> Text;
-  net.write : Text -> Unit;
-  net.close : Int -> Unit;
-};
-HttpServerEffects :: type Unit ! {
-  net.listen : Int -> Int;
-  ...HttpConnectionEffects;
-};
-HttpConnection :: <A> type A ! { ...HttpConnectionEffects; };
-HttpServer :: <A> type A ! { ...HttpServerEffects; };
-
-loop :: Int -> HttpConnection Text
-  = listener => [
-    conn := perform net.accept listener;
-    requestLine := perform net.read conn;
+loop :: Net -> Int -> net.Connection Text
+  = cap listener => [
+    conn := net.accept cap listener;
+    requestLine := net.read cap conn;
     response := t.join "" {
       "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
       requestLine;
     };
-    perform net.write response;
-    perform net.close conn;
-    loop listener
+    net.write cap response;
+    net.close cap conn;
+    loop cap listener
   ];
 
-serve :: Int -> HttpServer Text
-  = port => [
-    listener := perform net.listen port;
-    loop listener
+serve :: Net -> Int -> net.Server Text
+  = cap port => [
+    listener := net.listen cap port;
+    loop cap listener
   ];
 
-serve 8080
+main :: Net -> net.Server Text
+  = cap => serve cap 8080;
+
+main

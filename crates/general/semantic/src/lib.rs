@@ -926,6 +926,30 @@ mod tests {
     }
 
     #[test]
+    fn stdlib_net_import_resolves_without_base() {
+        let analysis = analyze(
+            "net ::= import stdlib.net;\n\
+             main :: Net -> net.Server Text\n\
+               = cap => [\n\
+                 listener := net.listen cap 7777;\n\
+                 conn := net.accept cap listener;\n\
+                 line := net.read cap conn;\n\
+                 net.write cap line;\n\
+                 net.close cap conn;\n\
+                 line\n\
+               ];\n\
+             main",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn stdlib_config_import_resolves_and_overlay_alias_typechecks() {
         let analysis = analyze(
             "cfg ::= import stdlib.config;\n\

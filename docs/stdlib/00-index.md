@@ -80,6 +80,7 @@ always shadows the ambient fallback.
 | `num` | `min max abs clamp pow rem gcd toFloat round truncate` | accepted as explicit importable source module via `import stdlib.num`; exports `min` `max` `abs` `clamp` `pow` `rem` `gcd` `toFloat` `round` `truncate`; Int helpers are source wrappers over checked scalar bridge intrinsics where needed; `toFloat`/`round`/`truncate` are conversion intrinsics; interpreter/TLC/native parity covered |
 | `text` | `length split join trim toUpper toLower contains replace show parseInt parseFloat` | accepted as explicit importable source module via `import stdlib.text`; backed by scalar bridge intrinsics/runtime helpers for Unicode scalar length, splitting/joining, trimming, case conversion, containment/replacement, text quoting, and numeric parsing; interpreter/TLC/native parity covered |
 | [FS](fs.md) | `ReadLine/WriteText/ScopedRead/ScopedWrite/ScopedReadWrite/WholeRead/WholeWrite/WholeFile` aliases plus `openRead readLine closeRead openWrite writeText flush closeWrite withReader withWriter readAll writeAll` | accepted as explicit embedded `stdlib.fs`; source wrappers over explicit `fs.*` host effects, with opaque `Reader`/`Writer` handles, effect aliases for common rows, and bracket helpers for scoped close; whole-file `readAll`/`writeAll` remain compatibility wrappers over `fs.read`/`fs.write`; no filesystem API is ambient |
+| [Net](net.md) | `Listen/Accept/Read/Write/Close/Connection/Server` aliases plus `listen accept read write close` | accepted as explicit embedded `stdlib.net`; source wrappers over existing `net.*` TCP host effects and effect aliases for common server/connection rows; listener and connection handles remain `Int`, `write` preserves the current-connection runtime behavior; no network API is ambient |
 | `cmp` | `Ordering (#lt/#eq/#gt) lt eq gt isLt isEq isGt reverse then by compareInt compareFloat compareText` | accepted as explicit importable source module via `import stdlib.cmp`; comparator composition and concrete Int/Float/Text comparators are source definitions; the exported `then` field is backed by an internal `thenCmp` binding because `then` is a keyword |
 | [Data](data.md) | `Data DataField DecodeError Result bool int float text atom list record tagged fieldOf kind asBool asInt asFloat asText asAtom asList asRecord asTagged field field? at tag payload mapList` | accepted as explicit embedded `stdlib.data`; first-order data constructors and structured decoder errors; decoder results use the `stdlib.result.Result` shape through the module's exported `Result` alias |
 | [Validate](validate.md) | `ValidationError Validation Result valid invalid errors map map2 map3 required satisfy nonEmptyText intRange oneOfText oneOfInt toResult fromResult` | accepted as explicit embedded `stdlib.validate`; accumulating validation helpers over structured errors; validation/result aliases forward to `stdlib.result` shapes |
@@ -92,8 +93,9 @@ always shadows the ambient fallback.
 combinators are **ambient prelude** (no import needed) and also importable via
 embedded `stdlib.stream`; the language-level producer `stream { yield ...; }` is
 syntax, not a standard-library function. Host-backed streams such as file lines,
-environment scans, clock events, and randomness require explicit capabilities
-(v2 host capabilities); they must not become ambient APIs. The low-level text
-filesystem helpers live in explicit `stdlib.fs`.
+environment scans, clock events, randomness, and network sockets require
+explicit capabilities (v2 host capabilities); they must not become ambient APIs.
+The low-level text filesystem helpers live in explicit `stdlib.fs`, and the
+current TCP helpers live in explicit `stdlib.net`.
 
 Standard-library names are ordinary bindings, not language keywords, unless a page explicitly says otherwise.

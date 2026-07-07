@@ -109,6 +109,10 @@ opaque handles; see "Scoped filesystem IO foundation" below.
 The same 2026-07-07 usability pass adds named effect-row alias spreads and
 stdlib filesystem effect aliases, so large effect rows can be factored without
 changing their checked operation set; see "Effect-row alias spreads" below.
+The same 2026-07-07 stdlib network pass adds `Net` as an explicit host
+capability type and `stdlib.net` as the source module for existing TCP
+`net.listen`/`net.accept`/`net.read`/`net.write`/`net.close` host effects; see
+"Explicit network helpers" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -238,6 +242,26 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Explicit network helpers ✅
+
+_Completed 2026-07-07. Factors the existing TCP host operations behind an
+explicit `stdlib.net` module without changing their runtime semantics._
+
+- `Net` is seeded as an opaque advisory host capability type, matching the
+  existing TLC `net.*` host-operation grant mapping and entry-boundary token
+  synthesis.
+- `stdlib.net` exports closed operation packs (`ListenEffects`,
+  `ConnectionEffects`, `ServerEffects`), result aliases (`Listen A`,
+  `Connection A`, `Server A`, etc.), and thin source wrappers `listen`,
+  `accept`, `read`, `write`, and `close` over the existing `net.*` host effects.
+- `examples/net_echo.zt` and `examples/echo_http.zt` now use `stdlib.net`
+  helper functions and `Net` capability entries. Network APIs remain explicit
+  imports only; no network names are ambient.
+- Verification: stdlib registry coverage, semantic import/type coverage,
+  handler-based evaluator coverage, backend `NET_MODULE_SRC` host-grant
+  coverage, CLI LLVM host-helper coverage, and check coverage for both network
+  examples.
 
 ### Effect-row alias spreads and filesystem effect aliases ✅
 

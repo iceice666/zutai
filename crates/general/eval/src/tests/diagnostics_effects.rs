@@ -311,6 +311,32 @@ fn stdlib_fs_imports_effectful_handle_helpers() {
 }
 
 #[test]
+fn stdlib_net_helpers_can_be_handled_in_source() {
+    assert_eq!(
+        run(r#"
+net ::= import stdlib.net;
+main :: Net -> Text
+  = cap => handle [
+    listener := net.listen cap 7777;
+    conn := net.accept cap listener;
+    line := net.read cap conn;
+    net.write cap line;
+    net.close cap conn;
+    line
+  ] with {
+    net.listen = \port. resume 10;
+    net.accept = \listener. resume 20;
+    net.read = \conn. resume "mock-line";
+    net.write = \contents. resume ();
+    net.close = \conn. resume ();
+  };
+main
+"#),
+        Value::Text("mock-line".into())
+    );
+}
+
+#[test]
 fn scoped_fs_handles_write_read_lines_and_eof() {
     let path = std::env::temp_dir().join("zutai_eval_scoped_fs_roundtrip.txt");
     let path = zt_string_literal(path.to_str().unwrap());

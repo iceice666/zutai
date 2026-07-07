@@ -384,6 +384,13 @@ fn real_examples_check_run_and_compile_match() {
     }
 }
 
+#[test]
+fn network_examples_check_with_stdlib_net() {
+    for name in ["net_echo.zt", "echo_http.zt"] {
+        check_path_passes(&example_fixture(name));
+    }
+}
+
 // V3-G1: `Stream A` is demand-driven codata (`Unit -> StreamCell A`). A finite
 // generator folds to the same value the interpreter computes.
 const CODATA_STREAM_FINITE_SRC: &str = "sumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (stream { yield 1; yield 2; yield 3; })\n";
@@ -4902,6 +4909,33 @@ main
         "@zutai.host.fs_open_read",
         "@zutai.host.fs_read_line",
         "@zutai.host.fs_close_read",
+    ] {
+        assert!(llvm.contains(helper), "missing {helper} in:\n{llvm}");
+    }
+}
+
+#[test]
+fn compile_stdlib_net_helpers_emit_host_ops() {
+    let source = r#"
+net ::= import stdlib.net;
+main :: Net -> net.Server Text
+  = cap => [
+    listener := net.listen cap 7777;
+    conn := net.accept cap listener;
+    line := net.read cap conn;
+    net.write cap line;
+    net.close cap conn;
+    line
+  ];
+main
+"#;
+    let llvm = compile_stdout("cli_test_stdlib_net_compile.zt", source);
+    for helper in [
+        "@zutai.host.net_listen",
+        "@zutai.host.net_accept",
+        "@zutai.host.net_read",
+        "@zutai.host.net_write",
+        "@zutai.host.net_close",
     ] {
         assert!(llvm.contains(helper), "missing {helper} in:\n{llvm}");
     }

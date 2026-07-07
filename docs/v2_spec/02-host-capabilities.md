@@ -71,10 +71,16 @@ signature, and the capability that authorizes it:
 | `rng.next`  | `Unit -> Int`                                   | `Rng`             |
 | `load.zti`  | `Path -> Data`                                  | `Load`            |
 | `load.zt`   | `Path -> Data`                                  | `Load`            |
+| `net.listen` | `Int -> Int`                                  | `Net`             |
+| `net.accept` | `Int -> Int`                                  | `Net`             |
+| `net.read` | `Int -> Text`                                   | `Net`             |
+| `net.write` | `Text -> Unit`                                 | `Net`             |
+| `net.close` | `Int -> Unit`                                  | `Net`             |
 
 `Path`, `Instant`, and related types are standard-library types (see
-[`stdlib`](../stdlib/00-index.md)). Networking (`net.*`) is sketched but not
-standardized in v2.
+[`stdlib`](../stdlib/00-index.md)). The current network helpers live in explicit
+[`stdlib.net`](../stdlib/net.md); listener and connection handles are still
+represented as `Int` at the host boundary.
 
 Clock and randomness are effects, never ambient reads, so the pure core stays
 deterministic: every source of nondeterminism is explicit in a type.
@@ -124,9 +130,10 @@ the v1 effect runtime — the CPS effect lowering and runtime dispatch that
 replace compile-time effect folding. The standard set has **landed**
 (`docs/ARCHIVED.md` Phase 27 plus the dynamic-load follow-up): the capability
 type names `FsRead`, `FsWrite`, `Env`, `Clock`, `Rng`, `Load`, and explicit
-`IoPrint` are seeded in the root scope (with `Path`/`Instant` as text-shaped
+`IoPrint`, plus `Net` for the current TCP host effects, are seeded in the root
+scope (with `Path`/`Instant` as text-shaped
 boundary types), THIR effect rows recognize `fs.read`, `fs.write`, `env.get`,
-`clock.now`, `rng.next`, `load.zti`, and `load.zt` with advisory authority, and
+`clock.now`, `rng.next`, `load.zti`, `load.zt`, and `net.*` with advisory authority, and
 TLC keeps residual host effects explicit, rejecting ungranted operations before
 TLC→DC. The CLI `run`, `dataflow`, and native/LLVM compile boundaries grant the
 standard set and lower granted residual effects to a Dataflow Core `HostOp` node

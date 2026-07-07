@@ -3,23 +3,19 @@
 -- Client: printf 'hello\n' | nc 127.0.0.1 7777
 -- Listens on port 7777, echoes one line, then exits.
 
-NetEchoEffects :: type Unit ! {
-  net.listen : Int -> Int;
-  net.accept : Int -> Int;
-  net.read : Int -> Text;
-  net.write : Text -> Unit;
-  net.close : Int -> Unit;
-};
-NetEcho :: <A> type A ! { ...NetEchoEffects; };
+net ::= import stdlib.net;
 
-serveOnce :: Int -> NetEcho Text
-  = port => [
-    listener := perform net.listen port;
-    conn := perform net.accept listener;
-    line := perform net.read conn;
-    perform net.write line;
-    perform net.close conn;
+serveOnce :: Net -> Int -> net.Server Text
+  = cap port => [
+    listener := net.listen cap port;
+    conn := net.accept cap listener;
+    line := net.read cap conn;
+    net.write cap line;
+    net.close cap conn;
     line
   ];
 
-serveOnce 7777
+main :: Net -> net.Server Text
+  = cap => serveOnce cap 7777;
+
+main

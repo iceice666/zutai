@@ -684,6 +684,16 @@ fn backend_stdlib_fs_module_lowers_under_host_grants() {
 }
 
 #[test]
+fn backend_stdlib_net_module_lowers_under_host_grants() {
+    let m = backend_tlc_of(zutai_hir::NET_MODULE_SRC);
+    let reason = crate::residual_effect_reason_with_grants(&m, HostEffectSet::ALL);
+    assert!(
+        reason.is_none(),
+        "stdlib.net should not leave ungranted residual effects after backend lowering: {reason:?}"
+    );
+}
+
+#[test]
 fn nested_handlers_forward_to_outer_scope() {
     let m = tlc_of(
         r#"

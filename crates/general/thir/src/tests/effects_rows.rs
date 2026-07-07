@@ -372,6 +372,15 @@ randomInt :: Rng -> Unit -> Int ! { rng.next : Unit -> Int; }
   = rng tick => perform rng.next tick;
 save :: FsWrite -> WriteRequest -> Unit ! { fs.write : WriteRequest -> Unit; }
   = fs req => perform fs.write req;
+serveOnce :: Net -> Int -> Text ! { net.listen : Int -> Int; net.accept : Int -> Int; net.read : Int -> Text; net.write : Text -> Unit; net.close : Int -> Unit; }
+  = net port => [
+    listener := perform net.listen port;
+    conn := perform net.accept listener;
+    line := perform net.read conn;
+    perform net.write line;
+    perform net.close conn;
+    line
+  ];
 readConfig
 "#,
     );
