@@ -34,7 +34,10 @@ readSummary :: FsRead -> Reader -> fs.ReadLine Text
     t.join " | " {
       lineOr "<missing>" first;
       lineOr "<missing>" second;
-      if isNone eof then "eof" else "extra";
+      cond {
+        isNone eof => "eof";
+        _ => "extra";
+      };
     }
   ];
 

@@ -163,6 +163,25 @@ fn if_else_branch() {
     assert_eq!(run("if false then 1 else 2"), Value::Int(2));
 }
 
+#[test]
+fn cond_selects_first_true_branch() {
+    assert_eq!(
+        run("cond { false => 1; true => 2; _ => 3; }"),
+        Value::Int(2)
+    );
+}
+
+#[test]
+fn cond_uses_default_branch() {
+    assert_eq!(run("cond { false => 1; _ => 2; }"), Value::Int(2));
+}
+
+#[test]
+fn cond_short_circuits_branches() {
+    assert_eq!(run("cond { true => 1; _ => 1 / 0; }"), Value::Int(1));
+    assert_eq!(run("cond { false => 1 / 0; _ => 2; }"), Value::Int(2));
+}
+
 // ─── let blocks ───────────────────────────────────────────────────────────────
 
 #[test]

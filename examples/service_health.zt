@@ -41,10 +41,11 @@ serviceScore :: Service -> Int
   = svc => n.clamp 0 100 (svc.errors * 10 + svc.latencyMs / 10);
 
 serviceAction :: Service -> Action
-  = svc => if svc.enabled then
-      if serviceScore svc > 80 then #page else #watch
-    else
-      #ignore;
+  = svc => cond {
+    not svc.enabled => #ignore;
+    serviceScore svc > 80 => #page;
+    _ => #watch;
+  };
 
 summarize :: Service -> Summary
   = svc => [
@@ -55,14 +56,12 @@ summarize :: Service -> Summary
   ];
 
 validateService :: Service -> r.Validation Text Service
-  = svc => if svc.requests < 0 then
-      r.invalid { svc.name; }
-    else if svc.errors < 0 then
-      r.invalid { svc.name; }
-    else if svc.errors > svc.requests then
-      r.invalid { svc.name; }
-    else
-      r.valid svc;
+  = svc => cond {
+    svc.requests < 0 => r.invalid { svc.name; };
+    svc.errors < 0 => r.invalid { svc.name; };
+    svc.errors > svc.requests => r.invalid { svc.name; };
+    _ => r.valid svc;
+  };
 
 isCritical :: Service -> Bool
   = svc => svc.enabled && serviceScore svc > 80;
@@ -81,8 +80,14 @@ criticalServices :: List Service = filter isCritical snapshot.services;
 validationErrors :: List Text = fold appendValidationErrors {;} snapshot.services;
 totalErrors :: Int = fold addErrors 0 snapshot.services;
 worstScore :: Int = fold maxServiceScore 0 snapshot.services;
-budgetState :: BudgetState = if totalErrors <= snapshot.alertBudget then #withinBudget else #overBudget;
-validationState :: ValidationState = if length validationErrors == 0 then #clean else #needsReview;
+budgetState :: BudgetState = cond {
+  totalErrors <= snapshot.alertBudget => #withinBudget;
+  _ => #overBudget;
+};
+validationState :: ValidationState = cond {
+  length validationErrors == 0 => #clean;
+  _ => #needsReview;
+};
 
 {
   generatedAt = snapshot.generatedAt;

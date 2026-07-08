@@ -117,6 +117,7 @@ AtomExpr
    | Tuple
    | List
    | Lambda
+   | Cond
    | If
    | Match
    | Import
@@ -169,6 +170,15 @@ TupleItem
 
 Lambda
   ::= "\\" Pattern+ "." whitespace Expr
+
+Cond
+  ::= "cond" "{" CondArm+ CondDefault "}"
+
+CondArm
+  ::= Expr "=>" Expr ";"
+
+CondDefault
+  ::= "_" "=>" Expr ";"
 
 If
   ::= "if" Expr "then" Expr "else" Expr
@@ -387,12 +397,13 @@ BlockComment
   ::= "--[" (BlockComment | any-char-except-unmatched-end)* "]--"
 ```
 
-Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `import`, `true`, `false`, `select`, `perform`, `handle`, `with`, `resume`.
+Reserved words are not identifiers: `type`, `match`, `if`, `cond`, `then`, `else`, `import`, `true`, `false`, `select`, `perform`, `handle`, `with`, `resume`.
 
 ### Interpretation rules
 
 - A file contains zero or more top-level declarations followed by one optional final expression. Each value-like top-level declaration ends in `;`; the trailing expression has no `;`. A trailing `;` (or no tail at all) yields `()`.
 - Top-level function declarations and constraint-method defaults use `= pat => body` clauses after the signature. `match` arms use `{ | pat => body; }` clause blocks.
+- `cond` is the canonical source form for expression conditionals. It requires one or more guarded arms and a final `_` default arm. It desugars to the core `if`/`else` conditional form; the `if condition then expr else expr` spelling remains accepted as a legacy compatibility form.
 - `;` is the universal terminator/separator. An expression written with a trailing `;` is a statement of type `()` (Unit), Rust-style.
 - The container glyph picks the shape: `{ … }` is a parallel container — a record (`name = value;` entries) or a list (bare `value;` entries) — while `[ … ]` is a serial do-block (local bindings followed by a tail expression that is the block's value).
 - The scope picks the binding operator: top-level (the parallel/letrec scope) uses `::=` (inferred) and `:: T =` (typed); a local binding inside a `[ … ]` do-block uses `:=` (inferred) and `: T =` (typed). Mnemonic: `::` is top-level, `:` is local.

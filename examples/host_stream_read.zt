@@ -31,7 +31,10 @@ missingPath :: Path = "examples/host_stream_read.tail-must-stay-lazy";
   };
   {
     forcedFirstCell = t.contains "Host-boundary stream read example" contents;
-    sourceHandlerDidNotCaptureCell = if contents == "handler-mock" then false else true;
+    sourceHandlerDidNotCaptureCell = cond {
+      contents == "handler-mock" => false;
+      _ => true;
+    };
     skippedMissingTail = true;
     bytesRead = t.length contents;
   }

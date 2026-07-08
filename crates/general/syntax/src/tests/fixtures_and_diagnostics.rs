@@ -245,6 +245,25 @@ fn ast_only_parse_matches_parse_diagnostics() {
 }
 
 #[test]
+fn lambda_string_boundary_does_not_capture_later_cond_arrow() {
+    let src = r#"
+[
+  f := \path. "handler-mock";
+  cond {
+    value == "handler-mock" => false;
+    _ => true;
+  }
+]
+"#;
+    let parsed = parse_ast_only(src);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+}
+
+#[test]
 fn reports_multiple_common_diagnostics_in_source_order() {
     let parsed = parse(
         r#"

@@ -91,6 +91,7 @@ pub enum SyntaxKind {
     SelectOperator = 65,
     Caret = 66,
     Percent = 67,
+    KeywordCond = 68,
 }
 
 impl SyntaxKind {
@@ -164,6 +165,7 @@ impl SyntaxKind {
             65 => Self::SelectOperator,
             66 => Self::Caret,
             67 => Self::Percent,
+            68 => Self::KeywordCond,
             _ => Self::Unknown,
         }
     }
@@ -400,6 +402,7 @@ impl<'a> Lexer<'a> {
             "type" => SyntaxKind::KeywordType,
             "match" => SyntaxKind::KeywordMatch,
             "if" => SyntaxKind::KeywordIf,
+            "cond" => SyntaxKind::KeywordCond,
             "then" => SyntaxKind::KeywordThen,
             "else" => SyntaxKind::KeywordElse,
             "import" => SyntaxKind::KeywordImport,

@@ -91,10 +91,12 @@ fn parse_value_ident_suffixes() {
 
 #[test]
 fn parse_ident_rejects_keywords() {
-    crate::parser::lex::BASE_PTR.with(|c| c.set("type".as_ptr() as usize));
-    let mut input = "type";
     use crate::parser::lex::parse_ident;
-    assert!(parse_ident(&mut input).is_err());
+    for keyword in ["type", "cond"] {
+        crate::parser::lex::BASE_PTR.with(|c| c.set(keyword.as_ptr() as usize));
+        let mut input = keyword;
+        assert!(parse_ident(&mut input).is_err(), "{keyword}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -553,12 +555,12 @@ fn genuine_chained_comparison_still_rejected() {
 }
 
 #[test]
-fn chained_comparison_help_mentions_nested_conditional_parentheses() {
+fn chained_comparison_help_mentions_cond() {
     let help = ParseErrorKind::ChainedComparison
         .help()
         .expect("chained comparison should have help text");
     assert!(help.contains("parenthesize comparisons explicitly"));
-    assert!(help.contains("else (if ... then ... else ...)"));
+    assert!(help.contains("cond { guard => expr; _ => fallback; }"));
 }
 
 #[test]
@@ -699,6 +701,98 @@ fn parse_if_then_else() {
             assert!(matches!(cond.as_ref(), Expr::True(_)));
             assert_eq!(as_int(then_branch), 1);
             assert_eq!(as_int(else_branch), 2);
+        }
+        other => panic!("expected If, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_cond_desugars_to_nested_if() {
+    let e = parse_expr_str("cond { score >= 80 => #hot; score >= 50 => #elevated; _ => #steady; }");
+    match &e {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let (op, lhs, rhs) = as_binary(cond);
+            assert_eq!(op, BinOp::Ge);
+            assert_eq!(as_ident(lhs), "score");
+            assert_eq!(as_int(rhs), 80);
+            assert_eq!(as_atom(then_branch), "hot");
+
+            match else_branch.as_ref() {
+                Expr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    let (op, lhs, rhs) = as_binary(cond);
+                    assert_eq!(op, BinOp::Ge);
+                    assert_eq!(as_ident(lhs), "score");
+                    assert_eq!(as_int(rhs), 50);
+                    assert_eq!(as_atom(then_branch), "elevated");
+                    assert_eq!(as_atom(else_branch), "steady");
+                }
+                other => panic!("expected nested If, got {other:?}"),
+            }
+        }
+        other => panic!("expected If, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_cond_requires_final_default_arm() {
+    for src in [
+        "cond { true => 1; }",
+        "cond { _ => 0; true => 1; }",
+        "cond { _ => 0; }",
+    ] {
+        crate::parser::lex::BASE_PTR.with(|c| c.set(src.as_ptr() as usize));
+        let mut input = src;
+        assert!(parse_expr(&mut input).is_err(), "{src:?}");
+    }
+}
+
+#[test]
+fn parse_cond_allows_underscore_in_regular_guard() {
+    let e = parse_expr_str("cond { _ == 0 => 1; _ => 2; }");
+    match &e {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let (op, lhs, rhs) = as_binary(cond);
+            assert_eq!(op, BinOp::Eq);
+            assert_eq!(as_ident(lhs), "_");
+            assert_eq!(as_int(rhs), 0);
+            assert_eq!(as_int(then_branch), 1);
+            assert_eq!(as_int(else_branch), 2);
+        }
+        other => panic!("expected If, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_cond_allows_string_comparison_guard() {
+    let e = parse_expr_str(r#"cond { contents == "handler-mock" => false; _ => true; }"#);
+    match &e {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            let (op, lhs, rhs) = as_binary(cond);
+            assert_eq!(op, BinOp::Eq);
+            assert_eq!(as_ident(lhs), "contents");
+            assert_eq!(as_str_val(rhs), "handler-mock");
+            assert!(matches!(then_branch.as_ref(), Expr::False(_)));
+            assert!(matches!(else_branch.as_ref(), Expr::True(_)));
         }
         other => panic!("expected If, got {other:?}"),
     }

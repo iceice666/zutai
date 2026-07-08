@@ -118,6 +118,9 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             {
                 return Ok(Expr::False(span));
             }
+            if input.starts_with("cond") && peek(kw("cond")).parse_next(input).is_ok() {
+                return parse_cond(input, options);
+            }
             if input.starts_with("if") && peek(kw("if")).parse_next(input).is_ok() {
                 return parse_if(input, options);
             }
@@ -727,6 +730,82 @@ fn parse_if(input: &mut &str, options: ExprOptions) -> Result<Expr> {
         else_branch: Box::new(else_branch),
         span,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Cond
+// ---------------------------------------------------------------------------
+
+fn parse_cond(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    let (_, start_span) = spanned(kw("cond")).parse_next(input)?;
+    ws(input)?;
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+
+    let mut arms = Vec::new();
+    let mut default = None;
+
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+
+        let checkpoint = *input;
+        if input.starts_with('_') {
+            '_'.parse_next(input)?;
+            ws(input)?;
+            if input.starts_with("=>") {
+                "=>".parse_next(input)?;
+                ws(input)?;
+                let body = super::parse_expr_with_options(input, options)?;
+                ws(input)?;
+                ';'.parse_next(input)?;
+                ws(input)?;
+                if !input.starts_with('}') {
+                    return fail.parse_next(input);
+                }
+                default = Some(body);
+                break;
+            }
+            *input = checkpoint;
+        }
+
+        let cond = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        "=>".parse_next(input)?;
+        ws(input)?;
+        let body = super::parse_expr_with_options(input, options)?;
+        ws(input)?;
+        ';'.parse_next(input)?;
+        arms.push((cond, body));
+    }
+
+    ws(input)?;
+    '}'.parse_next(input)?;
+
+    if arms.is_empty() {
+        return fail.parse_next(input);
+    }
+    let Some(mut expr) = default else {
+        return fail.parse_next(input);
+    };
+
+    for (index, (cond, then_branch)) in arms.into_iter().enumerate().rev() {
+        let span = if index == 0 {
+            start_span.merge(expr.span())
+        } else {
+            cond.span().merge(expr.span())
+        };
+        expr = Expr::If {
+            cond: Box::new(cond),
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(expr),
+            span,
+        };
+    }
+
+    Ok(expr)
 }
 
 // ---------------------------------------------------------------------------

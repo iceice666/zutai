@@ -153,7 +153,7 @@ The following are invalid in `.zti`:
   x = 1 + 2;
   y = \a. a;
   z = readFile "foo.zti";
-  a = if cond then x else y;
+  a = cond { cond => x; _ => y; };
 }
 ```
 

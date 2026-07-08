@@ -12,6 +12,7 @@ Sign :: type {#pos; #nonpos;};
   missing_int : Int? = #none;
   present_int : Int? = #some (5);
   env : BuildEnv = #prod;
+  apply : (Int -> Int) -> Int -> Int = \f x. f x;
   {
     -- Scalars
     bool_vals      = {true; false;};
@@ -78,6 +79,6 @@ Sign :: type {#pos; #nonpos;};
     type_opt       = type Int?;
 
     -- Function application (curried)
-    applied        = (\f. \x. f x) (\n. n + 1) 41;
+    applied        = apply (\n. n + 1) 41;
   }
 ]

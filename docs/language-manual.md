@@ -58,11 +58,15 @@ nontrivial; for simple projections in an already-typed context, field sections
 such as `filter _.enabled services` and `map _.owner.name services` keep
 `map`, `filter`, and stream/list folds readable.
 
-For nested conditionals inside expressions, use parentheses when the nesting
-would otherwise be visually ambiguous:
+Use `cond` for expression conditionals, especially when a branch ladder would
+otherwise need nested punctuation:
 
 ```zt
-else (if score >= 50 then #elevated else #steady)
+cond {
+  score >= 80 => #hot;
+  score >= 50 => #elevated;
+  _ => #steady;
+}
 ```
 
 ## Lexical basics
@@ -105,7 +109,7 @@ Operator precedence, highest to lowest:
 |          8 | defaulting `??`                                                          | right                     |
 |          9 | pipeline `\|>`, `<\|`                                                   | `\|>` left, `<\|` right |
 |         10 | function type `->`                                                       | right                     |
-|         11 | `if`, `match`, `\` bodies                                               | syntax-delimited          |
+|         11 | `cond`, `match`, `\` bodies                                             | syntax-delimited          |
 
 `??` is right-associative. `|>` and `<|` must not mix without parentheses. `%` is integer remainder. v0 has no unary operators: negation is part of a numeric literal, such as `-10` or `x * -1`. Use the ambient prelude helper `not` for boolean negation.
 
@@ -263,13 +267,20 @@ Records use semicolon-terminated `field = value;` items. A field whose value is 
 
 Tagged union values are atoms with optional payloads. A no-payload tag is a bare atom such as `#prod`. A record payload is written as an atom followed by a record, such as `#circle { radius = 5.0; }`.
 
-Conditionals are expressions:
+Conditionals are expressions. The canonical source form is `cond`:
 
 ```text
-if condition then expr else expr
+cond {
+  guard => expr;
+  _ => fallback;
+}
 ```
 
-The condition must have type `Bool`, and both branches must type-check to a compatible type.
+Each guard must have type `Bool`, arms are tried top-to-bottom, and the final
+`_` branch is required. All branch bodies must type-check to a compatible type.
+`cond` desugars to the core `if`/`else` conditional form; the old
+`if condition then expr else expr` spelling is still accepted as a legacy
+compatibility form.
 
 `import` is a pure, deterministic, static, cached expression whose source is a
 literal import source: either a quoted path (`cfg ::= import "config.zti"`) or a

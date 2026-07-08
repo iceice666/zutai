@@ -451,6 +451,13 @@ fn tokenize_v1_keywords() {
     assert!(kinds.contains(&SyntaxKind::KeywordResume), "resume");
 }
 
+#[test]
+fn tokenize_cond_keyword() {
+    let tokens = tokenize("cond");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, SyntaxKind::KeywordCond);
+}
+
 /// `@` tokenises as `SyntaxKind::At` — used in constraint/witness declarations.
 /// Parsing a real witness program ensures `from_raw` arm 61 is also covered.
 #[test]

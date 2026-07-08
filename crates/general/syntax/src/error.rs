@@ -113,7 +113,7 @@ impl ParseErrorKind {
     pub fn help(&self) -> Option<&'static str> {
         match self {
             ParseErrorKind::ChainedComparison => Some(
-                "parenthesize comparisons explicitly; for nested conditionals, write `else (if ... then ... else ...)`",
+                "parenthesize comparisons explicitly; for multi-branch conditionals, use `cond { guard => expr; _ => fallback; }`",
             ),
             ParseErrorKind::MixedPipeline => {
                 Some("split the expression or use one pipeline direction")

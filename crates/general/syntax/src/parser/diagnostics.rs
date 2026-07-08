@@ -953,6 +953,9 @@ impl<'a> Scanner<'a> {
                         }
                         offset += self.char_len_at(offset);
                     }
+                    if offset < self.bytes.len() {
+                        offset += 1;
+                    }
                 }
                 _ => offset += self.char_len_at(offset),
             }

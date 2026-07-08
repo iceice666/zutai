@@ -36,7 +36,7 @@ items
 
 All values are immutable. There is no mutation or assignment in the core language.
 
-Functions are first-class and curried. The `|>` pipeline operator is the idiomatic way to chain transformations. Pattern matching over union types is the primary branching mechanism — `if` exists for boolean conditions, but multi-case dispatch uses `match`.
+Functions are first-class and curried. The `|>` pipeline operator is the idiomatic way to chain transformations. Pattern matching over union types is the primary branching mechanism. Boolean conditionals use `cond`, which desugars to the core `if`/`else` form; multi-case structural dispatch uses `match`.
 
 Type-level computation uses the same pure expression language as runtime code. Type constructors are ordinary functions that return `Type`, and type-level evaluation is deterministic and bounded by implementation limits.
 

@@ -226,6 +226,7 @@ Syntactic keywords and reserved literals cannot be used as identifiers. This inc
 type
 match
 if
+cond
 then
 else
 import
@@ -325,7 +326,7 @@ or pattern**. They never overlap.
 | `\|`             | match arm introducer inside `match` bodies                                |
 | `=`              | value/pattern field binding and top-level function clause introducer       |
 | `->`             | function type arrow                                                        |
-| `=>`             | function clause and `match` arm body separator                             |
+| `=>`             | function clause, `match` arm, and `cond` arm body separator                 |
 | `\`              | anonymous function (lambda) introducer                                     |
 | `.`              | lambda body separator (after `\params`); also field and module-member access |
 | `?.`             | optional chaining                                                          |

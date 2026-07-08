@@ -33,12 +33,19 @@ riskScore :: Reading -> Int
   = reading => n.clamp 0 100 (reading.errorRate * 12 + reading.latencyMs / 5);
 
 riskBand :: Int -> Risk
-  = score => if score >= 80 then #hot else (if score >= 50 then #elevated else #steady);
+  = score => cond {
+    score >= 80 => #hot;
+    score >= 50 => #elevated;
+    _ => #steady;
+  };
 
 chooseFirstHot :: Reading? -> Reading -> Reading?
   = current reading => match current {
     | #some (found) => #some (found);
-    | #none => if riskBand (riskScore reading) == #hot then #some (reading) else #none;
+    | #none => cond {
+      riskBand (riskScore reading) == #hot => #some (reading);
+      _ => #none;
+    };
   };
 
 window :: List Reading = s.takeList 8 (telemetryFrom 0);

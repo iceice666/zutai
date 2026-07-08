@@ -119,6 +119,9 @@ below.
 The same 2026-07-08 parser-sugar pass adds value-level field sections
 `_.field` and `_?.field`, desugaring to ordinary lambdas; see
 "Field-section shorthand" below.
+The same 2026-07-08 conditional-sugar pass makes `cond { guard => expr; _ =>
+fallback; }` the canonical source form for expression conditionals, desugaring
+to the existing core `if`/`else` AST; see "Cond expression sugar" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -248,6 +251,25 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Cond expression sugar ✅
+
+_Completed 2026-07-08. Adds canonical source syntax for expression
+conditionals without adding a new core AST/IR form._
+
+- `cond { guard => expr; _ => fallback; }` parses to the existing nested
+  `Expr::If` shape. Guards are checked as `Bool` by the existing conditional
+  typing path, branch bodies use the existing compatibility rules, and later
+  HIR/THIR/TLC/evaluator/backend layers see no new form.
+- The final `_` arm is required and must be last, so surface conditionals remain
+  total. `_ == value => ...` is still a normal guard expression; only `_ => ...`
+  starts the default arm.
+- Support level: full reference-interpreter and native/backend support by
+  desugaring to existing `if`/`else` forms before HIR. The legacy
+  `if condition then expr else expr` spelling remains accepted for
+  compatibility while examples and docs use `cond`.
+- Verification: syntax AST tests for desugaring/default placement, evaluator
+  tests for branch selection and laziness, plus real example check/run coverage.
 
 ### Field-section shorthand ✅
 

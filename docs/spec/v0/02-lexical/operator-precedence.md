@@ -14,7 +14,7 @@ From highest to lowest:
 |          8 | defaulting `??`                                                          | right                     |
 |          9 | pipeline `|>`, `<|`                                                      | `|>` left, `<|` right     |
 |         10 | function type `->`                                                       | right                     |
-|         11 | `if`, `match`, `\` bodies                                                | syntax-delimited          |
+|         11 | `cond`, `match`, `\` bodies                                              | syntax-delimited          |
 
 v0 has no unary operators: negation is part of a numeric literal (e.g. `-10`, `x * -1`).
 
