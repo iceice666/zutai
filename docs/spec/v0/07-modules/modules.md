@@ -57,6 +57,19 @@ s ::= import stdlib.stream;
 s.map f (s.singleton 1)
 ```
 
+Several static module aliases can be grouped with `use`. This is source sugar
+for ordinary import bindings; imported members remain prefixed:
+
+```zt
+use stdlib {
+  stream as s;
+  num as n;
+  text as t;
+}
+
+s.map f (s.singleton 1)
+```
+
 `import stdlib.<name>` needs no install path and no file next to the program;
 the module source is built into the compiler. Resolution does not consult the
 filesystem and is not subject to the path-relative subtree confinement that
@@ -64,7 +77,8 @@ quoted-string imports use. An unknown `<name>` is a precise diagnostic
 (`unknown stdlib module: stdlib.<name>`). Currently provided embedded modules
 are `stdlib.stream`, `stdlib.prelude`, `stdlib.optional`, `stdlib.result`,
 `stdlib.num`, `stdlib.text`, `stdlib.cmp`, `stdlib.config`,
-`stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate`.
+`stdlib.reflect`, `stdlib.list`, `stdlib.data`, `stdlib.validate`, `stdlib.fs`,
+and `stdlib.net`.
 
 ### Selective binding (destructuring import)
 

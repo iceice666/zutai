@@ -77,6 +77,9 @@ struct Lowerer {
     /// per-field `(binding, field_name)` pairs allocated in Pass 1, so Pass 2 can
     /// emit one `field ::= receiver.field` value decl per name.
     destructure_fields: FxHashMap<BindingId, Vec<(BindingId, String)>>,
+    /// Maps a grouped `use` declaration's synthetic binding to the import aliases
+    /// allocated in Pass 1. Pass 2 emits ordinary import value declarations.
+    use_imports: FxHashMap<BindingId, Vec<(BindingId, HirImportSource, Span)>>,
     /// The lexically-nearest enclosing `handle` clause body, if any. `resume`
     /// is only valid when this is `Some(HandlerClauseKind::Operation)`.
     handler_clause: Option<HandlerClauseKind>,
@@ -101,6 +104,7 @@ impl Lowerer {
             diagnostics: Vec::new(),
             constraint_method_bindings: FxHashMap::default(),
             destructure_fields: FxHashMap::default(),
+            use_imports: FxHashMap::default(),
             handler_clause: None,
             used_level_params: FxHashSet::default(),
         };
@@ -177,6 +181,9 @@ impl Lowerer {
                 // plus one `field ::= receiver.field` decl per name.
                 ast::Decl::Destructure { value, .. } => {
                     self.lower_destructure_decl(binding, value, &mut decls);
+                }
+                ast::Decl::Use { .. } => {
+                    self.lower_use_decl(binding, &mut decls);
                 }
                 _ => decls.push(self.lower_decl(decl, binding)),
             }

@@ -4921,11 +4921,11 @@ net ::= import stdlib.net;
 main :: Net -> net.Server Text
   = cap => [
     listener := net.listen cap 7777;
-    conn := net.accept cap listener;
-    line := net.read cap conn;
-    net.write cap line;
-    net.close cap conn;
-    line
+    net.withConnection cap listener (\conn. [
+      line := net.read cap conn;
+      net.write cap line;
+      line
+    ])
   ];
 main
 "#;

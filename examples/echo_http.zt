@@ -4,19 +4,22 @@
 -- Listens on port 8080, echoes each request line in an HTTP 200 response,
 -- then accepts the next connection.
 
-net ::= import stdlib.net;
-t ::= import stdlib.text;
+use stdlib {
+  net;
+  text as t;
+}
 
 loop :: Net -> Int -> net.Connection Text
   = cap listener => [
-    conn := net.accept cap listener;
-    requestLine := net.read cap conn;
-    response := t.join "" {
-      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
-      requestLine;
-    };
-    net.write cap response;
-    net.close cap conn;
+    net.withConnection cap listener (\conn. [
+      requestLine := net.read cap conn;
+      response := t.join "" {
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+        requestLine;
+      };
+      net.write cap response;
+      requestLine
+    ]);
     loop cap listener
   ];
 

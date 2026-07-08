@@ -203,6 +203,36 @@ fn parse_list_value() {
 }
 
 #[test]
+fn parse_do_block_allows_bindings_after_statements() {
+    let e = parse_expr_str("[ x := 1; x; y := x + 1; y ]");
+    let Expr::Block {
+        bindings, result, ..
+    } = &e
+    else {
+        panic!("expected block, got {e:?}");
+    };
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].name, "x");
+
+    let Expr::Sequence { items, .. } = result.as_ref() else {
+        panic!("expected statement then nested block, got {result:?}");
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!(as_ident(&items[0]), "x");
+    let Expr::Block {
+        bindings: nested,
+        result: nested_result,
+        ..
+    } = &items[1]
+    else {
+        panic!("expected nested binding block, got {:?}", items[1]);
+    };
+    assert_eq!(nested.len(), 1);
+    assert_eq!(nested[0].name, "y");
+    assert_eq!(as_ident(nested_result), "y");
+}
+
+#[test]
 fn parse_stream_generator_yields_values() {
     let e = parse_expr_str("stream { yield 1; yield 2; }");
     let Expr::Generator { body, .. } = e else {

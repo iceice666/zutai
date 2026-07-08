@@ -932,11 +932,11 @@ mod tests {
              main :: Net -> net.Server Text\n\
                = cap => [\n\
                  listener := net.listen cap 7777;\n\
-                 conn := net.accept cap listener;\n\
-                 line := net.read cap conn;\n\
-                 net.write cap line;\n\
-                 net.close cap conn;\n\
-                 line\n\
+                 net.withConnection cap listener (\\conn. [\n\
+                   line := net.read cap conn;\n\
+                   net.write cap line;\n\
+                   line\n\
+                 ])\n\
                ];\n\
              main",
         );

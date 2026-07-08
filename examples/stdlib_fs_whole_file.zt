@@ -2,26 +2,23 @@
 -- Usage: zutai-cli run examples/stdlib_fs_whole_file.zt
 -- `readAll` and `writeAll` stay source wrappers over existing fs.read/fs.write.
 
-fs ::= import stdlib.fs;
-t ::= import stdlib.text;
+use stdlib {
+  fs;
+  text as t;
+}
 
 outPath :: Path = "examples/stdlib_fs_whole_file.out";
 
 main :: { read : FsRead; write : FsWrite; } -> fs.WholeFile { bytes : Int; exact : Bool; mentionsSecond : Bool; }
   = caps => [
     expected := "whole-file-one\nwhole-file-two\n";
-    wrote := fs.writeAll caps.write outPath expected;
-    [
-      wrote;
-      [
-        actual := fs.readAll caps.read outPath;
-        {
-          bytes = t.length actual;
-          exact = actual == expected;
-          mentionsSecond = t.contains "two" actual;
-        }
-      ]
-    ]
+    fs.writeAll caps.write outPath expected;
+    actual := fs.readAll caps.read outPath;
+    {
+      bytes = t.length actual;
+      exact = actual == expected;
+      mentionsSecond = t.contains "two" actual;
+    }
   ];
 
 main

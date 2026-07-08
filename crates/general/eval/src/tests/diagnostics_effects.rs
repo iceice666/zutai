@@ -318,11 +318,11 @@ net ::= import stdlib.net;
 main :: Net -> Text
   = cap => handle [
     listener := net.listen cap 7777;
-    conn := net.accept cap listener;
-    line := net.read cap conn;
-    net.write cap line;
-    net.close cap conn;
-    line
+    net.withConnection cap listener (\conn. [
+      line := net.read cap conn;
+      net.write cap line;
+      line
+    ])
   ] with {
     net.listen = \port. resume 10;
     net.accept = \listener. resume 20;
@@ -333,6 +333,28 @@ main :: Net -> Text
 main
 "#),
         Value::Text("mock-line".into())
+    );
+}
+
+#[test]
+fn stdlib_net_with_connection_runs_close_finally() {
+    assert_eq!(
+        run(r#"
+net ::= import stdlib.net;
+main :: Net -> Text
+  = cap => handle [
+    listener := net.listen cap 7777;
+    net.withConnection cap listener (\conn. net.read cap conn)
+  ] with {
+    net.listen = \port. resume 10;
+    net.accept = \listener. resume 20;
+    net.read = \conn. resume "body";
+    net.write = \contents. resume ();
+    net.close = \conn. "closed";
+  };
+main
+"#),
+        Value::Text("closed".into())
     );
 }
 

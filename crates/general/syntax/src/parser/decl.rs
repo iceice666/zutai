@@ -4,14 +4,15 @@ use winnow::combinator::fail;
 use winnow::token::take_till;
 
 use crate::ast::{
-    ConstraintMethod, Decl, DeriveRecipe, Expr, File, FuncClause, MethodName, SelectField,
-    TypeParam, TypeParamBound, WitnessBody, WitnessField,
+    ConstraintMethod, Decl, DeriveRecipe, Expr, File, FuncClause, ImportSource, MethodName,
+    SelectField, TypeParam, TypeParamBound, UseItem, WitnessBody, WitnessField,
 };
 use crate::span::Span;
 
 use super::expr::parse_expr;
 use super::lex::{
-    enter_delimiter, kw, parse_ident, parse_value_field_name, parse_value_ident, spanned, ws,
+    enter_delimiter, kw, parse_field_name, parse_ident, parse_value_field_name, parse_value_ident,
+    spanned, ws,
 };
 use super::pattern::parse_pattern;
 use super::type_expr::{parse_type_atom, parse_type_expr};
@@ -106,6 +107,9 @@ fn is_decl_start(input: &mut &str) -> bool {
     let mut tmp = *input;
     // Skip whitespace
     tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
+    if kw("use").parse_next(&mut tmp).is_ok() {
+        return true;
+    }
     // Destructuring binding: `{ a; b; } ::=`. Scan the balanced brace group and
     // require `::=` after it — a trailing record/list final-expression has no
     // `::=`, so this stays disjoint from the file's value expression.
@@ -172,6 +176,11 @@ fn is_nosig_fn_start(s: &str) -> bool {
 pub fn parse_top_decl(input: &mut &str) -> Result<Decl> {
     ws(input)?;
 
+    let mut use_probe = *input;
+    if kw("use").parse_next(&mut use_probe).is_ok() {
+        return parse_use_decl(input);
+    }
+
     // Destructuring binding: `{ a; b; } ::= value;`.
     if input.starts_with('{') {
         return parse_destructure_binding(input);
@@ -227,6 +236,63 @@ fn parse_destructure_binding(input: &mut &str) -> Result<Decl> {
         value,
         span,
     })
+}
+
+/// `use stdlib { num as n; text as t; }` — grouped static import sugar.
+/// Each item expands during HIR lowering to one ordinary inferred import binding.
+fn parse_use_decl(input: &mut &str) -> Result<Decl> {
+    let (_, start_span) = spanned(kw("use")).parse_next(input)?;
+    ws(input)?;
+    let base = parse_use_path(input)?;
+    ws(input)?;
+    '{'.parse_next(input)?;
+    let _guard = enter_delimiter();
+    let mut items = vec![];
+    loop {
+        ws(input)?;
+        if input.starts_with('}') {
+            break;
+        }
+        let (member, member_span) = spanned(parse_field_name).parse_next(input)?;
+        ws(input)?;
+        let alias = if kw("as").parse_next(input).is_ok() {
+            ws(input)?;
+            parse_value_ident(input)?
+        } else {
+            member.clone()
+        };
+        ws(input)?;
+        ';'.parse_next(input)?;
+        let mut path = base.clone();
+        path.push(member);
+        items.push(UseItem {
+            source: ImportSource::Path(path),
+            alias,
+            span: member_span,
+        });
+    }
+    ws(input)?;
+    let (_, end_span) = spanned(|i: &mut &str| '}'.parse_next(i)).parse_next(input)?;
+    ws(input)?;
+    if input.starts_with(';') {
+        ';'.parse_next(input)?;
+    }
+    Ok(Decl::Use {
+        items,
+        span: start_span.merge(end_span),
+    })
+}
+
+fn parse_use_path(input: &mut &str) -> Result<Vec<String>> {
+    let mut parts = vec![parse_field_name(input)?];
+    loop {
+        if !input.starts_with('.') {
+            break;
+        }
+        '.'.parse_next(input)?;
+        parts.push(parse_field_name(input)?);
+    }
+    Ok(parts)
 }
 
 fn parse_destructure_fields(input: &mut &str) -> Result<Vec<SelectField>> {

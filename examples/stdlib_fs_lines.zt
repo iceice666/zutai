@@ -2,22 +2,13 @@
 -- Usage: zutai-cli run examples/stdlib_fs_lines.zt
 -- Writes two text lines, reads them back with bracket helpers, and confirms EOF.
 
-fs ::= import stdlib.fs;
-t ::= import stdlib.text;
+use stdlib {
+  fs;
+  text as t;
+  optional as o;
+}
 
 outPath :: Path = "examples/stdlib_fs_lines.out";
-
-lineOr :: Text -> Text? -> Text
-  = fallback value => match value {
-    | #some (line) => line;
-    | #none => fallback;
-  };
-
-isNone :: Text? -> Bool
-  = value => match value {
-    | #none => true;
-    | #some (_) => false;
-  };
 
 writeLines :: FsWrite -> Writer -> Unit ! { * fs.WriteTextEffects; fs.flush : Writer -> Unit; }
   = cap writer => [
@@ -32,10 +23,10 @@ readSummary :: FsRead -> Reader -> fs.ReadLine Text
     second := fs.readLine cap reader;
     eof := fs.readLine cap reader;
     t.join " | " {
-      lineOr "<missing>" first;
-      lineOr "<missing>" second;
+      first ?? "<missing>";
+      second ?? "<missing>";
       cond {
-        isNone eof => "eof";
+        o.isNone eof => "eof";
         _ => "extra";
       };
     }
@@ -43,11 +34,8 @@ readSummary :: FsRead -> Reader -> fs.ReadLine Text
 
 main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { path : Text; summary : Text; }
   = caps => [
-    wrote := fs.withWriter caps.write outPath (writeLines caps.write);
-    summary := [
-      wrote;
-      fs.withReader caps.read outPath (readSummary caps.read)
-    ];
+    fs.withWriter caps.write outPath (writeLines caps.write);
+    summary := fs.withReader caps.read outPath (readSummary caps.read);
     {
       path = "examples/stdlib_fs_lines.out";
       summary =;

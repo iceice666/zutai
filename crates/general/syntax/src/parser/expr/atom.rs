@@ -383,86 +383,110 @@ fn parse_block_value(input: &mut &str, options: ExprOptions) -> Result<Expr> {
 fn parse_block_inner(input: &mut &str, options: ExprOptions) -> Result<Expr> {
     '['.parse_next(input)?;
     let _guard = enter_delimiter();
-    let mut bindings = vec![];
+    let mut items = vec![];
+    let mut trailing_semi = false;
     loop {
         ws(input)?;
         if input.starts_with(']') {
             break;
         }
-        let binding_kind = {
-            let mut tmp = *input;
-            if let Ok(_name) = parse_value_ident(&mut tmp) {
-                tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
-                if tmp.starts_with(":=") {
-                    Some(false)
-                } else if tmp.starts_with(':') && !tmp.starts_with("::") {
-                    Some(true)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
 
-        let Some(has_annotation) = binding_kind else {
-            break;
-        };
-        let (name, name_span) = spanned(parse_value_ident).parse_next(input)?;
-        ws(input)?;
-        let annotation = if has_annotation {
-            ':'.parse_next(input)?;
-            ws(input)?;
-            let ty = parse_type_expr(input)?;
-            ws(input)?;
-            '='.parse_next(input)?;
-            Some(ty)
-        } else {
-            ":=".parse_next(input)?;
-            None
-        };
-        ws(input)?;
-        let value = super::parse_expr_with_options(input, options)?;
-        ws(input)?;
-        ';'.parse_next(input)?;
-        let span = name_span.merge(value.span());
-        bindings.push(LocalBinding {
-            name,
-            annotation,
-            value,
-            span,
-        });
-    }
+        if let Some(binding) = parse_local_binding_if_present(input, options)? {
+            items.push(BlockItem::Binding(binding));
+            trailing_semi = false;
+            continue;
+        }
 
-    // Optional result: a `;`-separated tail. A trailing `;` (or no tail at all)
-    // discards the value to `()`.
-    let mut items = vec![];
-    let mut trailing_semi = false;
-    ws(input)?;
-    if !input.starts_with(']') {
-        items.push(super::parse_expr_with_options(input, options)?);
-        loop {
-            ws(input)?;
-            if !input.starts_with(';') {
-                break;
-            }
+        let expr = super::parse_expr_with_options(input, options)?;
+        items.push(BlockItem::Expr(expr));
+        ws(input)?;
+        if input.starts_with(';') {
             ';'.parse_next(input)?;
             trailing_semi = true;
             ws(input)?;
-            if input.starts_with(']') {
-                break;
-            }
-            items.push(super::parse_expr_with_options(input, options)?);
+        } else {
             trailing_semi = false;
+            break;
         }
     }
     let (_, end_span) = spanned(|i: &mut &str| ']'.parse_next(i)).parse_next(input)?;
-    let result = build_block_result(items, trailing_semi, end_span.end as usize);
+    let end = end_span.end as usize;
+    let (bindings, rest) = split_leading_bindings(items);
+    let result = build_block_suffix(rest, trailing_semi, end);
     Ok(Expr::Block {
         bindings,
         result: Box::new(result),
-        span: Span::new(0, end_span.end as usize),
+        span: Span::new(0, end),
     })
+}
+
+enum BlockItem {
+    Binding(LocalBinding),
+    Expr(Expr),
+}
+
+fn parse_local_binding_if_present(
+    input: &mut &str,
+    options: ExprOptions,
+) -> Result<Option<LocalBinding>> {
+    let Some(has_annotation) = local_binding_kind(input) else {
+        return Ok(None);
+    };
+    let (name, name_span) = spanned(parse_value_ident).parse_next(input)?;
+    ws(input)?;
+    let annotation = if has_annotation {
+        ':'.parse_next(input)?;
+        ws(input)?;
+        let ty = parse_type_expr(input)?;
+        ws(input)?;
+        '='.parse_next(input)?;
+        Some(ty)
+    } else {
+        ":=".parse_next(input)?;
+        None
+    };
+    ws(input)?;
+    let value = super::parse_expr_with_options(input, options)?;
+    ws(input)?;
+    ';'.parse_next(input)?;
+    let span = name_span.merge(value.span());
+    Ok(Some(LocalBinding {
+        name,
+        annotation,
+        value,
+        span,
+    }))
+}
+
+fn local_binding_kind(input: &str) -> Option<bool> {
+    let mut tmp = input;
+    if parse_value_ident(&mut tmp).is_err() {
+        return None;
+    }
+    tmp = tmp.trim_start_matches(|c: char| c.is_whitespace());
+    if tmp.starts_with(":=") {
+        Some(false)
+    } else if tmp.starts_with(':') && !tmp.starts_with("::") {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn split_leading_bindings(items: Vec<BlockItem>) -> (Vec<LocalBinding>, Vec<BlockItem>) {
+    let mut bindings = vec![];
+    let mut iter = items.into_iter();
+    while let Some(item) = iter.next() {
+        match item {
+            BlockItem::Binding(binding) => bindings.push(binding),
+            other => {
+                let mut rest = vec![other];
+                rest.extend(iter);
+                return (bindings, rest);
+            }
+        }
+    }
+    (bindings, vec![])
 }
 
 /// `()` — the empty tuple, which is Unit.
@@ -489,6 +513,50 @@ fn build_block_result(mut items: Vec<Expr>, trailing_semi: bool, end: usize) -> 
                 .unwrap_or_else(|| Span::new(end, end));
             let span = start.merge(Span::new(end, end));
             Expr::Sequence { items, span }
+        }
+    }
+}
+
+fn build_block_suffix(items: Vec<BlockItem>, trailing_semi: bool, end: usize) -> Expr {
+    let Some(first) = items.first() else {
+        return unit_expr(end);
+    };
+
+    match first {
+        BlockItem::Binding(_) => {
+            let (bindings, rest) = split_leading_bindings(items);
+            let result = build_block_suffix(rest, trailing_semi, end);
+            let span = bindings
+                .first()
+                .map(|binding| binding.span)
+                .unwrap_or_else(|| Span::new(end, end))
+                .merge(result.span());
+            Expr::Block {
+                bindings,
+                result: Box::new(result),
+                span,
+            }
+        }
+        BlockItem::Expr(_) => {
+            let mut exprs = vec![];
+            let mut rest = vec![];
+            let mut iter = items.into_iter();
+            while let Some(item) = iter.next() {
+                match item {
+                    BlockItem::Expr(expr) => exprs.push(expr),
+                    binding @ BlockItem::Binding(_) => {
+                        rest.push(binding);
+                        rest.extend(iter);
+                        break;
+                    }
+                }
+            }
+            if !rest.is_empty() {
+                exprs.push(build_block_suffix(rest, trailing_semi, end));
+                build_block_result(exprs, false, end)
+            } else {
+                build_block_result(exprs, trailing_semi, end)
+            }
         }
     }
 }

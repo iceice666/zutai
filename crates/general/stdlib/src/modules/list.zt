@@ -55,6 +55,12 @@ all :: <A> (A -> Bool) -> List A -> Bool
   = p xs => match xs { | {;} => true; | {h; ...t} => if p h then all p t else false; };
 find :: <A> (A -> Bool) -> List A -> A?
   = p xs => match xs { | {;} => #none; | {h; ...t} => if p h then #some (h) else find p t; };
+countBy :: <A> (A -> Bool) -> List A -> Int
+  = p xs => fold (\acc x. if p x then acc + 1 else acc) 0 xs;
+sumBy :: <A> (A -> Int) -> List A -> Int
+  = f xs => fold (\acc x. acc + f x) 0 xs;
+filterMap :: <A, B> (A -> B?) -> List A -> List B
+  = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => match f h { | #none => filterMap f t; | #some (value) => listCons value (filterMap f t); }; };
 partition :: <A> (A -> Bool) -> List A -> { yes : List A; no : List A; }
   = p xs => match xs { | {;} => { yes = listEmpty (); no = listEmpty (); }; | {h; ...t} => [ rest := partition p t; if p h then { yes = listCons h rest.yes; no = rest.no; } else { yes = rest.yes; no = listCons h rest.no; } ]; };
 range :: Int -> Int -> List Int
@@ -75,4 +81,4 @@ groupBy :: <A> (A -> A -> Bool) -> List A -> List (List A)
   = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (listCons h (takeRun same h t)) (groupBy same (dropRun same h t)); };
 dedupBy :: <A> (A -> A -> Bool) -> List A -> List A
   = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons h (dedupBy same (dropRun same h t)); };
-{ empty = empty; singleton = singleton; cons = cons; fold = fold; foldl' = foldl'; foldr = foldr; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; reverse = reverse; flatten = flatten; zip = zip; zipWith = zipWith; enumerate = enumerate; take = take; drop = drop; takeWhile = takeWhile; dropWhile = dropWhile; span = span; any = any; all = all; find = find; partition = partition; range = range; sum = sum; product = product; sortBy = sortBy; groupBy = groupBy; dedupBy = dedupBy; }
+{ empty = empty; singleton = singleton; cons = cons; fold = fold; foldl' = foldl'; foldr = foldr; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; reverse = reverse; flatten = flatten; zip = zip; zipWith = zipWith; enumerate = enumerate; take = take; drop = drop; takeWhile = takeWhile; dropWhile = dropWhile; span = span; any = any; all = all; find = find; countBy = countBy; sumBy = sumBy; filterMap = filterMap; partition = partition; range = range; sum = sum; product = product; sortBy = sortBy; groupBy = groupBy; dedupBy = dedupBy; }

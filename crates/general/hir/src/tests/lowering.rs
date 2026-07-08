@@ -131,6 +131,74 @@ fn lowers_typed_local_binding_annotation() {
 }
 
 #[test]
+fn lowers_grouped_use_to_import_value_decls() {
+    let lowered = lower("use stdlib { num as n; text as t; }\nn");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let n = find_binding_by_name(&lowered.file, "n").expect("n binding");
+    let t = find_binding_by_name(&lowered.file, "t").expect("t binding");
+    assert_eq!(lowered.file.decls.len(), 2);
+
+    let n_decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    assert_eq!(n_decl.binding, n);
+    match &n_decl.kind {
+        HirDeclKind::Value { value, .. } => assert!(matches!(
+            &lowered.file.expr_arena[*value].kind,
+            HirExprKind::Import(HirImportSource::Path(parts)) if parts == &["stdlib", "num"]
+        )),
+        other => panic!("expected import value decl, got {other:?}"),
+    }
+
+    let t_decl = &lowered.file.decl_arena[lowered.file.decls[1]];
+    assert_eq!(t_decl.binding, t);
+    match &t_decl.kind {
+        HirDeclKind::Value { value, .. } => assert!(matches!(
+            &lowered.file.expr_arena[*value].kind,
+            HirExprKind::Import(HirImportSource::Path(parts)) if parts == &["stdlib", "text"]
+        )),
+        other => panic!("expected import value decl, got {other:?}"),
+    }
+}
+
+#[test]
+fn lowers_interleaved_do_block_as_sequence_then_nested_block() {
+    let lowered = lower("x ::= 1;\n[ x; y := x + 1; y ]");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let block = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::Block { bindings, result } = &block.kind else {
+        panic!("expected final block, got {:?}", block.kind);
+    };
+    assert!(bindings.is_empty());
+
+    let sequence = &lowered.file.expr_arena[*result];
+    let HirExprKind::Sequence(items) = &sequence.kind else {
+        panic!("expected sequence result, got {:?}", sequence.kind);
+    };
+    assert_eq!(items.len(), 2);
+    let first_ref = match lowered.file.expr_arena[items[0]].kind {
+        HirExprKind::BindingRef(id) => id,
+        ref other => panic!("expected first statement ref, got {other:?}"),
+    };
+    assert_eq!(binding_name(&lowered.file, first_ref), "x");
+
+    let nested = &lowered.file.expr_arena[items[1]];
+    let HirExprKind::Block {
+        bindings: nested_bindings,
+        result: nested_result,
+    } = &nested.kind
+    else {
+        panic!("expected nested block, got {:?}", nested.kind);
+    };
+    assert_eq!(nested_bindings.len(), 1);
+    let nested_ref = match lowered.file.expr_arena[*nested_result].kind {
+        HirExprKind::BindingRef(id) => id,
+        ref other => panic!("expected nested result ref, got {other:?}"),
+    };
+    assert_eq!(nested_ref, nested_bindings[0].binding);
+}
+
+#[test]
 fn resolves_function_type_params_in_signature_and_body_type_form() {
     let lowered = lower("id :: <A> A -> A\n  = x => type A;\nid");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);

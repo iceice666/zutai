@@ -2,48 +2,36 @@
 -- Usage: zutai-cli run examples/stdlib_fs_manual.zt
 -- Shows explicit open/flush/close calls. Double close is intentionally allowed.
 
-fs ::= import stdlib.fs;
-t ::= import stdlib.text;
+use stdlib {
+  fs;
+  text as t;
+}
 
 outPath :: Path = "examples/stdlib_fs_manual.out";
-
-lineOr :: Text -> Text? -> Text
-  = fallback value => match value {
-    | #some (line) => line;
-    | #none => fallback;
-  };
 
 main :: { read : FsRead; write : FsWrite; } -> fs.ScopedReadWrite { doubleCloseOk : Bool; summary : Text; }
   = caps => [
     writer := fs.openWrite caps.write outPath;
-    wrote := [
-      fs.writeText caps.write writer "manual-one\n";
-      fs.writeText caps.write writer "manual-two\n";
-      fs.flush caps.write writer;
-      fs.closeWrite caps.write writer;
-      fs.closeWrite caps.write writer
-    ];
-    [
-      wrote;
-      [
-        reader := fs.openRead caps.read outPath;
-        first := fs.readLine caps.read reader;
-        second := fs.readLine caps.read reader;
-        summary := t.join " | " {
-          lineOr "<missing>" first;
-          lineOr "<missing>" second;
-        };
-        [
-          summary;
-          fs.closeRead caps.read reader;
-          fs.closeRead caps.read reader;
-          {
-            doubleCloseOk = true;
-            summary =;
-          }
-        ]
-      ]
-    ]
+    fs.writeText caps.write writer "manual-one\n";
+    fs.writeText caps.write writer "manual-two\n";
+    fs.flush caps.write writer;
+    fs.closeWrite caps.write writer;
+    fs.closeWrite caps.write writer;
+
+    reader := fs.openRead caps.read outPath;
+    first := fs.readLine caps.read reader;
+    second := fs.readLine caps.read reader;
+    summary := t.join " | " {
+      first ?? "<missing>";
+      second ?? "<missing>";
+    };
+    summary;
+    fs.closeRead caps.read reader;
+    fs.closeRead caps.read reader;
+    {
+      doubleCloseOk = true;
+      summary =;
+    }
   ];
 
 main

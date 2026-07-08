@@ -2,8 +2,11 @@
 -- Usage: zutai-cli run examples/deploy_readiness.zt
 -- Imports inert rollout data, summarizes failed checks, and chooses a gate.
 
-n ::= import stdlib.num;
-t ::= import stdlib.text;
+use stdlib {
+  num as n;
+  text as t;
+  list as l;
+}
 
 Severity :: type { #info; #warn; #blocker; };
 Gate :: type { #ship; #hold; };
@@ -44,13 +47,12 @@ appendFailure :: List Text -> Check -> List Text
     _ => names;
   };
 
-failedChecks :: List Text = fold appendFailure {;} plan.checks;
-blockingChecks :: List Check = filter isBlocking plan.checks;
-risk :: Int = fold riskStep 0 plan.checks;
+failedChecks :: List Text = plan.checks |> filter isFailed |> map _.name;
+risk :: Int = plan.checks |> filter isFailed |> l.sumBy _.score;
 clampedRollout :: Int = n.clamp 0 100 plan.rolloutPercent;
 
 gate :: Gate = cond {
-  length blockingChecks > 0 => #hold;
+  l.any isBlocking plan.checks => #hold;
   risk > plan.errorBudget => #hold;
   clampedRollout > 50 => #hold;
   _ => #ship;
@@ -66,8 +68,7 @@ summary ::= t.join " / " {
 };
 
 {
-  target = plan.target;
-  owner = plan.owner;
+  * (plan >>= { target; owner; });
   rolloutPercent = clampedRollout;
   failed = failedChecks;
   risk =;

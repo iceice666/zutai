@@ -2,9 +2,12 @@
 -- Usage: zutai-cli run examples/service_health.zt
 -- Imports inert .zti data, validates it as typed records, and summarizes it.
 
-n ::= import stdlib.num;
-r ::= import stdlib.result;
-t ::= import stdlib.text;
+use stdlib {
+  num as n;
+  result as r;
+  text as t;
+  list as l;
+}
 
 Tier :: type { #edge; #core; #batch; };
 Action :: type { #ignore; #watch; #page; };
@@ -52,7 +55,7 @@ summarize :: Service -> Summary
     score := serviceScore svc;
     action := serviceAction svc;
     owner := t.toUpper svc.owner;
-    { name = svc.name; tier = svc.tier; owner =; score =; action =; }
+    { * (svc >>= { name; tier; }); owner =; score =; action =; }
   ];
 
 validateService :: Service -> r.Validation Text Service
@@ -75,10 +78,8 @@ addErrors :: Int -> Service -> Int
 maxServiceScore :: Int -> Service -> Int
   = acc svc => n.max acc (serviceScore svc);
 
-activeServices :: List Service = filter _.enabled snapshot.services;
-criticalServices :: List Service = filter isCritical snapshot.services;
 validationErrors :: List Text = fold appendValidationErrors {;} snapshot.services;
-totalErrors :: Int = fold addErrors 0 snapshot.services;
+totalErrors :: Int = l.sumBy _.errors snapshot.services;
 worstScore :: Int = fold maxServiceScore 0 snapshot.services;
 budgetState :: BudgetState = cond {
   totalErrors <= snapshot.alertBudget => #withinBudget;
@@ -90,9 +91,9 @@ validationState :: ValidationState = cond {
 };
 
 {
-  generatedAt = snapshot.generatedAt;
-  activeCount = length activeServices;
-  criticalCount = length criticalServices;
+  * (snapshot >>= { generatedAt; });
+  activeCount = l.countBy _.enabled snapshot.services;
+  criticalCount = l.countBy isCritical snapshot.services;
   totalErrors =;
   worstScore =;
   budget = budgetState;

@@ -9,7 +9,7 @@ net ::= import stdlib.net;
 
 It is not ambient. The module factors the existing `net.listen`, `net.accept`,
 `net.read`, `net.write`, and `net.close` host operations into reusable effect
-aliases and thin helper functions.
+aliases, thin helper functions, and one scoped connection helper.
 
 ## Types
 
@@ -41,19 +41,21 @@ exported for composition with `* Pack` row spreads.
 | `read` | `Net -> Int -> Read Text` | Reads one UTF-8 line and strips trailing line ending characters. |
 | `write` | `Net -> Text -> Write Unit` | Writes text to the current accepted connection and flushes. |
 | `close` | `Net -> Int -> Close Unit` | Closes a connection handle. |
+| `withConnection` | `Net -> Int -> (Int -> A ! { net.read; net.write; ...e; }) -> A ! { * ConnectionEffects; ...e; }` | Accepts one connection from a listener, passes the connection handle to the callback, and closes it in `finally` when the callback settles. |
 
 This slice is intentionally small: no socket options, async/nonblocking IO,
-binary bytes, address selection, or bracket helpers are part of the current
-module.
+binary bytes, address selection, or higher-level protocol helpers are part of
+the current module. Listener lifetime stays explicit; `withConnection` scopes
+only one accepted connection.
 
 ## Examples
 
 Full runnable examples live in `examples/`:
 
-- `examples/net_echo.zt` accepts one TCP connection on port 7777 and echoes one
-  line.
+- `examples/net_echo.zt` accepts one TCP connection on port 7777 with
+  `withConnection` and echoes one line.
 - `examples/echo_http.zt` accepts HTTP requests on port 8080 and echoes the
-  request line in a small response.
+  request line in a small response, scoping each accepted connection.
 
 ```zt
 net ::= import stdlib.net;
@@ -61,11 +63,11 @@ net ::= import stdlib.net;
 serveOnce :: Net -> Int -> net.Server Text
   = cap port => [
     listener := net.listen cap port;
-    conn := net.accept cap listener;
-    line := net.read cap conn;
-    net.write cap line;
-    net.close cap conn;
-    line
+    net.withConnection cap listener (\conn. [
+      line := net.read cap conn;
+      net.write cap line;
+      line
+    ])
   ];
 
 main :: Net -> net.Server Text

@@ -24,4 +24,9 @@ write :: Net -> Text -> Write Unit
   = net contents => perform net.write contents;
 close :: Net -> Int -> Close Unit
   = net conn => perform net.close conn;
-{ listen = listen; accept = accept; read = read; write = write; close = close; }
+withConnection :: <A, e> Net -> Int -> (Int -> A ! { * ReadEffects; * WriteEffects; ...e; }) -> A ! { * ConnectionEffects; ...e; }
+  = net listener body => [
+    conn := accept net listener;
+    handle body conn with { finally = close net conn; }
+  ];
+{ listen = listen; accept = accept; read = read; write = write; close = close; withConnection = withConnection; }

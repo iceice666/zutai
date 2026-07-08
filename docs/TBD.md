@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-07-07)
+## Status (2026-07-08)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
 "Post-V3 readiness audit"). v1 semantics are complete, and native support is
@@ -33,10 +33,11 @@ do not leave an active native backlog item. The 2026-07-07 scoped filesystem IO
 foundation (`Reader`/`Writer`, explicit `stdlib.fs`, text line/read-write host
 ops) and effect-row alias-spread ergonomics are also archived and leave
 append/seek/binary/async IO intentionally unscoped. Track 2 remains
-demand-gated. The same-day explicit `stdlib.net` helper module is archived as a
-factoring layer over the already-implemented TCP host effects; it leaves richer
+demand-gated. The explicit `stdlib.net` helper module is archived as a factoring
+layer over the already-implemented TCP host effects, with the 2026-07-08
+`withConnection` scoped-lifetime helper covering one accepted connection; richer
 network API design such as socket options, async/nonblocking IO, binary bytes,
-and address selection intentionally unscoped.
+address selection, and protocol helpers remains intentionally unscoped.
 
 ## Native/interpreter parity backlog
 
@@ -54,8 +55,8 @@ archived in `docs/ARCHIVED.md`: small function helpers, minimal
 ambient/importable `List` verbs, explicit `stdlib.optional`, `stdlib.result`,
 `stdlib.num`, `stdlib.text`, `stdlib.cmp`, explicit `stdlib.fs`, and the
 explicit `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
-`stdlib.validate` modules. Explicit `stdlib.net` is also archived as the current
-TCP host-effect helper module.
+`stdlib.validate` modules. Explicit `stdlib.net`, including `withConnection`,
+is also archived as the current TCP host-effect helper module.
 
 Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic

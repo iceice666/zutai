@@ -17,7 +17,7 @@ fold foldl' foldr
 map filter length append uncons head? tail?
 reverse flatten zip zipWith enumerate
 take drop takeWhile dropWhile span
-any all find partition
+any all find countBy sumBy filterMap partition
 range sum product
 sortBy groupBy dedupBy
 ```
@@ -35,6 +35,9 @@ polymorphic list value needs an explicit producer.
 - `groupBy same xs` groups consecutive runs only; it does not sort first.
 - `dedupBy same xs` removes later values from consecutive runs only.
 - `zip` and `zipWith` stop when either input list ends.
+- `countBy p xs` counts elements accepted by `p`.
+- `sumBy f xs` maps each element to an `Int` and sums the results.
+- `filterMap f xs` drops `#none` results and unwraps `#some` values.
 
 ## Implementation Notes
 

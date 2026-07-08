@@ -3,16 +3,18 @@
 -- Client: printf 'hello\n' | nc 127.0.0.1 7777
 -- Listens on port 7777, echoes one line, then exits.
 
-net ::= import stdlib.net;
+use stdlib {
+  net;
+}
 
 serveOnce :: Net -> Int -> net.Server Text
   = cap port => [
     listener := net.listen cap port;
-    conn := net.accept cap listener;
-    line := net.read cap conn;
-    net.write cap line;
-    net.close cap conn;
-    line
+    net.withConnection cap listener (\conn. [
+      line := net.read cap conn;
+      net.write cap line;
+      line
+    ])
   ];
 
 main :: Net -> net.Server Text

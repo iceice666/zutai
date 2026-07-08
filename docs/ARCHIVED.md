@@ -113,6 +113,9 @@ The same 2026-07-07 stdlib network pass adds `Net` as an explicit host
 capability type and `stdlib.net` as the source module for existing TCP
 `net.listen`/`net.accept`/`net.read`/`net.write`/`net.close` host effects; see
 "Explicit network helpers" below.
+The 2026-07-08 stdlib network scoped-lifetime pass adds `net.withConnection`
+as a minimal `finally`-backed helper for one accepted TCP connection; see
+"Scoped network connection helper" below.
 The 2026-07-08 ergonomics pass adds ambient/importable prelude `not` and the
 general-mode `%` integer remainder operator; see "Boolean/remainder ergonomics"
 below.
@@ -122,6 +125,9 @@ The same 2026-07-08 parser-sugar pass adds value-level field sections
 The same 2026-07-08 conditional-sugar pass makes `cond { guard => expr; _ =>
 fallback; }` the canonical source form for expression conditionals, desugaring
 to the existing core `if`/`else` AST; see "Cond expression sugar" below.
+The same 2026-07-08 ergonomics pass adds grouped static import sugar, interleaved
+do-block bindings, opt-in list rollup helpers, and `stdlib.optional.isNone`;
+see "Grouped import and do-block ergonomics" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -129,11 +135,14 @@ to the existing core `if`/`else` AST; see "Cond expression sugar" below.
   shape — `{ … }` is a parallel record (`name = value;`) or list (bare `value;`),
   and `[ … ]` is a serial do-block (local bindings + tail). The scope picks the
   binding operator — top-level `::=` / `:: T =`, local (inside `[ … ]`) `:=` / `: T =`.
-  Empty record `{}`, empty list `{;}`, empty do-block `[]`. Immediate mode `.zti`
-  is unchanged (arrays stay `[ … ]`). v0 spec docs, the language manual, and stdlib
-  notes were migrated to this grammar; the `v0_spec` doc-fence acceptance test was
-  updated to the new accepting set (decl-only `.zt` snippets now form complete
-  programs that evaluate to `()`).
+  Local do-block bindings may appear after earlier statement expressions and
+  scope over only the following statements. Grouped `use base { item as alias; }`
+  declarations lower to ordinary static import bindings. Empty record `{}`,
+  empty list `{;}`, empty do-block `[]`. Immediate mode `.zti` is unchanged
+  (arrays stay `[ … ]`). v0 spec docs, the language manual, and stdlib notes were
+  migrated to this grammar; the `v0_spec` doc-fence acceptance test was updated
+  to the new accepting set (decl-only `.zt` snippets now form complete programs
+  that evaluate to `()`).
 - Immediate mode parses `.zti` data through selectable parser backends
   (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and
@@ -252,6 +261,26 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
+### Grouped import and do-block ergonomics ✅
+
+_Completed 2026-07-08. Adds low-risk source ergonomics that lower to existing
+AST/HIR shapes or pure stdlib source helpers._
+
+- `use stdlib { num as n; text as t; }` parses as a grouped top-level import
+  declaration and lowers during HIR construction to ordinary inferred value
+  declarations (`n ::= import stdlib.num;`, etc.). Later compiler stages see
+  only existing `Import` expressions.
+- `[ ... ]` do-blocks now accept local bindings after earlier statement
+  expressions. The parser desugars interleaved statement/binding lists back into
+  nested `Block` and `Sequence` AST nodes, preserving lexical scope without
+  adding a new IR node.
+- `stdlib.list` now exports pure source helpers `countBy`, `sumBy`, and
+  `filterMap`; `stdlib.optional` exports pure source `isNone`.
+- Real examples use grouped imports, list rollup helpers, `??` defaults, record
+  projection/spread for copied output fields, and flatter filesystem do-blocks.
+- Verification: `cargo fmt`, `cargo test -p zutai-syntax`, `cargo test -p
+  zutai-hir`, and `just examples-check`.
+
 ### Cond expression sugar ✅
 
 _Completed 2026-07-08. Adds canonical source syntax for expression
@@ -310,6 +339,25 @@ boolean and integer predicates._
   and `just examples-run`. The CLI native example parity gate was attempted but
   this shell lacks `llc`; run it inside `nix develop` for the full binary link
   gate.
+
+### Scoped network connection helper ✅
+
+_Completed 2026-07-08. Adds the smallest scoped lifetime helper to
+`stdlib.net`, modeled on the existing `stdlib.fs` bracket helpers._
+
+- `withConnection :: Net -> Int -> (Int -> A ! { net.read; net.write; ...e; }) -> A ! { * ConnectionEffects; ...e; }`
+  accepts one connection from an explicit listener, runs the callback with the
+  connection handle, and closes the handle in a `finally` clause when the
+  callback settles. The callback keeps the read/write connection surface
+  explicit and threads any additional effects through `...e`.
+- `examples/net_echo.zt` and `examples/echo_http.zt` now keep listener setup
+  explicit and use `withConnection` for per-connection lifetime. Richer socket
+  APIs, async/nonblocking IO, binary bytes, and protocol helpers remain
+  intentionally unscoped.
+- Verification: semantic import/type coverage, handler-based evaluator coverage
+  proving the finalizer runs, backend `NET_MODULE_SRC` host-grant coverage,
+  CLI LLVM host-helper coverage through `withConnection`, and check coverage
+  for both network examples.
 
 ### Explicit network helpers ✅
 

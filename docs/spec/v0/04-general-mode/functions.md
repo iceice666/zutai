@@ -44,6 +44,18 @@ normalizeServer :: RawServer -> Server
   ];
 ```
 
+Statement expressions and local bindings can be interleaved. A binding scopes
+over only the statements that follow it:
+
+```zt
+copySummary :: FsRead -> FsWrite -> Text
+  = readCap writeCap => [
+    fs.writeAll writeCap "out.txt" "ready";
+    text := fs.readAll readCap "out.txt";
+    text
+  ];
+```
+
 ### No-sig single definitions
 
 When the type is fully inferable and only one clause is needed, write a definition without a signature or `|`:
