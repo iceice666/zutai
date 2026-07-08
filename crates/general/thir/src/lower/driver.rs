@@ -40,6 +40,7 @@ impl<'hir> Lowerer<'hir> {
             alias_match_in_progress: FxHashSet::default(),
             alias_recursive_cache: FxHashMap::default(),
             alias_params: FxHashMap::default(),
+            field_section_params: FxHashSet::default(),
             type_param_scope: FxHashSet::default(),
             type_eval_fuel: 10_000,
             binding_import_key: FxHashMap::default(),

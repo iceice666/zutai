@@ -64,9 +64,6 @@ validateService :: Service -> r.Validation Text Service
     else
       r.valid svc;
 
-isEnabled :: Service -> Bool
-  = svc => svc.enabled;
-
 isCritical :: Service -> Bool
   = svc => svc.enabled && serviceScore svc > 80;
 
@@ -79,7 +76,7 @@ addErrors :: Int -> Service -> Int
 maxServiceScore :: Int -> Service -> Int
   = acc svc => n.max acc (serviceScore svc);
 
-activeServices :: List Service = filter isEnabled snapshot.services;
+activeServices :: List Service = filter _.enabled snapshot.services;
 criticalServices :: List Service = filter isCritical snapshot.services;
 validationErrors :: List Text = fold appendValidationErrors {;} snapshot.services;
 totalErrors :: Int = fold addErrors 0 snapshot.services;

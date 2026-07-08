@@ -40,6 +40,11 @@ impl<'hir> Lowerer<'hir> {
         if let Some(overlay) = self.overlay_full_apply(func) {
             return self.lower_overlay_apply_expr(id, func, arg, span, overlay);
         }
+        if let HirExprKind::Lambda { params, .. } = &self.hir_expr(func).kind
+            && params.len() == 1
+        {
+            return self.lower_single_arg_lambda_apply_expr(id, func, arg, span);
+        }
         let func = self.infer_expr(func);
         // A rank-1 polymorphic `BindingRef` callee has already freshened its `<A>`
         // TypeVars and recorded the instantiation (`lower_binding_ref`), leaving
@@ -156,6 +161,74 @@ impl<'hir> Lowerer<'hir> {
             },
             span,
         })
+    }
+
+    fn lower_single_arg_lambda_apply_expr(
+        &mut self,
+        id: HirExprId,
+        func: HirExprId,
+        arg: HirExprId,
+        span: Span,
+    ) -> ThirExprId {
+        let arg = self.infer_expr(arg);
+        let from = self.expr(arg).ty;
+        let to = self.fresh_infer_var(span);
+        let func_ty = self.alloc_type(Type {
+            kind: TypeKind::Function { from, to },
+            span: self.hir_expr(func).span,
+        });
+        let func = self.check_expr(func, func_ty);
+        let result_ty = self.resolve(to);
+        let effect_ty = self.resolve_alias(result_ty, &mut FxHashSet::default(), span);
+        let result_ty = match self.type_arena[effect_ty.0 as usize].kind.clone() {
+            TypeKind::Effect { base, row } => {
+                self.discharge_row(&row, span);
+                base
+            }
+            _ => result_ty,
+        };
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty: result_ty,
+            kind: ThirExprKind::Apply {
+                func,
+                arg,
+                instantiation: Vec::new(),
+                forall_instantiation: Vec::new(),
+            },
+            span,
+        })
+    }
+
+    fn field_section_binding(&self, params: &[zutai_hir::HirPatId]) -> Option<BindingId> {
+        let [param] = params else {
+            return None;
+        };
+        let zutai_hir::HirPatKind::Bind(binding) = self.hir_pat(*param).kind else {
+            return None;
+        };
+        (self.hir.bindings[binding.0 as usize].name == super::super::FIELD_SECTION_PARAM)
+            .then_some(binding)
+    }
+
+    pub(super) fn access_roots_in_active_field_section(&self, id: HirExprId) -> bool {
+        match &self.hir_expr(id).kind {
+            HirExprKind::BindingRef(binding) => self.field_section_params.contains(binding),
+            HirExprKind::Access { receiver, .. } | HirExprKind::OptAccess { receiver, .. } => {
+                self.access_roots_in_active_field_section(*receiver)
+            }
+            _ => false,
+        }
+    }
+
+    fn expr_roots_in_binding(&self, id: HirExprId, binding: BindingId) -> bool {
+        match &self.hir_expr(id).kind {
+            HirExprKind::BindingRef(candidate) => *candidate == binding,
+            HirExprKind::Access { receiver, .. } | HirExprKind::OptAccess { receiver, .. } => {
+                self.expr_roots_in_binding(*receiver, binding)
+            }
+            _ => false,
+        }
     }
 
     fn overlay_full_apply(&self, func: HirExprId) -> Option<OverlayApply> {
@@ -505,7 +578,15 @@ impl<'hir> Lowerer<'hir> {
             .collect();
 
         let (body_ty, saved_effect_ambient) = self.enter_effectful_result(return_type);
+        let field_section_binding = self
+            .field_section_binding(params)
+            .filter(|binding| self.expr_roots_in_binding(body, *binding));
+        let inserted_field_section_binding =
+            field_section_binding.is_some_and(|binding| self.field_section_params.insert(binding));
         let body = self.check_expr(body, body_ty);
+        if inserted_field_section_binding && let Some(binding) = field_section_binding {
+            self.field_section_params.remove(&binding);
+        }
         self.exit_effectful_result(saved_effect_ambient);
         self.clear_scoped_value_types(&scoped_bindings);
 

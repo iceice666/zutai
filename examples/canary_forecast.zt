@@ -35,9 +35,6 @@ riskScore :: Reading -> Int
 riskBand :: Int -> Risk
   = score => if score >= 80 then #hot else (if score >= 50 then #elevated else #steady);
 
-readingMinute :: Reading -> Int
-  = reading => reading.minute;
-
 chooseFirstHot :: Reading? -> Reading -> Reading?
   = current reading => match current {
     | #some (found) => #some (found);
@@ -50,7 +47,7 @@ peakScore :: Int = fold (\peak score. n.max peak score) 0 scores;
 firstHot :: Reading? = fold chooseFirstHot #none window;
 
 {
-  minutes = map readingMinute window;
+  minutes = map _.minute window;
   scores =;
   peakScore =;
   band = riskBand peakScore;

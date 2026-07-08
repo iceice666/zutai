@@ -116,6 +116,9 @@ capability type and `stdlib.net` as the source module for existing TCP
 The 2026-07-08 ergonomics pass adds ambient/importable prelude `not` and the
 general-mode `%` integer remainder operator; see "Boolean/remainder ergonomics"
 below.
+The same 2026-07-08 parser-sugar pass adds value-level field sections
+`_.field` and `_?.field`, desugaring to ordinary lambdas; see
+"Field-section shorthand" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -245,6 +248,25 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Field-section shorthand ✅
+
+_Completed 2026-07-08. Adds parser-level projection sugar without adding a new
+core AST/IR form._
+
+- `_.field` desugars during parsing to a one-argument lambda equivalent to
+  `\x. x.field`; `_?.field` desugars to `\x. x?.field` for optional/maybe
+  receivers. Chained sections such as `_.owner.name` include the full access
+  chain in the lambda body.
+- The shorthand is tight only: `_ .field` remains ordinary field access on an
+  identifier named `_`, preserving an escape hatch for the pre-existing value
+  identifier grammar.
+- Support level: full reference-interpreter and native/backend support by
+  desugaring to existing lambda/access forms before HIR. No macro/eval system
+  was added.
+- Verification: targeted syntax AST tests, evaluator tests for
+  `filter _.enabled`, nested `map _.owner.name`, and `_?.enabled` on an optional
+  receiver, plus real example check/run coverage.
 
 ### Boolean/remainder ergonomics ✅
 

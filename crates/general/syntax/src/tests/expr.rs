@@ -375,6 +375,82 @@ fn question_mark_suffix_does_not_steal_optional_chain() {
     }
 }
 
+#[test]
+fn parse_field_section_desugars_to_lambda() {
+    let e = parse_expr_str("_.enabled");
+    match &e {
+        Expr::Lambda { params, body, .. } => {
+            assert_eq!(params.len(), 1);
+            let Pattern::Ident { name, .. } = &params[0] else {
+                panic!(
+                    "expected generated field-section param, got {:?}",
+                    params[0]
+                );
+            };
+            let (receiver, field) = as_access(body);
+            assert_eq!(as_ident(receiver), name);
+            assert_eq!(field, "enabled");
+        }
+        other => panic!("expected Lambda, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_optional_field_section_desugars_to_lambda() {
+    let e = parse_expr_str("_?.enabled");
+    match &e {
+        Expr::Lambda { params, body, .. } => {
+            assert_eq!(params.len(), 1);
+            let Pattern::Ident { name, .. } = &params[0] else {
+                panic!(
+                    "expected generated field-section param, got {:?}",
+                    params[0]
+                );
+            };
+            match body.as_ref() {
+                Expr::OptAccess {
+                    receiver, field, ..
+                } => {
+                    assert_eq!(as_ident(receiver), name);
+                    assert_eq!(field, "enabled");
+                }
+                other => panic!("expected OptAccess, got {other:?}"),
+            }
+        }
+        other => panic!("expected Lambda, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_field_section_keeps_nested_chain() {
+    let e = parse_expr_str("_.owner.name");
+    match &e {
+        Expr::Lambda { params, body, .. } => {
+            assert_eq!(params.len(), 1);
+            let Pattern::Ident { name, .. } = &params[0] else {
+                panic!(
+                    "expected generated field-section param, got {:?}",
+                    params[0]
+                );
+            };
+            let (owner_access, name_field) = as_access(body);
+            assert_eq!(name_field, "name");
+            let (receiver, owner_field) = as_access(owner_access);
+            assert_eq!(as_ident(receiver), name);
+            assert_eq!(owner_field, "owner");
+        }
+        other => panic!("expected Lambda, got {other:?}"),
+    }
+}
+
+#[test]
+fn spaced_underscore_dot_remains_ordinary_field_access() {
+    let e = parse_expr_str("_ .enabled");
+    let (receiver, field) = as_access(&e);
+    assert_eq!(as_ident(receiver), "_");
+    assert_eq!(field, "enabled");
+}
+
 // ---------------------------------------------------------------------------
 // Arithmetic / operator precedence
 // ---------------------------------------------------------------------------

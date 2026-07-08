@@ -2,16 +2,18 @@ use winnow::Parser;
 use winnow::Result;
 use winnow::combinator::fail;
 
-use crate::ast::{BinOp, Expr, RecordField, TypeExpr};
+use crate::ast::{BinOp, Expr, Pattern, RecordField, TypeExpr};
 use crate::span::Span;
 
-use super::lex::{application_ws, at_depth_0, kw, ws};
+use super::lex::{application_ws, at_depth_0, kw, parse_value_field_name, spanned, ws};
 
 mod atom;
 
 pub use atom::{parse_atom_expr, parse_clause_block};
 
 use atom::parse_atom_expr_with_options;
+
+const FIELD_SECTION_PARAM: &str = "__zt_field_section";
 
 #[derive(Clone, Copy)]
 pub(super) struct ExprOptions {
@@ -407,6 +409,11 @@ fn parse_application_with_options(input: &mut &str, options: ExprOptions) -> Res
 // ---------------------------------------------------------------------------
 
 pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions) -> Result<Expr> {
+    ws(input)?;
+    if input.starts_with("_.") || input.starts_with("_?.") {
+        return parse_field_section(input);
+    }
+
     let mut node = parse_atom_expr_with_options(input, options)?;
 
     loop {
@@ -414,7 +421,6 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
         ws(input)?;
 
         if input.starts_with("?.") {
-            use super::lex::{parse_value_field_name, spanned};
             "?.".parse_next(input)?;
             ws(input)?;
             let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
@@ -425,7 +431,6 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
                 span,
             };
         } else if input.starts_with('.') && !input.starts_with("..") {
-            use super::lex::{parse_value_field_name, spanned};
             '.'.parse_next(input)?;
             ws(input)?;
             let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
@@ -455,6 +460,58 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
     }
 
     Ok(node)
+}
+
+fn parse_field_section(input: &mut &str) -> Result<Expr> {
+    let (_, start_span) = spanned('_').parse_next(input)?;
+    let param_name = FIELD_SECTION_PARAM.to_string();
+    let mut body = Expr::Ident {
+        name: param_name.clone(),
+        span: start_span,
+    };
+
+    let mut saw_field = false;
+    loop {
+        if input.starts_with("?.") {
+            "?.".parse_next(input)?;
+            ws(input)?;
+            let (field, field_span) = spanned(parse_value_field_name).parse_next(input)?;
+            let span = body.span().merge(field_span);
+            body = Expr::OptAccess {
+                receiver: Box::new(body),
+                field,
+                span,
+            };
+            saw_field = true;
+        } else if input.starts_with('.') && !input.starts_with("..") {
+            '.'.parse_next(input)?;
+            ws(input)?;
+            let (field, field_span) = spanned(parse_value_field_name).parse_next(input)?;
+            let span = body.span().merge(field_span);
+            body = Expr::Access {
+                receiver: Box::new(body),
+                field,
+                span,
+            };
+            saw_field = true;
+        } else {
+            break;
+        }
+    }
+
+    if !saw_field {
+        return fail.parse_next(input);
+    }
+
+    let span = start_span.merge(body.span());
+    Ok(Expr::Lambda {
+        params: vec![Pattern::Ident {
+            name: param_name,
+            span: start_span,
+        }],
+        body: Box::new(body),
+        span,
+    })
 }
 
 fn parse_record_update_fields(input: &mut &str) -> Result<(Vec<RecordField>, Span)> {

@@ -58,6 +58,8 @@ fn prelude_thir_oracle_matches_tlc_path() {
         "flip (\\x y. x - y) 3 10",
         "not false",
         "compose (\\x. x + 1) (\\x. x * 2) (id 10)",
+        "Service :: type { enabled : Bool; };\nsvc :: Service = { enabled = true; };\n(_.enabled) svc",
+        "Service :: type { enabled : Bool; };\nsvc :: Service? = #some ({ enabled = true; });\n((_?.enabled) svc) ?? false",
     ];
     for src in srcs {
         let tlc = eval_file(src).expect("TLC eval failed");
@@ -71,6 +73,65 @@ fn list_prelude_pipeline_maps_filters_and_folds() {
     let src =
         "{1; 2; 3; 4;} |> filter (\\x. x > 1) |> map (\\x. x * 2) |> fold (\\acc x. acc + x) 0";
     assert_eq!(run(src), Value::Int(18));
+}
+
+#[test]
+fn field_section_projects_records_in_higher_order_calls() {
+    let src = "
+Service :: type { enabled : Bool; name : Text; };
+services :: List Service = {
+  { enabled = true; name = \"api\"; };
+  { enabled = false; name = \"jobs\"; };
+  { enabled = true; name = \"edge\"; };
+};
+length (filter _.enabled services)
+";
+    assert_eq!(run(src), Value::Int(2));
+}
+
+#[test]
+fn field_section_can_be_called_directly() {
+    let src = "
+Service :: type { enabled : Bool; };
+svc :: Service = { enabled = true; };
+(_.enabled) svc
+";
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+#[test]
+fn field_section_projects_nested_record_chain() {
+    let src = "
+Owner :: type { name : Text; };
+Service :: type { owner : Owner; };
+services :: List Service = {
+  { owner = { name = \"platform\"; }; };
+  { owner = { name = \"infra\"; }; };
+};
+head? (map _.owner.name services) ?? \"missing\"
+";
+    assert_eq!(run(src), Value::Text("platform".into()));
+}
+
+#[test]
+fn field_section_preserves_optional_record_field_access() {
+    let src = "
+Service :: type { port? : Int; };
+project :: Service -> Maybe Int = _.port;
+svc :: Service = {};
+project svc ?? 8080
+";
+    assert_eq!(run(src), Value::Int(8080));
+}
+
+#[test]
+fn optional_field_section_projects_optional_receiver() {
+    let src = "
+Service :: type { enabled : Bool; };
+svc :: Service? = #none;
+((_?.enabled) svc) ?? false
+";
+    assert_eq!(run(src), Value::Bool(false));
 }
 
 #[test]
@@ -92,6 +153,7 @@ fn list_prelude_user_binding_shadows_map() {
 fn list_prelude_thir_oracle_matches_tlc_path() {
     let srcs = [
         "{1; 2; 3; 4;} |> filter (\\x. x > 1) |> map (\\x. x * 2) |> fold (\\acc x. acc + x) 0",
+        "Service :: type { enabled : Bool; };\nservices :: List Service = {{ enabled = true; }; { enabled = false; };};\nlength (filter _.enabled services)",
         "append {1; 2;} {3;}",
         "head? {7; 8;}",
         "tail? {7; 8;}",

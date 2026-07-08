@@ -53,9 +53,10 @@ Short module aliases keep pipelines readable in example-sized programs:
 use `l ::= import stdlib.list;`, `d ::= import stdlib.data;`,
 `v ::= import stdlib.validate;`, `cfg ::= import stdlib.config;`, and
 `refl ::= import stdlib.reflect;`. Network examples use
-`net ::= import stdlib.net;`. Prefer typed projection or
-predicate helpers such as `isEnabled :: Service -> Bool = svc => svc.enabled;`
-before using them in `map`, `filter`, or stream/list folds.
+`net ::= import stdlib.net;`. Prefer typed helper functions when the logic is
+nontrivial; for simple projections in an already-typed context, field sections
+such as `filter _.enabled services` and `map _.owner.name services` keep
+`map`, `filter`, and stream/list folds readable.
 
 For nested conditionals inside expressions, use parentheses when the nesting
 would otherwise be visually ambiguous:
@@ -85,12 +86,16 @@ Binding identifiers and field names use Unicode UAX #31 XID letters/digits plus 
 Type-valued bindings are uppercase, and runtime value bindings are lowercase. This is statically enforced: `Server :: type { ... };` is a type binding, while `server ::= ...;` is a runtime value binding.
 
 Lambda-dot spacing is required: write `\x. y`, not `\x.y`.
+Tight field sections are shorthand lambdas: `_.field` means `\x. x.field`,
+`_?.field` means `\x. x?.field`, and chains such as `_.owner.name` are allowed.
+Whitespace after `_` disables the shorthand, so `_ .field` remains ordinary
+field access on a value named `_`.
 
 Operator precedence, highest to lowest:
 
 | Precedence | Operator / form                                                          | Associativity             |
 | ---------: | ------------------------------------------------------------------------ | ------------------------- |
-|          1 | field access `x.y`, optional chaining `x?.y`, postfix optional type `T?` | left / postfix            |
+|          1 | field access `x.y`, optional chaining `x?.y`, field sections `_.y`/`_?.y`, postfix optional type `T?` | left / postfix            |
 |          2 | function application `f x`                                               | left                      |
 |          3 | `*`, `/`, `%`                                                            | left                      |
 |          4 | `+`, `-`                                                                 | left                      |
@@ -273,7 +278,7 @@ parses data into `.zt` records and lists. Importing `.zt` evaluates the imported
 module and exposes its final expression as the binding; fields are accessed as
 `cfg.field` or `lib.Type`.
 
-Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`.
+Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`. Field sections are parser sugar for ordinary lambdas, so `filter _.enabled services` means `filter (\x. x.enabled) services`, while `_?.field` uses optional chaining on the receiver.
 
 Pipelines are syntax for ordinary function application. `x |> f` means `f x`, and `f <| x` also means `f x`. Because functions are curried, `x |> f a` means `(f a) x`.
 

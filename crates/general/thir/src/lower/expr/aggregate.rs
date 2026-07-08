@@ -768,6 +768,86 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    pub(super) fn check_access_expr(
+        &mut self,
+        id: HirExprId,
+        receiver: HirExprId,
+        field: &str,
+        expected: TypeId,
+        span: Span,
+    ) -> ThirExprId {
+        let receiver_tail = self.fresh_row_var();
+        let receiver_expected = self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![TypeRecordField {
+                    name: field.to_string(),
+                    optional: false,
+                    ty: expected,
+                    span,
+                }],
+                receiver_tail,
+            ),
+            span,
+        });
+
+        let receiver = if matches!(self.hir_expr(receiver).kind, HirExprKind::Access { .. }) {
+            self.check_expr(receiver, receiver_expected)
+        } else {
+            let receiver = self.infer_expr(receiver);
+            let receiver_ty = self.expr(receiver).ty;
+            let resolved = self.resolve(receiver_ty);
+            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                self.type_matches(receiver_expected, receiver_ty);
+            }
+            receiver
+        };
+        let receiver_ty = self.expr(receiver).ty;
+        let Some(fields) = self.record_fields(receiver_ty, span) else {
+            let resolved = self.resolve(receiver_ty);
+            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::RowAnnotationRequired {
+                        field: Some(field.to_string()),
+                    },
+                    span,
+                });
+            } else {
+                let found = self.type_name(receiver_ty);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::ExpectedRecord { found },
+                    span,
+                });
+            }
+            return self.error_expr(id, span);
+        };
+        let Some(record_field) = fields.iter().find(|candidate| candidate.name == field) else {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnknownField {
+                    name: field.to_string(),
+                },
+                span,
+            });
+            return self.error_expr(id, span);
+        };
+        let ty = if record_field.optional {
+            self.maybe_type(record_field.ty, record_field.span)
+        } else {
+            record_field.ty
+        };
+        if !self.type_matches(expected, ty) {
+            self.type_mismatch(expected, ty, span);
+        }
+        self.alloc_expr(ThirExpr {
+            source: id,
+            ty,
+            kind: ThirExprKind::Access {
+                receiver,
+                field: field.to_string(),
+            },
+            span,
+        })
+    }
+
     /// Type-check `select receiver { f1; f2; }` as a closed record built from the
     /// selected fields in requested order. Desugars to record construction over
     /// field accesses so downstream stages reuse existing record/access nodes.

@@ -4,7 +4,7 @@ From highest to lowest:
 
 | Precedence | Operator / form                                                          | Associativity             |
 | ---------: | ------------------------------------------------------------------------ | ------------------------- |
-|          1 | field access `x.y`, optional chaining `x?.y`, postfix optional type `T?` | left / postfix            |
+|          1 | field access `x.y`, optional chaining `x?.y`, field sections `_.y`/`_?.y`, postfix optional type `T?` | left / postfix            |
 |          2 | function application `f x`                                               | left                      |
 |          3 | `*`, `/`, `%`                                                            | left                      |
 |          4 | `+`, `-`                                                                 | left                      |
@@ -38,6 +38,16 @@ means:
 
 ```zt
 f (x.y)
+```
+
+```zt
+map _.owner.name services
+```
+
+means:
+
+```zt
+map (\x. x.owner.name) services
 ```
 
 ```zt

@@ -96,7 +96,15 @@ Application
   ::= Postfix (application-whitespace Postfix)*
 
 Postfix
-  ::= AtomExpr (("." | "?.") FieldName)*
+  ::= FieldSection
+   | AtomExpr (("." | "?.") FieldName)*
+
+FieldSection
+  ::= "_" FieldSectionAccess+
+
+FieldSectionAccess
+  ::= "." FieldName
+   | "?." FieldName
 
 AtomExpr
   ::= Literal
@@ -395,6 +403,7 @@ Reserved words are not identifiers: `type`, `match`, `if`, `then`, `else`, `impo
 - Record row tails (`...;`, `...Rest;`) are final and unique. Named/qualified row spreads use explicit `* Shape;` / `* m.Shape;`; union row spreads may appear among variants.
 - Effect rows accept named or qualified effect-type spreads (`* Name;`, `* m.Name;`) before the final row tail. Anonymous tails and row-variable tails (`...;`, `...e;`) are final.
 - Function application by whitespace is left-associative. At delimiter depth zero, a newline stops application unless an enclosing operator production consumes it.
+- A tight value-level field section `_.field` is shorthand for a one-argument lambda whose body projects that field. `_?.field` uses optional chaining on the generated receiver. Further accesses are included in the lambda body, so `_.a.b` means `\x. x.a.b`. Whitespace between `_` and the first access operator disables this shorthand; `_ .field` remains ordinary access on an identifier named `_`.
 - `|>` and `<|` chains are left-associative but cannot mix directions in a single chain.
 - `??` is right-associative. Comparisons are non-associative: write `(a < b) && (b < c)`, not `a < b < c`.
 - `?` is postfix optional type syntax only in type context. `?.` is optional field access in value and type contexts. `??` is value-level defaulting.
