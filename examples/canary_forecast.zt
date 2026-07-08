@@ -2,11 +2,9 @@
 -- Usage: zutai-cli run examples/canary_forecast.zt
 -- Builds a bounded report from an infinite synthetic telemetry stream.
 
-use stdlib {
-  stream as s;
-  num as n;
-  cmp as c;
-}
+s ::= import stdlib.stream;
+n ::= import stdlib.num;
+c ::= import stdlib.cmp;
 
 Risk :: type { #steady; #elevated; #hot; };
 

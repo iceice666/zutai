@@ -125,9 +125,12 @@ The same 2026-07-08 parser-sugar pass adds value-level field sections
 The same 2026-07-08 conditional-sugar pass makes `cond { guard => expr; _ =>
 fallback; }` the canonical source form for expression conditionals, desugaring
 to the existing core `if`/`else` AST; see "Cond expression sugar" below.
-The same 2026-07-08 ergonomics pass adds grouped static import sugar, interleaved
-do-block bindings, opt-in list rollup helpers, and `stdlib.optional.isNone`;
-see "Grouped import and do-block ergonomics" below.
+The same 2026-07-08 ergonomics pass adds interleaved do-block bindings, opt-in
+list rollup helpers, and `stdlib.optional.isNone`; see "Do-block and stdlib
+ergonomics" below.
+The same 2026-07-08 import-keyword decision keeps `import` as the only static
+import spelling and leaves `use` available as an ordinary identifier; see
+"Import keyword decision" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -136,9 +139,8 @@ see "Grouped import and do-block ergonomics" below.
   and `[ … ]` is a serial do-block (local bindings + tail). The scope picks the
   binding operator — top-level `::=` / `:: T =`, local (inside `[ … ]`) `:=` / `: T =`.
   Local do-block bindings may appear after earlier statement expressions and
-  scope over only the following statements. Grouped `use base { item as alias; }`
-  declarations lower to ordinary static import bindings. Empty record `{}`,
-  empty list `{;}`, empty do-block `[]`. Immediate mode `.zti` is unchanged
+  scope over only the following statements. Empty record `{}`, empty list `{;}`,
+  empty do-block `[]`. Immediate mode `.zti` is unchanged
   (arrays stay `[ … ]`). v0 spec docs, the language manual, and stdlib notes were
   migrated to this grammar; the `v0_spec` doc-fence acceptance test was updated
   to the new accepting set (decl-only `.zt` snippets now form complete programs
@@ -261,22 +263,34 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
-### Grouped import and do-block ergonomics ✅
+### Import keyword decision ✅
+
+_Completed 2026-07-08. `import` remains the sole static import spelling._
+
+- Removed grouped `use` import sugar before stabilization. Several module aliases
+  are written as ordinary bindings (`n ::= import stdlib.num;`, etc.), while
+  selective unqualified imports continue to use destructuring over an `import`
+  expression (`{ map; fold; } ::= import stdlib.stream;`).
+- `use` is no longer reserved by the lexer/parser and may be used as an ordinary
+  identifier.
+- User-facing examples, the language manual, and the v0 grammar now consistently
+  document `import`.
+- Verification: `cargo fmt`, `cargo test -p zutai-syntax`,
+  `cargo test -p zutai-hir`, `just examples-check`, and
+  `cargo clippy --workspace --all-targets`.
+
+### Do-block and stdlib ergonomics ✅
 
 _Completed 2026-07-08. Adds low-risk source ergonomics that lower to existing
 AST/HIR shapes or pure stdlib source helpers._
 
-- `use stdlib { num as n; text as t; }` parses as a grouped top-level import
-  declaration and lowers during HIR construction to ordinary inferred value
-  declarations (`n ::= import stdlib.num;`, etc.). Later compiler stages see
-  only existing `Import` expressions.
 - `[ ... ]` do-blocks now accept local bindings after earlier statement
   expressions. The parser desugars interleaved statement/binding lists back into
   nested `Block` and `Sequence` AST nodes, preserving lexical scope without
   adding a new IR node.
 - `stdlib.list` now exports pure source helpers `countBy`, `sumBy`, and
   `filterMap`; `stdlib.optional` exports pure source `isNone`.
-- Real examples use grouped imports, list rollup helpers, `??` defaults, record
+- Real examples use explicit import aliases, list rollup helpers, `??` defaults, record
   projection/spread for copied output fields, and flatter filesystem do-blocks.
 - Verification: `cargo fmt`, `cargo test -p zutai-syntax`, `cargo test -p
   zutai-hir`, and `just examples-check`.

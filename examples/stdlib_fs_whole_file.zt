@@ -2,10 +2,8 @@
 -- Usage: zutai-cli run examples/stdlib_fs_whole_file.zt
 -- `readAll` and `writeAll` stay source wrappers over existing fs.read/fs.write.
 
-use stdlib {
-  fs;
-  text as t;
-}
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
 
 outPath :: Path = "examples/stdlib_fs_whole_file.out";
 

@@ -57,15 +57,13 @@ s ::= import stdlib.stream;
 s.map f (s.singleton 1)
 ```
 
-Several static module aliases can be grouped with `use`. This is source sugar
-for ordinary import bindings; imported members remain prefixed:
+Several static module aliases are ordinary import bindings; imported members
+remain prefixed:
 
 ```zt
-use stdlib {
-  stream as s;
-  num as n;
-  text as t;
-}
+s ::= import stdlib.stream;
+n ::= import stdlib.num;
+t ::= import stdlib.text;
 
 s.map f (s.singleton 1)
 ```

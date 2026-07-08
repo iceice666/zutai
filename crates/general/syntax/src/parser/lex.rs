@@ -179,7 +179,7 @@ where
 // ---------------------------------------------------------------------------
 
 const RESERVED: &[&str] = &[
-    "type", "match", "if", "cond", "then", "else", "import", "use", "true", "false",
+    "type", "match", "if", "cond", "then", "else", "import", "true", "false",
     // future-reserved
     "select", "perform", "handle", "with", "resume",
 ];

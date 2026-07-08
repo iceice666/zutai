@@ -8,10 +8,8 @@
 -- returns "handler-mock", but standard host effects in lazy cells are served by
 -- the interpreter/native host boundary when the cell is forced.
 
-use stdlib {
-  text as t;
-  fs;
-}
+t ::= import stdlib.text;
+fs ::= import stdlib.fs;
 
 Cell :: type { #nil; #cons : { head : Text; tail : Unit -> Cell; }; };
 

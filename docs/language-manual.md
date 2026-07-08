@@ -53,9 +53,7 @@ Short module aliases keep pipelines readable in example-sized programs:
 use `l ::= import stdlib.list;`, `d ::= import stdlib.data;`,
 `v ::= import stdlib.validate;`, `cfg ::= import stdlib.config;`, and
 `refl ::= import stdlib.reflect;`. Network examples use
-`net ::= import stdlib.net;`. Several explicit modules can be grouped with
-`use stdlib { stream as s; num as n; text as t; }`, which is syntax for the same
-ordinary static import bindings. Prefer typed helper functions when the logic is
+`net ::= import stdlib.net;`. Prefer typed helper functions when the logic is
 nontrivial; for simple projections in an already-typed context, field sections
 such as `filter _.enabled services`, `map _.owner.name services`, and
 `services |> filter _.enabled |> map _.owner` keep list/stream folds readable.
@@ -205,7 +203,6 @@ Top-level declaration forms:
 | --- | --- |
 | `name ::= expr;` | Inferred top-level value binding. |
 | `name :: TypeExpr = expr;` | Typed top-level value binding. |
-| `use base { member as alias; }` | Grouped static import sugar, equivalent to `alias ::= import base.member;`. |
 | `name :: TypeSignature`<br>`= pattern => body;` | Function signature followed by one or more clauses. |
 | `Name :: type TypeExpr;` | Type alias or named type expression. |
 
@@ -291,8 +288,9 @@ literal import source: either a quoted path (`cfg ::= import "config.zti"`) or a
 dotted stdlib path (`{ map; fold; } ::= import stdlib.stream`). Importing `.zti`
 parses data into `.zt` records and lists. Importing `.zt` evaluates the imported
 module and exposes its final expression as the binding; fields are accessed as
-`cfg.field` or `lib.Type`. Grouped `use` declarations are shorthand for multiple
-static import bindings, for example `use stdlib { num as n; text as t; }`.
+`cfg.field` or `lib.Type`. Several static module aliases are written as several
+ordinary bindings, for example `n ::= import stdlib.num;` and
+`t ::= import stdlib.text;`.
 
 Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`. Field sections are parser sugar for ordinary lambdas, so `filter _.enabled services` means `filter (\x. x.enabled) services`, while `_?.field` uses optional chaining on the receiver.
 

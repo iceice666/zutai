@@ -3,9 +3,7 @@
 -- Client: printf 'hello\n' | nc 127.0.0.1 7777
 -- Listens on port 7777, echoes one line, then exits.
 
-use stdlib {
-  net;
-}
+net ::= import stdlib.net;
 
 serveOnce :: Net -> Int -> net.Server Text
   = cap port => [

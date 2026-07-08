@@ -2,11 +2,9 @@
 -- Usage: zutai-cli run examples/stdlib_fs_lines.zt
 -- Writes two text lines, reads them back with bracket helpers, and confirms EOF.
 
-use stdlib {
-  fs;
-  text as t;
-  optional as o;
-}
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
+o ::= import stdlib.optional;
 
 outPath :: Path = "examples/stdlib_fs_lines.out";
 

@@ -2,9 +2,7 @@
 -- Usage: zutai-cli run examples/stream_summary.zt
 -- Adapts a list to a stream, transforms it lazily, and summarizes it.
 
-use stdlib {
-  stream as s;
-}
+s ::= import stdlib.stream;
 
 numbers ::= {1; 2; 3; 4; 5; 6;};
 

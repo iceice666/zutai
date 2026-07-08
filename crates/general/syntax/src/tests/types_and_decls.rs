@@ -302,26 +302,15 @@ fn import_destructures_in_one_binding() {
 }
 
 #[test]
-fn parse_grouped_use_decl() {
-    let f = parse_str("use stdlib { num as n; text as t; list; }\nn");
+fn use_is_an_ordinary_identifier() {
+    let f = parse_str("use ::= 1;\nuse");
     assert_eq!(f.decls.len(), 1);
-    match &f.decls[0] {
-        Decl::Use { items, .. } => {
-            assert_eq!(items.len(), 3);
-            assert_eq!(items[0].alias, "n");
-            assert!(
-                matches!(&items[0].source, ImportSource::Path(parts) if parts == &["stdlib", "num"])
-            );
-            assert_eq!(items[1].alias, "t");
-            assert!(
-                matches!(&items[1].source, ImportSource::Path(parts) if parts == &["stdlib", "text"])
-            );
-            assert_eq!(items[2].alias, "list");
-            assert!(
-                matches!(&items[2].source, ImportSource::Path(parts) if parts == &["stdlib", "list"])
-            );
+    match decl_by(&f, "use") {
+        Decl::Inferred { name, value, .. } => {
+            assert_eq!(name, "use");
+            assert_eq!(as_int(value), 1);
         }
-        other => panic!("expected Use decl, got {other:?}"),
+        other => panic!("expected Inferred, got {other:?}"),
     }
 }
 

@@ -131,32 +131,21 @@ fn lowers_typed_local_binding_annotation() {
 }
 
 #[test]
-fn lowers_grouped_use_to_import_value_decls() {
-    let lowered = lower("use stdlib { num as n; text as t; }\nn");
+fn lowers_use_identifier_binding() {
+    let lowered = lower("use ::= 1;\nuse");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
 
-    let n = find_binding_by_name(&lowered.file, "n").expect("n binding");
-    let t = find_binding_by_name(&lowered.file, "t").expect("t binding");
-    assert_eq!(lowered.file.decls.len(), 2);
+    let binding = find_binding_by_name(&lowered.file, "use").expect("use binding");
+    assert_eq!(lowered.file.decls.len(), 1);
 
-    let n_decl = &lowered.file.decl_arena[lowered.file.decls[0]];
-    assert_eq!(n_decl.binding, n);
-    match &n_decl.kind {
+    let decl = &lowered.file.decl_arena[lowered.file.decls[0]];
+    assert_eq!(decl.binding, binding);
+    match &decl.kind {
         HirDeclKind::Value { value, .. } => assert!(matches!(
             &lowered.file.expr_arena[*value].kind,
-            HirExprKind::Import(HirImportSource::Path(parts)) if parts == &["stdlib", "num"]
+            HirExprKind::Integer(1, None)
         )),
-        other => panic!("expected import value decl, got {other:?}"),
-    }
-
-    let t_decl = &lowered.file.decl_arena[lowered.file.decls[1]];
-    assert_eq!(t_decl.binding, t);
-    match &t_decl.kind {
-        HirDeclKind::Value { value, .. } => assert!(matches!(
-            &lowered.file.expr_arena[*value].kind,
-            HirExprKind::Import(HirImportSource::Path(parts)) if parts == &["stdlib", "text"]
-        )),
-        other => panic!("expected import value decl, got {other:?}"),
+        other => panic!("expected value decl, got {other:?}"),
     }
 }
 

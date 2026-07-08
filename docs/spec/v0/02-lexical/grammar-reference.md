@@ -11,7 +11,6 @@ File
 TopDecl
   ::= Ident "::=" Expr ";"
    | Ident "::" TypeExpr "=" Expr ";"
-   | "use" ImportPath "{" UseItem* "}" ";"?
    | Ident "::" TypeParamList? "type" TypeExpr ";"
    | Ident "::" TypeParamList? TypeExpr FunctionClause+
    | Ident Pattern+ "=" Expr ";"
@@ -56,9 +55,6 @@ TypeParam
 
 LevelBinder
   ::= "$" Ident
-
-UseItem
-  ::= FieldName ("as" Ident)? ";"
 ```
 
 ### Expressions

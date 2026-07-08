@@ -2,12 +2,10 @@
 -- Usage: zutai-cli run examples/service_health.zt
 -- Imports inert .zti data, validates it as typed records, and summarizes it.
 
-use stdlib {
-  num as n;
-  result as r;
-  text as t;
-  list as l;
-}
+n ::= import stdlib.num;
+r ::= import stdlib.result;
+t ::= import stdlib.text;
+l ::= import stdlib.list;
 
 Tier :: type { #edge; #core; #batch; };
 Action :: type { #ignore; #watch; #page; };

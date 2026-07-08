@@ -2,10 +2,8 @@
 -- Usage: zutai-cli run examples/text_report.zt
 -- Splits, normalizes, replaces, joins, and parses text.
 
-use stdlib {
-  text as t;
-  optional as o;
-}
+t ::= import stdlib.text;
+o ::= import stdlib.optional;
 
 raw ::= " zutai,examples,zt ";
 parts ::= t.split "," (t.trim raw);

@@ -104,25 +104,6 @@ fn write_decl(f: &mut fmt::Formatter<'_>, decl: &Decl, prefix: &str, indent: &st
                 &format!("{indent}   "),
             )
         }
-        Decl::Use { items, .. } => {
-            writeln!(f, "{prefix} Use")?;
-            for item in items {
-                writeln!(
-                    f,
-                    "{indent}├─ {:?} as {:?}",
-                    display_import_source(&item.source),
-                    item.alias
-                )?;
-            }
-            Ok(())
-        }
-    }
-}
-
-fn display_import_source(source: &ImportSource) -> String {
-    match source {
-        ImportSource::String(value) => format!("\"{value}\""),
-        ImportSource::Path(parts) => parts.join("."),
     }
 }
 

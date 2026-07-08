@@ -2,11 +2,9 @@
 -- Usage: zutai-cli run examples/deploy_readiness.zt
 -- Imports inert rollout data, summarizes failed checks, and chooses a gate.
 
-use stdlib {
-  num as n;
-  text as t;
-  list as l;
-}
+n ::= import stdlib.num;
+t ::= import stdlib.text;
+l ::= import stdlib.list;
 
 Severity :: type { #info; #warn; #blocker; };
 Gate :: type { #ship; #hold; };

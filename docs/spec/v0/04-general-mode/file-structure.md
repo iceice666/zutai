@@ -48,24 +48,6 @@ name ::= import "path.zti";
 
 This creates one prefixed binding; imported fields are accessed through it, for example `name.field` or `name.Type`. Members can also be destructured directly: `{ field; } ::= import "path.zt";`.
 
-**Grouped static imports** — `use` expands to ordinary inferred import bindings:
-
-```zt
-use stdlib {
-  stream as s;
-  num as n;
-  text as t;
-}
-```
-
-is equivalent to:
-
-```zt
-s ::= import stdlib.stream;
-n ::= import stdlib.num;
-t ::= import stdlib.text;
-```
-
 **Function definition** — uses `::` for the signature, followed by one or more `=` clauses:
 
 ```zt

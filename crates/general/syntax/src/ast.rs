@@ -85,10 +85,6 @@ pub enum Decl {
         value: Expr,
         span: Span,
     },
-    /// Grouped static imports:
-    /// `use stdlib { num as n; text as t; }` expands during HIR lowering to one
-    /// ordinary import value binding per item.
-    Use { items: Vec<UseItem>, span: Span },
     TypeAlias {
         name: String,
         params: Vec<TypeParam>,
@@ -136,7 +132,6 @@ impl Decl {
             | Decl::NoSigFn { span, .. }
             | Decl::Constraint { span, .. }
             | Decl::Destructure { span, .. }
-            | Decl::Use { span, .. }
             | Decl::Witness { span, .. } => *span,
         }
     }
@@ -152,7 +147,7 @@ impl Decl {
             | Decl::NoSigFn { name, .. }
             | Decl::Constraint { name, .. } => name,
             Decl::Witness { constraint, .. } => constraint,
-            Decl::Destructure { .. } | Decl::Use { .. } => "",
+            Decl::Destructure { .. } => "",
         }
     }
 }
@@ -264,13 +259,6 @@ pub enum PipelineDir {
 pub enum ImportSource {
     String(String),
     Path(Vec<String>),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct UseItem {
-    pub source: ImportSource,
-    pub alias: String,
-    pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]

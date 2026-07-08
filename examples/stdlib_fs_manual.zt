@@ -2,10 +2,8 @@
 -- Usage: zutai-cli run examples/stdlib_fs_manual.zt
 -- Shows explicit open/flush/close calls. Double close is intentionally allowed.
 
-use stdlib {
-  fs;
-  text as t;
-}
+fs ::= import stdlib.fs;
+t ::= import stdlib.text;
 
 outPath :: Path = "examples/stdlib_fs_manual.out";
 

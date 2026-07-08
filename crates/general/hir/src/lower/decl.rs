@@ -26,29 +26,6 @@ impl Lowerer {
                 self.destructure_fields.insert(receiver, field_bindings);
                 receiver
             }
-            ast::Decl::Use { items, span } => {
-                // Allocate a synthetic (unscoped, so never a duplicate) group
-                // binding, plus one in-scope value binding per import alias.
-                let group =
-                    self.alloc_binding_unscoped("$use".to_string(), BindingKind::TopValue, *span);
-                let imports = items
-                    .iter()
-                    .map(|item| {
-                        let binding = self.define_current(
-                            item.alias.clone(),
-                            BindingKind::TopValue,
-                            item.span,
-                        );
-                        (
-                            binding,
-                            super::types::clone_import_source(&item.source),
-                            item.span,
-                        )
-                    })
-                    .collect();
-                self.use_imports.insert(group, imports);
-                group
-            }
             ast::Decl::TypeAlias { .. } => {
                 self.define_current(decl.name().to_string(), BindingKind::TopType, decl.span())
             }
@@ -135,9 +112,6 @@ impl Lowerer {
             ),
             ast::Decl::Destructure { .. } => {
                 unreachable!("destructure decls are expanded in lower_file, not lower_decl")
-            }
-            ast::Decl::Use { .. } => {
-                unreachable!("use decls are expanded in lower_file, not lower_decl")
             }
             ast::Decl::TypeAlias {
                 params, ty, span, ..
@@ -404,28 +378,6 @@ impl Lowerer {
                 kind: HirDeclKind::Value {
                     annotation: None,
                     value: access,
-                },
-                span,
-            });
-            out.push(decl);
-        }
-    }
-
-    /// Expand `use base { item as alias; }` into ordinary import value decls:
-    /// `alias ::= import base.item;`. The syntax is top-level sugar only; later
-    /// compiler stages see plain imports.
-    pub(super) fn lower_use_decl(&mut self, group: BindingId, out: &mut Vec<HirDeclId>) {
-        let imports = self.use_imports.remove(&group).unwrap_or_default();
-        for (binding, source, span) in imports {
-            let value = self.alloc_expr(HirExpr {
-                kind: HirExprKind::Import(source),
-                span,
-            });
-            let decl = self.alloc_decl(HirDecl {
-                binding,
-                kind: HirDeclKind::Value {
-                    annotation: None,
-                    value,
                 },
                 span,
             });

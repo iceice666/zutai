@@ -4,10 +4,8 @@
 -- Listens on port 8080, echoes each request line in an HTTP 200 response,
 -- then accepts the next connection.
 
-use stdlib {
-  net;
-  text as t;
-}
+net ::= import stdlib.net;
+t ::= import stdlib.text;
 
 loop :: Net -> Int -> net.Connection Text
   = cap listener => [

@@ -2,11 +2,9 @@
 -- Usage: zutai-cli run examples/stdlib_pipeline.zt
 -- Uses explicit numeric, optional, and result helpers.
 
-use stdlib {
-  num as n;
-  optional as o;
-  result as r;
-}
+n ::= import stdlib.num;
+o ::= import stdlib.optional;
+r ::= import stdlib.result;
 
 score :: Int -> Int
   = x => x
