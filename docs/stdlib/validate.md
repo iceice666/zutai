@@ -28,13 +28,14 @@ type annotations and pattern matching.
 ## API
 
 ```zt
-valid invalid errors
+valid invalid invalidOne custom errors
 map map2 map3
 required satisfy nonEmptyText intRange oneOfText oneOfInt
 toResult fromResult
 ```
 
-`map2` and `map3` accumulate errors from every invalid input. `required` turns
+`invalidOne` wraps a single structured validation error, while `custom` creates
+a `#custom` error directly. `map2` and `map3` accumulate errors from every invalid input. `required` turns
 `#none` into `#required { field = ...; }`. `satisfy`, `nonEmptyText`,
 `intRange`, `oneOfText`, and `oneOfInt` produce structured `ValidationError`
 values rather than free-text-only failures.

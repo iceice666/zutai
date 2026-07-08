@@ -429,18 +429,24 @@ fn stdlib_result_qualified_members_evaluate() {
                b ::= r.withDefault 0 (r.andThen (\\x. if x > 0 then r.ok (x + 1) else r.err \"neg\") (r.ok 1));\n\
                c ::= if mappedErr == expectedErr then 6 else 0;\n\
                v1 :: r.Validation Text Int = r.valid 3;\n\
-               v2 :: r.Validation Text Int = r.invalid {\"a\";};\n\
+               v2 :: r.Validation Text Int = r.invalidOne \"a\";\n\
                v3 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\n\
                d ::= length (r.errors (r.map2 (\\x y. x + y) v1 (r.valid 4)));\n\
                e ::= length (r.errors (r.map2 (\\x y. x + y) v2 v3));\n\
-               a + b + c + d + e";
-    assert_eq!(run(src), Value::Int(52));
+               f ::= length (r.errors (r.map3 (\\x y z. x + y + z) (r.valid 1) v2 v3));\n\
+               g ::= r.withDefault 0 (r.orElse (r.ok 9) (r.err \"fallback\"));\n\
+               h ::= r.withDefault 0 (r.fromOptional \"missing\" (r.toOptional (r.ensure \"small\" (\\x. x > 3) 4)));\n\
+               i ::= if r.isOk good then 5 else 0;\n\
+               j ::= if r.isErr (r.err \"no\") then 6 else 0;\n\
+               a + b + c + d + e + f + g + h + i + j";
+    assert_eq!(run(src), Value::Int(79));
 }
 
 #[test]
 fn destructured_stdlib_result_members_evaluate() {
-    let src = "{ ok; err; map; withDefault; } ::= import stdlib.result;\n\
-               withDefault 0 (map (\\x. x + 1) (if true then ok 4 else err \"x\"))";
+    let src = "{ ok; err; map; withDefault; ensure; isOk; } ::= import stdlib.result;\n\
+               checked ::= ensure \"small\" (\\x. x > 3) 4;\n\
+               withDefault 0 (map (\\x. x + 1) (if isOk checked then checked else err \"x\"))";
     assert_eq!(run(src), Value::Int(5));
 }
 
@@ -451,6 +457,8 @@ fn stdlib_result_thir_oracle_matches_tlc_path() {
         "r ::= import stdlib.result;\nres :: r.Result Text Int = r.ok 4;\nr.withDefault 7 (r.andThen (\\x. r.err \"stop\") res)",
         "r ::= import stdlib.result;\nbad :: r.Result Int Int = r.err 4;\nexpected :: r.Result Int Int = r.err 5;\nr.mapErr (\\e. e + 1) bad == expected",
         "r ::= import stdlib.result;\nv1 :: r.Validation Text Int = r.invalid {\"a\";};\nv2 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\nlength (r.errors (r.map2 (\\x y. x + y) v1 v2))",
+        "r ::= import stdlib.result;\nv1 :: r.Validation Text Int = r.invalidOne \"a\";\nv2 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\nlength (r.errors (r.map3 (\\x y z. x + y + z) (r.valid 1) v1 v2))",
+        "r ::= import stdlib.result;\nok ::= r.ensure \"small\" (\\x. x > 3) 4;\nr.withDefault 0 (r.fromOptional \"missing\" (r.toOptional ok))",
     ];
     for src in srcs {
         let tlc = eval_file(src).expect("TLC eval failed");
@@ -559,8 +567,11 @@ fn stdlib_list_toolbox_members_evaluate() {
                c ::= import stdlib.cmp;\n\
                sorted ::= l.sortBy c.compareInt {3; 1; 2; 2; 3;};\n\
                unique ::= l.dedupBy (\\a b. a == b) sorted;\n\
-               l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique";
-    assert_eq!(run(src), Value::Int(45));
+               emptyInts :: List Int = {;};\n\
+               foundMapped ::= match l.findMap (\\x. if x > 2 then #some (x * 10) else #none) sorted { | #none => 0; | #some (x) => x; };\n\
+               extrema ::= (l.maximum sorted ?? 0) + (l.minimum sorted ?? 0) + (l.maximumBy (\\x. x * 2) sorted ?? 0) + (l.minimumBy (\\x. x * 2) sorted ?? 0) + (match l.maximum emptyInts { | #none => 5; | #some (_) => 0; });\n\
+               l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique + foundMapped + extrema";
+    assert_eq!(run(src), Value::Int(92));
 }
 
 #[test]
@@ -579,9 +590,21 @@ fn stdlib_validate_members_accumulate_errors() {
     let src = "v ::= import stdlib.validate;\n\
                missing :: Text? = #none;\n\
                checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\
+               custom ::= v.custom \"manual\";\n\
                asResult ::= v.toResult checked;\n\
-               length (v.errors checked) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }";
-    assert_eq!(run(src), Value::Int(4));
+               length (v.errors checked) + length (v.errors custom) + length (v.errors (v.invalidOne (#custom { message = \"one\"; }))) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }";
+    assert_eq!(run(src), Value::Int(6));
+}
+
+#[test]
+fn stdlib_stream_find_members_evaluate() {
+    let src = "s ::= import stdlib.stream;\n\
+               xs ::= s.fromList {1; 2; 3; 4;};\n\
+               found ::= match s.find (\\x. x > 2) xs { | #none => 0; | #some (x) => x; };\n\
+               mapped ::= match s.findMap (\\x. if x > 3 then #some (x * 2) else #none) xs { | #none => 0; | #some (x) => x; };\n\
+               missing ::= match s.find (\\x. x > 9) xs { | #none => 5; | #some (_) => 0; };\n\
+               found + mapped + missing";
+    assert_eq!(run(src), Value::Int(16));
 }
 
 #[test]

@@ -13,6 +13,10 @@ valid :: <A> A -> Validation ValidationError A
   = value => #valid { value = value; };
 invalid :: <A> List ValidationError -> Validation ValidationError A
   = errs => #invalid { errors = errs; };
+invalidOne :: <A> ValidationError -> Validation ValidationError A
+  = err => invalid { err; };
+custom :: <A> Text -> Validation ValidationError A
+  = message => invalidOne (#custom { message = message; });
 errors :: <A> Validation ValidationError A -> List ValidationError
   = validation => match validation { | #valid { value = _; } => listEmpty (); | #invalid { errors = errs; } => errs; };
 map :: <A, B> (A -> B) -> Validation ValidationError A -> Validation ValidationError B
@@ -41,4 +45,4 @@ toResult :: <A> Validation ValidationError A -> Result (List ValidationError) A
   = validation => match validation { | #valid { value = value; } => #ok { value = value; }; | #invalid { errors = errs; } => #err { error = errs; }; };
 fromResult :: <A> Result (List ValidationError) A -> Validation ValidationError A
   = result => match result { | #ok { value = value; } => #valid { value = value; }; | #err { error = errs; } => #invalid { errors = errs; }; };
-{ ValidationError = ValidationError; Validation = Validation; Result = Result; valid = valid; invalid = invalid; errors = errors; map = map; map2 = map2; map3 = map3; required = required; satisfy = satisfy; nonEmptyText = nonEmptyText; intRange = intRange; oneOfText = oneOfText; oneOfInt = oneOfInt; toResult = toResult; fromResult = fromResult; }
+{ ValidationError = ValidationError; Validation = Validation; Result = Result; valid = valid; invalid = invalid; invalidOne = invalidOne; custom = custom; errors = errors; map = map; map2 = map2; map3 = map3; required = required; satisfy = satisfy; nonEmptyText = nonEmptyText; intRange = intRange; oneOfText = oneOfText; oneOfInt = oneOfInt; toResult = toResult; fromResult = fromResult; }

@@ -493,6 +493,27 @@ fn compile_stdlib_result_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_RESULT_HELPERS_SRC: &str = "r ::= import stdlib.result;\n\
+v1 :: r.Validation Text Int = r.invalidOne \"a\";\n\
+v2 :: r.Validation Text Int = r.invalid {\"b\"; \"c\";};\n\
+mapped :: r.Validation Text Int = r.map3 (\\a b c. a + b + c) (r.valid 1) v1 v2;\n\
+ensureOk :: r.Result Text Int = r.ensure \"small\" (\\x. x > 3) 4;\n\
+ensureErr :: r.Result Text Int = r.ensure \"small\" (\\x. x > 3) 1;\n\
+fallbackScore :: Int = r.withDefault 0 (r.orElse (r.ok 9) ensureErr);\n\
+optionalScore :: Int = r.withDefault 0 (r.fromOptional \"missing\" (r.toOptional ensureOk));\n\
+length (r.errors mapped) + fallbackScore + optionalScore + (if r.isOk ensureOk then 5 else 0) + (if r.isErr ensureErr then 6 else 0)\n";
+
+#[test]
+fn compile_stdlib_result_helpers_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_result_helpers", STDLIB_RESULT_HELPERS_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_result_helpers_oracle.zt",
+        STDLIB_RESULT_HELPERS_SRC,
+    );
+    assert_eq!(native.trim(), "27");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 const STDLIB_NUM_PIPELINE_SRC: &str = "n ::= import stdlib.num;\n\
 score :: Int -> Int\n  = x => x |> n.clamp 0 10 |> n.pow 2 |> n.rem 17;\n\
 score 12 + score (0 - 3) + n.gcd (0 - 84) 30 + n.abs (0 - 9) + n.round 2.6 + n.truncate 2.9 + (if n.toFloat 4 == 4.0 then 5 else 0)\n";
@@ -528,7 +549,10 @@ const STDLIB_LIST_TOOLBOX_SRC: &str = "l ::= import stdlib.list;\n\
 c ::= import stdlib.cmp;\n\
 sorted ::= l.sortBy c.compareInt {3; 1; 2; 2; 3;};\n\
 unique ::= l.dedupBy (\\a b. a == b) sorted;\n\
-l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique\n";
+emptyInts :: List Int = {;};\n\
+foundMapped ::= match l.findMap (\\x. if x > 2 then #some (x * 10) else #none) sorted { | #none => 0; | #some (x) => x; };\n\
+extrema ::= (l.maximum sorted ?? 0) + (l.minimum sorted ?? 0) + (l.maximumBy (\\x. x * 2) sorted ?? 0) + (l.minimumBy (\\x. x * 2) sorted ?? 0) + (match l.maximum emptyInts { | #none => 5; | #some (_) => 0; });\n\
+l.sum (l.range 1 5) + l.product {2; 3; 4;} + length (l.zip {1; 2;} {\"a\"; \"b\"; \"c\";}) + length (l.flatten {{1; 2;}; {3;};}) + (match l.find (\\x. x == 3) sorted { | #none => 0; | #some (x) => x; }) + length unique + foundMapped + extrema\n";
 
 #[test]
 fn compile_stdlib_list_toolbox_matches_oracle() {
@@ -537,7 +561,25 @@ fn compile_stdlib_list_toolbox_matches_oracle() {
         "cli_test_stdlib_list_toolbox_oracle.zt",
         STDLIB_LIST_TOOLBOX_SRC,
     );
-    assert_eq!(native.trim(), "45");
+    assert_eq!(native.trim(), "92");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
+const STDLIB_STREAM_FIND_SRC: &str = "s ::= import stdlib.stream;\n\
+xs ::= s.fromList {1; 2; 3; 4;};\n\
+found ::= match s.find (\\x. x > 2) xs { | #none => 0; | #some (x) => x; };\n\
+mapped ::= match s.findMap (\\x. if x > 3 then #some (x * 2) else #none) xs { | #none => 0; | #some (x) => x; };\n\
+missing ::= match s.find (\\x. x > 9) xs { | #none => 5; | #some (_) => 0; };\n\
+found + mapped + missing\n";
+
+#[test]
+fn compile_stdlib_stream_find_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_stream_find", STDLIB_STREAM_FIND_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_stream_find_oracle.zt",
+        STDLIB_STREAM_FIND_SRC,
+    );
+    assert_eq!(native.trim(), "16");
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
@@ -562,14 +604,15 @@ fn compile_stdlib_data_decode_matches_oracle() {
 const STDLIB_VALIDATE_SRC: &str = "v ::= import stdlib.validate;\n\
 missing :: Text? = #none;\n\
 checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\
+custom ::= v.custom \"manual\";\n\
 asResult ::= v.toResult checked;\n\
-length (v.errors checked) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }\n";
+length (v.errors checked) + length (v.errors custom) + length (v.errors (v.invalidOne (#custom { message = \"one\"; }))) + match asResult { | #ok { value = _; } => 0; | #err { error = errs; } => length errs; }\n";
 
 #[test]
 fn compile_stdlib_validate_matches_oracle() {
     let native = compile_bin_stdout("cli_test_stdlib_validate", STDLIB_VALIDATE_SRC);
     let interp = run_stdout("cli_test_stdlib_validate_oracle.zt", STDLIB_VALIDATE_SRC);
-    assert_eq!(native.trim(), "4");
+    assert_eq!(native.trim(), "6");
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
@@ -629,6 +672,8 @@ fn compile_unused_stdlib_config_reflect_imports_do_not_reject() {
 fn compile_stdlib_expansion_emits_llvm_without_native_toolchain() {
     for (name, src) in [
         ("stdlib_list_toolbox_llvm.zt", STDLIB_LIST_TOOLBOX_SRC),
+        ("stdlib_stream_find_llvm.zt", STDLIB_STREAM_FIND_SRC),
+        ("stdlib_result_helpers_llvm.zt", STDLIB_RESULT_HELPERS_SRC),
         ("stdlib_data_decode_llvm.zt", STDLIB_DATA_DECODE_SRC),
         ("stdlib_validate_llvm.zt", STDLIB_VALIDATE_SRC),
         ("stdlib_config_alias_llvm.zt", STDLIB_CONFIG_ALIAS_SRC),

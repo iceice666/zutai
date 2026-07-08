@@ -131,6 +131,9 @@ ergonomics" below.
 The same 2026-07-08 import-keyword decision keeps `import` as the only static
 import spelling and leaves `use` available as an ordinary identifier; see
 "Import keyword decision" below.
+The same 2026-07-08 stdlib helper slice adds opt-in list/stream search/extrema
+and Result/Validation convenience helpers as pure source exports; see
+"Stdlib helper slice" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -262,6 +265,24 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Stdlib helper slice ✅
+
+_Completed 2026-07-08. Adds opt-in source helpers without changing parser,
+HIR/THIR/TLC, runtime ABI, or the ambient prelude._
+
+- `stdlib.list` now exports `findMap`, `maximum`, `minimum`, `maximumBy`, and
+  `minimumBy`; empty extrema return `#none`.
+- `stdlib.stream` now exports qualified `find` and `findMap` helpers that demand
+  cells only until a match or stream end.
+- `stdlib.result` now exports `map3`, `invalidOne`, `isOk`, `isErr`,
+  `toOptional`, `fromOptional`, `ensure`, and `orElse`; `stdlib.validate` now
+  exports `invalidOne` and `custom`.
+- Real examples use the new helpers where they remove boilerplate.
+- Verification: `cargo fmt`, `cargo test -p zutai-eval --lib`,
+  `cargo test -p zutai-semantic stdlib -- --test-threads=1`,
+  `cargo test -p zutai-cli compile_stdlib_expansion_emits_llvm_without_native_toolchain -- --test-threads=1`,
+  `just examples-check`, and `just examples-run`.
 
 ### Import keyword decision ✅
 

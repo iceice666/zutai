@@ -38,6 +38,9 @@ layer over the already-implemented TCP host effects, with the 2026-07-08
 `withConnection` scoped-lifetime helper covering one accepted connection; richer
 network API design such as socket options, async/nonblocking IO, binary bytes,
 address selection, and protocol helpers remains intentionally unscoped.
+The 2026-07-08 stdlib helper slice added opt-in list/stream search/extrema and
+Result/Validation conveniences and is archived; it does not reopen the source
+prelude or core-syntax boundary.
 
 ## Native/interpreter parity backlog
 
@@ -56,7 +59,8 @@ ambient/importable `List` verbs, explicit `stdlib.optional`, `stdlib.result`,
 `stdlib.num`, `stdlib.text`, `stdlib.cmp`, explicit `stdlib.fs`, and the
 explicit `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
 `stdlib.validate` modules. Explicit `stdlib.net`, including `withConnection`,
-is also archived as the current TCP host-effect helper module.
+is also archived as the current TCP host-effect helper module. The 2026-07-08
+stdlib helper slice is likewise archived as pure opt-in source helpers.
 
 Deferred/non-goals after stdlib usability: non-tail generator `yield from`,
 cross-module witness native ABI, all Track 2 boundaries, and generic

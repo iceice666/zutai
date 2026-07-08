@@ -55,6 +55,8 @@ all :: <A> (A -> Bool) -> List A -> Bool
   = p xs => match xs { | {;} => true; | {h; ...t} => if p h then all p t else false; };
 find :: <A> (A -> Bool) -> List A -> A?
   = p xs => match xs { | {;} => #none; | {h; ...t} => if p h then #some (h) else find p t; };
+findMap :: <A, B> (A -> B?) -> List A -> B?
+  = f xs => match xs { | {;} => #none; | {h; ...t} => match f h { | #none => findMap f t; | #some (value) => #some (value); }; };
 countBy :: <A> (A -> Bool) -> List A -> Int
   = p xs => fold (\acc x. if p x then acc + 1 else acc) 0 xs;
 sumBy :: <A> (A -> Int) -> List A -> Int
@@ -69,6 +71,14 @@ sum :: List Int -> Int
   = xs => fold (\acc x. acc + x) 0 xs;
 product :: List Int -> Int
   = xs => fold (\acc x. acc * x) 1 xs;
+maximum :: List Int -> Int?
+  = xs => match xs { | {;} => #none; | {h; ...t} => #some (fold (\best x. if best >= x then best else x) h t); };
+minimum :: List Int -> Int?
+  = xs => match xs { | {;} => #none; | {h; ...t} => #some (fold (\best x. if best <= x then best else x) h t); };
+maximumBy :: <A> (A -> Int) -> List A -> Int?
+  = f xs => match xs { | {;} => #none; | {h; ...t} => #some (fold (\best x. if best >= f x then best else f x) (f h) t); };
+minimumBy :: <A> (A -> Int) -> List A -> Int?
+  = f xs => match xs { | {;} => #none; | {h; ...t} => #some (fold (\best x. if best <= f x then best else f x) (f h) t); };
 insertBy :: <A> (A -> A -> c.Ordering) -> A -> List A -> List A
   = compare value xs => match xs { | {;} => listCons value (listEmpty ()); | {h; ...t} => if c.isGt (compare h value) then listCons value xs else listCons h (insertBy compare value t); };
 sortBy :: <A> (A -> A -> c.Ordering) -> List A -> List A
@@ -81,4 +91,4 @@ groupBy :: <A> (A -> A -> Bool) -> List A -> List (List A)
   = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (listCons h (takeRun same h t)) (groupBy same (dropRun same h t)); };
 dedupBy :: <A> (A -> A -> Bool) -> List A -> List A
   = same xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons h (dedupBy same (dropRun same h t)); };
-{ empty = empty; singleton = singleton; cons = cons; fold = fold; foldl' = foldl'; foldr = foldr; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; reverse = reverse; flatten = flatten; zip = zip; zipWith = zipWith; enumerate = enumerate; take = take; drop = drop; takeWhile = takeWhile; dropWhile = dropWhile; span = span; any = any; all = all; find = find; countBy = countBy; sumBy = sumBy; filterMap = filterMap; partition = partition; range = range; sum = sum; product = product; sortBy = sortBy; groupBy = groupBy; dedupBy = dedupBy; }
+{ empty = empty; singleton = singleton; cons = cons; fold = fold; foldl' = foldl'; foldr = foldr; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; reverse = reverse; flatten = flatten; zip = zip; zipWith = zipWith; enumerate = enumerate; take = take; drop = drop; takeWhile = takeWhile; dropWhile = dropWhile; span = span; any = any; all = all; find = find; findMap = findMap; countBy = countBy; sumBy = sumBy; filterMap = filterMap; partition = partition; range = range; sum = sum; product = product; maximum = maximum; minimum = minimum; maximumBy = maximumBy; minimumBy = minimumBy; sortBy = sortBy; groupBy = groupBy; dedupBy = dedupBy; }

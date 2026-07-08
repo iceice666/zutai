@@ -21,10 +21,7 @@ maybeScore :: Int? -> Int
 resultScore :: r.Result Text Int -> Int
   = value => value
     |> r.map (\x. x + 3)
-    |> r.andThen (\x. cond {
-      x > 10 => r.ok x;
-      _ => r.err "too-small";
-    })
+    |> r.andThen (r.ensure "too-small" (\x. x > 10))
     |> r.withDefault 0;
 
 maybeScore (#some (12)) + maybeScore (#some (1)) + maybeScore (#none) + resultScore (r.ok 9)

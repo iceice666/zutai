@@ -5,6 +5,7 @@
 s ::= import stdlib.stream;
 n ::= import stdlib.num;
 c ::= import stdlib.cmp;
+l ::= import stdlib.list;
 
 Risk :: type { #steady; #elevated; #hot; };
 
@@ -39,19 +40,10 @@ riskBand :: Int -> Risk
     _ => #steady;
   };
 
-chooseFirstHot :: Reading? -> Reading -> Reading?
-  = current reading => match current {
-    | #some (found) => #some (found);
-    | #none => cond {
-      riskBand (riskScore reading) == #hot => #some (reading);
-      _ => #none;
-    };
-  };
-
 window :: List Reading = s.takeList 8 (telemetryFrom 0);
 scores :: List Int = map riskScore window;
-peakScore :: Int = fold (\peak score. n.max peak score) 0 scores;
-firstHot :: Reading? = fold chooseFirstHot #none window;
+peakScore :: Int = l.maximum scores ?? 0;
+firstHot :: Reading? = l.find (\reading. riskBand (riskScore reading) == #hot) window;
 
 {
   minutes = map _.minute window;

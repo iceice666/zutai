@@ -49,6 +49,10 @@ streamFold :: <A, B> (B -> A -> B) -> B -> Stream A -> B
   = f acc s => match s () { | #nil => acc; | #cons { head = h; tail = t; } => streamFold f (f acc h) t; };
 streamUncons :: <A> Stream A -> { #none; #some : { head : A; tail : Stream A; }; }
   = s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => #some { head = h; tail = t; }; };
+streamFind :: <A> (A -> Bool) -> Stream A -> A?
+  = p s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => if p h then #some (h) else streamFind p t; };
+streamFindMap :: <A, B> (A -> B?) -> Stream A -> B?
+  = f s => match s () { | #nil => #none; | #cons { head = h; tail = t; } => match f h { | #none => streamFindMap f t; | #some (value) => #some (value); }; };
 -- List interop (V3-G2 residual). The builtin `List` has no source-level head/tail
 -- ops, so these ride internal scalar bridge primitives (`listEmpty`/`listCons`/
 -- `listIsNil`/`listHead`/`listTail`) that the compiler provides over the builtin
@@ -59,4 +63,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; toList = toList; fromList = fromList; takeList = takeList; }
+{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; }

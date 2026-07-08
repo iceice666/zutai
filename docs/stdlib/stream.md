@@ -7,7 +7,8 @@ not `List A`. The non-conflicting combinators `empty`, `cons`, `singleton`,
 `unfold`, `take` (as `Stream -> Stream`), `drop`, `toList`, `fromList`, and
 `takeList` are still available without import. Stream `map`/`filter`/`fold`/
 `uncons` are exported by `import stdlib.stream` and should be used qualified
-because the unqualified names now denote the ambient `List` verbs. `unfold`
+because the unqualified names now denote the ambient `List` verbs. `find` and
+`findMap` are also qualified/imported stream helpers. `unfold`
 takes a step function returning a
 `Step S A` union (`#done`/`#yield { item; next }`) rather than the builtin
 `Optional` — `Optional`'s `#some` payload is a positional tuple that does not
@@ -38,7 +39,7 @@ surfaces (V3-G6):
 - **Importable** (explicit). `import stdlib.stream` resolves to **embedded
   in-binary source** (no install path, no subtree-confinement exception) and
   binds the module's exported record, so every exported value is available
-  qualified — `s.map`, `s.fold`, `s.uncons`, … A path-relative
+  qualified — `s.map`, `s.fold`, `s.uncons`, `s.find`, … A path-relative
   `import "stream.zt"` still works when a local file of that name sits in the
   importing file's directory subtree. The export record carries the combinator
   functions **and** the type values `Data`, `DataField`, `Stream`, `Step`, and
@@ -83,6 +84,8 @@ filter    :: <A> (A -> Bool) -> Stream A -> Stream A
 take      :: <A> Int -> Stream A -> Stream A
 drop      :: <A> Int -> Stream A -> Stream A
 fold      :: <A, B> (B -> A -> B) -> B -> Stream A -> B
+find      :: <A> (A -> Bool) -> Stream A -> A?
+findMap   :: <A, B> (A -> B?) -> Stream A -> B?
 fromList  :: <A> List A -> Stream A
 toList    :: <A> Stream A -> List A
 takeList  :: <A> Int -> Stream A -> List A   -- = toList (take k s)
@@ -100,6 +103,8 @@ takeList  :: <A> Int -> Stream A -> List A   -- = toList (take k s)
   `take` before `fold` for finite prefixes.
 - `filter` over an infinite stream may continue demanding input until it finds
   the next matching element.
+- `find` and `findMap` demand cells only until the first match or stream end.
+  Like `filter`, they may not terminate on an infinite stream with no match.
 
 ## Source and intrinsic policy
 The full combinator set above is implemented in `.zt` over the codata cell and

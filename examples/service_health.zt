@@ -58,9 +58,9 @@ summarize :: Service -> Summary
 
 validateService :: Service -> r.Validation Text Service
   = svc => cond {
-    svc.requests < 0 => r.invalid { svc.name; };
-    svc.errors < 0 => r.invalid { svc.name; };
-    svc.errors > svc.requests => r.invalid { svc.name; };
+    svc.requests < 0 => r.invalidOne svc.name;
+    svc.errors < 0 => r.invalidOne svc.name;
+    svc.errors > svc.requests => r.invalidOne svc.name;
     _ => r.valid svc;
   };
 
@@ -70,15 +70,9 @@ isCritical :: Service -> Bool
 appendValidationErrors :: List Text -> Service -> List Text
   = errs svc => append errs (r.errors (validateService svc));
 
-addErrors :: Int -> Service -> Int
-  = acc svc => acc + svc.errors;
-
-maxServiceScore :: Int -> Service -> Int
-  = acc svc => n.max acc (serviceScore svc);
-
 validationErrors :: List Text = fold appendValidationErrors {;} snapshot.services;
 totalErrors :: Int = l.sumBy _.errors snapshot.services;
-worstScore :: Int = fold maxServiceScore 0 snapshot.services;
+worstScore :: Int = l.maximumBy serviceScore snapshot.services ?? 0;
 budgetState :: BudgetState = cond {
   totalErrors <= snapshot.alertBudget => #withinBudget;
   _ => #overBudget;

@@ -14,12 +14,28 @@ map :: <E, A, B> (A -> B) -> Result E A -> Result E B
   = f result => match result { | #ok { value = value; } => #ok { value = f value; }; | #err { error = error; } => #err { error = error; }; };
 map2 :: <E, A, B, C> (A -> B -> C) -> Validation E A -> Validation E B -> Validation E C
   = f left right => match left { | #valid { value = a; } => match right { | #valid { value = b; } => #valid { value = f a b; }; | #invalid { errors = rightErrors; } => #invalid { errors = rightErrors; }; }; | #invalid { errors = leftErrors; } => match right { | #valid { value = _; } => #invalid { errors = leftErrors; }; | #invalid { errors = rightErrors; } => #invalid { errors = append leftErrors rightErrors; }; }; };
+map3 :: <E, A, B, C, D> (A -> B -> C -> D) -> Validation E A -> Validation E B -> Validation E C -> Validation E D
+  = f a b c => map2 (\g value. g value) (map2 f a b) c;
 mapErr :: <E, F, A> (E -> F) -> Result E A -> Result F A
   = f result => match result { | #ok { value = value; } => #ok { value = value; }; | #err { error = error; } => #err { error = f error; }; };
 andThen :: <E, A, B> (A -> Result E B) -> Result E A -> Result E B
   = f result => match result { | #ok { value = value; } => f value; | #err { error = error; } => #err { error = error; }; };
 withDefault :: <E, A> A -> Result E A -> A
   = default result => match result { | #ok { value = value; } => value; | #err { error = _; } => default; };
+invalidOne :: <E, A> E -> Validation E A
+  = error => invalid { error; };
+isOk :: <E, A> Result E A -> Bool
+  = result => match result { | #ok { value = _; } => true; | #err { error = _; } => false; };
+isErr :: <E, A> Result E A -> Bool
+  = result => match result { | #ok { value = _; } => false; | #err { error = _; } => true; };
+toOptional :: <E, A> Result E A -> A?
+  = result => match result { | #ok { value = value; } => #some (value); | #err { error = _; } => #none; };
+fromOptional :: <E, A> E -> A? -> Result E A
+  = error opt => match opt { | #none => err error; | #some (value) => ok value; };
+ensure :: <E, A> E -> (A -> Bool) -> A -> Result E A
+  = error predicate value => if predicate value then ok value else err error;
+orElse :: <E, A> Result E A -> Result E A -> Result E A
+  = fallback result => match result { | #ok { value = value; } => #ok { value = value; }; | #err { error = _; } => fallback; };
 errors :: <E, A> Validation E A -> List E
   = validation => match validation { | #valid { value = _; } => listEmpty (); | #invalid { errors = errs; } => errs; };
-{ Result = Result; Validation = Validation; ok = ok; err = err; valid = valid; invalid = invalid; map = map; map2 = map2; mapErr = mapErr; andThen = andThen; withDefault = withDefault; errors = errors; }
+{ Result = Result; Validation = Validation; ok = ok; err = err; valid = valid; invalid = invalid; map = map; map2 = map2; map3 = map3; mapErr = mapErr; andThen = andThen; withDefault = withDefault; invalidOne = invalidOne; isOk = isOk; isErr = isErr; toOptional = toOptional; fromOptional = fromOptional; ensure = ensure; orElse = orElse; errors = errors; }
