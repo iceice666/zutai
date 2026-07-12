@@ -1,31 +1,48 @@
 use super::*;
+#[cfg(feature = "native-host")]
 use rustc_hash::FxHashMap;
 use std::cell::Cell;
+#[cfg(feature = "native-host")]
 use std::fs::File;
+#[cfg(feature = "native-host")]
 use std::io::{BufRead, BufReader, BufWriter, Write};
+#[cfg(feature = "native-host")]
 use std::net::{TcpListener, TcpStream};
+#[cfg(feature = "native-host")]
 use std::sync::LazyLock;
+#[cfg(feature = "native-host")]
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "native-host")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "native-host")]
 use parking_lot::Mutex;
 
+#[cfg(feature = "native-host")]
 static LISTENERS: LazyLock<Mutex<FxHashMap<u64, TcpListener>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
+#[cfg(feature = "native-host")]
 static CONNECTIONS: LazyLock<Mutex<FxHashMap<u64, TcpStream>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
+#[cfg(feature = "native-host")]
 static CURRENT_CONNECTION: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "native-host")]
 static NEXT_NET_ID: AtomicU64 = AtomicU64::new(1);
+#[cfg(feature = "native-host")]
 static READERS: LazyLock<Mutex<FxHashMap<u64, Option<BufReader<File>>>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
+#[cfg(feature = "native-host")]
 static WRITERS: LazyLock<Mutex<FxHashMap<u64, Option<BufWriter<File>>>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
+#[cfg(feature = "native-host")]
 static NEXT_FS_ID: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(feature = "native-host")]
 fn next_net_id() -> u64 {
     NEXT_NET_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+#[cfg(feature = "native-host")]
 fn next_fs_id() -> u64 {
     NEXT_FS_ID.fetch_add(1, Ordering::Relaxed)
 }
@@ -512,7 +529,10 @@ impl<'a> TlcEvaluator<'a> {
         match settle(control)? {
             EvalControl::Value(value) => Ok(value),
             EvalControl::Perform { op, arg, cont, .. } => {
-                let value = eval_host_op(&op, arg, self)?;
+                let value = match self.effect_handler {
+                    Some(handler) => handler.handle(&op, arg)?,
+                    None => eval_host_op(&op, arg, self)?,
+                };
                 let next = cont(value)?;
                 self.finish_top(next)
             }
@@ -521,8 +541,10 @@ impl<'a> TlcEvaluator<'a> {
     }
 }
 
+#[cfg(feature = "native-host")]
 static RNG_STATE: AtomicU64 = AtomicU64::new(0x9e37_79b9_7f4a_7c15);
 
+#[cfg(feature = "native-host")]
 fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Value, EvalError> {
     match op {
         "io.print" => match arg {
@@ -860,6 +882,12 @@ fn eval_host_op(op: &str, arg: Value, evaluator: TlcEvaluator<'_>) -> Result<Val
     }
 }
 
+#[cfg(not(feature = "native-host"))]
+fn eval_host_op(op: &str, _arg: Value, _evaluator: TlcEvaluator<'_>) -> Result<Value, EvalError> {
+    Err(EvalError::UnhandledEffect(op.to_string()))
+}
+
+#[cfg(feature = "native-host")]
 fn tagged_slot_value(tag: &'static str, value: Value) -> Value {
     Value::TaggedValue {
         tag: Rc::from(tag),
@@ -867,6 +895,7 @@ fn tagged_slot_value(tag: &'static str, value: Value) -> Value {
     }
 }
 
+#[cfg(feature = "native-host")]
 fn data_from_zti_block(block: &zutai_im::Block) -> Value {
     let fields = block
         .iter()
@@ -880,6 +909,7 @@ fn data_from_zti_block(block: &zutai_im::Block) -> Value {
     data_tagged("record", vec![("fields", data_list(fields))])
 }
 
+#[cfg(feature = "native-host")]
 fn strip_read_line_ending(line: &str) -> &str {
     let Some(stripped) = line.strip_suffix('\n') else {
         return line;
@@ -887,6 +917,7 @@ fn strip_read_line_ending(line: &str) -> &str {
     stripped.strip_suffix('\r').unwrap_or(stripped)
 }
 
+#[cfg(feature = "native-host")]
 fn data_from_zti_value(value: &zutai_im::Value) -> Value {
     match value {
         zutai_im::Value::True => data_tagged("bool", vec![("value", Value::Bool(true))]),
@@ -911,6 +942,7 @@ fn data_from_zti_value(value: &zutai_im::Value) -> Value {
     }
 }
 
+#[cfg(feature = "native-host")]
 fn data_from_value(value: &Value) -> Result<Value, EvalError> {
     match value {
         Value::Bool(value) => Ok(data_tagged("bool", vec![("value", Value::Bool(*value))])),
@@ -992,10 +1024,12 @@ fn data_from_value(value: &Value) -> Result<Value, EvalError> {
     }
 }
 
+#[cfg(feature = "native-host")]
 fn data_list(items: Vec<Value>) -> Value {
     Value::List(items.into_iter().map(Thunk::ready).collect())
 }
 
+#[cfg(feature = "native-host")]
 fn data_record(fields: Vec<(&'static str, Value)>) -> Value {
     Value::Record(Rc::new(
         fields
@@ -1005,6 +1039,7 @@ fn data_record(fields: Vec<(&'static str, Value)>) -> Value {
     ))
 }
 
+#[cfg(feature = "native-host")]
 fn data_tagged(tag: &'static str, fields: Vec<(&'static str, Value)>) -> Value {
     Value::TaggedValue {
         tag: Rc::from(tag),
@@ -1017,6 +1052,7 @@ fn data_tagged(tag: &'static str, fields: Vec<(&'static str, Value)>) -> Value {
     }
 }
 
+#[cfg(feature = "native-host")]
 fn force_record_text(
     fields: &[(Rc<str>, Thunk)],
     name: &str,
@@ -1037,6 +1073,7 @@ fn force_record_text(
     }
 }
 
+#[cfg(feature = "native-host")]
 fn expect_host_handle(
     value: Value,
     kind: HostHandleKind,
@@ -1051,6 +1088,7 @@ fn expect_host_handle(
     }
 }
 
+#[cfg(feature = "native-host")]
 fn force_record_host_handle(
     fields: &[(Rc<str>, Thunk)],
     name: &str,
@@ -1067,6 +1105,7 @@ fn force_record_host_handle(
     expect_host_handle(thunk.force_tlc(&evaluator)?, kind, expected)
 }
 
+#[cfg(feature = "native-host")]
 fn next_rng() -> i64 {
     let mut state = RNG_STATE.load(Ordering::Relaxed);
     loop {

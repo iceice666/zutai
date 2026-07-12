@@ -58,5 +58,17 @@ pub use gate::{
     check_runnable, check_well_typed, describe_hir_diagnostic, describe_semantic_diagnostic,
     describe_thir_diagnostic,
 };
+pub use thunk::Thunk;
+pub use tlc_entry::TlcSession;
 pub use tlc_entry::{eval_tlc_file, eval_tlc_path, eval_tlc_with_base};
 pub use value::Value;
+
+/// Host boundary for residual algebraic effects produced by the TLC evaluator.
+///
+/// Implementations that need mutation (for example, a browser queue collecting
+/// post-render focus requests) should use interior mutability. Returning a value
+/// resumes the suspended Zutai continuation with that value; returning an error
+/// aborts evaluation.
+pub trait EffectHandler {
+    fn handle(&self, operation: &str, argument: Value) -> Result<Value, EvalError>;
+}

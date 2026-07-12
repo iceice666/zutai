@@ -4,6 +4,10 @@ description = "TLC-first reference evaluator and THIR regression oracle for Zuta
 edition.workspace = true
 version.workspace = true
 
+[features]
+default = ["native-host"]
+native-host = ["dep:parking_lot"]
+
 [dependencies]
 thiserror = "2"
 zutai-thir = { path = "../thir" }
@@ -16,4 +20,4 @@ fast-posit = "0.2.0"
 rustc-hash = "2.0.0"
 smallvec = "1"
 serde_json = "1"
-parking_lot = "0.12"
+parking_lot = { version = "0.12", optional = true }

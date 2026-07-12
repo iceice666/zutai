@@ -75,4 +75,5 @@ mod functions_patterns;
 mod imports;
 mod json;
 mod prelude;
+mod session;
 mod witnesses;

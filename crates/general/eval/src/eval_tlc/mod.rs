@@ -22,15 +22,17 @@ use zutai_tlc::{
 };
 
 use crate::{
-    EvalError,
+    EffectHandler, EvalError,
     env::Env,
     thunk::Thunk,
     value::{
-        BuiltinFn, HostHandle, HostHandleKind, ModuleId, TlcClosure, TupleField, Value,
-        append_list_values, eval_num_builtin_values, eval_text_builtin_values, overlay_value,
-        update_record_value,
+        BuiltinFn, HostHandleKind, ModuleId, TlcClosure, TupleField, Value, append_list_values,
+        eval_num_builtin_values, eval_text_builtin_values, overlay_value, update_record_value,
     },
 };
+
+#[cfg(feature = "native-host")]
+use crate::value::HostHandle;
 
 type EvalCont<'eval> = Rc<dyn Fn(Value) -> Result<EvalControl<'eval>, EvalError> + 'eval>;
 type BindFn<'eval, 'module> =
@@ -94,6 +96,7 @@ pub struct TlcEvaluator<'a> {
     active_module: ModuleId,
     imports: Option<&'a FxHashMap<ImportKey, Value>>,
     operator_witnesses: Option<&'a FxHashMap<(String, String), Value>>,
+    effect_handler: Option<&'a dyn EffectHandler>,
     defer_aggregates: bool,
 }
 
@@ -119,6 +122,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: ModuleId(0),
             imports: None,
             operator_witnesses: None,
+            effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
     }
@@ -133,6 +137,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: ModuleId(0),
             imports: Some(imports),
             operator_witnesses: None,
+            effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
     }
@@ -152,6 +157,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module,
             imports: Some(imports),
             operator_witnesses: None,
+            effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }
@@ -172,9 +178,17 @@ impl<'a> TlcEvaluator<'a> {
             active_module,
             imports: Some(imports),
             operator_witnesses: Some(operator_witnesses),
+            effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }
+
+    /// Route residual effects through `handler` instead of the native host.
+    pub fn with_effect_handler(mut self, handler: &'a dyn EffectHandler) -> Self {
+        self.effect_handler = Some(handler);
+        self
+    }
+
     pub(crate) fn for_module(&self, home: ModuleId) -> Result<Self, EvalError> {
         if home == self.active_module {
             return Ok(Self {
@@ -183,6 +197,7 @@ impl<'a> TlcEvaluator<'a> {
                 active_module: self.active_module,
                 imports: self.imports,
                 operator_witnesses: self.operator_witnesses,
+                effect_handler: self.effect_handler,
                 defer_aggregates: self.defer_aggregates,
             });
         }
@@ -199,6 +214,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: home,
             imports: self.imports,
             operator_witnesses: self.operator_witnesses,
+            effect_handler: self.effect_handler,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
     }

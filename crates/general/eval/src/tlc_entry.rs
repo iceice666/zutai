@@ -1,5 +1,6 @@
 use super::*;
 use crate::analysis_eval::has_runtime_type_values;
+use std::rc::Rc;
 
 /// Evaluate a `.zt` source string using the TLC eager evaluator.
 ///
@@ -42,15 +43,29 @@ fn seed_tlc_prelude(thir_file: &ThirFile, top: env::Env) -> env::Env {
     top
 }
 
-fn completed_tlc_inputs(
+fn completed_tlc_inputs_strict(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<(&ThirFile, &zutai_tlc::TlcModule), EvalError> {
-    let thir_file = check_well_typed(analysis)?;
+    let inputs = completed_tlc_inputs_for_session(analysis)?;
     if has_runtime_type_values(analysis) {
         return Err(EvalError::ReflectionUnsupported(
             "runtime Type values are not represented in the TLC evaluator yet".to_string(),
         ));
     }
+    Ok(inputs)
+}
+
+/// Completed typed inputs for a persistent TLC session.
+///
+/// TLC intentionally erases `TypeValue` expressions to `Nothing`. Long-lived
+/// browser sessions need that erasure because imported stdlib modules export
+/// type names next to callable values, while the browser only retains/calls the
+/// value fields. Strict legacy `eval_tlc_*` entry points remain gated by
+/// [`completed_tlc_inputs_strict`] before constructing a session.
+fn completed_tlc_inputs_for_session(
+    analysis: &zutai_semantic::Analysis,
+) -> Result<(&ThirFile, &zutai_tlc::TlcModule), EvalError> {
+    let thir_file = check_well_typed(analysis)?;
     let module = analysis.tlc.as_ref().ok_or(EvalError::Internal(
         "semantic analysis did not produce TLC for complete THIR",
     ))?;
@@ -68,72 +83,233 @@ struct WitnessTables {
     conditionals: Vec<ConditionalRuntimeWitness>,
 }
 
-pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
-    let mut registry = Vec::new();
-    let mut imports = FxHashMap::default();
-    let mut tables = WitnessTables::default();
-    let root_id = eval_tlc_analysis_into(analysis, &mut registry, &mut imports, &mut tables)?;
+/// Persistent, owned TLC evaluator state for a long-lived application.
+///
+/// Modules are cloned out of semantic analysis into stable `Rc` storage while
+/// runtime closures retain compact `ModuleId` handles. The entry thunk, imports,
+/// witness methods, and memoized top-level environments therefore survive
+/// repeated event dispatch without reparsing or re-analysis.
+///
+/// A session accepts modules that export type names beside runtime values; TLC
+/// erases those type-valued fields to `Nothing`. Strict `eval_tlc_*` APIs keep
+/// rejecting runtime Type observation and reflection.
+pub struct TlcSession {
+    modules: Vec<Rc<zutai_tlc::TlcModule>>,
+    root: ModuleId,
+    imports: FxHashMap<ImportKey, Value>,
+    operator_witnesses: FxHashMap<(String, String), Value>,
+    entry: thunk::Thunk,
+}
 
-    let (thir_file, root_module) = completed_tlc_inputs(analysis)?;
+impl TlcSession {
+    pub fn from_analysis(analysis: &zutai_semantic::Analysis) -> Result<Self, EvalError> {
+        Self::build(analysis, None)
+    }
 
-    // Instantiate imported conditional witnesses for the root's concrete call
-    // sites: every dispatch key the root needs that a parametric witness covers
-    // becomes a concrete dictionary whose methods join `operators`, so the
-    // unchanged `imported_method` dispatch finds them by `(method, key)`.
-    if !tables.conditionals.is_empty() {
-        let mat_ev =
-            eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), root_id, &imports)?;
-        let needed: Vec<String> = root_module.dict_dispatch_keys.values().cloned().collect();
-        let WitnessTables {
-            operators,
-            concrete_dicts,
-            conditionals,
-        } = &mut tables;
-        let conds: &[ConditionalRuntimeWitness] = conditionals;
-        for cw in conds {
-            for key in &needed {
-                let Some(Value::Record(fields)) = materialize_conditional_dict(
-                    &mat_ev,
-                    &cw.constraint,
-                    key,
-                    conds,
-                    concrete_dicts,
-                    0,
-                ) else {
-                    continue;
-                };
-                for (name, thunk) in fields.iter() {
-                    let value = thunk.force_tlc(&mat_ev)?;
-                    operators
-                        .entry((name.to_string(), key.clone()))
-                        .or_insert(value);
+    pub fn from_analysis_with_handler(
+        analysis: &zutai_semantic::Analysis,
+        handler: &dyn EffectHandler,
+    ) -> Result<Self, EvalError> {
+        Self::build(analysis, Some(handler))
+    }
+
+    fn build(
+        analysis: &zutai_semantic::Analysis,
+        handler: Option<&dyn EffectHandler>,
+    ) -> Result<Self, EvalError> {
+        let mut modules = Vec::new();
+        let mut imports = FxHashMap::default();
+        let mut tables = WitnessTables::default();
+        let root =
+            build_tlc_session_into(analysis, &mut modules, &mut imports, &mut tables, handler)?;
+        let (thir_file, root_module) = completed_tlc_inputs_for_session(analysis)?;
+        let registry: Vec<&zutai_tlc::TlcModule> = modules.iter().map(Rc::as_ref).collect();
+
+        // Instantiate imported conditional witnesses for concrete dispatch keys
+        // needed by the root module.
+        if !tables.conditionals.is_empty() {
+            let mat_ev = evaluator_with_handler(&registry, root, &imports, None, handler)?;
+            let needed: Vec<String> = root_module.dict_dispatch_keys.values().cloned().collect();
+            let WitnessTables {
+                operators,
+                concrete_dicts,
+                conditionals,
+            } = &mut tables;
+            let conds: &[ConditionalRuntimeWitness] = conditionals;
+            for cw in conds {
+                for key in &needed {
+                    let Some(Value::Record(fields)) = materialize_conditional_dict(
+                        &mat_ev,
+                        &cw.constraint,
+                        key,
+                        conds,
+                        concrete_dicts,
+                        0,
+                    ) else {
+                        continue;
+                    };
+                    for (name, thunk) in fields.iter() {
+                        let value = thunk.force_tlc(&mat_ev)?;
+                        operators
+                            .entry((name.to_string(), key.clone()))
+                            .or_insert(value);
+                    }
                 }
             }
         }
+
+        let ev =
+            evaluator_with_handler(&registry, root, &imports, Some(&tables.operators), handler)?;
+        let top = seed_tlc_prelude(thir_file, env::Env::empty());
+        let top = ev.build_top_env_from(top)?;
+        let final_id = root_module
+            .final_expr
+            .ok_or(EvalError::Internal("TLC module has no final expression"))?;
+        let entry = thunk::Thunk::tlc_deferred(final_id, top, root);
+
+        Ok(Self {
+            modules,
+            root,
+            imports,
+            operator_witnesses: tables.operators,
+            entry,
+        })
     }
 
-    let ev = eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
-        registry.as_slice(),
-        root_id,
-        &imports,
-        &tables.operators,
-    )?;
-    let top = seed_tlc_prelude(thir_file, env::Env::empty());
-    let top = ev.build_top_env_from(top)?;
-    let final_id = root_module
-        .final_expr
-        .ok_or(EvalError::Internal("TLC module has no final expression"))?;
-    let result = ev.eval_expr(final_id, &top)?;
-    eval_tlc::tlc_force_deep(result, &ev)
+    /// Evaluate and recursively force the root module's final expression.
+    pub fn entry(&self) -> Result<Value, EvalError> {
+        let value = self.force_thunk(&self.entry)?;
+        self.force(value)
+    }
+
+    pub fn entry_with_handler(&self, handler: &dyn EffectHandler) -> Result<Value, EvalError> {
+        let value = self.force_thunk_with_handler(&self.entry, handler)?;
+        self.force_with_handler(value, handler)
+    }
+
+    /// Apply one argument. The result is settled but remains lazy internally.
+    pub fn apply(&self, function: Value, argument: Value) -> Result<Value, EvalError> {
+        self.apply_inner(function, argument, None)
+    }
+
+    pub fn apply_with_handler(
+        &self,
+        function: Value,
+        argument: Value,
+        handler: &dyn EffectHandler,
+    ) -> Result<Value, EvalError> {
+        self.apply_inner(function, argument, Some(handler))
+    }
+
+    pub fn apply2(&self, function: Value, first: Value, second: Value) -> Result<Value, EvalError> {
+        let partial = self.apply(function, first)?;
+        self.apply(partial, second)
+    }
+
+    pub fn apply2_with_handler(
+        &self,
+        function: Value,
+        first: Value,
+        second: Value,
+        handler: &dyn EffectHandler,
+    ) -> Result<Value, EvalError> {
+        let partial = self.apply_with_handler(function, first, handler)?;
+        self.apply_with_handler(partial, second, handler)
+    }
+
+    fn apply_inner(
+        &self,
+        function: Value,
+        argument: Value,
+        handler: Option<&dyn EffectHandler>,
+    ) -> Result<Value, EvalError> {
+        let registry = self.registry();
+        let ev = evaluator_with_handler(
+            &registry,
+            self.root,
+            &self.imports,
+            Some(&self.operator_witnesses),
+            handler,
+        )?;
+        ev.apply_to_value(function, argument)
+    }
+
+    /// Recursively force all lazy fields in `value`.
+    pub fn force(&self, value: Value) -> Result<Value, EvalError> {
+        self.force_inner(value, None)
+    }
+
+    pub fn force_with_handler(
+        &self,
+        value: Value,
+        handler: &dyn EffectHandler,
+    ) -> Result<Value, EvalError> {
+        self.force_inner(value, Some(handler))
+    }
+
+    fn force_inner(
+        &self,
+        value: Value,
+        handler: Option<&dyn EffectHandler>,
+    ) -> Result<Value, EvalError> {
+        let registry = self.registry();
+        let ev = evaluator_with_handler(
+            &registry,
+            self.root,
+            &self.imports,
+            Some(&self.operator_witnesses),
+            handler,
+        )?;
+        eval_tlc::tlc_force_deep(value, &ev)
+    }
+
+    /// Force one thunk without recursively forcing the returned value.
+    pub fn force_thunk(&self, value: &thunk::Thunk) -> Result<Value, EvalError> {
+        self.force_thunk_inner(value, None)
+    }
+
+    pub fn force_thunk_with_handler(
+        &self,
+        value: &thunk::Thunk,
+        handler: &dyn EffectHandler,
+    ) -> Result<Value, EvalError> {
+        self.force_thunk_inner(value, Some(handler))
+    }
+
+    fn force_thunk_inner(
+        &self,
+        value: &thunk::Thunk,
+        handler: Option<&dyn EffectHandler>,
+    ) -> Result<Value, EvalError> {
+        let registry = self.registry();
+        let ev = evaluator_with_handler(
+            &registry,
+            self.root,
+            &self.imports,
+            Some(&self.operator_witnesses),
+            handler,
+        )?;
+        value.force_tlc(&ev)
+    }
+
+    fn registry(&self) -> Vec<&zutai_tlc::TlcModule> {
+        self.modules.iter().map(Rc::as_ref).collect()
+    }
 }
 
-fn eval_tlc_analysis_into<'a>(
-    analysis: &'a zutai_semantic::Analysis,
-    registry: &mut eval_tlc::TlcModuleRegistry<'a>,
+pub(super) fn eval_tlc_analysis(analysis: &zutai_semantic::Analysis) -> Result<Value, EvalError> {
+    completed_tlc_inputs_strict(analysis)?;
+    TlcSession::from_analysis(analysis)?.entry()
+}
+
+fn build_tlc_session_into(
+    analysis: &zutai_semantic::Analysis,
+    modules: &mut Vec<Rc<zutai_tlc::TlcModule>>,
     imports: &mut FxHashMap<ImportKey, Value>,
     tables: &mut WitnessTables,
+    handler: Option<&dyn EffectHandler>,
 ) -> Result<ModuleId, EvalError> {
-    let (_thir_file, module) = completed_tlc_inputs(analysis)?;
+    let (_thir_file, module) = completed_tlc_inputs_for_session(analysis)?;
 
     for (key, value) in &analysis.import_values {
         imports
@@ -145,9 +321,17 @@ fn eval_tlc_analysis_into<'a>(
         if imports.contains_key(key) {
             continue;
         }
-        let dep_id = eval_tlc_analysis_into(imported_analysis.as_ref(), registry, imports, tables)?;
-        let (dep_thir_file, dep_module) = completed_tlc_inputs(imported_analysis.as_ref())?;
-        let dep_ev = eval_tlc::TlcEvaluator::new_in_registry(registry.as_slice(), dep_id, imports)?;
+        let dep_id = build_tlc_session_into(
+            imported_analysis.as_ref(),
+            modules,
+            imports,
+            tables,
+            handler,
+        )?;
+        let (dep_thir_file, dep_module) =
+            completed_tlc_inputs_for_session(imported_analysis.as_ref())?;
+        let registry: Vec<&zutai_tlc::TlcModule> = modules.iter().map(Rc::as_ref).collect();
+        let dep_ev = evaluator_with_handler(&registry, dep_id, imports, None, handler)?;
         let dep_top = seed_tlc_prelude(dep_thir_file, env::Env::empty());
         let dep_top = dep_ev.build_top_env_from(dep_top)?;
         let final_id = dep_module
@@ -166,9 +350,31 @@ fn eval_tlc_analysis_into<'a>(
         imports.insert(key.clone(), dep_value);
     }
 
-    let id = ModuleId(registry.len());
-    registry.push(module);
+    let id = ModuleId(modules.len());
+    modules.push(Rc::new(module.clone()));
     Ok(id)
+}
+
+fn evaluator_with_handler<'a>(
+    registry: &'a [&'a zutai_tlc::TlcModule],
+    active_module: ModuleId,
+    imports: &'a FxHashMap<ImportKey, Value>,
+    operator_witnesses: Option<&'a FxHashMap<(String, String), Value>>,
+    handler: Option<&'a dyn EffectHandler>,
+) -> Result<eval_tlc::TlcEvaluator<'a>, EvalError> {
+    let mut evaluator = match operator_witnesses {
+        Some(witnesses) => eval_tlc::TlcEvaluator::new_in_registry_with_operator_witnesses(
+            registry,
+            active_module,
+            imports,
+            witnesses,
+        )?,
+        None => eval_tlc::TlcEvaluator::new_in_registry(registry, active_module, imports)?,
+    };
+    if let Some(handler) = handler {
+        evaluator = evaluator.with_effect_handler(handler);
+    }
+    Ok(evaluator)
 }
 
 /// An imported parametric (conditional) witness, captured for on-demand
