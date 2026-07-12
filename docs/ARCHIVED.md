@@ -35,7 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (LSP editor baseline); prior baseline updates:
+_Last updated: 2026-07-12 (browser kernel and self-hosted website baseline);
+prior baseline updates: 2026-07-12 (LSP editor baseline),
 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
@@ -139,6 +140,10 @@ The 2026-07-12 editor tooling pass adds `zutai-cli lsp`: a stdio LSP service
 with incremental diagnostics, THIR-derived hover/signature types, and
 HIR-derived navigation, rename, symbols, completion, and parser quick fixes; see "Language Server
 Protocol editor baseline" below.
+The same 2026-07-12 browser pass adds an interpreter-backed WebAssembly kernel,
+typed browser/HTML/CSS stdlib modules, deterministic prerendered bundles,
+`zutai-cli web build` / `web serve`, and a pure-Zutai official website; see
+"Browser kernel and self-hosted website" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -270,6 +275,32 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Browser kernel and self-hosted website ✅
+
+_Completed 2026-07-12. Adds a whole-document browser runtime and delivery path
+without changing Zutai source syntax or claiming native-backend DOM support._
+
+- `zutai-browser` decodes the typed `browser.Program` contract, validates and
+  prerenders structured HTML/CSS, then runs the same owned TLC evaluator session
+  in WebAssembly. Browser execution stays gated on complete typed IR.
+- The DOM runtime hydrates the prerendered document, dispatches click and input
+  messages through `update`, patches keyed nodes while preserving controlled
+  input state, and performs queued `browser.focus` effects after patching.
+- Explicit `stdlib.browser`, `stdlib.html`, and `stdlib.css` modules provide the
+  closed browser surface. There is no raw-HTML or script constructor; unsafe CSS
+  escapes are explicit, and URL/document validation rejects unsafe output.
+- `zutai-cli web build` records a portable source bundle, revalidates it through
+  the in-memory import loader, emits content-addressed JavaScript/WebAssembly
+  assets plus prerendered HTML, and enforces the Cloudflare Pages file-size
+  envelope. `web serve` supplies local rebuild/reload behavior.
+- `website/` is the acceptance application: state, update, view, and stylesheet
+  are `.zt`; copy is inert `.zti`; its Cloudflare Pages workflow uses guarded
+  direct uploads for production and same-repository pull-request previews.
+- Verification: browser-kernel and evaluator session tests, native and
+  `wasm32-unknown-unknown` checks, CLI web-tool tests, a full optimized web build,
+  local HTTP/MIME probes, and live browser interaction checks for hydration,
+  input, counter updates, keyed mode switching, and focus effects.
 
 ### Language Server Protocol editor baseline ✅
 

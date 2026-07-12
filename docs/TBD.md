@@ -5,7 +5,7 @@ implementation detail live in `docs/ARCHIVED.md`; language design lives in
 `docs/spec/v0/` (stable), `docs/spec/v1/`, `docs/v2_spec/`, and `docs/v3_spec/`.
 New implementation phases should be added here when scoped.
 
-## Status (2026-07-08)
+## Status (2026-07-12)
 
 The post-V3 readiness audit **landed 2026-06-28** (see `docs/ARCHIVED.md`
 "Post-V3 readiness audit"). v1 semantics are complete, and native support is
@@ -41,6 +41,15 @@ address selection, and protocol helpers remains intentionally unscoped.
 The 2026-07-08 stdlib helper slice added opt-in list/stream search/extrema and
 Result/Validation conveniences and is archived; it does not reopen the source
 prelude or core-syntax boundary.
+
+The 2026-07-12 browser-kernel slice is also archived. It adds explicit
+`stdlib.browser`, `stdlib.html`, and `stdlib.css` modules, an owned TLC evaluator
+session compiled to WebAssembly, prerendered whole-document output, click/input
+updates, and the synchronous `browser.focus` host effect. The official website
+is the end-to-end acceptance application and is authored in `.zt` with inert
+`.zti` content. Routing, network requests, timers, storage, hydration islands,
+and server-side execution remain intentionally unscoped rather than an active
+browser backlog.
 
 ## Native/interpreter parity backlog
 
