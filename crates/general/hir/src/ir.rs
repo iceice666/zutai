@@ -55,8 +55,8 @@ pub const HOST_CAPABILITY_TYPE_NAMES: &[&str] = &[
     "FsRead", "FsWrite", "Env", "Clock", "Rng", "IoPrint", "Load", "Net",
 ];
 
-/// Standard support type names needed by v2 host operation signatures. `Path`
-/// and `Instant` are represented as `Text` at runtime in the v2 implementation;
+/// Standard support type names needed by host operation signatures. `Path`
+/// and `Instant` are represented as `Text` at runtime in the current implementation;
 /// `Unit` is the existing empty tuple type.
 pub const HOST_SUPPORT_TYPE_NAMES: &[&str] = &["Unit", "Path", "Instant", "Reader", "Writer"];
 
@@ -526,7 +526,7 @@ pub struct HirEffectRow {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HirEffectOp {
     /// Operation name path: a plain operation (`fail`) or a dotted capability
-    /// operation (`fs.read`). Effect operations are not bindings in v0/v1 HIR.
+    /// operation (`fs.read`). Effect operations are not HIR bindings.
     pub path: Vec<String>,
     pub payload: Option<HirTypeId>,
     pub signature: Option<HirTypeId>,

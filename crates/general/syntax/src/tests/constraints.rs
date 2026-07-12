@@ -1,7 +1,7 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
-// Constraint / witness parser tests (v1 syntax)
+// Constraint / witness parser tests (stable syntax)
 // ---------------------------------------------------------------------------
 
 fn as_constraint(

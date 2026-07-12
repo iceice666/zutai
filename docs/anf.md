@@ -118,7 +118,7 @@ Each global's root DC node is lowered into an `AnfBody`: a sequence of `(name, e
 - `Coalesce { value, fallback }` → lower both to atoms, emit `_anfN = value_atom ?? fallback_atom`.
 - `Builtin(op, lhs, rhs)` → lower both to atoms, emit `_anfN = lhs_atom ⊕ rhs_atom`.
 - `Variant(tag, value)` → lower value to atom, emit `_anfN = value_atom#tag`.
-- `Import`, `Error` → emit `_anfN = error` (defensive; these do not appear in well-typed v0 programs).
+- `Import`, `Error` → emit `_anfN = error` (defensive; these do not appear in well-typed programs).
 
 **Sharing within a body scope:** when lowering a Lambda body, a memoization table (`memo: HashMap<NodeId, AnfAtom>`) prevents re-lowering the same DC node twice within that scope. If a node has already been lowered (and its result bound to a name), subsequent uses return the same atom — no duplicate bindings. The memo is reset when entering a nested Lambda body, so sharing does not propagate across lambda scopes (cross-lambda sharing is deferred to a future CSE pass).
 

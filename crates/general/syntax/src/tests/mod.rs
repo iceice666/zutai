@@ -205,6 +205,6 @@ mod constraints;
 mod display;
 mod expr;
 mod fixtures_and_diagnostics;
+mod stable_syntax;
 mod types_and_decls;
 mod universe_levels;
-mod v1_and_lexer;

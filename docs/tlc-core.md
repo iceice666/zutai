@@ -37,7 +37,8 @@ See [`docs/dataflow-core.md`](dataflow-core.md) for the next stage's IR specific
 
 **Historical lowering failures now covered by the implementation.** Early TLC lowering lost several source distinctions: unions collapsed to empty records, `true`/`false` singleton types collapsed to `Bool`, first-class `Type`/error types collapsed to empty records, atom singleton payloads collapsed to `Atom`, and tagged-value patterns temporarily lowered to wildcards. The current lowering has dedicated `VariantT`, `Singleton(Literal)`, atom-payload, and tagged-pattern support, so downstream stages no longer depend on the THIR evaluator to preserve these cases.
 
-**The fix.** Extend the core with exactly the nodes needed to express every v0 and v1 construct as elaboration:
+**The fix.** Extend the core with exactly the nodes needed to express every
+stable surface construct as elaboration:
 - Types and terms share one language, with `Type ℓ` universes separating levels.
 - Phase distinction is enforced by a **runtime-erasure pass** before Dataflow Core, not a syntactic split. Types never depend on runtime values (Decision 0002), so after erasure downstream stages see a simply-typed program.
 - The **Row kind** parameterizes record rows, union rows, and effect rows — one shared row machinery.
@@ -81,15 +82,15 @@ Kind ::= Type ℓ           -- universe at level ℓ  (ℓ ∈ ℕ)
        | Row Kind          -- Row κ: a row whose entries have kind κ
                            -- records  →  Row (Type 0)
                            -- unions   →  Row (Type 0)
-                           -- effects  →  Row Effect  (Effect ≅ Type 0 at v1)
+                           -- effects  →  Row Effect  (Effect ≅ Type 0)
        | Kind -> Kind      -- type-constructor kind  e.g. Type -> Type  [HKT / F-ω layer]
 ```
 
-Universe levels: `Type 0 : Type 1`, `Type 1 : Type 2`, … — this avoids `Type : Type` unsoundness (see `spec/v1/02-type-level-computation.md` §"Universe Levels").
+Universe levels: `Type 0 : Type 1`, `Type 1 : Type 2`, … — this avoids `Type : Type` unsoundness (see `spec/05-type-system/type-level-computation.md` §"Universe Levels").
 
 `Row κ` is deliberately parameterized. Records, unions, and effect rows all use the same row machinery (§4 Row constructors), just at different entry kinds.
 
-Arrow kinds give HKT type variables: `F : Type -> Type` means F takes one concrete type and returns a concrete type — the basis for the constraint system's `Functor`, `Foldable`, etc. (see `spec/v1/03-constraints.md` §"Higher-Kinded Constraints").
+Arrow kinds give HKT type variables: `F : Type -> Type` means F takes one concrete type and returns a concrete type — the basis for the constraint system's `Functor`, `Foldable`, etc. (see `spec/06-polymorphism/constraints.md` §"Higher-Kinded Constraints").
 
 ---
 
@@ -121,7 +122,7 @@ Ty  ::=
 
     -- Function types --
     Fun(from: TlcTypeId, to: TlcTypeId, eff: EffRow)
-                                        -- A -{ε}> B  (eff = REmpty in v0 = pure)
+                                        -- A -{ε}> B  (eff = REmpty means pure)
 
     -- Composite types --
     RecordT(Row)                        -- record built from a row
@@ -133,10 +134,10 @@ Row ::=
     REmpty                              -- closed row: no more fields
     RExtend(label: String, ty: TlcTypeId, tail: Row)
                                         -- add one field/arm to a row
-    RVar(r: TlcTypeVar)                 -- open tail (row variable — v1 row polymorphism)
+    RVar(r: TlcTypeVar)                 -- open tail (row variable)
 
 EffRow ::= Row                          -- same Row type; entries have kind Effect
-                                        -- REmpty = pure function  (v0 default)
+                                        -- REmpty = pure function
 ```
 
 ### Key notes
@@ -160,11 +161,15 @@ RExtend("circle", RecordT(RExtend("radius", Prim(Float), REmpty)), …)
 
 **Posit primitives and literals.** Experimental posit scalar types lower to `Prim(Posit(nbits, es))`; posit literals lower to `Lit(Posit { nbits, es, bits })`. Downstream Dataflow Core carries the same `(nbits, es, bits)` metadata without depending on the `fast-posit` runtime crate.
 
-**`Fun` carries an effect row.** In v0, `eff = REmpty` (pure) always. The field costs nothing for v0 programs and gives effects a type-level hook in v1 without adding new node kinds.
+**`Fun` carries an effect row.** `eff = REmpty` means pure. The field gives
+effects a type-level hook without adding separate function node kinds.
 
 **`TyLamK` replaces eager alias expansion.** The current `types.rs` eagerly expands `Alias`/`AliasApply` to concrete types, which cannot handle recursive type functions. Instead, `Alias(b)` lowers to `TyVar(b)` (where `b` is the alias binding, kinded `Type 0`) or `TyLamK(params, body)` for generic aliases; `AliasApply { binding, args }` lowers to `TyApp(TyVar(b), args)`. The NbE normalizer (§9) reduces applications on demand.
 
-**`RecordT`/`VariantT` over `Row` — one row machinery.** Closed records (v0) have no `RVar`; open records (v1 row polymorphism, `spec/v1/01-row-polymorphism.md`) carry `RVar r` as the row tail. The identical structure applies to union types and effect rows.
+**`RecordT`/`VariantT` over `Row` — one row machinery.** Closed records have no
+`RVar`; open records carry `RVar r` as the row tail. The identical structure
+applies to union types and effect rows. See
+`spec/06-polymorphism/row-polymorphism.md`.
 
 **No `Coerce`/cast node.** Equality is normalization-based (§9). Coercions would be needed only if GADT-style local type equalities were introduced. No such feature is planned; this is an explicit design boundary (see §10 non-goals).
 
@@ -190,7 +195,7 @@ Tm ::=
     GetField(TlcExprId, String)
     Tuple(Vec<TlcTupleItem>)
     List(Vec<TlcExprId>)
-    Builtin(BuiltinOp, TlcExprId, TlcExprId)      -- always binary in v0
+    Builtin(BuiltinOp, TlcExprId, TlcExprId)      -- always binary
 
     -- NEW --
     Variant(label: String, value: TlcExprId)      -- inject into a sum: #dev  or  (#circle, …)
@@ -320,9 +325,9 @@ Surface forms are eliminated here so Dataflow Core never sees them:
 
 Driven by `poly_schemes: HashMap<BindingId, Vec<u32>>` from `ThirFile`.
 
-**At declaration sites** — for binding `b` where `poly_schemes[b] = [v1, v2, ...]`:
+**At declaration sites** — for binding `b` where `poly_schemes[b] = [t1, t2, ...]`:
 1. Assign fresh `TlcTypeVar::Named(…)` entries as named type variables (one per quantified `InferVar`).
-2. Substitute `InferVar(v1) → TyVar(a, Type 0)`, `InferVar(v2) → TyVar(b, Type 0)` throughout the binding's type.
+2. Substitute `InferVar(t1) → TyVar(a, Type 0)`, `InferVar(t2) → TyVar(b, Type 0)` throughout the binding's type.
 3. Wrap type: `ForAll(a, Type 0, ForAll(b, Type 0, T))`.
 4. Wrap body: `TyLam(a, Type 0, TyLam(b, Type 0, body))`.
 
@@ -346,7 +351,8 @@ Driven by `poly_schemes: HashMap<BindingId, Vec<u32>>` from `ThirFile`.
 
 *(Encodings in this section are approved under Decision 0003 and carried over from the design spec. They have not been re-derived in this consolidation pass.)*
 
-Zutai v1 constraint witnesses (`spec/v1/03-constraints.md`) elaborate entirely into existing term nodes via **dictionaries-as-records**.
+Zutai constraint witnesses (`spec/06-polymorphism/constraints.md`) elaborate
+entirely into existing term nodes via **dictionaries-as-records**.
 
 **Elaboration rule.** A constrained function:
 ```zt
@@ -392,7 +398,7 @@ The witness `Eq @Int :: { eq = \a b => a == b; }` compiles to an ordinary `Recor
 
 ## 9. Algebraic effects — implemented CPS boundary
 
-Zutai v1 source effects (`spec/v1/05-effects.md`) are eliminated before the
+Zutai source effects (`spec/08-effects/algebraic-effects.md`) are eliminated before the
 general backend sees source control markers. TLC may contain temporary
 `Perform`/`Handle`/`Resume`/`Sequence` nodes after THIR lowering, but
 `TlcModule::elaborate_effects` rewrites the supported handled subset into the
@@ -483,7 +489,7 @@ Each `TyApp` reduction step consumes one unit of fuel. Default limit: 1 000 step
 ```
 error: type-level computation exceeded evaluation limit
 ```
-This handles recursive type functions like `Loop :: Type -> Type` with clause `= T => Loop T;` (see `spec/v1/02-type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
+This handles recursive type functions like `Loop :: Type -> Type` with clause `= T => Loop T;` (see `spec/05-type-system/type-level-computation.md` §"Recursive Type Functions"). F-ω cannot express such functions (the kind system is strongly normalizing); the unified universe core + fuel handles them correctly.
 
 ### Coercion boundary
 
@@ -570,7 +576,8 @@ Each phase is additive and independently testable. No phase breaks anything done
 - Gate `Type`/`Error` at the lowering boundary (unreachable assertion).
 - Add `Variant(label, pat)` and `Singleton(Literal)` pattern arms to `TlcPat`.
 - Fix `lower/expr.rs` stopgap: `ThirPatKind::TaggedValue` → `TlcPat::Variant(…)`, not `Wildcard`.
-- Test: every v0 program lowers without data loss; no `InferVar`/`Alias`/`Union` in any `TlcType`.
+- Test: every accepted program lowers without data loss; no
+  `InferVar`/`Alias`/`Union` remains in any `TlcType`.
 
 **Phase 1 — Kind annotations**
 - Add `Kind` enum; kind-annotate `TyVar`, `ForAll`, `TyLam` (term), `TyLamK` (type-level λ).
@@ -591,7 +598,7 @@ Each phase is additive and independently testable. No phase breaks anything done
 
 **Phase 4 — Effect row on `Fun`**
 - Change `TlcType::Fun(TlcTypeId, TlcTypeId)` to `Fun(TlcTypeId, TlcTypeId, EffRow)`.
-- Default `eff = REmpty` for v0 pure lowerings (no behavioral change).
+- Default `eff = REmpty` for pure lowerings.
 - Implement handler-passing CPS elaboration for `perform`/`handle`/`resume` in
   the lowering pass.
 - Erase supported effect rows before emitting DC types; residual unsupported
@@ -626,9 +633,10 @@ The following invariants hold for every valid `TlcModule`:
 
 ## 16. Feature coverage table
 
-A complete audit of v0 and v1 constructs against this core. "Phase" = which implementation phase (§14) makes the construct work end-to-end.
+A complete audit of stable surface constructs against this core. "Phase" =
+which implementation phase (§14) makes the construct work end-to-end.
 
-### v0 constructs
+### Core data and computation constructs
 
 | Construct | Encoding in TLC | Phase |
 |---|---|---|
@@ -659,7 +667,7 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 | Module imports | resolved in HIR; flat `BindingId` in TLC | 0 |
 | `Type` as a value (`Server :: type { … }`) | type binding, erased before DC | 0 |
 
-### v1 constructs
+### Rows, constraints, effects, and type computation
 
 | Construct | Encoding | Phase |
 |---|---|---|
@@ -685,5 +693,5 @@ A complete audit of v0 and v1 constructs against this core. "Phase" = which impl
 
 - **`docs/dataflow-core.md`** — the next compile stage; the TLC→DC lowering pass lives in `zutai-dataflow::lower`.
 - **`docs/ARCHIVED.md`** — Phase 2 is the TLC phase; this document is the canonical spec for it.
-- **`docs/spec/v0/`** — source of truth for v0 syntax and semantics; every v0 construct has a Phase 0 encoding in §16.
-- **`docs/spec/v1/`** — design context for v1 features; all v1 constructs in §16 are expressible as elaboration in Phases 1–5.
+- **`docs/spec/`** — source of truth for stable syntax and semantics; §16 maps
+  the surface to its TLC encoding and implementation phase.

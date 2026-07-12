@@ -1,8 +1,8 @@
 # Standard Library: Stream
 
-Status: core API shipped as source prelude functions (V3-G2, 2026-06-25) **and**
-as an importable module (V3-G6, 2026-06-25). `Stream A` is demand-driven
-**codata** — `Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }` (V3-G1) —
+Status: core API shipped as source prelude functions (the generator implementation, 2026-06-25) **and**
+as an importable module (the generator implementation, 2026-06-25). `Stream A` is demand-driven
+**codata** — `Unit -> { #nil; #cons : { head : A; tail : Stream A; }; }` —
 not `List A`. The non-conflicting combinators `empty`, `cons`, `singleton`,
 `unfold`, `take` (as `Stream -> Stream`), `drop`, `toList`, `fromList`, and
 `takeList` are still available without import. Stream `map`/`filter`/`fold`/
@@ -17,19 +17,19 @@ polymorphic nullary value; it now instantiates correctly per use (a `<A>`
 reference outside callee position freshens its type variable — see
 `docs/ARCHIVED.md` "BindingRef instantiation site"). The `List`-interop subset —
 `toList`, `fromList`, and `takeList` (`= toList ∘ take`) — **shipped 2026-06-26**
-(V3-G2 residual). `take` stays `Stream -> Stream`; `takeList` is the named
+(the generator implementation residual). `take` stays `Stream -> Stream`; `takeList` is the named
 `take -> List` form. The builtin `List` has no source-level head/tail ops, so the
 three combinators ride internal scalar bridge primitives the compiler provides
 over the builtin `List` (`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`);
 the `if`/`match` branching lives in the `.zt` source. See `docs/ARCHIVED.md`
-"V3-G2".
+"generator and stream milestones".
 
 ## Two surfaces, one source
 
 The combinators live in one canonical file,
 `crates/general/stdlib/src/modules/stream.zt` (registered by `zutai-stdlib` and
 compatibly re-exported as `zutai_hir::STREAM_MODULE_SRC`), which feeds both
-surfaces (V3-G6):
+surfaces:
 
 - **Ambient** (no import). The HIR lowerer reads the embedded source from
   `zutai-stdlib` and injects non-conflicting declarations as a fallback. Stream
@@ -113,7 +113,7 @@ the list-interop bridge primitives (`listEmpty`/`listCons`/`listIsNil`/
 avoid repeated thunk allocation, or optimize stream stepping without changing the
 source binding semantics. Effectful streams use the `StreamEff A e` alias and the
 effect machinery, not a separate effectful codata type (see
-`docs/v3_spec/01-generators.md`).
+`docs/spec/10-generators/generators.md`).
 
 ## Host boundary policy
 

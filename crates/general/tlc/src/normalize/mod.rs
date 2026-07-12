@@ -27,10 +27,9 @@
 //! `TlcTypeVar::Inferred(u32::MAX - counter)` variable (counting downward from `u32::MAX`
 //! to avoid collision with THIR inference vars which start from 0).
 //!
-//! In v0 every replacement from the THIR lowering is a closed type (no free type variables),
-//! so the freshening path is unreachable for any real `.zt` program. The upgrade is required
-//! for v1 row polymorphism, where open-record/union types can carry free row-kinded type
-//! variables.
+//! Closed types do not exercise the freshening path. Row-polymorphic record and
+//! union types can carry free row-kinded variables, so substitution must handle
+//! freshening correctly.
 //!
 //! ## Type equality
 //!

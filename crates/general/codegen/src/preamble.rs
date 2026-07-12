@@ -38,7 +38,7 @@ pub(crate) fn emit_preamble(out: &mut String) {
 }
 
 pub(crate) fn emit_type_decls(out: &mut String) {
-    out.push_str("; Zutai runtime types (v0: all values are i64)\n\n");
+    out.push_str("; Zutai runtime types (all values are i64)\n\n");
 }
 
 pub(crate) fn emit_runtime_decls(out: &mut String) {

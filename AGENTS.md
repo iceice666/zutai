@@ -9,7 +9,10 @@ Zutai is an experimental two-mode language system:
 - Immediate mode (`.zti`) is an inert data literal format.
 - General mode (`.zt`) is a pure, lazy, typed computation language over data.
 
-The implementation is an early Rust workspace. The v0 language design lives under `docs/spec/v0/` and should be treated as the current implementation source of truth when changing parser, AST, type-system, or language behavior. Deferred post-v0 language features live under `docs/spec/v1/`.
+The implementation is an early Rust workspace. The stable language design
+lives under `docs/spec/` and is the implementation source of truth when
+changing parser, AST, type-system, or language behavior. Zutai has no numbered
+language-version buckets; support limits are recorded per feature.
 
 Local skill: use `skill://zutai-language` (project-local `.omp/skills/zutai-language/SKILL.md`) for quick routing to Zutai language facts, source-of-truth docs, implementation support levels, and compiler-layer references before answering language questions or changing language behavior.
 
@@ -68,9 +71,7 @@ docs/
   dataflow-core.md     Dataflow Core IR design specification
   ARCHIVED.md          Archived implementation status and completed milestones
   TBD.md               Open milestones and unresolved TBD items
-  spec/                Versioned language specifications
-  spec/v0/             Zutai v0 language specification (8 chapters, source of truth)
-  spec/v1/             Zutai v1 deferred feature specification
+  spec/                Stable language specification, organized by language area
   stdlib/              Standard-library notes
 ```
 
@@ -96,9 +97,12 @@ Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
 
 - Prefer small, focused changes.
 - Do not overwrite user changes you did not make.
-- Read the relevant files in `docs/spec/v0/` before implementing v0 language syntax or semantics; read `docs/spec/v1/` as design context only when working on deferred v1 features.
+- Read the relevant files in `docs/spec/` before implementing language syntax
+  or semantics.
 - For remaining roadmap work, treat `docs/TBD.md` as the implementation order; completed post-frontend history lives in `docs/ARCHIVED.md`.
-- For v1 features, do not extend parser syntax further until the existing surface forms have HIR/THIR/TLC semantics. Prefer check-only support with precise unsupported-feature diagnostics before claiming compiler or interpreter support.
+- Do not extend parser syntax until the existing surface forms have HIR/THIR/TLC
+  semantics. Prefer check-only support with precise unsupported-feature
+  diagnostics before claiming compiler or interpreter support.
 - Keep parser syntax in `general/syntax`, name resolution and syntax-only normalization in `general/hir`, and type-dependent checking/elaboration in `general/thir`.
 - Keep constraint solving, zonking, and TyLam/TyApp elaboration in `general/tlc`; keep graph construction and TLC→DC lowering in `general/dataflow`; keep ANF scheduling in `general/anf`; keep SSA and LLVM emission in `general/ssa` and `general/codegen` respectively.
 - Route end-to-end general-mode semantic behavior through `general/semantic` where practical so callers can inspect parse, HIR, THIR, and diagnostics consistently.

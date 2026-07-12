@@ -2,8 +2,8 @@
 
 This document tracks implemented status, validation notes, archived decisions,
 and completed milestones. Open milestones and TBD items live in
-[`TBD.md`](TBD.md). Language design still comes from `docs/spec/v0/` for v0 and
-`docs/spec/v1/` for deferred v1 features.
+[`TBD.md`](TBD.md). Stable language design comes from the single specification
+under [`docs/spec/`](spec/00-index.md).
 
 ## Compilation pipeline
 
@@ -35,7 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (browser kernel and self-hosted website baseline);
+_Last updated: 2026-07-12 (unversioned stable syntax specification);
+prior baseline updates: 2026-07-12 (browser kernel and self-hosted website baseline),
 prior baseline updates: 2026-07-12 (LSP editor baseline),
 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
@@ -162,7 +163,7 @@ typed browser/HTML/CSS stdlib modules, deterministic prerendered bundles,
   (standard + SIMD/NEON).
 - General mode parses `.zt`, lowers to HIR, type-checks through THIR, and
   elaborates complete programs to TLC.
-- THIR covers v0 plus implemented v1/v2/v3-adjacent semantics:
+- THIR covers the stable language semantics:
   row-polymorphic records/unions, `select`, constraints/witnesses, `derive`,
   method-level type params, higher-kinded constraints, algebraic-effect typing,
   named effect-row alias spreads, higher-rank annotation checking, predicative
@@ -241,7 +242,7 @@ typed browser/HTML/CSS stdlib modules, deterministic prerendered bundles,
   Optional field access preserves physical presence as `Maybe T` with `#absent`
   / `#present (v)`, so `field? : T?` yields `Maybe (Optional T)`. `?.` works on
   both `Optional` and `Maybe`; `??` unwraps exactly one layer.
-- v0 docs use parser-accepted typed bindings (`name :: Type = value`) and
+- Stable spec docs use parser-accepted typed bindings (`name :: Type = value`) and
   semicolon-terminated record/tagged patterns. Fixtures pin stale syntax
   rejections.
 - `Int??` lexes as `Int` + `??`, not a double optional. Write `(Int?)?` for a
@@ -264,7 +265,7 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 - [x] **Compiler entry-type gate cleanup** — CLI `compile` and `dataflow`
   reject final runtime `Type` values before TLC→DC/LLVM lowering, including raw
   `type Int` entries and alias-value entries such as `MyInt :: type Int; MyInt`.
-- [x] **v0 spec conformance sweep** — code fences from `docs/spec/v0/` are
+- [x] **v0 spec conformance sweep** — code fences from `docs/spec/` are
   extracted and routed through `check`/`run` for `.zt` survivors and the immediate
   parser for `.zti` survivors; stable survivors are promoted to acceptance tests.
 - [x] **Diagnostic polish** — record-vs-record type mismatches render source-like
@@ -275,6 +276,22 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Unversioned stable syntax specification ✅
+
+_Completed 2026-07-12. Consolidates every currently parser-accepted syntax form
+into one stable specification organized by language area._
+
+- Moved the former numbered core, extension, capability, and generator documents
+  under `docs/spec/` with one index and one compact grammar reference.
+- Promoted rows, constraints, effects, reflection, recursive aliases, universe
+  syntax, higher-rank annotations, record/list/type/effect spreads, witness
+  reflection, and stream generators into the stable language surface.
+- Replaced the numbered roadmap with per-feature support levels and explicit
+  demand-gated design boundaries. Historical phase names remain in this archive
+  only as implementation provenance.
+- Renamed the specification fence acceptance test and pointed it at the unified
+  specification tree.
 
 ### Browser kernel and self-hosted website ✅
 
@@ -1070,7 +1087,7 @@ Zutai can check, interpret, lower, compile, or deliberately refuse after V3._
   exported `Stream`/`Step`/`StreamEff` fields, applicable `s.Stream Int`,
   destructuring import, and codata/demand-driven wording (previously
   "path-relative only", "eight combinators", "no `s.Stream`", "pure lazy
-  sequence"). `docs/v3_spec/01-generators.md` status now splits native handled-
+  sequence"). `docs/spec/10-generators/generators.md` status now splits native handled-
   effect parity (landed 2026-06-26, `io.print`-backed idiom compiles natively)
   from the then-current non-`io.print` resource-effect backend gate, instead of
   collapsing both into "native lowering refused"; the 2026-06-30 host-boundary
@@ -1202,7 +1219,7 @@ Verification: `cargo test -p zutai-eval cancellation_across`,
 ### V3-G4 follow-up: cooperative cancellation for effectful generators ✅
 
 _Completed 2026-06-27. Settles the open generator question of *cancellation*
-(signalling a generator to stop mid-stream, `docs/v3_spec/01-generators.md`).
+(signalling a generator to stop mid-stream, `docs/spec/10-generators/generators.md`).
 Interpreter-only, like `finally`; native lowering of effectful generators stays
 refused. Built entirely in the reference interpreter's effect machinery
 (`crates/general/eval/src/eval_tlc/effects.rs`)._
@@ -1238,7 +1255,7 @@ follow-up. Verification: full workspace green (`cargo test --workspace`,
 ### Ergonomic effectful-stream type: call-site effect-row inference + `StreamEff` ✅
 
 _Completed 2026-06-27. Closes the last V3-G4 follow-up the spec named as scoped:
-the ergonomic effectful-stream type (`docs/v3_spec/01-generators.md` "Still open").
+the ergonomic effectful-stream type (`docs/spec/10-generators/generators.md` "Still open").
 Two pieces, both at the THIR effect-row layer plus a prelude alias._
 
 - **Call-site effect-row inference.** A pure or concretely-effectful argument now
@@ -1942,7 +1959,7 @@ blocked by a backend gap (see `docs/TBD.md` "Cross-module polymorphism")._
 ### V3-G1: Codata `Stream` representation ✅
 
 _Completed 2026-06-25. First phase of the V3 generator/stream spine
-(`docs/v3_spec/02-roadmap.md`). Turns the builtin `Stream A` from a strict
+(`docs/design/reserved-language-boundaries.md`). Turns the builtin `Stream A` from a strict
 `List A` alias into demand-driven **codata** — `Stream A ≡ Unit -> StreamCell A`,
 `StreamCell A ≡ { #nil; #cons : { head : A; tail : Stream A; }; }` — so infinite
 streams are representable and finite generators keep working, all within the
@@ -2112,7 +2129,7 @@ documentation-only correction pass, with no implementation change._
   `docs/ARCHIVED.md` (the "Current baseline" Last-updated note plus eight
   completed-milestone entries) were one day ahead of the authoritative date and
   were corrected to 2026-06-24.
-- **Higher-rank support level.** `docs/v2_spec/05-higher-rank-polymorphism.md`
+- **Higher-rank support level.** `docs/spec/06-polymorphism/higher-rank-polymorphism.md`
   "Support Level" understated support as reference-interpreter only; native
   rank-2 lambda-arg parity is tested by
   `compiled_rank2_lambda_arg_matches_oracle` and was documented.
@@ -2120,7 +2137,7 @@ documentation-only correction pass, with no implementation change._
 ### V2-A: Explicit universe-level syntax ✅
 
 _Completed 2026-06-24. Implements the v2 spec §"Explicit Level Syntax"
-(`docs/v2_spec/04-universe-levels.md`): the opt-in surface forms `$ℓ` (`$0`,
+(`docs/spec/05-type-system/universe-levels.md`): the opt-in surface forms `$ℓ` (`$0`,
 `$l`, `$(l + n)`, `$(max a b)`) and the `<$l>` level binder now parse, resolve,
 and check. Phase 24 had already landed the internal level algebra; only the
 surface syntax was missing._
@@ -2148,7 +2165,7 @@ surface syntax was missing._
 ### Track B: Host-capability entry boundary ✅
 
 _Completed 2026-06-24. Implements the v2 spec §"Entry Boundary"
-(`docs/v2_spec/02-host-capabilities.md`): a program may declare the host
+(`docs/spec/08-effects/host-capabilities.md`): a program may declare the host
 capabilities it needs as its entry parameter and the host supplies them. The six
 standard host ops already ran end-to-end via direct `perform` (the CLI grants
 `HostEffectSet::ALL`); the only gap was the idiomatic `main :: { caps } -> Result`
@@ -2503,9 +2520,9 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
 ### Documentation spec tree merge ✅
 
 - Merged the v0 and v1 language specifications under `docs/spec/` as
-  `docs/spec/v0/` and `docs/spec/v1/`, with `docs/spec/README.md` as the
+  `docs/spec/` and `docs/spec/v1/`, with `docs/spec/README.md` as the
   versioned specification entry point.
-- Updated repository docs, roadmap/archive links, v2 cross-links, the v0 spec
+- Updated repository docs, roadmap/archive links, v2 cross-links, the language specification
   conformance test fixture paths, and the local `zutai-language` skill routing
   to the new spec paths.
 - Recent implementation docs now reflect Unicode XID names, canonical
@@ -2838,7 +2855,7 @@ the v1 native-backend constraints/witnesses and row-polymorphism items._
 
 ### Phase 16: Effect evaluation and ordering model ✅
 
-- `docs/spec/v1/05-effects.md` now specifies sequencing for `perform`, `handle`,
+- `docs/spec/08-effects/algebraic-effects.md` now specifies sequencing for `perform`, `handle`,
   operation clauses, `resume`, and sequence expressions.
 - TLC evaluation supports handled effects with delimited continuations.
 - `print` was re-pointed to `io.print`; host `run` handles residual `io.print`.

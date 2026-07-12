@@ -2,7 +2,11 @@
 
 This is the user-facing guide to current Zutai.
 
-The [v0 language specification](spec/v0/00-index.md) is normative for stable syntax; implemented v1-adjacent features are summarized here with support levels and linked to the [v1 deferred feature specification](spec/v1/00-index.md) and [current implementation status](ARCHIVED.md#current-baseline).
+The [language specification](spec/00-index.md) is normative for all currently
+accepted syntax. Zutai has one stable language surface rather than numbered
+feature versions. This manual summarizes support levels, and the
+[implementation archive](ARCHIVED.md#current-baseline) records validation
+evidence.
 
 ## Quick start
 
@@ -94,9 +98,9 @@ In `.zt`, Unicode whitespace separates tokens. `;` is the universal terminator/s
 
 - Line comments begin with `--` and continue to the end of the line.
 - Block comments begin with `--[` and end with `]--`; block comments may nest.
-- Doc comments begin with `--|` and continue to the end of the line. In v0 they are lexically distinct but have no required semantic effect.
+- Doc comments begin with `--|` and continue to the end of the line. They are lexically distinct but have no required semantic effect.
 
-Canonical `.zti` v0 has no comments.
+Canonical `.zti` has no comments.
 
 Strings are double-quoted and JSON-like. Immediate mode numbers use JSON-style syntax; general mode numbers use the same base syntax plus optional numeric postfixes such as `i8`, `u16`, `f32`, `f64`, `p32`, and `p64eN`. Without a postfix, integer-looking literals infer as `Int`, and literals with a decimal point or exponent infer as `Float`.
 
@@ -128,7 +132,7 @@ Operator precedence, highest to lowest:
 |         10 | function type `->`                                                       | right                     |
 |         11 | `cond`, `match`, `\` bodies                                             | syntax-delimited          |
 
-`??` is right-associative. `|>` and `<|` must not mix without parentheses. `%` is integer remainder. v0 has no unary operators: negation is part of a numeric literal, such as `-10` or `x * -1`. Use the ambient prelude helper `not` for boolean negation.
+`??` is right-associative. `|>` and `<|` must not mix without parentheses. `%` is integer remainder. Zutai has no unary operators: negation is part of a numeric literal, such as `-10` or `x * -1`. Use the ambient prelude helper `not` for boolean negation.
 
 ## Immediate mode `.zti`
 
@@ -357,7 +361,9 @@ port
 
 Type aliases use `Name :: type TypeExpr;`. Generic aliases use `<...>`, for example `Pair :: <A, B> type { first : A; second : B; };`. Type functions may also be ordinary functions returning `Type`.
 
-Record types are closed in v0. A value of a closed record type must provide the declared fields and must not provide undeclared fields. List types use `List T`.
+Record types are closed unless they contain a row tail. A value of a closed
+record type must provide the declared fields and must not provide undeclared
+fields. List types use `List T`.
 
 Tagged union types use `type { ... }` with semicolon-terminated `#tag` members. The `:` colon after a tag name introduces a payload type; bare `#tag;` means no payload. Payload types may be record types or tuple types:
 
@@ -396,7 +402,9 @@ id :: <A> A -> A
 id 1
 ```
 
-Multiple type parameters are comma-separated, as in `<A, B>`. Polymorphic functions are implicitly instantiated at call sites. Explicit type application syntax is not part of v0.
+Multiple type parameters are comma-separated, as in `<A, B>`. Polymorphic
+functions are implicitly instantiated at call sites. Zutai has no explicit type
+application syntax.
 
 Pattern matching uses `match`; each arm is introduced by `|` and uses `=>` for the body. For finite union types, `match` must be exhaustive. `_` is a wildcard pattern, and guards use `if` between the pattern and `=>`.
 
@@ -453,21 +461,22 @@ level, not by importing absolute paths. Dotted stdlib imports such as
 embedded in-binary modules rather than the filesystem and are not subject to the
 quoted-path subtree check.
 
-## Implemented extensions beyond v0
+## Feature support
 
-These features are not v0 core. Their syntax is specified in the linked v1 or post-v0 pages; current implementation support is summarized here.
+All syntax in this table belongs to the stable language. A narrower support
+level is an implementation boundary, not a provisional syntax version.
 
 | Feature | User syntax | Support level |
 | --- | --- | --- |
-| [Row tails/open records/open unions](spec/v1/01-row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
-| [Selective projection](spec/v1/01-row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
-| [Constraints/witnesses/derive](spec/v1/03-constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; native support covers direct/bounded/conditional/operator/method-level witnesses plus imported concrete and structurally matchable conditional witnesses. Higher-kinded execution and non-matchable cross-module witness exports remain check-only/native-gated |
-| [Reflection](spec/v1/04-metaprogramming.md) | `fields T`, `variants T`, `schema T`, `witness C @T`, or explicit `refl.fields T` / `refl.schema T` through `import stdlib.reflect` | THIR/TLC/evaluator support; compile/dataflow fold supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
-| [Algebraic effects](spec/v1/05-effects.md) | `! { ... }`, named and qualified row spreads `* Effects` / `* m.Effects`, effect result aliases, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
-| [Record update](spec/v0/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch`; `cfg.overlay patch base` through `import stdlib.config` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, including module-qualified/destructured `stdlib.config` aliases, while residual/partial overlay forms remain backend-gated |
-| [`print`](spec/v1/05-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
+| [Row tails/open records/open unions](spec/06-polymorphism/row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
+| [Selective projection](spec/06-polymorphism/row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
+| [Constraints/witnesses/derive](spec/06-polymorphism/constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; native support covers direct/bounded/conditional/operator/method-level witnesses plus imported concrete and structurally matchable conditional witnesses. Higher-kinded execution and non-matchable cross-module witness exports remain check-only/native-gated |
+| [Reflection](spec/09-metaprogramming/reflection.md) | `fields T`, `variants T`, `schema T`, `witness C @T`, or explicit `refl.fields T` / `refl.schema T` through `import stdlib.reflect` | THIR/TLC/evaluator support; compile/dataflow fold supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
+| [Algebraic effects](spec/08-effects/algebraic-effects.md) | `! { ... }`, named and qualified row spreads `* Effects` / `* m.Effects`, effect result aliases, `perform`/`!`, `handle`, `with`, and `resume`/`^` | TLC run supports handled effects; compile/dataflow lower supported handled effects and ambient `io.print` through runtime codegen while rejecting unsupported residual effects |
+| [Record update](spec/05-type-system/records.md#record-update) / [config overlay](stdlib/config.md) | `record with { field = value; }`; `defaults |> overlay patch`; `cfg.overlay patch base` through `import stdlib.config` | record update fully lowers through native codegen; supported full config-overlay calls over record-literal patches lower before Dataflow Core, including module-qualified/destructured `stdlib.config` aliases, while residual/partial overlay forms remain backend-gated |
+| [`print`](spec/08-effects/algebraic-effects.md) | `print text` and handled operation `io.print` | prelude compatibility binding; source handlers can intercept io.print and host `run`/compiled binaries dispatch residual io.print at runtime |
 | Dynamic data loading | `loadZti path`, `loadZt path`, or `perform load.zti path` / `perform load.zt path` | explicit host capability/effect; `run` and compiled binaries dispatch runtime-selected `.zti`/`.zt` loads to a first-order `Data` envelope; handlers can intercept operations before the host boundary |
-| [Stream-backed generators](v3_spec/01-generators.md) | `stream { yield expr; ... }`, tail `yield from`, and `Stream A` | `Stream A` is demand-driven **codata** (`Unit -> { #nil; #cons : { head; tail }; }`), not a memoizing lazy list; pure finite *and* infinite generators type-check and evaluate on both the interpreter and native backend. Tail `yield from` lowers; non-tail delegation is deliberately refused. Effectful generators (`yield perform op`) run under a granting handler; raw-cell generator cells for supported custom effects and ambient `io.print` lower natively through the `Computation` driver, while standard host operations such as `fs.read` lower through the host boundary under an explicit grant. Custom-effect lazy escapes still refuse when forced outside the grant. `finally` has native parity for supported handled-effect shapes; cooperative cancellation and the resource-lifetime contract remain interpreter-oracle behavior |
+| [Stream-backed generators](spec/10-generators/generators.md) | `stream { yield expr; ... }`, tail `yield from`, and `Stream A` | `Stream A` is demand-driven **codata** (`Unit -> { #nil; #cons : { head; tail }; }`), not a memoizing lazy list; pure finite *and* infinite generators type-check and evaluate on both the interpreter and native backend. Tail `yield from` lowers; non-tail delegation is deliberately refused. Effectful generators (`yield perform op`) run under a granting handler; raw-cell generator cells for supported custom effects and ambient `io.print` lower natively through the `Computation` driver, while standard host operations such as `fs.read` lower through the host boundary under an explicit grant. Custom-effect lazy escapes still refuse when forced outside the grant. `finally` has native parity for supported handled-effect shapes; cooperative cancellation and the resource-lifetime contract remain interpreter-oracle behavior |
 
 ## Errors and diagnostics
 
@@ -507,7 +516,7 @@ Common parse-diagnostic mistakes should receive specific messages when the parse
 
 ## Further reading
 
-- [v0 language specification](spec/v0/00-index.md)
-- [v1 deferred feature specification](spec/v1/00-index.md)
+- [language specification](spec/00-index.md)
+- [grammar reference](spec/02-lexical/grammar-reference.md)
 - [standard library](stdlib/00-index.md)
 - [implementation status](ARCHIVED.md)

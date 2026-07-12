@@ -198,9 +198,8 @@ pub(super) fn alpha_rename_row(
 /// variable in `replacement`, `b` is alpha-renamed to a fresh `Inferred(next_fresh)` before
 /// descending. This prevents the replacement's free variable from being shadowed by `b`.
 ///
-/// In v0 all replacements from THIR lowering are closed types, so the freshening path is
-/// unreachable for any real `.zt` program. The upgrade is mandatory for v1 row-polymorphic
-/// types where open-record/union types can carry free type variables.
+/// Closed THIR replacements do not exercise this path. Row-polymorphic record
+/// and union types can carry free variables, so freshening is mandatory there.
 pub(super) fn subst(
     arena: &mut Arena<TlcType>,
     ty: TlcTypeId,

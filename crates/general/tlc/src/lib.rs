@@ -59,7 +59,7 @@ pub fn residual_effect_reason(module: &TlcModule) -> Option<&'static str> {
 
 /// Return why a TLC module cannot enter Dataflow Core under a host grant set.
 ///
-/// `io.print` is always ambient for source compatibility. v2 host capability
+/// `io.print` is always ambient for source compatibility. Host-capability
 /// entry points extend this set with explicitly requested standard operations.
 pub fn residual_effect_reason_with_grants(
     module: &TlcModule,

@@ -16,7 +16,8 @@ config overlay  = policy-driven application of partial layers
 normalization   = conversion from raw partial config to final validated config
 ```
 
-Post-v0 record update belongs to the core expression language. Config overlay belongs here, in the standard library.
+Record update belongs to the core expression language. Config overlay belongs
+here, in the standard library.
 
 ## Names
 
@@ -156,7 +157,7 @@ field present X       = #present (X); set the field to X
 field present #none   = #present (#none); set the field to #none, if allowed by the field type
 ```
 
-Deletion is not part of `Patch` or `DeepPatch` in this initial post-v0 design.
+Deletion is not part of `Patch` or `DeepPatch`.
 
 ## Raw-then-normalize workflow
 

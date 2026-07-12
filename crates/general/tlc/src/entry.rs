@@ -1,4 +1,4 @@
-//! Host-capability entry boundary (v2 `docs/v2_spec/02-host-capabilities.md`).
+//! Host-capability entry boundary (see `docs/spec/08-effects/host-capabilities.md`).
 //!
 //! The idiomatic entry shape declares the capabilities a program needs as its
 //! entry parameter and lets the host supply them:

@@ -32,7 +32,7 @@ pub enum ParseErrorKind {
 impl ParseErrorKind {
     pub fn message(&self) -> &'static str {
         match self {
-            ParseErrorKind::ChainedComparison => "comparison operators are non-associative in v0",
+            ParseErrorKind::ChainedComparison => "comparison operators are non-associative",
             ParseErrorKind::MixedPipeline => {
                 "a single pipeline chain cannot mix forward and backward directions"
             }

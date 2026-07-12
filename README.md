@@ -5,7 +5,9 @@ Zutai is an experimental two-mode language system for data, configuration, valid
 - `.zti` is an inert data literal format: deterministic, non-evaluating, and optimized for fast parsing and lazy materialization.
 - `.zt` is a pure, lazy, typed computation language over data.
 
-The current repository is an early Rust workspace containing parser, semantic IR, CLI, and editor-support work alongside the versioned language specifications under `docs/spec/`.
+The current repository is an early Rust workspace containing the parser,
+semantic IR, CLI, editor support, and one stable language specification under
+`docs/spec/`.
 
 ## Repository layout
 
@@ -31,9 +33,7 @@ docs/
   language-manual.md     User-facing language manual
   ARCHIVED.md          Archived implementation status and completed milestones
   TBD.md               Open work ledger
-  spec/                Versioned language specifications
-  spec/v0/             Zutai v0 language specification
-  spec/v1/             Deferred post-v0 language design notes
+  spec/                Stable Zutai language specification
   stdlib/              Standard library notes
 ```
 
@@ -45,8 +45,8 @@ Start with the language manual or documentation index:
 - [docs/README.md](docs/README.md)
 - [Archived implementation status](docs/ARCHIVED.md)
 - [Open work ledger](docs/TBD.md)
-- [Zutai v0 language specification](docs/spec/v0/00-index.md)
-- [Final design statement](docs/spec/v0/01-overview/final-design-statement.md)
+- [Zutai language specification](docs/spec/00-index.md)
+- [Final design statement](docs/spec/01-overview/final-design-statement.md)
 
 ## Examples
 
@@ -106,7 +106,9 @@ previews.
 
 ## Status
 
-Zutai is under active design. The docs describe the intended v0 language plus selected v1-adjacent features already implemented during the v0 cycle.
+Zutai's currently accepted syntax is stable and documented as one language.
+Some constructs have narrower interpreter or native-backend support; those
+limits are recorded per feature rather than represented as language versions.
 
 Current implementation highlights:
 

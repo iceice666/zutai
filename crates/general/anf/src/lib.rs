@@ -56,7 +56,7 @@ pub enum AnfExpr {
     Apply { func: AnfAtom, arg: AnfAtom },
     /// Runtime `io.print` dispatch. Prints the Text atom and returns it.
     HostPrint { value: AnfAtom },
-    /// Runtime host operation authorized by an explicit v2 capability.
+    /// Runtime host operation authorized by an explicit host capability.
     HostOp { op: HostOp, value: AnfAtom },
     /// Type application at a polymorphic call site.
     TyApp { poly: AnfAtom, ty_args: Vec<DfTyId> },

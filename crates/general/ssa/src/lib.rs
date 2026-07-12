@@ -68,7 +68,7 @@ pub enum SsaOp {
     },
     /// Runtime host `io.print`: print Text, append newline, return the same Text.
     HostPrint { value: SsaValue },
-    /// Runtime host operation authorized by an explicit v2 capability.
+    /// Runtime host operation authorized by an explicit host capability.
     HostOp { op: HostOp, value: SsaValue },
     /// Allocate a closure object for a lambda value: `{ header, code, caps[] }`.
     MakeClosure {

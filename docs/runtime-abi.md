@@ -1,11 +1,11 @@
 # Runtime and ABI
 
-This document specifies the v0 runtime library and the binary ABI of compiled
+This document specifies the runtime library and the binary ABI of compiled
 Zutai general-mode (`.zt`) programs. It is the design contract for the final
 pipeline layer: turning `zutai-codegen` LLVM IR into an object, native binary,
 or native library that links against `libzutai_rt`.
 
-> **Status: Phase 18 implemented for the v0 ABI surface.** The `zutai-rt`
+> **Status: Phase 18 implemented for the stable ABI surface.** The `zutai-rt`
 > crate defines the runtime symbols; codegen emits the D-0003 uniform closure
 > ABI, dense per-union variant tags, static `DfTy` descriptors, and a
 > type-directed `@main`; `compile --emit=llvm|obj|bin|lib` selects LLVM text,
@@ -36,7 +36,7 @@ Before Phase 18, the pipeline produced a `.ll` file and stopped. The closed
 gaps were:
 
 - **Runtime symbols were declared but undefined.** `crates/general/runtime/`
-  now provides the v0 definitions for allocation, records, tuples, lists,
+  now provides the runtime definitions for allocation, records, tuples, lists,
   variants, text, output, and `zutai.show`.
 - **No driver.** `run_compile` now supports `--emit=llvm|obj|bin`; object and
   binary modes invoke `llc`/`clang`, build/link `libzutai_rt`, and diagnose a
@@ -62,7 +62,7 @@ Three concrete defects drove the ABI work and are now closed:
 
 ## Design principles
 
-- **Correctness over speed.** v0 is the first runnable backend. Match the
+- **Correctness over speed.** the native backend is established. Match the
   `zutai-eval` oracle, then optimize. A wrong value is worse than a slow one.
 - **Static typing carries the representation.** General mode is fully typed and
   type-erased before Dataflow Core (Decision 0002 in `docs/tlc-core.md`). Every
@@ -106,7 +106,7 @@ Every Zutai value is a single `i64`, exactly as codegen already assumes:
 
 The representation is **untagged**: an `i64` is ambiguous between an `Int` and a
 pointer, and disambiguation is purely static — codegen calls the helper
-matching the operand's known type. This is sound for v0 because all dispatch is
+matching the operand's known type. This is sound for the stable language because all dispatch is
 resolved at compile time (monomorphized, dictionary-passed, rows/effects
 closed).
 
@@ -145,10 +145,10 @@ ZtClosure {
 - A **top-level** function `f` is a statically-allocated closure constant with
   `ncaps = 0`; `GlobalRef(f)` loads that constant. This removes the
   `Global`-direct vs indirect split entirely — codegen emits one shape.
-- A known-arity direct-call fast path is a **v2 optimization** (skip the
+- A known-arity direct-call fast path is a **future optimization** (skip the
   closure object and call the lifted function directly when the callee's arity
-  is statically known and saturated at the call site), not part of the v0
-  contract.
+  is statically known and saturated at the call site), not part of the stable
+  ABI contract.
 
 *Implementation impact (out of scope for this doc, tracked for Phase 18):* SSA
 must emit a dedicated `MakeClosure`/closure-apply rather than reusing
@@ -268,7 +268,7 @@ must not be merged.
 **Rendering rules `show` must reproduce** (all from the `Display` impl):
 - `Int` decimal; `Bool` → `true`/`false`.
 - `Float`: Rust shortest round-trip; bare `inf`/`-inf`/`NaN`; append `.0` only
-  when the repr is finite and has no `.`/`e`/`E` (`value.rs:523-533`) — the v0
+  when the repr is finite and has no `.`/`e`/`E` (`value.rs:523-533`)—the old
   `inf.0`/`NaN.0` bug must not regress.
 - `Text`: `"`-wrapped, escaping `\" \\ \n \r \t` (`value.rs:537-545`).
 - `Atom`: `#name`.
@@ -280,7 +280,7 @@ must not be merged.
 
 **Restriction.** A program whose final result type is a function cannot be
 meaningfully printed — `Display` renders `<function/N>`, but the residual arity
-is not recoverable from the closure object at runtime. v0 `compile` **rejects**
+is not recoverable from the closure object at runtime. `compile` **rejects**
 such entry types with a precise diagnostic rather than emitting a
 parity-breaking `<function>`. (`Type`/witness results are already gated upstream.)
 
@@ -290,7 +290,7 @@ never reordered or lost.
 
 ### D-0008 — Memory model: thread-local bump arena + default-on conservative GC
 
-> **Update (2026-06-27): GC work is closed for v0/v3.** The conservative
+> **Update (2026-06-27): GC work is closed for the current runtime.** The conservative
 > non-moving mark-sweep collector is the committed endpoint. It runs **by
 > default** wherever the conservative stack scan can establish stack bounds
 > (macOS, Linux); `ZUTAI_GC=0` (or `false`/`no`/`off`) opts back out to the
@@ -307,7 +307,7 @@ never reordered or lost.
   `i64`. Thread-local rather than global: no lock on the hot path, and each host
   thread gets its own arena, which keeps the `rlib` sound when linked into a
   multi-threaded host (e.g. the parallel test harness).
-- `void zutai.free(i64 p)` — **no-op in v0.** Declared for ABI stability.
+- `void zutai.free(i64 p)` — **no-op in the stable ABI.** Declared for ABI stability.
 - **Heap ceiling.** Committed arena bytes are capped — default **2 GiB**,
   overridable via `ZUTAI_HEAP_MAX` (`k`/`m`/`g` suffixes; `0`/`unlimited`/`none`
   disables). An allocation that would grow the arena past the cap aborts with a
@@ -321,7 +321,7 @@ never reordered or lost.
 
 - *Rationale.* A first runnable, *correct* backend should not block on a
   collector. The pure/lazy core means reachable allocation is bounded by what
-  the program forces; for the v0 fixture/spec programs this is fine, and the cap
+  the program forces; for the fixture/spec programs this is fine, and the cap
   bounds the blast radius when it is not.
 - *GC urgency — decision (A), 2026-06-22.* The native backend commits to
   **strict semantics plus tail-call optimization** (`musttail`; ANF→SSA return
@@ -363,10 +363,10 @@ never reordered or lost.
 
 ### D-0009 — Object header and type descriptors
 
-The descriptor concept does **two jobs**; separating them clarifies what v0 needs
+The descriptor concept does **two jobs**; separating them clarifies what the runtime needs
 for printing versus what a retired precise collector would have needed.
 
-**Role A — static type descriptors (needed in v0).** For every type that
+**Role A — static type descriptors (needed by the runtime).** For every type that
 reaches `zutai.show` (the entry type and, transitively, its components) codegen
 emits a static, read-only descriptor and passes it to `show`. `show` walks the
 **value and descriptor in lockstep**, top-down: the descriptor supplies the
@@ -419,7 +419,7 @@ directly by the runtime tag (no string compare, no collisions), and
 `#some`/`#present = 1`. The global atom hash is retained only for free-standing
 `Atom` values, which are not union discriminants.
 
-**Role B — precise pointer layout (retired for v0/v3).** A precise or moving
+**Role B — precise pointer layout (retired for the current runtime).** A precise or moving
 collector would need each heap object to describe which slots are pointers: a
 record `{x: Int, y: Text}` has an immediate in slot 0 and a pointer in slot 1,
 which the kind-tag header alone does not capture. The header still reserves high
@@ -428,7 +428,7 @@ use them: it conservatively scans object words and accepts false retention.
 
 This split remains useful for documentation, but **Role B is not active work**.
 Reopening precise/moving GC would require both object layout ids and exact root
-maps (shadow stack or stack maps) in the calling convention. The v0/v3 runtime
+maps (shadow stack or stack maps) in the calling convention. The current runtime
 does neither; the default-on conservative collector is the committed endpoint.
 
 ### D-0010 — Toolchain driver
@@ -452,7 +452,7 @@ exported with the generated entry symbols.
 
 Library-mode LLVM omits `main` and exports:
 
-- `zutai_entry() -> i64` — evaluate the program and return the raw v0 ABI value.
+- `zutai_entry() -> i64` — evaluate the program and return the raw ABI value.
 - `zutai_entry_descriptor() -> i64` — return the static descriptor pointer for
   the entry type.
 - `zutai_entry_json() -> i64` — evaluate the program, serialize the entry value
@@ -505,7 +505,7 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | Symbol | Signature | Semantics |
 | --- | --- | --- |
 | `zutai.alloc` | `i64 (i64 nbytes)` | Bump-allocate from a thread-local arena, 16-byte aligned; returns pointer as `i64`. Aborts (`exit 1`) past the `ZUTAI_HEAP_MAX` cap (default 2 GiB). |
-| `zutai.free` | `void (i64 p)` | No-op in v0. |
+| `zutai.free` | `void (i64 p)` | No-op in the stable ABI. |
 | `zutai.record_new` | `i64 (i64 n)` | Allocate a record of `n` slots. |
 | `zutai.record_set` | `void (i64 r, i64 slot, i64 v)` | Set slot by **ordinal index**. |
 | `zutai.record_get` | `i64 (i64 r, i64 slot)` | Get slot by **ordinal index**. |
@@ -529,7 +529,7 @@ All values are `i64` per D-0002. Slots/indices are 0-based.
 | `zutai.print_i64` | `void (i64 v)` | Print an integer. |
 | `zutai.print_bool` | `void (i64 v)` | Print a boolean. |
 | `zutai.print_float` | `void (i64 v)` | Print a float (bitcast from `i64`). |
-| `zutai.print_text` | `void (i64 v)` | Print text; also the v0 `io.print` handler. |
+| `zutai.print_text` | `void (i64 v)` | Print text; also the `io.print` handler. |
 | `zutai.print_posit` | `void (i64 value, i64 nbits, i64 es)` | Print a posit by static spec. |
 | `zutai.show` | `void (i64 value, i64 descriptor)` | Type-directed render (records/tuples/lists/variants/optionals/posits). |
 | `zutai.to_json` / `zutai_to_json` | `i64 (i64 value, i64 descriptor)` | Type-directed natural JSON serialization via `serde_json`; returns a runtime `Text`; the underscore alias is host-FFI friendly. |
@@ -606,9 +606,9 @@ and `cargo fmt --check`; native object/binary execution is toolchain-gated.
 
 ---
 
-## Non-goals (v0)
+## Non-goals
 
-- Precise/moving garbage collection; v0/v3 use the default-on conservative
+- Precise/moving garbage collection; the runtime uses the default-on conservative
   collector over the arena, with `ZUTAI_GC=0` preserving leak-by-default opt-out.
 - Tagged-pointer / NaN-boxing / runtime type recovery.
 - Multithreading, async, FFI, dynamic linking, separate compilation.

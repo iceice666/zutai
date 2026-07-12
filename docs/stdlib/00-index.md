@@ -94,7 +94,7 @@ combinators are **ambient prelude** (no import needed) and also importable via
 embedded `stdlib.stream`; the language-level producer `stream { yield ...; }` is
 syntax, not a standard-library function. Host-backed streams such as file lines,
 environment scans, clock events, randomness, and network sockets require
-explicit capabilities (v2 host capabilities); they must not become ambient APIs.
+explicit host capabilities; they must not become ambient APIs.
 The low-level text filesystem helpers live in explicit `stdlib.fs`, and the
 current TCP helpers live in explicit `stdlib.net`.
 

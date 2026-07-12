@@ -1,4 +1,4 @@
--- Comparisons are non-associative in v0.
+-- Comparisons are non-associative.
 
 {
   bad = 1 < 2 < 3;

@@ -26,8 +26,9 @@ pub(crate) enum EmitMode {
 }
 
 const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
-    "compiled entry point returns Type, which cannot be shown by the v0 runtime ABI";
-const UNSUPPORTED_OPAQUE_ENTRY_REASON: &str = "compiled entry point returns an opaque host handle, which cannot be shown by the v0 runtime ABI";
+    "compiled entry point returns Type, which cannot be shown by the runtime ABI";
+const UNSUPPORTED_OPAQUE_ENTRY_REASON: &str =
+    "compiled entry point returns an opaque host handle, which cannot be shown by the runtime ABI";
 
 fn unsupported_thir_entry_type_reason(thir: &zutai_thir::ThirFile) -> Option<&'static str> {
     fn alias_body(

@@ -233,7 +233,7 @@ pub enum DfNodeKind {
     HostPrint {
         arg: NodeId,
     },
-    /// Runtime host operation authorized by an explicit v2 capability.
+    /// Runtime host operation authorized by an explicit host capability.
     HostOp {
         op: HostOp,
         arg: NodeId,
@@ -438,7 +438,7 @@ pub fn lower_tlc(
         .expect("residual TLC effects must be handled before Dataflow Core")
 }
 
-/// Lower a TLC module under an explicit v2 host grant set.
+/// Lower a TLC module under an explicit host grant set.
 pub fn lower_tlc_with_host_grants(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],
@@ -549,7 +549,7 @@ pub fn try_lower_tlc(
     )
 }
 
-/// Fallible lowering under an explicit v2 host grant set.
+/// Fallible lowering under an explicit host grant set.
 pub fn try_lower_tlc_with_host_grants(
     module: &zutai_tlc::TlcModule,
     hir_bindings: &[zutai_hir::Binding],

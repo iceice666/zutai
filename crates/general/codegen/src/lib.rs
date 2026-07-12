@@ -107,13 +107,13 @@ pub fn unsupported_entry_type_reason(module: &SsaModule) -> Option<&'static str>
 
     match &module.entry_ty {
         DfTy::Fun(_, _) => Some(
-            "compiled entry point returns a function, which cannot be shown by the v0 runtime ABI",
+            "compiled entry point returns a function, which cannot be shown by the runtime ABI",
         ),
         DfTy::Type => {
-            Some("compiled entry point returns Type, which cannot be shown by the v0 runtime ABI")
+            Some("compiled entry point returns Type, which cannot be shown by the runtime ABI")
         }
         ty if contains_opaque(&module.types, ty, &mut rustc_hash::FxHashSet::default()) => Some(
-            "compiled entry point returns an opaque host handle, which cannot be shown by the v0 runtime ABI",
+            "compiled entry point returns an opaque host handle, which cannot be shown by the runtime ABI",
         ),
         _ => None,
     }

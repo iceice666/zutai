@@ -1,8 +1,14 @@
-# Zutai Language Specifications
+# Zutai Language Specification
 
-The versioned language specifications live here:
+Zutai has one unversioned language specification:
 
-- [v0 stable specification](v0/00-index.md) — current source of truth for stable syntax and semantics.
-- [v1 deferred feature specification](v1/00-index.md) — post-v0 features; check the [language manual](../language-manual.md) and [archive](../ARCHIVED.md) before claiming implementation support.
+- [Language specification](00-index.md) — stable syntax and semantics for the
+  complete currently accepted surface.
+- [Grammar reference](02-lexical/grammar-reference.md) — compact parser-aligned
+  general-mode grammar.
+- [Language manual](../language-manual.md) — examples, usage guidance, and
+  per-feature support levels.
 
-Later-version design notes remain under `docs/v2_spec/` and `docs/v3_spec/` until they are promoted into this versioned spec tree.
+Implementation history belongs in [the archive](../ARCHIVED.md), and concrete
+open implementation work belongs in [the open-work ledger](../TBD.md). Future
+ideas do not receive speculative language-version numbers.

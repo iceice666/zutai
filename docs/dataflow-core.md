@@ -112,7 +112,7 @@ DfNodeKind:
 
   TyApp { poly: NodeId, ty_args: Vec<TyId> }
     Type application. Instantiates a TyLam at a call site.
-    Implicit in v0 source (no explicit type application syntax); inserted by TLC→DC
+    Implicit in source (there is no explicit type application syntax); inserted by TLC→DC
     lowering when a polymorphic GlobalRef is applied to arguments with inferred types.
 
   -- Data construction --

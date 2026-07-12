@@ -3,15 +3,13 @@
 ## Sections
 
 - [Zutai language manual](language-manual.md)
-- [versioned language specifications](spec/README.md)
-- [v0 language specification](spec/v0/00-index.md)
+- [language specification](spec/00-index.md)
+- [grammar reference](spec/02-lexical/grammar-reference.md)
 - [archived implementation status](ARCHIVED.md)
 - [open work ledger](TBD.md)
 - [TLC IR design](tlc-core.md)
 - [Dataflow Core IR design](dataflow-core.md)
-- [v1 deferred feature specification](spec/v1/00-index.md)
-- [v2 deferred feature specification](v2_spec/00-index.md)
-- [v3 feature specification](v3_spec/00-index.md)
+- [reserved language boundaries](design/reserved-language-boundaries.md)
 - [Standard library](stdlib/00-index.md)
 
 ## General-mode compiler layers

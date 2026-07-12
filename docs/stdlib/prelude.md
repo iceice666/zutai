@@ -43,7 +43,7 @@ as a fallback:
 - the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Data`,
   `DataField`, `Stream`, `StreamEff`, `Step`, and the non-conflicting
   combinators `empty`/`cons`/`singleton`/`unfold`/`take`/`drop`/`toList`/
-  `fromList`/`takeList` are in scope without an import (V3-G2);
+  `fromList`/`takeList` are in scope without an import;
 - the *function/list* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
   `id`/`const`/`compose`/`flip`/`not` and the `List` verbs `fold`/`foldl'`/`map`/
   `filter`/`length`/`append`/`uncons`/`head?`/`tail?` are in scope without an
@@ -77,7 +77,7 @@ Rationale:
 
 - The **types** are needed to write any signature; they are already intrinsic type
   constructors.
-- The **list verbs** are the advertised idiom (`docs/spec/v0/05-type-system/lists.md`):
+- The **list verbs** are the advertised idiom (`docs/spec/05-type-system/lists.md`):
   `items |> filter pred |> map f |> fold step init`. `fold` is the strict left fold.
 - `id` is the no-op combinator pipelines and higher-order functions reach for.
 - `print` is the one ambient host effect (`io.print`); it stays a
@@ -97,8 +97,8 @@ Excluded from the prelude on purpose:
   helpers.
 
 Naming note: the list-specialized `map`/`fold` may later become the
-witness-dispatched `Functor`/`Foldable` methods once v1 constraints land
-(`docs/spec/v1/03-constraints.md`). Stream methods with the same names remain
+witness-dispatched `Functor`/`Foldable` methods through the constraint system
+(`docs/spec/06-polymorphism/constraints.md`). Stream methods with the same names remain
 available via `import stdlib.stream`.
 
 ## Source-canonical, intrinsic-optimized
@@ -184,7 +184,7 @@ effect (fail / warn)        = control: propagate, abort, capability boundaries
 Result / Validation (data)  = collect, store, pattern-match, serialize
 ```
 
-`fail`/`warn` (`docs/spec/v1/05-effects.md`) is the *default, blessed* error idiom and is
+`fail`/`warn` (`docs/spec/08-effects/algebraic-effects.md`) is the *default, blessed* error idiom and is
 **not** mirrored by a prelude `Result`. But `Result` (and an accumulating `Validation`)
 earn an explicit `result` module, because effects do not cover:
 

@@ -12,7 +12,7 @@ fn count_too_low(src: &str) -> usize {
         .count()
 }
 
-// ── Spec examples (docs/v2_spec/04-universe-levels.md "Explicit Level Syntax") ──
+// ── Spec examples (docs/spec/05-type-system/universe-levels.md "Explicit Level Syntax") ──
 
 #[test]
 fn small_accepts_known_level() {
