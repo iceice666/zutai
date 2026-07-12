@@ -35,11 +35,12 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (filesystem-only stdlib and portable stdlib bundles);
-prior baseline updates: 2026-07-12 (dedicated `zutai-web` CLI),
-prior baseline updates: 2026-07-12 (unversioned stable syntax specification),
-prior baseline updates: 2026-07-12 (browser kernel and self-hosted website baseline),
-prior baseline updates: 2026-07-12 (LSP editor baseline),
+_Last updated: 2026-07-13 (cross-file `.zti` validation diagnostics);
+prior baseline updates: 2026-07-12 (filesystem-only stdlib and portable stdlib bundles),
+2026-07-12 (dedicated `zutai-web` CLI),
+2026-07-12 (unversioned stable syntax specification),
+2026-07-12 (browser kernel and self-hosted website baseline),
+2026-07-12 (LSP editor baseline),
 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
@@ -147,6 +148,14 @@ The 2026-07-12 editor tooling pass adds `zutai-cli lsp`: a stdio LSP service
 with incremental diagnostics, THIR-derived hover/signature types, and
 HIR-derived navigation, rename, symbols, completion, and parser quick fixes; see "Language Server
 Protocol editor baseline" below.
+The 2026-07-13 diagnostic-provenance pass keeps the immediate runtime AST
+source-free while adding an opt-in located `.zti` parse tree. Static type
+mismatches discovered when a `.zt` typed boundary consumes imported `.zti`
+data now retain the offending data span: `zutai-cli check` renders the `.zti`
+source, and the LSP publishes the diagnostic to the `.zti` URI with related
+information pointing back to the `.zt` boundary. Open-document overlays and
+open-root reanalysis make unsaved `.zti` fixes clear those diagnostics;
+pure runtime validators remain ordinary execution and are not run by `check`.
 The same 2026-07-12 browser pass adds an interpreter-backed WebAssembly kernel,
 typed browser/HTML/CSS stdlib modules, deterministic prerendered bundles,
 the dedicated `zutai-web build` / `serve` app (also exposed through the

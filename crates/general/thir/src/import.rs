@@ -9,6 +9,7 @@
 
 use crate::ir::FixedWidth;
 use zutai_hir::HirImportSource;
+use zutai_syntax::Span;
 use zutai_syntax::posit::PositSpec;
 
 /// Key identifying a resolved import within a single file's analysis.
@@ -16,6 +17,37 @@ use zutai_syntax::posit::PositSpec;
 /// Equal import sources resolve to the same module, so the source itself is the
 /// natural key.  It is already the payload of [`crate::ThirExprKind::Import`].
 pub type ImportKey = HirImportSource;
+
+/// Source provenance for a structural type derived from an imported `.zti`
+/// value. The semantic layer builds this tree while parsing immediate data;
+/// THIR consumes it without performing filesystem access.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedProvenance {
+    pub ty: ImportedType,
+    pub span: Span,
+    pub name_span: Option<Span>,
+    pub children: ImportedProvenanceChildren,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportedProvenanceChildren {
+    Scalar,
+    Record(Vec<ImportedFieldProvenance>),
+    List(Vec<ImportedProvenance>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedFieldProvenance {
+    pub name: String,
+    pub value: ImportedProvenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedTypeOrigin {
+    pub source: ImportKey,
+    pub span: Span,
+    pub name_span: Option<Span>,
+}
 
 /// Structural type of an imported module's value, independent of THIR's
 /// internal type arena.

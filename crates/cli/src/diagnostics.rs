@@ -15,6 +15,36 @@ pub(crate) fn print_semantic_errors(
             eprintln!("import error: {}", format_import_diagnostic(import));
             continue;
         }
+        if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &err.kind
+            && let zutai_thir::ThirDiagnosticKind::ImportedDataTypeMismatch {
+                expected,
+                found,
+                origin,
+            } = &thir.kind
+            && let zutai_hir::HirImportSource::String(relative) = &origin.source
+        {
+            let imported_path = Path::new(path)
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(relative);
+            if let Ok(imported_contents) = std::fs::read_to_string(&imported_path) {
+                let source_span = origin.span;
+                let imported_path = imported_path.to_string_lossy();
+                eprintln!(
+                    "{:?}",
+                    miette::Report::new(ZtSemanticDiagnostic::new(
+                        &imported_path,
+                        &imported_contents,
+                        format!(
+                            "type mismatch in imported data: expected {expected}, found {found} (required by {path})"
+                        ),
+                        source_span.start,
+                        source_span.end,
+                    ))
+                );
+                continue;
+            }
+        }
         match zutai_eval::describe_semantic_diagnostic(err) {
             Some((message, start, end)) => eprintln!(
                 "{:?}",

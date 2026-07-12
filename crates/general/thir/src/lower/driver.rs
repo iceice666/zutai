@@ -4,10 +4,13 @@ impl<'hir> Lowerer<'hir> {
     pub(in crate::lower) fn new(
         hir: &'hir HirFile,
         imports: FxHashMap<ImportKey, ImportedType>,
+        import_provenance: FxHashMap<ImportKey, ImportedProvenance>,
     ) -> Self {
         let mut lowerer = Self {
             hir,
             imports,
+            import_provenance,
+            imported_type_origins: FxHashMap::default(),
             decl_arena: Arena::new(),
             expr_arena: Arena::new(),
             pat_arena: Arena::new(),

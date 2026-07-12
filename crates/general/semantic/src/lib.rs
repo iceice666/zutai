@@ -820,6 +820,7 @@ pub(crate) fn analyze_inner(
                 zutai_thir::ThirLowerOptions {
                     run_passes: options.run_thir_passes,
                     imports: resolved.types,
+                    import_provenance: resolved.provenance,
                     type_eval_fuel: None,
                 },
             );
@@ -1418,6 +1419,84 @@ mod tests {
             analysis.diagnostics
         );
         assert_eq!(analysis.import_modules.len(), 1);
+    }
+
+    #[test]
+    fn imported_data_type_mismatch_retains_zti_value_span() {
+        let a = "{\n  host = \"localhost\";\n  port = \"wrong\";\n}\n";
+        let sources = BTreeMap::from([
+            (
+                "C.zt".to_string(),
+                "b ::= import \"B.zt\";\na ::= import \"A.zti\";\nchecked :: b.Config = a;\nchecked\n"
+                    .to_string(),
+            ),
+            (
+                "B.zt".to_string(),
+                "Config :: type { host : Text; port : Int; };\n{ Config = Config; }\n"
+                    .to_string(),
+            ),
+            ("A.zti".to_string(), a.to_string()),
+        ]);
+
+        let analysis = analyze_sources("C.zt", &sources, AnalysisOptions::default()).unwrap();
+        let origin = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                SemanticDiagnosticKind::Thir(zutai_thir::ThirDiagnostic {
+                    kind:
+                        zutai_thir::ThirDiagnosticKind::ImportedDataTypeMismatch {
+                            expected,
+                            found,
+                            origin,
+                        },
+                    ..
+                }) if expected == "Int" && found == "Text" => Some(origin),
+                _ => None,
+            })
+            .expect("expected imported-data mismatch");
+        assert_eq!(
+            &a[origin.span.start as usize..origin.span.end as usize],
+            "\"wrong\""
+        );
+        assert!(matches!(
+            &origin.source,
+            zutai_hir::HirImportSource::String(path) if path == "A.zti"
+        ));
+    }
+
+    #[test]
+    fn heterogeneous_imported_list_checks_each_item_against_context() {
+        let a = "{ ports = [1; \"wrong\";]; }";
+        let sources = BTreeMap::from([
+            (
+                "C.zt".to_string(),
+                "b ::= import \"B.zt\";\na ::= import \"A.zti\";\nchecked :: b.Config = a;\nchecked\n"
+                    .to_string(),
+            ),
+            (
+                "B.zt".to_string(),
+                "Config :: type { ports : List Int; };\n{ Config = Config; }\n".to_string(),
+            ),
+            ("A.zti".to_string(), a.to_string()),
+        ]);
+
+        let analysis = analyze_sources("C.zt", &sources, AnalysisOptions::default()).unwrap();
+        let origin = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                SemanticDiagnosticKind::Thir(zutai_thir::ThirDiagnostic {
+                    kind: zutai_thir::ThirDiagnosticKind::ImportedDataTypeMismatch { origin, .. },
+                    ..
+                }) => Some(origin),
+                _ => None,
+            })
+            .expect("expected heterogeneous-list mismatch");
+        assert_eq!(
+            &a[origin.span.start as usize..origin.span.end as usize],
+            "\"wrong\""
+        );
     }
 
     #[test]

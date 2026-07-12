@@ -323,6 +323,38 @@ fn test_parse_duplicate_field_names_error() {
 }
 
 #[test]
+fn located_parse_tracks_nested_value_and_array_item_spans() {
+    let source = "{\n  server = { port = \"wrong\"; };\n  items = [1; \"bad\";];\n}";
+    let mut input = source;
+    let located = crate::parser::parse_located(&mut input).unwrap();
+    let server = located
+        .fields
+        .iter()
+        .find(|field| field.field_name == "server")
+        .unwrap();
+    let zutai_types::LocatedChildren::Block(server_fields) = &server.value.children else {
+        panic!("server should be a located block");
+    };
+    let port = server_fields
+        .iter()
+        .find(|field| field.field_name == "port")
+        .unwrap();
+    assert_eq!(
+        &source[port.value.span.start..port.value.span.end],
+        "\"wrong\""
+    );
+    let items = located
+        .fields
+        .iter()
+        .find(|field| field.field_name == "items")
+        .unwrap();
+    let zutai_types::LocatedChildren::Array(values) = &items.value.children else {
+        panic!("items should be a located array");
+    };
+    assert_eq!(&source[values[1].span.start..values[1].span.end], "\"bad\"");
+}
+
+#[test]
 fn test_parse_hyphenated_field_name_error() {
     let mut input = "{bad-name = 1;}";
     assert!(parse(&mut input).is_err());

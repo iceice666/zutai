@@ -8,7 +8,7 @@ use zutai_hir::{
 use zutai_syntax::Span;
 
 use crate::diagnostic::{ThirDiagnostic, ThirDiagnosticKind};
-use crate::import::{ImportKey, ImportedType};
+use crate::import::{ImportKey, ImportedProvenance, ImportedType, ImportedTypeOrigin};
 use crate::ir::{
     EffectOp, EffectRow, Kind, RowTail, ThirDecl, ThirDeclId, ThirDeclKind, ThirExpr, ThirExprId,
     ThirExprKind, ThirFile, ThirPat, ThirPatId, Type, TypeId, TypeKind, TypeRecordField,
@@ -48,6 +48,9 @@ pub struct ThirLowerOptions {
     /// layer (which owns filesystem access); empty when lowering with no module
     /// context, in which case every `import` becomes an unsupported `Error` node.
     pub imports: FxHashMap<ImportKey, ImportedType>,
+    /// Source trees for `.zti` imports. `.zt` imports intentionally have no
+    /// immediate-data provenance.
+    pub import_provenance: FxHashMap<ImportKey, ImportedProvenance>,
     /// Override the type-level alias expansion fuel budget.  `None` uses the
     /// default (10 000 steps).  Set to a small value in tests to trigger the
     /// `TypeLevelEvalLimitExceeded` diagnostic deterministically.
@@ -59,6 +62,7 @@ impl Default for ThirLowerOptions {
         Self {
             run_passes: true,
             imports: FxHashMap::default(),
+            import_provenance: FxHashMap::default(),
             type_eval_fuel: None,
         }
     }
@@ -72,9 +76,10 @@ pub fn lower_hir_with_options(file: &zutai_hir::HirFile, options: ThirLowerOptio
     let ThirLowerOptions {
         run_passes,
         imports,
+        import_provenance,
         type_eval_fuel,
     } = options;
-    let mut lowerer = Lowerer::new(file, imports);
+    let mut lowerer = Lowerer::new(file, imports, import_provenance);
     if let Some(fuel) = type_eval_fuel {
         lowerer.type_eval_fuel = fuel;
     }
@@ -107,6 +112,8 @@ enum RowSolution {
 struct Lowerer<'hir> {
     hir: &'hir HirFile,
     imports: FxHashMap<ImportKey, ImportedType>,
+    import_provenance: FxHashMap<ImportKey, ImportedProvenance>,
+    imported_type_origins: FxHashMap<TypeId, ImportedTypeOrigin>,
     decl_arena: Arena<ThirDecl>,
     expr_arena: Arena<ThirExpr>,
     pat_arena: Arena<ThirPat>,

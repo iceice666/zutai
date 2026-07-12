@@ -30,10 +30,16 @@ impl<'hir> Lowerer<'hir> {
 
             self.import_tyvar_cache.clear();
             self.import_rowvar_cache.clear();
+            let provenance = self.import_provenance.get(source).cloned();
             // Imported parametric constructors are defined here (once); the later
             // re-intern when the `Import` expr is lowered must not redefine them.
             self.current_import_decl = Some(*decl_id);
-            let ty = self.intern_imported_type_with_source(&desc, Some(source), decl.span);
+            let ty = self.intern_imported_type_with_source(
+                &desc,
+                Some(source),
+                decl.span,
+                provenance.as_ref(),
+            );
             if !self.import_rowvar_cache.is_empty() {
                 self.import_rowvar_caches
                     .insert(source.clone(), self.import_rowvar_cache.clone());
@@ -52,7 +58,8 @@ impl<'hir> Lowerer<'hir> {
             }
 
             if let ImportedType::Type(inner) = desc {
-                let denotation = self.intern_imported_type_with_source(&inner, None, decl.span);
+                let denotation =
+                    self.intern_imported_type_with_source(&inner, None, decl.span, None);
                 self.aliases.insert(decl.binding, denotation);
             }
         }

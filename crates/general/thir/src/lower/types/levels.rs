@@ -443,7 +443,7 @@ mod tests {
                 ))),
             },
         );
-        let mut lowerer = Lowerer::new(&hir.file, FxHashMap::default());
+        let mut lowerer = Lowerer::new(&hir.file, FxHashMap::default(), FxHashMap::default());
         let level = lowerer.fresh_level_meta();
 
         assert!(!lowerer.constrain_level_leq(

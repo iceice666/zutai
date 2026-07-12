@@ -31,6 +31,45 @@ pub enum Value {
     Block(Block),
 }
 
+/// Byte offsets into the original `.zti` source.
+///
+/// Immediate values intentionally remain source-free so their serde shape and
+/// runtime representation stay stable. Located parsing returns this parallel
+/// tree only to tools that need source attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedBlock {
+    pub value: Block,
+    pub span: ByteSpan,
+    pub fields: Vec<LocatedPair>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedPair {
+    pub field_name: String,
+    pub name_span: ByteSpan,
+    pub value: LocatedValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedValue {
+    pub value: Value,
+    pub span: ByteSpan,
+    pub children: LocatedChildren,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LocatedChildren {
+    Scalar,
+    Array(Vec<LocatedValue>),
+    Block(Vec<LocatedPair>),
+}
+
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use super::*;

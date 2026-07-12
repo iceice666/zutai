@@ -1,4 +1,6 @@
-pub use zutai_types::{Block, Pair, Value};
+pub use zutai_types::{
+    Block, ByteSpan, LocatedBlock, LocatedChildren, LocatedPair, LocatedValue, Pair, Value,
+};
 
 #[cfg(not(any(feature = "syntax", feature = "simd")))]
 compile_error!("zutai-im: enable at least one of the `syntax` or `simd` features");
@@ -38,6 +40,21 @@ pub fn parse_syntax(input: &str) -> Result<Block, Error> {
         return Err(Error::TrailingData);
     }
     Ok(b)
+}
+
+/// Parse immediate data together with a parallel byte-span tree for tooling.
+///
+/// The located path deliberately uses the reference syntax parser. Runtime
+/// callers continue through the selected high-throughput backend via `parse`.
+#[cfg(feature = "syntax")]
+pub fn parse_located(input: &str) -> Result<LocatedBlock, Error> {
+    let mut s = input;
+    let block =
+        zutai_im_syntax::parser::parse_located(&mut s).map_err(|e| Error::Syntax(e.to_string()))?;
+    if !s.trim().is_empty() {
+        return Err(Error::TrailingData);
+    }
+    Ok(block)
 }
 
 #[cfg(feature = "simd")]

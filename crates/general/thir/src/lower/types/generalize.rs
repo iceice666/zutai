@@ -1,4 +1,5 @@
 use super::*;
+use crate::import::ImportedTypeOrigin;
 
 impl<'hir> Lowerer<'hir> {
     // ── HM let-generalization ────────────────────────────────────────────────
@@ -304,7 +305,74 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    fn imported_mismatch_origin(
+        &mut self,
+        expected: TypeId,
+        found: TypeId,
+        seen: &mut FxHashSet<(TypeId, TypeId)>,
+    ) -> Option<(ImportedTypeOrigin, TypeId, TypeId)> {
+        let expected = self.resolve(expected);
+        let found = self.resolve(found);
+        if !seen.insert((expected, found)) {
+            return None;
+        }
+        let expected_span = self.type_arena[expected.0 as usize].span;
+        let found_span = self.type_arena[found.0 as usize].span;
+        let expected = self.resolve_alias(expected, &mut FxHashSet::default(), expected_span);
+        let found = self.resolve_alias(found, &mut FxHashSet::default(), found_span);
+        let expected_kind = self.type_arena[expected.0 as usize].kind.clone();
+        let found_kind = self.type_arena[found.0 as usize].kind.clone();
+        if expected_kind == found_kind {
+            return None;
+        }
+        match (expected_kind, found_kind) {
+            (TypeKind::Record(expected_fields, _), TypeKind::Record(found_fields, _)) => {
+                for expected_field in expected_fields {
+                    let Some(found_field) = found_fields
+                        .iter()
+                        .find(|field| field.name == expected_field.name)
+                    else {
+                        continue;
+                    };
+                    if let Some(origin) =
+                        self.imported_mismatch_origin(expected_field.ty, found_field.ty, seen)
+                    {
+                        return Some(origin);
+                    }
+                }
+            }
+            (TypeKind::List(expected), TypeKind::List(found))
+            | (TypeKind::Optional(expected), TypeKind::Optional(found))
+            | (TypeKind::Maybe(expected), TypeKind::Maybe(found)) => {
+                if let Some(origin) = self.imported_mismatch_origin(expected, found, seen) {
+                    return Some(origin);
+                }
+            }
+            _ => {}
+        }
+        self.imported_type_origins
+            .get(&found)
+            .or_else(|| self.imported_type_origins.get(&expected))
+            .cloned()
+            .map(|origin| (origin, expected, found))
+    }
+
     pub(in crate::lower) fn type_mismatch(&mut self, expected: TypeId, found: TypeId, span: Span) {
+        if let Some((origin, specific_expected, specific_found)) =
+            self.imported_mismatch_origin(expected, found, &mut FxHashSet::default())
+        {
+            let expected = self.type_name(specific_expected);
+            let found = self.type_name(specific_found);
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::ImportedDataTypeMismatch {
+                    expected,
+                    found,
+                    origin,
+                },
+                span,
+            });
+            return;
+        }
         let expected = self.type_name(expected);
         let found = self.type_name(found);
         self.diagnostics.push(ThirDiagnostic {

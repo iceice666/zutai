@@ -34,6 +34,40 @@ fn write_tmp(name: &str, content: &str) -> String {
     std::fs::write(&path, content).unwrap();
     path.to_str().unwrap().to_string()
 }
+
+#[test]
+fn check_reports_imported_data_mismatch_at_zti_value() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "zutai-cli-imported-data-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("B.zt"),
+        "Config :: type { port : Int; };\n{ Config = Config; }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("A.zti"), "{\n  port = \"wrong\";\n}\n").unwrap();
+    let entry = dir.join("C.zt");
+    std::fs::write(
+        &entry,
+        "b ::= import \"B.zt\";\na ::= import \"A.zti\";\nchecked :: b.Config = a;\nchecked\n",
+    )
+    .unwrap();
+
+    cli()
+        .arg("check")
+        .arg(&entry)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("expected Int, found Text"))
+        .stderr(predicate::str::contains("A.zti"))
+        .stderr(predicate::str::contains("\"wrong\""));
+}
 fn general_fixture(name: &str) -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../general/fixtures/valid")

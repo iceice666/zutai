@@ -1,5 +1,7 @@
 use zutai_syntax::Span;
 
+use crate::import::ImportedTypeOrigin;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThirDiagnostic {
     pub kind: ThirDiagnosticKind,
@@ -22,6 +24,11 @@ pub enum ThirDiagnosticKind {
     TypeMismatch {
         expected: String,
         found: String,
+    },
+    ImportedDataTypeMismatch {
+        expected: String,
+        found: String,
+        origin: ImportedTypeOrigin,
     },
     ExpectedFunction {
         found: String,

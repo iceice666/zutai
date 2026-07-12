@@ -23,7 +23,8 @@ use std::rc::Rc;
 use zutai_hir::{BindingId, HirExprKind, HirFile, HirImportSource};
 use zutai_syntax::Span;
 use zutai_thir::{
-    ImportKey, ImportedField, ImportedRowTail, ImportedTupleItem, ImportedType, ThirDeclKind,
+    ImportKey, ImportedField, ImportedFieldProvenance, ImportedProvenance,
+    ImportedProvenanceChildren, ImportedRowTail, ImportedTupleItem, ImportedType, ThirDeclKind,
     ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern,
 };
 
@@ -261,6 +262,7 @@ pub(crate) fn path_to_bundle_key(path: &Path) -> String {
 pub(crate) struct ResolvedImports {
     /// Structural types, keyed by import source — fed into THIR lowering.
     pub types: FxHashMap<ImportKey, ImportedType>,
+    pub provenance: FxHashMap<ImportKey, ImportedProvenance>,
     /// Parsed `.zti` values, keyed by import source — consumed by the evaluator.
     pub values: FxHashMap<ImportKey, zutai_im::Value>,
     /// Analyzed `.zt` sub-modules, keyed by import source — evaluated recursively.
@@ -365,6 +367,7 @@ enum Kind {
 struct Resolver<'a> {
     base: Option<&'a Path>,
     types: FxHashMap<ImportKey, ImportedType>,
+    provenance: FxHashMap<ImportKey, ImportedProvenance>,
     values: FxHashMap<ImportKey, zutai_im::Value>,
     modules: FxHashMap<ImportKey, Rc<Analysis>>,
     witnesses: Vec<WitnessExport>,
@@ -381,6 +384,7 @@ pub(crate) fn resolve_imports(
     let mut resolver = Resolver {
         base,
         types: FxHashMap::default(),
+        provenance: FxHashMap::default(),
         values: FxHashMap::default(),
         modules: FxHashMap::default(),
         witnesses: Vec::new(),
@@ -401,6 +405,7 @@ pub(crate) fn resolve_imports(
 
     ResolvedImports {
         types: resolver.types,
+        provenance: resolver.provenance,
         values: resolver.values,
         modules: resolver.modules,
         witnesses: resolver.witnesses,
@@ -462,11 +467,13 @@ impl Resolver<'_> {
     }
 
     fn resolve_zti(&mut self, source: &HirImportSource, contents: &str, rel: &str, span: Span) {
-        match zutai_im::parse(contents) {
+        match zutai_im::parse_located(contents) {
             Ok(block) => {
-                let value = zutai_im::Value::Block(block);
+                let provenance = block_provenance(&block);
+                let value = zutai_im::Value::Block(block.value);
                 let ty = imported_type(&value);
                 self.types.insert(source.clone(), ty);
+                self.provenance.insert(source.clone(), provenance);
                 self.values.insert(source.clone(), value);
             }
             Err(err) => self.diag(
@@ -924,6 +931,59 @@ fn imported_type(value: &zutai_im::Value) -> ImportedType {
                 .collect(),
         ),
         Value::Array(items) => ImportedType::List(Box::new(array_element_type(items))),
+    }
+}
+
+fn immediate_span(span: zutai_im::ByteSpan) -> Span {
+    Span::new(span.start, span.end)
+}
+
+fn block_provenance(block: &zutai_im::LocatedBlock) -> ImportedProvenance {
+    let value = zutai_im::Value::Block(block.value.clone());
+    ImportedProvenance {
+        ty: imported_type(&value),
+        span: immediate_span(block.span),
+        name_span: None,
+        children: ImportedProvenanceChildren::Record(
+            block
+                .fields
+                .iter()
+                .map(|field| ImportedFieldProvenance {
+                    name: field.field_name.clone(),
+                    value: value_provenance(&field.value, Some(field.name_span)),
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn value_provenance(
+    value: &zutai_im::LocatedValue,
+    name_span: Option<zutai_im::ByteSpan>,
+) -> ImportedProvenance {
+    let children = match &value.children {
+        zutai_im::LocatedChildren::Scalar => ImportedProvenanceChildren::Scalar,
+        zutai_im::LocatedChildren::Array(items) => ImportedProvenanceChildren::List(
+            items
+                .iter()
+                .map(|item| value_provenance(item, None))
+                .collect(),
+        ),
+        zutai_im::LocatedChildren::Block(fields) => ImportedProvenanceChildren::Record(
+            fields
+                .iter()
+                .map(|field| ImportedFieldProvenance {
+                    name: field.field_name.clone(),
+                    value: value_provenance(&field.value, Some(field.name_span)),
+                })
+                .collect(),
+        ),
+    };
+    ImportedProvenance {
+        ty: imported_type(&value.value),
+        span: immediate_span(value.span),
+        name_span: name_span.map(immediate_span),
+        children,
     }
 }
 

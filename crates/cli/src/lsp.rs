@@ -4,7 +4,7 @@
 //! delegated to `zutai-semantic`, keeping the editor and CLI on the same
 //! parse → HIR → THIR path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 
@@ -31,6 +31,7 @@ pub(crate) fn run() -> io::Result<()> {
 #[derive(Default)]
 struct Server {
     documents: HashMap<String, Document>,
+    published_diagnostics: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -97,18 +98,18 @@ impl Server {
             "textDocument/didOpen" => {
                 if let Some((uri, document)) = document_text(&params) {
                     self.documents.insert(uri.clone(), document);
-                    self.publish_diagnostics(&uri, output)?;
+                    self.publish_all_diagnostics(output)?;
                 }
             }
             "textDocument/didChange" => {
-                if let Some(uri) = self.apply_changes(&params) {
-                    self.publish_diagnostics(&uri, output)?;
+                if self.apply_changes(&params).is_some() {
+                    self.publish_all_diagnostics(output)?;
                 }
             }
             "textDocument/didClose" => {
                 if let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) {
                     self.documents.remove(uri);
-                    publish(output, uri, None, Vec::new())?;
+                    self.publish_all_diagnostics(output)?;
                 }
             }
             "textDocument/hover" => {
@@ -208,21 +209,142 @@ impl Server {
         Ok(false)
     }
 
-    fn publish_diagnostics(&self, uri: &str, output: &mut impl Write) -> io::Result<()> {
-        let Some(source) = self.source_for(uri) else {
-            return publish(output, uri, None, Vec::new());
+    fn publish_all_diagnostics(&mut self, output: &mut impl Write) -> io::Result<()> {
+        let roots: Vec<String> = self
+            .documents
+            .keys()
+            .filter(|uri| {
+                file_path(uri).and_then(|path| path.extension()?.to_str().map(str::to_owned))
+                    == Some("zt".to_string())
+            })
+            .cloned()
+            .collect();
+        let mut routed: HashMap<String, Vec<Value>> = HashMap::new();
+        for root_uri in roots {
+            let Some(root_source) = self.source_for(&root_uri) else {
+                continue;
+            };
+            let Some(analysis) = self.analyze_with_overlays(&root_uri, &root_source) else {
+                continue;
+            };
+            for (uri, diagnostic) in self.routed_diagnostics(&root_uri, &root_source, &analysis) {
+                routed.entry(uri).or_default().push(diagnostic);
+            }
+        }
+
+        let routed_targets: HashSet<String> = routed.keys().cloned().collect();
+        let mut targets: HashSet<String> = self.published_diagnostics.clone();
+        targets.extend(self.documents.keys().cloned());
+        targets.extend(routed.keys().cloned());
+        for uri in &targets {
+            publish(
+                output,
+                uri,
+                self.documents
+                    .get(uri)
+                    .and_then(|document| document.version),
+                routed.remove(uri).unwrap_or_default(),
+            )?;
+        }
+        self.published_diagnostics = targets
+            .into_iter()
+            .filter(|uri| self.documents.contains_key(uri) || routed_targets.contains(uri))
+            .collect();
+        Ok(())
+    }
+
+    fn analyze_with_overlays(
+        &self,
+        root_uri: &str,
+        root_source: &str,
+    ) -> Option<zutai_semantic::Analysis> {
+        let root_path = file_path(root_uri)?;
+        let root_dir = root_path.parent()?;
+        let Some(mut recorded) = zutai_semantic::analyze_path_recording(&root_path).ok() else {
+            return analyze(root_source, root_uri);
         };
-        let diagnostics = analyze(&source, uri)
-            .map(|analysis| diagnostics(&source, &analysis))
-            .unwrap_or_default();
-        publish(
-            output,
-            uri,
-            self.documents
-                .get(uri)
-                .and_then(|document| document.version),
-            diagnostics,
+        for (uri, document) in &self.documents {
+            let Some(path) = file_path(uri) else {
+                continue;
+            };
+            let Ok(relative) = path.strip_prefix(root_dir) else {
+                continue;
+            };
+            let key = relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            recorded.sources.insert(key, document.text.clone());
+        }
+        recorded
+            .sources
+            .insert(recorded.entry.clone(), root_source.to_string());
+        zutai_semantic::analyze_sources(
+            &recorded.entry,
+            &recorded.sources,
+            zutai_semantic::AnalysisOptions::default(),
         )
+        .ok()
+    }
+
+    fn routed_diagnostics(
+        &self,
+        root_uri: &str,
+        root_source: &str,
+        analysis: &zutai_semantic::Analysis,
+    ) -> Vec<(String, Value)> {
+        let mut output = Vec::new();
+        for diagnostic in &analysis.diagnostics {
+            if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &diagnostic.kind
+                && let zutai_thir::ThirDiagnosticKind::ImportedDataTypeMismatch {
+                    expected,
+                    found,
+                    origin,
+                } = &thir.kind
+                && let zutai_hir::HirImportSource::String(relative) = &origin.source
+                && let Some(root_path) = file_path(root_uri)
+            {
+                let path = root_path
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(""))
+                    .join(relative);
+                let path = std::fs::canonicalize(&path).unwrap_or(path);
+                let uri = self.uri_for_path(&path);
+                if let Some(source) = self.source_for(&uri) {
+                    output.push((
+                        uri.clone(),
+                        json!({
+                            "range": range(&source, origin.span.start as usize, origin.span.end as usize),
+                            "severity": 1,
+                            "source": "zutai",
+                            "message": format!("type mismatch: expected {expected}, found {found}"),
+                            "relatedInformation": [{
+                                "location": {
+                                    "uri": root_uri,
+                                    "range": range(root_source, thir.span.start as usize, thir.span.end as usize),
+                                },
+                                "message": "required by this typed boundary",
+                            }],
+                        }),
+                    ));
+                    continue;
+                }
+            }
+            output.push((
+                root_uri.to_string(),
+                diagnostic_value(root_source, diagnostic),
+            ));
+        }
+        output
+    }
+
+    fn uri_for_path(&self, path: &std::path::Path) -> String {
+        self.documents
+            .keys()
+            .find(|uri| file_path(uri).as_deref() == Some(path))
+            .cloned()
+            .unwrap_or_else(|| file_uri(path))
     }
 
     fn apply_changes(&mut self, params: &Value) -> Option<String> {
@@ -588,36 +710,41 @@ fn analyze(source: &str, uri: &str) -> Option<zutai_semantic::Analysis> {
     ))
 }
 
+#[cfg(test)]
 fn diagnostics(source: &str, analysis: &zutai_semantic::Analysis) -> Vec<Value> {
     analysis
         .diagnostics
         .iter()
-        .map(|diagnostic| match &diagnostic.kind {
-            zutai_semantic::SemanticDiagnosticKind::Parse(parse) => json!({
-                "range": range(source, parse.primary_span().start as usize, parse.primary_span().end as usize),
-                "severity": severity(parse.severity),
-                "code": parse.code,
-                "source": "zutai",
-                "message": parse.message,
-            }),
-            zutai_semantic::SemanticDiagnosticKind::Import(import) => json!({
-                "range": range(source, 0, 0),
+        .map(|diagnostic| diagnostic_value(source, diagnostic))
+        .collect()
+}
+
+fn diagnostic_value(source: &str, diagnostic: &zutai_semantic::SemanticDiagnostic) -> Value {
+    match &diagnostic.kind {
+        zutai_semantic::SemanticDiagnosticKind::Parse(parse) => json!({
+            "range": range(source, parse.primary_span().start as usize, parse.primary_span().end as usize),
+            "severity": severity(parse.severity),
+            "code": parse.code,
+            "source": "zutai",
+            "message": parse.message,
+        }),
+        zutai_semantic::SemanticDiagnosticKind::Import(import) => json!({
+            "range": range(source, 0, 0),
+            "severity": 1,
+            "source": "zutai",
+            "message": format_import_diagnostic(import),
+        }),
+        _ => {
+            let (message, start, end) = zutai_eval::describe_semantic_diagnostic(diagnostic)
+                .expect("HIR and THIR diagnostics always have a source span");
+            json!({
+                "range": range(source, start as usize, end as usize),
                 "severity": 1,
                 "source": "zutai",
-                "message": format_import_diagnostic(import),
-            }),
-            _ => {
-                let (message, start, end) = zutai_eval::describe_semantic_diagnostic(diagnostic)
-                    .expect("HIR and THIR diagnostics always have a source span");
-                json!({
-                    "range": range(source, start as usize, end as usize),
-                    "severity": 1,
-                    "source": "zutai",
-                    "message": message,
-                })
-            }
-        })
-        .collect()
+                "message": message,
+            })
+        }
+    }
 }
 
 /// Find the narrowest resolved value or type reference at an LSP byte offset.
@@ -1011,6 +1138,19 @@ fn file_path(uri: &str) -> Option<PathBuf> {
     Some(PathBuf::from(percent_decode(path)))
 }
 
+fn file_uri(path: &std::path::Path) -> String {
+    let mut encoded = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            use std::fmt::Write as _;
+            write!(encoded, "%{byte:02X}").expect("writing to String cannot fail");
+        }
+    }
+    encoded
+}
+
 fn percent_decode(input: &str) -> String {
     let mut output = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
@@ -1387,6 +1527,72 @@ mod tests {
     }
 
     #[test]
+    fn imported_zti_mismatch_is_published_to_data_uri_and_cleared_from_overlay() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "zutai-lsp-imported-data-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let b_path = dir.join("B.zt");
+        let a_path = dir.join("A.zti");
+        let c_path = dir.join("C.zt");
+        let b_source = "Config :: type { port : Int; };\n{ Config = Config; }\n";
+        let bad_a = "{\n  port = \"wrong\";\n}\n";
+        let good_a = "{\n  port = 8080;\n}\n";
+        let c_source =
+            "b ::= import \"B.zt\";\na ::= import \"A.zti\";\nchecked :: b.Config = a;\nchecked\n";
+        std::fs::write(&b_path, b_source).unwrap();
+        std::fs::write(&a_path, bad_a).unwrap();
+        std::fs::write(&c_path, c_source).unwrap();
+        let a_uri = format!("file://{}", a_path.display());
+        let c_uri = format!("file://{}", c_path.display());
+
+        let mut server = Server::default();
+        let mut output = Vec::new();
+        server
+            .handle(
+                json!({ "method": "textDocument/didOpen", "params": { "textDocument": {
+                    "uri": c_uri, "version": 1, "text": c_source
+                } } }),
+                &mut output,
+            )
+            .unwrap();
+        server
+            .handle(
+                json!({ "method": "textDocument/didOpen", "params": { "textDocument": {
+                    "uri": a_uri, "version": 1, "text": bad_a
+                } } }),
+                &mut output,
+            )
+            .unwrap();
+        let published = String::from_utf8_lossy(&output);
+        assert!(published.contains(&a_uri), "{published}");
+        assert!(
+            published.contains("expected Int, found Text"),
+            "{published}"
+        );
+        assert!(published.contains("relatedInformation"), "{published}");
+
+        output.clear();
+        server
+            .handle(
+                json!({ "method": "textDocument/didChange", "params": {
+                    "textDocument": { "uri": a_uri, "version": 2 },
+                    "contentChanges": [{ "text": good_a }]
+                } }),
+                &mut output,
+            )
+            .unwrap();
+        let cleared = String::from_utf8_lossy(&output);
+        assert!(cleared.contains(&a_uri), "{cleared}");
+        assert!(cleared.contains("\"diagnostics\":[]"), "{cleared}");
+    }
+
+    #[test]
     fn framing_round_trip() {
         let input = b"Content-Length: 17\r\n\r\n{\"method\":\"ping\"}";
         assert_eq!(
@@ -1405,5 +1611,8 @@ mod tests {
             file_path("file://localhost/tmp/example.zt"),
             Some(PathBuf::from("/tmp/example.zt"))
         );
+        let spaced = PathBuf::from("/tmp/Zutai data/A.zti");
+        assert_eq!(file_uri(&spaced), "file:///tmp/Zutai%20data/A.zti");
+        assert_eq!(file_path(&file_uri(&spaced)), Some(spaced));
     }
 }

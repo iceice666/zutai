@@ -58,6 +58,9 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         TypeMismatch { expected, found } => {
             format!("type mismatch: expected {expected}, found {found}")
         }
+        ImportedDataTypeMismatch {
+            expected, found, ..
+        } => format!("type mismatch in imported data: expected {expected}, found {found}"),
         UnsupportedFeature { feature } => {
             format!("unsupported feature: {feature}")
         }

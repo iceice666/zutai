@@ -39,7 +39,11 @@ cfg.server.port
 and output. It supports `.zt` diagnostics, hover types, go-to-definition,
 same-document references and rename, document symbols, identifier completion,
 signature help, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
-and resolves relative imports from the edited file's directory. Rename and
+and resolves relative imports from the edited file's directory. When an open
+`.zt` root checks imported `.zti` data against a type and finds a structural
+mismatch, the diagnostic is published on the offending `.zti` value with the
+typed `.zt` boundary as related information; unsaved open `.zti` changes are
+included when dependent roots are reanalyzed. Rename and
 navigation deliberately decline builtins and ambient-prelude bindings because
 they have no source location in the edited file. The server never executes a
 program or performs native compilation while editing.
@@ -497,6 +501,13 @@ Implementations should report deterministic, source-located errors. User-visible
 - unresolvable import cycle
 - type-level evaluation limit
 - serialization boundary violation
+
+For static imported-data mismatches, `zutai-cli check root.zt` attributes the
+primary diagnostic to the offending value in the imported `.zti` file and
+retains the `.zt` annotation or call site as the validation boundary. Missing
+fields point at the containing data record because no source token exists for
+the absent field. `check` does not execute pure validator functions; semantic
+range/format validation remains ordinary program evaluation and errors-as-data.
 
 Common parse-diagnostic mistakes should receive specific messages when the parser can identify them:
 

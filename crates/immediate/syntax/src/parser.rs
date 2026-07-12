@@ -6,7 +6,9 @@ use winnow::ascii::digit1;
 use winnow::combinator::{alt, delimited, eof, fail, not, opt, peek, preceded, repeat, terminated};
 use winnow::token::{one_of, take, take_till, take_while};
 
-use zutai_types::{Block, Pair, Value};
+use zutai_types::{
+    Block, ByteSpan, LocatedBlock, LocatedChildren, LocatedPair, LocatedValue, Pair, Value,
+};
 
 pub fn parse(input: &mut &str) -> Result<Block> {
     let block = (ws, parse_block, ws, eof)
@@ -14,6 +16,140 @@ pub fn parse(input: &mut &str) -> Result<Block> {
         .parse_next(input)?;
 
     Ok(block)
+}
+
+pub fn parse_located(input: &mut &str) -> Result<LocatedBlock> {
+    let mut parser = LocatedParser {
+        input,
+        source_len: input.len(),
+    };
+    ws(&mut parser.input)?;
+    let block = parser.parse_block()?;
+    ws(&mut parser.input)?;
+    eof.parse_next(&mut parser.input)?;
+    *input = parser.input;
+    Ok(block)
+}
+
+struct LocatedParser<'a> {
+    input: &'a str,
+    source_len: usize,
+}
+
+impl LocatedParser<'_> {
+    fn offset(&self) -> usize {
+        self.source_len - self.input.len()
+    }
+
+    fn parse_block(&mut self) -> Result<LocatedBlock> {
+        let start = self.offset();
+        '{'.parse_next(&mut self.input)?;
+        let mut fields = Vec::new();
+        let mut seen = FxHashSet::default();
+        loop {
+            ws(&mut self.input)?;
+            if self.input.starts_with('}') {
+                '}'.parse_next(&mut self.input)?;
+                break;
+            }
+            let field = self.parse_pair()?;
+            if !seen.insert(field.field_name.clone()) {
+                fail.parse_next(&mut self.input)?;
+            }
+            fields.push(field);
+        }
+        let value = Block(
+            fields
+                .iter()
+                .map(|field: &LocatedPair| Pair {
+                    field_name: field.field_name.clone(),
+                    value: field.value.value.clone(),
+                })
+                .collect(),
+        );
+        Ok(LocatedBlock {
+            value,
+            span: ByteSpan {
+                start,
+                end: self.offset(),
+            },
+            fields,
+        })
+    }
+
+    fn parse_pair(&mut self) -> Result<LocatedPair> {
+        ws(&mut self.input)?;
+        let name_start = self.offset();
+        let field_name = parse_field_name(&mut self.input)?;
+        let name_span = ByteSpan {
+            start: name_start,
+            end: self.offset(),
+        };
+        ws(&mut self.input)?;
+        '='.parse_next(&mut self.input)?;
+        ws(&mut self.input)?;
+        let value = self.parse_value()?;
+        ws(&mut self.input)?;
+        ';'.parse_next(&mut self.input)?;
+        Ok(LocatedPair {
+            field_name,
+            name_span,
+            value,
+        })
+    }
+
+    fn parse_value(&mut self) -> Result<LocatedValue> {
+        let start = self.offset();
+        let (value, children) = match self.input.chars().next() {
+            Some('"') => (
+                Value::String(parse_string(&mut self.input)?),
+                LocatedChildren::Scalar,
+            ),
+            Some('#') => (
+                Value::Atom(parse_atom(&mut self.input)?),
+                LocatedChildren::Scalar,
+            ),
+            Some('[') => self.parse_array()?,
+            Some('{') => {
+                let block = self.parse_block()?;
+                (
+                    Value::Block(block.value),
+                    LocatedChildren::Block(block.fields),
+                )
+            }
+            Some('t') => (parse_true(&mut self.input)?, LocatedChildren::Scalar),
+            Some('f') => (parse_false(&mut self.input)?, LocatedChildren::Scalar),
+            Some('-' | '0'..='9') => (parse_number(&mut self.input)?, LocatedChildren::Scalar),
+            _ => fail.parse_next(&mut self.input)?,
+        };
+        Ok(LocatedValue {
+            value,
+            span: ByteSpan {
+                start,
+                end: self.offset(),
+            },
+            children,
+        })
+    }
+
+    fn parse_array(&mut self) -> Result<(Value, LocatedChildren)> {
+        '['.parse_next(&mut self.input)?;
+        let mut values = Vec::new();
+        loop {
+            ws(&mut self.input)?;
+            if self.input.starts_with(']') {
+                ']'.parse_next(&mut self.input)?;
+                break;
+            }
+            values.push(self.parse_value()?);
+            ws(&mut self.input)?;
+            ';'.parse_next(&mut self.input)?;
+        }
+        Ok((
+            Value::Array(values.iter().map(|value| value.value.clone()).collect()),
+            LocatedChildren::Array(values),
+        ))
+    }
 }
 
 fn ws(input: &mut &str) -> Result<()> {

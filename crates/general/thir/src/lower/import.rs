@@ -1,8 +1,11 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use zutai_hir::{BindingId, BindingKind, HirExprId, HirImportSource};
 use zutai_syntax::Span;
 
-use crate::import::{ImportedRowTail, ImportedTupleItem, ImportedType};
+use crate::import::{
+    ImportedProvenance, ImportedProvenanceChildren, ImportedRowTail, ImportedTupleItem,
+    ImportedType, ImportedTypeOrigin,
+};
 use crate::ir::{
     EffectOp, EffectRow, Kind, RowTail, ThirDecl, ThirDeclKind, ThirExpr, ThirExprId, ThirExprKind,
     Type, TypeId, TypeKind, TypeRecordField, TypeTupleItem,
@@ -11,6 +14,72 @@ use crate::ir::{
 use super::Lowerer;
 
 impl<'hir> Lowerer<'hir> {
+    pub(super) fn check_heterogeneous_import_lists(
+        &mut self,
+        source: &HirImportSource,
+        expected: TypeId,
+        boundary_span: Span,
+    ) {
+        let Some(provenance) = self.import_provenance.get(source).cloned() else {
+            return;
+        };
+        self.check_heterogeneous_lists_in_provenance(source, expected, &provenance, boundary_span);
+    }
+
+    fn check_heterogeneous_lists_in_provenance(
+        &mut self,
+        source: &HirImportSource,
+        expected: TypeId,
+        provenance: &ImportedProvenance,
+        boundary_span: Span,
+    ) {
+        let expected_span = self.type_arena[expected.0 as usize].span;
+        let expected = self.resolve_alias(expected, &mut FxHashSet::default(), expected_span);
+        let expected_kind = self.type_arena[expected.0 as usize].kind.clone();
+        match (&provenance.children, expected_kind) {
+            (ImportedProvenanceChildren::Record(fields), TypeKind::Record(expected_fields, _)) => {
+                for field in fields {
+                    if let Some(expected_field) = expected_fields
+                        .iter()
+                        .find(|candidate| candidate.name == field.name)
+                    {
+                        self.check_heterogeneous_lists_in_provenance(
+                            source,
+                            expected_field.ty,
+                            &field.value,
+                            boundary_span,
+                        );
+                    }
+                }
+            }
+            (ImportedProvenanceChildren::List(items), TypeKind::List(expected_item)) => {
+                if matches!(provenance.ty, ImportedType::List(ref item) if matches!(**item, ImportedType::Unknown))
+                {
+                    for item in items {
+                        let found = self.intern_imported_type_with_source(
+                            &item.ty,
+                            Some(source),
+                            boundary_span,
+                            Some(item),
+                        );
+                        if !self.type_matches(expected_item, found) {
+                            self.type_mismatch(expected_item, found, boundary_span);
+                        }
+                    }
+                }
+                for item in items {
+                    self.check_heterogeneous_lists_in_provenance(
+                        source,
+                        expected_item,
+                        item,
+                        boundary_span,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Lower an internal import node by looking up its pre-resolved type.
     ///
     /// Resolution (filesystem read + `.zti` parse + type derivation) happens in
@@ -26,13 +95,19 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         match self.imports.get(source).cloned() {
             Some(desc) => {
+                let provenance = self.import_provenance.get(source).cloned();
                 self.import_tyvar_cache.clear();
                 self.import_rowvar_cache = self
                     .import_rowvar_caches
                     .get(source)
                     .cloned()
                     .unwrap_or_default();
-                let ty = self.intern_imported_type_with_source(&desc, Some(source), span);
+                let ty = self.intern_imported_type_with_source(
+                    &desc,
+                    Some(source),
+                    span,
+                    provenance.as_ref(),
+                );
                 self.alloc_expr(ThirExpr {
                     source: id,
                     ty,
@@ -55,8 +130,9 @@ impl<'hir> Lowerer<'hir> {
         desc: &ImportedType,
         source: Option<&HirImportSource>,
         span: Span,
+        provenance: Option<&ImportedProvenance>,
     ) -> TypeId {
-        match desc {
+        let ty = match desc {
             ImportedType::Bool => self.bool_type(span),
             ImportedType::Int => self.int_type(span),
             ImportedType::Float => self.float_type(span),
@@ -72,18 +148,24 @@ impl<'hir> Lowerer<'hir> {
                 span,
             }),
             ImportedType::List(inner) => {
-                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
+                let item_provenance =
+                    provenance.and_then(|provenance| match &provenance.children {
+                        ImportedProvenanceChildren::List(items) => items.first(),
+                        _ => None,
+                    });
+                let inner_ty =
+                    self.intern_imported_type_with_source(inner, source, span, item_provenance);
                 self.alloc_type(Type {
                     kind: TypeKind::List(inner_ty),
                     span,
                 })
             }
             ImportedType::Optional(inner) => {
-                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
+                let inner_ty = self.intern_imported_type_with_source(inner, source, span, None);
                 self.optional_type(inner_ty, span)
             }
             ImportedType::Maybe(inner) => {
-                let inner_ty = self.intern_imported_type_with_source(inner, source, span);
+                let inner_ty = self.intern_imported_type_with_source(inner, source, span, None);
                 self.maybe_type(inner_ty, span)
             }
             ImportedType::Record(fields) => {
@@ -115,6 +197,16 @@ impl<'hir> Lowerer<'hir> {
                 // that every constructor in the record is declared.
                 let mut thir_fields = Vec::with_capacity(fields.len());
                 for field in fields {
+                    let field_provenance = provenance.and_then(|provenance| {
+                        let ImportedProvenanceChildren::Record(fields) = &provenance.children
+                        else {
+                            return None;
+                        };
+                        fields
+                            .iter()
+                            .find(|candidate| candidate.name == field.name)
+                            .map(|field| &field.value)
+                    });
                     let ty = if let ImportedType::Type(inner) = &field.ty {
                         match &**inner {
                             ImportedType::TypeCon { body, .. } => {
@@ -134,8 +226,12 @@ impl<'hir> Lowerer<'hir> {
                             // `serverLib.Server` path). Intern it and register it so
                             // annotation-position access recovers the concrete type.
                             _ => {
-                                let denotation =
-                                    self.intern_imported_type_with_source(inner, source, span);
+                                let denotation = self.intern_imported_type_with_source(
+                                    inner,
+                                    source,
+                                    span,
+                                    field_provenance,
+                                );
                                 if let Some(src) = source {
                                     self.import_type_denotations
                                         .insert((src.clone(), field.name.clone()), denotation);
@@ -144,7 +240,12 @@ impl<'hir> Lowerer<'hir> {
                             }
                         }
                     } else {
-                        self.intern_imported_type_with_source(&field.ty, source, span)
+                        self.intern_imported_type_with_source(
+                            &field.ty,
+                            source,
+                            span,
+                            field_provenance,
+                        )
                     };
                     thir_fields.push(TypeRecordField {
                         name: field.name.clone(),
@@ -162,7 +263,7 @@ impl<'hir> Lowerer<'hir> {
                 if let Some(src) = source {
                     self.register_imported_type_exports(src, types, span);
                 }
-                self.intern_imported_type_with_source(value, source, span)
+                self.intern_imported_type_with_source(value, source, span, provenance)
             }
             ImportedType::Tuple(items) => {
                 let items = items
@@ -170,11 +271,11 @@ impl<'hir> Lowerer<'hir> {
                     .map(|item| match item {
                         ImportedTupleItem::Named { name, ty } => TypeTupleItem::Named {
                             name: name.clone(),
-                            ty: self.intern_imported_type_with_source(ty, source, span),
+                            ty: self.intern_imported_type_with_source(ty, source, span, None),
                             span,
                         },
                         ImportedTupleItem::Positional(ty) => TypeTupleItem::Positional(
-                            self.intern_imported_type_with_source(ty, source, span),
+                            self.intern_imported_type_with_source(ty, source, span, None),
                         ),
                     })
                     .collect();
@@ -191,7 +292,7 @@ impl<'hir> Lowerer<'hir> {
                         payload: v
                             .payload
                             .as_deref()
-                            .map(|p| self.intern_imported_type_with_source(p, source, span)),
+                            .map(|p| self.intern_imported_type_with_source(p, source, span, None)),
                         span,
                     })
                     .collect();
@@ -201,21 +302,22 @@ impl<'hir> Lowerer<'hir> {
                 })
             }
             ImportedType::Function { from, to } => {
-                let from = self.intern_imported_type_with_source(from, source, span);
-                let to = self.intern_imported_type_with_source(to, source, span);
+                let from = self.intern_imported_type_with_source(from, source, span, None);
+                let to = self.intern_imported_type_with_source(to, source, span, None);
                 self.alloc_type(Type {
                     kind: TypeKind::Function { from, to },
                     span,
                 })
             }
             ImportedType::Effect { base, ops, tail } => {
-                let base = self.intern_imported_type_with_source(base, source, span);
+                let base = self.intern_imported_type_with_source(base, source, span, None);
                 let ops = ops
                     .iter()
                     .map(|op| EffectOp {
                         name: op.name.clone(),
-                        param: self.intern_imported_type_with_source(&op.param, source, span),
-                        result: self.intern_imported_type_with_source(&op.result, source, span),
+                        param: self.intern_imported_type_with_source(&op.param, source, span, None),
+                        result: self
+                            .intern_imported_type_with_source(&op.result, source, span, None),
                         span,
                     })
                     .collect();
@@ -259,7 +361,7 @@ impl<'hir> Lowerer<'hir> {
             ImportedType::ConApply { ctor, args } => {
                 let arg_tys: Vec<TypeId> = args
                     .iter()
-                    .map(|a| self.intern_imported_type_with_source(a, source, span))
+                    .map(|a| self.intern_imported_type_with_source(a, source, span, None))
                     .collect();
                 let Some(src) = source else {
                     return self.fresh_infer_var(span);
@@ -302,7 +404,18 @@ impl<'hir> Lowerer<'hir> {
             // `Unknown` so any application is refused rather than mistyped.
             ImportedType::TypeCon { .. } => self.fresh_infer_var(span),
             ImportedType::Unknown => self.fresh_infer_var(span),
+        };
+        if let (Some(source), Some(provenance)) = (source, provenance) {
+            self.imported_type_origins.insert(
+                ty,
+                ImportedTypeOrigin {
+                    source: source.clone(),
+                    span: provenance.span,
+                    name_span: provenance.name_span,
+                },
+            );
         }
+        ty
     }
 
     fn intern_imported_row_tail(&mut self, tail: ImportedRowTail) -> RowTail {
@@ -365,7 +478,7 @@ impl<'hir> Lowerer<'hir> {
                 }
                 _ => {
                     let denotation =
-                        self.intern_imported_type_with_source(inner, Some(source), span);
+                        self.intern_imported_type_with_source(inner, Some(source), span, None);
                     self.import_type_denotations
                         .insert((source.clone(), field.name.clone()), denotation);
                 }
@@ -423,7 +536,7 @@ impl<'hir> Lowerer<'hir> {
             .cloned()
             .unwrap_or_default();
         let saved = std::mem::replace(&mut self.ctor_param_map, param_map);
-        let body_ty = self.intern_imported_type_with_source(body, Some(source), span);
+        let body_ty = self.intern_imported_type_with_source(body, Some(source), span, None);
         self.ctor_param_map = saved;
         self.aliases.insert(ctor_binding, body_ty);
         let source_decl = self

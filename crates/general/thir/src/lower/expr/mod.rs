@@ -104,6 +104,9 @@ impl<'hir> Lowerer<'hir> {
                 let instantiate = !matches!(self.ty(resolved).kind, TypeKind::ForAll { .. });
                 let lowered = self.lower_binding_ref(id, *binding, expr.span, instantiate);
                 let found = self.expr(lowered).ty;
+                if let Some(source) = self.binding_import_key.get(binding).cloned() {
+                    self.check_heterogeneous_import_lists(&source, expected, expr.span);
+                }
                 if !self.type_matches(expected, found) {
                     self.type_mismatch(expected, found, expr.span);
                 }
