@@ -1,323 +1,293 @@
+-- Page components for the Zutai site, rendered as typed `html.Html`.
+-- Editorial copy and pre-tokenized code live in `content.zti`; this module maps
+-- that inert data into the document tree. The syntax highlighter below is the
+-- clearest bit of dogfooding: Zutai colors Zutai using its own union types.
 html ::= import stdlib.html;
-text ::= import stdlib.text;
 copy ::= import "content.zti";
 
-navLink :: <M> Text -> Text -> html.Html M
-  = label target =>
-    html.a {
-      html.classAttr "nav-link";
-      html.href target;
-    } {
-      html.text label;
+-- ── Shared shapes ────────────────────────────────────────────────────────────
+Link :: type { label : Text; href : Text; };
+Resource :: type { text : Text; url : Text; };
+Feature :: type { index : Text; title : Text; body : Text; };
+Stage :: type { name : Text; note : Text; };
+Step :: type { command : Text; note : Text; };
+FooterGroup :: type { head : Text; links : List Resource; };
+ModeCopy :: type { tab : Text; label : Text; title : Text; body : Text; code : List (List Token); };
+
+TokenKind :: type { #kw; #ty; #fn; #pn; #op; #st; #cm; #at; #nm; #pl; };
+Token :: type { k : TokenKind; t : Text; };
+
+-- ── Syntax highlighter ───────────────────────────────────────────────────────
+tokenClass :: TokenKind -> Text
+  = kind => match kind {
+    | #kw => "tk-kw";
+    | #ty => "tk-ty";
+    | #fn => "tk-fn";
+    | #pn => "tk-pn";
+    | #op => "tk-op";
+    | #st => "tk-st";
+    | #cm => "tk-cm";
+    | #at => "tk-at";
+    | #nm => "tk-nm";
+    | #pl => "tk-pl";
+  };
+
+renderToken :: <M> Token -> html.Html M
+  = tok =>
+    html.span { html.classAttr (tokenClass tok.k); } { html.text tok.t; };
+
+renderCodeLine :: <M> List Token -> html.Html M
+  = tokens =>
+    html.span { html.classAttr "code-line"; } (map renderToken tokens);
+
+codeWindow :: <M> Text -> List (List Token) -> html.Html M
+  = caption lines =>
+    html.div { html.classAttr "code-window"; } {
+      html.div { html.classAttr "code-bar"; } {
+        html.span { html.classAttr "code-dots"; } {
+          html.span { html.classAttr "code-dot"; } {;};
+          html.span { html.classAttr "code-dot"; } {;};
+          html.span { html.classAttr "code-dot"; } {;};
+        };
+        html.span { html.classAttr "code-caption"; } { html.text caption; };
+      };
+      html.pre { html.classAttr "code"; } {
+        html.code {;} (map renderCodeLine lines);
+      };
+    };
+
+sectionHead :: <M> Text -> Text -> Text -> html.Html M
+  = eyebrow title lead =>
+    html.div { html.classAttr "section-head"; } {
+      html.p { html.classAttr "eyebrow"; } { html.text eyebrow; };
+      html.h2 { html.classAttr "section-title"; } { html.text title; };
+      html.p { html.classAttr "section-lead"; } { html.text lead; };
+    };
+
+-- ── Header ───────────────────────────────────────────────────────────────────
+navLink :: <M> Link -> html.Html M
+  = item =>
+    html.a { html.classAttr "nav-link"; html.href item.href; } {
+      html.text item.label;
     };
 
 siteHeader :: <M> Unit -> html.Html M
   = _ => html.header { html.classAttr "site-header"; } {
-    html.a {
-      html.classAttr "wordmark";
-      html.href "#top";
-    } {
-      html.text "ZUTAI";
-    };
-
-    html.nav { html.classAttr "site-nav"; } {
-      navLink "Language" "#language";
-      navLink "Pipeline" "#pipeline";
-      navLink "Principles" "#principles";
-      navLink "Manual" "https://github.com/iceice666/zutai/blob/main/docs/language-manual.md";
-    };
-
-    html.span { html.classAttr "header-status"; } {
-      html.span {
-        html.classAttr "status-dot";
-        html.aria "hidden" "true";
-      } {;};
-      html.text "EXPERIMENTAL / LIVE";
+    html.div { html.classAttr "container header-inner"; } {
+      html.a { html.classAttr "wordmark"; html.href "#top"; } {
+        html.span { html.classAttr "wordmark-dot"; html.aria "hidden" "true"; } {;};
+        html.text "Zutai";
+      };
+      html.nav { html.classAttr "site-nav"; } (map navLink copy.nav);
+      html.a {
+        html.classAttr "header-cta";
+        html.href "https://github.com/iceice666/zutai";
+      } {
+        html.text "GitHub ↗";
+      };
     };
   };
 
-hero :: <M> M -> html.Html M
-  = focusMessage =>
-    html.section {
-      html.idAttr "top";
-      html.classAttr "hero";
-    } {
+-- ── Hero ─────────────────────────────────────────────────────────────────────
+hero :: <M> Unit -> html.Html M
+  = _ => html.section { html.idAttr "top"; html.classAttr "hero"; } {
+    html.div { html.classAttr "container hero-inner"; } {
       html.div { html.classAttr "hero-copy"; } {
-        html.div { html.classAttr "hero-heading"; } {
-          html.p { html.classAttr "eyebrow"; } {
-            html.text copy.hero.eyebrow;
-          };
-          html.h1 { html.classAttr "hero-title"; } {
-            html.text "Zutai";
-          };
-        };
-
-        html.div { html.classAttr "hero-intro"; } {
-          html.p { html.classAttr "hero-lead"; } {
-            html.text copy.hero.lead;
-          };
-          html.p { html.classAttr "hero-body"; } {
-            html.text copy.hero.body;
-          };
-          html.button {
-            html.classAttr "action";
-            html.onClick focusMessage;
+        html.p { html.classAttr "eyebrow"; } { html.text copy.hero.eyebrow; };
+        html.h1 { html.classAttr "hero-title"; } { html.text copy.hero.title; };
+        html.p { html.classAttr "hero-lead"; } { html.text copy.hero.lead; };
+        html.div { html.classAttr "hero-actions"; } {
+          html.a {
+            html.classAttr "btn btn-primary";
+            html.href copy.hero.primary.href;
           } {
-            html.text "Open the signal";
+            html.text copy.hero.primary.label;
+          };
+          html.a {
+            html.classAttr "btn btn-secondary";
+            html.href copy.hero.secondary.href;
+          } {
+            html.text copy.hero.secondary.label;
           };
         };
       };
-
-      html.div { html.classAttr "hero-signal"; } {
-        html.div { html.classAttr "signal-band signal-electric"; } {
-          html.text "INERT / DETERMINISTIC";
-        };
-        html.div { html.classAttr "signal-band signal-cyan"; } {
-          html.text "PURE / LAZY / TYPED";
-        };
-        html.div { html.classAttr "signal-band signal-violet"; } {
-          html.text "THIR → TLC → LLVM";
-        };
+      html.div { html.classAttr "hero-code-wrap"; } {
+        codeWindow copy.hero.caption copy.heroCode;
       };
     };
+  };
 
+-- ── Modes ────────────────────────────────────────────────────────────────────
 modeTabClass :: Bool -> Text
   = active => if active then "mode-tab mode-tab-active" else "mode-tab";
 
-modePanel :: <M> Bool -> html.Html M
-  = immediate =>
-    if immediate then
-      html.div {
-        html.classAttr "mode-card";
-        html.key "immediate-mode";
-      } {
-        html.div { html.classAttr "mode-copy"; } {
-          html.p { html.classAttr "eyebrow"; } { html.text copy.immediate.label; };
-          html.h3 {;} { html.text copy.immediate.title; };
-          html.p {;} { html.text copy.immediate.body; };
-        };
-        html.pre { html.classAttr "mode-code"; } {
-          html.code {;} { html.text copy.immediate.code; };
-        };
-      }
-    else
-      html.div {
-        html.classAttr "mode-card";
-        html.key "general-mode";
-      } {
-        html.div { html.classAttr "mode-copy"; } {
-          html.p { html.classAttr "eyebrow"; } { html.text copy.general.label; };
-          html.h3 {;} { html.text copy.general.title; };
-          html.p {;} { html.text copy.general.body; };
-        };
-        html.pre { html.classAttr "mode-code"; } {
-          html.code {;} { html.text copy.general.code; };
-        };
+modePanelFor :: <M> ModeCopy -> Text -> html.Html M
+  = mode panelKey =>
+    html.div { html.classAttr "mode-panel"; html.key panelKey; } {
+      html.div { html.classAttr "mode-copy"; } {
+        html.p { html.classAttr "mode-label"; } { html.text mode.label; };
+        html.h3 {;} { html.text mode.title; };
+        html.p {;} { html.text mode.body; };
       };
+      codeWindow mode.tab mode.code;
+    };
 
-language :: <M> Bool -> M -> M -> html.Html M
+modes :: <M> Bool -> M -> M -> html.Html M
   = immediate selectImmediate selectGeneral =>
-    html.section {
-      html.idAttr "language";
-      html.classAttr "section language-section";
-    } {
-      html.div { html.classAttr "section-heading"; } {
-        html.p { html.classAttr "eyebrow"; } { html.text "01 / LANGUAGE"; };
-        html.h2 {;} { html.text "One shape. Two energies."; };
-      };
+    html.section { html.idAttr "modes"; html.classAttr "section"; } {
+      html.div { html.classAttr "container"; } {
+        sectionHead copy.modes.intro.eyebrow copy.modes.intro.title copy.modes.intro.lead;
 
-      html.div { html.classAttr "mode-switch"; } {
-        html.button {
-          html.classAttr (modeTabClass immediate);
-          html.aria "pressed" (if immediate then "true" else "false");
-          html.onClick selectImmediate;
+        html.div {
+          html.classAttr "mode-toggle";
+          html.role "tablist";
+          html.aria "label" "Select a language mode";
         } {
-          html.text ".zti — data at rest";
+          html.button {
+            html.classAttr (modeTabClass immediate);
+            html.role "tab";
+            html.aria "selected" (if immediate then "true" else "false");
+            html.onClick selectImmediate;
+          } {
+            html.text copy.modes.immediate.tab;
+          };
+          html.button {
+            html.classAttr (modeTabClass (not immediate));
+            html.role "tab";
+            html.aria "selected" (if immediate then "false" else "true");
+            html.onClick selectGeneral;
+          } {
+            html.text copy.modes.general.tab;
+          };
         };
-        html.button {
-          html.classAttr (modeTabClass (not immediate));
-          html.aria "pressed" (if immediate then "false" else "true");
-          html.onClick selectGeneral;
-        } {
-          html.text ".zt — computation in motion";
-        };
-      };
 
-      modePanel immediate;
+        if immediate then
+          modePanelFor copy.modes.immediate "mode-immediate"
+        else
+          modePanelFor copy.modes.general "mode-general";
+      };
     };
 
-pipelineStep :: <M> Bool -> Text -> Text -> Text -> html.Html M
-  = alternate position label detail =>
-    html.li {
-      html.classAttr (if alternate then "pipeline-step pipeline-step-alt" else "pipeline-step");
-      html.key label;
-    } {
-      html.span {;} { html.text position; };
-      html.span { html.classAttr "pipeline-label"; } { html.text label; };
-      html.p {;} { html.text detail; };
+-- ── Why Zutai ────────────────────────────────────────────────────────────────
+whyCard :: <M> Feature -> html.Html M
+  = feature =>
+    html.article { html.classAttr "why-card"; html.key feature.index; } {
+      html.span { html.classAttr "why-index"; } { html.text feature.index; };
+      html.h3 {;} { html.text feature.title; };
+      html.p {;} { html.text feature.body; };
     };
+
+why :: <M> Unit -> html.Html M
+  = _ => html.section { html.idAttr "why"; html.classAttr "section section-alt"; } {
+    html.div { html.classAttr "container"; } {
+      sectionHead copy.why.eyebrow copy.why.title copy.why.lead;
+      html.div { html.classAttr "why-grid"; } (map whyCard copy.why.items);
+    };
+  };
+
+-- ── Pipeline ─────────────────────────────────────────────────────────────────
+stageChip :: <M> Stage -> html.Html M
+  = stage =>
+    html.div { html.classAttr "stage"; html.key stage.name; } {
+      html.span { html.classAttr "stage-name"; } { html.text stage.name; };
+      html.span { html.classAttr "stage-note"; } { html.text stage.note; };
+    };
+
+stageArrow :: <M> Unit -> html.Html M
+  = _ => html.span { html.classAttr "stage-arrow"; html.aria "hidden" "true"; } {
+    html.text "→";
+  };
+
+stageFlow :: <M> List Stage -> List (html.Html M)
+  = stages => match stages {
+    | {;} => {;};
+    | {stage; ...rest} => match rest {
+        | {;} => { stageChip stage; };
+        | {next; ...more} => append { stageChip stage; stageArrow (); } (stageFlow rest);
+      };
+  };
 
 pipeline :: <M> Unit -> html.Html M
-  = _ => html.section {
-    html.idAttr "pipeline";
-    html.classAttr "section pipeline-section";
-  } {
-    html.div { html.classAttr "section-heading"; } {
-      html.p { html.classAttr "eyebrow"; } { html.text "02 / COMPILER"; };
-      html.h2 {;} { html.text "Every step stays visible."; };
-    };
-
-    html.ul { html.classAttr "pipeline"; } {
-      pipelineStep true "00" "Source" ".zt";
-      pipelineStep false "01" "HIR" "names + shape";
-      pipelineStep true "02" "THIR" "types + diagnostics";
-      pipelineStep false "03" "TLC" "explicit polymorphism";
-      pipelineStep true "04" "Dataflow" "sharing + recursion";
-      pipelineStep false "05" "ANF / SSA" "ordered lowering";
-      pipelineStep true "06" "LLVM" "native output";
+  = _ => html.section { html.idAttr "pipeline"; html.classAttr "section"; } {
+    html.div { html.classAttr "container"; } {
+      sectionHead copy.pipeline.eyebrow copy.pipeline.title copy.pipeline.lead;
+      html.div { html.classAttr "pipeline-flow"; } (stageFlow copy.pipeline.stages);
     };
   };
 
-digitText :: Int -> Text
-  = digit =>
-    if digit == 0 then "0"
-    else if digit == 1 then "1"
-    else if digit == 2 then "2"
-    else if digit == 3 then "3"
-    else if digit == 4 then "4"
-    else if digit == 5 then "5"
-    else if digit == 6 then "6"
-    else if digit == 7 then "7"
-    else if digit == 8 then "8"
-    else "9";
-
-naturalText :: Int -> Text
-  = value =>
-    if value < 10 then digitText value
-    else text.join "" {
-      naturalText (value / 10);
-      digitText (value % 10);
+-- ── Get started ──────────────────────────────────────────────────────────────
+terminalRow :: <M> Step -> html.Html M
+  = step =>
+    html.div { html.classAttr "term-row term-row-line"; html.key step.command; } {
+      html.div { html.classAttr "term-cmd"; } {
+        html.span { html.classAttr "term-prompt"; html.aria "hidden" "true"; } {
+          html.text "$ ";
+        };
+        html.text step.command;
+      };
+      html.p { html.classAttr "term-note"; } { html.text step.note; };
     };
 
-intText :: Int -> Text
-  = value =>
-    if value < 0 then text.join "" { "-"; naturalText (0 - value); }
-    else naturalText value;
-
-counterButton :: <M> Text -> Text -> M -> html.Html M
-  = label accessibleLabel message =>
-    html.button {
-      html.classAttr "counter-button";
-      html.aria "label" accessibleLabel;
-      html.onClick message;
-    } {
-      html.text label;
+resourceLink :: <M> Resource -> html.Html M
+  = resource =>
+    html.a { html.classAttr "resource-link"; html.href resource.url; } {
+      html.span {;} { html.text resource.text; };
+      html.span { html.classAttr "resource-arrow"; html.aria "hidden" "true"; } {
+        html.text "→";
+      };
     };
 
-playground :: <M> Text -> Int -> (Text -> M) -> M -> M -> M -> M -> html.Html M
-  = signal counter changeMessage focusMessage decrementMessage incrementMessage resetMessage =>
-    html.section { html.classAttr "playground"; } {
-      html.div { html.classAttr "playground-copy"; } {
-        html.p { html.classAttr "eyebrow"; } { html.text copy.playground.label; };
-        html.h2 {;} { html.text copy.playground.prompt; };
-      };
-
-      html.input {
-        html.idAttr "signal-input";
-        html.inputType "text";
-        html.aria "label" copy.playground.prompt;
-        html.placeholder "service-name";
-        html.value signal;
-        html.onInput changeMessage;
-      };
-
-      html.button {
-        html.classAttr "action";
-        html.onClick focusMessage;
-      } {
-        html.text "Focus";
-      };
-
-      html.div { html.classAttr "signal-output"; } {
-        html.span {;} { html.text "MODEL"; };
-        html.code {;} {
-          html.text "{ service = \"";
-          html.text signal;
-          html.text "\"; status = #typed; }";
+start :: <M> Unit -> html.Html M
+  = _ => html.section { html.idAttr "start"; html.classAttr "section section-alt"; } {
+    html.div { html.classAttr "container"; } {
+      sectionHead copy.start.eyebrow copy.start.title copy.start.lead;
+      html.div { html.classAttr "start-inner"; } {
+        html.div { html.classAttr "terminal"; } (map terminalRow copy.start.steps);
+        html.div { html.classAttr "resources"; } {
+          html.span { html.classAttr "resources-label"; } { html.text copy.start.resourcesLabel; };
+          html.div { html.classAttr "resources"; } (map resourceLink copy.start.resources);
         };
       };
-
-      html.div { html.classAttr "counter-card"; } {
-        html.div {
-          html.classAttr "counter-readout";
-          html.role "status";
-          html.aria "live" "polite";
-          html.aria "atomic" "true";
-        } {
-          html.span { html.classAttr "counter-label"; } {
-            html.text "PURE COUNTER";
-          };
-          html.strong { html.classAttr "counter-value"; } {
-            html.text (intText counter);
-          };
-        };
-
-        html.div { html.classAttr "counter-controls"; } {
-          counterButton "−" "Decrement counter" decrementMessage;
-          counterButton "+" "Increment counter" incrementMessage;
-          html.button {
-            html.classAttr "counter-button counter-reset";
-            html.onClick resetMessage;
-          } {
-            html.text "Reset + focus";
-          };
-        };
-      };
-    };
-
-principle :: <M> Text -> Text -> html.Html M
-  = title body =>
-    html.li { html.classAttr "manifesto-item"; } {
-      html.h3 {;} { html.text title; };
-      html.p {;} { html.text body; };
-    };
-
-principles :: <M> Unit -> html.Html M
-  = _ => html.section {
-    html.idAttr "principles";
-    html.classAttr "section principles-section";
-  } {
-    html.div { html.classAttr "section-heading"; } {
-      html.p { html.classAttr "eyebrow"; } { html.text "03 / PRINCIPLES"; };
-      html.h2 {;} { html.text "Nothing ambient. Nothing hidden."; };
-    };
-
-    html.ul { html.classAttr "manifesto"; } {
-      principle "Data is literal" "Immediate mode never evaluates. What you write is the shape you keep.";
-      principle "Effects show authority" "Runtime work is typed, explicit, and handled at a visible boundary.";
-      principle "Refusal beats fiction" "Incomplete typed IR does not run. A wrong value is worse than no value.";
     };
   };
+
+-- ── Footer ───────────────────────────────────────────────────────────────────
+footerLink :: <M> Resource -> html.Html M
+  = link =>
+    html.a { html.classAttr "footer-link"; html.href link.url; } {
+      html.text link.text;
+    };
+
+footerGroup :: <M> FooterGroup -> html.Html M
+  = group =>
+    html.div { html.classAttr "footer-group"; html.key group.head; } {
+      html.h3 {;} { html.text group.head; };
+      html.div {;} (map footerLink group.links);
+    };
 
 siteFooter :: <M> Unit -> html.Html M
   = _ => html.footer { html.classAttr "site-footer"; } {
-    html.div {;} {
-      html.span { html.classAttr "footer-wordmark"; } { html.text "ZUTAI"; };
-      html.p {;} { html.text "An experimental language for exact data and explicit computation."; };
-    };
-    html.div {;} {
-      html.a { html.href "https://github.com/iceice666/zutai"; } {
-        html.text "Source on GitHub ↗";
+    html.div { html.classAttr "container"; } {
+      html.div { html.classAttr "footer-inner"; } {
+        html.div { html.classAttr "footer-brand"; } {
+          html.span { html.classAttr "wordmark"; } {
+            html.span { html.classAttr "wordmark-dot"; html.aria "hidden" "true"; } {;};
+            html.text "Zutai";
+          };
+          html.p { html.classAttr "footer-blurb"; } { html.text copy.footer.blurb; };
+        };
+        html.div { html.classAttr "footer-groups"; } (map footerGroup copy.footer.groups);
       };
+      html.p { html.classAttr "footer-legal"; } { html.text copy.footer.legal; };
     };
   };
 
 {
   siteHeader = siteHeader;
   hero = hero;
-  language = language;
+  modes = modes;
+  why = why;
   pipeline = pipeline;
-  playground = playground;
-  principles = principles;
+  start = start;
   siteFooter = siteFooter;
 }

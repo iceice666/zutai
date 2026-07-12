@@ -1,18 +1,40 @@
+-- Typed stylesheet for the Zutai site.
+-- Produces a `css.Stylesheet` the browser kernel renders. The chrome stays
+-- neutral and calm; the lime/cyan brand lives in the dark code panels and a few
+-- accent marks. Text is system sans, code is monospace.
 css ::= import stdlib.css;
 
-ink ::= css.hex "#141310";
-paper ::= css.hex "#f2eee3";
-paperBright ::= css.hex "#fffdf5";
-muted ::= css.hex "#6f6b61";
-line ::= css.hex "#bbb4a5";
-electric ::= css.hex "#c7ff28";
+-- ── Palette ──────────────────────────────────────────────────────────────────
+ink ::= css.hex "#16181d";
+inkPanel ::= css.hex "#1b1d24";
+inkPanelSoft ::= css.hex "#23262f";
+paper ::= css.hex "#fbfaf6";
+surface ::= css.hex "#ffffff";
+subtle ::= css.hex "#f3f1ea";
+muted ::= css.hex "#5c6270";
+faint ::= css.hex "#8b8f99";
+faintInk ::= css.hex "#686d78";
+border ::= css.hex "#e6e3d9";
+borderStrong ::= css.hex "#d6d2c6";
+accent ::= css.hex "#0f7285";
+lime ::= css.hex "#c7ff28";
 cyan ::= css.hex "#55dfff";
-violet ::= css.hex "#885cff";
+codeText ::= css.hex "#d8dae0";
+
+sans ::= css.keyword "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+mono ::= css.keyword "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
+
+fw :: Text -> css.Value = weight => css.keyword weight;
 
 siteStyles :: css.Stylesheet = css.stylesheet {
+  -- ── Reset / base ───────────────────────────────────────────────────────────
+  css.rule { css.all; } {
+    css.customProperty "box-sizing" (css.keyword "border-box");
+  };
+
   css.rule { css.tag "html"; } {
-    css.background paper;
-    css.color ink;
+    css.customProperty "-webkit-text-size-adjust" (css.keyword "100%");
+    css.customProperty "scroll-behavior" (css.keyword "smooth");
   };
 
   css.rule { css.tag "body"; } {
@@ -20,451 +42,630 @@ siteStyles :: css.Stylesheet = css.stylesheet {
     css.minWidth (css.px 320.0);
     css.background paper;
     css.color ink;
-    css.fontFamily (css.keyword "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace");
-    css.fontSize (css.rem 1.0);
-    css.lineHeight (css.keyword "1.5");
+    css.fontFamily sans;
+    css.fontSize (css.px 17.0);
+    css.lineHeight (css.keyword "1.6");
+    css.customProperty "-webkit-font-smoothing" (css.keyword "antialiased");
   };
 
   css.rule { css.tag "a"; } {
     css.color (css.keyword "inherit");
+    css.textDecoration (css.keyword "none");
   };
 
-  css.rule { css.class "site-shell"; } {
-    css.position (css.keyword "relative");
-    css.overflow (css.keyword "hidden");
-    css.background (css.keyword "repeating-linear-gradient(0deg, transparent 0, transparent 1.95rem, rgba(20, 19, 16, 0.045) 2rem), repeating-linear-gradient(90deg, transparent 0, transparent 1.95rem, rgba(20, 19, 16, 0.045) 2rem)");
+  css.rule { css.tag "h1"; css.tag "h2"; css.tag "h3"; css.tag "h4"; css.tag "p"; } {
+    css.margin (css.px 0.0);
   };
 
+  css.rule { css.tag "code"; css.tag "pre"; } {
+    css.fontFamily mono;
+  };
+
+  -- ── Layout container ───────────────────────────────────────────────────────
+  css.rule { css.class "container"; } {
+    css.width (css.percent 100.0);
+    css.maxWidth (css.px 1120.0);
+    css.margin (css.keyword "0 auto");
+    css.padding (css.keyword "0 clamp(1.25rem, 4vw, 2.5rem)");
+  };
+
+  css.rule { css.class "site-body"; } {
+    css.customProperty "overflow-x" (css.keyword "hidden");
+  };
+
+  -- ── Header ─────────────────────────────────────────────────────────────────
   css.rule { css.class "site-header"; } {
-    css.position (css.keyword "relative");
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "auto 1fr auto");
+    css.position (css.keyword "sticky");
+    css.top (css.px 0.0);
+    css.customProperty "z-index" (css.keyword "20");
+    css.background (css.keyword "rgba(251, 250, 246, 0.86)");
+    css.customProperty "backdrop-filter" (css.keyword "saturate(140%) blur(10px)");
+    css.customProperty "border-bottom" (css.space { css.px 1.0; css.keyword "solid"; border; });
+  };
+
+  css.rule { css.class "header-inner"; } {
+    css.display (css.keyword "flex");
     css.alignItems (css.keyword "center");
-    css.gap (css.rem 2.0);
-    css.padding (css.keyword "1rem clamp(1rem, 3vw, 3rem)");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; line; });
-    css.background (css.keyword "rgba(242, 238, 227, 0.92)");
+    css.gap (css.rem 1.5);
+    css.customProperty "min-height" (css.rem 4.0);
   };
 
   css.rule { css.class "wordmark"; } {
-    css.fontWeight (css.keyword "900");
-    css.letterSpacing (css.rem -0.08);
-    css.textDecoration (css.keyword "none");
-    css.fontSize (css.rem 1.45);
-  };
-
-  css.rule { css.class "site-nav"; } {
-    css.display (css.keyword "flex");
-    css.justifyContent (css.keyword "center");
-    css.gap (css.keyword "clamp(0.8rem, 2.5vw, 2.5rem)");
-  };
-
-  css.rule { css.descendant (css.class "site-nav") (css.tag "a"); } {
-    css.fontSize (css.rem 0.72);
-    css.fontWeight (css.keyword "700");
-    css.letterSpacing (css.rem 0.08);
-    css.textDecoration (css.keyword "none");
-    css.textTransform (css.keyword "uppercase");
-  };
-
-  css.rule { css.hover (css.descendant (css.class "site-nav") (css.tag "a")); } {
-    css.background electric;
-  };
-
-  css.rule { css.class "header-status"; } {
     css.display (css.keyword "inline-flex");
     css.alignItems (css.keyword "center");
     css.gap (css.rem 0.5);
-    css.fontSize (css.rem 0.7);
-    css.fontWeight (css.keyword "700");
+    css.fontWeight (fw "800");
+    css.fontSize (css.rem 1.2);
+    css.letterSpacing (css.rem -0.02);
   };
 
-  css.rule { css.class "status-dot"; } {
+  css.rule { css.class "wordmark-dot"; } {
     css.display (css.keyword "inline-block");
     css.width (css.rem 0.6);
     css.height (css.rem 0.6);
     css.borderRadius (css.keyword "50%");
-    css.background electric;
-    css.boxShadow (css.keyword "0 0 0 0.2rem rgba(199, 255, 40, 0.24)");
-    css.animation (css.keyword "signal-pulse 1.8s ease-in-out infinite alternate");
+    css.background lime;
+    css.customProperty "box-shadow" (css.keyword "0 0 0 3px rgba(199, 255, 40, 0.28)");
   };
 
-  css.keyframes "signal-pulse" {
-    css.keyframe css.from {
-      css.opacity (css.number 0.45);
-      css.transform (css.keyword "scale(0.8)");
-    };
-    css.keyframe css.to {
-      css.opacity (css.number 1.0);
-      css.transform (css.keyword "scale(1)");
-    };
+  css.rule { css.class "site-nav"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 1.75);
+    css.customProperty "margin-left" (css.keyword "auto");
   };
 
-  css.rule { css.class "hero"; } {
-    css.position (css.keyword "relative");
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "minmax(0, 1.25fr) minmax(18rem, 0.75fr)");
-    css.minHeight (css.keyword "calc(100vh - 4.5rem)");
+  css.rule { css.class "nav-link"; } {
+    css.color muted;
+    css.fontSize (css.rem 0.95);
+    css.fontWeight (fw "500");
+    css.transition (css.keyword "color 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "nav-link"); } {
+    css.color ink;
+  };
+
+  css.rule { css.class "header-cta"; } {
+    css.display (css.keyword "inline-flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 0.4);
+    css.padding (css.keyword "0.5rem 0.95rem");
+    css.borderRadius (css.rem 0.5);
+    css.background ink;
+    css.color paper;
+    css.fontSize (css.rem 0.9);
+    css.fontWeight (fw "600");
+    css.transition (css.keyword "background 140ms ease, transform 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "header-cta"); } {
+    css.background (css.hex "#000000");
+    css.transform (css.keyword "translateY(-1px)");
+  };
+
+  -- ── Buttons ────────────────────────────────────────────────────────────────
+  css.rule { css.class "btn"; } {
+    css.display (css.keyword "inline-flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 0.5);
+    css.padding (css.keyword "0.8rem 1.4rem");
+    css.borderRadius (css.rem 0.6);
+    css.fontFamily sans;
+    css.fontSize (css.rem 1.0);
+    css.fontWeight (fw "600");
+    css.cursor (css.keyword "pointer");
+    css.transition (css.keyword "transform 140ms ease, background 140ms ease, border-color 140ms ease");
+  };
+
+  css.rule { css.class "btn-primary"; } {
+    css.background ink;
+    css.color paper;
     css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.hover (css.class "btn-primary"); } {
+    css.background (css.hex "#000000");
+    css.transform (css.keyword "translateY(-2px)");
+  };
+
+  css.rule { css.class "btn-secondary"; } {
+    css.background surface;
+    css.color ink;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; borderStrong; });
+  };
+
+  css.rule { css.hover (css.class "btn-secondary"); } {
+    css.customProperty "border-color" ink;
+    css.transform (css.keyword "translateY(-2px)");
+  };
+
+  -- ── Eyebrow / section heads ────────────────────────────────────────────────
+  css.rule { css.class "eyebrow"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.8);
+    css.fontWeight (fw "600");
+    css.letterSpacing (css.rem 0.06);
+    css.textTransform (css.keyword "uppercase");
+    css.color accent;
+  };
+
+  css.rule { css.class "section"; } {
+    css.padding (css.keyword "clamp(3.5rem, 8vw, 6.5rem) 0");
+    css.customProperty "border-top" (css.space { css.px 1.0; css.keyword "solid"; border; });
+  };
+
+  css.rule { css.class "section-alt"; } {
+    css.background subtle;
+  };
+
+  css.rule { css.class "section-head"; } {
+    css.maxWidth (css.px 680.0);
+    css.customProperty "margin-bottom" (css.keyword "clamp(2rem, 4vw, 3rem)");
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.9);
+  };
+
+  css.rule { css.class "section-title"; } {
+    css.fontSize (css.keyword "clamp(1.9rem, 4vw, 2.9rem)");
+    css.fontWeight (fw "800");
+    css.letterSpacing (css.rem -0.02);
+    css.lineHeight (css.keyword "1.08");
+  };
+
+  css.rule { css.class "section-lead"; } {
+    css.fontSize (css.rem 1.12);
+    css.color muted;
+    css.maxWidth (css.px 620.0);
+  };
+
+  -- ── Hero ───────────────────────────────────────────────────────────────────
+  css.rule { css.class "hero"; } {
+    css.padding (css.keyword "clamp(3rem, 7vw, 6rem) 0 clamp(3.5rem, 8vw, 6.5rem)");
+  };
+
+  css.rule { css.class "hero-inner"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1.05fr) minmax(0, 1fr)");
+    css.gap (css.keyword "clamp(2rem, 5vw, 4rem)");
+    css.alignItems (css.keyword "center");
   };
 
   css.rule { css.class "hero-copy"; } {
     css.display (css.keyword "flex");
     css.flexDirection (css.keyword "column");
-    css.justifyContent (css.keyword "space-between");
-    css.padding (css.keyword "clamp(2rem, 6vw, 6rem) clamp(1rem, 3vw, 3rem)");
-  };
-
-  css.rule { css.class "eyebrow"; } {
-    css.margin (css.px 0.0);
-    css.fontSize (css.rem 0.72);
-    css.fontWeight (css.keyword "800");
-    css.letterSpacing (css.rem 0.14);
-    css.textTransform (css.keyword "uppercase");
+    css.alignItems (css.keyword "flex-start");
+    css.gap (css.rem 1.4);
   };
 
   css.rule { css.class "hero-title"; } {
-    css.margin (css.keyword "1rem 0 0");
-    css.maxWidth (css.keyword "8ch");
-    css.fontFamily (css.keyword "Arial Black, Helvetica Neue, sans-serif");
-    css.fontSize (css.keyword "clamp(4.5rem, 12vw, 11rem)");
-    css.fontWeight (css.keyword "900");
-    css.letterSpacing (css.keyword "-0.09em");
-    css.lineHeight (css.keyword "0.76");
-    css.textTransform (css.keyword "uppercase");
+    css.fontSize (css.keyword "clamp(2.6rem, 6vw, 4.3rem)");
+    css.fontWeight (fw "800");
+    css.letterSpacing (css.rem -0.03);
+    css.lineHeight (css.keyword "1.02");
+    css.maxWidth (css.keyword "16ch");
   };
 
   css.rule { css.class "hero-lead"; } {
-    css.maxWidth (css.keyword "31rem");
-    css.margin (css.keyword "3rem 0 0 auto");
-    css.fontSize (css.keyword "clamp(1.1rem, 2vw, 1.55rem)");
-    css.fontWeight (css.keyword "650");
-    css.lineHeight (css.keyword "1.28");
+    css.fontSize (css.keyword "clamp(1.08rem, 1.6vw, 1.28rem)");
+    css.color muted;
+    css.maxWidth (css.px 560.0);
   };
 
-  css.rule { css.class "hero-signal"; } {
-    css.display (css.keyword "grid");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-  };
-
-  css.rule { css.class "signal-band"; } {
-    css.position (css.keyword "relative");
+  css.rule { css.class "hero-actions"; } {
     css.display (css.keyword "flex");
-    css.alignItems (css.keyword "flex-end");
-    css.padding (css.rem 1.5);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-    css.fontSize (css.rem 0.72);
-    css.fontWeight (css.keyword "800");
-    css.letterSpacing (css.rem 0.08);
+    css.flexWrap (css.keyword "wrap");
+    css.gap (css.rem 0.85);
+    css.customProperty "margin-top" (css.rem 0.4);
   };
 
-  css.rule { css.class "signal-electric"; } {
-    css.background electric;
+  -- ── Code window ────────────────────────────────────────────────────────────
+  css.rule { css.class "code-window"; } {
+    css.background inkPanel;
+    css.borderRadius (css.rem 0.85);
+    css.overflow (css.keyword "hidden");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; css.hex "#2c2f38"; });
+    css.customProperty "box-shadow" (css.keyword "0 24px 60px -30px rgba(22, 24, 29, 0.55)");
   };
 
-  css.rule { css.class "signal-cyan"; } {
-    css.background cyan;
+  css.rule { css.class "code-bar"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 0.85);
+    css.padding (css.keyword "0.8rem 1.1rem");
+    css.customProperty "border-bottom" (css.space { css.px 1.0; css.keyword "solid"; css.hex "#2c2f38"; });
   };
 
-  css.rule { css.class "signal-violet"; } {
-    css.background violet;
-    css.color paperBright;
+  css.rule { css.class "code-dots"; } {
+    css.display (css.keyword "inline-flex");
+    css.gap (css.rem 0.4);
   };
 
-  css.rule { css.class "section"; } {
-    css.padding (css.keyword "clamp(4rem, 9vw, 9rem) clamp(1rem, 3vw, 3rem)");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  css.rule { css.class "code-dot"; } {
+    css.width (css.rem 0.65);
+    css.height (css.rem 0.65);
+    css.borderRadius (css.keyword "50%");
+    css.background (css.hex "#3a3d47");
   };
 
-  css.rule { css.class "section-heading"; } {
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "minmax(9rem, 0.35fr) minmax(0, 1fr)");
-    css.gap (css.rem 2.0);
-    css.alignItems (css.keyword "end");
-    css.margin (css.keyword "0 0 4rem");
+  css.rule { css.class "code-caption"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.78);
+    css.color faint;
   };
 
-  css.rule { css.descendant (css.class "section-heading") (css.tag "h2"); } {
+  css.rule { css.class "code"; } {
     css.margin (css.px 0.0);
-    css.fontFamily (css.keyword "Arial Black, Helvetica Neue, sans-serif");
-    css.fontSize (css.keyword "clamp(2.6rem, 7vw, 6.5rem)");
-    css.letterSpacing (css.keyword "-0.07em");
-    css.lineHeight (css.keyword "0.9");
-    css.textTransform (css.keyword "uppercase");
+    css.padding (css.keyword "1.25rem 1.4rem");
+    css.overflow (css.keyword "auto");
+    css.fontSize (css.keyword "clamp(0.82rem, 1.1vw, 0.95rem)");
+    css.lineHeight (css.keyword "1.75");
+    css.color codeText;
   };
 
-  css.rule { css.class "mode-switch"; } {
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "repeat(2, minmax(0, 1fr))");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  css.rule { css.class "code-line"; } {
+    css.display (css.keyword "block");
+    css.customProperty "white-space" (css.keyword "pre");
+  };
+
+  -- Token colors on the dark panel.
+  css.rule { css.class "tk-kw"; } { css.color lime; css.fontWeight (fw "600"); };
+  css.rule { css.class "tk-ty"; } { css.color (css.hex "#7fd7ff"); };
+  css.rule { css.class "tk-fn"; } { css.color (css.hex "#ffd27d"); };
+  css.rule { css.class "tk-pn"; } { css.color (css.hex "#e8e9ec"); };
+  css.rule { css.class "tk-op"; } { css.color (css.hex "#9aa2b1"); };
+  css.rule { css.class "tk-st"; } { css.color (css.hex "#a6e08a"); };
+  css.rule { css.class "tk-cm"; } { css.color (css.hex "#6b7280"); css.customProperty "font-style" (css.keyword "italic"); };
+  css.rule { css.class "tk-at"; } { css.color (css.hex "#ff9d5c"); };
+  css.rule { css.class "tk-nm"; } { css.color (css.hex "#cbb0ff"); };
+
+  -- ── Modes ──────────────────────────────────────────────────────────────────
+  css.rule { css.class "mode-toggle"; } {
+    css.display (css.keyword "inline-flex");
+    css.padding (css.rem 0.3);
+    css.gap (css.rem 0.3);
+    css.borderRadius (css.rem 0.7);
+    css.background subtle;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.customProperty "margin-bottom" (css.keyword "clamp(1.75rem, 3vw, 2.5rem)");
   };
 
   css.rule { css.class "mode-tab"; } {
     css.cursor (css.keyword "pointer");
-    css.padding (css.rem 1.0);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-    css.background paperBright;
-    css.color ink;
-    css.fontWeight (css.keyword "800");
-    css.textAlign (css.keyword "left");
+    css.padding (css.keyword "0.55rem 1.1rem");
+    css.borderRadius (css.rem 0.5);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; css.keyword "transparent"; });
+    css.background (css.keyword "transparent");
+    css.color muted;
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.9);
+    css.fontWeight (fw "600");
+    css.transition (css.keyword "background 140ms ease, color 140ms ease");
   };
 
   css.rule { css.hover (css.class "mode-tab"); } {
-    css.background cyan;
+    css.color ink;
   };
 
   css.rule { css.class "mode-tab-active"; } {
-    css.background ink;
-    css.color electric;
+    css.background surface;
+    css.color ink;
+    css.customProperty "border-color" borderStrong;
+    css.customProperty "box-shadow" (css.keyword "0 1px 2px rgba(22, 24, 29, 0.08)");
   };
 
-  css.rule { css.class "mode-card"; } {
+  css.rule { css.hover (css.class "mode-tab-active"); } {
+    css.color ink;
+  };
+
+  css.rule { css.class "mode-panel"; } {
     css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "minmax(0, 0.8fr) minmax(0, 1.2fr)");
-    css.minHeight (css.rem 28.0);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.gridTemplateColumns (css.keyword "minmax(0, 0.9fr) minmax(0, 1.1fr)");
+    css.gap (css.keyword "clamp(1.5rem, 4vw, 3rem)");
+    css.alignItems (css.keyword "center");
   };
 
   css.rule { css.class "mode-copy"; } {
-    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.85);
+  };
+
+  css.rule { css.class "mode-label"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.8);
+    css.fontWeight (fw "600");
+    css.letterSpacing (css.rem 0.04);
+    css.textTransform (css.keyword "uppercase");
+    css.color faintInk;
   };
 
   css.rule { css.descendant (css.class "mode-copy") (css.tag "h3"); } {
-    css.margin (css.keyword "1rem 0");
-    css.fontSize (css.keyword "clamp(1.8rem, 4vw, 3.8rem)");
-    css.lineHeight (css.keyword "0.98");
+    css.fontSize (css.keyword "clamp(1.5rem, 3vw, 2.1rem)");
+    css.fontWeight (fw "800");
+    css.letterSpacing (css.rem -0.02);
   };
 
-  css.rule { css.class "mode-code"; } {
-    css.margin (css.px 0.0);
-    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
-    css.overflow (css.keyword "auto");
-    css.background ink;
-    css.color electric;
-    css.fontSize (css.keyword "clamp(0.82rem, 1.5vw, 1rem)");
-    css.lineHeight (css.keyword "1.7");
-  };
-
-  css.rule { css.class "pipeline"; } {
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "repeat(7, minmax(8rem, 1fr))");
-    css.overflow (css.keyword "auto");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-  };
-
-  css.rule { css.class "pipeline-step"; } {
-    css.position (css.keyword "relative");
-    css.minHeight (css.rem 10.0);
-    css.padding (css.rem 1.0);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-  };
-
-  css.rule { css.class "pipeline-step-alt"; } {
-    css.background (css.keyword "rgba(85, 223, 255, 0.22)");
-  };
-
-  css.rule { css.descendant (css.class "pipeline-step") (css.tag "span"); } {
-    css.display (css.keyword "block");
-    css.margin (css.keyword "0 0 4.5rem");
+  css.rule { css.descendant (css.class "mode-copy") (css.tag "p"); } {
     css.color muted;
-    css.fontSize (css.rem 0.68);
+    css.fontSize (css.rem 1.05);
   };
 
-  css.rule { css.class "playground"; } {
+  -- ── Why grid ───────────────────────────────────────────────────────────────
+  css.rule { css.class "why-grid"; } {
     css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "minmax(0, 1fr) auto");
-    css.gap (css.rem 1.0);
-    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
-    css.background ink;
-    css.color paperBright;
+    css.gridTemplateColumns (css.keyword "repeat(2, minmax(0, 1fr))");
+    css.gap (css.rem 1.1);
   };
 
-  css.rule { css.class "playground-copy"; } {
-    css.gridColumn (css.keyword "1 / -1");
+  css.rule { css.class "why-card"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.6);
+    css.padding (css.keyword "1.75rem");
+    css.borderRadius (css.rem 0.9);
+    css.background surface;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.transition (css.keyword "transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease");
   };
 
-  css.rule { css.id "signal-input"; } {
-    css.width (css.keyword "100%");
-    css.padding (css.keyword "1rem 1.2rem");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
-    css.borderRadius (css.px 0.0);
-    css.outline (css.keyword "none");
-    css.background (css.hex "#22211d");
-    css.color electric;
+  css.rule { css.hover (css.class "why-card"); } {
+    css.transform (css.keyword "translateY(-3px)");
+    css.customProperty "border-color" borderStrong;
+    css.customProperty "box-shadow" (css.keyword "0 18px 40px -28px rgba(22, 24, 29, 0.4)");
   };
 
-  css.rule { css.focus (css.id "signal-input"); } {
-    css.boxShadow (css.keyword "0 0 0 0.24rem rgba(199, 255, 40, 0.2)");
+  css.rule { css.class "why-index"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.85);
+    css.fontWeight (fw "600");
+    css.color accent;
   };
 
-  css.rule { css.class "action"; } {
-    css.cursor (css.keyword "pointer");
-    css.padding (css.keyword "1rem 1.4rem");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
-    css.borderRadius (css.px 0.0);
-    css.background electric;
-    css.color ink;
-    css.fontWeight (css.keyword "900");
-    css.textTransform (css.keyword "uppercase");
+  css.rule { css.descendant (css.class "why-card") (css.tag "h3"); } {
+    css.fontSize (css.rem 1.28);
+    css.fontWeight (fw "700");
+    css.letterSpacing (css.rem -0.01);
   };
 
-  css.rule { css.hover (css.class "action"); } {
-    css.background cyan;
+  css.rule { css.descendant (css.class "why-card") (css.tag "p"); } {
+    css.color muted;
+    css.fontSize (css.rem 1.0);
   };
 
-  css.rule { css.class "signal-output"; } {
-    css.gridColumn (css.keyword "1 / -1");
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "auto 1fr");
-    css.gap (css.rem 1.0);
-    css.padding (css.keyword "1rem 0 0");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; muted; });
-    css.color cyan;
+  -- ── Pipeline ───────────────────────────────────────────────────────────────
+  css.rule { css.class "pipeline-flow"; } {
+    css.display (css.keyword "flex");
+    css.flexWrap (css.keyword "wrap");
+    css.alignItems (css.keyword "stretch");
+    css.gap (css.rem 0.6);
   };
 
-  css.rule { css.class "counter-card"; } {
-    css.gridColumn (css.keyword "1 / -1");
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "minmax(0, 1fr) auto");
-    css.gap (css.rem 1.0);
-    css.padding (css.rem 1.0);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; cyan; });
-    css.background (css.hex "#22211d");
+  css.rule { css.class "stage"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.2);
+    css.padding (css.keyword "0.85rem 1.1rem");
+    css.borderRadius (css.rem 0.6);
+    css.background surface;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.customProperty "min-width" (css.rem 7.0);
   };
 
-  css.rule { css.class "counter-readout"; } {
+  css.rule { css.class "stage-name"; } {
+    css.fontWeight (fw "700");
+    css.fontSize (css.rem 1.0);
+  };
+
+  css.rule { css.class "stage-note"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.78);
+    css.color faintInk;
+  };
+
+  css.rule { css.class "stage-arrow"; } {
     css.display (css.keyword "flex");
     css.alignItems (css.keyword "center");
-    css.gap (css.rem 1.0);
-  };
-
-  css.rule { css.class "counter-label"; } {
-    css.color muted;
-    css.fontSize (css.rem 0.68);
-    css.letterSpacing (css.rem 0.08);
-  };
-
-  css.rule { css.class "counter-value"; } {
-    css.minWidth (css.keyword "3ch");
-    css.color electric;
-    css.fontSize (css.rem 2.6);
-    css.lineHeight (css.keyword "1");
-  };
-
-  css.rule { css.class "counter-controls"; } {
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "repeat(3, auto)");
-    css.gap (css.rem 0.5);
-  };
-
-  css.rule { css.class "counter-button"; } {
-    css.cursor (css.keyword "pointer");
-    css.minWidth (css.rem 3.0);
-    css.padding (css.keyword "0.75rem 1rem");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; cyan; });
-    css.borderRadius (css.px 0.0);
-    css.background (css.keyword "transparent");
-    css.color cyan;
-    css.fontWeight (css.keyword "900");
-  };
-
-  css.rule { css.hover (css.class "counter-button"); } {
-    css.background cyan;
-    css.color ink;
-  };
-
-  css.rule { css.class "counter-reset"; } {
-    css.color electric;
-    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
-    css.textTransform (css.keyword "uppercase");
-  };
-
-  css.rule { css.class "manifesto"; } {
-    css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "repeat(3, minmax(0, 1fr))");
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-  };
-
-  css.rule { css.class "manifesto-item"; } {
-    css.minHeight (css.rem 15.0);
-    css.padding (css.rem 1.5);
-    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-  };
-
-  css.rule { css.descendant (css.class "manifesto-item") (css.tag "h3"); } {
-    css.margin (css.keyword "0 0 4rem");
+    css.color (css.hex "#c0bdb0");
     css.fontSize (css.rem 1.1);
   };
 
-  css.rule { css.class "site-footer"; } {
+  -- ── Get started ────────────────────────────────────────────────────────────
+  css.rule { css.class "start-inner"; } {
     css.display (css.keyword "grid");
-    css.gridTemplateColumns (css.keyword "1fr auto");
-    css.gap (css.rem 2.0);
-    css.padding (css.keyword "2rem clamp(1rem, 3vw, 3rem)");
-    css.background ink;
-    css.color paperBright;
+    css.gridTemplateColumns (css.keyword "minmax(0, 1.3fr) minmax(0, 0.7fr)");
+    css.gap (css.keyword "clamp(1.5rem, 4vw, 3rem)");
+    css.alignItems (css.keyword "start");
   };
 
-  css.rule { css.focusVisible (css.tag "a"); css.focusVisible (css.tag "button"); css.focusVisible (css.tag "input"); } {
-    css.outline (css.space { css.px 3.0; css.keyword "solid"; violet; });
+  css.rule { css.class "terminal"; } {
+    css.background inkPanel;
+    css.borderRadius (css.rem 0.85);
+    css.overflow (css.keyword "hidden");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; css.hex "#2c2f38"; });
+  };
+
+  css.rule { css.class "term-row"; } {
+    css.padding (css.keyword "1rem 1.25rem");
+    css.customProperty "border-bottom" (css.space { css.px 1.0; css.keyword "solid"; css.hex "#26293200"; });
+  };
+
+  css.rule { css.class "term-row-line"; } {
+    css.customProperty "border-bottom" (css.space { css.px 1.0; css.keyword "solid"; css.hex "#262932"; });
+  };
+
+  css.rule { css.class "term-cmd"; } {
+    css.fontFamily mono;
+    css.fontSize (css.keyword "clamp(0.8rem, 1vw, 0.92rem)");
+    css.color codeText;
+    css.customProperty "white-space" (css.keyword "pre-wrap");
+    css.customProperty "word-break" (css.keyword "break-word");
+  };
+
+  css.rule { css.class "term-prompt"; } {
+    css.color lime;
+    css.customProperty "user-select" (css.keyword "none");
+  };
+
+  css.rule { css.class "term-note"; } {
+    css.fontFamily sans;
+    css.fontSize (css.rem 0.85);
+    css.color faint;
+    css.customProperty "margin-top" (css.rem 0.3);
+  };
+
+  css.rule { css.class "resources"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.5);
+  };
+
+  css.rule { css.class "resources-label"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.8);
+    css.fontWeight (fw "600");
+    css.letterSpacing (css.rem 0.05);
+    css.textTransform (css.keyword "uppercase");
+    css.color faintInk;
+    css.customProperty "margin-bottom" (css.rem 0.3);
+  };
+
+  css.rule { css.class "resource-link"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.justifyContent (css.keyword "space-between");
+    css.padding (css.keyword "0.85rem 1.1rem");
+    css.borderRadius (css.rem 0.6);
+    css.background surface;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.fontWeight (fw "600");
+    css.fontSize (css.rem 0.98);
+    css.transition (css.keyword "border-color 140ms ease, transform 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "resource-link"); } {
+    css.customProperty "border-color" accent;
+    css.transform (css.keyword "translateX(2px)");
+  };
+
+  css.rule { css.class "resource-arrow"; } {
+    css.color accent;
+  };
+
+  -- ── Footer ─────────────────────────────────────────────────────────────────
+  css.rule { css.class "site-footer"; } {
+    css.background ink;
+    css.color (css.hex "#c7c9cf");
+    css.padding (css.keyword "clamp(3rem, 6vw, 4.5rem) 0 2rem");
+  };
+
+  css.rule { css.class "footer-inner"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1.4fr) minmax(0, 2fr)");
+    css.gap (css.keyword "clamp(2rem, 5vw, 4rem)");
+  };
+
+  css.rule { css.descendant (css.class "footer-brand") (css.class "wordmark"); } {
+    css.color paper;
+  };
+
+  css.rule { css.class "footer-blurb"; } {
+    css.customProperty "margin-top" (css.rem 0.9);
+    css.color (css.hex "#9aa0ac");
+    css.fontSize (css.rem 0.98);
+    css.maxWidth (css.px 340.0);
+  };
+
+  css.rule { css.class "footer-groups"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "repeat(3, minmax(0, 1fr))");
+    css.gap (css.rem 1.5);
+  };
+
+  css.rule { css.descendant (css.class "footer-group") (css.tag "h3"); } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.78);
+    css.fontWeight (fw "600");
+    css.letterSpacing (css.rem 0.06);
+    css.textTransform (css.keyword "uppercase");
+    css.color (css.hex "#7c8290");
+    css.customProperty "margin-bottom" (css.rem 0.85);
+  };
+
+  css.rule { css.class "footer-link"; } {
+    css.display (css.keyword "block");
+    css.color (css.hex "#c7c9cf");
+    css.fontSize (css.rem 0.98);
+    css.customProperty "padding" (css.keyword "0.28rem 0");
+    css.transition (css.keyword "color 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "footer-link"); } {
+    css.color lime;
+  };
+
+  css.rule { css.class "footer-legal"; } {
+    css.customProperty "margin-top" (css.keyword "clamp(2rem, 4vw, 3rem)");
+    css.customProperty "padding-top" (css.rem 1.5);
+    css.customProperty "border-top" (css.space { css.px 1.0; css.keyword "solid"; css.hex "#2b2e37"; });
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.8);
+    css.color (css.hex "#8990a0");
+  };
+
+  -- ── Focus + motion ─────────────────────────────────────────────────────────
+  css.rule {
+    css.focusVisible (css.tag "a");
+    css.focusVisible (css.tag "button");
+  } {
+    css.outline (css.space { css.px 2.0; css.keyword "solid"; accent; });
+    css.customProperty "outline-offset" (css.px 2.0);
   };
 
   css.reducedMotion {
-    css.rule { css.class "status-dot"; } {
+    css.rule { css.all; } {
+      css.transition (css.keyword "none");
       css.animation (css.keyword "none");
+    };
+    css.rule { css.tag "html"; } {
+      css.customProperty "scroll-behavior" (css.keyword "auto");
     };
   };
 
-  css.media (css.maxWidthQuery 860) {
-    css.rule { css.class "site-header"; } {
-      css.gridTemplateColumns (css.keyword "1fr auto");
+  -- ── Responsive ─────────────────────────────────────────────────────────────
+  css.media (css.maxWidthQuery 900) {
+    css.rule { css.class "hero-inner"; css.class "mode-panel"; css.class "start-inner"; css.class "footer-inner"; } {
+      css.gridTemplateColumns (css.keyword "minmax(0, 1fr)");
     };
+    css.rule { css.class "footer-groups"; } {
+      css.gridTemplateColumns (css.keyword "repeat(3, minmax(0, 1fr))");
+    };
+  };
+
+  css.media (css.maxWidthQuery 720) {
     css.rule { css.class "site-nav"; } {
       css.display (css.keyword "none");
     };
-    css.rule { css.class "hero"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
+    css.rule { css.class "why-grid"; } {
+      css.gridTemplateColumns (css.keyword "minmax(0, 1fr)");
     };
-    css.rule { css.class "hero-signal"; } {
-      css.gridTemplateColumns (css.keyword "repeat(3, 1fr)");
-      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-    };
-    css.rule { css.class "section-heading"; css.class "mode-card"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
-    };
-    css.rule { css.class "mode-copy"; } {
-      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.rule { css.class "footer-groups"; } {
+      css.gridTemplateColumns (css.keyword "1fr 1fr");
     };
   };
 
-  css.media (css.maxWidthQuery 620) {
-    css.rule { css.class "hero-title"; } {
-      css.fontSize (css.keyword "clamp(4rem, 24vw, 7rem)");
+  css.media (css.maxWidthQuery 520) {
+    css.rule { css.class "hero-actions"; css.class "btn"; } {
+      css.width (css.percent 100.0);
+      css.justifyContent (css.keyword "center");
     };
-    css.rule { css.class "mode-switch"; css.class "manifesto"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
+    css.rule { css.class "mode-toggle"; } {
+      css.width (css.percent 100.0);
     };
-    css.rule { css.class "mode-tab"; css.class "manifesto-item"; } {
-      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
-    };
-    css.rule { css.class "playground"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
-    };
-    css.rule { css.class "counter-card"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
-    };
-    css.rule { css.class "counter-controls"; } {
-      css.gridTemplateColumns (css.keyword "1fr 1fr");
-    };
-    css.rule { css.class "counter-reset"; } {
-      css.gridColumn (css.keyword "1 / -1");
-    };
-    css.rule { css.class "action"; } {
-      css.width (css.keyword "100%");
-    };
-    css.rule { css.class "site-footer"; } {
-      css.gridTemplateColumns (css.keyword "1fr");
+    css.rule { css.class "mode-tab"; } {
+      css.customProperty "flex" (css.keyword "1");
+      css.textAlign (css.keyword "center");
     };
   };
 };
