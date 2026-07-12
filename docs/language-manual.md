@@ -32,11 +32,19 @@ cfg.server.port
 ## Editor integration
 
 `zutai-cli lsp` starts a Language Server Protocol service over standard input
-and output. The first release supports `.zt` document diagnostics on open and
-change, plus hover type information for typed expressions. Configure an editor
-to launch `zutai-cli lsp` for Zutai files; the server resolves relative imports
-from the edited file's directory. It deliberately does not execute programs or
-perform native compilation while editing.
+and output. It supports `.zt` diagnostics, hover types, go-to-definition,
+same-document references and rename, document symbols, identifier completion,
+signature help, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
+and resolves relative imports from the edited file's directory. Rename and
+navigation deliberately decline builtins and embedded-prelude bindings because
+they have no source location in the edited file. The server never executes a
+program or performs native compilation while editing.
+
+The bundled Zed extension in [`editors/zed/`](../editors/zed/) starts
+`zutai-cli lsp` when that executable is available on the worktree `PATH`.
+Install the directory as a development extension in Zed after building or
+installing the CLI. Other LSP clients can launch `zutai-cli lsp` directly for
+`.zt` files.
 
 ## File modes
 

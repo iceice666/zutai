@@ -35,7 +35,7 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (LSP diagnostics and hover); prior baseline updates:
+_Last updated: 2026-07-12 (LSP editor baseline); prior baseline updates:
 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
@@ -136,8 +136,9 @@ The same 2026-07-08 stdlib helper slice adds opt-in list/stream search/extrema
 and Result/Validation convenience helpers as pure source exports; see
 "Stdlib helper slice" below.
 The 2026-07-12 editor tooling pass adds `zutai-cli lsp`: a stdio LSP service
-with full-document diagnostics and THIR-derived hover types; see "Language
-Server Protocol diagnostics and hover" below.
+with incremental diagnostics, THIR-derived hover/signature types, and
+HIR-derived navigation, rename, symbols, completion, and parser quick fixes; see "Language Server
+Protocol editor baseline" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -270,19 +271,36 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
 
 ## Completed milestones, newest first
 
-### Language Server Protocol diagnostics and hover ✅
+### Language Server Protocol editor baseline ✅
 
 _Completed 2026-07-12. Adds editor integration without changing language
 syntax, HIR/THIR semantics, or the runtime._
 
-- `zutai-cli lsp` speaks stdio JSON-RPC/LSP with full-document synchronization.
-  It publishes parser, HIR, import, and THIR diagnostics using the same semantic
-  analysis path as `zutai check`.
+- `zutai-cli lsp` speaks stdio JSON-RPC/LSP with UTF-16 positions, versioned
+  diagnostics, and safe incremental document synchronization. It publishes
+  parser, HIR, import, and THIR diagnostics using the same semantic analysis
+  path as `zutai check`.
 - Hover selects the narrowest completed THIR expression at the cursor and shows
   a source-oriented rendering of its inferred type. Positions correctly use the
-  LSP-required UTF-16 character units.
+  LSP-required UTF-16 character units. Signature help renders the resolved
+  typed binding at a call site.
+- Go-to-definition resolves local value and type references from HIR, so it is
+  available even if later THIR type checking fails. It returns exact declaration
+  identifier ranges and deliberately declines builtins and embedded-prelude
+  bindings, which have no location in the edited source file.
+- Same-document references and rename use those resolved `BindingId`s, so they
+  neither conflate shadowed names nor edit embedded-prelude source. Document
+  symbols expose top-level declarations; completion offers language keywords,
+  root bindings, and prior local bindings without reimplementing resolution.
+  Machine-applicable parser fixes are available as LSP quick fixes.
+- `editors/zed/` now supplies a Zed adapter that locates `zutai-cli` on the
+  worktree `PATH` and starts it with `lsp`; the syntax extension and language
+  server are usable together as one dev extension.
 - Verification: CLI unit tests cover protocol framing, document diagnostics,
-  hover, and UTF-16 position conversion.
+  incremental UTF-16 edits, hover, local definitions through a later type
+  error, references/rename, symbols, completion, signature help, parser quick
+  fixes, and UTF-16 position conversion. The Zed adapter host-checks against
+  `zed_extension_api` 0.7.0.
 
 ### Stdlib helper slice ✅
 

@@ -30,7 +30,13 @@ pub(crate) fn run() -> io::Result<()> {
 
 #[derive(Default)]
 struct Server {
-    documents: HashMap<String, String>,
+    documents: HashMap<String, Document>,
+}
+
+#[derive(Clone)]
+struct Document {
+    text: String,
+    version: Option<i64>,
 }
 
 impl Server {
@@ -51,8 +57,27 @@ impl Server {
                             "id": id,
                             "result": {
                                 "capabilities": {
-                                    "textDocumentSync": 1,
-                                    "hoverProvider": true
+                                    "positionEncoding": "utf-16",
+                                    "textDocumentSync": {
+                                        "openClose": true,
+                                        "change": 2,
+                                        "save": { "includeText": false }
+                                    },
+                                    "hoverProvider": true,
+                                    "definitionProvider": true,
+                                    "referencesProvider": true,
+                                    "documentSymbolProvider": true,
+                                    "completionProvider": {
+                                        "triggerCharacters": [".", ":"],
+                                        "resolveProvider": false
+                                    },
+                                    "renameProvider": { "prepareProvider": true },
+                                    "signatureHelpProvider": {
+                                        "triggerCharacters": ["(", " "]
+                                    },
+                                    "codeActionProvider": {
+                                        "codeActionKinds": ["quickfix"]
+                                    }
                                 },
                                 "serverInfo": { "name": "zutai", "version": env!("CARGO_PKG_VERSION") }
                             }
@@ -70,37 +95,97 @@ impl Server {
             }
             "exit" => return Ok(true),
             "textDocument/didOpen" => {
-                if let Some((uri, text)) = document_text(&params) {
-                    self.documents.insert(uri.clone(), text);
+                if let Some((uri, document)) = document_text(&params) {
+                    self.documents.insert(uri.clone(), document);
                     self.publish_diagnostics(&uri, output)?;
                 }
             }
             "textDocument/didChange" => {
-                let uri = params
-                    .pointer("/textDocument/uri")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                let text = params
-                    .get("contentChanges")
-                    .and_then(Value::as_array)
-                    .and_then(|changes| changes.last())
-                    .and_then(|change| change.get("text"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                if let (Some(uri), Some(text)) = (uri, text) {
-                    self.documents.insert(uri.clone(), text);
+                if let Some(uri) = self.apply_changes(&params) {
                     self.publish_diagnostics(&uri, output)?;
                 }
             }
             "textDocument/didClose" => {
                 if let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) {
                     self.documents.remove(uri);
-                    publish(output, uri, Vec::new())?;
+                    publish(output, uri, None, Vec::new())?;
                 }
             }
             "textDocument/hover" => {
                 if let Some(id) = id {
                     let result = self.hover(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/definition" => {
+                if let Some(id) = id {
+                    let result = self.definition(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/references" => {
+                if let Some(id) = id {
+                    let result = self.references(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/documentSymbol" => {
+                if let Some(id) = id {
+                    let result = self.document_symbols(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/completion" => {
+                if let Some(id) = id {
+                    let result = self.completion(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/prepareRename" => {
+                if let Some(id) = id {
+                    let result = self.prepare_rename(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/rename" => {
+                if let Some(id) = id {
+                    let result = self.rename(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/signatureHelp" => {
+                if let Some(id) = id {
+                    let result = self.signature_help(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/codeAction" => {
+                if let Some(id) = id {
+                    let result = self.code_actions(&params);
                     send(
                         output,
                         json!({ "jsonrpc": "2.0", "id": id, "result": result }),
@@ -125,12 +210,42 @@ impl Server {
 
     fn publish_diagnostics(&self, uri: &str, output: &mut impl Write) -> io::Result<()> {
         let Some(source) = self.source_for(uri) else {
-            return publish(output, uri, Vec::new());
+            return publish(output, uri, None, Vec::new());
         };
         let diagnostics = analyze(&source, uri)
             .map(|analysis| diagnostics(&source, &analysis))
             .unwrap_or_default();
-        publish(output, uri, diagnostics)
+        publish(
+            output,
+            uri,
+            self.documents
+                .get(uri)
+                .and_then(|document| document.version),
+            diagnostics,
+        )
+    }
+
+    fn apply_changes(&mut self, params: &Value) -> Option<String> {
+        let uri = params.pointer("/textDocument/uri")?.as_str()?.to_owned();
+        let version = params
+            .pointer("/textDocument/version")
+            .and_then(Value::as_i64);
+        let document = self.documents.get_mut(&uri)?;
+        for change in params.get("contentChanges")?.as_array()? {
+            let text = change.get("text")?.as_str()?;
+            if let Some(range) = change.get("range") {
+                let start = offset_at(&document.text, range.get("start")?)?;
+                let end = offset_at(&document.text, range.get("end")?)?;
+                if start > end {
+                    return None;
+                }
+                document.text.replace_range(start..end, text);
+            } else {
+                document.text = text.to_owned();
+            }
+        }
+        document.version = version;
+        Some(uri)
     }
 
     fn hover(&self, params: &Value) -> Value {
@@ -168,19 +283,296 @@ impl Server {
         })
     }
 
+    fn definition(&self, params: &Value) -> Value {
+        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding) = hir.bindings.get(binding.0 as usize) else {
+            return Value::Null;
+        };
+        let Some((start, end)) = binding_range(&source, binding) else {
+            return Value::Null;
+        };
+        json!({ "uri": uri, "range": range(&source, start, end) })
+    }
+
+    fn references(&self, params: &Value) -> Value {
+        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
+            return Value::Null;
+        };
+        if binding_range(&source, binding_data).is_none() {
+            return Value::Null;
+        }
+        let include_declaration = params
+            .pointer("/context/includeDeclaration")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        Value::Array(
+            binding_reference_ranges(&source, hir, binding, include_declaration)
+                .into_iter()
+                .map(|(start, end)| json!({ "uri": uri, "range": range(&source, start, end) }))
+                .collect(),
+        )
+    }
+
+    fn document_symbols(&self, params: &Value) -> Value {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Value::Null;
+        };
+        let Some(source) = self.source_for(uri) else {
+            return Value::Null;
+        };
+        let Some(analysis) = analyze(&source, uri) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Array(Vec::new());
+        };
+        Value::Array(
+            hir.decl_arena
+                .iter()
+                .filter_map(|(_, decl)| {
+                    let binding = hir.bindings.get(decl.binding.0 as usize)?;
+                    let (start, end) = binding_range(&source, binding)?;
+                    Some(json!({
+                        "name": binding.name,
+                        "detail": binding_kind_label(binding.kind),
+                        "kind": symbol_kind(binding.kind),
+                        "range": range(&source, decl.span.start as usize, decl.span.end as usize),
+                        "selectionRange": range(&source, start, end),
+                    }))
+                })
+                .collect(),
+        )
+    }
+
+    fn completion(&self, params: &Value) -> Value {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Value::Null;
+        };
+        let Some(source) = self.source_for(uri) else {
+            return Value::Null;
+        };
+        let Some(offset) = params
+            .get("position")
+            .and_then(|position| offset_at(&source, position))
+        else {
+            return Value::Null;
+        };
+        let Some(analysis) = analyze(&source, uri) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Array(Vec::new());
+        };
+        let (start, prefix) = completion_prefix(&source, offset);
+        let replacement = range(&source, start, offset);
+        let mut candidates: Vec<_> = hir
+            .bindings
+            .iter()
+            .filter(|binding| completion_binding(binding, &source, offset))
+            .map(|binding| (binding.name.clone(), binding.kind))
+            .collect();
+        candidates.extend(
+            KEYWORDS
+                .iter()
+                .map(|keyword| ((*keyword).to_owned(), zutai_hir::BindingKind::BuiltinValue)),
+        );
+        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        candidates.dedup_by(|left, right| left.0 == right.0);
+        Value::Array(
+            candidates
+                .into_iter()
+                .filter(|(name, _)| name.starts_with(&prefix))
+                .map(|(name, kind)| {
+                    let is_keyword = KEYWORDS.contains(&name.as_str());
+                    json!({
+                        "label": name,
+                        "kind": if is_keyword { 14 } else { completion_kind(kind) },
+                        "detail": if is_keyword { "keyword" } else { binding_kind_label(kind) },
+                        "sortText": name,
+                        "textEdit": { "range": replacement, "newText": name },
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    fn prepare_rename(&self, params: &Value) -> Value {
+        let Some((_, source, analysis, binding)) = self.binding_at_position(params) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding) = hir.bindings.get(binding.0 as usize) else {
+            return Value::Null;
+        };
+        if !renameable_binding(&source, binding) {
+            return Value::Null;
+        }
+        let (start, end) = binding_range(&source, binding).expect("renameable binding has a range");
+        range(&source, start, end)
+    }
+
+    fn rename(&self, params: &Value) -> Value {
+        let Some(new_name) = params.get("newName").and_then(Value::as_str) else {
+            return Value::Null;
+        };
+        if !valid_identifier(new_name) {
+            return Value::Null;
+        }
+        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
+            return Value::Null;
+        };
+        if !renameable_binding(&source, binding_data) {
+            return Value::Null;
+        }
+        let edits: Vec<_> = binding_reference_ranges(&source, hir, binding, true)
+            .into_iter()
+            .map(|(start, end)| json!({ "range": range(&source, start, end), "newText": new_name }))
+            .collect();
+        json!({ "changes": { uri: edits } })
+    }
+
+    fn signature_help(&self, params: &Value) -> Value {
+        let Some((_, source, analysis, binding)) = self.binding_at_position(params) else {
+            return Value::Null;
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
+            return Value::Null;
+        };
+        let Some(file) = analysis
+            .thir
+            .as_ref()
+            .and_then(|lowered| lowered.file.as_ref())
+        else {
+            return Value::Null;
+        };
+        let ty = file
+            .expr_arena
+            .iter()
+            .filter_map(|(_, expr)| match expr.kind {
+                zutai_thir::ThirExprKind::BindingRef {
+                    binding: candidate, ..
+                } if candidate == binding
+                    && source.get(expr.span.start as usize..expr.span.end as usize)
+                        == Some(binding_data.name.as_str()) =>
+                {
+                    Some((expr.ty, expr.span))
+                }
+                _ => None,
+            })
+            .min_by_key(|(_, span)| span.end.saturating_sub(span.start))
+            .map(|(ty, _)| ty);
+        let Some(ty) = ty else {
+            return Value::Null;
+        };
+        json!({
+            "signatures": [{
+                "label": format!("{} : {}", binding_data.name, render_type(file, ty)),
+                "documentation": { "kind": "markdown", "value": binding_kind_label(binding_data.kind) }
+            }],
+            "activeSignature": 0,
+            "activeParameter": 0,
+        })
+    }
+
+    fn code_actions(&self, params: &Value) -> Value {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Value::Null;
+        };
+        let Some(source) = self.source_for(uri) else {
+            return Value::Null;
+        };
+        let Some(analysis) = analyze(&source, uri) else {
+            return Value::Null;
+        };
+        Value::Array(
+            analysis
+                .diagnostics
+                .iter()
+                .filter_map(|diagnostic| match &diagnostic.kind {
+                    zutai_semantic::SemanticDiagnosticKind::Parse(parse) => Some(parse),
+                    _ => None,
+                })
+                .flat_map(|diagnostic| {
+                    diagnostic.fixes.iter().map(|fix| {
+                        let edits: Vec<_> = fix
+                            .edits
+                            .iter()
+                            .map(|edit| {
+                                json!({
+                                    "range": range(&source, edit.span.start as usize, edit.span.end as usize),
+                                    "newText": edit.replacement,
+                                })
+                            })
+                            .collect();
+                        json!({
+                            "title": fix.title,
+                            "kind": "quickfix",
+                            "isPreferred": matches!(fix.applicability, zutai_syntax::Applicability::MachineApplicable),
+                            "edit": { "changes": { uri: edits } },
+                        })
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    fn binding_at_position(
+        &self,
+        params: &Value,
+    ) -> Option<(
+        String,
+        String,
+        zutai_semantic::Analysis,
+        zutai_hir::BindingId,
+    )> {
+        let uri = params.pointer("/textDocument/uri")?.as_str()?.to_owned();
+        let source = self.source_for(&uri)?;
+        let offset = offset_at(&source, params.get("position")?)?;
+        let analysis = analyze(&source, &uri)?;
+        let hir = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+        let binding =
+            binding_at(hir, offset).or_else(|| binding_declaration_at(&source, hir, offset))?;
+        Some((uri, source, analysis, binding))
+    }
+
     fn source_for(&self, uri: &str) -> Option<String> {
         self.documents
             .get(uri)
-            .cloned()
+            .map(|document| document.text.clone())
             .or_else(|| file_path(uri).and_then(|path| std::fs::read_to_string(path).ok()))
     }
 }
 
-fn document_text(params: &Value) -> Option<(String, String)> {
+fn document_text(params: &Value) -> Option<(String, Document)> {
     let document = params.get("textDocument")?;
     Some((
         document.get("uri")?.as_str()?.to_owned(),
-        document.get("text")?.as_str()?.to_owned(),
+        Document {
+            text: document.get("text")?.as_str()?.to_owned(),
+            version: document.get("version").and_then(Value::as_i64),
+        },
     ))
 }
 
@@ -226,6 +618,191 @@ fn diagnostics(source: &str, analysis: &zutai_semantic::Analysis) -> Vec<Value> 
             }
         })
         .collect()
+}
+
+/// Find the narrowest resolved value or type reference at an LSP byte offset.
+/// This deliberately consults HIR rather than THIR: name resolution survives
+/// later type errors, so definition navigation remains useful while editing an
+/// incomplete program.
+fn binding_at(file: &zutai_hir::HirFile, offset: usize) -> Option<zutai_hir::BindingId> {
+    file.expr_arena
+        .iter()
+        .filter_map(|(_, expr)| match expr.kind {
+            zutai_hir::HirExprKind::BindingRef(binding) if contains(expr.span, offset) => {
+                Some((binding, expr.span))
+            }
+            _ => None,
+        })
+        .chain(file.type_arena.iter().filter_map(|(_, ty)| match ty.kind {
+            zutai_hir::HirTypeKind::BindingRef(binding) if contains(ty.span, offset) => {
+                Some((binding, ty.span))
+            }
+            _ => None,
+        }))
+        .min_by_key(|(_, span)| span.end.saturating_sub(span.start))
+        .map(|(binding, _)| binding)
+}
+
+/// Return the source range of a declaration/binder only when it belongs to the
+/// current document. Embedded preludes share the HIR binding table but have
+/// spans into a different source buffer, so callers must not expose them as
+/// locations or edits in the editor document.
+fn binding_range(source: &str, binding: &zutai_hir::Binding) -> Option<(usize, usize)> {
+    let start = binding.span.start as usize;
+    let end = start.checked_add(binding.name.len())?;
+    (source.get(start..end) == Some(binding.name.as_str())).then_some((start, end))
+}
+
+fn binding_declaration_at(
+    source: &str,
+    file: &zutai_hir::HirFile,
+    offset: usize,
+) -> Option<zutai_hir::BindingId> {
+    file.bindings
+        .iter()
+        .enumerate()
+        .filter_map(|(index, binding)| {
+            let (start, end) = binding_range(source, binding)?;
+            ((start..=end).contains(&offset))
+                .then_some((zutai_hir::BindingId(index as u32), end - start))
+        })
+        .min_by_key(|(_, length)| *length)
+        .map(|(binding, _)| binding)
+}
+
+fn binding_reference_ranges(
+    source: &str,
+    file: &zutai_hir::HirFile,
+    binding: zutai_hir::BindingId,
+    include_declaration: bool,
+) -> Vec<(usize, usize)> {
+    let mut ranges: Vec<_> = file
+        .expr_arena
+        .iter()
+        .filter_map(|(_, expr)| match expr.kind {
+            zutai_hir::HirExprKind::BindingRef(candidate) if candidate == binding => {
+                let start = expr.span.start as usize;
+                let end = expr.span.end as usize;
+                source.get(start..end).is_some().then_some((start, end))
+            }
+            _ => None,
+        })
+        .chain(file.type_arena.iter().filter_map(|(_, ty)| match ty.kind {
+            zutai_hir::HirTypeKind::BindingRef(candidate) if candidate == binding => {
+                let start = ty.span.start as usize;
+                let end = ty.span.end as usize;
+                source.get(start..end).is_some().then_some((start, end))
+            }
+            _ => None,
+        }))
+        .collect();
+    if include_declaration
+        && let Some(binding) = file.bindings.get(binding.0 as usize)
+        && let Some(range) = binding_range(source, binding)
+    {
+        ranges.push(range);
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
+const KEYWORDS: &[&str] = &[
+    "cond", "false", "handle", "if", "import", "match", "perform", "resume", "select", "then",
+    "true", "type", "with",
+];
+
+fn completion_prefix(source: &str, offset: usize) -> (usize, String) {
+    let mut start = floor_boundary(source, offset.min(source.len()));
+    while let Some(character) = source[..start].chars().next_back() {
+        if !zutai_syntax::ident::is_ident_continue(character) {
+            break;
+        }
+        start -= character.len_utf8();
+    }
+    let prefix = &source[start..offset];
+    if prefix
+        .chars()
+        .next()
+        .is_some_and(zutai_syntax::ident::is_ident_start)
+    {
+        (start, prefix.to_owned())
+    } else {
+        (offset, String::new())
+    }
+}
+
+fn completion_binding(binding: &zutai_hir::Binding, source: &str, offset: usize) -> bool {
+    if binding.name.starts_with('$') {
+        return false;
+    }
+    match binding.kind {
+        zutai_hir::BindingKind::BuiltinType
+        | zutai_hir::BindingKind::BuiltinValue
+        | zutai_hir::BindingKind::TopValue
+        | zutai_hir::BindingKind::TopFunction
+        | zutai_hir::BindingKind::TopType
+        | zutai_hir::BindingKind::TopConstraint
+        | zutai_hir::BindingKind::TopWitness => true,
+        zutai_hir::BindingKind::ConstraintMethod
+        | zutai_hir::BindingKind::TypeParam
+        | zutai_hir::BindingKind::LevelParam
+        | zutai_hir::BindingKind::Local
+        | zutai_hir::BindingKind::Param => {
+            (binding.span.start as usize) <= offset && binding_range(source, binding).is_some()
+        }
+    }
+}
+
+fn binding_kind_label(kind: zutai_hir::BindingKind) -> &'static str {
+    match kind {
+        zutai_hir::BindingKind::BuiltinType => "builtin type",
+        zutai_hir::BindingKind::BuiltinValue => "builtin value",
+        zutai_hir::BindingKind::TopValue => "value",
+        zutai_hir::BindingKind::TopFunction => "function",
+        zutai_hir::BindingKind::TopType => "type",
+        zutai_hir::BindingKind::TopConstraint => "constraint",
+        zutai_hir::BindingKind::TopWitness => "witness",
+        zutai_hir::BindingKind::ConstraintMethod => "constraint method",
+        zutai_hir::BindingKind::TypeParam => "type parameter",
+        zutai_hir::BindingKind::LevelParam => "universe level parameter",
+        zutai_hir::BindingKind::Local => "local value",
+        zutai_hir::BindingKind::Param => "parameter",
+    }
+}
+
+fn completion_kind(kind: zutai_hir::BindingKind) -> u8 {
+    match kind {
+        zutai_hir::BindingKind::TopFunction | zutai_hir::BindingKind::ConstraintMethod => 3,
+        zutai_hir::BindingKind::TopType | zutai_hir::BindingKind::BuiltinType => 7,
+        zutai_hir::BindingKind::TopConstraint => 8,
+        zutai_hir::BindingKind::TypeParam | zutai_hir::BindingKind::LevelParam => 25,
+        zutai_hir::BindingKind::Param => 6,
+        _ => 6,
+    }
+}
+
+fn symbol_kind(kind: zutai_hir::BindingKind) -> u8 {
+    match kind {
+        zutai_hir::BindingKind::TopFunction => 12,
+        zutai_hir::BindingKind::TopType => 5,
+        zutai_hir::BindingKind::TopConstraint => 11,
+        zutai_hir::BindingKind::TopWitness => 14,
+        _ => 13,
+    }
+}
+
+fn renameable_binding(source: &str, binding: &zutai_hir::Binding) -> bool {
+    !matches!(
+        binding.kind,
+        zutai_hir::BindingKind::BuiltinType | zutai_hir::BindingKind::BuiltinValue
+    ) && !binding.name.starts_with('$')
+        && binding_range(source, binding).is_some()
+}
+
+fn valid_identifier(name: &str) -> bool {
+    let tokens = zutai_syntax::tokenize(name);
+    matches!(tokens.as_slice(), [token] if token.kind == zutai_syntax::SyntaxKind::Ident && token.text == name)
 }
 
 fn severity(severity: zutai_syntax::Severity) -> u8 {
@@ -462,10 +1039,15 @@ fn hex(byte: u8) -> Option<u8> {
     }
 }
 
-fn publish(output: &mut impl Write, uri: &str, diagnostics: Vec<Value>) -> io::Result<()> {
+fn publish(
+    output: &mut impl Write,
+    uri: &str,
+    version: Option<i64>,
+    diagnostics: Vec<Value>,
+) -> io::Result<()> {
     send(
         output,
-        json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": uri, "diagnostics": diagnostics } }),
+        json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": uri, "version": version, "diagnostics": diagnostics } }),
     )
 }
 
@@ -532,6 +1114,267 @@ mod tests {
         assert_eq!(
             hover.pointer("/contents/value").and_then(Value::as_str),
             Some("```zutai\nInt\n```")
+        );
+    }
+
+    #[test]
+    fn definition_resolves_value_and_type_bindings_with_utf16_ranges() {
+        let uri = "file:///tmp/definition.zt";
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.to_string(),
+            Document {
+                text: "名 ::= 1;\nCount :: type Int;\nvalue :: Count = 名;\nvalue".to_string(),
+                version: None,
+            },
+        );
+
+        let value = server.definition(
+            &json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 1 } }),
+        );
+        assert_eq!(
+            value,
+            json!({
+                "uri": uri,
+                "range": {
+                    "start": { "line": 2, "character": 0 },
+                    "end": { "line": 2, "character": 5 }
+                }
+            })
+        );
+
+        let ty = server.definition(
+            &json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 10 } }),
+        );
+        assert_eq!(
+            ty.pointer("/range/start/line").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            ty.pointer("/range/end/character").and_then(Value::as_u64),
+            Some(5)
+        );
+
+        let unicode = server.definition(
+            &json!({ "textDocument": { "uri": uri }, "position": { "line": 2, "character": 17 } }),
+        );
+        assert_eq!(
+            unicode.pointer("/range/start").cloned(),
+            Some(json!({ "line": 0, "character": 0 }))
+        );
+        assert_eq!(
+            unicode.pointer("/range/end").cloned(),
+            Some(json!({ "line": 0, "character": 1 }))
+        );
+    }
+
+    #[test]
+    fn definition_works_when_later_type_checking_fails() {
+        let uri = "file:///tmp/incomplete.zt";
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.to_string(),
+            Document {
+                text: "answer ::= 42;\nanswer + \"bad\"".to_string(),
+                version: None,
+            },
+        );
+
+        let result = server.definition(
+            &json!({ "textDocument": { "uri": uri }, "position": { "line": 1, "character": 2 } }),
+        );
+        assert_eq!(
+            result.pointer("/range/start").cloned(),
+            Some(json!({ "line": 0, "character": 0 }))
+        );
+        assert_eq!(
+            result.pointer("/range/end").cloned(),
+            Some(json!({ "line": 0, "character": 6 }))
+        );
+    }
+
+    #[test]
+    fn initialize_advertises_definition_support() {
+        let mut server = Server::default();
+        let mut output = Vec::new();
+        server
+            .handle(json!({ "id": 1, "method": "initialize" }), &mut output)
+            .unwrap();
+        let message = String::from_utf8(output).unwrap();
+        assert!(message.contains("definitionProvider"));
+        assert!(message.contains("referencesProvider"));
+        assert!(message.contains("renameProvider"));
+        assert!(message.contains("completionProvider"));
+        assert!(message.contains("codeActionProvider"));
+    }
+
+    #[test]
+    fn incremental_changes_preserve_utf16_positions_and_diagnostic_versions() {
+        let uri = "file:///tmp/change.zt";
+        let mut server = Server::default();
+        let mut output = Vec::new();
+        server
+            .handle(
+                json!({
+                    "method": "textDocument/didOpen",
+                    "params": { "textDocument": { "uri": uri, "version": 1, "text": "名 ::= 1;\n名" } }
+                }),
+                &mut output,
+            )
+            .unwrap();
+        output.clear();
+        server
+            .handle(
+                json!({
+                    "method": "textDocument/didChange",
+                    "params": {
+                        "textDocument": { "uri": uri, "version": 2 },
+                        "contentChanges": [{
+                            "range": {
+                                "start": { "line": 1, "character": 0 },
+                                "end": { "line": 1, "character": 1 }
+                            },
+                            "text": "名 + \"bad\""
+                        }]
+                    }
+                }),
+                &mut output,
+            )
+            .unwrap();
+
+        assert_eq!(
+            server.source_for(uri).as_deref(),
+            Some("名 ::= 1;\n名 + \"bad\"")
+        );
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("\"version\":2"), "{output}");
+        assert!(output.contains("publishDiagnostics"), "{output}");
+    }
+
+    #[test]
+    fn references_and_rename_are_binding_accurate() {
+        let uri = "file:///tmp/rename.zt";
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.to_string(),
+            Document {
+                text: "value ::= 1;\nuse ::= value;\nvalue".to_string(),
+                version: Some(4),
+            },
+        );
+        let params = json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 8 },
+            "context": { "includeDeclaration": true }
+        });
+        let references = server.references(&params);
+        assert_eq!(references.as_array().map(Vec::len), Some(3));
+        assert_eq!(
+            server
+                .prepare_rename(&params)
+                .pointer("/start/line")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+
+        let rename = server.rename(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 8 },
+            "newName": "renamed"
+        }));
+        assert_eq!(
+            rename
+                .get("changes")
+                .and_then(|changes| changes.get(uri))
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(3)
+        );
+        assert_eq!(
+            server.rename(&json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": 1, "character": 8 },
+                "newName": "match"
+            })),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn symbols_completion_and_signature_help_use_semantic_information() {
+        let uri = "file:///tmp/features.zt";
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.to_string(),
+            Document {
+                text: "id :: Int -> Int\n  = x => x;\nvalue ::= id 1;\nvalue".to_string(),
+                version: None,
+            },
+        );
+
+        let symbols = server.document_symbols(&json!({ "textDocument": { "uri": uri } }));
+        let names: Vec<_> = symbols
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
+            .collect();
+        assert_eq!(names, ["id", "value"]);
+
+        let completions = server.completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 3, "character": 3 }
+        }));
+        assert!(
+            completions
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| { item.get("label").and_then(Value::as_str) == Some("value") })
+        );
+
+        let signature = server.signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 10 }
+        }));
+        assert_eq!(
+            signature
+                .pointer("/signatures/0/label")
+                .and_then(Value::as_str),
+            Some("id : Int -> Int")
+        );
+    }
+
+    #[test]
+    fn parser_fixes_are_published_as_quick_fixes() {
+        let uri = "file:///tmp/fix.zt";
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.to_string(),
+            Document {
+                text: "value : Int = 1;\nvalue".to_string(),
+                version: None,
+            },
+        );
+
+        let actions = server.code_actions(&json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 16 }
+            },
+            "context": { "diagnostics": [] }
+        }));
+        assert_eq!(actions.as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            actions.pointer("/0/title").and_then(Value::as_str),
+            Some("Use `::` for typed binding")
+        );
+        assert_eq!(
+            actions
+                .pointer("/0/edit/changes/file:~1~1~1tmp~1fix.zt/0/newText")
+                .and_then(Value::as_str),
+            Some("::")
         );
     }
 

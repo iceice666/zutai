@@ -6,3 +6,6 @@ authors = ["iceice666"]
 description = "Syntax highlighting for Zutai (.zt) and Zutai Immediate (.zti)"
 repository = "https://github.com/iceice666/zutai"
 
+[language_servers.zutai]
+name = "Zutai LSP"
+languages = ["Zutai"]
