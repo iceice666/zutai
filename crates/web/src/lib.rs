@@ -15,12 +15,121 @@ use tiny_http::{Header, Response, Server, StatusCode};
 use zutai_browser::{BrowserProgram, WebBundleV1, decode_program, prerender_document};
 use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
 
-use super::{cargo_target_dir, run_tool, workspace_root};
+use clap::Subcommand;
 
 const MAX_PAGES_FILE_BYTES: u64 = 25 * 1024 * 1024;
 
+/// Commands exposed by the dedicated `zutai-web` app and the compatibility
+/// `zutai-cli web` entry point.
+#[derive(Clone, Debug, Subcommand)]
+pub enum WebCommand {
+    /// Build a prerendered static site and its interpreter WebAssembly kernel
+    Build {
+        /// Browser program entry `.zt` file
+        entry: PathBuf,
+        /// Static output directory
+        #[arg(short = 'o', long, default_value = "dist")]
+        out_dir: PathBuf,
+        /// Root used for portable source paths (defaults to the entry directory)
+        #[arg(long)]
+        source_root: Option<PathBuf>,
+        /// Static assets copied verbatim (defaults to `<source-root>/public`)
+        #[arg(long)]
+        public_dir: Option<PathBuf>,
+    },
+    /// Build, watch, and serve with full-page reload on successful changes
+    Serve {
+        /// Browser program entry `.zt` file
+        entry: PathBuf,
+        /// Static output directory
+        #[arg(short = 'o', long, default_value = "dist")]
+        out_dir: PathBuf,
+        /// Root used for portable source paths (defaults to the entry directory)
+        #[arg(long)]
+        source_root: Option<PathBuf>,
+        /// Static assets copied verbatim (defaults to `<source-root>/public`)
+        #[arg(long)]
+        public_dir: Option<PathBuf>,
+        /// Address for the development server
+        #[arg(long, default_value = "127.0.0.1:8787")]
+        addr: String,
+        /// Serve the existing output directory without rebuilding first
+        #[arg(long)]
+        no_build: bool,
+    },
+}
+
+impl WebCommand {
+    pub fn run(self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Build {
+                entry,
+                out_dir,
+                source_root,
+                public_dir,
+            } => run_web_build(WebBuildOptions {
+                entry,
+                out_dir,
+                source_root,
+                public_dir,
+            }),
+            Self::Serve {
+                entry,
+                out_dir,
+                source_root,
+                public_dir,
+                addr,
+                no_build,
+            } => run_web_serve(
+                WebBuildOptions {
+                    entry,
+                    out_dir,
+                    source_root,
+                    public_dir,
+                },
+                &addr,
+                no_build,
+            ),
+        }
+    }
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("web crate lives under crates/web")
+        .to_path_buf()
+}
+
+fn cargo_target_dir(root: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => {
+            let path = PathBuf::from(dir);
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        }
+        None => root.join("target"),
+    }
+}
+
+fn run_tool(command: &mut Command, tool: &str, purpose: &str) -> Result<(), Box<dyn Error>> {
+    let status = command.status().map_err(|err| {
+        format!(
+            "web build error: required tool `{tool}` failed to start for {purpose}: {err}; install it, set the corresponding ZUTAI_* environment variable, or run from the Zutai dev shell (`nix develop`)"
+        )
+    })?;
+    if !status.success() {
+        return Err(format!("web build error: `{tool}` failed while {purpose}").into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
-pub(crate) struct WebBuildOptions {
+pub struct WebBuildOptions {
     pub entry: PathBuf,
     pub out_dir: PathBuf,
     pub source_root: Option<PathBuf>,
@@ -55,7 +164,7 @@ struct BuiltSite {
     hash: String,
 }
 
-pub(crate) fn run_web_build(options: WebBuildOptions) -> Result<(), Box<dyn Error>> {
+pub fn run_web_build(options: WebBuildOptions) -> Result<(), Box<dyn Error>> {
     let built = build_site(&options)?;
     println!(
         "Zutai web build complete: {} (kernel {})",
@@ -360,7 +469,7 @@ struct DevStatus {
     error: Option<String>,
 }
 
-pub(crate) fn run_web_serve(
+pub fn run_web_serve(
     options: WebBuildOptions,
     addr: &str,
     no_build: bool,

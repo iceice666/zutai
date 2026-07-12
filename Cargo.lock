@@ -1648,16 +1648,12 @@ dependencies = [
  "clap",
  "libc",
  "miette",
- "notify",
  "predicates",
  "rustc-hash 2.1.2",
  "rustyline",
  "serde_json",
- "sha2",
  "thiserror",
- "tiny_http",
  "zutai-anf",
- "zutai-browser",
  "zutai-codegen",
  "zutai-dataflow",
  "zutai-eval",
@@ -1669,6 +1665,7 @@ dependencies = [
  "zutai-thir",
  "zutai-tlc",
  "zutai-types",
+ "zutai-web",
 ]
 
 [[package]]
@@ -1835,4 +1832,20 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "zutai-web"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "notify",
+ "predicates",
+ "serde_json",
+ "sha2",
+ "tiny_http",
+ "zutai-browser",
+ "zutai-eval",
+ "zutai-semantic",
 ]

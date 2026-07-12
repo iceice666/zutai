@@ -55,3 +55,4 @@ Source → HIR → THIR → TLC
 - **SSA and LLVM IR** — block form and native emission owned by `zutai-ssa` and `zutai-codegen`.
 - **Semantic facade** — `zutai-semantic` wires parse, HIR, THIR, TLC, imports, and stage gates.
 - **Reference evaluators** — `zutai-eval` evaluates only complete typed IR and remains the semantics oracle.
+- **Browser tooling** — `zutai-web` owns browser bundle builds and the local rebuild/reload server; `zutai-cli web` is a compatibility frontend over the same library.

@@ -58,7 +58,7 @@ web-check:
 
 # Build the official Zutai site and its hashed WebAssembly bundle.
 web-build OUT_DIR="dist":
-    cargo run -q -p zutai-cli -- web build website/main.zt --out-dir "{{ OUT_DIR }}"
+    cargo run -q -p zutai-web -- build website/main.zt --out-dir "{{ OUT_DIR }}"
 
 # Serve a built site through the same Pages-compatible local server used in CI.
 web-preview OUT_DIR="dist" PORT="8788": (web-build OUT_DIR)

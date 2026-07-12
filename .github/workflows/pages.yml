@@ -32,7 +32,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Build site
-        run: nix develop --command cargo run -q -p zutai-cli -- web build website/main.zt --out-dir dist
+        run: nix develop --command cargo run -q -p zutai-web -- build website/main.zt --out-dir dist
 
       - name: Store Pages artifact
         uses: actions/upload-artifact@v4

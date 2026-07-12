@@ -9,6 +9,8 @@ Build the production bundle from the repository root:
 
 ```sh
 just web-build
+# Equivalent direct invocation:
+cargo run -p zutai-web -- build website/main.zt
 ```
 
 The build writes a prerendered `dist/index.html`, copies `website/public/`, and

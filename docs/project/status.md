@@ -35,7 +35,8 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (unversioned stable syntax specification);
+_Last updated: 2026-07-12 (dedicated `zutai-web` CLI);
+prior baseline updates: 2026-07-12 (unversioned stable syntax specification),
 prior baseline updates: 2026-07-12 (browser kernel and self-hosted website baseline),
 prior baseline updates: 2026-07-12 (LSP editor baseline),
 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
@@ -143,7 +144,8 @@ HIR-derived navigation, rename, symbols, completion, and parser quick fixes; see
 Protocol editor baseline" below.
 The same 2026-07-12 browser pass adds an interpreter-backed WebAssembly kernel,
 typed browser/HTML/CSS stdlib modules, deterministic prerendered bundles,
-`zutai-cli web build` / `web serve`, and a pure-Zutai official website; see
+the dedicated `zutai-web build` / `serve` app (also exposed through the
+compatibility `zutai-cli web` subcommand), and a pure-Zutai official website; see
 "Browser kernel and self-hosted website" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal

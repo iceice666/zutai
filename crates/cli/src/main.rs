@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
@@ -18,36 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             commands::run_compile(&path, output.as_deref(), emit.into())?;
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
-        Some(Commands::Web { command }) => match command {
-            WebCommands::Build {
-                entry,
-                out_dir,
-                source_root,
-                public_dir,
-            } => commands::web::run_web_build(commands::web::WebBuildOptions {
-                entry,
-                out_dir,
-                source_root,
-                public_dir,
-            })?,
-            WebCommands::Serve {
-                entry,
-                out_dir,
-                source_root,
-                public_dir,
-                addr,
-                no_build,
-            } => commands::web::run_web_serve(
-                commands::web::WebBuildOptions {
-                    entry,
-                    out_dir,
-                    source_root,
-                    public_dir,
-                },
-                &addr,
-                no_build,
-            )?,
-        },
+        Some(Commands::Web { command }) => command.run()?,
         Some(Commands::Repl) => commands::run_repl()?,
         Some(Commands::Lsp) => lsp::run()?,
         None => {
@@ -133,48 +103,10 @@ enum Commands {
     /// Build or serve a whole-document Zutai browser application
     Web {
         #[command(subcommand)]
-        command: WebCommands,
+        command: zutai_web::WebCommand,
     },
     /// Run an interactive REPL
     Repl,
     /// Start the Language Server Protocol service on standard input/output
     Lsp,
-}
-
-#[derive(clap::Subcommand)]
-enum WebCommands {
-    /// Build a prerendered static site and its interpreter WebAssembly kernel
-    Build {
-        /// Browser program entry `.zt` file
-        entry: PathBuf,
-        /// Static output directory
-        #[arg(short = 'o', long, default_value = "dist")]
-        out_dir: PathBuf,
-        /// Root used for portable source paths (defaults to the entry directory)
-        #[arg(long)]
-        source_root: Option<PathBuf>,
-        /// Static assets copied verbatim (defaults to `<source-root>/public`)
-        #[arg(long)]
-        public_dir: Option<PathBuf>,
-    },
-    /// Build, watch, and serve with full-page reload on successful changes
-    Serve {
-        /// Browser program entry `.zt` file
-        entry: PathBuf,
-        /// Static output directory
-        #[arg(short = 'o', long, default_value = "dist")]
-        out_dir: PathBuf,
-        /// Root used for portable source paths (defaults to the entry directory)
-        #[arg(long)]
-        source_root: Option<PathBuf>,
-        /// Static assets copied verbatim (defaults to `<source-root>/public`)
-        #[arg(long)]
-        public_dir: Option<PathBuf>,
-        /// Address for the development server
-        #[arg(long, default_value = "127.0.0.1:8787")]
-        addr: String,
-        /// Serve the existing output directory without rebuilding first
-        #[arg(long)]
-        no_build: bool,
-    },
 }

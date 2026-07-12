@@ -80,7 +80,12 @@ inert `.zti` data. Build its prerendered WebAssembly bundle with:
 
 ```sh
 just web-build
+# Equivalent direct invocation:
+cargo run -p zutai-web -- build website/main.zt
 ```
+
+`zutai-web` is the dedicated browser-application CLI. The older
+`zutai-cli web ...` spelling remains available as a compatibility alias.
 
 See [website/README.md](website/README.md) for the source layout, local preview,
 and guarded Cloudflare Pages Direct Upload workflow.

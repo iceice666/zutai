@@ -27,7 +27,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
           fenixPkgs = fenix.packages.${system};
           # Stable host tools plus the WebAssembly standard library used by the
-          # browser kernel and `zutai web build`.
+          # browser kernel and `zutai-web build`.
           toolchain = fenixPkgs.combine [
             (fenixPkgs.stable.withComponents [
               "cargo"

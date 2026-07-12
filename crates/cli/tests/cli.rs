@@ -197,6 +197,17 @@ fn unknown_args_shows_usage() {
         .stderr(predicate::str::contains("Usage:"));
 }
 
+#[test]
+fn web_subcommand_remains_a_compatibility_frontend() {
+    cli()
+        .args(["web", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Build or serve a whole-document"))
+        .stdout(predicate::str::contains("build"))
+        .stdout(predicate::str::contains("serve"));
+}
+
 // ─── `run` subcommand ─────────────────────────────────────────────────────────
 
 #[test]
