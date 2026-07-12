@@ -671,6 +671,33 @@ fn content_type(path: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_TEMP_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "zutai-web-{label}-{}-{}",
+                std::process::id(),
+                NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn hash_is_stable_and_length_delimited() {
@@ -681,8 +708,17 @@ mod tests {
 
     #[test]
     fn request_paths_cannot_escape_dist() {
-        assert!(safe_request_path("/assets/site.js").is_ok());
-        assert!(safe_request_path("/../Cargo.toml").is_err());
+        assert_eq!(
+            safe_request_path("/assets/site.js").unwrap(),
+            Path::new("assets/site.js")
+        );
+        assert_eq!(
+            safe_request_path("/assets/./site.js").unwrap(),
+            Path::new("assets/site.js")
+        );
+        for path in ["/../Cargo.toml", "/assets/../site.js"] {
+            assert!(safe_request_path(path).is_err(), "accepted {path}");
+        }
     }
 
     #[test]
@@ -690,5 +726,170 @@ mod tests {
         assert!(is_reserved_public_path(Path::new("index.html")));
         assert!(is_reserved_public_path(Path::new("_zutai/x.js")));
         assert!(!is_reserved_public_path(Path::new("_headers")));
+    }
+
+    #[test]
+    fn build_effects_record_focus_and_reject_other_effects() {
+        let effects = BuildEffects::default();
+        let result = effects
+            .handle("browser.focus", Value::Text(Rc::from("search")))
+            .unwrap();
+        assert!(matches!(result, Value::Tuple(values) if values.is_empty()));
+        assert_eq!(&*effects.focus.borrow(), &["search"]);
+
+        let wrong_effect = effects.handle("net.listen", Value::Int(80)).unwrap_err();
+        assert!(
+            wrong_effect
+                .to_string()
+                .contains("unavailable in a browser")
+        );
+        let wrong_argument = effects.handle("browser.focus", Value::Int(1)).unwrap_err();
+        assert!(wrong_argument.to_string().contains("non-Text"));
+    }
+
+    #[test]
+    fn public_tree_copy_preserves_nested_files_and_rejects_collisions() {
+        let temp = TempDir::new("public-copy");
+        let public = temp.path().join("public");
+        let out = temp.path().join("out");
+        fs::create_dir_all(public.join("assets")).unwrap();
+        fs::write(public.join("assets/site.css"), "body {}").unwrap();
+        fs::write(public.join("_headers"), "/*\n  X-Test: yes\n").unwrap();
+        fs::create_dir_all(&out).unwrap();
+
+        copy_public_tree(&public, &out, Path::new("")).unwrap();
+        assert_eq!(
+            fs::read_to_string(out.join("assets/site.css")).unwrap(),
+            "body {}"
+        );
+        assert!(out.join("_headers").is_file());
+
+        fs::write(public.join("index.html"), "collision").unwrap();
+        let error = copy_public_tree(&public, &out, Path::new("")).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("collides with Zutai-generated output")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn public_tree_copy_rejects_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new("public-symlink");
+        let public = temp.path().join("public");
+        let out = temp.path().join("out");
+        fs::create_dir_all(&public).unwrap();
+        fs::create_dir_all(&out).unwrap();
+        fs::write(temp.path().join("outside.txt"), "outside").unwrap();
+        symlink(temp.path().join("outside.txt"), public.join("linked.txt")).unwrap();
+
+        let error = copy_public_tree(&public, &out, Path::new("")).unwrap_err();
+        assert!(error.to_string().contains("symlinks are not portable"));
+    }
+
+    #[test]
+    fn deploy_tree_rejects_files_over_pages_limit() {
+        let temp = TempDir::new("pages-limit");
+        let small = temp.path().join("small.txt");
+        fs::write(&small, "ok").unwrap();
+        validate_deploy_tree(temp.path()).unwrap();
+
+        let large = fs::File::create(temp.path().join("large.wasm")).unwrap();
+        large.set_len(MAX_PAGES_FILE_BYTES + 1).unwrap();
+        let error = validate_deploy_tree(temp.path()).unwrap_err();
+        assert!(error.to_string().contains("must not exceed 25 MiB"));
+    }
+
+    #[test]
+    fn output_guard_rejects_source_ancestors_but_allows_siblings() {
+        let temp = TempDir::new("output-guard");
+        let source = temp.path().join("source");
+        fs::create_dir_all(&source).unwrap();
+
+        assert!(guard_output_directory(&source, &source).is_err());
+        assert!(guard_output_directory(temp.path(), &source).is_err());
+        assert!(guard_output_directory(&temp.path().join("dist"), &source).is_ok());
+        assert!(guard_output_directory(&workspace_root(), &source).is_err());
+    }
+
+    #[test]
+    fn existing_path_helpers_distinguish_files_and_directories() {
+        let temp = TempDir::new("existing-paths");
+        let file = temp.path().join("entry.zt");
+        fs::write(&file, "1").unwrap();
+
+        assert_eq!(
+            absolute_existing_file(&file).unwrap(),
+            fs::canonicalize(&file).unwrap()
+        );
+        assert!(absolute_existing_file(temp.path()).is_err());
+        assert_eq!(
+            absolute_existing_dir(temp.path()).unwrap(),
+            fs::canonicalize(temp.path()).unwrap()
+        );
+        assert!(absolute_existing_dir(&file).is_err());
+        assert!(absolute_existing_file(&temp.path().join("missing")).is_err());
+    }
+
+    #[test]
+    fn no_build_serve_fails_before_binding_when_index_is_missing() {
+        let temp = TempDir::new("serve-missing");
+        let options = WebBuildOptions {
+            entry: temp.path().join("main.zt"),
+            out_dir: temp.path().join("dist"),
+            source_root: None,
+            public_dir: None,
+        };
+
+        let error = run_web_serve(options.clone(), "127.0.0.1:0", true).unwrap_err();
+        assert!(error.to_string().contains("has no index.html"));
+
+        let error = WebCommand::Serve {
+            entry: options.entry,
+            out_dir: options.out_dir,
+            source_root: None,
+            public_dir: None,
+            addr: "127.0.0.1:0".into(),
+            no_build: true,
+        }
+        .run()
+        .unwrap_err();
+        assert!(error.to_string().contains("has no index.html"));
+    }
+
+    #[test]
+    fn development_reload_is_injected_only_before_a_body_close() {
+        let html = inject_development_reload("<html><body>ready</body></html>", 7);
+        assert!(html.contains("let zutaiRevision = 7"));
+        assert!(html.contains("/__zutai/status"));
+        assert!(html.contains("data-zutai-development-reload"));
+        assert!(html.contains("</script></body>"));
+
+        assert_eq!(
+            inject_development_reload("<html>prerender fragment</html>", 7),
+            "<html>prerender fragment</html>"
+        );
+    }
+
+    #[test]
+    fn content_types_cover_generated_and_public_assets() {
+        let cases = [
+            ("index.html", "text/html; charset=utf-8"),
+            ("bootstrap.js", "text/javascript; charset=utf-8"),
+            ("bundle.json", "application/json; charset=utf-8"),
+            ("kernel.wasm", "application/wasm"),
+            ("site.css", "text/css; charset=utf-8"),
+            ("mark.svg", "image/svg+xml"),
+            ("image.png", "image/png"),
+            ("favicon.ico", "image/x-icon"),
+            ("robots.txt", "text/plain; charset=utf-8"),
+            ("asset.bin", "application/octet-stream"),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(content_type(Path::new(path)), expected, "{path}");
+        }
     }
 }
