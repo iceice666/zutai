@@ -122,7 +122,7 @@ impl<'thir> Lowerer<'thir> {
             }
             TypeKind::AliasApply { binding, args } => {
                 let tyvar = self.named_tyvar(binding);
-                let kind = self.alias_head_kind_for_args(binding, &args);
+                let kind = self.alias_head_kind_for_application(binding, resolved);
                 let mut spine = self.alloc_type(TlcType::TyVar(tyvar, kind));
                 for &arg in &args {
                     let arg_tlc = self.lower_type(arg);
@@ -552,6 +552,26 @@ impl<'thir> Lowerer<'thir> {
             })
     }
 
+    /// Return the kind of a saturated alias head from THIR's solved universe
+    /// for this application.
+    ///
+    /// THIR already computes and caches the argument-substituted universe for
+    /// every `TypeId` while finalizing `type_universes`. Re-walking the alias
+    /// body here is both redundant and particularly expensive for recursive
+    /// generic data shapes such as `Html Msg`: the body is a DAG, but the old
+    /// traversal visited it as a tree for every expression annotation.
+    fn alias_head_kind_for_application(&self, binding: BindingId, application: TypeId) -> Kind {
+        let Some((params, _)) = self.type_alias_params_body(binding) else {
+            return Kind::ground();
+        };
+        params
+            .into_iter()
+            .rev()
+            .fold(self.kind_for_type_id(application), |acc, param| {
+                Kind::Arrow(Box::new(self.kind_for_type_param(param)), Box::new(acc))
+            })
+    }
+
     fn alias_head_kind_for_args(&mut self, binding: BindingId, args: &[TypeId]) -> Kind {
         let Some((params, ty)) = self.thir.decls.iter().find_map(|&d| {
             let decl = &self.thir.decl_arena[d];
@@ -830,5 +850,139 @@ impl<'thir> Lowerer<'thir> {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+    use zutai_hir::BindingKind;
+    use zutai_syntax::Span;
+    use zutai_thir::{ThirDecl, Type};
+
+    fn push_type(file: &mut zutai_thir::ThirFile, kind: TypeKind) -> TypeId {
+        let id = TypeId(file.type_arena.len() as u32);
+        file.type_arena.push(Type {
+            kind,
+            span: Span::default(),
+        });
+        file.type_universes.push(0);
+        id
+    }
+
+    fn push_binding(file: &mut zutai_thir::ThirFile, name: String, kind: BindingKind) -> BindingId {
+        let binding = BindingId(file.binding_names.len() as u32);
+        file.binding_names.push(name);
+        file.binding_kinds.push(kind);
+        binding
+    }
+
+    #[test]
+    fn saturated_alias_kind_uses_solved_application_universe() {
+        let parsed = zutai_syntax::parse(
+            r#"
+Seed :: <A> type A;
+Use :: type Seed Int;
+Use
+"#,
+        );
+        assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+        let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+        assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
+        let thir = zutai_thir::lower_hir(&hir.file);
+        assert!(thir.diagnostics.is_empty(), "{:?}", thir.diagnostics);
+        let mut file = thir.file.expect("complete THIR");
+
+        let (mut previous_alias, source) = file
+            .decls
+            .iter()
+            .find_map(|&decl_id| {
+                let decl = &file.decl_arena[decl_id];
+                matches!(
+                    decl.kind,
+                    ThirDeclKind::TypeAlias { ref params, .. } if !params.is_empty()
+                )
+                .then_some((decl.binding, decl.source))
+            })
+            .expect("generic Seed alias");
+        let int_ty = file
+            .type_arena
+            .iter()
+            .position(|ty| matches!(ty.kind, TypeKind::Int))
+            .map(|index| TypeId(index as u32))
+            .expect("Int type");
+
+        // Construct a compact alias DAG whose tree expansion has 2^22 leaves.
+        // TLC must trust THIR's solved universe on the saturated application;
+        // recursively rediscovering it here turns this tiny fixture into a
+        // multi-million-node walk (the same shape exposed by `Html Msg`).
+        for depth in 0..22 {
+            let alias = push_binding(&mut file, format!("Layer{depth}"), BindingKind::TopType);
+            let param = push_binding(
+                &mut file,
+                format!("LayerParam{depth}"),
+                BindingKind::TypeParam,
+            );
+            file.type_param_kinds.insert(param, ThirKind::ground());
+            let param_ty = push_type(&mut file, TypeKind::TypeVar(param));
+            let child = push_type(
+                &mut file,
+                TypeKind::AliasApply {
+                    binding: previous_alias,
+                    args: vec![param_ty],
+                },
+            );
+            let body = push_type(
+                &mut file,
+                TypeKind::Record(
+                    vec![
+                        TypeRecordField {
+                            name: "left".to_owned(),
+                            optional: false,
+                            ty: child,
+                            span: Span::default(),
+                        },
+                        TypeRecordField {
+                            name: "right".to_owned(),
+                            optional: false,
+                            ty: child,
+                            span: Span::default(),
+                        },
+                    ],
+                    RowTail::Closed,
+                ),
+            );
+            let decl = file.decl_arena.alloc(ThirDecl {
+                source,
+                binding: alias,
+                kind: ThirDeclKind::TypeAlias {
+                    params: vec![param],
+                    ty: body,
+                },
+                span: Span::default(),
+            });
+            file.decls.push(decl);
+            previous_alias = alias;
+        }
+
+        let application = push_type(
+            &mut file,
+            TypeKind::AliasApply {
+                binding: previous_alias,
+                args: vec![int_ty],
+            },
+        );
+        let mut lowerer = Lowerer::new(&file);
+        let lowered = lowerer.lower_type(application);
+        let TlcType::TyApp(head, _) = lowerer.type_arena[lowered] else {
+            panic!("expected saturated alias application")
+        };
+        let TlcType::TyVar(_, kind) = &lowerer.type_arena[head] else {
+            panic!("expected alias head variable")
+        };
+        assert_eq!(
+            kind,
+            &Kind::Arrow(Box::new(Kind::Type(0)), Box::new(Kind::Type(0)))
+        );
     }
 }
