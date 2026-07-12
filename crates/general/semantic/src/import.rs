@@ -16,6 +16,7 @@
 //! so annotation-position access (`x : serverLib.Server`) type-checks.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -31,13 +32,47 @@ use crate::{Analysis, AnalysisOptions};
 /// Recursion state shared across a single top-level analysis: the stack of
 /// modules currently being analyzed (for cycle detection) and a cache of
 /// already-analyzed `.zt` modules keyed by canonical path.
-#[derive(Default)]
-pub(crate) struct ImportContext {
-    in_progress: Vec<PathBuf>,
-    cache: FxHashMap<PathBuf, Rc<Analysis>>,
+enum SourceBackend<'a> {
+    Filesystem {
+        confinement_root: Option<PathBuf>,
+        recording_root: Option<PathBuf>,
+        recorded: BTreeMap<String, String>,
+    },
+    Memory(&'a BTreeMap<String, String>),
 }
 
-impl ImportContext {
+pub(crate) struct ImportContext<'a> {
+    in_progress: Vec<PathBuf>,
+    cache: FxHashMap<PathBuf, Rc<Analysis>>,
+    source_backend: SourceBackend<'a>,
+}
+
+impl Default for ImportContext<'_> {
+    fn default() -> Self {
+        Self {
+            in_progress: Vec::new(),
+            cache: FxHashMap::default(),
+            source_backend: SourceBackend::Filesystem {
+                confinement_root: None,
+                recording_root: None,
+                recorded: BTreeMap::new(),
+            },
+        }
+    }
+}
+
+struct LoadedSource {
+    key: PathBuf,
+    contents: String,
+}
+
+enum LoadError {
+    NotFound,
+    Traversal,
+    Read(std::io::Error),
+}
+
+impl<'a> ImportContext<'a> {
     /// Seed the in-progress stack with the root file's canonical path so that a
     /// descendant importing the root is detected as a cycle.
     pub(crate) fn with_root(path: &Path) -> Self {
@@ -47,6 +82,155 @@ impl ImportContext {
         }
         ctx
     }
+
+    pub(crate) fn with_recording_root(path: &Path) -> Self {
+        let canonical = std::fs::canonicalize(path).ok();
+        let recording_root = canonical
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf);
+        Self {
+            in_progress: canonical.into_iter().collect(),
+            cache: FxHashMap::default(),
+            source_backend: SourceBackend::Filesystem {
+                confinement_root: None,
+                recording_root,
+                recorded: BTreeMap::new(),
+            },
+        }
+    }
+
+    pub(crate) fn with_explicit_recording_root(
+        path: &Path,
+        source_root: &Path,
+    ) -> std::io::Result<Self> {
+        let canonical = std::fs::canonicalize(path)?;
+        let source_root = std::fs::canonicalize(if source_root.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            source_root
+        })?;
+        if !source_root.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "source root must be a directory",
+            ));
+        }
+        if !canonical.starts_with(&source_root) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "entry path must be inside the source root",
+            ));
+        }
+        Ok(Self {
+            in_progress: vec![canonical],
+            cache: FxHashMap::default(),
+            source_backend: SourceBackend::Filesystem {
+                confinement_root: Some(source_root.clone()),
+                recording_root: Some(source_root),
+                recorded: BTreeMap::new(),
+            },
+        })
+    }
+
+    pub(crate) fn with_memory(sources: &'a BTreeMap<String, String>, entry: &Path) -> Self {
+        Self {
+            in_progress: vec![entry.to_path_buf()],
+            cache: FxHashMap::default(),
+            source_backend: SourceBackend::Memory(sources),
+        }
+    }
+
+    pub(crate) fn record_root_source(&mut self, key: &str, contents: &str) {
+        if let SourceBackend::Filesystem { recorded, .. } = &mut self.source_backend {
+            recorded.insert(key.to_string(), contents.to_string());
+        }
+    }
+
+    pub(crate) fn take_recorded_sources(&mut self) -> BTreeMap<String, String> {
+        match &mut self.source_backend {
+            SourceBackend::Filesystem { recorded, .. } => std::mem::take(recorded),
+            SourceBackend::Memory(_) => BTreeMap::new(),
+        }
+    }
+
+    fn load(&mut self, base: &Path, rel: &str) -> Result<LoadedSource, LoadError> {
+        match &mut self.source_backend {
+            SourceBackend::Filesystem {
+                confinement_root,
+                recording_root,
+                recorded,
+            } => {
+                let base_dir = if base.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    base
+                };
+                let canonical_base =
+                    std::fs::canonicalize(base_dir).map_err(|_| LoadError::NotFound)?;
+                let canonical =
+                    std::fs::canonicalize(base_dir.join(rel)).map_err(|_| LoadError::NotFound)?;
+                let allowed_root = confinement_root.as_deref().unwrap_or(&canonical_base);
+                if !canonical.starts_with(allowed_root) {
+                    return Err(LoadError::Traversal);
+                }
+                let contents = std::fs::read_to_string(&canonical).map_err(LoadError::Read)?;
+                if let Some(root) = recording_root
+                    && let Ok(path) = canonical.strip_prefix(root)
+                {
+                    recorded.insert(path_to_bundle_key(path), contents.clone());
+                }
+                Ok(LoadedSource {
+                    key: canonical,
+                    contents,
+                })
+            }
+            SourceBackend::Memory(sources) => {
+                let key = normalize_memory_join(base, rel).ok_or(LoadError::Traversal)?;
+                let bundle_key = path_to_bundle_key(&key);
+                let contents = sources
+                    .get(&bundle_key)
+                    .cloned()
+                    .ok_or(LoadError::NotFound)?;
+                Ok(LoadedSource { key, contents })
+            }
+        }
+    }
+}
+
+fn normalize_memory_join(base: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.contains('\0')
+        || rel.contains('\\')
+        || Path::new(rel).is_absolute()
+        || has_windows_drive_prefix(rel)
+    {
+        return None;
+    }
+    let mut out = base.to_path_buf();
+    for part in rel.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            part => out.push(part),
+        }
+    }
+    Some(out)
+}
+
+pub(crate) fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+pub(crate) fn path_to_bundle_key(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Everything resolved for a single file's imports.
@@ -164,7 +348,7 @@ struct Resolver<'a> {
 pub(crate) fn resolve_imports(
     hir: &HirFile,
     base: Option<&Path>,
-    ctx: &mut ImportContext,
+    ctx: &mut ImportContext<'_>,
 ) -> ResolvedImports {
     let mut resolver = Resolver {
         base,
@@ -232,43 +416,25 @@ impl Resolver<'_> {
             return self.diag(ImportDiagnosticKind::NoBaseDirectory, span);
         };
 
-        let base_dir = if base.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            base
+        let loaded = match ctx.load(base, &rel) {
+            Ok(loaded) => loaded,
+            Err(LoadError::NotFound) => {
+                return self.diag(ImportDiagnosticKind::FileNotFound { path: rel }, span);
+            }
+            Err(LoadError::Traversal) => {
+                return self.diag(ImportDiagnosticKind::PathTraversal { path: rel }, span);
+            }
+            Err(LoadError::Read(err)) => return self.read_error(&rel, &err, span),
         };
-        let canonical_base = match std::fs::canonicalize(base_dir) {
-            Ok(canonical_base) => canonical_base,
-            Err(_) => return self.diag(ImportDiagnosticKind::FileNotFound { path: rel }, span),
-        };
-
-        // `canonicalize` requires the file to exist, which doubles as the
-        // not-found check and dedupes symlinks to one resolved path.
-        let canonical = match std::fs::canonicalize(base_dir.join(&rel)) {
-            Ok(canonical) => canonical,
-            Err(_) => return self.diag(ImportDiagnosticKind::FileNotFound { path: rel }, span),
-        };
-
-        // Confine the resolved path to the importing file's directory subtree.
-        // `starts_with` is component-wise, so `/proj-evil` is not a prefix of `/proj`.
-        // Symlinks are already resolved by `canonicalize` above, so symlink escapes
-        // are also rejected.
-        if !canonical.starts_with(&canonical_base) {
-            return self.diag(ImportDiagnosticKind::PathTraversal { path: rel }, span);
-        }
 
         match kind {
-            Kind::Zti => self.resolve_zti(source, &canonical, &rel, span),
-            Kind::Zt => self.resolve_zt(source, &canonical, &rel, span, ctx),
+            Kind::Zti => self.resolve_zti(source, &loaded.contents, &rel, span),
+            Kind::Zt => self.resolve_zt(source, loaded, &rel, span, ctx),
         }
     }
 
-    fn resolve_zti(&mut self, source: &HirImportSource, canonical: &Path, rel: &str, span: Span) {
-        let contents = match std::fs::read_to_string(canonical) {
-            Ok(contents) => contents,
-            Err(err) => return self.read_error(rel, &err, span),
-        };
-        match zutai_im::parse(&contents) {
+    fn resolve_zti(&mut self, source: &HirImportSource, contents: &str, rel: &str, span: Span) {
+        match zutai_im::parse(contents) {
             Ok(block) => {
                 let value = zutai_im::Value::Block(block);
                 let ty = imported_type(&value);
@@ -288,12 +454,12 @@ impl Resolver<'_> {
     fn resolve_zt(
         &mut self,
         source: &HirImportSource,
-        canonical: &Path,
+        loaded: LoadedSource,
         rel: &str,
         span: Span,
         ctx: &mut ImportContext,
     ) {
-        if ctx.in_progress.iter().any(|p| p == canonical) {
+        if ctx.in_progress.iter().any(|p| p == &loaded.key) {
             return self.diag(
                 ImportDiagnosticKind::ImportCycle {
                     path: rel.to_string(),
@@ -302,14 +468,17 @@ impl Resolver<'_> {
             );
         }
 
-        let module = match ctx.cache.get(canonical) {
+        let module = match ctx.cache.get(&loaded.key) {
             Some(module) => module.clone(),
             None => {
-                let contents = match std::fs::read_to_string(canonical) {
-                    Ok(contents) => contents,
-                    Err(err) => return self.read_error(rel, &err, span),
-                };
-                match self.analyze_zt(canonical, canonical.parent(), &contents, rel, span, ctx) {
+                match self.analyze_zt(
+                    &loaded.key,
+                    loaded.key.parent(),
+                    &loaded.contents,
+                    rel,
+                    span,
+                    ctx,
+                ) {
                     Some(module) => module,
                     None => return,
                 }
@@ -328,7 +497,7 @@ impl Resolver<'_> {
         source: &HirImportSource,
         parts: &[String],
         span: Span,
-        ctx: &mut ImportContext,
+        ctx: &mut ImportContext<'_>,
     ) {
         let name = match parts {
             [_, name] => name.as_str(),
@@ -378,7 +547,7 @@ impl Resolver<'_> {
         contents: &str,
         rel: &str,
         span: Span,
-        ctx: &mut ImportContext,
+        ctx: &mut ImportContext<'_>,
     ) -> Option<Rc<Analysis>> {
         ctx.in_progress.push(key.to_path_buf());
         let analysis =

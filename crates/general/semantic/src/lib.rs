@@ -14,6 +14,8 @@
 //! evaluator gate predicates over completed staged output.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::BTreeMap;
+use std::fmt;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -37,6 +39,38 @@ pub struct Analysis {
     pub tlc: Option<zutai_tlc::TlcModule>,
     pub witness_exports: Vec<WitnessExport>,
 }
+
+/// An analysis plus the normalized transitive source graph read from disk.
+///
+/// Paths use `/` separators and are relative to the entry file's directory,
+/// making the result suitable for deterministic browser/compiler bundles.
+#[derive(Debug)]
+pub struct RecordedAnalysis {
+    pub entry: String,
+    pub sources: BTreeMap<String, String>,
+    pub analysis: Analysis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceMapError {
+    InvalidPath { path: String, reason: &'static str },
+    MissingEntry { path: String },
+}
+
+impl fmt::Display for SourceMapError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SourceMapError::InvalidPath { path, reason } => {
+                write!(f, "invalid source path `{path}`: {reason}")
+            }
+            SourceMapError::MissingEntry { path } => {
+                write!(f, "entry source `{path}` is not present in the source map")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SourceMapError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticPassReport {
@@ -416,6 +450,149 @@ pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
     ))
 }
 
+/// Analyze a `.zt` file while recording every transitive `.zt`/`.zti` source
+/// read through relative imports.
+///
+/// The returned entry and map keys are normalized, relative bundle paths. The
+/// filesystem resolver otherwise has exactly the same canonicalization,
+/// symlink-confinement, caching, and cycle behavior as [`analyze_path`].
+pub fn analyze_path_recording(path: &Path) -> std::io::Result<RecordedAnalysis> {
+    let input = std::fs::read_to_string(path)?;
+    let entry = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "entry path must have a UTF-8 file name",
+            )
+        })?
+        .to_string();
+    let mut ctx = import::ImportContext::with_recording_root(path);
+    ctx.record_root_source(&entry, &input);
+    let current = std::fs::canonicalize(path).ok();
+    let analysis = analyze_inner(
+        &input,
+        path.parent(),
+        current.as_deref(),
+        AnalysisOptions::default(),
+        &mut ctx,
+    );
+    Ok(RecordedAnalysis {
+        entry,
+        sources: ctx.take_recorded_sources(),
+        analysis,
+    })
+}
+
+/// Analyze and record a source graph relative to an explicit source root.
+///
+/// Unlike [`analyze_path_recording`], relative imports may traverse to sibling
+/// directories as long as their canonical targets remain inside `source_root`.
+/// This is the filesystem counterpart of [`analyze_sources`] and is intended
+/// for building portable browser/compiler bundles.
+pub fn analyze_path_recording_with_root(
+    path: &Path,
+    source_root: &Path,
+) -> std::io::Result<RecordedAnalysis> {
+    let input = std::fs::read_to_string(path)?;
+    let canonical = std::fs::canonicalize(path)?;
+    let canonical_root = std::fs::canonicalize(if source_root.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        source_root
+    })?;
+    let entry_path = canonical.strip_prefix(&canonical_root).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "entry path must be inside the source root",
+        )
+    })?;
+    let entry = import::path_to_bundle_key(entry_path);
+    validate_source_path(&entry).map_err(|error| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
+    })?;
+
+    let mut ctx = import::ImportContext::with_explicit_recording_root(path, source_root)?;
+    ctx.record_root_source(&entry, &input);
+    let analysis = analyze_inner(
+        &input,
+        path.parent(),
+        Some(&canonical),
+        AnalysisOptions::default(),
+        &mut ctx,
+    );
+    Ok(RecordedAnalysis {
+        entry,
+        sources: ctx.take_recorded_sources(),
+        analysis,
+    })
+}
+
+/// Analyze a complete in-memory source graph.
+///
+/// `entry` and all source keys must be normalized, relative, `/`-separated
+/// paths. Absolute paths, backslashes, NULs, empty segments, `.` and `..` are
+/// rejected before parsing. Relative imports may use `..` to reach siblings in
+/// the source graph, but cannot escape its virtual root. Embedded `stdlib.*`
+/// modules do not need entries in `sources`.
+pub fn analyze_sources(
+    entry: &str,
+    sources: &BTreeMap<String, String>,
+    options: AnalysisOptions,
+) -> Result<Analysis, SourceMapError> {
+    validate_source_path(entry)?;
+    for path in sources.keys() {
+        validate_source_path(path)?;
+    }
+    let input = sources
+        .get(entry)
+        .ok_or_else(|| SourceMapError::MissingEntry {
+            path: entry.to_string(),
+        })?;
+    let entry_path = Path::new(entry);
+    let base = entry_path.parent().unwrap_or_else(|| Path::new(""));
+    let mut ctx = import::ImportContext::with_memory(sources, entry_path);
+    Ok(analyze_inner(
+        input,
+        Some(base),
+        Some(entry_path),
+        options,
+        &mut ctx,
+    ))
+}
+
+fn validate_source_path(path: &str) -> Result<(), SourceMapError> {
+    let invalid = |reason| SourceMapError::InvalidPath {
+        path: path.to_string(),
+        reason,
+    };
+    if path.is_empty() {
+        return Err(invalid("path is empty"));
+    }
+    if path.contains('\0') {
+        return Err(invalid("path contains NUL"));
+    }
+    if path.contains('\\') {
+        return Err(invalid("use `/` separators"));
+    }
+    if path.starts_with('/')
+        || Path::new(path).is_absolute()
+        || import::has_windows_drive_prefix(path)
+    {
+        return Err(invalid("absolute paths are not allowed"));
+    }
+    for component in path.split('/') {
+        match component {
+            "" => return Err(invalid("empty path segments are not normalized")),
+            "." => return Err(invalid("`.` path segments are not normalized")),
+            ".." => return Err(invalid("`..` path segments are not allowed")),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 /// Analyze `input`, resolving import declarations relative to `base`.
 ///
 /// `base` is the directory of the importing file; `None` (string-only entry
@@ -432,7 +609,7 @@ pub(crate) fn analyze_inner(
     base: Option<&Path>,
     current: Option<&Path>,
     options: AnalysisOptions,
-    ctx: &mut import::ImportContext,
+    ctx: &mut import::ImportContext<'_>,
 ) -> Analysis {
     let parsed = zutai_syntax::parse_ast_only(input);
     let parse_diagnostics: Vec<_> = parsed
@@ -950,6 +1127,23 @@ mod tests {
     }
 
     #[test]
+    fn browser_stdlib_modules_resolve_together() {
+        let analysis = analyze(
+            "css ::= import stdlib.css;\n\
+             html ::= import stdlib.html;\n\
+             browser ::= import stdlib.browser;\n\
+             (css, html, browser)",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn stdlib_config_import_resolves_and_overlay_alias_typechecks() {
         let analysis = analyze(
             "cfg ::= import stdlib.config;\n\
@@ -1081,6 +1275,120 @@ mod tests {
             "{:?}",
             analysis.diagnostics
         );
+    }
+
+    #[test]
+    fn analyze_sources_resolves_transitive_zt_and_zti_imports() {
+        let sources = BTreeMap::from([
+            (
+                "main.zt".to_string(),
+                "lib ::= import \"modules/site.zt\";\nlib.port".to_string(),
+            ),
+            (
+                "modules/site.zt".to_string(),
+                "cfg ::= import \"../config.zti\";\n{ port = cfg.port; }".to_string(),
+            ),
+            ("config.zti".to_string(), "{ port = 8787; }".to_string()),
+        ]);
+
+        let analysis = analyze_sources("main.zt", &sources, AnalysisOptions::default()).unwrap();
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+        assert_eq!(analysis.import_modules.len(), 1);
+    }
+
+    #[test]
+    fn analyze_sources_rejects_non_normalized_or_missing_entries() {
+        let sources = BTreeMap::from([("main.zt".to_string(), "1".to_string())]);
+        assert!(matches!(
+            analyze_sources("../main.zt", &sources, AnalysisOptions::default()),
+            Err(SourceMapError::InvalidPath { .. })
+        ));
+        assert!(matches!(
+            analyze_sources("C:/main.zt", &sources, AnalysisOptions::default()),
+            Err(SourceMapError::InvalidPath { .. })
+        ));
+        assert!(matches!(
+            analyze_sources("missing.zt", &sources, AnalysisOptions::default()),
+            Err(SourceMapError::MissingEntry { .. })
+        ));
+
+        let invalid = BTreeMap::from([("dir\\main.zt".to_string(), "1".to_string())]);
+        assert!(matches!(
+            analyze_sources("dir/main.zt", &invalid, AnalysisOptions::default()),
+            Err(SourceMapError::InvalidPath { .. })
+        ));
+    }
+
+    #[test]
+    fn analyze_sources_confines_imports_to_virtual_root() {
+        let sources = BTreeMap::from([
+            (
+                "main.zt".to_string(),
+                "secret ::= import \"../secret.zti\";\nsecret".to_string(),
+            ),
+            ("secret.zti".to_string(), "value = 1".to_string()),
+        ]);
+        let analysis = analyze_sources("main.zt", &sources, AnalysisOptions::default()).unwrap();
+        assert!(has_import_diagnostic(
+            &analysis,
+            &ImportDiagnosticKind::PathTraversal {
+                path: "../secret.zti".to_string(),
+            },
+        ));
+    }
+
+    #[test]
+    fn analyze_path_recording_captures_transitive_sources() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/imports/chain_top.zt");
+        let recorded = analyze_path_recording(&path).expect("record source graph");
+        assert_eq!(recorded.entry, "chain_top.zt");
+        assert_eq!(
+            recorded.sources.keys().cloned().collect::<Vec<_>>(),
+            vec![
+                "chain_mid.zt".to_string(),
+                "chain_top.zt".to_string(),
+                "config.zti".to_string(),
+            ]
+        );
+        assert!(recorded.analysis.is_thir_complete());
+    }
+
+    #[test]
+    fn explicit_recording_root_allows_sibling_imports_inside_root() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-source-root-{}-{unique}",
+            std::process::id()
+        ));
+        let app = root.join("app");
+        let shared = root.join("shared");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&shared).unwrap();
+        let entry = app.join("main.zt");
+        std::fs::write(&entry, "cfg ::= import \"../shared/config.zti\";\ncfg.port").unwrap();
+        std::fs::write(shared.join("config.zti"), "{ port = 8787; }").unwrap();
+
+        let recorded = analyze_path_recording_with_root(&entry, &root).unwrap();
+        assert_eq!(recorded.entry, "app/main.zt");
+        assert_eq!(
+            recorded.sources.keys().cloned().collect::<Vec<_>>(),
+            vec!["app/main.zt".to_string(), "shared/config.zti".to_string()]
+        );
+        assert!(
+            recorded.analysis.is_thir_complete(),
+            "{:?}",
+            recorded.analysis.diagnostics
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
