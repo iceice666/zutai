@@ -1,0 +1,262 @@
+-- Typed document and HTML constructors for the Zutai browser kernel.
+-- Explicit import only: `html ::= import stdlib.html`.
+--
+-- There is intentionally no raw-HTML, script, or http-equiv constructor.  Tag,
+-- attribute, head, and event variants are closed data consumed by the kernel.
+css ::= import stdlib.css;
+
+Tag :: type {
+  #a; #article; #aside; #blockquote; #br; #button; #code; #dd; #details;
+  #div; #dl; #dt; #em; #fieldset; #figcaption; #figure; #footer; #form;
+  #h1; #h2; #h3; #h4; #h5; #h6; #header; #img; #input; #label; #legend;
+  #li; #main; #nav; #ol; #option; #p; #pre; #section; #select; #small;
+  #span; #strong; #summary; #table; #tbody; #td; #textarea; #tfoot; #th;
+  #thead; #tr; #ul;
+};
+AttributeName :: type {
+  #id; #class; #href; #src; #alt; #name; #placeholder; #inputType; #role;
+  #title; #forId; #target; #rel; #disabled; #required; #readOnly; #value;
+  #checked; #aria : { name : Text; }; #data : { name : Text; };
+};
+StaticAttribute :: type {
+  #textAttribute : { name : AttributeName; value : Text; };
+  #boolAttribute : { name : AttributeName; value : Bool; };
+  #styles : { declarations : List css.Declaration; };
+};
+EventOptions :: type { preventDefault : Bool; stopPropagation : Bool; };
+EventHandler :: <Msg> type {
+  #click : { message : Msg; options : EventOptions; };
+  #input : { toMessage : Text -> Msg; options : EventOptions; };
+};
+Attribute :: <Msg> type {
+  #static : { attribute : StaticAttribute; };
+  #textAttribute : { name : AttributeName; value : Text; };
+  #boolAttribute : { name : AttributeName; value : Bool; };
+  #textProperty : { name : AttributeName; value : Text; };
+  #boolProperty : { name : AttributeName; value : Bool; };
+  #styles : { declarations : List css.Declaration; };
+  #key : { value : Text; };
+  #event : { handler : EventHandler Msg; };
+};
+Html :: <Msg> type {
+  #text : { value : Text; };
+  #element : { tag : Tag; attributes : List (Attribute Msg); children : List (Html Msg); };
+};
+
+MetaName :: type {
+  #description; #viewport; #author; #robots; #keywords; #themeColor;
+  #applicationName; #generator; #referrer; #custom : { name : Text; };
+};
+LinkRel :: type {
+  #stylesheet; #icon; #canonical; #alternate; #manifest; #preload;
+  #preconnect; #dnsPrefetch; #custom : { name : Text; };
+};
+CrossOrigin :: type { #anonymous; #useCredentials; };
+Head :: type {
+  #metaName : { name : MetaName; content : Text; };
+  #metaProperty : { property : Text; content : Text; };
+  #link : {
+    rel : LinkRel; href : Text; mime : Text?; media : Text?; sizes : Text?;
+    crossOrigin : CrossOrigin?;
+  };
+  #base : { href : Text; target : Text?; };
+  #style : { sheet : css.Stylesheet; };
+};
+Document :: <Msg> type {
+  language : Text;
+  title : Text;
+  head : List Head;
+  bodyAttributes : List StaticAttribute;
+  body : List (Html Msg);
+};
+
+document :: <Msg> Text -> Text -> List Head -> List StaticAttribute -> List (Html Msg) -> Document Msg
+  = language title head bodyAttributes body => {
+      language = language;
+      title = title;
+      head = head;
+      bodyAttributes = bodyAttributes;
+      body = body;
+    };
+
+meta :: MetaName -> Text -> Head
+  = name content => #metaName { name = name; content = content; };
+description :: Text -> Head = content => meta #description content;
+viewport :: Text -> Head = content => meta #viewport content;
+author :: Text -> Head = content => meta #author content;
+robots :: Text -> Head = content => meta #robots content;
+themeColor :: Text -> Head = content => meta #themeColor content;
+openGraph :: Text -> Text -> Head
+  = property content => #metaProperty { property = property; content = content; };
+ogTitle :: Text -> Head = content => openGraph "og:title" content;
+ogType :: Text -> Head = content => openGraph "og:type" content;
+ogDescription :: Text -> Head = content => openGraph "og:description" content;
+ogImage :: Text -> Head = content => openGraph "og:image" content;
+ogUrl :: Text -> Head = content => openGraph "og:url" content;
+link :: LinkRel -> Text -> Text? -> Text? -> Text? -> CrossOrigin? -> Head
+  = rel href mime media sizes crossOrigin => #link {
+      rel = rel; href = href; mime = mime; media = media; sizes = sizes;
+      crossOrigin = crossOrigin;
+    };
+stylesheetLink :: Text -> Head
+  = href => link #stylesheet href #none #none #none #none;
+iconLink :: Text -> Text -> Head
+  = mime href => link #icon href (#some (mime)) #none #none #none;
+canonicalLink :: Text -> Head
+  = href => link #canonical href #none #none #none #none;
+base :: Text -> Text? -> Head
+  = href target => #base { href = href; target = target; };
+style :: css.Stylesheet -> Head = sheet => #style { sheet = sheet; };
+
+staticText :: AttributeName -> Text -> StaticAttribute
+  = name value => #textAttribute { name = name; value = value; };
+staticBool :: AttributeName -> Bool -> StaticAttribute
+  = name value => #boolAttribute { name = name; value = value; };
+bodyId :: Text -> StaticAttribute = value => staticText #id value;
+bodyClass :: Text -> StaticAttribute = value => staticText #class value;
+bodyStyles :: List css.Declaration -> StaticAttribute
+  = declarations => #styles { declarations = declarations; };
+
+attribute :: <Msg> AttributeName -> Text -> Attribute Msg
+  = name value => #textAttribute { name = name; value = value; };
+boolAttribute :: <Msg> AttributeName -> Bool -> Attribute Msg
+  = name value => #boolAttribute { name = name; value = value; };
+static :: <Msg> StaticAttribute -> Attribute Msg
+  = attributeValue => #static { attribute = attributeValue; };
+idAttr :: <Msg> Text -> Attribute Msg = value => attribute #id value;
+classAttr :: <Msg> Text -> Attribute Msg = value => attribute #class value;
+href :: <Msg> Text -> Attribute Msg = value => attribute #href value;
+src :: <Msg> Text -> Attribute Msg = value => attribute #src value;
+alt :: <Msg> Text -> Attribute Msg = value => attribute #alt value;
+nameAttr :: <Msg> Text -> Attribute Msg = value => attribute #name value;
+placeholder :: <Msg> Text -> Attribute Msg = value => attribute #placeholder value;
+inputType :: <Msg> Text -> Attribute Msg = value => attribute #inputType value;
+role :: <Msg> Text -> Attribute Msg = value => attribute #role value;
+titleAttr :: <Msg> Text -> Attribute Msg = value => attribute #title value;
+forId :: <Msg> Text -> Attribute Msg = value => attribute #forId value;
+target :: <Msg> Text -> Attribute Msg = value => attribute #target value;
+rel :: <Msg> Text -> Attribute Msg = value => attribute #rel value;
+aria :: <Msg> Text -> Text -> Attribute Msg
+  = name value => attribute (#aria { name = name; }) value;
+dataAttribute :: <Msg> Text -> Text -> Attribute Msg
+  = name value => attribute (#data { name = name; }) value;
+disabledAttr :: <Msg> Bool -> Attribute Msg = value => boolAttribute #disabled value;
+required :: <Msg> Bool -> Attribute Msg = value => boolAttribute #required value;
+readOnly :: <Msg> Bool -> Attribute Msg = value => boolAttribute #readOnly value;
+valueAttribute :: <Msg> Text -> Attribute Msg = value => attribute #value value;
+checkedAttribute :: <Msg> Bool -> Attribute Msg = value => boolAttribute #checked value;
+value :: <Msg> Text -> Attribute Msg
+  = propertyValue => #textProperty { name = #value; value = propertyValue; };
+checked :: <Msg> Bool -> Attribute Msg
+  = propertyValue => #boolProperty { name = #checked; value = propertyValue; };
+styles :: <Msg> List css.Declaration -> Attribute Msg
+  = declarations => #styles { declarations = declarations; };
+key :: <Msg> Text -> Attribute Msg = value => #key { value = value; };
+
+eventOptions :: Bool -> Bool -> EventOptions
+  = preventDefault stopPropagation => {
+      preventDefault = preventDefault;
+      stopPropagation = stopPropagation;
+    };
+defaultEventOptions :: EventOptions = eventOptions false false;
+preventDefault :: EventOptions = eventOptions true false;
+stopPropagation :: EventOptions = eventOptions false true;
+preventDefaultAndStopPropagation :: EventOptions = eventOptions true true;
+onClickWith :: <Msg> EventOptions -> Msg -> Attribute Msg
+  = options message => #event { handler = #click { message = message; options = options; }; };
+onClick :: <Msg> Msg -> Attribute Msg = message => onClickWith defaultEventOptions message;
+onInputWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
+  = options toMessage => #event { handler = #input { toMessage = toMessage; options = options; }; };
+onInput :: <Msg> (Text -> Msg) -> Attribute Msg
+  = toMessage => onInputWith defaultEventOptions toMessage;
+
+text :: <Msg> Text -> Html Msg = value => #text { value = value; };
+element :: <Msg> Tag -> List (Attribute Msg) -> List (Html Msg) -> Html Msg
+  = tag attributes children => #element { tag = tag; attributes = attributes; children = children; };
+a :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #a attributes children;
+article :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #article attributes children;
+aside :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #aside attributes children;
+blockquote :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #blockquote attributes children;
+button :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #button attributes children;
+code :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #code attributes children;
+details :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #details attributes children;
+div :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #div attributes children;
+em :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #em attributes children;
+fieldset :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #fieldset attributes children;
+figcaption :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #figcaption attributes children;
+figure :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #figure attributes children;
+footer :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #footer attributes children;
+form :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #form attributes children;
+h1 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h1 attributes children;
+h2 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h2 attributes children;
+h3 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h3 attributes children;
+h4 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h4 attributes children;
+h5 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h5 attributes children;
+h6 :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #h6 attributes children;
+header :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #header attributes children;
+label :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #label attributes children;
+legend :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #legend attributes children;
+li :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #li attributes children;
+main :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #main attributes children;
+nav :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #nav attributes children;
+ol :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #ol attributes children;
+option :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #option attributes children;
+p :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #p attributes children;
+pre :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #pre attributes children;
+section :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #section attributes children;
+selectElement :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #select attributes children;
+small :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #small attributes children;
+span :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #span attributes children;
+strong :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #strong attributes children;
+summary :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #summary attributes children;
+table :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #table attributes children;
+tbody :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #tbody attributes children;
+td :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #td attributes children;
+textarea :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #textarea attributes children;
+tfoot :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #tfoot attributes children;
+th :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #th attributes children;
+thead :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #thead attributes children;
+tr :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #tr attributes children;
+ul :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #ul attributes children;
+br :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #br attributes {;};
+img :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #img attributes {;};
+input :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #input attributes {;};
+
+{
+  Tag = Tag; AttributeName = AttributeName; StaticAttribute = StaticAttribute;
+  EventOptions = EventOptions; EventHandler = EventHandler; Attribute = Attribute;
+  Html = Html; MetaName = MetaName; LinkRel = LinkRel; CrossOrigin = CrossOrigin;
+  Head = Head; Document = Document; document = document;
+  meta = meta; description = description; viewport = viewport; author = author;
+  robots = robots; themeColor = themeColor; openGraph = openGraph;
+  ogTitle = ogTitle; ogType = ogType; ogDescription = ogDescription;
+  ogImage = ogImage; ogUrl = ogUrl; link = link;
+  stylesheetLink = stylesheetLink; iconLink = iconLink;
+  canonicalLink = canonicalLink; base = base; style = style;
+  staticText = staticText; staticBool = staticBool; bodyId = bodyId;
+  bodyClass = bodyClass; bodyStyles = bodyStyles; attribute = attribute;
+  boolAttribute = boolAttribute; static = static; idAttr = idAttr;
+  classAttr = classAttr; href = href; src = src; alt = alt;
+  nameAttr = nameAttr; placeholder = placeholder; inputType = inputType;
+  role = role; titleAttr = titleAttr; forId = forId; target = target;
+  rel = rel; aria = aria; dataAttribute = dataAttribute;
+  disabledAttr = disabledAttr; required = required; readOnly = readOnly;
+  valueAttribute = valueAttribute; checkedAttribute = checkedAttribute;
+  value = value; checked = checked; styles = styles; key = key;
+  eventOptions = eventOptions; defaultEventOptions = defaultEventOptions;
+  preventDefault = preventDefault; stopPropagation = stopPropagation;
+  preventDefaultAndStopPropagation = preventDefaultAndStopPropagation;
+  onClickWith = onClickWith; onClick = onClick;
+  onInputWith = onInputWith; onInput = onInput;
+  text = text; a = a; article = article; aside = aside;
+  blockquote = blockquote; button = button; code = code; details = details;
+  div = div; em = em; fieldset = fieldset; figcaption = figcaption;
+  figure = figure; footer = footer; form = form; h1 = h1; h2 = h2;
+  h3 = h3; h4 = h4; h5 = h5; h6 = h6; header = header;
+  label = label; legend = legend; li = li; main = main; nav = nav;
+  ol = ol; option = option; p = p; pre = pre; section = section;
+  selectElement = selectElement; small = small; span = span; strong = strong;
+  summary = summary; table = table; tbody = tbody; td = td;
+  textarea = textarea; tfoot = tfoot; th = th; thead = thead; tr = tr;
+  ul = ul; br = br; img = img; input = input;
+}

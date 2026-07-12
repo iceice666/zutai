@@ -1,0 +1,33 @@
+-- Browser application contract and synchronous browser effects.
+-- Explicit import only: `browser ::= import stdlib.browser`.
+--
+-- Browser computations currently have one fixed host operation.  The browser
+-- kernel queues focus requests during init/update, patches the document, then
+-- performs the queued requests in source order.
+html ::= import stdlib.html;
+
+BrowserEffects :: type Unit ! { browser.focus : Text -> Unit; };
+Browser :: <A> type A ! { * BrowserEffects; };
+Program :: <Model, Msg> type {
+  init : Unit -> Browser Model;
+  update : Msg -> Model -> Browser Model;
+  view : Model -> html.Document Msg;
+};
+
+application :: <Model, Msg>
+  (Unit -> Browser Model) ->
+  (Msg -> Model -> Browser Model) ->
+  (Model -> html.Document Msg) ->
+  Program Model Msg
+  = init update view => { init = init; update = update; view = view; };
+
+focus :: Text -> Browser Unit
+  = targetId => perform browser.focus targetId;
+
+{
+  BrowserEffects = BrowserEffects;
+  Browser = Browser;
+  Program = Program;
+  application = application;
+  focus = focus;
+}

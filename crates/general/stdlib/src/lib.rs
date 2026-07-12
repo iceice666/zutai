@@ -31,6 +31,9 @@ pub const DATA_MODULE_SRC: &str = include_str!("modules/data.zt");
 pub const VALIDATE_MODULE_SRC: &str = include_str!("modules/validate.zt");
 pub const FS_MODULE_SRC: &str = include_str!("modules/fs.zt");
 pub const NET_MODULE_SRC: &str = include_str!("modules/net.zt");
+pub const CSS_MODULE_SRC: &str = include_str!("modules/css.zt");
+pub const HTML_MODULE_SRC: &str = include_str!("modules/html.zt");
+pub const BROWSER_MODULE_SRC: &str = include_str!("modules/browser.zt");
 
 pub const MODULES: &[StdlibModule] = &[
     StdlibModule {
@@ -103,6 +106,21 @@ pub const MODULES: &[StdlibModule] = &[
         source: NET_MODULE_SRC,
         visibility: StdlibVisibility::Explicit,
     },
+    StdlibModule {
+        name: "css",
+        source: CSS_MODULE_SRC,
+        visibility: StdlibVisibility::Explicit,
+    },
+    StdlibModule {
+        name: "html",
+        source: HTML_MODULE_SRC,
+        visibility: StdlibVisibility::Explicit,
+    },
+    StdlibModule {
+        name: "browser",
+        source: BROWSER_MODULE_SRC,
+        visibility: StdlibVisibility::Explicit,
+    },
 ];
 
 pub fn modules() -> &'static [StdlibModule] {
@@ -123,7 +141,7 @@ mod tests {
 
     const ALL_MODULES: &[&str] = &[
         "stream", "prelude", "optional", "result", "num", "text", "cmp", "config", "reflect",
-        "list", "data", "validate", "fs", "net",
+        "list", "data", "validate", "fs", "net", "css", "html", "browser",
     ];
 
     #[test]
