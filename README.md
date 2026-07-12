@@ -70,6 +70,19 @@ Smaller stdlib-focused snippets include [stdlib_pipeline.zt](examples/stdlib_pip
 For conventions used by larger examples, see the
 [real-program style](docs/language-manual.md#real-program-style) notes.
 
+## Official website
+
+The project website under [website](website) is a Zutai browser application:
+its state loop, HTML tree, and typed stylesheet are all `.zt`, while its copy is
+inert `.zti` data. Build its prerendered WebAssembly bundle with:
+
+```sh
+just web-build
+```
+
+See [website/README.md](website/README.md) for the source layout, local preview,
+and guarded Cloudflare Pages Direct Upload workflow.
+
 ## Development
 
 This project is a Rust workspace.
@@ -87,7 +100,9 @@ If you use Nix, enter the development shell with:
 nix develop
 ```
 
-The shell provides `cargo`, `rustc`, `rustfmt`, `clippy`, and `rust-analyzer`.
+The shell provides the Rust workspace tools plus the `wasm32-unknown-unknown`
+target, `wasm-bindgen`, Binaryen, and Wrangler for browser builds and local Pages
+previews.
 
 ## Status
 

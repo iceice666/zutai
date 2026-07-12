@@ -1,0 +1,104 @@
+browser ::= import stdlib.browser;
+html ::= import stdlib.html;
+css ::= import stdlib.css;
+
+copy ::= import "content.zti";
+sections ::= import "sections.zt";
+siteStyles ::= import "styles.zt";
+
+Mode :: type {
+  #immediate;
+  #general;
+};
+
+Model :: type {
+  mode : Mode;
+  signal : Text;
+  counter : Int;
+};
+
+Msg :: type {
+  #selectImmediate;
+  #selectGeneral;
+  #editSignal: (Text);
+  #focusSignal;
+  #decrementCounter;
+  #incrementCounter;
+  #resetCounter;
+};
+
+selectImmediateMessage :: Msg = #selectImmediate;
+selectGeneralMessage :: Msg = #selectGeneral;
+focusSignalMessage :: Msg = #focusSignal;
+decrementCounterMessage :: Msg = #decrementCounter;
+incrementCounterMessage :: Msg = #incrementCounter;
+resetCounterMessage :: Msg = #resetCounter;
+editSignalMessage :: Text -> Msg
+  = value => #editSignal (value);
+
+init :: Unit -> browser.Browser Model
+  = _ => {
+    mode = #immediate;
+    signal = copy.playground.initial;
+    counter = 0;
+  };
+
+update :: Msg -> Model -> browser.Browser Model
+  = message model => match message {
+    | #selectImmediate => model with { mode = #immediate; };
+    | #selectGeneral => model with { mode = #general; };
+    | #editSignal (value) => model with { signal = value; };
+    | #focusSignal => [
+        browser.focus "signal-input";
+        model
+      ];
+    | #decrementCounter => model with { counter = model.counter - 1; };
+    | #incrementCounter => model with { counter = model.counter + 1; };
+    | #resetCounter => [
+        next := model with { counter = 0; };
+        browser.focus "signal-input";
+        next
+      ];
+  };
+
+view :: Model -> html.Document Msg
+  = model =>
+    (html.document
+      "en"
+      copy.meta.title
+      {
+        html.description copy.meta.description;
+        html.viewport "width=device-width, initial-scale=1";
+        html.themeColor "#c7ff28";
+        html.ogTitle copy.meta.title;
+        html.ogDescription copy.meta.description;
+        html.ogType "website";
+        html.iconLink "image/svg+xml" "/favicon.svg";
+        html.style siteStyles;
+      }
+      { html.bodyClass "site-body"; }
+      {
+        html.div { html.classAttr "site-shell"; } {
+          sections.siteHeader ();
+          html.main {;} {
+            sections.hero focusSignalMessage;
+            sections.language
+              (model.mode == #immediate)
+              selectImmediateMessage
+              selectGeneralMessage;
+            sections.pipeline ();
+            sections.playground
+              model.signal
+              model.counter
+              editSignalMessage
+              focusSignalMessage
+              decrementCounterMessage
+              incrementCounterMessage
+              resetCounterMessage;
+            sections.principles ();
+          };
+          sections.siteFooter ();
+        };
+      });
+
+browser.application init update view

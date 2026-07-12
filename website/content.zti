@@ -1,0 +1,32 @@
+{
+  meta = {
+    title = "Zutai — data at rest, computation in motion";
+    description = "A pure, lazy, typed language for shaping data without hiding its structure.";
+  };
+
+  hero = {
+    eyebrow = "TWO MODES / ONE LANGUAGE";
+    lead = "Data at rest. Computation in motion.";
+    body = "Zutai keeps inert data literal, makes transformation explicit, and carries types all the way from source to native code.";
+  };
+
+  immediate = {
+    label = ".zti / IMMEDIATE";
+    title = "Structure, untouched.";
+    body = "A deterministic, non-evaluating data format built for fast parsing and lazy materialization.";
+    code = "{\n  service = \"edge\";\n  replicas = 3;\n  regions = [#tpe; #nrt;];\n}";
+  };
+
+  general = {
+    label = ".zt / GENERAL";
+    title = "Transform, with proof.";
+    body = "Pure functions, exhaustive unions, effects with visible authority, and a typed path to LLVM.";
+    code = "healthy :: Service -> Bool\n  = service =>\n    service.enabled && service.errors == 0;";
+  };
+
+  playground = {
+    label = "LIVE SIGNAL";
+    prompt = "Name a service to shape";
+    initial = "payments-edge";
+  };
+}

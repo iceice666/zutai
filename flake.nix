@@ -25,24 +25,33 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          # Stable toolchain with llvm-tools-preview for cargo-llvm-cov
-          toolchain = fenix.packages.${system}.stable.withComponents [
-            "cargo"
-            "clippy"
-            "llvm-tools-preview"
-            "rustc"
-            "rustfmt"
+          fenixPkgs = fenix.packages.${system};
+          # Stable host tools plus the WebAssembly standard library used by the
+          # browser kernel and `zutai web build`.
+          toolchain = fenixPkgs.combine [
+            (fenixPkgs.stable.withComponents [
+              "cargo"
+              "clippy"
+              "llvm-tools-preview"
+              "rustc"
+              "rustfmt"
+            ])
+            fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
           ];
         in
         {
           default = pkgs.mkShell {
             packages = [
               toolchain
+              pkgs.binaryen
               pkgs.cargo-llvm-cov
               pkgs.cargo-nextest
+              pkgs.just
               pkgs.rust-analyzer
               pkgs.llvmPackages.clang
               pkgs.llvmPackages.llvm
+              pkgs.wasm-bindgen-cli
+              pkgs.wrangler
             ];
 
             RUST_BACKTRACE = "1";

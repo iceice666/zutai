@@ -17,7 +17,7 @@ build-release:
 
 # Run tests with nextest (accepts extra args, e.g. `just test -p zutai-tlc`)
 test *ARGS:
-    cargo nextest run --workspace {{ARGS}}
+    cargo nextest run --workspace {{ ARGS }}
 
 # Check real examples through check/run/native compile parity.
 native-examples:
@@ -50,7 +50,19 @@ browser-demo ADDR="127.0.0.1:8787":
     host="target/browser-demo/zutai-browser-demo-host"; \
     cargo run -q -p zutai-cli -- compile --emit=lib examples/deploy_readiness.zt -o "$lib"; \
     rustc --edition=2024 examples/browser_demo/host.rs -o "$host"; \
-    exec "$host" "$lib" "{{ADDR}}"
+    exec "$host" "$lib" "{{ ADDR }}"
+
+# Type-check the official site without producing a bundle.
+web-check:
+    cargo run -q -p zutai-cli -- check website/main.zt
+
+# Build the official Zutai site and its hashed WebAssembly bundle.
+web-build OUT_DIR="dist":
+    cargo run -q -p zutai-cli -- web build website/main.zt --out-dir "{{ OUT_DIR }}"
+
+# Serve a built site through the same Pages-compatible local server used in CI.
+web-preview OUT_DIR="dist" PORT="8788": (web-build OUT_DIR)
+    wrangler pages dev "{{ OUT_DIR }}" --port "{{ PORT }}"
 
 # ── Lint & format ─────────────────────────────────────────────────────────────
 

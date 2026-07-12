@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Zutai</title>
+  <rect width="64" height="64" rx="8" fill="#191815"/>
+  <path d="M13 14h38L22 50h30" fill="none" stroke="#c7ff28" stroke-width="8" stroke-linejoin="bevel"/>
+  <circle cx="51" cy="14" r="4" fill="#55dfff"/>
+</svg>

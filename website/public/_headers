@@ -1,0 +1,16 @@
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'
+  Cross-Origin-Opener-Policy: same-origin
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), geolocation=(), microphone=(), payment=(), usb=()
+
+/index.html
+  Cache-Control: no-cache
+
+/_zutai/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/_zutai/*.wasm
+  Content-Type: application/wasm

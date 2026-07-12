@@ -1,0 +1,472 @@
+css ::= import stdlib.css;
+
+ink ::= css.hex "#141310";
+paper ::= css.hex "#f2eee3";
+paperBright ::= css.hex "#fffdf5";
+muted ::= css.hex "#6f6b61";
+line ::= css.hex "#bbb4a5";
+electric ::= css.hex "#c7ff28";
+cyan ::= css.hex "#55dfff";
+violet ::= css.hex "#885cff";
+
+siteStyles :: css.Stylesheet = css.stylesheet {
+  css.rule { css.tag "html"; } {
+    css.background paper;
+    css.color ink;
+  };
+
+  css.rule { css.tag "body"; } {
+    css.margin (css.px 0.0);
+    css.minWidth (css.px 320.0);
+    css.background paper;
+    css.color ink;
+    css.fontFamily (css.keyword "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace");
+    css.fontSize (css.rem 1.0);
+    css.lineHeight (css.keyword "1.5");
+  };
+
+  css.rule { css.tag "a"; } {
+    css.color (css.keyword "inherit");
+  };
+
+  css.rule { css.class "site-shell"; } {
+    css.position (css.keyword "relative");
+    css.overflow (css.keyword "hidden");
+    css.background (css.keyword "repeating-linear-gradient(0deg, transparent 0, transparent 1.95rem, rgba(20, 19, 16, 0.045) 2rem), repeating-linear-gradient(90deg, transparent 0, transparent 1.95rem, rgba(20, 19, 16, 0.045) 2rem)");
+  };
+
+  css.rule { css.class "site-header"; } {
+    css.position (css.keyword "relative");
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "auto 1fr auto");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 2.0);
+    css.padding (css.keyword "1rem clamp(1rem, 3vw, 3rem)");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; line; });
+    css.background (css.keyword "rgba(242, 238, 227, 0.92)");
+  };
+
+  css.rule { css.class "wordmark"; } {
+    css.fontWeight (css.keyword "900");
+    css.letterSpacing (css.rem -0.08);
+    css.textDecoration (css.keyword "none");
+    css.fontSize (css.rem 1.45);
+  };
+
+  css.rule { css.class "site-nav"; } {
+    css.display (css.keyword "flex");
+    css.justifyContent (css.keyword "center");
+    css.gap (css.keyword "clamp(0.8rem, 2.5vw, 2.5rem)");
+  };
+
+  css.rule { css.descendant (css.class "site-nav") (css.tag "a"); } {
+    css.fontSize (css.rem 0.72);
+    css.fontWeight (css.keyword "700");
+    css.letterSpacing (css.rem 0.08);
+    css.textDecoration (css.keyword "none");
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.hover (css.descendant (css.class "site-nav") (css.tag "a")); } {
+    css.background electric;
+  };
+
+  css.rule { css.class "header-status"; } {
+    css.display (css.keyword "inline-flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 0.5);
+    css.fontSize (css.rem 0.7);
+    css.fontWeight (css.keyword "700");
+  };
+
+  css.rule { css.class "status-dot"; } {
+    css.display (css.keyword "inline-block");
+    css.width (css.rem 0.6);
+    css.height (css.rem 0.6);
+    css.borderRadius (css.keyword "50%");
+    css.background electric;
+    css.boxShadow (css.keyword "0 0 0 0.2rem rgba(199, 255, 40, 0.24)");
+    css.animation (css.keyword "signal-pulse 1.8s ease-in-out infinite alternate");
+  };
+
+  css.keyframes "signal-pulse" {
+    css.keyframe css.from {
+      css.opacity (css.number 0.45);
+      css.transform (css.keyword "scale(0.8)");
+    };
+    css.keyframe css.to {
+      css.opacity (css.number 1.0);
+      css.transform (css.keyword "scale(1)");
+    };
+  };
+
+  css.rule { css.class "hero"; } {
+    css.position (css.keyword "relative");
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1.25fr) minmax(18rem, 0.75fr)");
+    css.minHeight (css.keyword "calc(100vh - 4.5rem)");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "hero-copy"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.justifyContent (css.keyword "space-between");
+    css.padding (css.keyword "clamp(2rem, 6vw, 6rem) clamp(1rem, 3vw, 3rem)");
+  };
+
+  css.rule { css.class "eyebrow"; } {
+    css.margin (css.px 0.0);
+    css.fontSize (css.rem 0.72);
+    css.fontWeight (css.keyword "800");
+    css.letterSpacing (css.rem 0.14);
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.class "hero-title"; } {
+    css.margin (css.keyword "1rem 0 0");
+    css.maxWidth (css.keyword "8ch");
+    css.fontFamily (css.keyword "Arial Black, Helvetica Neue, sans-serif");
+    css.fontSize (css.keyword "clamp(4.5rem, 12vw, 11rem)");
+    css.fontWeight (css.keyword "900");
+    css.letterSpacing (css.keyword "-0.09em");
+    css.lineHeight (css.keyword "0.76");
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.class "hero-lead"; } {
+    css.maxWidth (css.keyword "31rem");
+    css.margin (css.keyword "3rem 0 0 auto");
+    css.fontSize (css.keyword "clamp(1.1rem, 2vw, 1.55rem)");
+    css.fontWeight (css.keyword "650");
+    css.lineHeight (css.keyword "1.28");
+  };
+
+  css.rule { css.class "hero-signal"; } {
+    css.display (css.keyword "grid");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "signal-band"; } {
+    css.position (css.keyword "relative");
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "flex-end");
+    css.padding (css.rem 1.5);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.fontSize (css.rem 0.72);
+    css.fontWeight (css.keyword "800");
+    css.letterSpacing (css.rem 0.08);
+  };
+
+  css.rule { css.class "signal-electric"; } {
+    css.background electric;
+  };
+
+  css.rule { css.class "signal-cyan"; } {
+    css.background cyan;
+  };
+
+  css.rule { css.class "signal-violet"; } {
+    css.background violet;
+    css.color paperBright;
+  };
+
+  css.rule { css.class "section"; } {
+    css.padding (css.keyword "clamp(4rem, 9vw, 9rem) clamp(1rem, 3vw, 3rem)");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "section-heading"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(9rem, 0.35fr) minmax(0, 1fr)");
+    css.gap (css.rem 2.0);
+    css.alignItems (css.keyword "end");
+    css.margin (css.keyword "0 0 4rem");
+  };
+
+  css.rule { css.descendant (css.class "section-heading") (css.tag "h2"); } {
+    css.margin (css.px 0.0);
+    css.fontFamily (css.keyword "Arial Black, Helvetica Neue, sans-serif");
+    css.fontSize (css.keyword "clamp(2.6rem, 7vw, 6.5rem)");
+    css.letterSpacing (css.keyword "-0.07em");
+    css.lineHeight (css.keyword "0.9");
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.class "mode-switch"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "repeat(2, minmax(0, 1fr))");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "mode-tab"; } {
+    css.cursor (css.keyword "pointer");
+    css.padding (css.rem 1.0);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.background paperBright;
+    css.color ink;
+    css.fontWeight (css.keyword "800");
+    css.textAlign (css.keyword "left");
+  };
+
+  css.rule { css.hover (css.class "mode-tab"); } {
+    css.background cyan;
+  };
+
+  css.rule { css.class "mode-tab-active"; } {
+    css.background ink;
+    css.color electric;
+  };
+
+  css.rule { css.class "mode-card"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 0.8fr) minmax(0, 1.2fr)");
+    css.minHeight (css.rem 28.0);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "mode-copy"; } {
+    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.descendant (css.class "mode-copy") (css.tag "h3"); } {
+    css.margin (css.keyword "1rem 0");
+    css.fontSize (css.keyword "clamp(1.8rem, 4vw, 3.8rem)");
+    css.lineHeight (css.keyword "0.98");
+  };
+
+  css.rule { css.class "mode-code"; } {
+    css.margin (css.px 0.0);
+    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
+    css.overflow (css.keyword "auto");
+    css.background ink;
+    css.color electric;
+    css.fontSize (css.keyword "clamp(0.82rem, 1.5vw, 1rem)");
+    css.lineHeight (css.keyword "1.7");
+  };
+
+  css.rule { css.class "pipeline"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "repeat(7, minmax(8rem, 1fr))");
+    css.overflow (css.keyword "auto");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "pipeline-step"; } {
+    css.position (css.keyword "relative");
+    css.minHeight (css.rem 10.0);
+    css.padding (css.rem 1.0);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "pipeline-step-alt"; } {
+    css.background (css.keyword "rgba(85, 223, 255, 0.22)");
+  };
+
+  css.rule { css.descendant (css.class "pipeline-step") (css.tag "span"); } {
+    css.display (css.keyword "block");
+    css.margin (css.keyword "0 0 4.5rem");
+    css.color muted;
+    css.fontSize (css.rem 0.68);
+  };
+
+  css.rule { css.class "playground"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1fr) auto");
+    css.gap (css.rem 1.0);
+    css.padding (css.keyword "clamp(1.5rem, 4vw, 4rem)");
+    css.background ink;
+    css.color paperBright;
+  };
+
+  css.rule { css.class "playground-copy"; } {
+    css.gridColumn (css.keyword "1 / -1");
+  };
+
+  css.rule { css.id "signal-input"; } {
+    css.width (css.keyword "100%");
+    css.padding (css.keyword "1rem 1.2rem");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
+    css.borderRadius (css.px 0.0);
+    css.outline (css.keyword "none");
+    css.background (css.hex "#22211d");
+    css.color electric;
+  };
+
+  css.rule { css.focus (css.id "signal-input"); } {
+    css.boxShadow (css.keyword "0 0 0 0.24rem rgba(199, 255, 40, 0.2)");
+  };
+
+  css.rule { css.class "action"; } {
+    css.cursor (css.keyword "pointer");
+    css.padding (css.keyword "1rem 1.4rem");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
+    css.borderRadius (css.px 0.0);
+    css.background electric;
+    css.color ink;
+    css.fontWeight (css.keyword "900");
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.hover (css.class "action"); } {
+    css.background cyan;
+  };
+
+  css.rule { css.class "signal-output"; } {
+    css.gridColumn (css.keyword "1 / -1");
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "auto 1fr");
+    css.gap (css.rem 1.0);
+    css.padding (css.keyword "1rem 0 0");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; muted; });
+    css.color cyan;
+  };
+
+  css.rule { css.class "counter-card"; } {
+    css.gridColumn (css.keyword "1 / -1");
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1fr) auto");
+    css.gap (css.rem 1.0);
+    css.padding (css.rem 1.0);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; cyan; });
+    css.background (css.hex "#22211d");
+  };
+
+  css.rule { css.class "counter-readout"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 1.0);
+  };
+
+  css.rule { css.class "counter-label"; } {
+    css.color muted;
+    css.fontSize (css.rem 0.68);
+    css.letterSpacing (css.rem 0.08);
+  };
+
+  css.rule { css.class "counter-value"; } {
+    css.minWidth (css.keyword "3ch");
+    css.color electric;
+    css.fontSize (css.rem 2.6);
+    css.lineHeight (css.keyword "1");
+  };
+
+  css.rule { css.class "counter-controls"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "repeat(3, auto)");
+    css.gap (css.rem 0.5);
+  };
+
+  css.rule { css.class "counter-button"; } {
+    css.cursor (css.keyword "pointer");
+    css.minWidth (css.rem 3.0);
+    css.padding (css.keyword "0.75rem 1rem");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; cyan; });
+    css.borderRadius (css.px 0.0);
+    css.background (css.keyword "transparent");
+    css.color cyan;
+    css.fontWeight (css.keyword "900");
+  };
+
+  css.rule { css.hover (css.class "counter-button"); } {
+    css.background cyan;
+    css.color ink;
+  };
+
+  css.rule { css.class "counter-reset"; } {
+    css.color electric;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; electric; });
+    css.textTransform (css.keyword "uppercase");
+  };
+
+  css.rule { css.class "manifesto"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "repeat(3, minmax(0, 1fr))");
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.class "manifesto-item"; } {
+    css.minHeight (css.rem 15.0);
+    css.padding (css.rem 1.5);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+  };
+
+  css.rule { css.descendant (css.class "manifesto-item") (css.tag "h3"); } {
+    css.margin (css.keyword "0 0 4rem");
+    css.fontSize (css.rem 1.1);
+  };
+
+  css.rule { css.class "site-footer"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "1fr auto");
+    css.gap (css.rem 2.0);
+    css.padding (css.keyword "2rem clamp(1rem, 3vw, 3rem)");
+    css.background ink;
+    css.color paperBright;
+  };
+
+  css.rule { css.focusVisible (css.tag "a"); css.focusVisible (css.tag "button"); css.focusVisible (css.tag "input"); } {
+    css.outline (css.space { css.px 3.0; css.keyword "solid"; violet; });
+  };
+
+  css.reducedMotion {
+    css.rule { css.class "status-dot"; } {
+      css.animation (css.keyword "none");
+    };
+  };
+
+  css.media (css.maxWidthQuery 860) {
+    css.rule { css.class "site-header"; } {
+      css.gridTemplateColumns (css.keyword "1fr auto");
+    };
+    css.rule { css.class "site-nav"; } {
+      css.display (css.keyword "none");
+    };
+    css.rule { css.class "hero"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+    css.rule { css.class "hero-signal"; } {
+      css.gridTemplateColumns (css.keyword "repeat(3, 1fr)");
+      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    };
+    css.rule { css.class "section-heading"; css.class "mode-card"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+    css.rule { css.class "mode-copy"; } {
+      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    };
+  };
+
+  css.media (css.maxWidthQuery 620) {
+    css.rule { css.class "hero-title"; } {
+      css.fontSize (css.keyword "clamp(4rem, 24vw, 7rem)");
+    };
+    css.rule { css.class "mode-switch"; css.class "manifesto"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+    css.rule { css.class "mode-tab"; css.class "manifesto-item"; } {
+      css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    };
+    css.rule { css.class "playground"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+    css.rule { css.class "counter-card"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+    css.rule { css.class "counter-controls"; } {
+      css.gridTemplateColumns (css.keyword "1fr 1fr");
+    };
+    css.rule { css.class "counter-reset"; } {
+      css.gridColumn (css.keyword "1 / -1");
+    };
+    css.rule { css.class "action"; } {
+      css.width (css.keyword "100%");
+    };
+    css.rule { css.class "site-footer"; } {
+      css.gridTemplateColumns (css.keyword "1fr");
+    };
+  };
+};
+
+siteStyles
