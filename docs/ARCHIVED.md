@@ -35,7 +35,8 @@ Design details: [`docs/tlc-core.md`](tlc-core.md),
 
 ## Current baseline
 
-_Last updated: 2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
+_Last updated: 2026-07-12 (LSP diagnostics and hover); prior baseline updates:
+2026-06-23 (language specs, Unicode XID, evaluator/backend hardening),
 2026-06-24 (Phase A: `.zt`/`.zti` native module-import lowering), 2026-06-26
 (general-mode `;`-terminator / container-glyph grammar; docs migrated; `import`
 unified as an expression; **native effect parity**), and 2026-06-27 (resource
@@ -134,6 +135,9 @@ import spelling and leaves `use` available as an ordinary identifier; see
 The same 2026-07-08 stdlib helper slice adds opt-in list/stream search/extrema
 and Result/Validation convenience helpers as pure source exports; see
 "Stdlib helper slice" below.
+The 2026-07-12 editor tooling pass adds `zutai-cli lsp`: a stdio LSP service
+with full-document diagnostics and THIR-derived hover types; see "Language
+Server Protocol diagnostics and hover" below.
 
 - General-mode (`.zt`) surface grammar now uses `;` as the universal
   terminator/separator: every value-like top-level declaration ends in `;`, and a
@@ -265,6 +269,20 @@ New unresolved work should become an open milestone/TBD item in `TBD.md`.
   runtime `Type`/reflection boundary.
 
 ## Completed milestones, newest first
+
+### Language Server Protocol diagnostics and hover ✅
+
+_Completed 2026-07-12. Adds editor integration without changing language
+syntax, HIR/THIR semantics, or the runtime._
+
+- `zutai-cli lsp` speaks stdio JSON-RPC/LSP with full-document synchronization.
+  It publishes parser, HIR, import, and THIR diagnostics using the same semantic
+  analysis path as `zutai check`.
+- Hover selects the narrowest completed THIR expression at the cursor and shows
+  a source-oriented rendering of its inferred type. Positions correctly use the
+  LSP-required UTF-16 character units.
+- Verification: CLI unit tests cover protocol framing, document diagnostics,
+  hover, and UTF-16 position conversion.
 
 ### Stdlib helper slice ✅
 

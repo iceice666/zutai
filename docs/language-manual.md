@@ -29,6 +29,15 @@ cfg.server.port
 
 `zutai-cli run app.zt` prints `8080` when both files are in the same directory.
 
+## Editor integration
+
+`zutai-cli lsp` starts a Language Server Protocol service over standard input
+and output. The first release supports `.zt` document diagnostics on open and
+change, plus hover type information for typed expressions. Configure an editor
+to launch `zutai-cli lsp` for Zutai files; the server resolves relative imports
+from the edited file's directory. It deliberately does not execute programs or
+perform native compilation while editing.
+
 ## File modes
 
 Zutai has two file modes.

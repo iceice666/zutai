@@ -4,6 +4,7 @@ use clap::{Parser, ValueEnum};
 
 mod commands;
 mod diagnostics;
+mod lsp;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -17,6 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
         Some(Commands::Repl) => commands::run_repl()?,
+        Some(Commands::Lsp) => lsp::run()?,
         None => {
             let path = cli.path.expect("clap requires a subcommand or path");
             commands::run_bare_path(&path)?;
@@ -99,4 +101,6 @@ enum Commands {
     },
     /// Run an interactive REPL
     Repl,
+    /// Start the Language Server Protocol service on standard input/output
+    Lsp,
 }
