@@ -1,9 +1,13 @@
 # Zutai official website
 
 The official site is itself a Zutai browser application. `main.zt` owns the
-Elm-style `Model` / `Msg` / `update` / `view` loop, `sections.zt` contains the
-page components, `styles.zt` produces a typed `css.Stylesheet`, and
-`content.zti` keeps editorial copy as inert immediate-mode data.
+Elm-style `Model` / `Msg` / `update` / `view` loop — the `Model` tracks only the
+active mode (`#immediate` / `#general`), and the hero mode toggle is the sole
+interaction. `sections.zt` contains the page components (header, hero, modes,
+why, pipeline, get-started, footer) plus a typed syntax highlighter that colors
+pre-tokenized code samples. `styles.zt` produces a typed `css.Stylesheet`, and
+`content.zti` keeps all editorial copy, code tokens, and link data as inert
+immediate-mode data — no logic, so every section is data-driven.
 
 Build the production bundle from the repository root:
 
