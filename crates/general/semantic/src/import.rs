@@ -28,6 +28,7 @@ use zutai_thir::{
 };
 
 use crate::{Analysis, AnalysisOptions};
+use zutai_stdlib::StdlibSources;
 
 /// Recursion state shared across a single top-level analysis: the stack of
 /// modules currently being analyzed (for cycle detection) and a cache of
@@ -45,10 +46,12 @@ pub(crate) struct ImportContext<'a> {
     in_progress: Vec<PathBuf>,
     cache: FxHashMap<PathBuf, Rc<Analysis>>,
     source_backend: SourceBackend<'a>,
+    stdlib: Rc<StdlibSources>,
+    recorded_stdlib: BTreeMap<String, String>,
 }
 
-impl Default for ImportContext<'_> {
-    fn default() -> Self {
+impl ImportContext<'_> {
+    pub(crate) fn new(stdlib: Rc<StdlibSources>) -> Self {
         Self {
             in_progress: Vec::new(),
             cache: FxHashMap::default(),
@@ -57,6 +60,8 @@ impl Default for ImportContext<'_> {
                 recording_root: None,
                 recorded: BTreeMap::new(),
             },
+            stdlib,
+            recorded_stdlib: BTreeMap::new(),
         }
     }
 }
@@ -75,15 +80,15 @@ enum LoadError {
 impl<'a> ImportContext<'a> {
     /// Seed the in-progress stack with the root file's canonical path so that a
     /// descendant importing the root is detected as a cycle.
-    pub(crate) fn with_root(path: &Path) -> Self {
-        let mut ctx = Self::default();
+    pub(crate) fn with_root(path: &Path, stdlib: Rc<StdlibSources>) -> Self {
+        let mut ctx = Self::new(stdlib);
         if let Ok(canonical) = std::fs::canonicalize(path) {
             ctx.in_progress.push(canonical);
         }
         ctx
     }
 
-    pub(crate) fn with_recording_root(path: &Path) -> Self {
+    pub(crate) fn with_recording_root(path: &Path, stdlib: Rc<StdlibSources>) -> Self {
         let canonical = std::fs::canonicalize(path).ok();
         let recording_root = canonical
             .as_deref()
@@ -97,12 +102,15 @@ impl<'a> ImportContext<'a> {
                 recording_root,
                 recorded: BTreeMap::new(),
             },
+            stdlib,
+            recorded_stdlib: BTreeMap::new(),
         }
     }
 
     pub(crate) fn with_explicit_recording_root(
         path: &Path,
         source_root: &Path,
+        stdlib: Rc<StdlibSources>,
     ) -> std::io::Result<Self> {
         let canonical = std::fs::canonicalize(path)?;
         let source_root = std::fs::canonicalize(if source_root.as_os_str().is_empty() {
@@ -130,14 +138,22 @@ impl<'a> ImportContext<'a> {
                 recording_root: Some(source_root),
                 recorded: BTreeMap::new(),
             },
+            stdlib,
+            recorded_stdlib: BTreeMap::new(),
         })
     }
 
-    pub(crate) fn with_memory(sources: &'a BTreeMap<String, String>, entry: &Path) -> Self {
+    pub(crate) fn with_memory(
+        sources: &'a BTreeMap<String, String>,
+        entry: &Path,
+        stdlib: Rc<StdlibSources>,
+    ) -> Self {
         Self {
             in_progress: vec![entry.to_path_buf()],
             cache: FxHashMap::default(),
             source_backend: SourceBackend::Memory(sources),
+            stdlib,
+            recorded_stdlib: BTreeMap::new(),
         }
     }
 
@@ -152,6 +168,14 @@ impl<'a> ImportContext<'a> {
             SourceBackend::Filesystem { recorded, .. } => std::mem::take(recorded),
             SourceBackend::Memory(_) => BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn take_recorded_stdlib(&mut self) -> BTreeMap<String, String> {
+        std::mem::take(&mut self.recorded_stdlib)
+    }
+
+    pub(crate) fn stdlib(&self) -> &StdlibSources {
+        &self.stdlib
     }
 
     fn load(&mut self, base: &Path, rel: &str) -> Result<LoadedSource, LoadError> {
@@ -286,8 +310,12 @@ pub enum ImportDiagnosticKind {
     UnsupportedImportForm {
         path: String,
     },
-    /// `import stdlib.<name>` named a module the embedded standard library does
-    /// not provide.
+    /// The configured filesystem standard library could not be loaded.
+    StdlibSetup {
+        message: String,
+    },
+    /// `import stdlib.<name>` named a module the configured standard library
+    /// does not provide.
     UnknownStdlibModule {
         name: String,
     },
@@ -382,8 +410,8 @@ pub(crate) fn resolve_imports(
 
 impl Resolver<'_> {
     fn resolve_one(&mut self, source: &HirImportSource, span: Span, ctx: &mut ImportContext) {
-        // `import stdlib.<name>` resolves to an embedded module (no filesystem,
-        // no install path, no subtree-confinement check). This is checked before
+        // `import stdlib.<name>` resolves from the validated stdlib source set
+        // (outside quoted-import subtree confinement). This is checked before
         // `relative_path` so `stdlib.stream` is not mistaken for `stem.ext`.
         if let HirImportSource::Path(parts) = source
             && parts.first().map(String::as_str) == Some("stdlib")
@@ -488,8 +516,8 @@ impl Resolver<'_> {
         self.register_zt_module(source, module, rel, span);
     }
 
-    /// `import stdlib.<name>` — resolve `<name>` against the embedded standard
-    /// library and analyze it from in-binary source. Uses a synthetic cache key
+    /// `import stdlib.<name>` — resolve `<name>` against the configured standard
+    /// library source set. Uses a synthetic cache key
     /// (`<stdlib>/<name>.zt`) so cycle detection and caching still apply without
     /// touching the filesystem.
     fn resolve_stdlib(
@@ -510,7 +538,7 @@ impl Resolver<'_> {
                 );
             }
         };
-        let Some(contents) = stdlib_source(name) else {
+        let Some(contents) = ctx.stdlib.source(name).map(str::to_owned) else {
             return self.diag(
                 ImportDiagnosticKind::UnknownStdlibModule {
                     name: name.to_string(),
@@ -519,6 +547,8 @@ impl Resolver<'_> {
             );
         };
 
+        ctx.recorded_stdlib
+            .insert(name.to_owned(), contents.clone());
         let key = PathBuf::from("<stdlib>").join(format!("{name}.zt"));
         let rel = format!("stdlib.{name}");
         if ctx.in_progress.iter().any(|p| p == &key) {
@@ -526,7 +556,7 @@ impl Resolver<'_> {
         }
         let module = match ctx.cache.get(&key) {
             Some(module) => module.clone(),
-            None => match self.analyze_zt(&key, key.parent(), contents, &rel, span, ctx) {
+            None => match self.analyze_zt(&key, key.parent(), &contents, &rel, span, ctx) {
                 Some(module) => module,
                 None => return,
             },
@@ -652,14 +682,6 @@ impl Resolver<'_> {
             }
         }
     }
-}
-
-/// Embedded standard-library modules, addressed as `import stdlib.<name>`.
-///
-/// Resolved from `zutai-stdlib` in-binary source so there is no filesystem
-/// stdlib root or install path.
-fn stdlib_source(name: &str) -> Option<&'static str> {
-    zutai_stdlib::source(name)
 }
 
 /// Whether `analysis` failed (at least in part) because of an import cycle.

@@ -429,7 +429,20 @@ mod tests {
     #[test]
     fn universe_circular_definition_reports_kind_diagnostic() {
         let parsed = zutai_syntax::parse("1");
-        let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+        let hir = zutai_hir::lower_file_with_preludes(
+            parsed.ast().expect("parse should produce AST"),
+            zutai_hir::HirLowerOptions::default(),
+            zutai_hir::SourcePreludes {
+                stream: Some(include_str!(concat!(
+                    env!("ZUTAI_STDLIB_ROOT"),
+                    "/modules/stream.zt"
+                ))),
+                prelude: Some(include_str!(concat!(
+                    env!("ZUTAI_STDLIB_ROOT"),
+                    "/modules/prelude.zt"
+                ))),
+            },
+        );
         let mut lowerer = Lowerer::new(&hir.file, FxHashMap::default());
         let level = lowerer.fresh_level_meta();
 

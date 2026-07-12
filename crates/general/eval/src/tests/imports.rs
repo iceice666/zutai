@@ -337,7 +337,7 @@ fn strict_tlc_rejects_imported_type_value() {
     }
 }
 
-// ─── embedded stdlib + destructuring imports ──────────────────────────────────
+// ─── filesystem stdlib + destructuring imports ────────────────────────────────
 
 #[test]
 fn stdlib_stream_qualified_members_evaluate() {

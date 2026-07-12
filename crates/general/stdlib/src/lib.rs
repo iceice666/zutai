@@ -1,176 +1,586 @@
-//! Embedded standard-library sources and module metadata for Zutai general mode.
+//! Filesystem standard-library loader for Zutai general mode.
 //!
-//! This crate owns the canonical `.zt` source text for `import stdlib.<name>`.
-//! Compiler layers consume the registry instead of keeping their own parallel
-//! module lists.
+//! The compiler never embeds standard-library source. A validated manifest and
+//! its `.zt` files are loaded from an explicitly selected stdlib root.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::fmt;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
+
+use serde::{Deserialize, Serialize};
+
+pub const MANIFEST_FORMAT_VERSION: u32 = 1;
+pub const COMPILER_COMPATIBILITY: &str = env!("CARGO_PKG_VERSION");
+pub const STDLIB_ROOT_ENV: &str = "ZUTAI_STDLIB_ROOT";
+
+static PROCESS_STDLIB_ROOT: OnceLock<PathBuf> = OnceLock::new();
+static CONFIGURED_STDLIB: OnceLock<Result<StdlibSources, String>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum StdlibVisibility {
     Ambient,
     Explicit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StdlibManifest {
+    format_version: u32,
+    compiler_compatibility: String,
+    modules: Vec<ManifestModule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestModule {
+    name: String,
+    path: String,
+    visibility: StdlibVisibility,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StdlibModule {
-    pub name: &'static str,
-    pub source: &'static str,
-    pub visibility: StdlibVisibility,
+    name: String,
+    source: String,
+    visibility: StdlibVisibility,
 }
 
-pub const STREAM_MODULE_SRC: &str = include_str!("modules/stream.zt");
-pub const PRELUDE_MODULE_SRC: &str = include_str!("modules/prelude.zt");
-pub const OPTIONAL_MODULE_SRC: &str = include_str!("modules/optional.zt");
-pub const RESULT_MODULE_SRC: &str = include_str!("modules/result.zt");
-pub const NUM_MODULE_SRC: &str = include_str!("modules/num.zt");
-pub const TEXT_MODULE_SRC: &str = include_str!("modules/text.zt");
-pub const CMP_MODULE_SRC: &str = include_str!("modules/cmp.zt");
-pub const CONFIG_MODULE_SRC: &str = include_str!("modules/config.zt");
-pub const REFLECT_MODULE_SRC: &str = include_str!("modules/reflect.zt");
-pub const LIST_MODULE_SRC: &str = include_str!("modules/list.zt");
-pub const DATA_MODULE_SRC: &str = include_str!("modules/data.zt");
-pub const VALIDATE_MODULE_SRC: &str = include_str!("modules/validate.zt");
-pub const FS_MODULE_SRC: &str = include_str!("modules/fs.zt");
-pub const NET_MODULE_SRC: &str = include_str!("modules/net.zt");
-pub const CSS_MODULE_SRC: &str = include_str!("modules/css.zt");
-pub const HTML_MODULE_SRC: &str = include_str!("modules/html.zt");
-pub const BROWSER_MODULE_SRC: &str = include_str!("modules/browser.zt");
+impl StdlibModule {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
-pub const MODULES: &[StdlibModule] = &[
-    StdlibModule {
-        name: "stream",
-        source: STREAM_MODULE_SRC,
-        visibility: StdlibVisibility::Ambient,
-    },
-    StdlibModule {
-        name: "prelude",
-        source: PRELUDE_MODULE_SRC,
-        visibility: StdlibVisibility::Ambient,
-    },
-    StdlibModule {
-        name: "optional",
-        source: OPTIONAL_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "result",
-        source: RESULT_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "num",
-        source: NUM_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "text",
-        source: TEXT_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "cmp",
-        source: CMP_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "config",
-        source: CONFIG_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "reflect",
-        source: REFLECT_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "list",
-        source: LIST_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "data",
-        source: DATA_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "validate",
-        source: VALIDATE_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "fs",
-        source: FS_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "net",
-        source: NET_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "css",
-        source: CSS_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "html",
-        source: HTML_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-    StdlibModule {
-        name: "browser",
-        source: BROWSER_MODULE_SRC,
-        visibility: StdlibVisibility::Explicit,
-    },
-];
+    pub fn source(&self) -> &str {
+        &self.source
+    }
 
-pub fn modules() -> &'static [StdlibModule] {
-    MODULES
+    pub fn visibility(&self) -> StdlibVisibility {
+        self.visibility
+    }
 }
 
-pub fn module(name: &str) -> Option<&'static StdlibModule> {
-    MODULES.iter().find(|module| module.name == name)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StdlibSources {
+    root: Option<PathBuf>,
+    compiler_compatibility: String,
+    modules: BTreeMap<String, StdlibModule>,
 }
 
-pub fn source(name: &str) -> Option<&'static str> {
-    module(name).map(|module| module.source)
+impl StdlibSources {
+    pub fn load(root: impl AsRef<Path>) -> Result<Self, StdlibError> {
+        let root = root.as_ref();
+        let manifest_path = root.join("manifest.json");
+        let bytes = fs::read(&manifest_path)
+            .map_err(|source| StdlibError::read(manifest_path.clone(), source))?;
+        let text = String::from_utf8(bytes)
+            .map_err(|_| StdlibError::invalid(manifest_path.clone(), "manifest is not UTF-8"))?;
+        let manifest: StdlibManifest = serde_json::from_str(&text).map_err(|source| {
+            StdlibError::invalid(manifest_path.clone(), format!("invalid JSON: {source}"))
+        })?;
+        Self::load_manifest(root, manifest)
+    }
+
+    fn load_manifest(root: &Path, manifest: StdlibManifest) -> Result<Self, StdlibError> {
+        if manifest.format_version != MANIFEST_FORMAT_VERSION {
+            return Err(StdlibError::invalid(
+                root.join("manifest.json"),
+                format!(
+                    "unsupported format version {}; expected {MANIFEST_FORMAT_VERSION}",
+                    manifest.format_version
+                ),
+            ));
+        }
+        if manifest.compiler_compatibility != COMPILER_COMPATIBILITY {
+            return Err(StdlibError::invalid(
+                root.join("manifest.json"),
+                format!(
+                    "stdlib compatibility {:?} does not match compiler {:?}",
+                    manifest.compiler_compatibility, COMPILER_COMPATIBILITY
+                ),
+            ));
+        }
+
+        let canonical_root = fs::canonicalize(root)
+            .map_err(|source| StdlibError::read(root.to_path_buf(), source))?;
+        let mut modules = BTreeMap::new();
+        for entry in manifest.modules {
+            if !valid_module_name(&entry.name) {
+                return Err(StdlibError::invalid(
+                    root.join("manifest.json"),
+                    format!("invalid module name {:?}", entry.name),
+                ));
+            }
+            let relative = Path::new(&entry.path);
+            if !safe_relative_zt_path(relative) {
+                return Err(StdlibError::invalid(
+                    root.join("manifest.json"),
+                    format!("unsafe module path {:?}", entry.path),
+                ));
+            }
+            if modules.contains_key(&entry.name) {
+                return Err(StdlibError::invalid(
+                    root.join("manifest.json"),
+                    format!("duplicate module {:?}", entry.name),
+                ));
+            }
+            let path = root.join(relative);
+            let canonical = fs::canonicalize(&path)
+                .map_err(|source| StdlibError::read(path.clone(), source))?;
+            if !canonical.starts_with(&canonical_root) {
+                return Err(StdlibError::invalid(path, "module escapes the stdlib root"));
+            }
+            let bytes = fs::read(&canonical)
+                .map_err(|source| StdlibError::read(canonical.clone(), source))?;
+            let source = String::from_utf8(bytes)
+                .map_err(|_| StdlibError::invalid(canonical, "module source is not UTF-8"))?;
+            modules.insert(
+                entry.name.clone(),
+                StdlibModule {
+                    name: entry.name,
+                    source,
+                    visibility: entry.visibility,
+                },
+            );
+        }
+
+        for required in ["stream", "prelude"] {
+            let Some(module) = modules.get(required) else {
+                return Err(StdlibError::invalid(
+                    root.join("manifest.json"),
+                    format!("missing required ambient module {required:?}"),
+                ));
+            };
+            if module.visibility != StdlibVisibility::Ambient {
+                return Err(StdlibError::invalid(
+                    root.join("manifest.json"),
+                    format!("required module {required:?} must be ambient"),
+                ));
+            }
+        }
+        let unexpected_ambient: BTreeSet<_> = modules
+            .values()
+            .filter(|module| module.visibility == StdlibVisibility::Ambient)
+            .map(|module| module.name.as_str())
+            .filter(|name| !matches!(*name, "stream" | "prelude"))
+            .collect();
+        if !unexpected_ambient.is_empty() {
+            return Err(StdlibError::invalid(
+                root.join("manifest.json"),
+                format!("unexpected ambient modules: {unexpected_ambient:?}"),
+            ));
+        }
+
+        Ok(Self {
+            root: Some(canonical_root),
+            compiler_compatibility: manifest.compiler_compatibility,
+            modules,
+        })
+    }
+
+    pub fn from_memory(
+        compiler_compatibility: impl Into<String>,
+        sources: BTreeMap<String, String>,
+    ) -> Result<Self, StdlibError> {
+        let compiler_compatibility = compiler_compatibility.into();
+        if compiler_compatibility != COMPILER_COMPATIBILITY {
+            return Err(StdlibError::invalid(
+                PathBuf::from("<bundle>/stdlib"),
+                format!(
+                    "stdlib compatibility {:?} does not match compiler {:?}",
+                    compiler_compatibility, COMPILER_COMPATIBILITY
+                ),
+            ));
+        }
+        let mut modules = BTreeMap::new();
+        for (name, source) in sources {
+            if !valid_module_name(&name) {
+                return Err(StdlibError::invalid(
+                    PathBuf::from("<bundle>/stdlib"),
+                    format!("invalid module name {name:?}"),
+                ));
+            }
+            let visibility = if matches!(name.as_str(), "stream" | "prelude") {
+                StdlibVisibility::Ambient
+            } else {
+                StdlibVisibility::Explicit
+            };
+            modules.insert(
+                name.clone(),
+                StdlibModule {
+                    name,
+                    source,
+                    visibility,
+                },
+            );
+        }
+        for required in ["stream", "prelude"] {
+            if !modules.contains_key(required) {
+                return Err(StdlibError::invalid(
+                    PathBuf::from("<bundle>/stdlib"),
+                    format!("missing required ambient module {required:?}"),
+                ));
+            }
+        }
+        Ok(Self {
+            root: None,
+            compiler_compatibility,
+            modules,
+        })
+    }
+
+    pub fn load_configured(explicit: Option<&Path>) -> Result<Self, StdlibError> {
+        if let Some(root) = explicit {
+            return Self::load(root);
+        }
+        match CONFIGURED_STDLIB.get_or_init(|| {
+            configured_root(None)
+                .and_then(Self::load)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(stdlib) => Ok(stdlib.clone()),
+            Err(detail) => Err(StdlibError::Resolve {
+                detail: detail.clone(),
+            }),
+        }
+    }
+
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    pub fn compiler_compatibility(&self) -> &str {
+        &self.compiler_compatibility
+    }
+
+    pub fn modules(&self) -> impl Iterator<Item = &StdlibModule> {
+        self.modules.values()
+    }
+
+    pub fn module(&self, name: &str) -> Option<&StdlibModule> {
+        self.modules.get(name)
+    }
+
+    pub fn source(&self, name: &str) -> Option<&str> {
+        self.module(name).map(StdlibModule::source)
+    }
+
+    pub fn source_map(&self) -> BTreeMap<String, String> {
+        self.modules
+            .iter()
+            .map(|(name, module)| (name.clone(), module.source.clone()))
+            .collect()
+    }
+}
+
+pub fn configured_root(explicit: Option<&Path>) -> Result<PathBuf, StdlibError> {
+    let executable = env::current_exe().map_err(|source| StdlibError::Resolve {
+        detail: format!("could not locate current executable: {source}"),
+    })?;
+    select_root(
+        explicit,
+        PROCESS_STDLIB_ROOT.get().map(PathBuf::as_path),
+        env::var_os(STDLIB_ROOT_ENV).as_deref().map(Path::new),
+        &executable,
+    )
+}
+
+fn select_root(
+    explicit: Option<&Path>,
+    process: Option<&Path>,
+    environment: Option<&Path>,
+    executable: &Path,
+) -> Result<PathBuf, StdlibError> {
+    if let Some(root) = explicit.or(process).or(environment) {
+        return Ok(root.to_path_buf());
+    }
+    let Some(bin_dir) = executable.parent() else {
+        return Err(StdlibError::Resolve {
+            detail: format!("executable path {} has no parent", executable.display()),
+        });
+    };
+    Ok(bin_dir
+        .join("..")
+        .join("share")
+        .join("zutai")
+        .join("stdlib"))
+}
+
+/// Select a process-wide stdlib root before analysis starts.
+///
+/// CLI frontends use this for `--stdlib-root`; repeated selection is accepted
+/// only when it names the same path.
+pub fn set_process_root(root: PathBuf) -> Result<(), StdlibError> {
+    if CONFIGURED_STDLIB.get().is_some() {
+        return Err(StdlibError::Resolve {
+            detail: "stdlib sources have already been loaded for this process".to_owned(),
+        });
+    }
+    if let Some(existing) = PROCESS_STDLIB_ROOT.get() {
+        if existing == &root {
+            return Ok(());
+        }
+        return Err(StdlibError::Resolve {
+            detail: format!(
+                "stdlib root is already configured as {}; cannot replace it with {}",
+                existing.display(),
+                root.display()
+            ),
+        });
+    }
+    PROCESS_STDLIB_ROOT
+        .set(root)
+        .map_err(|root| StdlibError::Resolve {
+            detail: format!("could not configure stdlib root {}", root.display()),
+        })
+}
+
+fn valid_module_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn safe_relative_zt_path(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path.extension().is_some_and(|extension| extension == "zt")
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+}
+
+#[derive(Debug)]
+pub enum StdlibError {
+    Resolve {
+        detail: String,
+    },
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Invalid {
+        path: PathBuf,
+        detail: String,
+    },
+}
+
+impl StdlibError {
+    fn read(path: PathBuf, source: std::io::Error) -> Self {
+        Self::Read { path, source }
+    }
+
+    fn invalid(path: PathBuf, detail: impl Into<String>) -> Self {
+        Self::Invalid {
+            path,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl fmt::Display for StdlibError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Resolve { detail } => write!(f, "could not resolve Zutai stdlib root: {detail}"),
+            Self::Read { path, source } => write!(
+                f,
+                "could not read Zutai stdlib at {}: {source}; pass --stdlib-root or set {STDLIB_ROOT_ENV}",
+                path.display()
+            ),
+            Self::Invalid { path, detail } => write!(
+                f,
+                "invalid Zutai stdlib at {}: {detail}; pass --stdlib-root or set {STDLIB_ROOT_ENV}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StdlibError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Read { source, .. } => Some(source),
+            Self::Resolve { .. } | Self::Invalid { .. } => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    const ALL_MODULES: &[&str] = &[
-        "stream", "prelude", "optional", "result", "num", "text", "cmp", "config", "reflect",
-        "list", "data", "validate", "fs", "net", "css", "html", "browser",
-    ];
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
-    #[test]
-    fn registry_contains_current_modules() {
-        let names: Vec<_> = modules().iter().map(|module| module.name).collect();
-        assert_eq!(names, ALL_MODULES);
-        for name in ALL_MODULES {
-            assert!(source(name).is_some(), "missing stdlib source for {name}");
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn path(&self) -> &Path {
+            &self.0
         }
     }
 
-    #[test]
-    fn ambient_visibility_is_limited_to_stream_and_prelude() {
-        for module in modules() {
-            let expected = match module.name {
-                "stream" | "prelude" => StdlibVisibility::Ambient,
-                _ => StdlibVisibility::Explicit,
-            };
-            assert_eq!(
-                module.visibility, expected,
-                "unexpected visibility for {}",
-                module.name
-            );
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
         }
     }
 
+    fn fixture_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+    }
+
+    fn manifest(modules: Vec<ManifestModule>) -> StdlibManifest {
+        StdlibManifest {
+            format_version: MANIFEST_FORMAT_VERSION,
+            compiler_compatibility: COMPILER_COMPATIBILITY.to_owned(),
+            modules,
+        }
+    }
+
+    fn module(name: &str, visibility: StdlibVisibility) -> ManifestModule {
+        ManifestModule {
+            name: name.to_owned(),
+            path: format!("modules/{name}.zt"),
+            visibility,
+        }
+    }
+
+    fn temp_root() -> TempRoot {
+        let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let path = env::temp_dir().join(format!("zutai-stdlib-test-{}-{id}", std::process::id()));
+        fs::create_dir_all(path.join("modules")).unwrap();
+        TempRoot(path)
+    }
+
     #[test]
-    fn unknown_module_lookup_returns_none() {
-        assert!(module("nope").is_none());
-        assert!(source("nope").is_none());
+    fn loads_checked_in_manifest_and_sources() {
+        let stdlib = StdlibSources::load(fixture_root()).unwrap();
+        assert!(stdlib.source("stream").is_some());
+        assert!(stdlib.source("browser").is_some());
+        assert_eq!(
+            stdlib.module("prelude").unwrap().visibility(),
+            StdlibVisibility::Ambient
+        );
+    }
+
+    #[test]
+    fn configured_root_prefers_explicit_path() {
+        let explicit = Path::new("/tmp/explicit-zutai-stdlib");
+        assert_eq!(configured_root(Some(explicit)).unwrap(), explicit);
+    }
+
+    #[test]
+    fn root_precedence_is_explicit_process_environment_install() {
+        let executable = Path::new("/opt/zutai/bin/zutai-cli");
+        assert_eq!(
+            select_root(
+                Some(Path::new("explicit")),
+                Some(Path::new("process")),
+                Some(Path::new("environment")),
+                executable,
+            )
+            .unwrap(),
+            Path::new("explicit")
+        );
+        assert_eq!(
+            select_root(
+                None,
+                Some(Path::new("process")),
+                Some(Path::new("environment")),
+                executable,
+            )
+            .unwrap(),
+            Path::new("process")
+        );
+        assert_eq!(
+            select_root(None, None, Some(Path::new("environment")), executable).unwrap(),
+            Path::new("environment")
+        );
+        assert_eq!(
+            select_root(None, None, None, executable).unwrap(),
+            Path::new("/opt/zutai/bin/../share/zutai/stdlib")
+        );
+    }
+
+    #[test]
+    fn memory_sources_require_both_ambient_modules() {
+        let error = StdlibSources::from_memory(
+            COMPILER_COMPATIBILITY,
+            BTreeMap::from([("stream".to_owned(), "1".to_owned())]),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("prelude"));
+    }
+
+    #[test]
+    fn rejects_unsafe_paths_before_reading_them() {
+        let root = fixture_root();
+        let manifest = manifest(vec![ManifestModule {
+            name: "stream".to_owned(),
+            path: "../stream.zt".to_owned(),
+            visibility: StdlibVisibility::Ambient,
+        }]);
+        let error = StdlibSources::load_manifest(&root, manifest).unwrap_err();
+        assert!(error.to_string().contains("unsafe module path"));
+    }
+
+    #[test]
+    fn rejects_incompatible_manifest() {
+        let temp = temp_root();
+        let mut manifest = manifest(Vec::new());
+        manifest.compiler_compatibility = "different".to_owned();
+        let error = StdlibSources::load_manifest(temp.path(), manifest).unwrap_err();
+        assert!(error.to_string().contains("does not match compiler"));
+    }
+
+    #[test]
+    fn rejects_duplicate_module_names() {
+        let temp = temp_root();
+        fs::write(temp.path().join("modules/stream.zt"), "1").unwrap();
+        let duplicate = module("stream", StdlibVisibility::Ambient);
+        let error =
+            StdlibSources::load_manifest(temp.path(), manifest(vec![duplicate.clone(), duplicate]))
+                .unwrap_err();
+        assert!(error.to_string().contains("duplicate module"));
+    }
+
+    #[test]
+    fn rejects_missing_module_file() {
+        let temp = temp_root();
+        let error = StdlibSources::load_manifest(
+            temp.path(),
+            manifest(vec![module("stream", StdlibVisibility::Ambient)]),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("stream.zt"));
+    }
+
+    #[test]
+    fn rejects_non_utf8_module_source() {
+        let temp = temp_root();
+        fs::write(temp.path().join("modules/stream.zt"), [0xff]).unwrap();
+        let error = StdlibSources::load_manifest(
+            temp.path(),
+            manifest(vec![module("stream", StdlibVisibility::Ambient)]),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("not UTF-8"));
+    }
+
+    #[test]
+    fn rejects_missing_required_ambient_module() {
+        let temp = temp_root();
+        fs::write(temp.path().join("modules/prelude.zt"), "1").unwrap();
+        let error = StdlibSources::load_manifest(
+            temp.path(),
+            manifest(vec![module("prelude", StdlibVisibility::Ambient)]),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("stream"));
     }
 }

@@ -1,9 +1,9 @@
 -- Canonical source for the small function and List prelude (stdlib slices B/C).
 --
 -- Single source of truth for two surfaces:
---   * Ambient prelude — the HIR lowerer injects these declarations into every
---     module as a fallback (`include_str!` in `crates/general/hir/src/lower/mod.rs`),
---     so these helpers are in scope without an import. The lowerer reads only the
+--   * Ambient prelude — semantic analysis loads this file from the selected
+--     filesystem stdlib and gives it to HIR for fallback injection, so these
+--     helpers are in scope without an import. The lowerer reads only the
 --     declarations; this file's final record expression is ignored on that path.
 --   * Importable module — `p ::= import stdlib.prelude` (or `import "prelude.zt"`)
 --     exports the final record below, so a program can use `p.id`, `p.map`, …

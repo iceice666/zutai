@@ -1,17 +1,35 @@
 use crate::*;
 
+fn source_preludes() -> SourcePreludes<'static> {
+    SourcePreludes {
+        stream: Some(include_str!(concat!(
+            env!("ZUTAI_STDLIB_ROOT"),
+            "/modules/stream.zt"
+        ))),
+        prelude: Some(include_str!(concat!(
+            env!("ZUTAI_STDLIB_ROOT"),
+            "/modules/prelude.zt"
+        ))),
+    }
+}
+
 fn lower(src: &str) -> LoweredHir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    lower_file(parsed.ast().expect("parse should produce AST"))
+    lower_file_with_preludes(
+        parsed.ast().expect("parse should produce AST"),
+        HirLowerOptions::default(),
+        source_preludes(),
+    )
 }
 
 fn lower_without_passes(src: &str) -> LoweredHir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    lower_file_with_options(
+    lower_file_with_preludes(
         parsed.ast().expect("parse should produce AST"),
         HirLowerOptions { run_passes: false },
+        source_preludes(),
     )
 }
 

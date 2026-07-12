@@ -1,7 +1,6 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use la_arena::Arena;
-use zutai_stdlib::{PRELUDE_MODULE_SRC, STREAM_MODULE_SRC};
 use zutai_syntax::Span;
 use zutai_syntax::ast;
 
@@ -29,6 +28,16 @@ pub struct HirLowerOptions {
     pub run_passes: bool,
 }
 
+/// Source preludes selected by the semantic layer.
+///
+/// Keeping these as explicit inputs leaves HIR lowering filesystem-free and
+/// prevents the compiler from acquiring an embedded stdlib through this crate.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SourcePreludes<'a> {
+    pub stream: Option<&'a str>,
+    pub prelude: Option<&'a str>,
+}
+
 impl Default for HirLowerOptions {
     fn default() -> Self {
         Self { run_passes: true }
@@ -40,8 +49,16 @@ pub fn lower_file(file: &ast::File) -> LoweredHir {
 }
 
 pub fn lower_file_with_options(file: &ast::File, options: HirLowerOptions) -> LoweredHir {
+    lower_file_with_preludes(file, options, SourcePreludes::default())
+}
+
+pub fn lower_file_with_preludes(
+    file: &ast::File,
+    options: HirLowerOptions,
+    preludes: SourcePreludes<'_>,
+) -> LoweredHir {
     let mut lowerer = Lowerer::new(file.span);
-    let mut lowered = lowerer.lower_file(file);
+    let mut lowered = lowerer.lower_file(file, preludes);
     if options.run_passes {
         lowered.pass_reports = run_default_passes(&mut lowered.file, &mut lowered.diagnostics);
     }
@@ -150,7 +167,7 @@ impl Lowerer {
         lowerer
     }
 
-    fn lower_file(&mut self, file: &ast::File) -> LoweredHir {
+    fn lower_file(&mut self, file: &ast::File, preludes: SourcePreludes<'_>) -> LoweredHir {
         // Define user top-level names first, then the source preludes (the codata
         // `Stream` type + combinators, and the small function prelude). All names
         // are in scope before any body is lowered, so user code can reference
@@ -166,9 +183,14 @@ impl Lowerer {
         // definitions always win and a colliding name raises no spurious
         // duplicate-binding diagnostic. The decl index is kept so the body can be
         // lowered later if the name is actually used.
-        let (stream_prelude_ast, stream_prelude_decls) =
-            self.define_prelude_fallback(STREAM_MODULE_SRC);
-        let (fn_prelude_ast, fn_prelude_decls) = self.define_prelude_fallback(PRELUDE_MODULE_SRC);
+        let (stream_prelude_ast, stream_prelude_decls) = preludes
+            .stream
+            .map(|source| self.define_prelude_fallback(source))
+            .unwrap_or_default();
+        let (fn_prelude_ast, fn_prelude_decls) = preludes
+            .prelude
+            .map(|source| self.define_prelude_fallback(source))
+            .unwrap_or_default();
 
         let mut decls: Vec<HirDeclId> = Vec::new();
         for (decl, binding) in file.decls.iter().zip(user_bindings) {

@@ -1,0 +1,2 @@
+[env]
+ZUTAI_STDLIB_ROOT = { value = "crates/general/stdlib/src", relative = true }

@@ -13,7 +13,7 @@ use crate::css::{render_declarations, render_stylesheet};
 use crate::render::validate_document;
 use crate::{
     Attribute, BrowserProgram, Document, Element, EventHandler, EventOptions, HeadNode, Html,
-    StaticAttribute, WebBundleV1, decode_program, is_void_element,
+    StaticAttribute, WebBundleV2, decode_program, is_void_element,
 };
 
 thread_local! {
@@ -73,11 +73,20 @@ impl EffectHandler for BrowserEffects {
 pub fn start(bundle_json: &str, development: bool) -> Result<(), JsValue> {
     console_error_panic_hook();
 
-    let bundle: WebBundleV1 = serde_json::from_str(bundle_json).map_err(js_error)?;
+    let bundle: WebBundleV2 = serde_json::from_str(bundle_json).map_err(js_error)?;
     bundle.validate_version().map_err(js_error)?;
-    let analysis =
-        zutai_semantic::analyze_sources(&bundle.entry, &bundle.sources, AnalysisOptions::default())
-            .map_err(js_error)?;
+    let stdlib = zutai_stdlib::StdlibSources::from_memory(
+        bundle.stdlib_compiler_compatibility,
+        bundle.stdlib_sources,
+    )
+    .map_err(js_error)?;
+    let analysis = zutai_semantic::analyze_sources_with_stdlib(
+        &bundle.entry,
+        &bundle.sources,
+        AnalysisOptions::default(),
+        &stdlib,
+    )
+    .map_err(js_error)?;
     let session = TlcSession::from_analysis(&analysis).map_err(js_error)?;
     let entry = session.entry().map_err(js_error)?;
     let program = decode_program(&session, entry).map_err(js_error)?;

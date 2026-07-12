@@ -10,3 +10,6 @@ zutai-hir = { path = "../hir" }
 zutai-syntax = { path = "../syntax" }
 zutai-thir = { path = "../thir" }
 rustc-hash = "2.0.0"
+
+[dev-dependencies]
+zutai-stdlib = { path = "../stdlib" }

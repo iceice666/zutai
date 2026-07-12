@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `d ::= import stdlib.data`. The module provides a first-order data envelope and
 structured decoding helpers; it is not ambient.
 
 The module source lives at `crates/general/stdlib/src/modules/data.zt` and is
-registered by `zutai-stdlib` as `DATA_MODULE_SRC`.
+registered by the filesystem stdlib manifest.
 
 ## Types
 

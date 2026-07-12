@@ -16,6 +16,16 @@ fn dedicated_cli_exposes_build_and_serve() {
 }
 
 #[test]
+fn dedicated_cli_exposes_global_stdlib_root() {
+    Command::cargo_bin("zutai-web")
+        .expect("zutai-web binary")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--stdlib-root"));
+}
+
+#[test]
 fn build_help_documents_the_web_entry_contract() {
     Command::cargo_bin("zutai-web")
         .expect("zutai-web binary")

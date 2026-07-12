@@ -9,10 +9,17 @@ use clap::Parser;
     arg_required_else_help = true
 )]
 struct Cli {
+    /// Filesystem root containing manifest.json and the Zutai stdlib modules.
+    #[arg(long, global = true, env = "ZUTAI_STDLIB_ROOT")]
+    stdlib_root: Option<std::path::PathBuf>,
     #[command(subcommand)]
     command: zutai_web::WebCommand,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    Cli::parse().command.run()
+    let cli = Cli::parse();
+    if let Some(root) = cli.stdlib_root {
+        zutai_semantic::configure_stdlib_root(root)?;
+    }
+    cli.command.run()
 }

@@ -1,5 +1,22 @@
 use crate::*;
 
+fn lower_hir(file: &zutai_syntax::File) -> zutai_hir::LoweredHir {
+    zutai_hir::lower_file_with_preludes(
+        file,
+        zutai_hir::HirLowerOptions::default(),
+        zutai_hir::SourcePreludes {
+            stream: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/stream.zt"
+            ))),
+            prelude: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/prelude.zt"
+            ))),
+        },
+    )
+}
+
 pub(super) fn tlc_of(src: &str) -> TlcModule {
     let parsed = zutai_syntax::parse(src);
     assert!(
@@ -7,7 +24,7 @@ pub(super) fn tlc_of(src: &str) -> TlcModule {
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "hir errors: {:?}",
@@ -29,7 +46,7 @@ pub(super) fn backend_tlc_of(src: &str) -> TlcModule {
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "hir errors: {:?}",

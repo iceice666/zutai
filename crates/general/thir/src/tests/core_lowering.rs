@@ -346,7 +346,7 @@ fn record_update_uninferred_receiver_requires_row_annotation() {
 fn record_update_duplicate_field_is_hir_diagnostic() {
     let parsed = zutai_syntax::parse("s ::= { a = 1; };\ns with { a = 2; a = 3; }");
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.iter().any(|diagnostic| {
         matches!(
             &diagnostic.kind,

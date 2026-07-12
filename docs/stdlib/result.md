@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `r ::= import stdlib.result`. Result and Validation helpers stay opt-in and do
 not become ambient prelude names.
 
 The module source lives at `crates/general/stdlib/src/modules/result.zt` and is
-registered by `zutai-stdlib` as `RESULT_MODULE_SRC`.
+registered by the filesystem stdlib manifest.
 
 ## API
 

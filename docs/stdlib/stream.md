@@ -27,17 +27,16 @@ the `if`/`match` branching lives in the `.zt` source. See [2026 H1 history](../h
 ## Two surfaces, one source
 
 The combinators live in one canonical file,
-`crates/general/stdlib/src/modules/stream.zt` (registered by `zutai-stdlib` and
-compatibly re-exported as `zutai_hir::STREAM_MODULE_SRC`), which feeds both
-surfaces:
+`crates/general/stdlib/src/modules/stream.zt`, registered by the adjacent
+filesystem manifest, which feeds both surfaces:
 
-- **Ambient** (no import). The HIR lowerer reads the embedded source from
-  `zutai-stdlib` and injects non-conflicting declarations as a fallback. Stream
+- **Ambient** (no import). Semantic analysis gives the manifest-selected source
+  to HIR, which injects non-conflicting declarations as a fallback. Stream
   `empty`/`cons`/`singleton`/
   `unfold`/`take`/`drop`/`toList`/`fromList`/`takeList` resolve directly; a user
   or constraint-method binding of the same spelling still wins.
-- **Importable** (explicit). `import stdlib.stream` resolves to **embedded
-  in-binary source** (no install path, no subtree-confinement exception) and
+- **Importable** (explicit). `import stdlib.stream` resolves to the source in
+  the validated filesystem stdlib (outside quoted-import subtree confinement) and
   binds the module's exported record, so every exported value is available
   qualified — `s.map`, `s.fold`, `s.uncons`, `s.find`, … A path-relative
   `import "stream.zt"` still works when a local file of that name sits in the

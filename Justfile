@@ -13,6 +13,14 @@ build:
 build-release:
     cargo build --workspace --release
 
+# Install native frontends and the filesystem stdlib under one prefix.
+install PREFIX="${HOME}/.local":
+    cargo build --release -p zutai-cli -p zutai-web
+    install -d "{{ PREFIX }}/bin" "{{ PREFIX }}/share/zutai/stdlib/modules"
+    install -m755 target/release/zutai-cli target/release/zutai-web "{{ PREFIX }}/bin/"
+    install -m644 crates/general/stdlib/src/manifest.json "{{ PREFIX }}/share/zutai/stdlib/manifest.json"
+    install -m644 crates/general/stdlib/src/modules/*.zt "{{ PREFIX }}/share/zutai/stdlib/modules/"
+
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 # Run tests with nextest (accepts extra args, e.g. `just test -p zutai-tlc`)

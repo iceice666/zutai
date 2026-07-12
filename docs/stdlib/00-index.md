@@ -32,12 +32,16 @@ Two principles govern what lives where:
 
 ## Implementation home
 
-Embedded source modules live under `crates/general/stdlib/src/modules/` and are
-registered by the dependency-free `zutai-stdlib` crate. HIR consumes that
-registry for ambient source-prelude injection, while `zutai-semantic` consumes
-the same registry for `import stdlib.<name>` resolution. `zutai-hir` still
-re-exports the old `*_MODULE_SRC` constants for Rust-side compatibility, but
-`zutai-stdlib` is the source of truth.
+Source modules live under `crates/general/stdlib/src/modules/`; the adjacent
+`manifest.json` is the canonical module and visibility registry. `zutai-stdlib`
+loads and validates that filesystem tree. The semantic layer supplies the
+ambient sources to HIR and uses the same loaded set for `import stdlib.<name>`.
+No standard-library source is embedded in a Rust binary.
+
+Native tools select the root in this order: global `--stdlib-root`,
+`ZUTAI_STDLIB_ROOT`, then `../share/zutai/stdlib` relative to the executable.
+There is no project-local or embedded fallback. Web bundles contain the exact
+ambient and transitively imported modules needed by the browser program.
 
 ## Adding standard-library functionality
 
@@ -48,7 +52,7 @@ re-exports the old `*_MODULE_SRC` constants for Rust-side compatibility, but
    private bridge such as `__moduleOp`.
 3. Classify support precisely in docs and tests: pure source, bridge-backed
    native, compile-time fold/reject, or host/effectful.
-4. Update the `zutai-stdlib` registry, the module doc page, import/eval/native
+4. Update `manifest.json`, the module doc page, import/eval/native
    coverage, and the implementation status notes together.
 
 ## Prelude
@@ -72,26 +76,26 @@ always shadows the ambient fallback.
 
 | Module | Contents | Status |
 | --- | --- | --- |
-| [Config](config.md) | `Patch DeepPatch overlay overlayDeep` | accepted as explicit embedded `stdlib.config`; supported full record-literal calls through module-qualified or destructured aliases lower exactly like the ambient builtin overlay forms; residual/partial overlay remains backend-gated |
-| [List](list.md) | `empty singleton cons fold foldl' foldr map filter length append uncons head? tail? reverse flatten zip zipWith enumerate take drop takeWhile dropWhile span any all find findMap countBy sumBy filterMap partition range sum product maximum minimum maximumBy minimumBy sortBy groupBy dedupBy` | accepted as explicit embedded `stdlib.list`; current ambient list basics stay in `stdlib.prelude`, while the larger toolbox remains opt-in; pure source over list patterns/bridges with interpreter and native parity |
-| [stream](stream.md) | `Data` `DataField` `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold find findMap fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), importable via embedded `stdlib.stream`; non-conflicting names stay ambient, while stream `map`/`filter`/`fold`/`uncons` stay qualified/imported to leave ambient names for `List`; `find`/`findMap` are qualified/imported stream helpers; pure finite and infinite generators run on interpreter and native backend; raw-cell effectful generators have native parity for supported custom effects, ambient `io.print`, and standard host operations granted at the host boundary (see [stream](stream.md)) |
+| [Config](config.md) | `Patch DeepPatch overlay overlayDeep` | accepted as explicit filesystem `stdlib.config`; supported full record-literal calls through module-qualified or destructured aliases lower exactly like the ambient builtin overlay forms; residual/partial overlay remains backend-gated |
+| [List](list.md) | `empty singleton cons fold foldl' foldr map filter length append uncons head? tail? reverse flatten zip zipWith enumerate take drop takeWhile dropWhile span any all find findMap countBy sumBy filterMap partition range sum product maximum minimum maximumBy minimumBy sortBy groupBy dedupBy` | accepted as explicit filesystem `stdlib.list`; current ambient list basics stay in `stdlib.prelude`, while the larger toolbox remains opt-in; pure source over list patterns/bridges with interpreter and native parity |
+| [stream](stream.md) | `Data` `DataField` `Stream` `StreamEff` `Step`, `stream { yield ...; }`, `empty singleton cons unfold uncons map filter take drop fold find findMap fromList toList takeList` | accepted; `Stream A` is demand-driven **codata** (not `List A`), importable via filesystem `stdlib.stream`; non-conflicting names stay ambient, while stream `map`/`filter`/`fold`/`uncons` stay qualified/imported to leave ambient names for `List`; `find`/`findMap` are qualified/imported stream helpers; pure finite and infinite generators run on interpreter and native backend; raw-cell effectful generators have native parity for supported custom effects, ambient `io.print`, and standard host operations granted at the host boundary (see [stream](stream.md)) |
 | `optional` | `map andThen filter withDefault isSome isNone toList` | accepted as explicit importable source module via `import stdlib.optional`; exports `map` `andThen` `filter` `withDefault` `isSome` `isNone` `toList` over `Optional`; interpreter/TLC/native parity covered |
 | [result](result.md) | `Result Validation ok err valid invalid map map2 map3 mapErr andThen withDefault invalidOne isOk isErr toOptional fromOptional ensure orElse errors` | accepted as explicit importable source module via `import stdlib.result`; exports short-circuiting `Result` and accumulating `Validation` helpers; interpreter/TLC/native parity covered |
 | `num` | `min max abs clamp pow rem gcd toFloat round truncate` | accepted as explicit importable source module via `import stdlib.num`; exports `min` `max` `abs` `clamp` `pow` `rem` `gcd` `toFloat` `round` `truncate`; Int helpers are source wrappers over checked scalar bridge intrinsics where needed; `toFloat`/`round`/`truncate` are conversion intrinsics; interpreter/TLC/native parity covered |
 | `text` | `length split join trim toUpper toLower contains replace show parseInt parseFloat` | accepted as explicit importable source module via `import stdlib.text`; backed by scalar bridge intrinsics/runtime helpers for Unicode scalar length, splitting/joining, trimming, case conversion, containment/replacement, text quoting, and numeric parsing; interpreter/TLC/native parity covered |
-| [FS](fs.md) | `ReadLine/WriteText/ScopedRead/ScopedWrite/ScopedReadWrite/WholeRead/WholeWrite/WholeFile` aliases plus `openRead readLine closeRead openWrite writeText flush closeWrite withReader withWriter readAll writeAll` | accepted as explicit embedded `stdlib.fs`; source wrappers over explicit `fs.*` host effects, with opaque `Reader`/`Writer` handles, effect aliases for common rows, and bracket helpers for scoped close; whole-file `readAll`/`writeAll` remain compatibility wrappers over `fs.read`/`fs.write`; no filesystem API is ambient |
-| [Net](net.md) | `Listen/Accept/Read/Write/Close/Connection/Server` aliases plus `listen accept read write close withConnection` | accepted as explicit embedded `stdlib.net`; source wrappers over existing `net.*` TCP host effects, effect aliases for common server/connection rows, and a `finally`-backed `withConnection` helper for one accepted connection; listener and connection handles remain `Int`, `write` preserves the current-connection runtime behavior; no network API is ambient |
+| [FS](fs.md) | `ReadLine/WriteText/ScopedRead/ScopedWrite/ScopedReadWrite/WholeRead/WholeWrite/WholeFile` aliases plus `openRead readLine closeRead openWrite writeText flush closeWrite withReader withWriter readAll writeAll` | accepted as explicit filesystem `stdlib.fs`; source wrappers over explicit `fs.*` host effects, with opaque `Reader`/`Writer` handles, effect aliases for common rows, and bracket helpers for scoped close; whole-file `readAll`/`writeAll` remain compatibility wrappers over `fs.read`/`fs.write`; no filesystem API is ambient |
+| [Net](net.md) | `Listen/Accept/Read/Write/Close/Connection/Server` aliases plus `listen accept read write close withConnection` | accepted as explicit filesystem `stdlib.net`; source wrappers over existing `net.*` TCP host effects, effect aliases for common server/connection rows, and a `finally`-backed `withConnection` helper for one accepted connection; listener and connection handles remain `Int`, `write` preserves the current-connection runtime behavior; no network API is ambient |
 | `cmp` | `Ordering (#lt/#eq/#gt) lt eq gt isLt isEq isGt reverse then by compareInt compareFloat compareText` | accepted as explicit importable source module via `import stdlib.cmp`; comparator composition and concrete Int/Float/Text comparators are source definitions; the exported `then` field is backed by an internal `thenCmp` binding because `then` is a keyword |
-| [Data](data.md) | `Data DataField DecodeError Result bool int float text atom list record tagged fieldOf kind asBool asInt asFloat asText asAtom asList asRecord asTagged field field? at tag payload mapList` | accepted as explicit embedded `stdlib.data`; first-order data constructors and structured decoder errors; decoder results use the `stdlib.result.Result` shape through the module's exported `Result` alias |
-| [Validate](validate.md) | `ValidationError Validation Result valid invalid invalidOne custom errors map map2 map3 required satisfy nonEmptyText intRange oneOfText oneOfInt toResult fromResult` | accepted as explicit embedded `stdlib.validate`; accumulating validation helpers over structured errors; validation/result aliases forward to `stdlib.result` shapes |
-| [Reflect](reflect.md) | `SchemaKind SchemaField SchemaVariant Schema fields variants schema` | accepted as explicit embedded `stdlib.reflect`; `fields`/`schema` keep THIR-oracle routing, `fields`/`variants`/`schema` keep compile/dataflow fold-or-reject behavior; `witness C @T` remains syntax and is not exported |
+| [Data](data.md) | `Data DataField DecodeError Result bool int float text atom list record tagged fieldOf kind asBool asInt asFloat asText asAtom asList asRecord asTagged field field? at tag payload mapList` | accepted as explicit filesystem `stdlib.data`; first-order data constructors and structured decoder errors; decoder results use the `stdlib.result.Result` shape through the module's exported `Result` alias |
+| [Validate](validate.md) | `ValidationError Validation Result valid invalid invalidOne custom errors map map2 map3 required satisfy nonEmptyText intRange oneOfText oneOfInt toResult fromResult` | accepted as explicit filesystem `stdlib.validate`; accumulating validation helpers over structured errors; validation/result aliases forward to `stdlib.result` shapes |
+| [Reflect](reflect.md) | `SchemaKind SchemaField SchemaVariant Schema fields variants schema` | accepted as explicit filesystem `stdlib.reflect`; `fields`/`schema` keep THIR-oracle routing, `fields`/`variants`/`schema` keep compile/dataflow fold-or-reject behavior; `witness C @T` remains syntax and is not exported |
 
 `sortBy`/`groupBy` take explicit comparator functions. Generic witness-dispatched
 `compare` remains deferred; concrete `stdlib.cmp` comparators are available now.
 
 `Stream` is the standard-library home for iterator-like pure APIs. Its
 combinators are **ambient prelude** (no import needed) and also importable via
-embedded `stdlib.stream`; the language-level producer `stream { yield ...; }` is
+filesystem `stdlib.stream`; the language-level producer `stream { yield ...; }` is
 syntax, not a standard-library function. Host-backed streams such as file lines,
 environment scans, clock events, randomness, and network sockets require
 explicit host capabilities; they must not become ambient APIs.

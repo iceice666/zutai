@@ -48,8 +48,8 @@ Only rendering requires serializability.
 
 ### Standard-library imports
 
-A dotted import resolves against the embedded standard library instead of the
-filesystem:
+A dotted import resolves against the configured filesystem standard library,
+not relative to the importing module:
 
 ```zt
 s ::= import stdlib.stream;
@@ -68,15 +68,21 @@ t ::= import stdlib.text;
 s.map f (s.singleton 1)
 ```
 
-`import stdlib.<name>` needs no install path and no file next to the program;
-the module source is built into the compiler. Resolution does not consult the
-filesystem and is not subject to the path-relative subtree confinement that
-quoted-string imports use. An unknown `<name>` is a precise diagnostic
-(`unknown stdlib module: stdlib.<name>`). Currently provided embedded modules
+`import stdlib.<name>` reads a module named by the version-checked
+`<stdlib-root>/manifest.json`. Native frontends select that root from the global
+`--stdlib-root` option, then `ZUTAI_STDLIB_ROOT`, then the compiler-relative
+`../share/zutai/stdlib` installation. Stdlib resolution is not subject to the
+path-relative subtree confinement that quoted-string imports use. A missing,
+incompatible, or malformed library is a setup error; an unknown `<name>` is the
+precise diagnostic `unknown stdlib module: stdlib.<name>`. Currently provided modules
 are `stdlib.stream`, `stdlib.prelude`, `stdlib.optional`, `stdlib.result`,
 `stdlib.num`, `stdlib.text`, `stdlib.cmp`, `stdlib.config`,
 `stdlib.reflect`, `stdlib.list`, `stdlib.data`, `stdlib.validate`, `stdlib.fs`,
-and `stdlib.net`.
+`stdlib.net`, `stdlib.css`, `stdlib.html`, and `stdlib.browser`.
+
+Portable web bundles carry the exact ambient and transitively imported stdlib
+sources selected by the native builder. The Wasm kernel resolves those sources
+from the bundle and performs no filesystem or network lookup.
 
 ### Selective binding (destructuring import)
 

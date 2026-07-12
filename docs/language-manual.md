@@ -40,7 +40,7 @@ and output. It supports `.zt` diagnostics, hover types, go-to-definition,
 same-document references and rename, document symbols, identifier completion,
 signature help, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
 and resolves relative imports from the edited file's directory. Rename and
-navigation deliberately decline builtins and embedded-prelude bindings because
+navigation deliberately decline builtins and ambient-prelude bindings because
 they have no source location in the edited file. The server never executes a
 program or performs native compilation while editing.
 
@@ -458,8 +458,10 @@ as a security boundary. This means a user config file cannot
 `import "/etc/app/defaults.zt"`; layering must be managed at the host application
 level, not by importing absolute paths. Dotted stdlib imports such as
 `import stdlib.stream` are static literal import sources too, but they resolve to
-embedded in-binary modules rather than the filesystem and are not subject to the
-quoted-path subtree check.
+the version-checked filesystem stdlib selected by `--stdlib-root`,
+`ZUTAI_STDLIB_ROOT`, or the compiler-relative installation. They are not subject
+to the quoted-path subtree check. Web builds bundle the exact resolved stdlib
+sources, so the Wasm kernel does not read a filesystem or fetch modules.
 
 ## Feature support
 

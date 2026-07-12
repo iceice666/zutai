@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `refl ::= import stdlib.reflect`. The module wraps the existing reflection
 intrinsics without making new names ambient.
 
 The module source lives at `crates/general/stdlib/src/modules/reflect.zt` and is
-registered by `zutai-stdlib` as `REFLECT_MODULE_SRC`.
+registered by the filesystem stdlib manifest.
 
 ## API
 

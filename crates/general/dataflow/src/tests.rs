@@ -9,7 +9,7 @@ fn dc_of(src: &str) -> DataflowGraph {
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -25,6 +25,23 @@ fn dc_of(src: &str) -> DataflowGraph {
     lower_tlc(&tlc, &hir.file.bindings)
 }
 
+fn lower_hir(file: &zutai_syntax::File) -> zutai_hir::LoweredHir {
+    zutai_hir::lower_file_with_preludes(
+        file,
+        zutai_hir::HirLowerOptions::default(),
+        zutai_hir::SourcePreludes {
+            stream: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/stream.zt"
+            ))),
+            prelude: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/prelude.zt"
+            ))),
+        },
+    )
+}
+
 #[test]
 fn residual_non_host_effects_do_not_enter_dataflow_core() {
     let parsed = zutai_syntax::parse(
@@ -35,7 +52,7 @@ parse
 "#,
     );
     assert!(!parsed.has_errors());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -66,7 +83,7 @@ readFile "Cargo.toml"
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -124,7 +141,7 @@ roundTrip "target/zutai-dataflow-scoped-fs.txt"
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -193,7 +210,7 @@ result
 "#,
     );
     assert!(!parsed.has_errors());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -1163,7 +1180,7 @@ fn tlc_of(src: &str) -> (zutai_tlc::TlcModule, Vec<zutai_hir::Binding>) {
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = lower_hir(parsed.ast().expect("parse AST"));
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",

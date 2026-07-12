@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `v ::= import stdlib.validate`. Validation is an opt-in errors-as-data surface,
 not an ambient prelude convention.
 
 The module source lives at `crates/general/stdlib/src/modules/validate.zt` and
-is registered by `zutai-stdlib` as `VALIDATE_MODULE_SRC`.
+is registered by the filesystem stdlib manifest.
 
 ## Types
 

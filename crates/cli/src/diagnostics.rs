@@ -30,6 +30,7 @@ pub(crate) fn print_semantic_errors(
 pub(crate) fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) -> String {
     use zutai_semantic::ImportDiagnosticKind::*;
     match &diag.kind {
+        StdlibSetup { message } => message.clone(),
         NoBaseDirectory => "cannot resolve an import without a base directory".to_string(),
         UnsupportedImportForm { path } => format!("unsupported import path: {path}"),
         UnknownStdlibModule { name } => format!("unknown stdlib module: stdlib.{name}"),

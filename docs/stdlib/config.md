@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `cfg ::= import stdlib.config`. The ambient compatibility names `overlay` and
 `overlayDeep` still exist, but nothing from `stdlib.config` becomes ambient.
 

@@ -1,9 +1,26 @@
 use crate::*;
 
+fn lower_hir_with_test_preludes(file: &zutai_syntax::File) -> zutai_hir::LoweredHir {
+    zutai_hir::lower_file_with_preludes(
+        file,
+        zutai_hir::HirLowerOptions::default(),
+        zutai_hir::SourcePreludes {
+            stream: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/stream.zt"
+            ))),
+            prelude: Some(include_str!(concat!(
+                env!("ZUTAI_STDLIB_ROOT"),
+                "/modules/prelude.zt"
+            ))),
+        },
+    )
+}
+
 fn lower(src: &str) -> LoweredThir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
     lower_hir(&hir.file)
 }
@@ -23,7 +40,7 @@ fn final_type_kind(file: &ThirFile) -> &TypeKind {
 fn lower_with_type_eval_fuel(src: &str, fuel: u32) -> LoweredThir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
     lower_hir_with_options(
         &hir.file,
@@ -49,7 +66,7 @@ where
 fn lower_allowing_hir_errors(src: &str) -> LoweredThir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     // Do NOT assert hir.diagnostics.is_empty() — HIR name-resolution errors are expected.
     lower_hir(&hir.file)
 }

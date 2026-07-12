@@ -1638,6 +1638,7 @@ dependencies = [
  "web-sys",
  "zutai-eval",
  "zutai-semantic",
+ "zutai-stdlib",
 ]
 
 [[package]]
@@ -1661,6 +1662,7 @@ dependencies = [
  "zutai-im",
  "zutai-semantic",
  "zutai-ssa",
+ "zutai-stdlib",
  "zutai-syntax",
  "zutai-thir",
  "zutai-tlc",
@@ -1715,7 +1717,6 @@ version = "0.1.0"
 dependencies = [
  "la-arena",
  "rustc-hash 2.1.2",
- "zutai-stdlib",
  "zutai-syntax",
 ]
 
@@ -1791,6 +1792,10 @@ dependencies = [
 [[package]]
 name = "zutai-stdlib"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "zutai-syntax"
@@ -1822,6 +1827,7 @@ dependencies = [
  "la-arena",
  "rustc-hash 2.1.2",
  "zutai-hir",
+ "zutai-stdlib",
  "zutai-syntax",
  "zutai-thir",
 ]
@@ -1848,4 +1854,5 @@ dependencies = [
  "zutai-browser",
  "zutai-eval",
  "zutai-semantic",
+ "zutai-stdlib",
 ]

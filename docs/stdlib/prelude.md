@@ -7,7 +7,7 @@ ambient `stream.zt` and `prelude.zt` are live, and the explicit
 `stdlib.optional`, `stdlib.result`, `stdlib.num`, `stdlib.text`, and
 `stdlib.cmp` modules are shipped. The explicit `stdlib.config`,
 `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and `stdlib.validate` modules
-are also embedded and importable; none of those larger surfaces becomes ambient.
+are also filesystem modules and importable; none of those larger surfaces becomes ambient.
 
 The prelude is the set of names in scope in every `.zt` module without an
 explicit `import`. Its source layer is deliberately small; its intrinsic layer
@@ -36,15 +36,15 @@ bridge `listFoldlStrict`; dynamic load `loadZti`/`loadZt`; and the internal
 numeric scalar bridge `__numAbs`/`__numRem`/`__numPow`/`__numToFloat`/
 `__numRound`/`__numTruncate` used by explicit `stdlib.num` — plus the builtin
 type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
-**source** layer is two ambient prelude files owned by `zutai-stdlib` under
-`crates/general/stdlib/src/modules/`; the HIR lowerer injects their declarations
-as a fallback:
+**source** layer is two ambient prelude files declared by the filesystem stdlib
+manifest under `crates/general/stdlib/src/modules/`; semantic analysis passes
+their loaded source to the HIR lowerer for fallback injection:
 
-- the *stream* prelude `STREAM_MODULE_SRC` (`stream.zt`), so `Data`,
+- the *stream* prelude `stream.zt`, so `Data`,
   `DataField`, `Stream`, `StreamEff`, `Step`, and the non-conflicting
   combinators `empty`/`cons`/`singleton`/`unfold`/`take`/`drop`/`toList`/
   `fromList`/`takeList` are in scope without an import;
-- the *function/list* prelude `PRELUDE_MODULE_SRC` (`prelude.zt`), so
+- the *function/list* prelude `prelude.zt`, so
   `id`/`const`/`compose`/`flip`/`not` and the `List` verbs `fold`/`foldl'`/`map`/
   `filter`/`length`/`append`/`uncons`/`head?`/`tail?` are in scope without an
   import (stdlib slices B/C).
@@ -147,7 +147,7 @@ The source prelude is loaded by the HIR lowerer (`zutai-hir`), not a separate
 semantic pass — the same model as the stream prelude:
 
 ```text
-- `include_str!` each prelude file (`stream.zt`, `prelude.zt`) and parse it.
+- Load each prelude from the validated stdlib root (or web bundle) and parse it.
 - Inject its declarations into every module's root scope as a FALLBACK, after
   intrinsic seeding and user top-level names: a user/constraint binding of the
   same spelling wins, and a colliding name raises no duplicate-binding error.

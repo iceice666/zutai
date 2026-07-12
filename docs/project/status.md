@@ -35,7 +35,8 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
-_Last updated: 2026-07-12 (dedicated `zutai-web` CLI);
+_Last updated: 2026-07-12 (filesystem-only stdlib and portable stdlib bundles);
+prior baseline updates: 2026-07-12 (dedicated `zutai-web` CLI),
 prior baseline updates: 2026-07-12 (unversioned stable syntax specification),
 prior baseline updates: 2026-07-12 (browser kernel and self-hosted website baseline),
 prior baseline updates: 2026-07-12 (LSP editor baseline),
@@ -94,14 +95,18 @@ The same 2026-06-30 native parity pass also stores optional record fields as
 native `Maybe` envelopes, lowers `?.` to control-flow matches, and teaches
 runtime record rendering/equality to skip `#absent` fields and unwrap
 `#present` payloads; see "Native optional-field presence parity" below.
-The same 2026-06-30 baseline also includes the explicit stdlib expansion:
+The same 2026-06-30 baseline also included the explicit stdlib expansion:
 `stdlib.config`, `stdlib.reflect`, `stdlib.list`, `stdlib.data`, and
-`stdlib.validate` are embedded importable modules, with config/reflect compiler
+`stdlib.validate` were embedded importable modules, with config/reflect compiler
 gates recognizing qualified and destructured aliases; see "Explicit stdlib
 expansion" below. A follow-up stdlib crate extraction moved embedded `.zt`
 sources and module metadata into `zutai-stdlib`, while preserving the old
 `zutai_hir::*_MODULE_SRC` Rust re-exports and all user-facing import behavior;
-see "Stdlib crate extraction" below.
+see "Stdlib crate extraction" below. The 2026-07-12 filesystem-only stdlib
+baseline supersedes that storage mechanism: `manifest.json` is canonical,
+native tools load `.zt` sources from the selected stdlib root, HIR receives
+ambient prelude source explicitly, and web bundle v2 transports the exact
+resolved stdlib set to Wasm. There is no embedded fallback.
 The 2026-07-01 baseline adds native shared-library artifacts:
 `compile --emit=lib` links a platform shared library that exports raw, descriptor,
 and JSON entry points, with the JSON path backed by the runtime's descriptor

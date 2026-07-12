@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted and implemented as an explicit embedded source module:
+Accepted and implemented as an explicit filesystem source module:
 `l ::= import stdlib.list`. The smaller list basics remain ambient through
 `stdlib.prelude`; the larger toolbox is opt-in and does not become ambient.
 
 The module source lives at `crates/general/stdlib/src/modules/list.zt` and is
-registered by `zutai-stdlib` as `LIST_MODULE_SRC`.
+registered by the filesystem stdlib manifest.
 
 ## API
 

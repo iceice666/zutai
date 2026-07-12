@@ -18,6 +18,13 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 use std::rc::Rc;
+use zutai_stdlib::{StdlibError, StdlibSources};
+
+pub use zutai_stdlib::{COMPILER_COMPATIBILITY as STDLIB_COMPILER_COMPATIBILITY, STDLIB_ROOT_ENV};
+
+pub fn configure_stdlib_root(root: impl Into<std::path::PathBuf>) -> Result<(), StdlibError> {
+    zutai_stdlib::set_process_root(root.into())
+}
 
 mod import;
 
@@ -48,6 +55,8 @@ pub struct Analysis {
 pub struct RecordedAnalysis {
     pub entry: String,
     pub sources: BTreeMap<String, String>,
+    pub stdlib_compiler_compatibility: String,
+    pub stdlib_sources: BTreeMap<String, String>,
     pub analysis: Analysis,
 }
 
@@ -55,6 +64,7 @@ pub struct RecordedAnalysis {
 pub enum SourceMapError {
     InvalidPath { path: String, reason: &'static str },
     MissingEntry { path: String },
+    Stdlib { message: String },
 }
 
 impl fmt::Display for SourceMapError {
@@ -66,6 +76,7 @@ impl fmt::Display for SourceMapError {
             SourceMapError::MissingEntry { path } => {
                 write!(f, "entry source `{path}` is not present in the source map")
             }
+            SourceMapError::Stdlib { message } => f.write_str(message),
         }
     }
 }
@@ -429,17 +440,33 @@ fn thir_expr_is_stdlib_reflect_alias(
 }
 
 pub fn analyze(input: &str) -> Analysis {
-    analyze_with_base(input, None, AnalysisOptions::default())
+    analyze_with_options(input, AnalysisOptions::default())
 }
 
 pub fn analyze_with_options(input: &str, options: AnalysisOptions) -> Analysis {
-    analyze_with_base(input, None, options)
+    match StdlibSources::load_configured(None) {
+        Ok(stdlib) => analyze_with_stdlib(input, options, &stdlib),
+        Err(error) => stdlib_error_analysis(error),
+    }
+}
+
+pub fn analyze_with_stdlib(
+    input: &str,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
+) -> Analysis {
+    analyze_with_base_and_stdlib(input, None, options, stdlib)
 }
 
 /// Analyze a `.zt` file on disk, resolving imports relative to its directory.
 pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_with_stdlib(path, &stdlib)
+}
+
+pub fn analyze_path_with_stdlib(path: &Path, stdlib: &StdlibSources) -> std::io::Result<Analysis> {
     let input = std::fs::read_to_string(path)?;
-    let mut ctx = import::ImportContext::with_root(path);
+    let mut ctx = import::ImportContext::with_root(path, Rc::new(stdlib.clone()));
     let current = std::fs::canonicalize(path).ok();
     Ok(analyze_inner(
         &input,
@@ -457,6 +484,14 @@ pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
 /// filesystem resolver otherwise has exactly the same canonicalization,
 /// symlink-confinement, caching, and cycle behavior as [`analyze_path`].
 pub fn analyze_path_recording(path: &Path) -> std::io::Result<RecordedAnalysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_recording_with_stdlib(path, &stdlib)
+}
+
+pub fn analyze_path_recording_with_stdlib(
+    path: &Path,
+    stdlib: &StdlibSources,
+) -> std::io::Result<RecordedAnalysis> {
     let input = std::fs::read_to_string(path)?;
     let entry = path
         .file_name()
@@ -468,7 +503,7 @@ pub fn analyze_path_recording(path: &Path) -> std::io::Result<RecordedAnalysis> 
             )
         })?
         .to_string();
-    let mut ctx = import::ImportContext::with_recording_root(path);
+    let mut ctx = import::ImportContext::with_recording_root(path, Rc::new(stdlib.clone()));
     ctx.record_root_source(&entry, &input);
     let current = std::fs::canonicalize(path).ok();
     let analysis = analyze_inner(
@@ -478,11 +513,7 @@ pub fn analyze_path_recording(path: &Path) -> std::io::Result<RecordedAnalysis> 
         AnalysisOptions::default(),
         &mut ctx,
     );
-    Ok(RecordedAnalysis {
-        entry,
-        sources: ctx.take_recorded_sources(),
-        analysis,
-    })
+    Ok(recorded_analysis(entry, analysis, &mut ctx))
 }
 
 /// Analyze and record a source graph relative to an explicit source root.
@@ -494,6 +525,15 @@ pub fn analyze_path_recording(path: &Path) -> std::io::Result<RecordedAnalysis> 
 pub fn analyze_path_recording_with_root(
     path: &Path,
     source_root: &Path,
+) -> std::io::Result<RecordedAnalysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_recording_with_root_and_stdlib(path, source_root, &stdlib)
+}
+
+pub fn analyze_path_recording_with_root_and_stdlib(
+    path: &Path,
+    source_root: &Path,
+    stdlib: &StdlibSources,
 ) -> std::io::Result<RecordedAnalysis> {
     let input = std::fs::read_to_string(path)?;
     let canonical = std::fs::canonicalize(path)?;
@@ -513,7 +553,11 @@ pub fn analyze_path_recording_with_root(
         std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
     })?;
 
-    let mut ctx = import::ImportContext::with_explicit_recording_root(path, source_root)?;
+    let mut ctx = import::ImportContext::with_explicit_recording_root(
+        path,
+        source_root,
+        Rc::new(stdlib.clone()),
+    )?;
     ctx.record_root_source(&entry, &input);
     let analysis = analyze_inner(
         &input,
@@ -522,11 +566,7 @@ pub fn analyze_path_recording_with_root(
         AnalysisOptions::default(),
         &mut ctx,
     );
-    Ok(RecordedAnalysis {
-        entry,
-        sources: ctx.take_recorded_sources(),
-        analysis,
-    })
+    Ok(recorded_analysis(entry, analysis, &mut ctx))
 }
 
 /// Analyze a complete in-memory source graph.
@@ -534,12 +574,24 @@ pub fn analyze_path_recording_with_root(
 /// `entry` and all source keys must be normalized, relative, `/`-separated
 /// paths. Absolute paths, backslashes, NULs, empty segments, `.` and `..` are
 /// rejected before parsing. Relative imports may use `..` to reach siblings in
-/// the source graph, but cannot escape its virtual root. Embedded `stdlib.*`
-/// modules do not need entries in `sources`.
+/// the source graph, but cannot escape its virtual root. Standard-library
+/// modules come from the configured filesystem root.
 pub fn analyze_sources(
     entry: &str,
     sources: &BTreeMap<String, String>,
     options: AnalysisOptions,
+) -> Result<Analysis, SourceMapError> {
+    let stdlib = StdlibSources::load_configured(None).map_err(|error| SourceMapError::Stdlib {
+        message: error.to_string(),
+    })?;
+    analyze_sources_with_stdlib(entry, sources, options, &stdlib)
+}
+
+pub fn analyze_sources_with_stdlib(
+    entry: &str,
+    sources: &BTreeMap<String, String>,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
 ) -> Result<Analysis, SourceMapError> {
     validate_source_path(entry)?;
     for path in sources.keys() {
@@ -552,7 +604,7 @@ pub fn analyze_sources(
         })?;
     let entry_path = Path::new(entry);
     let base = entry_path.parent().unwrap_or_else(|| Path::new(""));
-    let mut ctx = import::ImportContext::with_memory(sources, entry_path);
+    let mut ctx = import::ImportContext::with_memory(sources, entry_path, Rc::new(stdlib.clone()));
     Ok(analyze_inner(
         input,
         Some(base),
@@ -598,8 +650,71 @@ fn validate_source_path(path: &str) -> Result<(), SourceMapError> {
 /// `base` is the directory of the importing file; `None` (string-only entry
 /// points, REPL) means imports cannot be resolved and yield a diagnostic.
 pub fn analyze_with_base(input: &str, base: Option<&Path>, options: AnalysisOptions) -> Analysis {
-    let mut ctx = import::ImportContext::default();
+    match StdlibSources::load_configured(None) {
+        Ok(stdlib) => analyze_with_base_and_stdlib(input, base, options, &stdlib),
+        Err(error) => stdlib_error_analysis(error),
+    }
+}
+
+pub fn analyze_with_base_and_stdlib(
+    input: &str,
+    base: Option<&Path>,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
+) -> Analysis {
+    let mut ctx = import::ImportContext::new(Rc::new(stdlib.clone()));
     analyze_inner(input, base, None, options, &mut ctx)
+}
+
+fn configured_stdlib_io(explicit: Option<&Path>) -> std::io::Result<StdlibSources> {
+    StdlibSources::load_configured(explicit).map_err(std::io::Error::other)
+}
+
+fn stdlib_error_analysis(error: StdlibError) -> Analysis {
+    Analysis {
+        ast: None,
+        hir: None,
+        thir: None,
+        diagnostics: vec![SemanticDiagnostic {
+            stage: SemanticStage::Import,
+            kind: SemanticDiagnosticKind::Import(ImportDiagnostic {
+                kind: ImportDiagnosticKind::StdlibSetup {
+                    message: error.to_string(),
+                },
+                span: zutai_syntax::Span::default(),
+            }),
+        }],
+        pass_reports: Vec::new(),
+        import_values: FxHashMap::default(),
+        import_modules: FxHashMap::default(),
+        tlc: None,
+        witness_exports: Vec::new(),
+    }
+}
+
+fn recorded_analysis(
+    entry: String,
+    analysis: Analysis,
+    ctx: &mut import::ImportContext<'_>,
+) -> RecordedAnalysis {
+    let compatibility = ctx.stdlib().compiler_compatibility().to_owned();
+    let ambient: Vec<_> = ["stream", "prelude"]
+        .into_iter()
+        .filter_map(|name| {
+            ctx.stdlib()
+                .source(name)
+                .map(|source| (name.to_owned(), source.to_owned()))
+        })
+        .collect();
+    let mut stdlib_sources = ctx.take_recorded_stdlib();
+    stdlib_sources.extend(ambient);
+    RecordedAnalysis {
+        entry,
+        sources: ctx.take_recorded_sources(),
+        stdlib_compiler_compatibility: compatibility,
+        stdlib_sources,
+        analysis,
+    }
 }
 
 /// Analyze `input`, threading the recursive-import `ctx` (cycle stack + module
@@ -650,10 +765,14 @@ pub(crate) fn analyze_inner(
         };
     };
 
-    let hir = zutai_hir::lower_file_with_options(
+    let hir = zutai_hir::lower_file_with_preludes(
         &ast,
         zutai_hir::HirLowerOptions {
             run_passes: options.run_hir_passes,
+        },
+        zutai_hir::SourcePreludes {
+            stream: ctx.stdlib().source("stream"),
+            prelude: ctx.stdlib().source("prelude"),
         },
     );
     let mut diagnostics = parse_diagnostics;
@@ -871,11 +990,11 @@ mod tests {
         );
     }
 
-    // ── embedded stdlib + destructuring imports ────────────────────────────────
+    // ── filesystem stdlib + destructuring imports ──────────────────────────────
 
     #[test]
     fn stdlib_stream_import_resolves_without_base() {
-        // The embedded stdlib needs no filesystem base directory.
+        // Dotted stdlib imports need no user-module base directory.
         let analysis =
             analyze("s ::= import stdlib.stream;\ns.fold (\\acc x. acc + x) 0 (s.singleton 5)");
         assert!(!analysis.has_parse_errors());
@@ -1355,7 +1474,43 @@ mod tests {
                 "config.zti".to_string(),
             ]
         );
+        assert_eq!(
+            recorded.stdlib_sources.keys().cloned().collect::<Vec<_>>(),
+            vec!["prelude".to_string(), "stream".to_string()]
+        );
+        assert_eq!(
+            recorded.stdlib_compiler_compatibility,
+            zutai_stdlib::COMPILER_COMPATIBILITY
+        );
         assert!(recorded.analysis.is_thir_complete());
+    }
+
+    #[test]
+    fn recording_bundles_only_used_stdlib_modules_plus_ambient_preludes() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-stdlib-recording-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(&entry, "n ::= import stdlib.num;\nn.abs -1\n").unwrap();
+
+        let recorded = analyze_path_recording(&entry).expect("record stdlib source graph");
+        assert_eq!(
+            recorded.stdlib_sources.keys().cloned().collect::<Vec<_>>(),
+            vec![
+                "num".to_string(),
+                "prelude".to_string(),
+                "stream".to_string(),
+            ]
+        );
+        assert!(recorded.analysis.is_thir_complete());
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

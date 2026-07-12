@@ -5,7 +5,7 @@ version.workspace = true
 
 [dependencies]
 miette = { version = "7.6.0", features = ["fancy"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 rustyline = "15"
 thiserror = "2.0.18"
 rustc-hash = "2.0.0"
@@ -28,3 +28,4 @@ zutai-web = { path = "../web" }
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+zutai-stdlib = { path = "../general/stdlib" }

@@ -8,20 +8,31 @@ use serde::{Deserialize, Serialize};
 /// `zutai_semantic::analyze_sources` before a bundle is emitted or loaded.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WebBundleV1 {
+pub struct WebBundleV2 {
     pub format_version: u32,
     pub entry: String,
     pub sources: BTreeMap<String, String>,
+    #[serde(default)]
+    pub stdlib_compiler_compatibility: String,
+    #[serde(default)]
+    pub stdlib_sources: BTreeMap<String, String>,
 }
 
-impl WebBundleV1 {
-    pub const FORMAT_VERSION: u32 = 1;
+impl WebBundleV2 {
+    pub const FORMAT_VERSION: u32 = 2;
 
-    pub fn new(entry: String, sources: BTreeMap<String, String>) -> Self {
+    pub fn new(
+        entry: String,
+        sources: BTreeMap<String, String>,
+        stdlib_compiler_compatibility: String,
+        stdlib_sources: BTreeMap<String, String>,
+    ) -> Self {
         Self {
             format_version: Self::FORMAT_VERSION,
             entry,
             sources,
+            stdlib_compiler_compatibility,
+            stdlib_sources,
         }
     }
 
@@ -52,22 +63,37 @@ mod tests {
     fn bundle_schema_round_trips_deterministically() {
         let mut sources = BTreeMap::new();
         sources.insert("main.zt".to_owned(), "1\n".to_owned());
-        let bundle = WebBundleV1::new("main.zt".to_owned(), sources);
-        let json = serde_json::to_string(&bundle).unwrap();
-        assert_eq!(
-            json,
-            r#"{"format_version":1,"entry":"main.zt","sources":{"main.zt":"1\n"}}"#
+        let bundle = WebBundleV2::new(
+            "main.zt".to_owned(),
+            sources,
+            "0.1.0".to_owned(),
+            BTreeMap::from([
+                ("prelude".to_owned(), "1".to_owned()),
+                ("stream".to_owned(), "1".to_owned()),
+            ]),
         );
-        assert_eq!(serde_json::from_str::<WebBundleV1>(&json).unwrap(), bundle);
+        let json = serde_json::to_string(&bundle).unwrap();
+        assert_eq!(serde_json::from_str::<WebBundleV2>(&json).unwrap(), bundle);
     }
 
     #[test]
     fn future_bundle_versions_are_rejected() {
-        let bundle = WebBundleV1 {
-            format_version: 2,
+        let bundle = WebBundleV2 {
+            format_version: 1,
             entry: "main.zt".to_owned(),
             sources: BTreeMap::new(),
+            stdlib_compiler_compatibility: String::new(),
+            stdlib_sources: BTreeMap::new(),
         };
         assert!(bundle.validate_version().is_err());
+    }
+
+    #[test]
+    fn version_one_json_reaches_precise_version_rejection() {
+        let json = r#"{"format_version":1,"entry":"main.zt","sources":{"main.zt":"1\n"}}"#;
+        let bundle: WebBundleV2 = serde_json::from_str(json).unwrap();
+        let error = bundle.validate_version().unwrap_err();
+        assert_eq!(error.found, 1);
+        assert_eq!(error.supported, 2);
     }
 }

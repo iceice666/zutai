@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "compiler_compatibility": "0.1.0",
+  "modules": [
+    { "name": "stream", "path": "modules/stream.zt", "visibility": "ambient" },
+    { "name": "prelude", "path": "modules/prelude.zt", "visibility": "ambient" },
+    { "name": "optional", "path": "modules/optional.zt", "visibility": "explicit" },
+    { "name": "result", "path": "modules/result.zt", "visibility": "explicit" },
+    { "name": "num", "path": "modules/num.zt", "visibility": "explicit" },
+    { "name": "text", "path": "modules/text.zt", "visibility": "explicit" },
+    { "name": "cmp", "path": "modules/cmp.zt", "visibility": "explicit" },
+    { "name": "config", "path": "modules/config.zt", "visibility": "explicit" },
+    { "name": "reflect", "path": "modules/reflect.zt", "visibility": "explicit" },
+    { "name": "list", "path": "modules/list.zt", "visibility": "explicit" },
+    { "name": "data", "path": "modules/data.zt", "visibility": "explicit" },
+    { "name": "validate", "path": "modules/validate.zt", "visibility": "explicit" },
+    { "name": "fs", "path": "modules/fs.zt", "visibility": "explicit" },
+    { "name": "net", "path": "modules/net.zt", "visibility": "explicit" },
+    { "name": "css", "path": "modules/css.zt", "visibility": "explicit" },
+    { "name": "html", "path": "modules/html.zt", "visibility": "explicit" },
+    { "name": "browser", "path": "modules/browser.zt", "visibility": "explicit" }
+  ]
+}

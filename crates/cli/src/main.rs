@@ -8,6 +8,9 @@ mod lsp;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
+    if let Some(root) = cli.stdlib_root {
+        zutai_semantic::configure_stdlib_root(root)?;
+    }
     match cli.command {
         Some(Commands::Run { path }) => commands::run_file(&path)?,
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
@@ -37,6 +40,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     arg_required_else_help = true
 )]
 struct Cli {
+    /// Filesystem root containing manifest.json and the Zutai stdlib modules.
+    #[arg(long, global = true, env = "ZUTAI_STDLIB_ROOT")]
+    stdlib_root: Option<std::path::PathBuf>,
     /// Legacy shorthand: run .zt files or parse .zti files without a subcommand.
     path: Option<String>,
     #[command(subcommand)]

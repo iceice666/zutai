@@ -887,7 +887,20 @@ Use
 "#,
         );
         assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-        let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+        let hir = zutai_hir::lower_file_with_preludes(
+            parsed.ast().expect("parse AST"),
+            zutai_hir::HirLowerOptions::default(),
+            zutai_hir::SourcePreludes {
+                stream: Some(include_str!(concat!(
+                    env!("ZUTAI_STDLIB_ROOT"),
+                    "/modules/stream.zt"
+                ))),
+                prelude: Some(include_str!(concat!(
+                    env!("ZUTAI_STDLIB_ROOT"),
+                    "/modules/prelude.zt"
+                ))),
+            },
+        );
         assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
         let thir = zutai_thir::lower_hir(&hir.file);
         assert!(thir.diagnostics.is_empty(), "{:?}", thir.diagnostics);

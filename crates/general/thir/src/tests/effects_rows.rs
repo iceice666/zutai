@@ -558,7 +558,7 @@ bad
 fn resume_outside_handler_remains_a_hir_error() {
     let parsed = zutai_syntax::parse("resume 1");
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(
         hir.diagnostics
             .iter()
@@ -576,7 +576,7 @@ outer
 "#,
     );
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(
         hir.diagnostics
             .iter()
@@ -943,7 +943,7 @@ handle (forward (\_. perform tick ()) ()) with { tick = \_. resume 5; }
 fn lower_with_fs_write_text_import(src: &str) -> LoweredThir {
     let parsed = zutai_syntax::parse(src);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse should produce AST"));
+    let hir = lower_hir_with_test_preludes(parsed.ast().expect("parse should produce AST"));
     assert!(hir.diagnostics.is_empty(), "{:?}", hir.diagnostics);
 
     let mut imports = rustc_hash::FxHashMap::default();

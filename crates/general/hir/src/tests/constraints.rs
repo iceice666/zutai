@@ -32,7 +32,11 @@ fn h1_bound_resolves_to_constraint() {
 fn h2_unknown_bound_produces_diagnostic() {
     let parsed = zutai_syntax::parse("Foo :: <A: Unknown> @A { f :: A -> A; }\n1");
     assert!(!parsed.has_errors());
-    let lowered = lower_file(parsed.ast().unwrap());
+    let lowered = lower_file_with_preludes(
+        parsed.ast().unwrap(),
+        HirLowerOptions::default(),
+        source_preludes(),
+    );
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -84,7 +88,11 @@ fn h5_duplicate_constraint_method() {
     let parsed =
         zutai_syntax::parse("Eq :: <A> @A { eq :: A -> A -> Bool; eq :: A -> A -> Bool; }\n1");
     assert!(!parsed.has_errors());
-    let lowered = lower_file(parsed.ast().unwrap());
+    let lowered = lower_file_with_preludes(
+        parsed.ast().unwrap(),
+        HirLowerOptions::default(),
+        source_preludes(),
+    );
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -102,7 +110,11 @@ fn h6_duplicate_witness_field() {
         "Eq @Int :: { eq = intEq; eq = intEq2; }\nintEq ::= 1;\nintEq2 ::= 2;\n1",
     );
     assert!(!parsed.has_errors());
-    let lowered = lower_file(parsed.ast().unwrap());
+    let lowered = lower_file_with_preludes(
+        parsed.ast().unwrap(),
+        HirLowerOptions::default(),
+        source_preludes(),
+    );
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -143,7 +155,11 @@ fn h7_witness_target_resolves() {
 fn h8_unknown_witness_constraint() {
     let parsed = zutai_syntax::parse("Nonexistent @Int :: { eq = 1; }\n1");
     assert!(!parsed.has_errors());
-    let lowered = lower_file(parsed.ast().unwrap());
+    let lowered = lower_file_with_preludes(
+        parsed.ast().unwrap(),
+        HirLowerOptions::default(),
+        source_preludes(),
+    );
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
@@ -161,7 +177,11 @@ fn h9_two_witnesses_no_duplicate_binding() {
         "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = f; }\nEq @Int :: { eq = g; }\nf ::= 1;\ng ::= 2;\n1",
     );
     assert!(!parsed.has_errors());
-    let lowered = lower_file(parsed.ast().unwrap());
+    let lowered = lower_file_with_preludes(
+        parsed.ast().unwrap(),
+        HirLowerOptions::default(),
+        source_preludes(),
+    );
     let dup_bindings: Vec<_> = lowered
         .diagnostics
         .iter()

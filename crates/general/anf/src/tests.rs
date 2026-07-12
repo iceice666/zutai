@@ -8,7 +8,11 @@ fn anf_of(src: &str) -> AnfModule {
         "parse errors: {:?}",
         parsed.diagnostics()
     );
-    let hir = zutai_hir::lower_file(parsed.ast().expect("parse AST"));
+    let hir = zutai_hir::lower_file_with_preludes(
+        parsed.ast().expect("parse AST"),
+        zutai_hir::HirLowerOptions::default(),
+        test_preludes(),
+    );
     assert!(
         hir.diagnostics.is_empty(),
         "HIR errors: {:?}",
@@ -23,6 +27,19 @@ fn anf_of(src: &str) -> AnfModule {
     let tlc = zutai_tlc::lower_thir(thir.file.as_ref().expect("THIR file"));
     let dc = zutai_dataflow::lower_tlc(&tlc, &hir.file.bindings);
     lower_dc(&dc)
+}
+
+fn test_preludes() -> zutai_hir::SourcePreludes<'static> {
+    zutai_hir::SourcePreludes {
+        stream: Some(include_str!(concat!(
+            env!("ZUTAI_STDLIB_ROOT"),
+            "/modules/stream.zt"
+        ))),
+        prelude: Some(include_str!(concat!(
+            env!("ZUTAI_STDLIB_ROOT"),
+            "/modules/prelude.zt"
+        ))),
+    }
 }
 
 /// Count `AnfDecl::Let` entries in a module's top-level decls.
