@@ -30,11 +30,12 @@ crates/
     types/             Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
-  language-manual.md     User-facing language manual
-  ARCHIVED.md          Archived implementation status and completed milestones
-  TBD.md               Open work ledger
+  language-manual.md   User-facing language manual
   spec/                Stable Zutai language specification
   stdlib/              Standard library notes
+  compiler/            Compiler IR and runtime internals
+  project/             Current status, roadmap, and closed decisions
+  history/             Completed implementation milestones by date
 ```
 
 ## Documentation
@@ -43,8 +44,9 @@ Start with the language manual or documentation index:
 
 - [Zutai language manual](docs/language-manual.md)
 - [docs/README.md](docs/README.md)
-- [Archived implementation status](docs/ARCHIVED.md)
-- [Open work ledger](docs/TBD.md)
+- [Implementation status](docs/project/status.md)
+- [Open roadmap](docs/project/roadmap.md)
+- [Implementation history](docs/history/README.md)
 - [Zutai language specification](docs/spec/00-index.md)
 - [Final design statement](docs/spec/01-overview/final-design-statement.md)
 

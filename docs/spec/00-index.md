@@ -89,8 +89,9 @@ The executable syntax source of truth is
 `crates/general/syntax/src/parser/`. The compact accepted grammar is the
 [grammar reference](02-lexical/grammar-reference.md). The
 [language manual](../language-manual.md) is the user-facing guide, while
-[ARCHIVED.md](../ARCHIVED.md) records implementation evidence and
-[TBD.md](../TBD.md) contains only concrete open work.
+[implementation status](../project/status.md) records the current baseline,
+[history](../history/README.md) records implementation evidence, and the
+[roadmap](../project/roadmap.md) contains only concrete open work.
 
 Zutai includes both canonical spellings and parser-accepted
 compatibility spellings. New syntax requires a specification update, parser and

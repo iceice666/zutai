@@ -65,7 +65,7 @@ Three concrete defects drove the ABI work and are now closed:
 - **Correctness over speed.** the native backend is established. Match the
   `zutai-eval` oracle, then optimize. A wrong value is worse than a slow one.
 - **Static typing carries the representation.** General mode is fully typed and
-  type-erased before Dataflow Core (Decision 0002 in `docs/tlc-core.md`). Every
+  type-erased before Dataflow Core (Decision 0002 in [`tlc.md`](tlc.md)). Every
   value's static type is known at every use site, and rows/effects are closed
   before codegen. The runtime therefore does **not** need runtime type tags for
   dispatch — the compiler picks the right helper. Tags exist only for printing
@@ -204,7 +204,7 @@ ZtVariant { i64 header; i64 tag; i64 payload; } // TAG_VARIANT
   `i64 zutai.variant_value(i64 v)`.
 - **Optional/Maybe** are ordinary variants: `#none`/`#some (v)` and
   `#absent`/`#present (v)`, matching the interpreter split documented in
-  `ARCHIVED.md`. Source `??` lowers to control flow so fallback expressions stay
+  the [implementation history](../history/README.md). Source `??` lowers to control flow so fallback expressions stay
   lazy; the strict `i64 zutai.coalesce(i64 v, i64 fallback)` helper remains for
   residual helper-shaped IR and unwraps exactly one layer.
 
@@ -335,7 +335,8 @@ never reordered or lost.
   so **uncurrying lands before any collector**. Caveat to "without an ABI break"
   below: that holds for the *object layout*, but **root-finding** does not —
   untagged `i64` roots (D-0002) need a shadow stack or stack maps for a precise
-  collector, which is a calling-convention change. Historical record is archived in `ARCHIVED.md`.
+  collector, which is a calling-convention change. The historical record lives
+  in the [2026 H1 implementation history](../history/2026-h1.md).
 - *Retired precise/moving trajectory (2026-06-27).* The default-on conservative
   collector is the final GC posture for the current backend. The earlier planned
   path — precise non-moving mark-sweep followed by a generational Cheney copying
@@ -614,7 +615,7 @@ and `cargo fmt --check`; native object/binary execution is toolchain-gated.
 - Multithreading, async, FFI, dynamic linking, separate compilation.
 - DWARF/debug info and source-level debugging of compiled output.
 - Known-arity direct-call optimization and closure inlining.
-- Coercion/cast nodes, GADT equalities (see `docs/tlc-core.md` non-goals).
+- Coercion/cast nodes, GADT equalities (see [`tlc.md`](tlc.md) non-goals).
 
 ---
 

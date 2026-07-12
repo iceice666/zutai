@@ -1,6 +1,6 @@
 //! NbE (Normalization-by-Evaluation) kernel for TLC types.
 //!
-//! Spec source of truth: `docs/tlc-core.md` §10 (NbE, reduction rules lines 468–469, fuel
+//! Spec source of truth: `docs/compiler/tlc.md` §10 (NbE, reduction rules lines 468–469, fuel
 //! limit line 475).
 //!
 //! ## Design

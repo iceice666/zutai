@@ -5,7 +5,7 @@ This is the user-facing guide to current Zutai.
 The [language specification](spec/00-index.md) is normative for all currently
 accepted syntax. Zutai has one stable language surface rather than numbered
 feature versions. This manual summarizes support levels, and the
-[implementation archive](ARCHIVED.md#current-baseline) records validation
+[implementation status](project/status.md#current-baseline) records validation
 evidence.
 
 ## Quick start
@@ -519,4 +519,5 @@ Common parse-diagnostic mistakes should receive specific messages when the parse
 - [language specification](spec/00-index.md)
 - [grammar reference](spec/02-lexical/grammar-reference.md)
 - [standard library](stdlib/00-index.md)
-- [implementation status](ARCHIVED.md)
+- [implementation status](project/status.md)
+- [implementation history](history/README.md)

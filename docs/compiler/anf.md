@@ -1,4 +1,4 @@
-# Administrative Normal Form (ANF)
+# Administrative Normal Form (ANF) IR
 
 ANF is the linear intermediate representation that sits between Dataflow Core (DC) and SSA in the Zutai compilation pipeline.
 

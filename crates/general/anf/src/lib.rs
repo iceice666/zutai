@@ -4,7 +4,7 @@
 //! Every sub-expression is named by a let-binding, and every argument
 //! to an application or primitive is an atom (variable, literal, or global).
 //!
-//! See `docs/anf.md` for the design specification.
+//! See `docs/compiler/anf.md` for the design specification.
 
 pub use zutai_dataflow::{
     DataflowGraph, DfBuiltinOp, DfListPrimOp, DfLit, DfNumPrimOp, DfPositOp, DfTextPrimOp,

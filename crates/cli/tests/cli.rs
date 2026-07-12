@@ -1908,7 +1908,7 @@ const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
     ("float_value", "x :: Float = 5.0;\nx\n"),
     ("coalesce_some", "x :: Int? = #some (7);\nx ?? 0\n"),
     ("coalesce_none", "y :: Int? = #none;\ny ?? 99\n"),
-    // ── value-rendering divergence guards (docs/TBD.md) ──────────────────────
+    // ── value-rendering divergence guards (docs/project/roadmap.md) ──────────
     // The backend sorts record fields by name for slot layout; the interpreter
     // must render the same order. These exercise the shapes a backend/interp
     // rendering divergence would hide: non-alphabetical records (flat + nested),
@@ -3922,7 +3922,7 @@ fn run_with_heap_stats(name: &str, src: &str) -> (String, String) {
     )
 }
 
-/// Phase 34 gate measurement (TBD.md gate condition (b): "accumulator garbage
+/// Phase 34 gate measurement (2026 H1 history gate condition (b): "accumulator garbage
 /// dominates after Phase 33"). The accumulator has an O(1) live set — it returns
 /// a single `Int` and retains no heap structure — yet allocates one `box` record
 /// per step. We compile it at `n` and `2n`, read `ZUTAI_HEAP_STATS`, and assert

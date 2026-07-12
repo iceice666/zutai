@@ -27,7 +27,7 @@ Source → HIR → THIR → TLC
 
 **TLC** is produced only when `is_thir_complete()` is true. It has no free inference variables, no unresolved aliases, and explicit polymorphism via `TyLam`/`TyApp`. Spans are stored in a side-table only. The Dataflow Core lowering takes TLC as its sole input.
 
-See [`docs/dataflow-core.md`](dataflow-core.md) for the next stage's IR specification.
+See [Dataflow Core](dataflow-core.md) for the next stage's IR specification.
 
 ---
 
@@ -691,7 +691,7 @@ which implementation phase (§14) makes the construct work end-to-end.
 
 ## 17. Related documents
 
-- **`docs/dataflow-core.md`** — the next compile stage; the TLC→DC lowering pass lives in `zutai-dataflow::lower`.
-- **`docs/ARCHIVED.md`** — Phase 2 is the TLC phase; this document is the canonical spec for it.
+- **[Dataflow Core](dataflow-core.md)** — the next compile stage; the TLC→DC lowering pass lives in `zutai-dataflow::lower`.
+- **[implementation history](../history/README.md)** — Phase 2 records the original TLC milestone; this document is the canonical IR specification.
 - **`docs/spec/`** — source of truth for stable syntax and semantics; §16 maps
   the surface to its TLC encoding and implementation phase.

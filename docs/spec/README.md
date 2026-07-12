@@ -9,6 +9,6 @@ Zutai has one unversioned language specification:
 - [Language manual](../language-manual.md) — examples, usage guidance, and
   per-feature support levels.
 
-Implementation history belongs in [the archive](../ARCHIVED.md), and concrete
-open implementation work belongs in [the open-work ledger](../TBD.md). Future
+Implementation history belongs under [history](../history/README.md), and concrete
+open implementation work belongs in the [roadmap](../project/roadmap.md). Future
 ideas do not receive speculative language-version numbers.

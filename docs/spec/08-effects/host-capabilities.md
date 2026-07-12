@@ -127,7 +127,7 @@ beyond `io.print`.
 Host capabilities are dispatched by the runtime effect driver, and so depend on
 the effect runtime—the CPS effect lowering and runtime dispatch that
 replace compile-time effect folding. The standard set has **landed**
-(`docs/ARCHIVED.md` Phase 27 plus the dynamic-load follow-up): the capability
+([2026 H1 history](../../history/2026-h1.md), Phase 27 plus the dynamic-load follow-up): the capability
 type names `FsRead`, `FsWrite`, `Env`, `Clock`, `Rng`, `Load`, and explicit
 `IoPrint`, plus `Net` for the current TCP host effects, are seeded in the root
 scope (with `Path`/`Instant` as text-shaped

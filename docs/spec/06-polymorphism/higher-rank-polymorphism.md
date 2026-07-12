@@ -65,7 +65,7 @@ annotations (rank-N), but instantiation remains first-order.
 Nested quantifiers elaborate to TLC `ForAll` in argument position; a higher-rank
 argument becomes a value that is itself type-abstracted (`TyLam`), applied at
 each use site with the appropriate type arguments. The mechanism already exists
-for top-level polymorphism and dictionary passing (see [`tlc-core.md`](../../tlc-core.md));
+for top-level polymorphism and dictionary passing (see [`compiler/tlc.md`](../../compiler/tlc.md));
 Zutai extends *where* a `ForAll` may appear, not the core term forms.
 
 Constrained higher-rank arguments pass their dictionaries the same way: the
@@ -77,7 +77,7 @@ call.
 ## Support Level
 
 Higher-rank polymorphism has **landed** with reference-interpreter support
-(`docs/ARCHIVED.md` Phase 26) for explicitly annotated nested quantifiers in
+([2026 H1 history](../../history/2026-h1.md), Phase 26) for explicitly annotated nested quantifiers in
 direct function argument positions. The parser, HIR, THIR, and TLC preserve
 `ForAll`; THIR checks written higher-rank annotations bidirectionally while
 inference remains predicative and rank-1; TLC elaborates applications with

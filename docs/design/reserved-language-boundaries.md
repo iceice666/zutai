@@ -30,7 +30,7 @@ Effectful generators run within the dynamic extent of a granting handler, and
 `finally` provides cleanup for supported handled-effect shapes.
 
 See the [generator specification](../spec/10-generators/generators.md) for the
-language contract and [the archive](../ARCHIVED.md) for implementation history.
+language contract and [the history index](../history/README.md) for implementation provenance.
 
 ## Demand-gated boundaries
 
@@ -63,6 +63,6 @@ top of aliases without a concrete interoperability or abstraction need.
 ## Promotion rule
 
 When a real program requires one of these boundaries, add a scoped milestone to
-[`TBD.md`](../TBD.md) with the motivating program, semantic rule, parser impact,
+[the roadmap](../project/roadmap.md) with the motivating program, semantic rule, parser impact,
 IR impact, refusal behavior, and acceptance gates. Do not assign a speculative
 language-version number.

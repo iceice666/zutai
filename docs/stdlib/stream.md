@@ -15,13 +15,13 @@ takes a step function returning a
 compose with a record payload at the surface. `empty :: <A> Stream A` is a
 polymorphic nullary value; it now instantiates correctly per use (a `<A>`
 reference outside callee position freshens its type variable — see
-`docs/ARCHIVED.md` "BindingRef instantiation site"). The `List`-interop subset —
+[2026 H1 history](../history/2026-h1.md), "BindingRef instantiation site"). The `List`-interop subset —
 `toList`, `fromList`, and `takeList` (`= toList ∘ take`) — **shipped 2026-06-26**
 (the generator implementation residual). `take` stays `Stream -> Stream`; `takeList` is the named
 `take -> List` form. The builtin `List` has no source-level head/tail ops, so the
 three combinators ride internal scalar bridge primitives the compiler provides
 over the builtin `List` (`listEmpty`/`listCons`/`listIsNil`/`listHead`/`listTail`);
-the `if`/`match` branching lives in the `.zt` source. See `docs/ARCHIVED.md`
+the `if`/`match` branching lives in the `.zt` source. See [2026 H1 history](../history/2026-h1.md)
 "generator and stream milestones".
 
 ## Two surfaces, one source

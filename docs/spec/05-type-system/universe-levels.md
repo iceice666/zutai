@@ -90,7 +90,7 @@ Levels and fuel are orthogonal and both retained:
 
 Type equality remains normalization-based (NbE) under the fuel bound; the
 normalizer additionally tracks levels so that equality and unification do not
-conflate types at incompatible universes (see [`tlc-core.md`](../../tlc-core.md)
+conflate types at incompatible universes (see [`compiler/tlc.md`](../../compiler/tlc.md)
 §10).
 
 ---
@@ -216,7 +216,7 @@ an unknown level variable.
 
 ## Support Level
 
-Internal universe levels have **landed** (`docs/ARCHIVED.md` Phase 24): the TLC
+Internal universe levels have **landed** ([2026 H1 history](../../history/2026-h1.md), Phase 24): the TLC
 core kind carries a level slot (`Type(level)`), and level inference,
 cumulativity, and level-polymorphic defaulting now flow through THIR kind
 checking and TLC kind lowering rather than pinning every kind to level 0. Type
@@ -238,4 +238,4 @@ defaulted to the lowest consistent universe exactly like bare `Type`, so explici
 levels reject nothing a well-founded bare-`Type` program already accepts. Four
 diagnostics guard misuse: an explicit level below the required universe, a level
 variable used as a type, a non-level name used as a level, and an unknown level
-variable. See `docs/ARCHIVED.md` "V2-A" for the landed milestone.
+variable. See [2026 H1 history](../../history/2026-h1.md) "V2-A" for the landed milestone.

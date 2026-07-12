@@ -34,15 +34,16 @@ Source → HIR → THIR → TLC
 
 THIR is error-tolerant and source-preserving — the foundation for LSP tooling (diagnostics, hover types, go-to-definition). TLC (Type Lambda Calculus) is the fully-elaborated IR with explicit `TyLam`/`TyApp` and no free type variables; it is the clean input for all compilation stages.
 
-See `docs/dataflow-core.md` for the Dataflow Core IR specification,
-`docs/ARCHIVED.md` for implemented status, and `docs/TBD.md` for the open
+See `docs/compiler/dataflow-core.md` for the Dataflow Core IR specification,
+`docs/project/status.md` for implemented status, and `docs/project/roadmap.md` for the open
 phase plan.
 
-## Updating `docs/ARCHIVED.md` and `docs/TBD.md`
+## Updating project status, roadmap, and history
 
-- Keep `docs/ARCHIVED.md` focused on current baseline, validation notes, archived decisions, and completed milestones newest-to-oldest.
-- Keep active TODOs and TBD items in `docs/TBD.md`, ordered newest/open work first.
-- When a milestone finishes, move a short summary from `docs/TBD.md` into `docs/ARCHIVED.md`'s "Completed milestones, newest first" and leave unfinished follow-up in `docs/TBD.md`.
+- Keep `docs/project/status.md` focused on the current baseline and validation notes.
+- Keep active TODOs and TBD items in `docs/project/roadmap.md`, ordered newest/open work first.
+- Keep closed decisions that remain useful in `docs/project/decisions.md`.
+- When a milestone finishes, move a short summary from the roadmap into the current half-year file under `docs/history/`, newest first, and leave unfinished follow-up in the roadmap.
 - State support levels precisely: check-only, reference-interpreter support, backend rejection, or full compile/runtime support.
 - Update the relevant "Last updated" note and verification gate when changing implementation status; keep old long-form details compressed unless they explain a current risk.
 
@@ -68,11 +69,12 @@ crates/
   immediate/types/     Shared AST types for immediate mode (`.zti`)
 docs/
   README.md            Documentation index
-  dataflow-core.md     Dataflow Core IR design specification
-  ARCHIVED.md          Archived implementation status and completed milestones
-  TBD.md               Open milestones and unresolved TBD items
+  language-manual.md   User-facing current syntax, examples, and support levels
   spec/                Stable language specification, organized by language area
   stdlib/              Standard-library notes
+  compiler/            TLC, Dataflow Core, ANF, and runtime/ABI internals
+  project/             Current status, roadmap, and archived decisions
+  history/             Completed implementation milestones grouped by date
 ```
 
 ## Development commands
@@ -99,7 +101,7 @@ Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
 - Do not overwrite user changes you did not make.
 - Read the relevant files in `docs/spec/` before implementing language syntax
   or semantics.
-- For remaining roadmap work, treat `docs/TBD.md` as the implementation order; completed post-frontend history lives in `docs/ARCHIVED.md`.
+- For remaining roadmap work, treat `docs/project/roadmap.md` as the implementation order; completed post-frontend history lives under `docs/history/`.
 - Do not extend parser syntax until the existing surface forms have HIR/THIR/TLC
   semantics. Prefer check-only support with precise unsupported-feature
   diagnostics before claiming compiler or interpreter support.

@@ -16,7 +16,7 @@ Source → HIR → THIR → TLC
                     LLVM IR
 ```
 
-THIR is the error-tolerant, source-preserving typed IR used by the language server (LSP) and diagnostics tooling. It carries spans on every node, tolerates partial type information, and is produced even when type checking fails partially. TLC (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds: all inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. The Dataflow Core lowering takes TLC as its sole input. TLC is specified in [`docs/tlc-core.md`](tlc-core.md).
+THIR is the error-tolerant, source-preserving typed IR used by the language server (LSP) and diagnostics tooling. It carries spans on every node, tolerates partial type information, and is produced even when type checking fails partially. TLC (Type Lambda Calculus) is the fully-elaborated IR produced only when type checking succeeds: all inference variables are resolved, polymorphism is explicit via `TyLam`/`TyApp`, and complete type information is guaranteed. The Dataflow Core lowering takes TLC as its sole input. TLC is specified in [the TLC document](tlc.md).
 
 ## Effect boundary
 
@@ -316,7 +316,7 @@ The ANF pass converts the DC graph to a linear let/letrec schedule:
    - Single-node, self-loop, or multi-node → `letrec { name₁ = ...; name₂ = ...; }`.
 4. **Name all sub-expressions.** Every non-trivial sub-expression in a node's lowering gets a fresh ANF name. `Apply(Apply(f, x), y)` becomes `let t1 = f x; let t2 = t1 y; ...`.
 
-The full ANF design lives in `docs/anf.md` (to be written when that phase begins).
+The full ANF design lives in [the ANF document](anf.md).
 
 ## Invariants
 

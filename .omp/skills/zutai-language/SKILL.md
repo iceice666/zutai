@@ -14,22 +14,22 @@ Read the smallest relevant set; do not answer from memory when a file can ground
 1. `docs/language-manual.md` — first stop for user-facing current behavior, examples, implemented extensions, and common diagnostics.
 2. `docs/spec/00-index.md` — normative stable-language index. Follow its chapter links for syntax and semantics.
 3. `docs/spec/02-lexical/grammar-reference.md` — compact implemented general-mode grammar; parser source remains `crates/general/syntax/src/parser/` when code behavior must be verified.
-4. `docs/ARCHIVED.md` — current implementation baseline, validation notes, completed milestones, and precise backend/support caveats.
-5. `docs/TBD.md` — open implementation order and unresolved work; top-to-bottom order is authoritative for roadmap questions.
+4. `docs/project/status.md` — current implementation baseline, validation notes, and precise backend/support caveats.
+5. `docs/project/roadmap.md` — open implementation order and unresolved work; top-to-bottom order is authoritative for roadmap questions.
 6. `docs/design/reserved-language-boundaries.md` — explicit non-goals and
    demand-gated future design boundaries; these are not speculative versions.
 7. `docs/README.md` — compiler pipeline and crate responsibility map.
-8. `docs/tlc-core.md`, `docs/dataflow-core.md`, `docs/anf.md`, and `docs/runtime-abi.md` — IR, lowering, scheduling, and runtime ABI details for compiler-stage questions.
+8. `docs/compiler/tlc.md`, `docs/compiler/dataflow-core.md`, `docs/compiler/anf.md`, and `docs/compiler/runtime-abi.md` — IR, lowering, scheduling, and runtime ABI details for compiler-stage questions.
 
 ## Answer workflow
 
 1. Classify the question:
    - Syntax/example question → read `docs/language-manual.md`, then the relevant `docs/spec/` chapter or `grammar-reference.md`.
-   - Implementation/support question → read `docs/language-manual.md` implemented-extension table, then `docs/ARCHIVED.md` current baseline/validation notes, then `docs/TBD.md` if the feature is incomplete.
-   - Compiler-stage question → read `docs/README.md` pipeline, then `docs/tlc-core.md` / `docs/dataflow-core.md` / `docs/anf.md` / `docs/runtime-abi.md` or the relevant crate source if exact behavior is needed.
+   - Implementation/support question → read `docs/language-manual.md` implemented-extension table, then `docs/project/status.md` current baseline/validation notes, then `docs/project/roadmap.md` if the feature is incomplete.
+   - Compiler-stage question → read `docs/README.md` pipeline, then `docs/compiler/tlc.md` / `docs/compiler/dataflow-core.md` / `docs/compiler/anf.md` / `docs/compiler/runtime-abi.md` or the relevant crate source if exact behavior is needed.
    - Reserved-boundary question → read
      `docs/design/reserved-language-boundaries.md`, then cross-check
-     `docs/language-manual.md` and `docs/ARCHIVED.md` before claiming support.
+     `docs/language-manual.md` and `docs/project/status.md` before claiming support.
 2. State support levels using this vocabulary when applicable: `syntax only`, `check-only`, `reference-interpreter support`, `backend rejection`, `LLVM/native support`, or `unimplemented/open`.
 3. Cite exact paths and sections/line ranges for load-bearing claims.
 4. For implementation work, read the relevant stable spec page before editing parser, AST, HIR, THIR, TLC, evaluator, or backend code. Then inspect the crate named by `docs/README.md` for the pipeline layer.

@@ -1,18 +1,36 @@
 # Zutai Documentation
 
-## Sections
+Choose the path that matches what you are trying to do. Stable language
+behavior is defined by the specification; implementation status and history do
+not override it.
 
-- [Zutai language manual](language-manual.md)
-- [language specification](spec/00-index.md)
-- [grammar reference](spec/02-lexical/grammar-reference.md)
-- [archived implementation status](ARCHIVED.md)
-- [open work ledger](TBD.md)
-- [TLC IR design](tlc-core.md)
-- [Dataflow Core IR design](dataflow-core.md)
-- [reserved language boundaries](design/reserved-language-boundaries.md)
-- [Standard library](stdlib/00-index.md)
+## Learn and use Zutai
 
-## General-mode compiler layers
+- [Language manual](language-manual.md) — start here for syntax, examples, and current support levels
+- [Grammar reference](spec/02-lexical/grammar-reference.md) — compact parser-aligned general-mode grammar
+- [Standard library](stdlib/00-index.md) — importable modules and ambient prelude
+
+## Language reference
+
+- [Language specification](spec/00-index.md) — normative stable syntax and semantics
+- [Reserved language boundaries](design/reserved-language-boundaries.md) — demand-gated non-goals and design constraints
+
+## Compiler contributors
+
+- [Compiler internals](compiler/README.md) — post-frontend IR and runtime documents
+- [TLC](compiler/tlc.md)
+- [Dataflow Core](compiler/dataflow-core.md)
+- [ANF](compiler/anf.md)
+- [Runtime and ABI](compiler/runtime-abi.md)
+
+## Project state
+
+- [Implementation status](project/status.md) — current baseline and validation notes
+- [Roadmap](project/roadmap.md) — concrete unfinished work only
+- [Archived decisions](project/decisions.md) — closed decisions that remain useful
+- [Implementation history](history/README.md) — completed milestones grouped by date
+
+## Compiler layer ownership
 
 ```text
 Source → HIR → THIR → TLC
@@ -28,15 +46,12 @@ Source → HIR → THIR → TLC
                     Object / native binary / native library
 ```
 
-- **HIR** — resolved, source-preserving, not fully typed. Produced by `zutai-hir`.
-- **Standard library registry** — embedded `.zt` stdlib sources and module
-  metadata. Owned by `zutai-stdlib`; consumed by HIR for ambient source-prelude
-  injection and by `zutai-semantic` for `import stdlib.<name>`.
-- **THIR** — typed, source-preserving, error-tolerant. Carries spans on every node; produced even when type inference is incomplete. Foundation for LSP tooling (diagnostics, hover types, go-to-definition). Produced by `zutai-thir`.
-- **TLC** (Type Lambda Calculus) — fully elaborated; all inference variables resolved; polymorphism explicit via `TyLam`/`TyApp`; spans in a side-table only. Produced only when type checking succeeds. Clean input contract for all compilation stages. Produced by `zutai-tlc`. See [TLC IR design](tlc-core.md).
-- **Dataflow Core** — graph IR where sharing and recursion are structurally explicit. A node may be referenced by many consumers (sharing); a cycle represents recursion. Laziness = graph reachability from the output root. Produced by `zutai-dataflow`.
-- **ANF** — linear schedule of `let`/`letrec` bindings with one operation per binding. Every sub-expression is named. SCCs from the DC graph become `letrec` groups. Produced by `zutai-anf`.
-- **SSA** — basic blocks with phi-nodes. Standard form for LLVM emission. Produced by `zutai-ssa`.
-- **LLVM IR / native output** — final backend target. `zutai-codegen` emits LLVM text with runtime descriptors; `zutai-cli compile --emit=llvm|obj|bin|lib` writes IR, objects, linked native binaries, or linked native shared libraries when the host LLVM toolchain is available.
-- **Semantic facade** (`zutai-semantic`) — wires parse, HIR, THIR, and TLC into one staged API; owns filesystem/module-graph analysis (imports, caches, cycles, witness merging) and cross-stage gate predicates. Passes live in the IR crate they transform.
-- **Reference evaluators** (`zutai-eval`) — semantics oracles over completed typed IR. The default `run`/`repl` path is TLC-first for executable value programs; the THIR evaluator remains the regression oracle and the runtime `Type`/reflection boundary until TLC represents type values directly. All evaluators refuse programs that are not fully type-checked.
+- **HIR** — resolved, source-preserving, not fully typed; produced by `zutai-hir`.
+- **Standard library registry** — embedded `.zt` sources and module metadata owned by `zutai-stdlib`.
+- **THIR** — typed, source-preserving, error-tolerant; produced by `zutai-thir` and used by LSP tooling.
+- **TLC** — fully elaborated with explicit polymorphism; produced by `zutai-tlc` only after successful checking.
+- **Dataflow Core** — graph IR where sharing and recursion are structurally explicit; produced by `zutai-dataflow`.
+- **ANF** — scheduled `let`/`letrec` bindings with one operation per binding; produced by `zutai-anf`.
+- **SSA and LLVM IR** — block form and native emission owned by `zutai-ssa` and `zutai-codegen`.
+- **Semantic facade** — `zutai-semantic` wires parse, HIR, THIR, TLC, imports, and stage gates.
+- **Reference evaluators** — `zutai-eval` evaluates only complete typed IR and remains the semantics oracle.

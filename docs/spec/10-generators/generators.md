@@ -46,7 +46,7 @@ boundary under the same explicit-grant policy as top-level host operations.
   unsupported residual host operations keep rejecting before backend erasure.
   No second effect system or host iterator abstraction is introduced.
 - **Resource-lifetime contract landed** (2026-06-27; see
-  `docs/ARCHIVED.md` "Resource lifetime for effectful generators"). The granting
+  [2026 H1 history](../../history/2026-h1.md), "Resource lifetime for effectful generators"). The granting
   handler's dynamic extent is the sole owner of resource-backed stream lifetime:
   acquisition/step effects, early stop, cancellation, cross-boundary abort
   unwinding, and `finally` teardown all run under that handler. Dropped or
@@ -56,7 +56,7 @@ boundary under the same explicit-grant policy as top-level host operations.
   grant, while standard host operations fall through to the host boundary when
   granted.
 - **Ergonomic effectful-stream type landed** (2026-06-27, see
-  `docs/ARCHIVED.md`): call-site effect-row inference (a pure/concrete argument
+  [2026 H1 history](../../history/2026-h1.md)): call-site effect-row inference (a pure/concrete argument
   unifies against an instantiated open-row parameter) plus the `StreamEff A e`
   ambient/importable alias naming the supported idiom (`StreamEff A {}` ≡
   `Stream A`). Built on the open-effect-row-tail foundation (2026-06-26).

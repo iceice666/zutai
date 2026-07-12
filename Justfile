@@ -95,6 +95,9 @@ cov-lcov:
 
 # ── Docs ──────────────────────────────────────────────────────────────────────
 
+docs-check:
+    bash scripts/check-doc-links.sh
+
 doc:
     cargo doc --workspace --no-deps --open
 

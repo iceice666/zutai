@@ -87,7 +87,7 @@ The embedded `Type` value in a reflected field is a first-class compile-time
 
 A recipe is pure, compile-time code, evaluated under the type-level fuel bound
 (see [universe levels](../05-type-system/universe-levels.md) and
-[`tlc-core.md`](../../tlc-core.md)
+[`compiler/tlc.md`](../../compiler/tlc.md)
 §10). Its evaluation:
 
 1. runs once per `(constraint, type)` derivation request;
@@ -140,7 +140,7 @@ record and union whose components are themselves `Ord`.
 Derive recipes require a witness-reflection primitive (`witness C @T`),
 reflection over unions (`variants`) and recursive types, and a compile-time
 staging boundary that runs a recipe during witness elaboration and reifies its
-result into a dictionary. These have **landed** (`docs/ARCHIVED.md` Phase 28):
+result into a dictionary. These have **landed** ([2026 H1 history](../../history/2026-h1.md), Phase 28):
 constraint declarations carry `derive = <T> => ...` recipe bodies through
 Syntax/HIR/THIR — the recipe is type-checked before TLC consumes the marker —
 and drive specialized TLC Show/Ord dictionary synthesis for records and unions,

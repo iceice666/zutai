@@ -2,7 +2,7 @@
 //!
 //! This crate implements the `@zutai.*` symbols that `zutai-codegen` references
 //! and defines the binary representation of runtime values. The full contract
-//! is specified in `docs/runtime-abi.md`; this module is the v0 skeleton of
+//! is specified in `docs/compiler/runtime-abi.md`; this module is the v0 skeleton of
 //! Phase 18 (Runtime & ABI).
 //!
 //! Every Zutai value is an `i64` (D-0002, untagged, statically dispatched):

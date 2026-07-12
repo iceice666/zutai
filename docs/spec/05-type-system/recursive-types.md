@@ -91,7 +91,7 @@ Guardedness is the static rule; fuel is the dynamic backstop.
 
 Recursion is permitted in every guarded position, including under a function
 arrow. This is what lets the algebraic-effect free-monad encoding represent a
-suspended computation `resume : R -> Free Op A` (see [`tlc-core.md`](../../tlc-core.md)
+suspended computation `resume : R -> Free Op A` (see [`compiler/tlc.md`](../../compiler/tlc.md)
 §9).
 
 ---
@@ -128,13 +128,13 @@ arguments (see [constraints](../06-polymorphism/constraints.md)).
 
 Recursive types lower to cyclic type descriptors; the compilation stages below
 TLC carry recursive type references by identity rather than by expansion (see
-[`dataflow-core.md`](../../dataflow-core.md) and
-[`runtime-abi.md`](../../runtime-abi.md)).
+[`compiler/dataflow-core.md`](../../compiler/dataflow-core.md) and
+[`compiler/runtime-abi.md`](../../compiler/runtime-abi.md)).
 Finite recursive *values* — ordinary trees and lists — render and compare in
 finite time. The pure core does not construct cyclic values.
 
 Recursive type support is structural (equirecursive) and has **landed**
-(`docs/ARCHIVED.md` Phase 25): guarded recursive and mutually recursive aliases
+([2026 H1 history](../../history/2026-h1.md), Phase 25): guarded recursive and mutually recursive aliases
 check through THIR/TLC, generic recursive aliases such as `Tree A` preserve
 universe levels and compare via scoped equirecursive matching, and Dataflow Core
 instantiates them into finite cyclic `DfTyId` graphs that reach

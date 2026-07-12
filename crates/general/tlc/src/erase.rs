@@ -1,6 +1,6 @@
 //! Effect-row eraser: sets all `Fun` effect rows to `REmpty` before DC emission.
 //!
-//! Spec source of truth: `docs/ARCHIVED.md` §"TLC Phase 4 — Effect rows".
+//! Historical design reference: `docs/history/2026-h1.md` §"TLC Phase 4 — Effect rows".
 //!
 //! ## Design
 //!
