@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/browser/kernel",
   "crates/cli",
   "crates/general/anf",
   "crates/general/codegen",
@@ -24,3 +25,11 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
+
+[profile.web]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

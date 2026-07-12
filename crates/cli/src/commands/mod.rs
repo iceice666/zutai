@@ -6,6 +6,7 @@ mod reflect;
 #[cfg(test)]
 mod tests;
 mod toolchain;
+pub(crate) mod web;
 
 use self::reflect::*;
 use self::toolchain::*;

@@ -10,8 +10,12 @@ rustyline = "15"
 thiserror = "2.0.18"
 rustc-hash = "2.0.0"
 libc = "0.2"
+notify = "8"
 serde_json = "1"
+sha2 = "0.10"
+tiny_http = "0.12"
 zutai-anf = { path = "../general/anf" }
+zutai-browser = { path = "../browser/kernel" }
 zutai-codegen = { path = "../general/codegen" }
 zutai-dataflow = { path = "../general/dataflow" }
 zutai-eval = { path = "../general/eval" }
