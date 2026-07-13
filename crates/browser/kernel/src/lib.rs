@@ -8,6 +8,7 @@
 mod bundle;
 mod css;
 mod decode;
+mod diff;
 mod document;
 mod render;
 
@@ -17,6 +18,7 @@ mod dom;
 pub use bundle::WebBundleV3;
 pub use css::render_stylesheet;
 pub use decode::{BrowserProgram, decode_document, decode_program};
+pub use diff::{ChildDiff, ChildOp, diff_children};
 pub use document::*;
 pub use render::{PrerenderedPage, prerender_document};
 

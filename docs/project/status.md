@@ -46,7 +46,16 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (browser DOM event expansion: `stdlib.html`
+_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 1: steady-state
+DOM patching now diffs the retained previous `Document` (`App::rendered`)
+against the newly rendered one as plain data, via a new pure `zutai-browser`
+`diff` module (`diff_children`, unit-tested without a wasm target), instead of
+reading child identity back off the live DOM; hydration is unchanged and still
+DOM-walks the prerendered document, since it has no in-memory old tree. This
+also incidentally gives keyed matching O(n) hashmap lookup instead of an O(n^2)
+per-child DOM scan; minimal-move ordering and unkeyed shift tolerance remain
+open in the roadmap);
+prior baseline updates: 2026-07-13 (browser DOM event expansion: `stdlib.html`
 `EventHandler` gains `#change`/`#submit`/`#blur`/`#focus`/`#keyDown`/`#keyUp`
 variants alongside the existing `#click`/`#input`, with matching
 `onChange`/`onSubmit`/`onBlur`/`onFocus`/`onKeyDown`/`onKeyUp` (and `*With`
@@ -54,8 +63,7 @@ options-taking) constructors; the browser kernel decodes the new tags,
 listens for the corresponding native DOM events (`change`/`submit`/`blur`/
 `focus`/`keydown`/`keyup`), and extracts `Text` payloads from `<select>`
 elements and `KeyboardEvent.key` for the key handlers; see
-`crates/browser/kernel/tests/events.rs`);
-prior baseline updates: 2026-07-13 (stdlib package independence: the
+`crates/browser/kernel/tests/events.rs`), 2026-07-13 (stdlib package independence: the
 filesystem stdlib tree moved out of the Rust workspace to a top-level
 `stdlib/` directory, the loader (`StdlibSources`, manifest parsing, root
 resolution) was folded into `zutai-semantic`, and the now-empty

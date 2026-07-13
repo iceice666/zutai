@@ -27,21 +27,27 @@ reading the DOM.
 
 Planned milestones, in order:
 
-1. **Retained-tree diff for steady-state children reconciliation.** Add a
-   pure `diff_children(old: &[Html], new: &[Html]) -> Vec<ChildOp>` (no
-   `web_sys` dependency, testable with plain `cargo test` using the same
-   `Html`/`Element` builders `render.rs` and `events.rs` already use) plus a
-   thin wasm-only apply step, and wire it into `dispatch`'s patch call.
-   Hydration's DOM-walking in `start`/`attach_children` is an explicit
-   carve-out and stays as-is. `data-zutai-key` keeps being written to the DOM
-   (hydration still needs it); steady-state diffing just stops reading it
-   back.
-2. **O(n) keyed matching and minimal moves.** Replace per-child linear scans
-   with a `HashMap<key, old-index>` built once per sibling list, and compute
-   a minimal move set (longest-increasing-subsequence over matched old
-   indices) so unmoved keyed children emit zero `insertBefore` calls. Extend
-   unkeyed matching to tolerate small positional shifts instead of only the
-   exact same index, so a single mid-list insert/remove doesn't cascade into
+1. **DONE. Retained-tree diff for steady-state children reconciliation.**
+   Added a pure `diff_children` (`crates/browser/kernel/src/diff.rs`, no
+   `web_sys` dependency, unit-tested with plain `cargo test`) that matches
+   `new` children against the retained `old` `Document` as data, plus
+   `diff_patch_document`/`diff_patch_children`/`diff_patch_element` in
+   `dom.rs` that apply the resulting `ChildOp`s to the live DOM. `dispatch`
+   now calls `diff_patch_document(&document, &app.rendered, &next_document)`
+   instead of reading identity back off the DOM. Hydration's DOM-walking in
+   `start`/`patch_document`/`attach_children` is untouched, by design — it
+   has no in-memory old tree. `data-zutai-key` still gets written to the DOM
+   (hydration needs it); steady-state diffing just stops reading it back.
+   As a side effect this already replaced the O(n^2) per-child DOM scan with
+   an O(n) hashmap lookup in `diff_children`, ahead of milestone 2 below.
+   Attribute application (`apply_element_attributes`) is still the
+   clear-and-reapply-everything strategy — milestone 3, not touched here.
+2. **Minimal moves and unkeyed shift tolerance.** `diff_children` already
+   gives O(n) keyed lookup (see above); still open: compute a minimal move
+   set (longest-increasing-subsequence over matched old indices) so unmoved
+   keyed children emit zero `insertBefore` calls, and extend unkeyed
+   matching to tolerate small positional shifts instead of only the exact
+   same index, so a single mid-list insert/remove doesn't cascade into
    replacing every later unkeyed sibling.
 3. **Attribute-level diffing.** Compare old vs. new `Element.attributes` and
    `Document.body_attributes` as data and emit only the add/remove/set ops

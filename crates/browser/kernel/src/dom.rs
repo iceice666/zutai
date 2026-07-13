@@ -10,6 +10,7 @@ use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
 use zutai_semantic::AnalysisOptions;
 
 use crate::css::{render_declarations, render_stylesheet};
+use crate::diff::{ChildOp, child_key, diff_children};
 use crate::render::validate_document;
 use crate::{
     Attribute, BrowserProgram, Document, Element, EventHandler, EventOptions, HeadNode, Html,
@@ -184,7 +185,7 @@ fn dispatch(generation: u64, pending: PendingHandler, event: Event) {
             .map_err(|err| EvalError::EffectfulNotExecutable(js_value_text(err)))?;
         let selection = SelectionSnapshot::capture(&document);
         detach_listeners(&mut app.listeners);
-        if let Err(err) = patch_document(&document, &next_document) {
+        if let Err(err) = diff_patch_document(&document, &app.rendered, &next_document) {
             app.listeners = attach_listeners(&document, &app.rendered, app.generation)
                 .map_err(|attach| EvalError::EffectfulNotExecutable(js_value_text(attach)))?;
             return Err(EvalError::EffectfulNotExecutable(js_value_text(err)));
@@ -473,6 +474,17 @@ fn create_node(parent: &Node, next: &Html) -> Result<Node, JsValue> {
 }
 
 fn patch_element(dom_element: &WebElement, element: &Element) -> Result<(), JsValue> {
+    apply_element_attributes(dom_element, element)?;
+    if !is_void_element(&element.tag) {
+        patch_children(&dom_element.clone().unchecked_into(), &element.children)?;
+    }
+    Ok(())
+}
+
+/// Shared by the hydration DOM-walk (`patch_element`) and the steady-state
+/// retained-tree diff (`diff_patch_element`) below. Attribute diffing itself
+/// is still clear-and-reapply here; that is a later milestone.
+fn apply_element_attributes(dom_element: &WebElement, element: &Element) -> Result<(), JsValue> {
     clear_attributes(dom_element)?;
     if let Some(key) = &element.key {
         dom_element.set_attribute("data-zutai-key", key)?;
@@ -508,8 +520,97 @@ fn patch_element(dom_element: &WebElement, element: &Element) -> Result<(), JsVa
             Attribute::BoolProperty { .. } | Attribute::Event(_) => {}
         }
     }
-    if !is_void_element(&element.tag) {
-        patch_children(&dom_element.clone().unchecked_into(), &element.children)?;
+    Ok(())
+}
+
+/// Patch the live DOM against a newly rendered `Document`, diffing against
+/// `old` (the previous `Document`, retained in `App::rendered`) as plain
+/// data instead of reading identity back off the DOM. Only used once an old
+/// tree exists in memory; hydration has none and uses `patch_document`.
+fn diff_patch_document(
+    document: &WebDocument,
+    old: &Document,
+    new: &Document,
+) -> Result<(), JsValue> {
+    let root = document
+        .document_element()
+        .ok_or_else(|| JsValue::from_str("document has no documentElement"))?;
+    root.set_attribute("lang", &new.language)?;
+    document.set_title(&new.title);
+    patch_head(document, new)?;
+
+    let body = document
+        .body()
+        .ok_or_else(|| JsValue::from_str("document has no body"))?;
+    clear_attributes(&body.clone().unchecked_into())?;
+    apply_static_attributes(&body.clone().unchecked_into(), &new.body_attributes)?;
+    diff_patch_children(&body.unchecked_into(), &old.body, &new.body)
+}
+
+fn diff_patch_children(parent: &Node, old: &[Html], new: &[Html]) -> Result<(), JsValue> {
+    let diff = diff_children(old, new);
+
+    let snapshot: Vec<Node> = (0..old.len() as u32)
+        .map(|index| parent.child_nodes().item(index))
+        .collect::<Option<_>>()
+        .ok_or_else(|| JsValue::from_str("live DOM children do not match the retained tree"))?;
+
+    for (new_index, op) in diff.ops.iter().enumerate() {
+        let cursor = parent.child_nodes().item(new_index as u32);
+        match *op {
+            ChildOp::Update { old_index } => {
+                let node = &snapshot[old_index];
+                if cursor
+                    .as_ref()
+                    .is_none_or(|current| !node.is_same_node(Some(current)))
+                {
+                    parent.insert_before(node, cursor.as_ref())?;
+                }
+                diff_patch_node(node, &old[old_index], &new[new_index])?;
+            }
+            ChildOp::Create => {
+                let created = create_node(parent, &new[new_index])?;
+                parent.insert_before(&created, cursor.as_ref())?;
+            }
+        }
+    }
+
+    for &old_index in &diff.removed_old_indices {
+        parent.remove_child(&snapshot[old_index])?;
+    }
+    Ok(())
+}
+
+fn diff_patch_node(node: &Node, old: &Html, new: &Html) -> Result<(), JsValue> {
+    match new {
+        Html::Text(text) => {
+            if !matches!(old, Html::Text(old_text) if old_text == text) {
+                node.set_node_value(Some(text));
+            }
+            Ok(())
+        }
+        Html::Element(element) => {
+            let Html::Element(old_element) = old else {
+                unreachable!("diff_children only reuses nodes of a matching kind")
+            };
+            let dom_element: WebElement = node.clone().dyn_into()?;
+            diff_patch_element(&dom_element, old_element, element)
+        }
+    }
+}
+
+fn diff_patch_element(
+    dom_element: &WebElement,
+    old: &Element,
+    new: &Element,
+) -> Result<(), JsValue> {
+    apply_element_attributes(dom_element, new)?;
+    if !is_void_element(&new.tag) {
+        diff_patch_children(
+            &dom_element.clone().unchecked_into(),
+            &old.children,
+            &new.children,
+        )?;
     }
     Ok(())
 }
@@ -562,13 +663,6 @@ fn replace_or_append(parent: &Node, existing: Option<Node>, next: Node) -> Resul
         parent.append_child(&next)?;
     }
     Ok(next)
-}
-
-fn child_key(node: &Html) -> Option<&str> {
-    match node {
-        Html::Element(element) => element.key.as_deref(),
-        Html::Text(_) => None,
-    }
 }
 
 fn node_key(node: &Node) -> Option<String> {
