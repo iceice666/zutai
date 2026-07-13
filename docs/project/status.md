@@ -35,6 +35,17 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The in-progress 2026-07-13 typed-staging slice adds compile-time-only `Code A`,
+hygienic direct/bound `quote(expr)` / `splice(expr)`, generic quoted-record
+derive recipes, and a provisional ambient `FromData`/`decode` structural
+decoder. Supported decoders accumulate path-aware record/list errors and lower
+to ordinary TLC terms; missing physical optional fields decode as absent, and
+no `Code` node or decoder runtime primitive reaches Dataflow Core. Full recipe
+evaluation, typed structural reflection descriptors, and richer expansion
+diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
+records and unions; LLVM/native execution is currently verified only for
+primitive and flat-record decoders, with nested-record parity still open.
+
 _Last updated: 2026-07-13 (cross-file `.zti` validation diagnostics);
 prior baseline updates: 2026-07-12 (filesystem-only stdlib and portable stdlib bundles),
 2026-07-12 (dedicated `zutai-web` CLI),

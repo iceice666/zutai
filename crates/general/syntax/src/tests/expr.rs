@@ -70,6 +70,14 @@ fn parse_bool_literals() {
 }
 
 #[test]
+fn parse_typed_quote_and_splice() {
+    let quoted = parse_expr_str("quote(1 + 2)");
+    assert!(matches!(quoted, Expr::Quote { .. }));
+    let spliced = parse_expr_str("splice(quote(1))");
+    assert!(matches!(spliced, Expr::Splice { .. }));
+}
+
+#[test]
 fn parse_atom_hash() {
     assert_eq!(as_atom(&parse_expr_str("#prod")), "prod");
     assert_eq!(as_atom(&parse_expr_str("#x86_64-linux")), "x86_64-linux");

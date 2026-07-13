@@ -146,6 +146,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::List(inner) => Some(format!("[{}]", key(self, inner, seen)?)),
             TypeKind::Optional(inner) => Some(format!("{}?", key(self, inner, seen)?)),
             TypeKind::Maybe(inner) => Some(format!("Maybe[{}]", key(self, inner, seen)?)),
+            TypeKind::Code(inner) => Some(format!("Code[{}]", key(self, inner, seen)?)),
             TypeKind::Patch { target, deep } => {
                 let head = if deep { "DeepPatch" } else { "Patch" };
                 Some(format!("{head}[{}]", key(self, target, seen)?))

@@ -142,6 +142,7 @@ impl Lowerer {
             "Maybe",
             "Patch",
             "DeepPatch",
+            "Code",
         ] {
             lowerer.define_current(name.to_string(), BindingKind::BuiltinType, file_span);
         }

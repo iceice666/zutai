@@ -74,6 +74,7 @@ fn host_op_emits_runtime_capability_helper_call() {
 
     let llvm = emit_llvm(&module);
     assert!(llvm.contains("declare i64 @zutai.host.fs_read(i64)"));
+    assert!(llvm.contains("declare i64 @zutai.list_append(i64, i64)"));
     assert!(llvm.contains("call i64 @zutai.host.fs_read"));
 }
 

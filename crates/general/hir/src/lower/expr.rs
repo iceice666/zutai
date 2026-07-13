@@ -313,6 +313,8 @@ impl Lowerer {
                 arms: arms.iter().map(|arm| self.lower_clause(arm)).collect(),
             },
             ast::Expr::TypeForm { ty, .. } => HirExprKind::TypeForm(self.lower_type(ty)),
+            ast::Expr::Quote { value, .. } => HirExprKind::Quote(self.lower_expr(value)),
+            ast::Expr::Splice { value, .. } => HirExprKind::Splice(self.lower_expr(value)),
             ast::Expr::WitnessReflect {
                 constraint,
                 target,

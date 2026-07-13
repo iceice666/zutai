@@ -178,6 +178,14 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             writeln!(f, "{prefix}TaggedValue(#{tag})")?;
             write_expr(f, payload, &format!("{indent}└─ "), &format!("{indent}   "))
         }
+        Expr::Quote { value, .. } => {
+            writeln!(f, "{prefix}Quote")?;
+            write_expr(f, value, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
+        Expr::Splice { value, .. } => {
+            writeln!(f, "{prefix}Splice")?;
+            write_expr(f, value, &format!("{indent}└─ "), &format!("{indent}   "))
+        }
         Expr::Ident { name, .. } => writeln!(f, "{prefix}Ident({name})"),
         Expr::Record { items, .. } => {
             writeln!(f, "{prefix}Record")?;

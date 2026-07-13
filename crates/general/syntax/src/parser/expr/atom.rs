@@ -130,6 +130,12 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             if input.starts_with("type") && peek(kw("type")).parse_next(input).is_ok() {
                 return parse_type_form(input);
             }
+            if input.starts_with("quote") && peek(kw("quote")).parse_next(input).is_ok() {
+                return parse_staged_expr(input, true, options);
+            }
+            if input.starts_with("splice") && peek(kw("splice")).parse_next(input).is_ok() {
+                return parse_staged_expr(input, false, options);
+            }
             if input.starts_with("import") && peek(kw("import")).parse_next(input).is_ok() {
                 let (source, span) = spanned(|i: &mut &str| {
                     kw("import").parse_next(i)?;
@@ -160,6 +166,28 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
             let (name, span) = spanned(parse_value_ident).parse_next(input)?;
             Ok(Expr::Ident { name, span })
         }
+    }
+}
+
+fn parse_staged_expr(input: &mut &str, quote: bool, options: ExprOptions) -> Result<Expr> {
+    let keyword = if quote { "quote" } else { "splice" };
+    let (_, start) = spanned(kw(keyword)).parse_next(input)?;
+    ws(input)?;
+    '('.parse_next(input)?;
+    let value = super::parse_expr_with_options(input, options)?;
+    ws(input)?;
+    let (_, end) = spanned(')').parse_next(input)?;
+    let span = start.merge(end);
+    if quote {
+        Ok(Expr::Quote {
+            value: Box::new(value),
+            span,
+        })
+    } else {
+        Ok(Expr::Splice {
+            value: Box::new(value),
+            span,
+        })
     }
 }
 

@@ -132,4 +132,11 @@ impl<'hir> Lowerer<'hir> {
             span,
         })
     }
+
+    pub(in crate::lower) fn code_type(&mut self, inner: TypeId, span: Span) -> TypeId {
+        self.alloc_type(Type {
+            kind: TypeKind::Code(inner),
+            span,
+        })
+    }
 }

@@ -149,6 +149,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner)
             | TypeKind::Optional(inner)
             | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner)
             | TypeKind::Patch { target: inner, .. } => self.type_universe(inner, span),
             TypeKind::Record(fields, _) => UniverseLevel::max(
                 fields

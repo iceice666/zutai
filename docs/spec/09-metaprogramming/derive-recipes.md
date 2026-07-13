@@ -32,6 +32,15 @@ A derivable constraint may attach a recipe: a compile-time function from the
 target type to the witness it should produce. The recipe replaces the built-in
 structural recipe for that constraint.
 
+A recipe may return a quoted witness record directly or through the supported
+pure `Code` reducer. Field names are taken from the expanded record rather than
+recognized by the compiler, so arbitrary constraint methods work:
+
+```zt
+Const :: <A> @A { constant :: A -> Int; }
+  derive = <T> => quote({ constant = \value. 7; })
+```
+
 ```zt
 Show :: <A> @A {
   show :: A -> Text;
@@ -143,7 +152,10 @@ staging boundary that runs a recipe during witness elaboration and reifies its
 result into a dictionary. These have **landed** ([2026 H1 history](../../history/2026-h1.md), Phase 28):
 constraint declarations carry `derive = <T> => ...` recipe bodies through
 Syntax/HIR/THIR — the recipe is type-checked before TLC consumes the marker —
-and drive specialized TLC Show/Ord dictionary synthesis for records and unions,
+and quoted witness records expand generically before TLC dictionary passing.
+The expanded record type is checked against the concrete constraint at the
+derive request. Pattern-complete evaluation and typed reflection folds are
+still open. The established Show/Ord structural builders remain compatibility fallbacks,
 including same-variant payload ordering. `witness C @T` is parsed, typed as a
 method-record dictionary, and resolved through the same concrete/conditional
 lookup as implicit dispatch (accepting conditional witnesses such as

@@ -55,6 +55,12 @@ pub(super) fn type_key_subst(
                 type_key_subst(type_arena, aliases, subst, *inner, d)
             )
         }
+        TypeKind::Code(inner) => {
+            format!(
+                "Code[{}]",
+                type_key_subst(type_arena, aliases, subst, *inner, d)
+            )
+        }
         TypeKind::Patch { target, deep } => {
             let head = if *deep { "DeepPatch" } else { "Patch" };
             format!(

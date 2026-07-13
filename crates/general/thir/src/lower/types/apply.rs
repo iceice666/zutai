@@ -48,7 +48,7 @@ impl<'hir> Lowerer<'hir> {
         // arity precisely instead of falling through to "not parametric".
         if !from_access {
             match name.as_str() {
-                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => {
+                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" | "Code" => {
                     if args.len() != 1 {
                         self.diagnostics.push(ThirDiagnostic {
                             kind: ThirDiagnosticKind::TypeConstructorArityMismatch {
@@ -69,6 +69,7 @@ impl<'hir> Lowerer<'hir> {
                         "Maybe" => self.maybe_type(args[0], span),
                         "Patch" => self.patch_type(args[0], false, span),
                         "DeepPatch" => self.patch_type(args[0], true, span),
+                        "Code" => self.code_type(args[0], span),
                         _ => unreachable!(),
                     };
                 }
@@ -177,10 +178,12 @@ impl<'hir> Lowerer<'hir> {
             BindingKind::BuiltinType => match binding_info.name.as_str() {
                 // Bare single-argument builtins (kind `Type -> Type`), used
                 // unapplied as higher-kinded witness/constraint targets.
-                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" => self.alloc_type(Type {
-                    kind: TypeKind::Con(binding),
-                    span,
-                }),
+                "List" | "Optional" | "Maybe" | "Patch" | "DeepPatch" | "Code" => {
+                    self.alloc_type(Type {
+                        kind: TypeKind::Con(binding),
+                        span,
+                    })
+                }
                 name => self
                     .builtin_type_by_name(name, span)
                     .unwrap_or_else(|| self.invalid_type("unknown built-in type", span)),

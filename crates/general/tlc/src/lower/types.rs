@@ -56,6 +56,7 @@ impl<'thir> Lowerer<'thir> {
                 let inner_tlc = self.lower_type(inner);
                 self.alloc_type(TlcType::Maybe(inner_tlc))
             }
+            TypeKind::Code(_) => self.alloc_type(TlcType::Prim(PrimTy::Nothing)),
             TypeKind::Patch { target, deep } => {
                 self.lower_patch_type_with_subst(target, deep, &FxHashMap::default())
             }
@@ -354,6 +355,94 @@ impl<'thir> Lowerer<'thir> {
         }
     }
 
+    pub(super) fn lower_expanded_type_with_subst(
+        &mut self,
+        ty: TypeId,
+        subst: &FxHashMap<BindingId, TypeId>,
+    ) -> TlcTypeId {
+        self.lower_expanded_type_with_subst_seen(ty, subst, &mut FxHashSet::default())
+    }
+
+    fn lower_expanded_type_with_subst_seen(
+        &mut self,
+        ty: TypeId,
+        subst: &FxHashMap<BindingId, TypeId>,
+        seen: &mut FxHashSet<BindingId>,
+    ) -> TlcTypeId {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Alias(binding) => {
+                if let Some((params, body)) = self.type_alias_params_body(binding)
+                    && params.is_empty()
+                    && seen.insert(binding)
+                {
+                    let result = self.lower_expanded_type_with_subst_seen(body, subst, seen);
+                    seen.remove(&binding);
+                    return result;
+                }
+                self.lower_type_with_subst(ty, subst)
+            }
+            TypeKind::AliasApply { binding, args } => {
+                if let Some((params, body)) = self.type_alias_params_body(binding)
+                    && params.len() == args.len()
+                    && seen.insert(binding)
+                {
+                    let mut next = subst.clone();
+                    for (param, arg) in params.into_iter().zip(args) {
+                        next.insert(param, arg);
+                    }
+                    let result = self.lower_expanded_type_with_subst_seen(body, &next, seen);
+                    seen.remove(&binding);
+                    return result;
+                }
+                self.lower_type_with_subst(ty, subst)
+            }
+            TypeKind::TypeVar(binding) if subst.contains_key(&binding) => {
+                self.lower_expanded_type_with_subst_seen(subst[&binding], subst, seen)
+            }
+            TypeKind::Record(fields, tail) => {
+                let fields = fields
+                    .into_iter()
+                    .map(|field| {
+                        let field_ty =
+                            self.lower_expanded_type_with_subst_seen(field.ty, subst, seen);
+                        (field.name, field_ty, field.optional)
+                    })
+                    .collect::<Vec<_>>();
+                let tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::Record(Row::from_record_fields_with_tail(
+                    fields, tail,
+                )))
+            }
+            TypeKind::Union(variants, tail) => {
+                let fields = variants
+                    .into_iter()
+                    .map(|variant| {
+                        let arm = match variant.payload {
+                            Some(payload) => {
+                                self.lower_expanded_type_with_subst_seen(payload, subst, seen)
+                            }
+                            None => self.alloc_type(TlcType::Singleton(Literal::Atom(
+                                variant.name.clone(),
+                            ))),
+                        };
+                        (variant.name, arm)
+                    })
+                    .collect::<Vec<_>>();
+                let tail = self.thir_row_tail(tail);
+                self.alloc_type(TlcType::VariantT(Row::from_fields_with_tail(fields, tail)))
+            }
+            TypeKind::List(inner) => {
+                let inner = self.lower_expanded_type_with_subst_seen(inner, subst, seen);
+                self.alloc_type(TlcType::List(inner))
+            }
+            TypeKind::Optional(inner) => {
+                let inner = self.lower_expanded_type_with_subst_seen(inner, subst, seen);
+                self.alloc_type(TlcType::Optional(inner))
+            }
+            _ => self.lower_type_with_subst(ty, subst),
+        }
+    }
+
     fn resolve_thir(&self, ty: TypeId) -> TypeId {
         ty
     }
@@ -387,6 +476,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::List(inner)
             | TypeKind::Optional(inner)
             | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner)
             | TypeKind::Patch { target: inner, .. } => {
                 self.collect_sig_row_params(inner, out);
             }
@@ -622,6 +712,7 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::List(inner)
             | TypeKind::Optional(inner)
             | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner)
             | TypeKind::Patch { target: inner, .. } => {
                 self.thir_universe_with_subst_seen(inner, subst, alias_seen)
             }

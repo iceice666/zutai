@@ -123,6 +123,18 @@ impl<'hir> Lowerer<'hir> {
         let final_expr = self.infer_expr(self.hir.final_expr);
         self.exit_effectful_result(saved_effect_ambient);
 
+        if matches!(
+            self.ty(self.resolve(self.expr(final_expr).ty)).kind,
+            TypeKind::Code(_)
+        ) {
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::InvalidTypeExpression {
+                    reason: "compile-time Code value cannot be a program result",
+                },
+                span: self.expr(final_expr).span,
+            });
+        }
+
         // Zonk: replace solved InferVar slots in the type arena with their
         // concrete types so downstream consumers see fully-resolved types.
         self.zonk_type_arena();

@@ -17,6 +17,8 @@ impl<'hir> Lowerer<'hir> {
             method_params: FxHashMap<String, Vec<BindingId>>,
             derivable: bool,
             has_recipe: bool,
+            has_code_recipe: bool,
+            code_recipe_type: Option<TypeId>,
         }
 
         let mut constraint_map: FxHashMap<BindingId, ConstraintInfo> = FxHashMap::default();
@@ -38,6 +40,13 @@ impl<'hir> Lowerer<'hir> {
                     .map(|m| (m.name.clone(), m.params.clone()))
                     .collect();
                 let name = self.hir.bindings[decl.binding.0 as usize].name.clone();
+                let code_recipe_type = recipe.as_ref().and_then(|recipe| {
+                    let recipe_ty = self.expr(recipe.body).ty;
+                    match self.ty(recipe_ty).kind {
+                        TypeKind::Code(inner) => Some(inner),
+                        _ => None,
+                    }
+                });
                 constraint_map.insert(
                     decl.binding,
                     ConstraintInfo {
@@ -47,6 +56,10 @@ impl<'hir> Lowerer<'hir> {
                         method_params: owned_method_params,
                         derivable: *derivable,
                         has_recipe: recipe.is_some(),
+                        has_code_recipe: code_recipe_type.is_some_and(|inner| {
+                            matches!(self.ty(inner).kind, TypeKind::Record(_, _))
+                        }),
+                        code_recipe_type,
                     },
                 );
             }
@@ -68,6 +81,8 @@ impl<'hir> Lowerer<'hir> {
             methods: Vec<(String, bool, bool, TypeId)>,
             derivable: bool,
             has_recipe: bool,
+            has_code_recipe: bool,
+            code_recipe_type: Option<TypeId>,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
         let mut derive_tasks: Vec<DeriveTask> = Vec::new();
@@ -127,6 +142,8 @@ impl<'hir> Lowerer<'hir> {
                         methods: cst_info.methods.clone(),
                         derivable: cst_info.derivable,
                         has_recipe: cst_info.has_recipe,
+                        has_code_recipe: cst_info.has_code_recipe,
+                        code_recipe_type: cst_info.code_recipe_type,
                     });
                     continue;
                 }
@@ -267,7 +284,24 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .any(|(name, _, _, _)| derive_method_is_eq(name));
             let mut unsupported = false;
-            if !task.has_recipe {
+            if task.constraint_name == "FromData" {
+                // `FromData` is the first typed structural-code recipe. Its
+                // target-shape validation and component expansion happen at the
+                // staging boundary, not through equality-family method names.
+                if !self.supports_from_data_target(task.target, &mut FxHashSet::default()) {
+                    let found = self.type_name(task.target);
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
+                            constraint: task.constraint_name.clone(),
+                            method: "fromData".to_string(),
+                            expected: "Bool, Int, Float, Text, atom, List, Optional, closed non-recursive record, or closed non-recursive union".to_string(),
+                            found,
+                        },
+                        span: task.span,
+                    });
+                    unsupported = true;
+                }
+            } else if !task.has_recipe {
                 for (name, optional, has_default, _) in &task.methods {
                     if *optional || *has_default {
                         continue;
@@ -286,12 +320,14 @@ impl<'hir> Lowerer<'hir> {
                         unsupported = true;
                     }
                 }
-            } else if !task.methods.iter().any(|(name, _, _, _)| {
-                matches!(
-                    derive_recipe_method_kind(name),
-                    Some(DeriveRecipeMethodKind::Show | DeriveRecipeMethodKind::Ord)
-                )
-            }) {
+            } else if !task.has_code_recipe
+                && !task.methods.iter().any(|(name, _, _, _)| {
+                    matches!(
+                        derive_recipe_method_kind(name),
+                        Some(DeriveRecipeMethodKind::Show | DeriveRecipeMethodKind::Ord)
+                    )
+                })
+            {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
                         constraint: task.constraint_name.clone(),
@@ -304,6 +340,72 @@ impl<'hir> Lowerer<'hir> {
                 unsupported = true;
             }
             if unsupported {
+                continue;
+            }
+            if let Some(recipe_ty) = task.code_recipe_type {
+                let TypeKind::Record(fields, RowTail::Closed) = self.ty(recipe_ty).kind.clone()
+                else {
+                    let found = self.type_name(recipe_ty);
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
+                            constraint: task.constraint_name.clone(),
+                            method: "<recipe>".to_string(),
+                            expected: "closed witness record".to_string(),
+                            found,
+                        },
+                        span: task.span,
+                    });
+                    continue;
+                };
+                let subst: FxHashMap<BindingId, TypeId> = constraint_map
+                    .get(&task.constraint)
+                    .and_then(|info| info.params.first().copied())
+                    .map(|param| [(param, task.target)].into_iter().collect())
+                    .unwrap_or_default();
+                for field in &fields {
+                    let Some((_, _, _, method_sig)) = task
+                        .methods
+                        .iter()
+                        .find(|(name, _, _, _)| name == &field.name)
+                    else {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::UnknownWitnessField {
+                                name: field.name.clone(),
+                            },
+                            span: task.span,
+                        });
+                        continue;
+                    };
+                    let expected = self.instantiate_type_vars(*method_sig, &subst);
+                    if !self.type_matches(expected, field.ty) {
+                        let expected_name = self.type_name(expected);
+                        let found_name = self.type_name(field.ty);
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
+                                constraint: task.constraint_name.clone(),
+                                method: field.name.clone(),
+                                expected: expected_name,
+                                found: found_name,
+                            },
+                            span: task.span,
+                        });
+                    }
+                }
+                for (method, optional, has_default, _) in &task.methods {
+                    if !optional
+                        && !has_default
+                        && !fields.iter().any(|field| &field.name == method)
+                    {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::MissingWitnessField {
+                                name: method.clone(),
+                            },
+                            span: task.span,
+                        });
+                    }
+                }
+            }
+            if task.has_code_recipe || task.constraint_name == "FromData" {
                 continue;
             }
             for component in self.derive_components(task.target) {
@@ -323,6 +425,53 @@ impl<'hir> Lowerer<'hir> {
                     });
                 }
             }
+        }
+    }
+
+    fn supports_from_data_target(&self, ty: TypeId, seen: &mut FxHashSet<BindingId>) -> bool {
+        match self.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Bool
+            | TypeKind::Int
+            | TypeKind::Float
+            | TypeKind::Text
+            | TypeKind::Atom(_) => true,
+            TypeKind::List(inner) | TypeKind::Optional(inner) => {
+                self.supports_from_data_target(inner, seen)
+            }
+            TypeKind::Record(fields, RowTail::Closed) => fields
+                .iter()
+                .all(|field| self.supports_from_data_target(field.ty, seen)),
+            TypeKind::Union(variants, RowTail::Closed) => variants.iter().all(|variant| {
+                variant
+                    .payload
+                    .is_none_or(|payload| self.supports_from_data_target(payload, seen))
+            }),
+            TypeKind::Alias(binding) => {
+                if !seen.insert(binding) {
+                    return false;
+                }
+                let result = self
+                    .aliases
+                    .get(&binding)
+                    .copied()
+                    .is_some_and(|body| self.supports_from_data_target(body, seen));
+                seen.remove(&binding);
+                result
+            }
+            TypeKind::AliasApply { binding, .. } => {
+                if !seen.insert(binding) {
+                    return false;
+                }
+                let result = self
+                    .aliases
+                    .get(&binding)
+                    .copied()
+                    .is_some_and(|body| self.supports_from_data_target(body, seen));
+                seen.remove(&binding);
+                result
+            }
+            TypeKind::TypeVar(_) => true,
+            _ => false,
         }
     }
 

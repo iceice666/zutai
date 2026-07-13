@@ -969,6 +969,7 @@ fn render_type(file: &zutai_thir::ThirFile, id: zutai_thir::TypeId) -> String {
             zutai_thir::TypeKind::List(inner) => format!("List {}", go(file, *inner, seen)),
             zutai_thir::TypeKind::Optional(inner) => format!("{}?", go(file, *inner, seen)),
             zutai_thir::TypeKind::Maybe(inner) => format!("Maybe {}", go(file, *inner, seen)),
+            zutai_thir::TypeKind::Code(inner) => format!("Code {}", go(file, *inner, seen)),
             zutai_thir::TypeKind::Patch { target, deep } => {
                 format!(
                     "{}Patch {}",

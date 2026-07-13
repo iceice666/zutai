@@ -131,6 +131,23 @@ impl<'thir> Lowerer<'thir> {
                 Some(self.alloc_expr(TlcExpr::Var(dp), dp_ty, span))
             }
             _ => {
+                if self.thir.binding_names[cst_binding.0 as usize] == "FromData"
+                    && matches!(
+                        thir_kind,
+                        TypeKind::Bool | TypeKind::Int | TypeKind::Float | TypeKind::Text
+                    )
+                {
+                    let fields = self.synthesize_derive_fields(cst_binding, inst_type_id);
+                    if !fields.is_empty() {
+                        let row = Row::from_fields(
+                            fields
+                                .iter()
+                                .map(|(name, expr)| (name.clone(), self.expr_types[expr])),
+                        );
+                        let dict_ty = self.alloc_type(TlcType::Record(row));
+                        return Some(self.alloc_expr(TlcExpr::Record(fields), dict_ty, span));
+                    }
+                }
                 if let Some(key) = self.thir_type_to_witness_key(inst_type_id)
                     && let Some(&wb) = self.witness_bindings.get(&(cst_binding.0, key))
                 {

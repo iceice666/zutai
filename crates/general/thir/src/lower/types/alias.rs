@@ -127,6 +127,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner) => format!("List {}", self.type_name(inner)),
             TypeKind::Optional(inner) => format!("{}?", self.type_name(inner)),
             TypeKind::Maybe(inner) => format!("Maybe {}", self.type_name(inner)),
+            TypeKind::Code(inner) => format!("Code {}", self.type_name(inner)),
             TypeKind::Patch { target, deep } => {
                 let head = if deep { "DeepPatch" } else { "Patch" };
                 format!("{head} {}", self.type_name(target))
@@ -256,6 +257,9 @@ impl<'hir> Lowerer<'hir> {
             }
             TypeKind::Maybe(inner) => {
                 format!("Maybe[{}]", self.witness_target_key_with(inner, norm))
+            }
+            TypeKind::Code(inner) => {
+                format!("Code[{}]", self.witness_target_key_with(inner, norm))
             }
             TypeKind::Patch { target, deep } => {
                 let head = if deep { "DeepPatch" } else { "Patch" };

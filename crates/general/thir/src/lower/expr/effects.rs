@@ -324,6 +324,7 @@ impl<'hir> Lowerer<'hir> {
                 .map(|spread| self.max_resumes(spread.value))
                 .sum(),
             HirExprKind::TaggedValue { payload, .. } => self.max_resumes(*payload),
+            HirExprKind::Quote(value) | HirExprKind::Splice(value) => self.max_resumes(*value),
             HirExprKind::Select { receiver, .. }
             | HirExprKind::Access { receiver, .. }
             | HirExprKind::OptAccess { receiver, .. } => self.max_resumes(*receiver),

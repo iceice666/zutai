@@ -111,6 +111,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::List(inner)
             | TypeKind::Optional(inner)
             | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner)
             | TypeKind::Patch { target: inner, .. } => self.occurs(var_id, inner),
             TypeKind::Union(variants, _) => variants
                 .iter()
@@ -224,6 +225,9 @@ impl<'hir> Lowerer<'hir> {
                 self.unify_inner(e1, e2, span, seen_alias_pairs)
             }
             (TypeKind::Maybe(e1), TypeKind::Maybe(e2)) => {
+                self.unify_inner(e1, e2, span, seen_alias_pairs)
+            }
+            (TypeKind::Code(e1), TypeKind::Code(e2)) => {
                 self.unify_inner(e1, e2, span, seen_alias_pairs)
             }
             (

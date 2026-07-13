@@ -279,6 +279,8 @@ pub enum ThirExprKind {
     Sequence(Vec<ThirExprId>),
     Import(HirImportSource),
     TypeValue(TypeId),
+    Quote(ThirExprId),
+    Splice(ThirExprId),
     WitnessReflect {
         constraint: Option<BindingId>,
         target: TypeId,
@@ -491,6 +493,8 @@ pub enum TypeKind {
     List(TypeId),
     Optional(TypeId),
     Maybe(TypeId),
+    /// Compile-time-only typed expression code. This must be eliminated before TLC.
+    Code(TypeId),
     Patch {
         target: TypeId,
         deep: bool,

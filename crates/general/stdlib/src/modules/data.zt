@@ -19,6 +19,13 @@ DecodeError :: type {
   #custom : { message : Text; };
 };
 Result :: <E, A> type r.Result E A;
+Validation :: <E, A> type r.Validation E A;
+DecodePath :: type {
+  #field : { name : Text; };
+  #index : { index : Int; };
+  #variant : { name : Text; };
+};
+DecodeIssue :: type { path : List DecodePath; error : DecodeError; };
 bool :: Bool -> Data
   = value => #bool { value = value; };
 int :: Int -> Data
@@ -81,4 +88,4 @@ mapListItems :: <A> (Data -> Result DecodeError A) -> List Data -> Result Decode
   = f items => match items { | {;} => #ok { value = listEmpty (); }; | {head; ...tail} => match f head { | #err { error = error; } => #err { error = error; }; | #ok { value = value; } => match mapListItems f tail { | #err { error = error; } => #err { error = error; }; | #ok { value = values; } => #ok { value = listCons value values; }; }; }; };
 mapList :: <A> (Data -> Result DecodeError A) -> Data -> Result DecodeError (List A)
   = f data => match asList data { | #err { error = error; } => #err { error = error; }; | #ok { value = items; } => mapListItems f items; };
-{ Data = Data; DataField = DataField; DecodeError = DecodeError; Result = Result; bool = bool; int = int; float = float; text = text; atom = atom; list = list; record = record; tagged = tagged; fieldOf = fieldOf; kind = kind; asBool = asBool; asInt = asInt; asFloat = asFloat; asText = asText; asAtom = asAtom; asList = asList; asRecord = asRecord; asTagged = asTagged; field = field; field? = fieldMaybe; at = at; tag = tag; payload = payload; mapList = mapList; }
+{ Data = Data; DataField = DataField; DecodeError = DecodeError; DecodePath = DecodePath; DecodeIssue = DecodeIssue; Result = Result; Validation = Validation; bool = bool; int = int; float = float; text = text; atom = atom; list = list; record = record; tagged = tagged; fieldOf = fieldOf; kind = kind; asBool = asBool; asInt = asInt; asFloat = asFloat; asText = asText; asAtom = asAtom; asList = asList; asRecord = asRecord; asTagged = asTagged; field = field; field? = fieldMaybe; at = at; tag = tag; payload = payload; mapList = mapList; }

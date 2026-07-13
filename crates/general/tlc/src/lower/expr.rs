@@ -3,7 +3,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use zutai_hir::BindingId;
 use zutai_syntax::{Span, ast::BinOp};
 use zutai_thir::{
-    ThirClause, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeKind, TypeRecordField,
+    ThirClause, ThirDeclKind, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeKind,
+    TypeRecordField,
 };
 
 use crate::ir::{
@@ -14,6 +15,26 @@ use crate::ir::{
 use super::Lowerer;
 type ForallLambdaDict = (BindingId, BindingId, TlcTypeId);
 type ForallLambdaLayer = Vec<(BindingId, Vec<ForallLambdaDict>)>;
+const CODE_EXPANSION_FUEL: u16 = 256;
+
+#[derive(Clone)]
+struct CodeExpansion {
+    value: ThirExprId,
+    frames: Vec<FxHashMap<BindingId, ThirExprId>>,
+}
+
+#[derive(Clone)]
+struct CodeClosure {
+    params: Vec<ThirPatId>,
+    body: ThirExprId,
+    frames: Vec<FxHashMap<BindingId, ThirExprId>>,
+}
+
+enum CompileTimeValue {
+    Code(CodeExpansion),
+    Closure(CodeClosure),
+    Expr(CodeExpansion),
+}
 
 #[derive(Clone, Copy)]
 enum WrapperKind {
@@ -65,7 +86,13 @@ impl<'thir> Lowerer<'thir> {
                 binding,
                 instantiation,
                 ..
-            } => self.lower_binding_ref(binding, &instantiation, tlc_ty, thir_ty, span),
+            } => {
+                if let Some(replacement) = self.code_substitution(binding) {
+                    self.lower_expr(replacement)
+                } else {
+                    self.lower_binding_ref(binding, &instantiation, tlc_ty, thir_ty, span)
+                }
+            }
             ThirExprKind::Record(fields) => {
                 let tlc_fields: Vec<(String, TlcExprId)> = fields
                     .iter()
@@ -245,6 +272,67 @@ impl<'thir> Lowerer<'thir> {
                         );
                     }
 
+                    if self.thir.binding_names[binding.0 as usize] == "decode"
+                        && let Some(&target) = instantiation.first()
+                        && let Some(&sig) = self.decl_thir_types.get(&binding)
+                        && let TypeKind::Function { from, to } =
+                            self.thir.type_arena[sig.0 as usize].kind
+                        && let Some((param, _)) = self
+                            .fn_explicit_params
+                            .get(&binding)
+                            .and_then(|params| params.first())
+                            .cloned()
+                    {
+                        let arg_tlc = self.lower_expr(arg);
+                        let subst: FxHashMap<BindingId, TypeId> =
+                            [(param, target)].into_iter().collect();
+                        let data_ty = self.lower_expanded_type_with_subst(from, &subst);
+                        let result_shape_ty = self.lower_expanded_type_with_subst(to, &subst);
+                        self.expr_types.insert(arg_tlc, data_ty);
+                        let target_ty = self.lower_type(target);
+                        if let Some(decoded) = self.derive_from_data_value(
+                            target,
+                            target_ty,
+                            arg_tlc,
+                            data_ty,
+                            result_shape_ty,
+                            span,
+                        ) {
+                            self.expr_types.insert(decoded, tlc_ty);
+                            return decoded;
+                        }
+                    }
+
+                    if let Some(info) = self
+                        .constraint_methods
+                        .get(&binding)
+                        .filter(|info| info.name == "fromData")
+                        .cloned()
+                        && let Some(&target) = instantiation.first()
+                        && let Some(sig) = self.method_sig_for(info.constraint, "fromData")
+                        && let TypeKind::Function { from, to } =
+                            self.thir.type_arena[sig.0 as usize].kind
+                    {
+                        let arg_tlc = self.lower_expr(arg);
+                        let subst: FxHashMap<BindingId, TypeId> =
+                            [(info.constraint_param, target)].into_iter().collect();
+                        let data_ty = self.lower_expanded_type_with_subst(from, &subst);
+                        let result_shape_ty = self.lower_expanded_type_with_subst(to, &subst);
+                        self.expr_types.insert(arg_tlc, data_ty);
+                        let target_ty = self.lower_type(target);
+                        if let Some(decoded) = self.derive_from_data_value(
+                            target,
+                            target_ty,
+                            arg_tlc,
+                            data_ty,
+                            result_shape_ty,
+                            span,
+                        ) {
+                            self.expr_types.insert(decoded, tlc_ty);
+                            return decoded;
+                        }
+                    }
+
                     // Constraint-method / explicit-params dispatch: build the
                     // instantiated callee (TyApps + dict Apps) then apply the arg.
                     if let Some(callee) = self.lower_instantiated_callee(
@@ -348,10 +436,193 @@ impl<'thir> Lowerer<'thir> {
                 self.expr_types.insert(dict, tlc_ty);
                 dict
             }
+            ThirExprKind::Splice(code) => match self.resolve_code_expr(code) {
+                Some(expansion) => self.lower_code_expansion(expansion),
+                None => self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span),
+            },
+            // A standalone Code value is compile-time-only. Semantic validation
+            // rejects escape; keep TLC construction total for error recovery.
+            ThirExprKind::Quote(_) => self.alloc_expr(TlcExpr::Lit(Literal::Nothing), tlc_ty, span),
             ThirExprKind::TaggedValue { tag, payload } => {
                 let payload_tlc = self.lower_expr(payload);
                 self.alloc_expr(TlcExpr::Variant(tag, payload_tlc), tlc_ty, span)
             }
+        }
+    }
+
+    fn code_substitution(&self, binding: BindingId) -> Option<ThirExprId> {
+        self.code_frames
+            .iter()
+            .rev()
+            .find_map(|frame| frame.get(&binding).copied())
+    }
+
+    fn lower_code_expansion(&mut self, expansion: CodeExpansion) -> TlcExprId {
+        let saved = std::mem::replace(&mut self.code_frames, expansion.frames);
+        let value = self.lower_expr(expansion.value);
+        self.code_frames = saved;
+        value
+    }
+
+    fn resolve_code_expr(&self, id: ThirExprId) -> Option<CodeExpansion> {
+        match self.eval_compile_time(id, self.code_frames.clone(), CODE_EXPANSION_FUEL)? {
+            CompileTimeValue::Code(code) => Some(code),
+            CompileTimeValue::Closure(_) | CompileTimeValue::Expr(_) => None,
+        }
+    }
+
+    pub(super) fn lower_quoted_recipe_record(
+        &mut self,
+        constraint: BindingId,
+    ) -> Option<Vec<(String, TlcExprId)>> {
+        let body = self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding == constraint
+                && let ThirDeclKind::Constraint {
+                    recipe: Some(recipe),
+                    ..
+                } = &decl.kind
+            {
+                Some(recipe.body)
+            } else {
+                None
+            }
+        })?;
+        let CompileTimeValue::Code(expansion) =
+            self.eval_compile_time(body, Vec::new(), CODE_EXPANSION_FUEL)?
+        else {
+            return None;
+        };
+        let ThirExprKind::Record(fields) = self.thir.expr_arena[expansion.value].kind.clone()
+        else {
+            return None;
+        };
+        let saved = std::mem::replace(&mut self.code_frames, expansion.frames);
+        let lowered = fields
+            .into_iter()
+            .map(|field| (field.name, self.lower_expr(field.value)))
+            .collect();
+        self.code_frames = saved;
+        Some(lowered)
+    }
+
+    fn eval_compile_time(
+        &self,
+        id: ThirExprId,
+        frames: Vec<FxHashMap<BindingId, ThirExprId>>,
+        fuel: u16,
+    ) -> Option<CompileTimeValue> {
+        let fuel = fuel.checked_sub(1)?;
+        match self.thir.expr_arena[id].kind.clone() {
+            ThirExprKind::Quote(value) => {
+                Some(CompileTimeValue::Code(CodeExpansion { value, frames }))
+            }
+            ThirExprKind::BindingRef { binding, .. } => {
+                if let Some(value) = frames
+                    .iter()
+                    .rev()
+                    .find_map(|frame| frame.get(&binding).copied())
+                {
+                    return self.eval_compile_time(value, frames, fuel);
+                }
+                self.thir.decls.iter().find_map(|&decl_id| {
+                    let decl = &self.thir.decl_arena[decl_id];
+                    if decl.binding != binding {
+                        return None;
+                    }
+                    match &decl.kind {
+                        ThirDeclKind::Value { value, .. } => {
+                            self.eval_compile_time(*value, frames.clone(), fuel)
+                        }
+                        ThirDeclKind::Function { clauses, .. } if clauses.len() == 1 => {
+                            let clause = &clauses[0];
+                            Some(CompileTimeValue::Closure(CodeClosure {
+                                params: clause.patterns.clone(),
+                                body: clause.body,
+                                frames: frames.clone(),
+                            }))
+                        }
+                        _ => None,
+                    }
+                })
+            }
+            ThirExprKind::Lambda { params, body } => Some(CompileTimeValue::Closure(CodeClosure {
+                params,
+                body,
+                frames,
+            })),
+            ThirExprKind::Apply { func, arg, .. } => {
+                let CompileTimeValue::Closure(mut closure) =
+                    self.eval_compile_time(func, frames, fuel)?
+                else {
+                    return None;
+                };
+                let pattern = closure.params.first().copied()?;
+                let mut frame = FxHashMap::default();
+                if !self.bind_compile_time_pattern(pattern, arg, &mut frame) {
+                    return None;
+                }
+                closure.frames.push(frame);
+                closure.params.remove(0);
+                if closure.params.is_empty() {
+                    self.eval_compile_time(closure.body, closure.frames, fuel)
+                } else {
+                    Some(CompileTimeValue::Closure(closure))
+                }
+            }
+            ThirExprKind::Block { bindings, result } => {
+                let mut frame = FxHashMap::default();
+                for binding in bindings {
+                    frame.insert(binding.binding, binding.value);
+                }
+                let mut frames = frames;
+                frames.push(frame);
+                self.eval_compile_time(result, frames, fuel)
+            }
+            ThirExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = self.eval_compile_time(cond, frames.clone(), fuel)?;
+                match self.compile_time_bool(cond) {
+                    Some(true) => self.eval_compile_time(then_branch, frames, fuel),
+                    Some(false) => self.eval_compile_time(else_branch, frames, fuel),
+                    None => None,
+                }
+            }
+            ThirExprKind::Perform { .. }
+            | ThirExprKind::Handle { .. }
+            | ThirExprKind::Resume { .. }
+            | ThirExprKind::Import(_) => None,
+            _ => Some(CompileTimeValue::Expr(CodeExpansion { value: id, frames })),
+        }
+    }
+
+    fn bind_compile_time_pattern(
+        &self,
+        pattern: ThirPatId,
+        value: ThirExprId,
+        frame: &mut FxHashMap<BindingId, ThirExprId>,
+    ) -> bool {
+        match self.thir.pat_arena[pattern].kind {
+            ThirPatKind::Bind(binding) => {
+                frame.insert(binding, value);
+                true
+            }
+            ThirPatKind::Wildcard => true,
+            _ => false,
+        }
+    }
+
+    fn compile_time_bool(&self, value: CompileTimeValue) -> Option<bool> {
+        let CompileTimeValue::Expr(value) = value else {
+            return None;
+        };
+        match self.thir.expr_arena[value.value].kind {
+            ThirExprKind::True => Some(true),
+            ThirExprKind::False => Some(false),
+            _ => None,
         }
     }
 

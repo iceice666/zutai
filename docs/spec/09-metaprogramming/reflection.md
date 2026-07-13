@@ -118,3 +118,23 @@ schema Server
 ```
 
 is serializable schema data.
+
+## Typed expression code
+
+`Code A` is a compile-time-only, typed expression value. In the current first
+slice, `quote(expr)` captures an expression after name resolution and
+`splice(code)` inserts direct, bound, or purely computed code before TLC:
+
+```zt
+answer ::= quote(40 + 2);
+splice(answer)
+```
+
+Quoted bindings retain their resolved `BindingId`s, so expansion is hygienic.
+The bounded reducer currently covers curried pure helpers, lambdas, blocks,
+conditionals, and nested splices; substitutions carry lexical bindings into the
+generated expression without re-resolving names.
+`Code` cannot be returned, serialized, reflected, or lowered to Dataflow Core.
+This surface is expression-only: it cannot emit declarations, tokens, or new
+grammar. Pattern-complete compile-time evaluation, explicit fuel diagnostics,
+and the typed structural descriptor/builder API remain roadmap work.

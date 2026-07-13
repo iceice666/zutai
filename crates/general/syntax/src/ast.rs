@@ -387,6 +387,14 @@ pub enum Expr {
         ty: Box<TypeExpr>,
         span: Span,
     },
+    Quote {
+        value: Box<Expr>,
+        span: Span,
+    },
+    Splice {
+        value: Box<Expr>,
+        span: Span,
+    },
     WitnessReflect {
         constraint: String,
         target: Box<TypeExpr>,
@@ -467,6 +475,8 @@ impl Expr {
             | Expr::If { span, .. }
             | Expr::Match { span, .. }
             | Expr::TypeForm { span, .. }
+            | Expr::Quote { span, .. }
+            | Expr::Splice { span, .. }
             | Expr::WitnessReflect { span, .. }
             | Expr::Select { span, .. }
             | Expr::Perform { span, .. }

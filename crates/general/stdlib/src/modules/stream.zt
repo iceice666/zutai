@@ -21,6 +21,28 @@ Data :: type {
   #record : { fields : List DataField; };
   #tagged : { payload : Data; tag : Text; };
 };
+Validation :: <E, A> type { #valid : { value : A; }; #invalid : { errors : List E; }; };
+DecodeError :: type {
+  #expected : { expected : Text; actual : Text; };
+  #missingField : { name : Text; };
+  #indexOutOfBounds : { index : Int; };
+  #custom : { message : Text; };
+};
+DecodePath :: type {
+  #field : { name : Text; };
+  #index : { index : Int; };
+  #variant : { name : Text; };
+};
+DecodeIssue :: type { path : List DecodePath; error : DecodeError; };
+FromData :: <A> @A { fromData :: Data -> Validation DecodeIssue A; } derive
+FromData @Bool :: derive
+FromData @Int :: derive
+FromData @Float :: derive
+FromData @Text :: derive
+FromData @(List A) :: <A: FromData> derive
+FromData @(Optional A) :: <A: FromData> derive
+decode :: <A: FromData> Data -> Validation DecodeIssue A
+  = data => fromData data;
 Stream :: <A> type Unit -> { #nil; #cons : { head : A; tail : Stream A; }; };
 -- Effectful stream (V3-G4): like `Stream A`, but forcing a cell may perform the
 -- operations in effect row `e`. The supported effectful-generator idiom — a
@@ -63,4 +85,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Data = Data; DataField = DataField; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; }
+{ Data = Data; DataField = DataField; Validation = Validation; DecodeError = DecodeError; DecodePath = DecodePath; DecodeIssue = DecodeIssue; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; decode = decode; }

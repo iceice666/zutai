@@ -1,0 +1,13 @@
+-- Reflection-derived decoding at the runtime-selected data boundary.
+-- Usage: zutai-cli run examples/from_data_runtime.zt
+
+Owner :: type { name : Text; };
+Config :: type { port : Int; owner : Owner; };
+
+FromData @Owner :: derive
+FromData @Config :: derive
+
+decodeConfig :: Data -> Validation DecodeIssue Config
+  = data => decode data;
+
+decodeConfig (loadZti "examples/from_data_runtime.zti")

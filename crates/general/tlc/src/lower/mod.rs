@@ -156,6 +156,10 @@ struct Lowerer<'thir> {
     /// binding-names array length and counts upward so it never collides with a
     /// real BindingId (`0..len`), no matter how many virtual globals are needed.
     next_virtual_binding: u32,
+    /// Lexical substitutions active while lowering a compile-time `Code`
+    /// expansion. Binding ids are globally fresh, so retaining the caller
+    /// frames while entering a quoted helper is capture-free.
+    code_frames: Vec<FxHashMap<BindingId, zutai_thir::ThirExprId>>,
 }
 
 impl<'thir> Lowerer<'thir> {
@@ -190,6 +194,7 @@ impl<'thir> Lowerer<'thir> {
             extern_conditionals: Vec::new(),
             extern_global_bindings: FxHashMap::default(),
             next_virtual_binding,
+            code_frames: Vec::new(),
         }
     }
 

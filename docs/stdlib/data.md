@@ -37,6 +37,20 @@ Decoder results use the `stdlib.result.Result DecodeError A` shape. The module
 exports `Result` as a forwarding type alias so imported decoder results can be
 pattern-matched ergonomically.
 
+Runtime-loaded `Data` can also be decoded structurally through the provisional
+ambient `FromData` constraint and `decode` helper:
+
+```zt
+Config :: type { port : Int; owner : { name : Text; }; };
+FromData @Config :: derive
+value :: Validation DecodeIssue Config = decode rawData;
+```
+
+`DecodeIssue` carries a `List DecodePath`; nested record, list, and union
+failures prepend `#field`, `#index`, and `#variant` segments. Record and list
+decoding accumulates independent failures in declaration/index order and
+ignores unknown input record fields.
+
 ## API
 
 Constructors:
@@ -52,6 +66,27 @@ kind
 asBool asInt asFloat asText asAtom asList asRecord asTagged
 field field? at tag payload mapList
 ```
+
+Shared decoder types exported by `stdlib.data`:
+
+```zt
+Validation DecodePath DecodeIssue
+```
+
+Ambient decoder names: `FromData`, `fromData`, and `decode`.
+
+Supported derived targets are `Bool`, `Int`, `Float`, `Text`, atom singleton
+types, `List`, `Optional`, closed records (including physical optional fields),
+and closed unions. A missing optional field becomes absent; a present one is
+decoded normally. Open rows, tuples, recursive targets, and fixed-width/posit
+scalars are rejected at the derive request. The constraint and helper are
+ambient in this slice; `stdlib.data` exports the shared
+`Validation`, `DecodePath`, and `DecodeIssue` types. Moving synthesis onto the
+typed reflection recipe API remains roadmap work.
+
+The reference/TLC evaluator supports the full target set above. Native output
+currently runs primitive and flat-record decoders; nested derived records remain
+an explicit backend-parity blocker rather than a claimed support level.
 
 `field name data` rejects missing fields with `#missingField`. `field? name data`
 returns `#ok #none` for a missing field and still returns `#err` when `data` is

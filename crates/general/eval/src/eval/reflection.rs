@@ -233,6 +233,9 @@ impl<'a> Evaluator<'a> {
             TypeKind::List(inner) => Ok(RuntimeTypeView::List(ty.with_ty(inner))),
             TypeKind::Optional(inner) => Ok(RuntimeTypeView::Optional(ty.with_ty(inner))),
             TypeKind::Maybe(inner) => Ok(RuntimeTypeView::Maybe(ty.with_ty(inner))),
+            TypeKind::Code(_) => Err(EvalError::ReflectionUnsupported(
+                "Code types are staging-only and cannot be reflected".to_string(),
+            )),
             TypeKind::Patch { .. } => Err(EvalError::ReflectionUnsupported(
                 "patch types cannot be reflected in this phase".to_string(),
             )),

@@ -131,6 +131,8 @@ AtomExpr
    | Handle
    | Resume
    | WitnessReflect
+   | Quote
+   | Splice
    | Generator
 
 Literal
@@ -236,6 +238,12 @@ Resume
 
 WitnessReflect
   ::= "witness" Ident "@" TypeExpr
+
+Quote
+  ::= "quote" "(" Expr ")"
+
+Splice
+  ::= "splice" "(" Expr ")"
 
 Generator
   ::= "stream" "{" GenStmt* "}"

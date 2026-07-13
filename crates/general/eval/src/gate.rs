@@ -402,6 +402,7 @@ fn has_reachable_error(file: &ThirFile) -> bool {
                 }
             }
             ThirExprKind::Sequence(items) => stack.extend(items.iter().copied()),
+            ThirExprKind::Quote(value) | ThirExprKind::Splice(value) => stack.push(*value),
             // Leaves — no sub-expressions.
             ThirExprKind::True
             | ThirExprKind::False

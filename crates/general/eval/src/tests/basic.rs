@@ -8,6 +8,259 @@ fn int_add() {
 }
 
 #[test]
+fn typed_code_direct_splice_runs() {
+    assert_eq!(run("splice(quote(1 + 2))"), Value::Int(3));
+}
+
+#[test]
+fn typed_code_bound_splice_runs() {
+    assert_eq!(run("c ::= quote(40 + 2); splice(c)"), Value::Int(42));
+}
+
+#[test]
+fn typed_code_pure_helper_expands_with_lexical_substitution() {
+    let src = r#"
+make :: Int -> Code Int = value => quote(value + 1);
+value ::= 100;
+splice(make 41)
+"#;
+    assert_eq!(run(src), Value::Int(42));
+}
+
+#[test]
+fn typed_code_nested_splice_retains_original_bindings() {
+    let src = r#"
+wrap :: Code Int -> Code Int = code => quote(splice(code) + 1);
+value ::= 40;
+splice(wrap(quote(value + 1)))
+"#;
+    assert_eq!(run(src), Value::Int(42));
+}
+
+#[test]
+fn typed_code_compile_time_conditional_is_reduced() {
+    let src = r#"
+choose :: Bool -> Code Int = yes => if yes then quote(42) else quote(0);
+splice(choose true)
+"#;
+    assert_eq!(run(src), Value::Int(42));
+}
+
+#[test]
+fn typed_code_result_is_rejected() {
+    let err = run_err("quote(1)");
+    let EvalError::TypeCheckFailed(messages) = err else {
+        panic!("expected TypeCheckFailed, got {err:?}");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("Code value"))
+    );
+}
+
+#[test]
+fn quoted_generic_recipe_supports_arbitrary_method_names() {
+    let src = r#"
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => quote({ constant = \value. 7; })
+Const @Text :: derive
+constant "ignored"
+"#;
+    assert_eq!(run(src), Value::Int(7));
+}
+
+#[test]
+fn quoted_generic_recipe_executes_pure_code_helper() {
+    let src = r#"
+makeConst :: Unit -> Code { constant : Text -> Int; }
+  = _ => quote({ constant = \value. 9; });
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => makeConst ()
+Const @Text :: derive
+constant "ignored"
+"#;
+    assert_eq!(run(src), Value::Int(9));
+}
+
+#[test]
+fn quoted_generic_recipe_result_is_checked_at_derive_request() {
+    let src = r#"
+makeConst :: Unit -> Code { constant : Text -> Int; }
+  = _ => quote({ constant = \value. 9; });
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => makeConst ()
+Const @Int :: derive
+constant 1
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(src) else {
+        panic!("expected type-check failure");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| { message.contains("derive recipe") && message.contains("constant") })
+    );
+}
+
+#[test]
+fn derived_from_data_decodes_primitive() {
+    let src = r#"
+result :: Validation DecodeIssue Int = decode (#int { value = 42; });
+result
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    assert_eq!(payload[0].1.peek(), Some(Value::Int(42)));
+}
+
+#[test]
+fn derived_from_data_decodes_record_and_accumulates_errors() {
+    let src = r#"
+Point :: type { x : Int; label : Text; };
+FromData @Point :: derive
+good :: Validation DecodeIssue Point = fromData (#record { fields = {
+  { name = "x"; value = #int { value = 3; }; };
+  { name = "label"; value = #text { value = "ok"; }; };
+}; });
+good
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    let Some(Value::Record(fields)) = payload[0].1.peek() else {
+        panic!("expected decoded record");
+    };
+    assert_eq!(fields[0].1.peek(), Some(Value::Int(3)));
+
+    let bad = r#"
+Point :: type { x : Int; label : Text; };
+FromData @Point :: derive
+bad :: Validation DecodeIssue Point = fromData (#record { fields = {
+  { name = "x"; value = #text { value = "wrong"; }; };
+  { name = "extra"; value = #int { value = 9; }; };
+}; });
+bad
+"#;
+    let Value::TaggedValue { tag, payload } = run(bad) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "invalid");
+    let Some(Value::List(errors)) = payload[0].1.peek() else {
+        panic!("expected accumulated errors");
+    };
+    assert_eq!(errors.len(), 2);
+    let Some(Value::Record(issue)) = errors[0].peek() else {
+        panic!()
+    };
+    let Some(Value::List(path)) = issue[0].1.peek() else {
+        panic!()
+    };
+    assert!(
+        matches!(path[0].peek(), Some(Value::TaggedValue { tag, .. }) if tag.as_ref() == "field")
+    );
+}
+
+#[test]
+fn derived_from_data_treats_missing_optional_record_field_as_absent() {
+    let src = r#"
+Config :: type { name : Text; note? : Text; };
+FromData @Config :: derive
+result :: Validation DecodeIssue Config = decode (#record { fields = {
+  { name = "name"; value = #text { value = "zutai"; }; };
+}; });
+result
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    let value = payload
+        .iter()
+        .find(|(name, _)| name.as_ref() == "value")
+        .and_then(|(_, value)| value.peek())
+        .expect("valid payload value");
+    let Value::Record(fields) = value else {
+        panic!("expected decoded record");
+    };
+    assert!(fields.iter().any(|(name, _)| name.as_ref() == "name"));
+    assert!(!fields.iter().any(|(name, _)| name.as_ref() == "note"));
+}
+
+#[test]
+fn derived_from_data_decodes_present_optional_record_field() {
+    let src = r#"
+Config :: type { name : Text; note? : Text; };
+FromData @Config :: derive
+result :: Validation DecodeIssue Config = decode (#record { fields = {
+  { name = "name"; value = #text { value = "zutai"; }; };
+  { name = "note"; value = #text { value = "typed"; }; };
+}; });
+result
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    let value = payload
+        .iter()
+        .find(|(name, _)| name.as_ref() == "value")
+        .and_then(|(_, value)| value.peek())
+        .expect("valid payload value");
+    assert_eq!(
+        record_field_value(&value, "note"),
+        Value::Text("typed".into())
+    );
+}
+
+#[test]
+fn derived_from_data_decodes_lists_optionals_and_unions() {
+    let list_src = r#"
+value :: Validation DecodeIssue (List Int) = fromData (#list { items = {
+  #int { value = 1; };
+  #int { value = 2; };
+}; });
+value
+"#;
+    let Value::TaggedValue { tag, payload } = run(list_src) else {
+        panic!()
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    assert!(matches!(payload[0].1.peek(), Some(Value::List(items)) if items.len() == 2));
+
+    let optional_src = r#"
+value :: Validation DecodeIssue (Int?) = fromData (#tagged {
+  tag = "some";
+  payload = #int { value = 7; };
+});
+value
+"#;
+    let Value::TaggedValue { tag, .. } = run(optional_src) else {
+        panic!()
+    };
+    assert_eq!(tag.as_ref(), "valid");
+
+    let union_src = r#"
+Choice :: type { #off; #count : { value : Int; }; };
+FromData @Choice :: derive
+value :: Validation DecodeIssue Choice = fromData (#tagged {
+  tag = "count";
+  payload = #record { fields = {
+    { name = "value"; value = #int { value = 9; }; };
+  }; };
+});
+value
+"#;
+    let Value::TaggedValue { tag, payload } = run(union_src) else {
+        panic!()
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    assert!(
+        matches!(payload[0].1.peek(), Some(Value::TaggedValue { tag, .. }) if tag.as_ref() == "count")
+    );
+}
+
+#[test]
 fn fixed_width_int_literal_evaluates_as_int_value() {
     let value = run("255u8");
     assert_eq!(value, Value::Int(255));

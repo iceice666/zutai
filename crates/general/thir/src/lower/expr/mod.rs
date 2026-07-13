@@ -95,6 +95,25 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
             HirExprKind::Sequence(items) => self.lower_sequence_expr(id, items, Some(expected)),
+            HirExprKind::Quote(value) => {
+                let resolved = self.resolve_alias(expected, &mut FxHashSet::default(), expr.span);
+                if let TypeKind::Code(inner) = self.ty(resolved).kind {
+                    let value = self.check_expr(*value, inner);
+                    self.alloc_expr(ThirExpr {
+                        source: id,
+                        ty: expected,
+                        kind: ThirExprKind::Quote(value),
+                        span: expr.span,
+                    })
+                } else {
+                    let lowered = self.infer_expr(id);
+                    let found = self.expr(lowered).ty;
+                    if !self.type_matches(expected, found) {
+                        self.type_mismatch(expected, found, expr.span);
+                    }
+                    lowered
+                }
+            }
             HirExprKind::BindingRef(binding) => {
                 // A polymorphic value reference instantiates its `<A>` per use —
                 // *unless* checked against a higher-rank (`ForAll`) parameter, where
@@ -227,6 +246,39 @@ impl<'hir> Lowerer<'hir> {
             }
             HirExprKind::WitnessReflect { constraint, target } => {
                 self.infer_witness_reflect_expr(id, *constraint, *target, expr.span)
+            }
+            HirExprKind::Quote(value) => {
+                let value = self.infer_expr(*value);
+                let ty = self.code_type(self.expr(value).ty, expr.span);
+                self.alloc_expr(ThirExpr {
+                    source: id,
+                    ty,
+                    kind: ThirExprKind::Quote(value),
+                    span: expr.span,
+                })
+            }
+            HirExprKind::Splice(value) => {
+                let value = self.infer_expr(*value);
+                let value_ty =
+                    self.resolve_alias(self.expr(value).ty, &mut FxHashSet::default(), expr.span);
+                let ty = match self.ty(value_ty).kind {
+                    TypeKind::Code(inner) => inner,
+                    _ => {
+                        self.diagnostics.push(ThirDiagnostic {
+                            kind: ThirDiagnosticKind::InvalidTypeExpression {
+                                reason: "splice expects Code A",
+                            },
+                            span: expr.span,
+                        });
+                        self.error_type
+                    }
+                };
+                self.alloc_expr(ThirExpr {
+                    source: id,
+                    ty,
+                    kind: ThirExprKind::Splice(value),
+                    span: expr.span,
+                })
             }
             HirExprKind::Access { receiver, field } => {
                 self.lower_access_expr(id, *receiver, field, expr.span)

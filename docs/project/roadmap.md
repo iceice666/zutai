@@ -5,10 +5,27 @@ is one stable surface specified under the [language specification](../spec/00-in
 Implementation history lives under [`docs/history/`](../history/README.md); this file contains
 only concrete open work.
 
-## Status (2026-07-12)
+## Status (2026-07-13)
 
-_No active core-language, syntax, native/interpreter parity, standard-library,
-or tooling milestone is scoped._
+### Finish the typed macro kernel
+
+The first staging/decoder slice has landed locally: `Code A`, hygienic
+`quote`/`splice`, a bounded reducer for pure helpers and nested splices, generic
+type-checked witness records, and structural `FromData` synthesis. Before
+recording the milestone as complete:
+
+- complete pattern-driven pure recipe evaluation and surface fuel exhaustion
+  as a source diagnostic;
+- add typed rank-2 field/variant descriptors and the compile-time record
+  builder to `stdlib.reflect`;
+- route `FromData` through that generic recipe API instead of the provisional
+  TLC structural synthesizer;
+- fix LLVM/native execution of nested derived-record decoders; primitive and
+  flat-record binaries run, while nested record decoding still crashes in the
+  generated program;
+- add expansion definition/request locations to macro diagnostics;
+- finish malformed-staging, effect, fuel, recursion, open-row, and residual
+  metadata coverage.
 
 The syntax-stabilization pass consolidated the former numbered specifications
 by language area and promoted every parser-accepted surface form into the stable

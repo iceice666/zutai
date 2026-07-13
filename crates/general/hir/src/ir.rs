@@ -239,6 +239,8 @@ pub enum HirExprKind {
     },
     Import(HirImportSource),
     TypeForm(HirTypeId),
+    Quote(HirExprId),
+    Splice(HirExprId),
     WitnessReflect {
         constraint: Option<BindingId>,
         target: HirTypeId,

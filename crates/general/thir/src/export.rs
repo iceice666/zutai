@@ -233,6 +233,9 @@ fn export_typecon_body(
         TypeKind::Maybe(inner) => Ok(ImportedType::Maybe(Box::new(export_typecon_body(
             file, aliases, inner, seen, subst,
         )?))),
+        TypeKind::Code(_) => Err(ExportUnsupported {
+            reason: "compile-time Code values cannot cross a module boundary",
+        }),
         TypeKind::Record(fields, tail) => {
             if tail != RowTail::Closed {
                 return Err(ExportUnsupported {
@@ -555,6 +558,9 @@ fn export(
         TypeKind::Maybe(inner) => Ok(ImportedType::Maybe(Box::new(export(
             file, aliases, inner, seen,
         )?))),
+        TypeKind::Code(_) => Err(ExportUnsupported {
+            reason: "compile-time Code values cannot cross a module boundary",
+        }),
         TypeKind::Record(fields, tail) => {
             if tail != RowTail::Closed {
                 return Err(ExportUnsupported {

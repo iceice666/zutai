@@ -109,6 +109,15 @@ impl<'a> Evaluator<'a> {
                     method: "witness".to_string(),
                 })
             }
+            ThirExprKind::Splice(code) => match self.expr(*code).kind {
+                ThirExprKind::Quote(value) => self.eval(value, env),
+                _ => Err(EvalError::ReflectionUnsupported(
+                    "splice argument did not reduce to a Code value".to_string(),
+                )),
+            },
+            ThirExprKind::Quote(_) => Err(EvalError::ReflectionUnsupported(
+                "Code values are compile-time-only and cannot escape".to_string(),
+            )),
             ThirExprKind::TaggedValue { tag, payload } => {
                 let payload_val = self.eval(*payload, env)?;
                 let fields = match payload_val {
