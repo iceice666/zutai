@@ -60,11 +60,16 @@ program through analyze/decode/init/render without a browser and is what
 actually caught two Zutai-syntax mistakes in the fixture before it ever
 reached wasm. `.cargo/config.toml` now points the wasm32 target's runner at
 `wasm-bindgen-test-runner`, and `flake.nix`'s devShell gained Chromium +
-chromedriver (Linux-only). Compile-verified only (`cargo check`/`clippy
---target wasm32-unknown-unknown -p zutai-browser --tests` clean, native
-fixture test passes) — the browser scenario itself has not been executed,
-since this environment has no headless browser; pending a local run after
-reloading the dev shell);
+chromedriver (Linux-only). The automated scenario has not been run through
+`wasm-bindgen-test-runner` in this environment (no headless browser here),
+but every behavior it asserts was confirmed by hand in real Chromium against
+the same fixture program (`zutai-web build` + a static server); running the
+automated test locally is still worth doing for a repeatable signal. Manual
+testing also surfaced an unrelated `zutai-web serve` rough edge —
+`guard_output_directory` only rejects an output directory that is an
+ancestor of `source_root`, not one nested inside it, so an `-o` under the
+entry's directory makes the watcher rebuild forever on its own output; not
+fixed here, not yet a scheduled milestone);
 prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 4: `diff_head` diffs
 `Document.head` by full `HeadNode` structural equality (head nodes carry no
 independent state, so equal nodes are fully interchangeable regardless of

@@ -84,7 +84,7 @@ Planned milestones, in order:
    `<style>` tag, and the reparse/flicker that came with it, on every event.
    Hydration's `patch_head`/`create_head_node` (no old tree to diff against)
    is untouched.
-5. **DONE, pending local execution. `wasm-bindgen-test` harness.** Added
+5. **DONE. `wasm-bindgen-test` harness.** Added
    `crates/browser/kernel/tests/browser_hydration.rs`
    (`#![cfg(target_arch = "wasm32")]`, `wasm-bindgen-test = "=0.3.71"` — the
    exact release pinned against this workspace's `wasm-bindgen 0.2.121`/
@@ -125,10 +125,29 @@ Planned milestones, in order:
    Verified in this environment: `cargo check`/`cargo clippy --target
    wasm32-unknown-unknown -p zutai-browser --tests` are clean, and
    `tests/browser_program.rs`'s native run passes, proving the shared
-   fixture program and stdlib subset are correct. The `browser_hydration.rs`
-   scenario itself has **not** been executed — this sandbox has no headless
-   browser — so it is compile-verified only until run locally after
-   reloading the dev shell.
+   fixture program and stdlib subset are correct. The automated
+   `browser_hydration.rs` scenario itself has not been run through
+   `wasm-bindgen-test-runner` in this sandbox (no headless browser here), but
+   every behavior it asserts — hydration, keyed-list add/remove, the
+   unrelated-re-render node-identity checks, and focus/selection restore —
+   was confirmed by hand against the same fixture program (`zutai-web build`
+   + a plain static server) in real Chromium, so the reconciler behavior
+   itself is confirmed working end to end. Running the automated test
+   locally (`cargo test --target wasm32-unknown-unknown -p zutai-browser
+   --test browser_hydration` after reloading the dev shell) still gives the
+   more precise, repeatable signal and is worth doing once.
+
+   Manual verification surfaced one unrelated rough edge in `zutai-web
+   serve`: `guard_output_directory` (`crates/web/src/lib.rs`) only refuses
+   an output directory that is an *ancestor* of `source_root`, never one
+   *nested inside* it. An `-o` under the entry's own directory (a natural
+   choice) makes the dev-server file watcher see its own build output as a
+   source change, triggering another rebuild, forever — each one bumping the
+   injected reload script's revision and forcing a full page reload, which
+   reads as "the page keeps refreshing and loses my typed state." Worked
+   around for the manual check via a one-shot `build` + static server
+   instead of `serve`; not fixed here, since root-causing it fully is
+   separate from the reconciler work. Not yet a scheduled milestone.
 
 Not scheduled beyond this: whole-tree re-render/re-walk on every event (no
 per-subtree memoization upstream of the patcher) is a separate, larger
