@@ -1,7 +1,8 @@
 -- Entry point for the Zutai official site — a Zutai browser application.
--- The Elm-style loop is deliberately small: the only state is which language
--- mode the reader is viewing. `sections.zt` renders the page from typed data in
--- `content.zti`, and `styles.zt` produces the typed stylesheet.
+-- The Elm-style loop stays small: the reader picks a language mode and drives a
+-- live service roster that evaluates the hero's own `healthy`/`ready` code.
+-- `sections.zt` renders the page from typed data in `content.zti`, and
+-- `styles.zt` produces the typed stylesheet.
 browser ::= import stdlib.browser;
 html ::= import stdlib.html;
 
@@ -16,25 +17,86 @@ Mode :: type {
 
 Model :: type {
   mode : Mode;
+  services : List sections.Service;
+  draft : Text;
 };
 
 Msg :: type {
   #selectImmediate;
   #selectGeneral;
+  #addService;
+  #setDraft : { value : Text; };
+  #removeService : { key : Text; };
+  #toggleService : { key : Text; };
+  #logError : { key : Text; };
+  #clearErrors : { key : Text; };
 };
 
 selectImmediateMessage :: Msg = #selectImmediate;
 selectGeneralMessage :: Msg = #selectGeneral;
+addServiceMessage :: Msg = #addService;
+setDraftMessage :: Text -> Msg = value => #setDraft { value = value; };
+removeServiceMessage :: Text -> Msg = key => #removeService { key = key; };
+toggleServiceMessage :: Text -> Msg = key => #toggleService { key = key; };
+logErrorMessage :: Text -> Msg = key => #logError { key = key; };
+clearErrorsMessage :: Text -> Msg = key => #clearErrors { key = key; };
+
+demoHandlers ::= {
+  add = addServiceMessage;
+  setDraft = setDraftMessage;
+  remove = removeServiceMessage;
+  toggle = toggleServiceMessage;
+  logError = logErrorMessage;
+  clearErrors = clearErrorsMessage;
+};
+
+setError :: Text -> Int -> sections.Service -> sections.Service
+  = key errors service =>
+    if service.name == key then service with { errors = errors; } else service;
+
+newService :: Text -> sections.Service
+  = name => { name = name; errors = 0; enabled = true; };
+
+keepService :: Text -> sections.Service -> Bool
+  = key service => not (service.name == key);
+
+toggleService :: Text -> sections.Service -> sections.Service
+  = key service =>
+    if service.name == key then service with { enabled = not service.enabled; } else service;
+
+bumpError :: Text -> sections.Service -> sections.Service
+  = key service =>
+    if service.name == key then service with { errors = service.errors + 1; } else service;
 
 init :: Unit -> browser.Browser Model
   = _ => {
     mode = #general;
+    services = copy.demo.seeds;
+    draft = "";
   };
 
 update :: Msg -> Model -> browser.Browser Model
   = message model => match message {
     | #selectImmediate => model with { mode = #immediate; };
     | #selectGeneral => model with { mode = #general; };
+    | #setDraft { value = v; } => model with { draft = v; };
+    | #addService => [
+        next := if model.draft == "" then model
+          else model with {
+            services = append model.services { newService model.draft; };
+            draft = "";
+          };
+        browser.focus "demo-draft";
+        next
+      ];
+    | #removeService { key = k; } =>
+        model with { services = filter (keepService k) model.services; };
+    | #toggleService { key = k; } =>
+        model with { services = map (toggleService k) model.services; };
+    | #logError { key = k; } =>
+        model with { services = map (bumpError k) model.services; };
+    | #clearErrors { key = k; } =>
+        model with { services = map (setError k 0) model.services; };
   };
 
 view :: Model -> html.Document Msg
@@ -61,6 +123,7 @@ view :: Model -> html.Document Msg
             (model.mode == #immediate)
             selectImmediateMessage
             selectGeneralMessage;
+          sections.demo model.services model.draft demoHandlers;
           sections.why ();
           sections.pipeline ();
           sections.start ();

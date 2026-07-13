@@ -3,6 +3,9 @@
 -- that inert data into the document tree. The syntax highlighter below is the
 -- clearest bit of dogfooding: Zutai colors Zutai using its own union types.
 html ::= import stdlib.html;
+text ::= import stdlib.text;
+cmp ::= import stdlib.cmp;
+list ::= import stdlib.list;
 copy ::= import "content.zti";
 
 -- ── Shared shapes ────────────────────────────────────────────────────────────
@@ -13,6 +16,7 @@ Stage :: type { name : Text; note : Text; };
 Step :: type { command : Text; note : Text; };
 FooterGroup :: type { head : Text; links : List Resource; };
 ModeCopy :: type { tab : Text; label : Text; title : Text; body : Text; code : List (List Token); };
+Service :: type { name : Text; errors : Int; enabled : Bool; };
 
 TokenKind :: type { #kw; #ty; #fn; #pn; #op; #st; #cm; #at; #nm; #pl; };
 Token :: type { k : TokenKind; t : Text; };
@@ -168,6 +172,189 @@ modes :: <M> Bool -> M -> M -> html.Html M
       };
     };
 
+-- ── Live demo ────────────────────────────────────────────────────────────────
+-- The reader-facing dogfood: this roster evaluates the same `healthy`/`ready`
+-- logic the hero shows, so adding, pausing, or erroring a service recomputes
+-- the readiness rollup live. Every render feeds the browser kernel's retained-
+-- tree reconciler — keyed rows move by health, status pills diff in place.
+DemoStatus :: type { #ready; #paused; #erroring; };
+DemoHandlers :: <M> type {
+  add : M;
+  setDraft : Text -> M;
+  remove : Text -> M;
+  toggle : Text -> M;
+  logError : Text -> M;
+  clearErrors : Text -> M;
+};
+
+healthy :: Service -> Bool
+  = svc => svc.enabled && svc.errors == 0;
+
+ready :: List Service -> Int
+  = services => length (filter healthy services);
+
+serviceStatus :: Service -> DemoStatus
+  = svc =>
+    if not svc.enabled then #paused
+    else if svc.errors > 0 then #erroring
+    else #ready;
+
+statusRank :: Service -> Int
+  = svc =>
+    if not svc.enabled then 2
+    else if svc.errors > 0 then 1
+    else 0;
+
+compareService :: Service -> Service -> cmp.Ordering
+  = left right => [
+    rankOrder := cmp.compareInt (statusRank left) (statusRank right);
+    if cmp.isEq rankOrder then cmp.compareText left.name right.name else rankOrder
+  ];
+
+sortServices :: List Service -> List Service
+  = svcs => list.sortBy compareService svcs;
+
+digitText :: Int -> Text
+  = digit =>
+    if digit == 0 then "0"
+    else if digit == 1 then "1"
+    else if digit == 2 then "2"
+    else if digit == 3 then "3"
+    else if digit == 4 then "4"
+    else if digit == 5 then "5"
+    else if digit == 6 then "6"
+    else if digit == 7 then "7"
+    else if digit == 8 then "8"
+    else "9";
+
+naturalText :: Int -> Text
+  = value =>
+    if value < 10 then digitText value
+    else text.join "" { naturalText (value / 10); digitText (value % 10); };
+
+intText :: Int -> Text
+  = value =>
+    if value < 0 then text.join "" { "-"; naturalText (0 - value); }
+    else naturalText value;
+
+statusClass :: DemoStatus -> Text
+  = status => match status {
+    | #ready => "is-ready";
+    | #paused => "is-paused";
+    | #erroring => "is-erroring";
+  };
+
+statusLabel :: DemoStatus -> Text
+  = status => match status {
+    | #ready => copy.demo.statusReady;
+    | #paused => copy.demo.statusPaused;
+    | #erroring => copy.demo.statusErroring;
+  };
+
+rowClass :: Service -> Text
+  = svc => text.join " " { "roster-row"; statusClass (serviceStatus svc); };
+
+controlId :: Text -> Text -> Text
+  = prefix name => text.join "" { prefix; name; };
+
+errorButton :: <M> DemoHandlers M -> Service -> html.Html M
+  = handlers svc =>
+    if svc.errors > 0 then
+      html.button {
+        html.idAttr (controlId "clear-" svc.name);
+        html.classAttr "roster-btn";
+        html.onClick (handlers.clearErrors svc.name);
+      } {
+        html.text copy.demo.clearLabel;
+      }
+    else
+      html.button {
+        html.idAttr (controlId "error-" svc.name);
+        html.classAttr "roster-btn";
+        html.onClick (handlers.logError svc.name);
+      } {
+        html.text copy.demo.errorLabel;
+      };
+
+serviceRow :: <M> DemoHandlers M -> Service -> html.Html M
+  = handlers svc =>
+    html.li { html.classAttr (rowClass svc); html.key svc.name; } {
+      html.div { html.classAttr "roster-info"; } {
+        html.span { html.classAttr "roster-dot"; html.aria "hidden" "true"; } {;};
+        html.div { html.classAttr "roster-text"; } {
+          html.span { html.classAttr "roster-name"; } { html.text svc.name; };
+          html.span { html.classAttr "roster-status"; } {
+            html.text (statusLabel (serviceStatus svc));
+            html.text " · ";
+            html.text (intText svc.errors);
+            html.text " ";
+            html.text copy.demo.errorsWord;
+          };
+        };
+      };
+      html.div { html.classAttr "roster-actions"; } {
+        html.button {
+          html.idAttr (controlId "toggle-" svc.name);
+          html.classAttr "roster-btn";
+          html.onClick (handlers.toggle svc.name);
+        } {
+          html.text (if svc.enabled then copy.demo.pauseLabel else copy.demo.resumeLabel);
+        };
+        errorButton handlers svc;
+        html.button {
+          html.idAttr (controlId "remove-" svc.name);
+          html.classAttr "roster-btn roster-btn-remove";
+          html.onClick (handlers.remove svc.name);
+        } {
+          html.text copy.demo.removeLabel;
+        };
+      };
+    };
+
+rosterView :: <M> DemoHandlers M -> List Service -> html.Html M
+  = handlers services => match services {
+    | {;} => html.p { html.classAttr "demo-empty"; } { html.text copy.demo.emptyState; };
+    | _ => html.ul { html.idAttr "demo-roster"; html.classAttr "demo-roster"; } (map (serviceRow handlers) (sortServices services));
+  };
+
+demo :: <M> List Service -> Text -> DemoHandlers M -> html.Html M
+  = services draft handlers =>
+    html.section { html.idAttr "demo"; html.classAttr "section section-alt"; } {
+      html.div { html.classAttr "container"; } {
+        sectionHead copy.demo.eyebrow copy.demo.title copy.demo.lead;
+        html.div { html.classAttr "demo-inner"; } {
+          codeWindow copy.demo.codeCaption copy.demo.code;
+          html.div { html.classAttr "demo-panel"; } {
+            html.div {
+              html.classAttr "demo-readout";
+              html.role "status";
+              html.aria "live" "polite";
+            } {
+              html.span { html.idAttr "demo-ready-count"; html.classAttr "demo-count"; } { html.text (intText (ready services)); };
+              html.span { html.classAttr "demo-of"; } { html.text copy.demo.ofWord; };
+              html.span { html.idAttr "demo-total-count"; html.classAttr "demo-count"; } { html.text (intText (length services)); };
+              html.span { html.classAttr "demo-ready"; } { html.text copy.demo.readyWord; };
+            };
+            html.div { html.classAttr "demo-form"; } {
+              html.input {
+                html.idAttr "demo-draft";
+                html.inputType "text";
+                html.classAttr "demo-input";
+                html.aria "label" copy.demo.draftLabel;
+                html.placeholder copy.demo.draftPlaceholder;
+                html.value draft;
+                html.onInput handlers.setDraft;
+              };
+              html.button { html.idAttr "demo-add"; html.classAttr "demo-add"; html.onClick handlers.add; } {
+                html.text copy.demo.addLabel;
+              };
+            };
+            rosterView handlers services;
+          };
+        };
+      };
+    };
+
 -- ── Why Zutai ────────────────────────────────────────────────────────────────
 whyCard :: <M> Feature -> html.Html M
   = feature =>
@@ -286,6 +473,9 @@ siteFooter :: <M> Unit -> html.Html M
   siteHeader = siteHeader;
   hero = hero;
   modes = modes;
+  demo = demo;
+  Service = Service;
+  DemoHandlers = DemoHandlers;
   why = why;
   pipeline = pipeline;
   start = start;

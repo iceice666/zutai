@@ -392,6 +392,209 @@ siteStyles :: css.Stylesheet = css.stylesheet {
     css.fontSize (css.rem 1.05);
   };
 
+  -- ── Live demo ──────────────────────────────────────────────────────────────
+  css.rule { css.class "demo-inner"; } {
+    css.display (css.keyword "grid");
+    css.gridTemplateColumns (css.keyword "minmax(0, 1fr) minmax(0, 1fr)");
+    css.gap (css.keyword "clamp(1.5rem, 4vw, 3rem)");
+    css.alignItems (css.keyword "start");
+  };
+
+  css.rule { css.class "demo-panel"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 1.1);
+  };
+
+  css.rule { css.class "demo-readout"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "baseline");
+    css.gap (css.rem 0.5);
+    css.padding (css.keyword "1.1rem 1.35rem");
+    css.borderRadius (css.rem 0.85);
+    css.background surface;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+  };
+
+  css.rule { css.class "demo-count"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 2.1);
+    css.fontWeight (fw "800");
+    css.color ink;
+    css.letterSpacing (css.rem -0.02);
+  };
+
+  css.rule { css.class "demo-of"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 1.0);
+    css.color faint;
+  };
+
+  css.rule { css.class "demo-ready"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.8);
+    css.fontWeight (fw "600");
+    css.letterSpacing (css.rem 0.05);
+    css.textTransform (css.keyword "uppercase");
+    css.color accent;
+    css.customProperty "margin-left" (css.rem 0.15);
+  };
+
+  css.rule { css.class "demo-form"; } {
+    css.display (css.keyword "flex");
+    css.gap (css.rem 0.6);
+  };
+
+  css.rule { css.class "demo-input"; } {
+    css.customProperty "flex" (css.keyword "1");
+    css.padding (css.keyword "0.7rem 0.9rem");
+    css.borderRadius (css.rem 0.55);
+    css.background surface;
+    css.color ink;
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.95);
+    css.border (css.space { css.px 1.0; css.keyword "solid"; borderStrong; });
+    css.customProperty "min-width" (css.px 0.0);
+    css.transition (css.keyword "border-color 140ms ease");
+  };
+
+  css.rule { css.focus (css.class "demo-input"); } {
+    css.customProperty "border-color" accent;
+    css.outline (css.keyword "none");
+  };
+
+  css.rule { css.class "demo-add"; } {
+    css.cursor (css.keyword "pointer");
+    css.padding (css.keyword "0.7rem 1.3rem");
+    css.borderRadius (css.rem 0.55);
+    css.background ink;
+    css.color paper;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; ink; });
+    css.fontFamily sans;
+    css.fontSize (css.rem 0.95);
+    css.fontWeight (fw "600");
+    css.transition (css.keyword "background 140ms ease, transform 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "demo-add"); } {
+    css.background (css.hex "#000000");
+    css.transform (css.keyword "translateY(-1px)");
+  };
+
+  css.rule { css.class "demo-empty"; } {
+    css.padding (css.keyword "1.5rem");
+    css.borderRadius (css.rem 0.75);
+    css.background subtle;
+    css.border (css.space { css.px 1.0; css.keyword "dashed"; borderStrong; });
+    css.color muted;
+    css.textAlign (css.keyword "center");
+    css.fontSize (css.rem 0.95);
+  };
+
+  css.rule { css.class "demo-roster"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.6);
+    css.margin (css.px 0.0);
+    css.padding (css.px 0.0);
+    css.customProperty "list-style" (css.keyword "none");
+  };
+
+  css.rule { css.class "roster-row"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.justifyContent (css.keyword "space-between");
+    css.gap (css.rem 1.0);
+    css.padding (css.keyword "0.85rem 1.1rem");
+    css.borderRadius (css.rem 0.7);
+    css.background surface;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.customProperty "border-left" (css.space { css.px 3.0; css.keyword "solid"; borderStrong; });
+    css.transition (css.keyword "border-color 140ms ease");
+  };
+
+  css.rule { css.class "roster-info"; } {
+    css.display (css.keyword "flex");
+    css.alignItems (css.keyword "center");
+    css.gap (css.rem 0.75);
+    css.customProperty "min-width" (css.px 0.0);
+  };
+
+  css.rule { css.class "roster-dot"; } {
+    css.width (css.rem 0.6);
+    css.height (css.rem 0.6);
+    css.borderRadius (css.keyword "50%");
+    css.background borderStrong;
+    css.customProperty "flex-shrink" (css.keyword "0");
+  };
+
+  css.rule { css.class "roster-text"; } {
+    css.display (css.keyword "flex");
+    css.flexDirection (css.keyword "column");
+    css.gap (css.rem 0.1);
+  };
+
+  css.rule { css.class "roster-name"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.98);
+    css.fontWeight (fw "600");
+    css.color ink;
+  };
+
+  css.rule { css.class "roster-status"; } {
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.78);
+    css.color faintInk;
+  };
+
+  css.rule { css.class "roster-actions"; } {
+    css.display (css.keyword "flex");
+    css.gap (css.rem 0.4);
+    css.customProperty "flex-shrink" (css.keyword "0");
+  };
+
+  css.rule { css.class "roster-btn"; } {
+    css.cursor (css.keyword "pointer");
+    css.padding (css.keyword "0.4rem 0.7rem");
+    css.borderRadius (css.rem 0.45);
+    css.background subtle;
+    css.color ink;
+    css.border (css.space { css.px 1.0; css.keyword "solid"; border; });
+    css.fontFamily mono;
+    css.fontSize (css.rem 0.78);
+    css.fontWeight (fw "600");
+    css.transition (css.keyword "background 140ms ease, border-color 140ms ease");
+  };
+
+  css.rule { css.hover (css.class "roster-btn"); } {
+    css.customProperty "border-color" faintInk;
+  };
+
+  css.rule { css.hover (css.class "roster-btn-remove"); } {
+    css.color (css.hex "#b4341f");
+    css.customProperty "border-color" (css.hex "#e0a89c");
+  };
+
+  css.rule { css.compound { css.class "roster-row"; css.class "is-ready"; }; } {
+    css.customProperty "border-left-color" accent;
+  };
+
+  css.rule { css.descendant (css.compound { css.class "roster-row"; css.class "is-ready"; }) (css.class "roster-dot"); } {
+    css.background accent;
+  };
+
+  css.rule { css.compound { css.class "roster-row"; css.class "is-erroring"; }; } {
+    css.customProperty "border-left-color" (css.hex "#d1553a");
+  };
+
+  css.rule { css.descendant (css.compound { css.class "roster-row"; css.class "is-erroring"; }) (css.class "roster-dot"); } {
+    css.background (css.hex "#d1553a");
+  };
+
+  css.rule { css.descendant (css.compound { css.class "roster-row"; css.class "is-paused"; }) (css.class "roster-name"); } {
+    css.color faintInk;
+  };
+
   -- ── Why grid ───────────────────────────────────────────────────────────────
   css.rule { css.class "why-grid"; } {
     css.display (css.keyword "grid");
@@ -635,7 +838,7 @@ siteStyles :: css.Stylesheet = css.stylesheet {
 
   -- ── Responsive ─────────────────────────────────────────────────────────────
   css.media (css.maxWidthQuery 900) {
-    css.rule { css.class "hero-inner"; css.class "mode-panel"; css.class "start-inner"; css.class "footer-inner"; } {
+    css.rule { css.class "hero-inner"; css.class "mode-panel"; css.class "demo-inner"; css.class "start-inner"; css.class "footer-inner"; } {
       css.gridTemplateColumns (css.keyword "minmax(0, 1fr)");
     };
     css.rule { css.class "footer-groups"; } {

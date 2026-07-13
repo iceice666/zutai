@@ -6,6 +6,7 @@
 
   nav = [
     { label = "Modes"; href = "#modes"; };
+    { label = "Demo"; href = "#demo"; };
     { label = "Why Zutai"; href = "#why"; };
     { label = "Compiler"; href = "#pipeline"; };
     { label = "Get started"; href = "#start"; };
@@ -77,8 +78,45 @@
     };
   };
 
+  demo = {
+    eyebrow = "02 — See it run";
+    title = "The hero snippet, live in your browser.";
+    lead = "This roster runs the very code beside it — the same typed Service, healthy, and ready functions the compiler checks. Deploy a service, pause it, or log an error, and the readiness rollup recomputes from those functions, evaluated in your browser as you click.";
+    draftLabel = "Service name";
+    draftPlaceholder = "service-name";
+    addLabel = "Deploy";
+    emptyState = "No services yet. Deploy one to begin.";
+    ofWord = "of";
+    readyWord = "ready";
+    statusReady = "ready";
+    statusPaused = "paused";
+    statusErroring = "erroring";
+    pauseLabel = "Pause";
+    resumeLabel = "Resume";
+    errorLabel = "Log error";
+    clearLabel = "Clear errors";
+    removeLabel = "Remove";
+    errorsWord = "errors";
+    codeCaption = "roster.zt — evaluated live";
+    code = [
+      [ { k = #fn; t = "healthy"; }; { k = #op; t = " :: "; }; { k = #ty; t = "Service"; }; { k = #op; t = " -> "; }; { k = #ty; t = "Bool"; }; ];
+      [ { k = #pl; t = "  "; }; { k = #op; t = "= "; }; { k = #pn; t = "svc"; }; { k = #op; t = " =>"; }; ];
+      [ { k = #pl; t = "    "; }; { k = #pn; t = "svc"; }; { k = #pl; t = ".enabled "; }; { k = #op; t = "&& "; }; { k = #pn; t = "svc"; }; { k = #pl; t = ".errors "; }; { k = #op; t = "== "; }; { k = #nm; t = "0"; }; { k = #pl; t = ";"; }; ];
+      [ { k = #pl; t = " "; }; ];
+      [ { k = #fn; t = "ready"; }; { k = #op; t = " :: "; }; { k = #ty; t = "List"; }; { k = #pl; t = " "; }; { k = #ty; t = "Service"; }; { k = #op; t = " -> "; }; { k = #ty; t = "Int"; }; ];
+      [ { k = #pl; t = "  "; }; { k = #op; t = "= "; }; { k = #pn; t = "svcs"; }; { k = #op; t = " =>"; }; ];
+      [ { k = #pl; t = "    "; }; { k = #fn; t = "length"; }; { k = #pl; t = " ("; }; { k = #fn; t = "filter"; }; { k = #pl; t = " "; }; { k = #fn; t = "healthy"; }; { k = #pl; t = " "; }; { k = #pn; t = "svcs"; }; { k = #pl; t = ");"; }; ];
+    ];
+    seeds = [
+      { name = "payments-edge"; errors = 0; enabled = true; };
+      { name = "auth-core"; errors = 0; enabled = true; };
+      { name = "search-index"; errors = 2; enabled = true; };
+      { name = "batch-archiver"; errors = 0; enabled = false; };
+    ];
+  };
+
   why = {
-    eyebrow = "02 — Why Zutai";
+    eyebrow = "03 — Why Zutai";
     title = "Nothing ambient. Nothing hidden.";
     lead = "Four commitments the language keeps on every program.";
     items = [
@@ -106,7 +144,7 @@
   };
 
   pipeline = {
-    eyebrow = "03 — Compiler";
+    eyebrow = "04 — Compiler";
     title = "Every step stays visible.";
     lead = "General mode lowers through a chain of typed IRs — each one inspectable — before it reaches native code.";
     stages = [
@@ -122,7 +160,7 @@
   };
 
   start = {
-    eyebrow = "04 — Get started";
+    eyebrow = "05 — Get started";
     title = "Check it, run it, compile it.";
     lead = "Clone the workspace and drive the compiler from one CLI. Programs are type-checked before they ever evaluate.";
     steps = [
