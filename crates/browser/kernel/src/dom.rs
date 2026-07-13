@@ -40,6 +40,12 @@ struct Listener {
 enum PendingHandler {
     Click(Value, EventOptions),
     Input(Value, EventOptions),
+    Change(Value, EventOptions),
+    Submit(Value, EventOptions),
+    Blur(Value, EventOptions),
+    Focus(Value, EventOptions),
+    KeyDown(Value, EventOptions),
+    KeyUp(Value, EventOptions),
 }
 
 #[derive(Default)]
@@ -121,7 +127,14 @@ pub fn start(bundle_json: &str, development: bool) -> Result<(), JsValue> {
 
 fn dispatch(generation: u64, pending: PendingHandler, event: Event) {
     let options = match &pending {
-        PendingHandler::Click(_, options) | PendingHandler::Input(_, options) => *options,
+        PendingHandler::Click(_, options)
+        | PendingHandler::Input(_, options)
+        | PendingHandler::Change(_, options)
+        | PendingHandler::Submit(_, options)
+        | PendingHandler::Blur(_, options)
+        | PendingHandler::Focus(_, options)
+        | PendingHandler::KeyDown(_, options)
+        | PendingHandler::KeyUp(_, options) => *options,
     };
     if options.prevent_default {
         event.prevent_default();
@@ -140,9 +153,17 @@ fn dispatch(generation: u64, pending: PendingHandler, event: Event) {
         }
 
         let message = match pending {
-            PendingHandler::Click(message, _) => message,
-            PendingHandler::Input(to_message, _) => {
+            PendingHandler::Click(message, _)
+            | PendingHandler::Submit(message, _)
+            | PendingHandler::Blur(message, _)
+            | PendingHandler::Focus(message, _) => message,
+            PendingHandler::Input(to_message, _) | PendingHandler::Change(to_message, _) => {
                 let value = event_input_value(&event)?;
+                app.session
+                    .apply(to_message, Value::Text(Rc::from(value)))?
+            }
+            PendingHandler::KeyDown(to_message, _) | PendingHandler::KeyUp(to_message, _) => {
+                let value = event_key_value(&event)?;
                 app.session
                     .apply(to_message, Value::Text(Rc::from(value)))?
             }
@@ -238,6 +259,33 @@ fn attach_children(
                     to_message,
                     options,
                 } => ("input", PendingHandler::Input(to_message.clone(), *options)),
+                EventHandler::Change {
+                    to_message,
+                    options,
+                } => (
+                    "change",
+                    PendingHandler::Change(to_message.clone(), *options),
+                ),
+                EventHandler::Submit { message, options } => {
+                    ("submit", PendingHandler::Submit(message.clone(), *options))
+                }
+                EventHandler::Blur { message, options } => {
+                    ("blur", PendingHandler::Blur(message.clone(), *options))
+                }
+                EventHandler::Focus { message, options } => {
+                    ("focus", PendingHandler::Focus(message.clone(), *options))
+                }
+                EventHandler::KeyDown {
+                    to_message,
+                    options,
+                } => (
+                    "keydown",
+                    PendingHandler::KeyDown(to_message.clone(), *options),
+                ),
+                EventHandler::KeyUp {
+                    to_message,
+                    options,
+                } => ("keyup", PendingHandler::KeyUp(to_message.clone(), *options)),
             };
             let callback = {
                 let pending = pending.clone();
@@ -556,9 +604,19 @@ fn event_input_value(event: &Event) -> Result<String, EvalError> {
     if let Some(textarea) = target.dyn_ref::<web_sys::HtmlTextAreaElement>() {
         return Ok(textarea.value());
     }
+    if let Some(select) = target.dyn_ref::<web_sys::HtmlSelectElement>() {
+        return Ok(select.value());
+    }
     Err(EvalError::EffectfulNotExecutable(
-        "input handler requires an input or textarea element".into(),
+        "input handler requires an input, textarea, or select element".into(),
     ))
+}
+
+fn event_key_value(event: &Event) -> Result<String, EvalError> {
+    let keyboard_event = event.dyn_ref::<web_sys::KeyboardEvent>().ok_or_else(|| {
+        EvalError::EffectfulNotExecutable("key handler requires a KeyboardEvent".into())
+    })?;
+    Ok(keyboard_event.key())
 }
 
 fn flush_focus(document: &WebDocument, effects: &BrowserEffects) {

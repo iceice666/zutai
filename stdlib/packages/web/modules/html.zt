@@ -27,6 +27,12 @@ EventOptions :: type { preventDefault : Bool; stopPropagation : Bool; };
 EventHandler :: <Msg> type {
   #click : { message : Msg; options : EventOptions; };
   #input : { toMessage : Text -> Msg; options : EventOptions; };
+  #change : { toMessage : Text -> Msg; options : EventOptions; };
+  #submit : { message : Msg; options : EventOptions; };
+  #blur : { message : Msg; options : EventOptions; };
+  #focus : { message : Msg; options : EventOptions; };
+  #keyDown : { toMessage : Text -> Msg; options : EventOptions; };
+  #keyUp : { toMessage : Text -> Msg; options : EventOptions; };
 };
 Attribute :: <Msg> type {
   #static : { attribute : StaticAttribute; };
@@ -169,6 +175,27 @@ onInputWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
   = options toMessage => #event { handler = #input { toMessage = toMessage; options = options; }; };
 onInput :: <Msg> (Text -> Msg) -> Attribute Msg
   = toMessage => onInputWith defaultEventOptions toMessage;
+onChangeWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
+  = options toMessage => #event { handler = #change { toMessage = toMessage; options = options; }; };
+onChange :: <Msg> (Text -> Msg) -> Attribute Msg
+  = toMessage => onChangeWith defaultEventOptions toMessage;
+onSubmitWith :: <Msg> EventOptions -> Msg -> Attribute Msg
+  = options message => #event { handler = #submit { message = message; options = options; }; };
+onSubmit :: <Msg> Msg -> Attribute Msg = message => onSubmitWith defaultEventOptions message;
+onBlurWith :: <Msg> EventOptions -> Msg -> Attribute Msg
+  = options message => #event { handler = #blur { message = message; options = options; }; };
+onBlur :: <Msg> Msg -> Attribute Msg = message => onBlurWith defaultEventOptions message;
+onFocusWith :: <Msg> EventOptions -> Msg -> Attribute Msg
+  = options message => #event { handler = #focus { message = message; options = options; }; };
+onFocus :: <Msg> Msg -> Attribute Msg = message => onFocusWith defaultEventOptions message;
+onKeyDownWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
+  = options toMessage => #event { handler = #keyDown { toMessage = toMessage; options = options; }; };
+onKeyDown :: <Msg> (Text -> Msg) -> Attribute Msg
+  = toMessage => onKeyDownWith defaultEventOptions toMessage;
+onKeyUpWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
+  = options toMessage => #event { handler = #keyUp { toMessage = toMessage; options = options; }; };
+onKeyUp :: <Msg> (Text -> Msg) -> Attribute Msg
+  = toMessage => onKeyUpWith defaultEventOptions toMessage;
 
 text :: <Msg> Text -> Html Msg = value => #text { value = value; };
 element :: <Msg> Tag -> List (Attribute Msg) -> List (Html Msg) -> Html Msg
@@ -248,6 +275,12 @@ input :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #input a
   preventDefaultAndStopPropagation = preventDefaultAndStopPropagation;
   onClickWith = onClickWith; onClick = onClick;
   onInputWith = onInputWith; onInput = onInput;
+  onChangeWith = onChangeWith; onChange = onChange;
+  onSubmitWith = onSubmitWith; onSubmit = onSubmit;
+  onBlurWith = onBlurWith; onBlur = onBlur;
+  onFocusWith = onFocusWith; onFocus = onFocus;
+  onKeyDownWith = onKeyDownWith; onKeyDown = onKeyDown;
+  onKeyUpWith = onKeyUpWith; onKeyUp = onKeyUp;
   text = text; a = a; article = article; aside = aside;
   blockquote = blockquote; button = button; code = code; details = details;
   div = div; em = em; fieldset = fieldset; figcaption = figcaption;

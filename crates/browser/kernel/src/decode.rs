@@ -262,6 +262,30 @@ fn decode_event(session: &TlcSession, value: Value) -> Result<EventHandler, Deco
             to_message: force_payload_field(session, payload, "toMessage")?,
             options,
         }),
+        "change" => Ok(EventHandler::Change {
+            to_message: force_payload_field(session, payload, "toMessage")?,
+            options,
+        }),
+        "submit" => Ok(EventHandler::Submit {
+            message: force_payload_field(session, payload, "message")?,
+            options,
+        }),
+        "blur" => Ok(EventHandler::Blur {
+            message: force_payload_field(session, payload, "message")?,
+            options,
+        }),
+        "focus" => Ok(EventHandler::Focus {
+            message: force_payload_field(session, payload, "message")?,
+            options,
+        }),
+        "keyDown" => Ok(EventHandler::KeyDown {
+            to_message: force_payload_field(session, payload, "toMessage")?,
+            options,
+        }),
+        "keyUp" => Ok(EventHandler::KeyUp {
+            to_message: force_payload_field(session, payload, "toMessage")?,
+            options,
+        }),
         _ => Err(unknown("event", tag)),
     }
 }

@@ -73,6 +73,30 @@ pub enum EventHandler<Msg = Value> {
         to_message: Msg,
         options: EventOptions,
     },
+    Change {
+        to_message: Msg,
+        options: EventOptions,
+    },
+    Submit {
+        message: Msg,
+        options: EventOptions,
+    },
+    Blur {
+        message: Msg,
+        options: EventOptions,
+    },
+    Focus {
+        message: Msg,
+        options: EventOptions,
+    },
+    KeyDown {
+        to_message: Msg,
+        options: EventOptions,
+    },
+    KeyUp {
+        to_message: Msg,
+        options: EventOptions,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
