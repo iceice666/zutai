@@ -7,6 +7,64 @@ only concrete open work.
 
 ## Status (2026-07-13)
 
+### Browser kernel: retained-tree DOM reconciliation
+
+`patch_document` (`crates/browser/kernel/src/dom.rs`) reconciles the *live
+DOM* against the newly rendered `Document` on every event; it never reads
+`App::rendered`, the previous `Document` value already held in memory.
+Identity for keyed children is recovered by reading `data-zutai-key` back off
+DOM nodes with a linear scan per keyed child (O(n^2) for a keyed list of
+length n), and `patch_element`/`patch_document` unconditionally
+`clear_attributes` then reapply every attribute and every managed `<head>`
+node on every patch, whether or not anything changed. Hydration (`start`,
+patching against build-time prerendered HTML) is the one place a DOM read is
+unavoidable, since the first "old tree" only exists as SSR markup — that is
+why `render.rs` stamps `data-zutai-key` into the prerendered HTML in the
+first place (see `prerenders_semantic_html_and_omits_handlers`), and that
+stamping must stay. Everything after hydration has a real old `Document` in
+`App::rendered` and should diff against it as plain Rust values instead of
+reading the DOM.
+
+Planned milestones, in order:
+
+1. **Retained-tree diff for steady-state children reconciliation.** Add a
+   pure `diff_children(old: &[Html], new: &[Html]) -> Vec<ChildOp>` (no
+   `web_sys` dependency, testable with plain `cargo test` using the same
+   `Html`/`Element` builders `render.rs` and `events.rs` already use) plus a
+   thin wasm-only apply step, and wire it into `dispatch`'s patch call.
+   Hydration's DOM-walking in `start`/`attach_children` is an explicit
+   carve-out and stays as-is. `data-zutai-key` keeps being written to the DOM
+   (hydration still needs it); steady-state diffing just stops reading it
+   back.
+2. **O(n) keyed matching and minimal moves.** Replace per-child linear scans
+   with a `HashMap<key, old-index>` built once per sibling list, and compute
+   a minimal move set (longest-increasing-subsequence over matched old
+   indices) so unmoved keyed children emit zero `insertBefore` calls. Extend
+   unkeyed matching to tolerate small positional shifts instead of only the
+   exact same index, so a single mid-list insert/remove doesn't cascade into
+   replacing every later unkeyed sibling.
+3. **Attribute-level diffing.** Compare old vs. new `Element.attributes` and
+   `Document.body_attributes` as data and emit only the add/remove/set ops
+   that actually changed, replacing the current clear-all-then-reapply in
+   `patch_element` and `patch_document`. Keep the existing `value`/`checked`
+   special-casing for input cursor/IME safety.
+4. **Head diffing.** Diff `Document.head` old vs. new instead of removing and
+   recreating every `[data-zutai-managed]` node on every patch in
+   `patch_head`. This is the milestone with a user-visible payoff: today
+   every event reparses and reinserts the page's `<style>` tag even when the
+   rendered CSS is byte-identical.
+5. **`wasm-bindgen-test` harness.** Add headless-browser test infrastructure
+   (none exists in this crate today — no CI wasm test target) to cover what
+   the pure diff tests structurally cannot: hydration itself, focus/selection
+   restore (`SelectionSnapshot`), and end-to-end event-dispatch-to-DOM
+   scenarios for at least one keyed-list case.
+
+Not scheduled beyond this: whole-tree re-render/re-walk on every event (no
+per-subtree memoization upstream of the patcher) is a separate, larger
+architectural question tied to the render/dataflow layer rather than the DOM
+kernel, and should be scoped on its own once 1-4 land and profiling shows it
+matters.
+
 ### Finish the typed macro kernel
 
 The first staging/decoder slice has landed locally: `Code A`, hygienic
