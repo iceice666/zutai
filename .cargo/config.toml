@@ -1,2 +1,10 @@
 [env]
 ZUTAI_STDLIB_ROOT = { value = "stdlib", relative = true }
+
+# Lets `cargo test --target wasm32-unknown-unknown -p zutai-browser --test
+# browser_hydration` drive the crate's wasm-bindgen-test browser harness
+# (crates/browser/kernel/tests/browser_hydration.rs). `wasm-bindgen-cli`
+# bundles this binary; a headless browser + WebDriver (e.g. Chromium +
+# chromedriver, both in flake.nix's devShell) must be on PATH to run it.
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

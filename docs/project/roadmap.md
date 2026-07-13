@@ -84,11 +84,51 @@ Planned milestones, in order:
    `<style>` tag, and the reparse/flicker that came with it, on every event.
    Hydration's `patch_head`/`create_head_node` (no old tree to diff against)
    is untouched.
-5. **`wasm-bindgen-test` harness.** Add headless-browser test infrastructure
-   (none exists in this crate today — no CI wasm test target) to cover what
-   the pure diff tests structurally cannot: hydration itself, focus/selection
-   restore (`SelectionSnapshot`), and end-to-end event-dispatch-to-DOM
-   scenarios for at least one keyed-list case.
+5. **DONE, pending local execution. `wasm-bindgen-test` harness.** Added
+   `crates/browser/kernel/tests/browser_hydration.rs`
+   (`#![cfg(target_arch = "wasm32")]`, `wasm-bindgen-test = "=0.3.71"` — the
+   exact release pinned against this workspace's `wasm-bindgen 0.2.121`/
+   `js-sys 0.3.98`), plus `tests/fixture/mod.rs`: a small model/update/view
+   Zutai program (toggle, keyed list add/remove, draft input) with its own
+   `WebBundleV3`, embedding only the stdlib modules it needs
+   (`stream`/`prelude`/`html`/`css`) via `include_str!` so building the
+   bundle needs no filesystem access — required since wasm32 has none at
+   test-run time, which also rules out `zutai_semantic::analyze`/
+   `analyze_path` (both resolve the stdlib from disk unconditionally, even
+   for the caller-supplied-`StdlibSources` — the only filesystem-free
+   constructor — `StdlibSources::from_memory` — used here and in the real
+   `start()`). `tests/browser_program.rs` (native) runs the same fixture
+   through `analyze_sources_with_stdlib_and_packages` → decode → init →
+   transition → render with no browser needed, which is what actually
+   caught and fixed two real Zutai-syntax mistakes in the fixture program
+   (a multi-arg call needing explicit parens, and bare tag literals not
+   unifying to the declared `Msg` type without a named typed wrapper) before
+   ever touching wasm.
+
+   `browser_hydration.rs` drives the real `start()` entry point end to end:
+   hydration, keyed-list add (asserting the pre-existing "seed" node's
+   *identity* survives via `is_same_node`, not just its content), an
+   unrelated toggle re-render (asserting list AND head node identity both
+   survive — milestones 1/2/4 together), keyed-list removal (surviving
+   sibling keeps its node), and focus/selection restore across a patch.
+
+   Runs via `cargo test --target wasm32-unknown-unknown -p zutai-browser
+   --test browser_hydration` (a `[target.wasm32-unknown-unknown] runner =
+   "wasm-bindgen-test-runner"` entry was added to `.cargo/config.toml`;
+   `wasm-bindgen-cli` already bundles that binary). Needs a headless browser
+   + WebDriver on `PATH` — added Chromium + chromedriver to `flake.nix`'s
+   devShell, Linux-only (nixpkgs does not package Chromium for Darwin).
+   `events.rs`/`website.rs` were given `#![cfg(not(target_arch = "wasm32"))]`
+   defensively, since they use the disk-reading `analyze`/`analyze_path` and
+   were never meant to run under the wasm32 target.
+
+   Verified in this environment: `cargo check`/`cargo clippy --target
+   wasm32-unknown-unknown -p zutai-browser --tests` are clean, and
+   `tests/browser_program.rs`'s native run passes, proving the shared
+   fixture program and stdlib subset are correct. The `browser_hydration.rs`
+   scenario itself has **not** been executed — this sandbox has no headless
+   browser — so it is compile-verified only until run locally after
+   reloading the dev shell.
 
 Not scheduled beyond this: whole-tree re-render/re-walk on every event (no
 per-subtree memoization upstream of the patcher) is a separate, larger

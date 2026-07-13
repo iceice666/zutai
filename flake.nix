@@ -52,6 +52,15 @@
               pkgs.llvmPackages.llvm
               pkgs.wasm-bindgen-cli
               pkgs.wrangler
+            ]
+            # Headless browser + WebDriver for the browser kernel's
+            # wasm-bindgen-test suite (crates/browser/kernel/tests/
+            # browser_hydration.rs, run via `cargo test --target
+            # wasm32-unknown-unknown -p zutai-browser --test
+            # browser_hydration`). nixpkgs' Chromium is Linux-only.
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.chromium
+              pkgs.chromedriver
             ];
 
             RUST_BACKTRACE = "1";

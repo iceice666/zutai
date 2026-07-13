@@ -95,6 +95,19 @@ cargo llvm-cov nextest --workspace
 
 Add `--html` to generate an HTML report in `target/llvm-cov/html/`.
 
+Browser kernel wasm-bindgen-test suite (requires a headless browser +
+WebDriver from the dev shell, e.g. Chromium + chromedriver on Linux;
+`nixpkgs` Chromium is not packaged for Darwin):
+
+```sh
+cargo test --target wasm32-unknown-unknown -p zutai-browser --test browser_hydration
+```
+
+Scope to `--test browser_hydration` — it is the only test binary in the
+crate written against `wasm-bindgen-test`; the crate's other tests are
+native-only (`#![cfg(not(target_arch = "wasm32"))]`) since they read the
+stdlib from disk, which wasm32 cannot do.
+
 ## Agent guidelines
 
 - Prefer small, focused changes.

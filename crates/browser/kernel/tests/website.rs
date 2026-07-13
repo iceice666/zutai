@@ -1,3 +1,7 @@
+// `zutai_semantic::analyze_path` reads both the entry file and the stdlib
+// from disk, so this test is native-only (see tests/fixture/mod.rs).
+#![cfg(not(target_arch = "wasm32"))]
+
 use zutai_browser::{Attribute, Html, decode_program, prerender_document};
 use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
 

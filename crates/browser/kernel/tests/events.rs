@@ -1,3 +1,9 @@
+// `zutai_semantic::analyze` reads the stdlib from disk (see
+// `tests/fixture/mod.rs` for why the wasm-bindgen-test browser harness
+// cannot do the same and embeds its stdlib subset via `include_str!`
+// instead), so this test is native-only.
+#![cfg(not(target_arch = "wasm32"))]
+
 use zutai_browser::{Attribute, EventHandler, Html, decode_document};
 use zutai_eval::TlcSession;
 

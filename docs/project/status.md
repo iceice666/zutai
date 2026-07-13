@@ -46,15 +46,33 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 4: `diff_head` diffs
+_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 5: added a
+wasm-bindgen-test browser harness (`crates/browser/kernel/tests/
+browser_hydration.rs`, `wasm-bindgen-test = "=0.3.71"` pinned to match this
+workspace's `wasm-bindgen 0.2.121`) exercising `start()` end to end —
+hydration, keyed-list add/remove with DOM node *identity* assertions
+(`is_same_node`, not just content), an unrelated re-render leaving list and
+head nodes untouched, and focus/selection restore — against a small fixture
+Zutai program (`tests/fixture/mod.rs`) whose `WebBundleV3` embeds only the
+stdlib it needs via `include_str!` (no filesystem access, required for
+wasm32); a native counterpart (`tests/browser_program.rs`) runs the same
+program through analyze/decode/init/render without a browser and is what
+actually caught two Zutai-syntax mistakes in the fixture before it ever
+reached wasm. `.cargo/config.toml` now points the wasm32 target's runner at
+`wasm-bindgen-test-runner`, and `flake.nix`'s devShell gained Chromium +
+chromedriver (Linux-only). Compile-verified only (`cargo check`/`clippy
+--target wasm32-unknown-unknown -p zutai-browser --tests` clean, native
+fixture test passes) — the browser scenario itself has not been executed,
+since this environment has no headless browser; pending a local run after
+reloading the dev shell);
+prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 4: `diff_head` diffs
 `Document.head` by full `HeadNode` structural equality (head nodes carry no
 independent state, so equal nodes are fully interchangeable regardless of
 position), reusing the `diff_children` move-minimization machinery renamed
 `ListOp`/`ListDiff` now that it backs two unrelated lists; a render that
 leaves the head unchanged now touches `<head>` not at all, removing the
 per-event `<style>` teardown/reparse; `dom.rs`'s `diff_patch_head` applies it
-via the same backward, anchor-based walk as children);
-prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 3: `diff_element_attributes`/
+via the same backward, anchor-based walk as children), 2026-07-13 (browser kernel reconciliation, milestone 3: `diff_element_attributes`/
 `diff_static_attributes` compute an add/change/remove `AttributeDiff` from a
 structural name -> `AttributeEffect` map (style declarations compared
 without rendering), replacing the old clear-and-reapply-every-attribute
