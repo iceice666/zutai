@@ -11,8 +11,8 @@ use zutai_semantic::AnalysisOptions;
 
 use crate::css::{render_declarations, render_stylesheet};
 use crate::diff::{
-    AttributeDiff, AttributeEffect, ChildOp, child_key, diff_children, diff_element_attributes,
-    diff_static_attributes,
+    AttributeDiff, AttributeEffect, ListOp, child_key, diff_children, diff_element_attributes,
+    diff_head, diff_static_attributes,
 };
 use crate::render::validate_document;
 use crate::{
@@ -526,6 +526,63 @@ fn apply_element_attributes(dom_element: &WebElement, element: &Element) -> Resu
     Ok(())
 }
 
+/// Patch `<head>`'s managed nodes (`diff_head` in `diff.rs`) instead of
+/// `patch_head`'s remove-everything-then-recreate-everything, so a render
+/// that leaves `Document.head` unchanged — most of them, since head content
+/// is rarely conditional — never touches the DOM at all: no `<style>`
+/// teardown, no stylesheet reparse.
+///
+/// Unlike `diff_patch_children`, a `Keep`/`Move` match never needs a content
+/// update (`diff_head` only matches by full equality, so matched nodes are
+/// always byte-identical) and there is no bootstrap script to anchor
+/// against: by the time any steady-state patch can run, `start` has already
+/// removed it (event listeners can only fire after `start` returns), so
+/// managed nodes can simply be appended at the tail of `<head>`.
+fn diff_patch_head(
+    document: &WebDocument,
+    old: &[HeadNode],
+    new: &[HeadNode],
+) -> Result<(), JsValue> {
+    let head = document
+        .head()
+        .ok_or_else(|| JsValue::from_str("document has no head"))?;
+    let managed = head.query_selector_all("[data-zutai-managed]")?;
+    let snapshot: Vec<Node> = (0..managed.length())
+        .map(|index| managed.item(index))
+        .collect::<Option<_>>()
+        .ok_or_else(|| JsValue::from_str("live head nodes do not match the retained tree"))?;
+    if snapshot.len() != old.len() {
+        return Err(JsValue::from_str(
+            "live managed head nodes do not match the retained tree",
+        ));
+    }
+
+    let diff = diff_head(old, new);
+
+    for &old_index in &diff.removed_old_indices {
+        head.remove_child(&snapshot[old_index])?;
+    }
+
+    let mut anchor: Option<Node> = None;
+    for (new_index, op) in diff.ops.iter().enumerate().rev() {
+        let node = match *op {
+            ListOp::Keep { old_index } => snapshot[old_index].clone(),
+            ListOp::Move { old_index } => {
+                let node = snapshot[old_index].clone();
+                head.insert_before(&node, anchor.as_ref())?;
+                node
+            }
+            ListOp::Create => {
+                let node = create_head_node(document, &new[new_index])?;
+                head.insert_before(&node, anchor.as_ref())?;
+                node
+            }
+        };
+        anchor = Some(node);
+    }
+    Ok(())
+}
+
 /// Patch the live DOM against a newly rendered `Document`, diffing against
 /// `old` (the previous `Document`, retained in `App::rendered`) as plain
 /// data instead of reading identity back off the DOM. Only used once an old
@@ -540,7 +597,7 @@ fn diff_patch_document(
         .ok_or_else(|| JsValue::from_str("document has no documentElement"))?;
     root.set_attribute("lang", &new.language)?;
     document.set_title(&new.title);
-    patch_head(document, new)?;
+    diff_patch_head(document, &old.head, &new.head)?;
 
     let body = document
         .body()
@@ -575,18 +632,18 @@ fn diff_patch_children(parent: &Node, old: &[Html], new: &[Html]) -> Result<(), 
     let mut anchor: Option<Node> = None;
     for (new_index, op) in diff.ops.iter().enumerate().rev() {
         let node = match *op {
-            ChildOp::Keep { old_index } => {
+            ListOp::Keep { old_index } => {
                 let node = snapshot[old_index].clone();
                 diff_patch_node(&node, &old[old_index], &new[new_index])?;
                 node
             }
-            ChildOp::Move { old_index } => {
+            ListOp::Move { old_index } => {
                 let node = snapshot[old_index].clone();
                 parent.insert_before(&node, anchor.as_ref())?;
                 diff_patch_node(&node, &old[old_index], &new[new_index])?;
                 node
             }
-            ChildOp::Create => {
+            ListOp::Create => {
                 let node = create_node(parent, &new[new_index])?;
                 parent.insert_before(&node, anchor.as_ref())?;
                 node

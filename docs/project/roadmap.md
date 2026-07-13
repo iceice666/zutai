@@ -70,11 +70,20 @@ Planned milestones, in order:
    attributes would silently break the "revert an invalid edit" pattern.
    Hydration's `patch_element`/`apply_element_attributes` (no old tree to
    diff against) is untouched.
-4. **Head diffing.** Diff `Document.head` old vs. new instead of removing and
-   recreating every `[data-zutai-managed]` node on every patch in
-   `patch_head`. This is the milestone with a user-visible payoff: today
-   every event reparses and reinserts the page's `<style>` tag even when the
-   rendered CSS is byte-identical.
+4. **DONE. Head diffing.** Added `diff_head` (`diff.rs`), reusing the same
+   `ListOp`/`ListDiff`/longest-increasing-subsequence machinery `diff_children`
+   uses (renamed from `ChildOp`/`ChildDiff` now that a second, unrelated list
+   shares them), but matched by full `HeadNode` structural equality instead
+   of keys or tags — head nodes carry no independent state, so two equal
+   nodes are fully interchangeable regardless of position, and a match never
+   needs a content update, only a possible reposition. `dom.rs`'s
+   `diff_patch_head` applies it with the same backward, anchor-based walk as
+   children. This was the milestone with the user-visible payoff: a render
+   that leaves `Document.head` unchanged (the common case) now touches
+   `<head>` not at all — no more removing and reinserting the page's
+   `<style>` tag, and the reparse/flicker that came with it, on every event.
+   Hydration's `patch_head`/`create_head_node` (no old tree to diff against)
+   is untouched.
 5. **`wasm-bindgen-test` harness.** Add headless-browser test infrastructure
    (none exists in this crate today — no CI wasm test target) to cover what
    the pure diff tests structurally cannot: hydration itself, focus/selection

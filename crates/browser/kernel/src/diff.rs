@@ -1,32 +1,34 @@
-//! Pure, DOM-independent reconciliation of sibling `Html` lists.
+//! Pure, DOM-independent reconciliation of ordered node lists: sibling
+//! `Html` lists (`diff_children`) and `Document.head` (`diff_head`).
 //!
 //! Steady-state updates retain the previously rendered tree (`App::rendered`
-//! in `dom.rs`) in memory, so matching children between renders can be
-//! computed as plain data instead of reading identity back off the live DOM.
-//! Hydration has no such retained tree — the only "old" state at that point
-//! is the server-rendered HTML — and keeps using the DOM-walking patch in
-//! `dom.rs` instead of this module.
+//! in `dom.rs`) in memory, so matching between renders can be computed as
+//! plain data instead of reading identity back off the live DOM. Hydration
+//! has no such retained tree — the only "old" state at that point is the
+//! server-rendered HTML — and keeps using the DOM-walking patch in `dom.rs`
+//! instead of this module.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::{Attribute, Declaration, Element, Html, StaticAttribute};
+use crate::{Attribute, Declaration, Element, HeadNode, Html, StaticAttribute};
 
+/// One operation per `new`-list position, produced by `diff_children` or
+/// `diff_head`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChildOp {
-    /// Reuse the DOM node at `old_index`; it is already in the correct
-    /// position relative to every other reused node, so no DOM move is
-    /// needed.
+pub enum ListOp {
+    /// Reuse the node at `old_index`; it is already in the correct position
+    /// relative to every other reused node, so no DOM move is needed.
     Keep { old_index: usize },
-    /// Reuse the DOM node at `old_index`, but move it into place first.
+    /// Reuse the node at `old_index`, but move it into place first.
     Move { old_index: usize },
     /// No compatible old node exists at this position; create fresh DOM.
     Create,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChildDiff {
+pub struct ListDiff {
     /// One entry per `new` position, in `new` order.
-    pub ops: Vec<ChildOp>,
+    pub ops: Vec<ListOp>,
     /// Old indices with no surviving match, ascending, for removal.
     pub removed_old_indices: Vec<usize>,
 }
@@ -45,7 +47,7 @@ pub struct ChildDiff {
 /// Move selection: the longest increasing subsequence of matched old indices
 /// is already in correct relative order and is marked `Keep` (no DOM move);
 /// every other match is `Move`.
-pub fn diff_children<Msg>(old: &[Html<Msg>], new: &[Html<Msg>]) -> ChildDiff {
+pub fn diff_children<Msg>(old: &[Html<Msg>], new: &[Html<Msg>]) -> ListDiff {
     let mut keyed_old: HashMap<&str, usize> = HashMap::new();
     let mut unkeyed_old: HashMap<UnkeyedKind, VecDeque<usize>> = HashMap::new();
     for (index, node) in old.iter().enumerate() {
@@ -83,6 +85,42 @@ pub fn diff_children<Msg>(old: &[Html<Msg>], new: &[Html<Msg>]) -> ChildDiff {
         })
         .collect();
 
+    build_list_diff(old.len(), matches)
+}
+
+/// Diff a `Document.head` list the same way `diff_children` diffs sibling
+/// `Html`, but matched by full structural equality instead of keys or tags.
+/// Head nodes carry no independent state (no listeners, no typed input), so
+/// two equal `HeadNode`s are fully interchangeable regardless of position —
+/// unlike children, a `Keep`/`Move` match here never needs a content update,
+/// only a possible reposition, and a changed node is simply an independent
+/// `Create` (old copy removed, new one created — see `dom.rs`).
+pub fn diff_head(old: &[HeadNode], new: &[HeadNode]) -> ListDiff {
+    let mut consumed = vec![false; old.len()];
+    let matches: Vec<Option<usize>> = new
+        .iter()
+        .map(|node| {
+            let found = old
+                .iter()
+                .enumerate()
+                .find(|(index, old_node)| !consumed[*index] && *old_node == node);
+            found.map(|(index, _)| {
+                consumed[index] = true;
+                index
+            })
+        })
+        .collect();
+
+    build_list_diff(old.len(), matches)
+}
+
+/// Turn a list of per-new-position matches (`Some(old_index)` or `None` for
+/// no match) against an old list of length `old_len` into a `ListDiff`: the
+/// longest increasing subsequence of matched old indices needs no move
+/// (`Keep`); every other match is a reposition (`Move`); unmatched
+/// positions are `Create`; old indices that matched nothing are
+/// `removed_old_indices`.
+fn build_list_diff(old_len: usize, matches: Vec<Option<usize>>) -> ListDiff {
     let matched_positions: Vec<usize> = matches
         .iter()
         .enumerate()
@@ -94,17 +132,24 @@ pub fn diff_children<Msg>(old: &[Html<Msg>], new: &[Html<Msg>]) -> ChildDiff {
         .map(|i| matched_positions[i])
         .collect();
 
+    let mut consumed = vec![false; old_len];
     let ops = matches
         .iter()
         .enumerate()
         .map(|(new_index, m)| match m {
-            Some(old_index) if keep_positions.contains(&new_index) => ChildOp::Keep {
-                old_index: *old_index,
-            },
-            Some(old_index) => ChildOp::Move {
-                old_index: *old_index,
-            },
-            None => ChildOp::Create,
+            Some(old_index) => {
+                consumed[*old_index] = true;
+                if keep_positions.contains(&new_index) {
+                    ListOp::Keep {
+                        old_index: *old_index,
+                    }
+                } else {
+                    ListOp::Move {
+                        old_index: *old_index,
+                    }
+                }
+            }
+            None => ListOp::Create,
         })
         .collect();
 
@@ -114,7 +159,7 @@ pub fn diff_children<Msg>(old: &[Html<Msg>], new: &[Html<Msg>]) -> ChildDiff {
         .filter_map(|(index, &used)| (!used).then_some(index))
         .collect();
 
-    ChildDiff {
+    ListDiff {
         ops,
         removed_old_indices,
     }
@@ -291,7 +336,7 @@ fn static_attribute_effect(attribute: &StaticAttribute) -> Option<(String, Attri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CssValue;
+    use crate::{CssValue, Stylesheet};
 
     fn text(value: &str) -> Html {
         Html::Text(value.to_string())
@@ -324,10 +369,7 @@ mod tests {
         let diff = diff_children(&old, &new);
         assert_eq!(
             diff.ops,
-            vec![
-                ChildOp::Keep { old_index: 0 },
-                ChildOp::Keep { old_index: 1 },
-            ]
+            vec![ListOp::Keep { old_index: 0 }, ListOp::Keep { old_index: 1 },]
         );
         assert!(diff.removed_old_indices.is_empty());
     }
@@ -337,7 +379,7 @@ mod tests {
         let old = vec![el("div", None)];
         let new = vec![el("span", None)];
         let diff = diff_children(&old, &new);
-        assert_eq!(diff.ops, vec![ChildOp::Create]);
+        assert_eq!(diff.ops, vec![ListOp::Create]);
         assert_eq!(diff.removed_old_indices, vec![0]);
     }
 
@@ -359,9 +401,9 @@ mod tests {
         assert_eq!(
             diff.ops,
             vec![
-                ChildOp::Keep { old_index: 1 },
-                ChildOp::Keep { old_index: 2 },
-                ChildOp::Move { old_index: 0 },
+                ListOp::Keep { old_index: 1 },
+                ListOp::Keep { old_index: 2 },
+                ListOp::Move { old_index: 0 },
             ]
         );
         assert!(diff.removed_old_indices.is_empty());
@@ -374,7 +416,7 @@ mod tests {
         let diff = diff_children(&old, &new);
         assert_eq!(
             diff.ops,
-            vec![ChildOp::Keep { old_index: 0 }, ChildOp::Create]
+            vec![ListOp::Keep { old_index: 0 }, ListOp::Create]
         );
         assert!(diff.removed_old_indices.is_empty());
     }
@@ -388,7 +430,7 @@ mod tests {
         ];
         let new = vec![el("li", Some("a"))];
         let diff = diff_children(&old, &new);
-        assert_eq!(diff.ops, vec![ChildOp::Keep { old_index: 0 }]);
+        assert_eq!(diff.ops, vec![ListOp::Keep { old_index: 0 }]);
         assert_eq!(diff.removed_old_indices, vec![1, 2]);
     }
 
@@ -399,7 +441,7 @@ mod tests {
         let diff = diff_children(&old, &new);
         assert_eq!(
             diff.ops,
-            vec![ChildOp::Keep { old_index: 0 }, ChildOp::Create]
+            vec![ListOp::Keep { old_index: 0 }, ListOp::Create]
         );
         assert!(diff.removed_old_indices.is_empty());
     }
@@ -409,7 +451,7 @@ mod tests {
         let old = vec![text("hello")];
         let new = vec![text("world")];
         let diff = diff_children(&old, &new);
-        assert_eq!(diff.ops, vec![ChildOp::Keep { old_index: 0 }]);
+        assert_eq!(diff.ops, vec![ListOp::Keep { old_index: 0 }]);
         assert!(diff.removed_old_indices.is_empty());
     }
 
@@ -418,7 +460,7 @@ mod tests {
         let old = vec![text("hello")];
         let new = vec![el("span", None)];
         let diff = diff_children(&old, &new);
-        assert_eq!(diff.ops, vec![ChildOp::Create]);
+        assert_eq!(diff.ops, vec![ListOp::Create]);
         assert_eq!(diff.removed_old_indices, vec![0]);
     }
 
@@ -444,7 +486,7 @@ mod tests {
         let creates = diff
             .ops
             .iter()
-            .filter(|op| matches!(op, ChildOp::Create))
+            .filter(|op| matches!(op, ListOp::Create))
             .count();
         assert_eq!(creates, 1, "only the genuinely new node should be created");
     }
@@ -464,7 +506,7 @@ mod tests {
             1,
             "exactly one stale node should be dropped, not the whole tail"
         );
-        assert!(diff.ops.iter().all(|op| !matches!(op, ChildOp::Create)));
+        assert!(diff.ops.iter().all(|op| !matches!(op, ListOp::Create)));
     }
 
     fn elem(tag: &str, attributes: Vec<Attribute>) -> Element {
@@ -650,5 +692,82 @@ mod tests {
             diff.set,
             vec![("class".to_string(), AttributeEffect::Text("b".to_string()))]
         );
+    }
+
+    fn meta(name: &str, content: &str) -> HeadNode {
+        HeadNode::MetaName {
+            name: name.to_string(),
+            content: content.to_string(),
+        }
+    }
+
+    #[test]
+    fn unchanged_head_list_is_entirely_kept() {
+        let old = vec![meta("description", "a"), meta("author", "b")];
+        let new = old.clone();
+        let diff = diff_head(&old, &new);
+        assert_eq!(
+            diff.ops,
+            vec![ListOp::Keep { old_index: 0 }, ListOp::Keep { old_index: 1 },]
+        );
+        assert!(diff.removed_old_indices.is_empty());
+    }
+
+    #[test]
+    fn changed_head_node_content_is_replaced_not_kept() {
+        // Head nodes carry no independent state, so a content change is
+        // just "old copy gone, new copy created" rather than an in-place
+        // update — there is nothing meaningful to patch in place.
+        let old = vec![meta("description", "old css-driven copy")];
+        let new = vec![meta("description", "new css-driven copy")];
+        let diff = diff_head(&old, &new);
+        assert_eq!(diff.ops, vec![ListOp::Create]);
+        assert_eq!(diff.removed_old_indices, vec![0]);
+    }
+
+    #[test]
+    fn unchanged_style_node_is_kept_without_touching_the_dom() {
+        let old = vec![HeadNode::Style(Stylesheet::default())];
+        let new = vec![HeadNode::Style(Stylesheet::default())];
+        let diff = diff_head(&old, &new);
+        assert_eq!(diff.ops, vec![ListOp::Keep { old_index: 0 }]);
+        assert!(diff.removed_old_indices.is_empty());
+    }
+
+    #[test]
+    fn reordered_head_nodes_move_only_the_one_that_needs_to() {
+        let old = vec![meta("a", "1"), meta("b", "2"), meta("c", "3")];
+        let new = vec![meta("b", "2"), meta("c", "3"), meta("a", "1")];
+        let diff = diff_head(&old, &new);
+        assert_eq!(
+            diff.ops,
+            vec![
+                ListOp::Keep { old_index: 1 },
+                ListOp::Keep { old_index: 2 },
+                ListOp::Move { old_index: 0 },
+            ]
+        );
+        assert!(diff.removed_old_indices.is_empty());
+    }
+
+    #[test]
+    fn dropped_head_node_is_removed_and_not_recreated() {
+        let old = vec![meta("a", "1"), meta("b", "2")];
+        let new = vec![meta("a", "1")];
+        let diff = diff_head(&old, &new);
+        assert_eq!(diff.ops, vec![ListOp::Keep { old_index: 0 }]);
+        assert_eq!(diff.removed_old_indices, vec![1]);
+    }
+
+    #[test]
+    fn added_head_node_is_created() {
+        let old = vec![meta("a", "1")];
+        let new = vec![meta("a", "1"), meta("b", "2")];
+        let diff = diff_head(&old, &new);
+        assert_eq!(
+            diff.ops,
+            vec![ListOp::Keep { old_index: 0 }, ListOp::Create]
+        );
+        assert!(diff.removed_old_indices.is_empty());
     }
 }
