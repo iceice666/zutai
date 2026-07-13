@@ -555,28 +555,38 @@ fn diff_patch_children(parent: &Node, old: &[Html], new: &[Html]) -> Result<(), 
         .collect::<Option<_>>()
         .ok_or_else(|| JsValue::from_str("live DOM children do not match the retained tree"))?;
 
-    for (new_index, op) in diff.ops.iter().enumerate() {
-        let cursor = parent.child_nodes().item(new_index as u32);
-        match *op {
-            ChildOp::Update { old_index } => {
-                let node = &snapshot[old_index];
-                if cursor
-                    .as_ref()
-                    .is_none_or(|current| !node.is_same_node(Some(current)))
-                {
-                    parent.insert_before(node, cursor.as_ref())?;
-                }
-                diff_patch_node(node, &old[old_index], &new[new_index])?;
-            }
-            ChildOp::Create => {
-                let created = create_node(parent, &new[new_index])?;
-                parent.insert_before(&created, cursor.as_ref())?;
-            }
-        }
-    }
-
+    // Remove stale nodes first so none of them can end up used as an anchor
+    // below.
     for &old_index in &diff.removed_old_indices {
         parent.remove_child(&snapshot[old_index])?;
+    }
+
+    // Walk backwards, so each already-placed node can serve as the
+    // insertion anchor for whatever precedes it. `Keep` nodes are trusted
+    // to already be in the right relative order (that is what the diff's
+    // longest-increasing-subsequence selection guarantees) and are never
+    // moved; only `Move` and `Create` ever call `insert_before`.
+    let mut anchor: Option<Node> = None;
+    for (new_index, op) in diff.ops.iter().enumerate().rev() {
+        let node = match *op {
+            ChildOp::Keep { old_index } => {
+                let node = snapshot[old_index].clone();
+                diff_patch_node(&node, &old[old_index], &new[new_index])?;
+                node
+            }
+            ChildOp::Move { old_index } => {
+                let node = snapshot[old_index].clone();
+                parent.insert_before(&node, anchor.as_ref())?;
+                diff_patch_node(&node, &old[old_index], &new[new_index])?;
+                node
+            }
+            ChildOp::Create => {
+                let node = create_node(parent, &new[new_index])?;
+                parent.insert_before(&node, anchor.as_ref())?;
+                node
+            }
+        };
+        anchor = Some(node);
     }
     Ok(())
 }

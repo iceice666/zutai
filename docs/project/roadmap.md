@@ -42,13 +42,19 @@ Planned milestones, in order:
    an O(n) hashmap lookup in `diff_children`, ahead of milestone 2 below.
    Attribute application (`apply_element_attributes`) is still the
    clear-and-reapply-everything strategy — milestone 3, not touched here.
-2. **Minimal moves and unkeyed shift tolerance.** `diff_children` already
-   gives O(n) keyed lookup (see above); still open: compute a minimal move
-   set (longest-increasing-subsequence over matched old indices) so unmoved
-   keyed children emit zero `insertBefore` calls, and extend unkeyed
-   matching to tolerate small positional shifts instead of only the exact
-   same index, so a single mid-list insert/remove doesn't cascade into
-   replacing every later unkeyed sibling.
+2. **DONE. Minimal moves and unkeyed shift tolerance.** `diff_children` now
+   computes the longest increasing subsequence over matched old indices
+   (`longest_increasing_subsequence`, O(n log n)) and marks those positions
+   `ChildOp::Keep` (no DOM move); every other match is `ChildOp::Move`.
+   `diff_patch_children` in `dom.rs` applies this with a backward,
+   anchor-based walk (each already-placed node becomes the `insertBefore`
+   anchor for whatever precedes it), the standard minimal-move keyed-diff
+   shape used by Vue/Inferno. Unkeyed matching no longer requires the exact
+   same index: old and new unkeyed nodes are grouped into per-kind (text, or
+   element-by-tag) FIFO queues, so a mid-list insert or removal re-syncs on
+   the next same-kind sibling instead of cascading into replacing everything
+   after it — see the `unkeyed_mid_list_insert_...`/`..._removal_...` tests
+   in `diff.rs`.
 3. **Attribute-level diffing.** Compare old vs. new `Element.attributes` and
    `Document.body_attributes` as data and emit only the add/remove/set ops
    that actually changed, replacing the current clear-all-then-reapply in
