@@ -19,6 +19,13 @@ use clap::Subcommand;
 
 const MAX_PAGES_FILE_BYTES: u64 = 25 * 1024 * 1024;
 
+/// Prefix for `build_site`'s staging directory, a sibling of `out_dir`
+/// (`out_dir.parent()/{STAGING_DIR_PREFIX}<pid>-<hash>`) it assembles a
+/// fresh build in before renaming it into place. `spawn_watcher` recognizes
+/// this same prefix to ignore the directory's own churn -- kept as one
+/// constant so the two can't silently drift apart.
+const STAGING_DIR_PREFIX: &str = ".zutai-web-";
+
 /// Commands exposed by the dedicated `zutai-web` app and the compatibility
 /// `zutai-cli web` entry point.
 #[derive(Clone, Debug, Subcommand)]
@@ -246,7 +253,11 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
         .parent()
         .ok_or("web output must have a parent directory")?;
     fs::create_dir_all(parent)?;
-    let staging = parent.join(format!(".zutai-web-{}-{}", std::process::id(), hash));
+    let staging = parent.join(format!(
+        "{STAGING_DIR_PREFIX}{}-{}",
+        std::process::id(),
+        hash
+    ));
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
     }
@@ -507,7 +518,7 @@ pub fn run_web_serve(
         error: None,
     }));
     if !no_build {
-        spawn_watcher(options.clone(), Arc::clone(&status));
+        spawn_watcher(options.clone(), built.out_dir.clone(), Arc::clone(&status));
     }
 
     let server = Server::http(addr).map_err(|err| format!("cannot bind {addr}: {err}"))?;
@@ -518,7 +529,7 @@ pub fn run_web_serve(
     Ok(())
 }
 
-fn spawn_watcher(options: WebBuildOptions, status: Arc<Mutex<DevStatus>>) {
+fn spawn_watcher(options: WebBuildOptions, out_dir: PathBuf, status: Arc<Mutex<DevStatus>>) {
     thread::spawn(move || {
         let (send, receive) = mpsc::channel();
         let mut watcher = match notify::recommended_watcher(move |result| {
@@ -541,11 +552,25 @@ fn spawn_watcher(options: WebBuildOptions, status: Arc<Mutex<DevStatus>>) {
             status.lock().unwrap().error = Some(format!("watcher failed: {err}"));
             return;
         }
+        // Canonicalize `out_dir` up front: it may sit inside `source_root`
+        // (e.g. `-o dist` next to the entry file, a common layout
+        // `guard_output_directory` allows), and comparing it against the
+        // absolute paths `notify` reports needs it in the same form.
+        let out_dir = fs::canonicalize(&out_dir).unwrap_or(out_dir);
         loop {
             match receive.recv() {
-                Ok(Ok(_)) => {
+                Ok(Ok(event)) => {
+                    let mut worth_rebuilding = is_relevant_source_change(&event, &out_dir);
                     thread::sleep(Duration::from_millis(150));
-                    while receive.try_recv().is_ok() {}
+                    while let Ok(next) = receive.try_recv() {
+                        if let Ok(event) = next {
+                            worth_rebuilding =
+                                worth_rebuilding || is_relevant_source_change(&event, &out_dir);
+                        }
+                    }
+                    if !worth_rebuilding {
+                        continue;
+                    }
                     match build_site(&options) {
                         Ok(_) => {
                             let mut status = status.lock().unwrap();
@@ -560,6 +585,40 @@ fn spawn_watcher(options: WebBuildOptions, status: Arc<Mutex<DevStatus>>) {
             }
         }
     });
+}
+
+/// Whether `event` reflects a real source change worth rebuilding for, as
+/// opposed to the dev server's own build activity re-triggering itself:
+///
+/// - Pure access events (open/read/close without writing) reflect reads,
+///   never content changes -- and `build_site` reads the entry file and
+///   every imported source file on *every* run, so treating these as real
+///   changes would make the watcher self-trigger forever regardless of
+///   where `out_dir` lives.
+/// - A build's own writes happen in `out_dir` itself and in `build_site`'s
+///   staging directory, always a *sibling* of `out_dir`
+///   (`out_dir.parent()/<STAGING_DIR_PREFIX><pid>-<hash>`, see
+///   `is_staging_path`) -- recognizing `out_dir` alone is not enough, since
+///   almost all of a build's actual writes happen in staging before the
+///   final rename into place.
+fn is_relevant_source_change(event: &notify::Event, out_dir: &Path) -> bool {
+    if matches!(event.kind, notify::EventKind::Access(_)) {
+        return false;
+    }
+    event.paths.is_empty()
+        || !event
+            .paths
+            .iter()
+            .all(|path| path.starts_with(out_dir) || is_staging_path(path))
+}
+
+fn is_staging_path(path: &Path) -> bool {
+    path.ancestors().any(|ancestor| {
+        ancestor
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(STAGING_DIR_PREFIX))
+    })
 }
 
 fn serve_request(
@@ -716,6 +775,87 @@ mod tests {
         assert_eq!(content_hash(&[b"ab", b"c"]), content_hash(&[b"ab", b"c"]));
         assert_ne!(content_hash(&[b"ab", b"c"]), content_hash(&[b"a", b"bc"]));
         assert_eq!(content_hash(&[b"value"]).len(), 24);
+    }
+
+    #[test]
+    fn event_wholly_inside_the_output_directory_is_not_a_relevant_change() {
+        let out_dir = PathBuf::from("/project/dist");
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(out_dir.join("index.html"));
+        assert!(!is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn event_outside_the_output_directory_is_relevant() {
+        let out_dir = PathBuf::from("/project/dist");
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(PathBuf::from("/project/main.zt"));
+        assert!(is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn event_touching_both_source_and_output_is_relevant() {
+        // A real source edit that lands in the same debounced batch as a
+        // build-output write must still trigger a rebuild.
+        let out_dir = PathBuf::from("/project/dist");
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(out_dir.join("index.html"))
+            .add_path(PathBuf::from("/project/main.zt"));
+        assert!(is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn event_with_no_known_paths_is_relevant() {
+        let out_dir = PathBuf::from("/project/dist");
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any));
+        assert!(is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn event_inside_the_staging_directory_is_not_relevant_even_though_it_is_not_inside_out_dir() {
+        // `build_site` assembles a fresh build in
+        // `out_dir.parent()/<STAGING_DIR_PREFIX><pid>-<hash>` -- a *sibling*
+        // of `out_dir`, not a descendant -- before renaming it into place.
+        // This was one real cause of an infinite rebuild loop: almost all
+        // of a build's writes happen here, outside `out_dir`, so filtering
+        // on `out_dir` alone left every one of them looking like a real
+        // source change.
+        let out_dir = PathBuf::from("/project/dist");
+        let staging = PathBuf::from("/project").join(format!("{STAGING_DIR_PREFIX}123-abc"));
+        let event = notify::Event::new(notify::EventKind::Create(notify::event::CreateKind::File))
+            .add_path(staging.join("index.html"));
+        assert!(!is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn event_renaming_staging_into_out_dir_is_not_relevant() {
+        // The final `fs::rename(&staging, &out_dir)` can report both the
+        // staging source and the out_dir destination in one event.
+        let out_dir = PathBuf::from("/project/dist");
+        let staging = PathBuf::from("/project").join(format!("{STAGING_DIR_PREFIX}123-abc"));
+        let event = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::Both,
+        )))
+        .add_path(staging)
+        .add_path(out_dir.clone());
+        assert!(!is_relevant_source_change(&event, &out_dir));
+    }
+
+    #[test]
+    fn pure_access_events_are_never_relevant_even_for_source_paths() {
+        // The actual cause of a second, independent infinite loop: every
+        // build reads the entry file (and every imported source file) to
+        // analyze it, which itself generates an access event for a path
+        // that is neither inside `out_dir` nor the staging directory. If
+        // access events counted as changes, the watcher would re-trigger a
+        // rebuild forever purely from each build reading its own source,
+        // regardless of where `out_dir` lives.
+        let out_dir = PathBuf::from("/project/dist");
+        let event = notify::Event::new(notify::EventKind::Access(notify::event::AccessKind::Open(
+            notify::event::AccessMode::Any,
+        )))
+        .add_path(PathBuf::from("/project/main.zt"));
+        assert!(!is_relevant_source_change(&event, &out_dir));
     }
 
     #[test]

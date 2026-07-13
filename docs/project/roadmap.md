@@ -137,17 +137,40 @@ Planned milestones, in order:
    --test browser_hydration` after reloading the dev shell) still gives the
    more precise, repeatable signal and is worth doing once.
 
-   Manual verification surfaced one unrelated rough edge in `zutai-web
-   serve`: `guard_output_directory` (`crates/web/src/lib.rs`) only refuses
-   an output directory that is an *ancestor* of `source_root`, never one
-   *nested inside* it. An `-o` under the entry's own directory (a natural
-   choice) makes the dev-server file watcher see its own build output as a
-   source change, triggering another rebuild, forever — each one bumping the
-   injected reload script's revision and forcing a full page reload, which
-   reads as "the page keeps refreshing and loses my typed state." Worked
-   around for the manual check via a one-shot `build` + static server
-   instead of `serve`; not fixed here, since root-causing it fully is
-   separate from the reconciler work. Not yet a scheduled milestone.
+   Manual verification surfaced (and this then fixed, once diagnosed) an
+   unrelated `zutai-web serve` bug: its file watcher could see its own
+   build activity as a source change and rebuild forever, each cycle
+   bumping the injected reload script's revision and forcing a full page
+   reload — which is what "the page keeps refreshing and loses my typed
+   state" turned out to be, unrelated to the reconciler. Two independent
+   causes, found by instrumenting `spawn_watcher` and observing real
+   `notify` events rather than guessing:
+
+   - `build_site`'s actual writes land in a *staging* directory
+     (`out_dir.parent()/<STAGING_DIR_PREFIX><pid>-<hash>`, a sibling of
+     `out_dir`, not a descendant) before the final rename into place — so
+     an `-o` under the entry's own directory (a natural, common choice)
+     meant almost every build-triggered filesystem event was outside the
+     one path (`out_dir`) an earlier attempt at this fix checked.
+   - Independently of `out_dir`'s location at all: `build_site` reads the
+     entry file (and every imported source file) on *every* run to analyze
+     it, and the dev-server's `notify` watcher reports pure `Access`
+     (open/read/close) events for that read — which a naive "did anything
+     under source_root change" check treats as a real edit, so simply
+     *building* would perpetually re-trigger itself regardless of where
+     output lives.
+
+   Fixed in `crates/web/src/lib.rs`: `spawn_watcher`'s
+   `is_relevant_source_change` now (a) never treats `EventKind::Access`
+   events as a change, and (b) ignores any event whose paths are entirely
+   inside `out_dir` or a `STAGING_DIR_PREFIX`-prefixed staging directory
+   (a shared constant, so `build_site` and the watcher can't drift apart on
+   the naming convention). Verified empirically, not just by unit test:
+   reproduced the original nested `-o dist` layout, confirmed the server
+   stays at build-count 1 while idle (previously climbed continuously), and
+   confirmed a genuine source edit still triggers exactly one rebuild
+   (revision 1 -> 2, stable afterward) — the watcher still works, it just
+   no longer answers to its own echo.
 
 Not scheduled beyond this: whole-tree re-render/re-walk on every event (no
 per-subtree memoization upstream of the patcher) is a separate, larger

@@ -46,7 +46,25 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 5: added a
+_Last updated: 2026-07-13 (`zutai-web serve`: fixed a dev-server watcher bug found
+while manually verifying the browser kernel reconciler (below) — the file
+watcher could see its own build activity as a source change and rebuild
+forever, each cycle forcing a full page reload. Two independent causes,
+found by instrumenting `spawn_watcher` and reading real `notify` events
+rather than guessing: `build_site`'s writes actually land in a staging
+directory that is a *sibling* of `out_dir`, not a descendant, so an `-o`
+under the entry's own directory put almost every write outside the one path
+a filter on `out_dir` alone would catch; and, independently of `out_dir`'s
+location, `build_site` reads the entry file on every run, which the watcher
+reports as a pure `Access` event that a naive "did anything change" check
+treats as a real edit. `crates/web/src/lib.rs`'s `is_relevant_source_change`
+now excludes `EventKind::Access` outright and recognizes the staging
+directory by its `STAGING_DIR_PREFIX` (a constant shared with `build_site`
+so the two can't drift apart). Verified empirically, not just by unit test:
+reproduced the original nested `-o dist` layout, confirmed the server holds
+at build-count 1 while idle, and confirmed a genuine source edit still
+triggers exactly one rebuild);
+prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 5: added a
 wasm-bindgen-test browser harness (`crates/browser/kernel/tests/
 browser_hydration.rs`, `wasm-bindgen-test = "=0.3.71"` pinned to match this
 workspace's `wasm-bindgen 0.2.121`) exercising `start()` end to end —
@@ -63,14 +81,7 @@ reached wasm. `.cargo/config.toml` now points the wasm32 target's runner at
 chromedriver (Linux-only). The automated scenario has not been run through
 `wasm-bindgen-test-runner` in this environment (no headless browser here),
 but every behavior it asserts was confirmed by hand in real Chromium against
-the same fixture program (`zutai-web build` + a static server); running the
-automated test locally is still worth doing for a repeatable signal. Manual
-testing also surfaced an unrelated `zutai-web serve` rough edge —
-`guard_output_directory` only rejects an output directory that is an
-ancestor of `source_root`, not one nested inside it, so an `-o` under the
-entry's directory makes the watcher rebuild forever on its own output; not
-fixed here, not yet a scheduled milestone);
-prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 4: `diff_head` diffs
+the same fixture program), 2026-07-13 (browser kernel reconciliation, milestone 4: `diff_head` diffs
 `Document.head` by full `HeadNode` structural equality (head nodes carry no
 independent state, so equal nodes are fully interchangeable regardless of
 position), reusing the `diff_children` move-minimization machinery renamed
