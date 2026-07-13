@@ -60,6 +60,55 @@ These are specified behavior, not backlog items:
 - Non-matchable cross-module witness exports remain native-gated.
 - Non-tail `yield from` remains unsupported; tail delegation is stable.
 
+## Open design question: GitHub-style remote dependencies
+
+The current package model (see
+[local packages](../spec/07-modules/modules.md#local-packages)) is
+local-path-only: a `zutai.zti` manifest declares dependencies as
+package-relative filesystem paths. There is no registry, no remote fetch, no
+version solving, and no lockfile. This is deliberate — package resolution
+must finish before general-mode name resolution or type checking can start,
+so remote fetch is IO the compiler does not currently perform.
+
+A Go-modules-style alternative has been proposed: address a dependency by its
+repository location (e.g. a `github.com/...` path) plus a git ref, using git
+itself as the distribution mechanism instead of a central package registry.
+This fits Zutai's existing "no registry" posture better than an npm-style
+model would, but it is not yet a scheduled milestone. Before it becomes one,
+the following need concrete answers:
+
+- **Manifest shape.** Dependency entries currently take `{ alias; path; }`. A
+  remote entry needs at least `{ alias; url; rev; }` (or `tag`); decide
+  whether `path` and `url` are mutually exclusive variants of one dependency
+  shape or visibly distinct forms.
+- **Fetch and cache.** Something must git-clone/shallow-fetch into a local
+  module cache (analogous to `$GOPATH/pkg/mod`) before typed work starts,
+  since package resolution is synchronous and pre-typecheck today. This is
+  new process/network IO the compiler does not currently do; decide which
+  crate owns it and how it stays gated to native builds (see the Wasm point
+  below).
+- **Version identity.** Choose between pinning an exact commit (simplest,
+  most reproducible, closest to the current local-path model), tag-based
+  semver ranges with Go-style minimal version selection (more ergonomic, needs
+  a solver), or something narrower. `compilerCompatibility` already exists for
+  compiler-version gating and is orthogonal to dependency version selection.
+- **Lockfile.** Reproducible builds need resolved commit hashes recorded
+  somewhere durable; the current spec explicitly excludes lockfiles from the
+  local-path model, and a remote model likely cannot skip this the way local
+  paths do.
+- **Wasm / portable bundles.** Package sources are carried pre-resolved into
+  portable web bundles today; the Wasm kernel does no filesystem or network
+  lookup (see "Standard-library imports" in the modules spec). Remote fetch
+  must stay a native/CLI-side concern that completes before bundle
+  construction, never something the Wasm kernel performs itself.
+- **Trust surface.** Arbitrary git fetch during compilation is a supply-chain
+  surface npm and Go have both had incidents with; decide whether fetched
+  sources need pinning-by-hash verification before being treated as trusted
+  input to name resolution.
+
+Not scheduled. Add a concrete milestone here only when a real
+multi-repository Zutai program needs it.
+
 ## Reserved design boundaries
 
 The following are demand-gated non-goals rather than a sequenced roadmap:
