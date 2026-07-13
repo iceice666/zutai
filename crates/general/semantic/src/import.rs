@@ -29,8 +29,7 @@ use zutai_thir::{
 };
 
 use crate::package::{PackageGraph, PortablePackageGraph};
-use crate::{Analysis, AnalysisOptions};
-use zutai_stdlib::StdlibSources;
+use crate::{Analysis, AnalysisOptions, StdlibSources};
 
 /// Recursion state shared across a single top-level analysis: the stack of
 /// modules currently being analyzed (for cycle detection) and a cache of

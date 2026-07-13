@@ -18,8 +18,8 @@ install PREFIX="${HOME}/.local":
     cargo build --release -p zutai-cli -p zutai-web
     install -d "{{ PREFIX }}/bin" "{{ PREFIX }}/share/zutai/stdlib"
     install -m755 target/release/zutai-cli target/release/zutai-web "{{ PREFIX }}/bin/"
-    install -m644 crates/general/stdlib/src/zutai.zti "{{ PREFIX }}/share/zutai/stdlib/zutai.zti"
-    cp -R crates/general/stdlib/src/packages "{{ PREFIX }}/share/zutai/stdlib/"
+    install -m644 stdlib/zutai.zti "{{ PREFIX }}/share/zutai/stdlib/zutai.zti"
+    cp -R stdlib/packages "{{ PREFIX }}/share/zutai/stdlib/"
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 

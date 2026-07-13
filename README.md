@@ -94,9 +94,9 @@ and guarded Cloudflare Pages Direct Upload workflow.
 
 This project is a Rust workspace.
 
-The standard library is ordinary `.zt` source under
-`crates/general/stdlib/src/packages/*/modules`. Workspace Cargo commands
-automatically set
+The standard library is ordinary `.zt` source under `stdlib/packages/*/modules`,
+a plain filesystem package tree independent of the Rust workspace (not a Cargo
+crate). Workspace Cargo commands automatically set
 `ZUTAI_STDLIB_ROOT` through `.cargo/config.toml`. Installed binaries look for
 `../share/zutai/stdlib` relative to their executable; `just install` installs
 both binaries and those sources. Plain `cargo install` does not install data

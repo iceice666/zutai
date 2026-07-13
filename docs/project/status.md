@@ -46,8 +46,12 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (local package system and split filesystem stdlib);
-prior baseline updates: 2026-07-13 (cross-file `.zti` validation diagnostics),
+_Last updated: 2026-07-13 (stdlib package independence: the filesystem stdlib
+tree moved out of the Rust workspace to a top-level `stdlib/` directory, the
+loader (`StdlibSources`, manifest parsing, root resolution) was folded into
+`zutai-semantic`, and the now-empty `zutai-stdlib` crate was removed);
+prior baseline updates: 2026-07-13 (local package system and split filesystem
+stdlib), 2026-07-13 (cross-file `.zti` validation diagnostics),
 2026-07-12 (filesystem-only stdlib and portable stdlib bundles),
 2026-07-12 (dedicated `zutai-web` CLI),
 2026-07-12 (unversioned stable syntax specification),

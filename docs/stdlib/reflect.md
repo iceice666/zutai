@@ -6,7 +6,7 @@ Accepted and implemented as an explicit filesystem source module:
 `refl ::= import stdlib.reflect`. The module wraps the existing reflection
 intrinsics without making new names ambient.
 
-The module source lives at `crates/general/stdlib/src/packages/data/modules/reflect.zt` and is
+The module source lives at `stdlib/packages/data/modules/reflect.zt` and is
 registered by the filesystem stdlib manifest.
 
 ## API

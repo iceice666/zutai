@@ -32,10 +32,12 @@ Two principles govern what lives where:
 
 ## Implementation home
 
-Source modules live under `crates/general/stdlib/src/packages/{base,data,system,web}/modules/`.
-The root `zutai.zti` is the canonical compatibility module and visibility
-registry, and each physical unit has its own package manifest. `zutai-stdlib`
-loads and validates that filesystem tree. The semantic layer supplies the
+Source modules live under `stdlib/packages/{base,data,system,web}/modules/`,
+a plain filesystem package tree independent of the Rust workspace — it is not
+a Cargo crate. The root `zutai.zti` is the canonical compatibility module and
+visibility registry, and each physical unit has its own package manifest.
+`zutai-semantic` loads and validates that filesystem tree (the loader lives at
+`crates/general/semantic/src/stdlib.rs`). The semantic layer supplies the
 ambient sources to HIR and uses the same loaded set for `import stdlib.<name>`.
 No standard-library source is embedded in a Rust binary.
 

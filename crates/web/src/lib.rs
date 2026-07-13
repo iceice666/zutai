@@ -216,7 +216,7 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
     );
     // Re-run through the memory loader at build time. This proves the emitted
     // bundle is complete and path-portable before it reaches a browser.
-    let bundled_stdlib = zutai_stdlib::StdlibSources::from_memory(
+    let bundled_stdlib = zutai_semantic::StdlibSources::from_memory(
         bundle.stdlib_compiler_compatibility.clone(),
         bundle.stdlib_sources.clone(),
     )?;

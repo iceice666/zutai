@@ -1490,7 +1490,7 @@ fn compile_zt_imported_stream_module_matches_oracle() {
     // a finite stream, maps/filters/takes/folds it, and the native compile must
     // match the interpreter oracle. The recursive `Stream` codata type crossing the
     // boundary is the case that drove the cross-module global-ref compat fix.
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+    let stdlib = zutai_semantic::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
     let (interp, native) = import_run_vs_compile(
         "g6_stream_module",
         "main.zt",
@@ -1519,7 +1519,7 @@ fn compile_zt_imported_stream_unfold_matches_oracle() {
     // structurally inside `unfold`'s signature (the `Step` type is not an exported
     // field, so the importer names a local structural alias for the step
     // annotation). Native compile must match the interpreter oracle.
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+    let stdlib = zutai_semantic::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
     let (interp, native) = import_run_vs_compile(
         "g6_stream_unfold",
         "main.zt",
@@ -1544,7 +1544,7 @@ fn compile_zt_imported_stream_unfold_matches_oracle() {
 fn compile_zt_imported_stream_empty_matches_oracle() {
     // `s.empty` through the import boundary: a polymorphic nullary value crossing
     // the module boundary, then consumed by `s.cons`/`s.fold`. Native == oracle.
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+    let stdlib = zutai_semantic::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
     let (interp, native) = import_run_vs_compile(
         "g6_stream_empty",
         "main.zt",
@@ -1567,7 +1567,7 @@ fn compile_zt_imported_stream_list_interop_matches_oracle() {
     // V3-G2 residual through the import boundary: `s.fromList`/`s.toList`/`s.takeList`
     // qualified on the imported module. A builtin `List` round-trips List→Stream→List
     // through the qualified combinators; native compile must match the oracle.
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+    let stdlib = zutai_semantic::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
     let (interp, native) = import_run_vs_compile(
         "g6_stream_list_interop",
         "main.zt",

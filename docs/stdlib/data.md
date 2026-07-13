@@ -6,7 +6,7 @@ Accepted and implemented as an explicit filesystem source module:
 `d ::= import stdlib.data`. The module provides a first-order data envelope and
 structured decoding helpers; it is not ambient.
 
-The module source lives at `crates/general/stdlib/src/packages/data/modules/data.zt` and is
+The module source lives at `stdlib/packages/data/modules/data.zt` and is
 registered by the filesystem stdlib manifest.
 
 ## Types

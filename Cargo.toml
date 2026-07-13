@@ -11,7 +11,6 @@ members = [
   "crates/general/semantic",
   "crates/general/runtime",
   "crates/general/ssa",
-  "crates/general/stdlib",
   "crates/general/syntax",
   "crates/general/tlc",
   "crates/general/thir",

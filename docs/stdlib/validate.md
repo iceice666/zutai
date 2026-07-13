@@ -6,7 +6,7 @@ Accepted and implemented as an explicit filesystem source module:
 `v ::= import stdlib.validate`. Validation is an opt-in errors-as-data surface,
 not an ambient prelude convention.
 
-The module source lives at `crates/general/stdlib/src/packages/data/modules/validate.zt` and
+The module source lives at `stdlib/packages/data/modules/validate.zt` and
 is registered by the filesystem stdlib manifest.
 
 ## Types

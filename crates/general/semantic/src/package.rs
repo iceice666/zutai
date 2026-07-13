@@ -955,7 +955,7 @@ mod tests {
         fs::write(facade.join("src/internal.zt"), "{ pick = \\value. value; }").unwrap();
         fs::write(math.join("src/vector.zt"), "{ answer = 42; }").unwrap();
 
-        let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+        let stdlib = crate::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
         let recorded = crate::analyze_path_recording_with_stdlib(&entry, &stdlib).unwrap();
         assert!(recorded.analysis.blocking_diagnostics().next().is_none());
         assert_eq!(recorded.packages.packages["facade"].sources.len(), 2);
@@ -992,7 +992,7 @@ mod tests {
         .unwrap();
         let entry = a.join("src/main.zt");
         fs::write(&entry, "x ::= import b.missing; x").unwrap();
-        let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+        let stdlib = crate::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
         let analysis = crate::analyze_path_with_stdlib(&entry, &stdlib).unwrap();
         assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
             &diagnostic.kind,

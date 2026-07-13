@@ -27,7 +27,7 @@ the `if`/`match` branching lives in the `.zt` source. See [2026 H1 history](../h
 ## Two surfaces, one source
 
 The combinators live in one canonical file,
-`crates/general/stdlib/src/packages/base/modules/stream.zt`, registered by the adjacent
+`stdlib/packages/base/modules/stream.zt`, registered by the adjacent
 filesystem manifest, which feeds both surfaces:
 
 - **Ambient** (no import). Semantic analysis gives the manifest-selected source

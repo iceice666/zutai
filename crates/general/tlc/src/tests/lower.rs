@@ -682,8 +682,11 @@ readFirst "Cargo.toml"
 
 #[test]
 fn backend_stdlib_fs_module_lowers_under_host_grants() {
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
-    let m = backend_tlc_of(stdlib.source("fs").unwrap());
+    let source = include_str!(concat!(
+        env!("ZUTAI_STDLIB_ROOT"),
+        "/packages/system/modules/fs.zt"
+    ));
+    let m = backend_tlc_of(source);
     let reason = crate::residual_effect_reason_with_grants(&m, HostEffectSet::ALL);
     assert!(
         reason.is_none(),
@@ -693,8 +696,11 @@ fn backend_stdlib_fs_module_lowers_under_host_grants() {
 
 #[test]
 fn backend_stdlib_net_module_lowers_under_host_grants() {
-    let stdlib = zutai_stdlib::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
-    let m = backend_tlc_of(stdlib.source("net").unwrap());
+    let source = include_str!(concat!(
+        env!("ZUTAI_STDLIB_ROOT"),
+        "/packages/system/modules/net.zt"
+    ));
+    let m = backend_tlc_of(source);
     let reason = crate::residual_effect_reason_with_grants(&m, HostEffectSet::ALL);
     assert!(
         reason.is_none(),

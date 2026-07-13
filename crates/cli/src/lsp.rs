@@ -280,7 +280,7 @@ impl Server {
         recorded
             .sources
             .insert(recorded.entry.clone(), root_source.to_string());
-        let stdlib = zutai_stdlib::StdlibSources::from_memory(
+        let stdlib = zutai_semantic::StdlibSources::from_memory(
             recorded.stdlib_compiler_compatibility.clone(),
             recorded.stdlib_sources.clone(),
         )

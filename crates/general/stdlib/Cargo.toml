@@ -1,8 +1,0 @@
-[package]
-name = "zutai-stdlib"
-description = "Filesystem standard-library manifest and source loader for Zutai general mode (.zt)."
-edition.workspace = true
-version.workspace = true
-
-[dependencies]
-zutai-im = { path = "../../immediate/core" }

@@ -47,7 +47,7 @@ Source → HIR → THIR → TLC
 ```
 
 - **HIR** — resolved, source-preserving, not fully typed; produced by `zutai-hir`.
-- **Standard library loader** — version-checked filesystem `.zt` sources and manifest handling owned by `zutai-stdlib`.
+- **Standard library** — a plain filesystem package tree at `stdlib/`, independent of the Rust workspace; version-checked loading and manifest handling live in `zutai-semantic`.
 - **THIR** — typed, source-preserving, error-tolerant; produced by `zutai-thir` and used by LSP tooling.
 - **TLC** — fully elaborated with explicit polymorphism; produced by `zutai-tlc` only after successful checking.
 - **Dataflow Core** — graph IR where sharing and recursion are structurally explicit; produced by `zutai-dataflow`.

@@ -75,7 +75,7 @@ pub fn start(bundle_json: &str, development: bool) -> Result<(), JsValue> {
 
     let bundle: WebBundleV3 = serde_json::from_str(bundle_json).map_err(js_error)?;
     bundle.validate_version().map_err(js_error)?;
-    let stdlib = zutai_stdlib::StdlibSources::from_memory(
+    let stdlib = zutai_semantic::StdlibSources::from_memory(
         bundle.stdlib_compiler_compatibility,
         bundle.stdlib_sources,
     )

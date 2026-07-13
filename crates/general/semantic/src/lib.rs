@@ -18,16 +18,19 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 use std::rc::Rc;
-use zutai_stdlib::{StdlibError, StdlibSources};
 
-pub use zutai_stdlib::{COMPILER_COMPATIBILITY as STDLIB_COMPILER_COMPATIBILITY, STDLIB_ROOT_ENV};
+pub use stdlib::{
+    COMPILER_COMPATIBILITY as STDLIB_COMPILER_COMPATIBILITY, STDLIB_ROOT_ENV, StdlibError,
+    StdlibSources,
+};
 
 pub fn configure_stdlib_root(root: impl Into<std::path::PathBuf>) -> Result<(), StdlibError> {
-    zutai_stdlib::set_process_root(root.into())
+    stdlib::set_process_root(root.into())
 }
 
 mod import;
 mod package;
+mod stdlib;
 
 pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 pub use package::{PortablePackage, PortablePackageGraph};
@@ -1580,7 +1583,7 @@ mod tests {
         );
         assert_eq!(
             recorded.stdlib_compiler_compatibility,
-            zutai_stdlib::COMPILER_COMPATIBILITY
+            STDLIB_COMPILER_COMPATIBILITY
         );
         assert!(recorded.analysis.is_thir_complete());
     }

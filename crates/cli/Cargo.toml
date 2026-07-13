@@ -18,7 +18,6 @@ zutai-eval = { path = "../general/eval" }
 zutai-hir = { path = "../general/hir" }
 zutai-im = { path = "../immediate/core" }
 zutai-semantic = { path = "../general/semantic" }
-zutai-stdlib = { path = "../general/stdlib" }
 zutai-ssa = { path = "../general/ssa" }
 zutai-syntax = { path = "../general/syntax" }
 zutai-thir = { path = "../general/thir" }

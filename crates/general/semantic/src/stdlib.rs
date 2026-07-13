@@ -517,7 +517,7 @@ mod tests {
     }
 
     fn fixture_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+        PathBuf::from(env!("ZUTAI_STDLIB_ROOT"))
     }
 
     fn manifest(modules: Vec<ManifestModule>) -> StdlibManifest {
