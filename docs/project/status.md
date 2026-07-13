@@ -46,14 +46,21 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 2: `diff_children`
+_Last updated: 2026-07-13 (browser kernel reconciliation, milestone 3: `diff_element_attributes`/
+`diff_static_attributes` compute an add/change/remove `AttributeDiff` from a
+structural name -> `AttributeEffect` map (style declarations compared
+without rendering), replacing the old clear-and-reapply-every-attribute
+patch for both element attributes and `Document.body_attributes`;
+`value`/`checked` stay excluded from the diff and are still compared against
+live DOM state unconditionally, since typed/checked input can diverge from
+the last declared value);
+prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 2: `diff_children`
 now selects a minimal DOM move set via a longest-increasing-subsequence pass
 over matched old indices, and unkeyed sibling matching moved from
 exact-position to per-kind FIFO queues (text, or element-by-tag), so a
 mid-list unkeyed insert/removal re-syncs on the next matching sibling
 instead of cascading into replacing everything after it; applied in `dom.rs`
-via a backward, anchor-based patch walk);
-prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 1: steady-state
+via a backward, anchor-based patch walk), 2026-07-13 (browser kernel reconciliation, milestone 1: steady-state
 DOM patching now diffs the retained previous `Document` (`App::rendered`)
 against the newly rendered one as plain data, via a new pure `zutai-browser`
 `diff` module (`diff_children`, unit-tested without a wasm target), instead of

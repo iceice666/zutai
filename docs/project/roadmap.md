@@ -55,11 +55,21 @@ Planned milestones, in order:
    the next same-kind sibling instead of cascading into replacing everything
    after it — see the `unkeyed_mid_list_insert_...`/`..._removal_...` tests
    in `diff.rs`.
-3. **Attribute-level diffing.** Compare old vs. new `Element.attributes` and
-   `Document.body_attributes` as data and emit only the add/remove/set ops
-   that actually changed, replacing the current clear-all-then-reapply in
-   `patch_element` and `patch_document`. Keep the existing `value`/`checked`
-   special-casing for input cursor/IME safety.
+3. **DONE. Attribute-level diffing.** Added `diff_element_attributes`/
+   `diff_static_attributes` (`diff.rs`), which build a name -> `AttributeEffect`
+   map per element/body (`Text(String)` or `Styles(Vec<Declaration>)`,
+   compared structurally so an unchanged stylesheet never gets re-rendered
+   just to check equality) and emit only the names that were actually added,
+   changed, or removed. `dom.rs`'s `diff_apply_element_attributes`/
+   `diff_apply_static_attributes` apply that `AttributeDiff` in place of the
+   old `clear_attributes` + reapply-everything loop. `value`/`checked` stay
+   excluded from the diff entirely and are still compared against *live* DOM
+   state unconditionally on every patch (not old-vs-new declared value),
+   because typing or checking a box can diverge the live property from
+   whatever was last declared — diffing those the same way as other
+   attributes would silently break the "revert an invalid edit" pattern.
+   Hydration's `patch_element`/`apply_element_attributes` (no old tree to
+   diff against) is untouched.
 4. **Head diffing.** Diff `Document.head` old vs. new instead of removing and
    recreating every `[data-zutai-managed]` node on every patch in
    `patch_head`. This is the milestone with a user-visible payoff: today

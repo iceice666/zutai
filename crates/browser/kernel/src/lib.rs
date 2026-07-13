@@ -18,7 +18,10 @@ mod dom;
 pub use bundle::WebBundleV3;
 pub use css::render_stylesheet;
 pub use decode::{BrowserProgram, decode_document, decode_program};
-pub use diff::{ChildDiff, ChildOp, diff_children};
+pub use diff::{
+    AttributeDiff, AttributeEffect, ChildDiff, ChildOp, diff_children, diff_element_attributes,
+    diff_static_attributes,
+};
 pub use document::*;
 pub use render::{PrerenderedPage, prerender_document};
 

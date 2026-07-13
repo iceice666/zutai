@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::{Element, Html};
+use crate::{Attribute, Declaration, Element, Html, StaticAttribute};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChildOp {
@@ -178,9 +178,120 @@ fn unkeyed_kind<Msg>(node: &Html<Msg>) -> UnkeyedKind {
     }
 }
 
+/// What a changed or newly-set attribute name should become. Kept as
+/// structured data (not a rendered string) so comparing an unchanged
+/// `Styles` declaration list never needs to re-render CSS just to check
+/// equality; only the apply step, when something actually changed, renders.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeEffect {
+    Text(String),
+    Styles(Vec<Declaration>),
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AttributeDiff {
+    pub removed: Vec<String>,
+    pub set: Vec<(String, AttributeEffect)>,
+}
+
+/// Diff an element's non-event attributes (plus its `key`, which the DOM
+/// carries as a `data-zutai-key` attribute). `value`/`checked` are excluded
+/// entirely: those are DOM *properties* that can drift from their last
+/// declared value through user interaction (typing, checking a box), so
+/// they are always compared against live DOM state at apply time, not
+/// old-vs-new declared value — see `diff_apply_element_attributes` in
+/// `dom.rs`.
+pub fn diff_element_attributes<Msg>(old: &Element<Msg>, new: &Element<Msg>) -> AttributeDiff {
+    diff_attribute_maps(element_attribute_map(old), element_attribute_map(new))
+}
+
+/// Diff a plain `StaticAttribute` list (used for `Document.body_attributes`,
+/// which has no `key`, no properties, and no events).
+pub fn diff_static_attributes(old: &[StaticAttribute], new: &[StaticAttribute]) -> AttributeDiff {
+    diff_attribute_maps(static_attribute_map(old), static_attribute_map(new))
+}
+
+fn diff_attribute_maps(
+    old: HashMap<String, AttributeEffect>,
+    new: HashMap<String, AttributeEffect>,
+) -> AttributeDiff {
+    let removed = old
+        .keys()
+        .filter(|name| !new.contains_key(name.as_str()))
+        .cloned()
+        .collect();
+    let set = new
+        .into_iter()
+        .filter(|(name, effect)| old.get(name) != Some(effect))
+        .collect();
+    AttributeDiff { removed, set }
+}
+
+/// The final name -> effect map an element's attribute list produces,
+/// mirroring `dom.rs`'s old clear-and-reapply loop: entries are applied in
+/// list order and a later entry for the same name overwrites an earlier
+/// one, but an attribute that renders to nothing (e.g. `Bool { value: false
+/// }`) does not erase an earlier same-named entry, since the original loop
+/// never called `remove_attribute` for it either.
+fn element_attribute_map<Msg>(element: &Element<Msg>) -> HashMap<String, AttributeEffect> {
+    let mut map = HashMap::new();
+    if let Some(key) = &element.key {
+        map.insert(
+            "data-zutai-key".to_string(),
+            AttributeEffect::Text(key.clone()),
+        );
+    }
+    for attribute in &element.attributes {
+        match attribute {
+            Attribute::Static(attribute) => {
+                if let Some((name, effect)) = static_attribute_effect(attribute) {
+                    map.insert(name, effect);
+                }
+            }
+            Attribute::TextProperty { name, .. } if name == "value" => {}
+            Attribute::TextProperty { name, value } => {
+                map.insert(name.clone(), AttributeEffect::Text(value.clone()));
+            }
+            Attribute::BoolProperty { name, .. } if name == "checked" => {}
+            Attribute::BoolProperty { name, value: true } => {
+                map.insert(name.clone(), AttributeEffect::Text(String::new()));
+            }
+            Attribute::BoolProperty { .. } | Attribute::Event(_) => {}
+        }
+    }
+    map
+}
+
+fn static_attribute_map(attributes: &[StaticAttribute]) -> HashMap<String, AttributeEffect> {
+    let mut map = HashMap::new();
+    for attribute in attributes {
+        if let Some((name, effect)) = static_attribute_effect(attribute) {
+            map.insert(name, effect);
+        }
+    }
+    map
+}
+
+fn static_attribute_effect(attribute: &StaticAttribute) -> Option<(String, AttributeEffect)> {
+    match attribute {
+        StaticAttribute::Text { name, value } => {
+            Some((name.clone(), AttributeEffect::Text(value.clone())))
+        }
+        StaticAttribute::Bool { name, value: true } => {
+            Some((name.clone(), AttributeEffect::Text(String::new())))
+        }
+        StaticAttribute::Bool { value: false, .. } => None,
+        StaticAttribute::Styles(declarations) => Some((
+            "style".to_string(),
+            AttributeEffect::Styles(declarations.clone()),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CssValue;
 
     fn text(value: &str) -> Html {
         Html::Text(value.to_string())
@@ -354,5 +465,190 @@ mod tests {
             "exactly one stale node should be dropped, not the whole tail"
         );
         assert!(diff.ops.iter().all(|op| !matches!(op, ChildOp::Create)));
+    }
+
+    fn elem(tag: &str, attributes: Vec<Attribute>) -> Element {
+        Element {
+            tag: tag.to_string(),
+            key: None,
+            attributes,
+            children: Vec::new(),
+        }
+    }
+
+    fn text_attr(name: &str, value: &str) -> Attribute {
+        Attribute::Static(StaticAttribute::Text {
+            name: name.to_string(),
+            value: value.to_string(),
+        })
+    }
+
+    fn bool_attr(name: &str, value: bool) -> Attribute {
+        Attribute::Static(StaticAttribute::Bool {
+            name: name.to_string(),
+            value,
+        })
+    }
+
+    #[test]
+    fn unchanged_attributes_produce_no_diff() {
+        let old = elem("div", vec![text_attr("class", "a")]);
+        let new = elem("div", vec![text_attr("class", "a")]);
+        assert_eq!(
+            diff_element_attributes(&old, &new),
+            AttributeDiff::default()
+        );
+    }
+
+    #[test]
+    fn changed_attribute_value_only_touches_that_name() {
+        let old = elem("div", vec![text_attr("class", "a"), text_attr("id", "x")]);
+        let new = elem("div", vec![text_attr("class", "b"), text_attr("id", "x")]);
+        let diff = diff_element_attributes(&old, &new);
+        assert!(diff.removed.is_empty());
+        assert_eq!(
+            diff.set,
+            vec![("class".to_string(), AttributeEffect::Text("b".to_string()))]
+        );
+    }
+
+    #[test]
+    fn dropped_attribute_is_removed() {
+        let old = elem("div", vec![text_attr("title", "hi")]);
+        let new = elem("div", vec![]);
+        let diff = diff_element_attributes(&old, &new);
+        assert_eq!(diff.removed, vec!["title".to_string()]);
+        assert!(diff.set.is_empty());
+    }
+
+    #[test]
+    fn added_attribute_is_set() {
+        let old = elem("div", vec![]);
+        let new = elem("div", vec![text_attr("title", "hi")]);
+        let diff = diff_element_attributes(&old, &new);
+        assert!(diff.removed.is_empty());
+        assert_eq!(
+            diff.set,
+            vec![("title".to_string(), AttributeEffect::Text("hi".to_string()))]
+        );
+    }
+
+    #[test]
+    fn bool_attribute_true_to_false_removes_it() {
+        let old = elem("input", vec![bool_attr("disabled", true)]);
+        let new = elem("input", vec![bool_attr("disabled", false)]);
+        let diff = diff_element_attributes(&old, &new);
+        assert_eq!(diff.removed, vec!["disabled".to_string()]);
+        assert!(diff.set.is_empty());
+    }
+
+    #[test]
+    fn bool_attribute_false_to_true_sets_it() {
+        let old = elem("input", vec![bool_attr("disabled", false)]);
+        let new = elem("input", vec![bool_attr("disabled", true)]);
+        let diff = diff_element_attributes(&old, &new);
+        assert!(diff.removed.is_empty());
+        assert_eq!(
+            diff.set,
+            vec![("disabled".to_string(), AttributeEffect::Text(String::new()))]
+        );
+    }
+
+    #[test]
+    fn unchanged_style_declarations_produce_no_diff_even_though_css_is_unrendered() {
+        let declarations = vec![Declaration {
+            property: "opacity".to_string(),
+            value: CssValue::Number(0.5),
+            important: false,
+        }];
+        let old = elem(
+            "div",
+            vec![Attribute::Static(StaticAttribute::Styles(
+                declarations.clone(),
+            ))],
+        );
+        let new = elem(
+            "div",
+            vec![Attribute::Static(StaticAttribute::Styles(declarations))],
+        );
+        assert_eq!(
+            diff_element_attributes(&old, &new),
+            AttributeDiff::default()
+        );
+    }
+
+    #[test]
+    fn key_change_diffs_as_the_data_zutai_key_attribute() {
+        let old: Element = Element {
+            tag: "li".to_string(),
+            key: Some("a".to_string()),
+            attributes: Vec::new(),
+            children: Vec::new(),
+        };
+        let new: Element = Element {
+            tag: "li".to_string(),
+            key: Some("b".to_string()),
+            attributes: Vec::new(),
+            children: Vec::new(),
+        };
+        let diff = diff_element_attributes(&old, &new);
+        assert_eq!(
+            diff.set,
+            vec![(
+                "data-zutai-key".to_string(),
+                AttributeEffect::Text("b".to_string())
+            )]
+        );
+    }
+
+    #[test]
+    fn declared_value_and_checked_never_appear_in_the_attribute_diff() {
+        let old = elem(
+            "input",
+            vec![
+                Attribute::TextProperty {
+                    name: "value".to_string(),
+                    value: "old".to_string(),
+                },
+                Attribute::BoolProperty {
+                    name: "checked".to_string(),
+                    value: false,
+                },
+            ],
+        );
+        let new = elem(
+            "input",
+            vec![
+                Attribute::TextProperty {
+                    name: "value".to_string(),
+                    value: "new".to_string(),
+                },
+                Attribute::BoolProperty {
+                    name: "checked".to_string(),
+                    value: true,
+                },
+            ],
+        );
+        assert_eq!(
+            diff_element_attributes(&old, &new),
+            AttributeDiff::default()
+        );
+    }
+
+    #[test]
+    fn static_attribute_list_diffs_the_same_way() {
+        let old = vec![StaticAttribute::Text {
+            name: "class".to_string(),
+            value: "a".to_string(),
+        }];
+        let new = vec![StaticAttribute::Text {
+            name: "class".to_string(),
+            value: "b".to_string(),
+        }];
+        let diff = diff_static_attributes(&old, &new);
+        assert_eq!(
+            diff.set,
+            vec![("class".to_string(), AttributeEffect::Text("b".to_string()))]
+        );
     }
 }

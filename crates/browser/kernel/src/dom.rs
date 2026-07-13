@@ -10,7 +10,10 @@ use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
 use zutai_semantic::AnalysisOptions;
 
 use crate::css::{render_declarations, render_stylesheet};
-use crate::diff::{ChildOp, child_key, diff_children};
+use crate::diff::{
+    AttributeDiff, AttributeEffect, ChildOp, child_key, diff_children, diff_element_attributes,
+    diff_static_attributes,
+};
 use crate::render::validate_document;
 use crate::{
     Attribute, BrowserProgram, Document, Element, EventHandler, EventOptions, HeadNode, Html,
@@ -542,8 +545,11 @@ fn diff_patch_document(
     let body = document
         .body()
         .ok_or_else(|| JsValue::from_str("document has no body"))?;
-    clear_attributes(&body.clone().unchecked_into())?;
-    apply_static_attributes(&body.clone().unchecked_into(), &new.body_attributes)?;
+    diff_apply_static_attributes(
+        &body.clone().unchecked_into(),
+        &old.body_attributes,
+        &new.body_attributes,
+    )?;
     diff_patch_children(&body.unchecked_into(), &old.body, &new.body)
 }
 
@@ -614,13 +620,79 @@ fn diff_patch_element(
     old: &Element,
     new: &Element,
 ) -> Result<(), JsValue> {
-    apply_element_attributes(dom_element, new)?;
+    diff_apply_element_attributes(dom_element, old, new)?;
     if !is_void_element(&new.tag) {
         diff_patch_children(
             &dom_element.clone().unchecked_into(),
             &old.children,
             &new.children,
         )?;
+    }
+    Ok(())
+}
+
+/// Apply only the attributes that actually changed between `old` and `new`,
+/// using `diff_element_attributes` (pure, see `diff.rs`). `value`/`checked`
+/// are excluded from that diff and handled here exactly as
+/// `apply_element_attributes` always has: compared against live DOM state
+/// unconditionally, since a user's typing or checking can diverge the
+/// live property from whatever was last declared.
+fn diff_apply_element_attributes(
+    dom_element: &WebElement,
+    old: &Element,
+    new: &Element,
+) -> Result<(), JsValue> {
+    apply_attribute_diff(dom_element, &diff_element_attributes(old, new))?;
+    for attribute in &new.attributes {
+        match attribute {
+            Attribute::TextProperty { name, value } if name == "value" => {
+                if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                    if input.value() != *value {
+                        input.set_value(value);
+                    }
+                } else if let Some(textarea) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>()
+                {
+                    if textarea.value() != *value {
+                        textarea.set_value(value);
+                    }
+                } else {
+                    dom_element.set_attribute(name, value)?;
+                }
+            }
+            Attribute::BoolProperty { name, value } if name == "checked" => {
+                if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                    input.set_checked(*value);
+                } else if *value {
+                    dom_element.set_attribute(name, "")?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn diff_apply_static_attributes(
+    dom_element: &WebElement,
+    old: &[StaticAttribute],
+    new: &[StaticAttribute],
+) -> Result<(), JsValue> {
+    apply_attribute_diff(dom_element, &diff_static_attributes(old, new))
+}
+
+fn apply_attribute_diff(dom_element: &WebElement, diff: &AttributeDiff) -> Result<(), JsValue> {
+    for name in &diff.removed {
+        dom_element.remove_attribute(name)?;
+    }
+    for (name, effect) in &diff.set {
+        match effect {
+            AttributeEffect::Text(value) => dom_element.set_attribute(name, value)?,
+            AttributeEffect::Styles(declarations) => {
+                let mut css = String::new();
+                render_declarations(declarations, false, &mut css).map_err(js_error)?;
+                dom_element.set_attribute(name, &css)?;
+            }
+        }
     }
     Ok(())
 }
