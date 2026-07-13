@@ -61,6 +61,10 @@ pub(crate) fn format_import_diagnostic(diag: &zutai_semantic::ImportDiagnostic) 
     use zutai_semantic::ImportDiagnosticKind::*;
     match &diag.kind {
         StdlibSetup { message } => message.clone(),
+        PackageSetup { message } => format!("invalid Zutai package: {message}"),
+        PackageResolution { path, message } => {
+            format!("cannot resolve package import {path}: {message}")
+        }
         NoBaseDirectory => "cannot resolve an import without a base directory".to_string(),
         UnsupportedImportForm { path } => format!("unsupported import path: {path}"),
         UnknownStdlibModule { name } => format!("unknown stdlib module: stdlib.{name}"),
@@ -282,6 +286,20 @@ mod tests {
     fn format_import_diag_no_base() {
         let d = make_diag(zutai_semantic::ImportDiagnosticKind::NoBaseDirectory);
         assert!(format_import_diagnostic(&d).contains("base directory"));
+    }
+
+    #[test]
+    fn format_import_diag_package_setup_and_resolution() {
+        let setup = make_diag(zutai_semantic::ImportDiagnosticKind::PackageSetup {
+            message: "bad manifest".to_owned(),
+        });
+        assert!(format_import_diagnostic(&setup).contains("bad manifest"));
+        let resolution = make_diag(zutai_semantic::ImportDiagnosticKind::PackageResolution {
+            path: "math.vector".to_owned(),
+            message: "unknown module".to_owned(),
+        });
+        let rendered = format_import_diagnostic(&resolution);
+        assert!(rendered.contains("math.vector") && rendered.contains("unknown module"));
     }
 
     #[test]

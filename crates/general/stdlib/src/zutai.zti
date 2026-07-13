@@ -1,0 +1,25 @@
+{
+  formatVersion = 1;
+  name = "zutai_stdlib";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "stream"; path = "packages/base/modules/stream.zt"; visibility = #ambient; };
+    { name = "prelude"; path = "packages/base/modules/prelude.zt"; visibility = #ambient; };
+    { name = "optional"; path = "packages/base/modules/optional.zt"; visibility = #explicit; };
+    { name = "result"; path = "packages/base/modules/result.zt"; visibility = #explicit; };
+    { name = "num"; path = "packages/base/modules/num.zt"; visibility = #explicit; };
+    { name = "text"; path = "packages/base/modules/text.zt"; visibility = #explicit; };
+    { name = "cmp"; path = "packages/base/modules/cmp.zt"; visibility = #explicit; };
+    { name = "list"; path = "packages/base/modules/list.zt"; visibility = #explicit; };
+    { name = "data"; path = "packages/data/modules/data.zt"; visibility = #explicit; };
+    { name = "validate"; path = "packages/data/modules/validate.zt"; visibility = #explicit; };
+    { name = "config"; path = "packages/data/modules/config.zt"; visibility = #explicit; };
+    { name = "reflect"; path = "packages/data/modules/reflect.zt"; visibility = #explicit; };
+    { name = "fs"; path = "packages/system/modules/fs.zt"; visibility = #explicit; };
+    { name = "net"; path = "packages/system/modules/net.zt"; visibility = #explicit; };
+    { name = "css"; path = "packages/web/modules/css.zt"; visibility = #explicit; };
+    { name = "html"; path = "packages/web/modules/html.zt"; visibility = #explicit; };
+    { name = "browser"; path = "packages/web/modules/browser.zt"; visibility = #explicit; };
+  ];
+  dependencies = [];
+}

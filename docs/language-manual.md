@@ -39,7 +39,8 @@ cfg.server.port
 and output. It supports `.zt` diagnostics, hover types, go-to-definition,
 same-document references and rename, document symbols, identifier completion,
 signature help, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
-and resolves relative imports from the edited file's directory. When an open
+and resolves relative imports from the edited file's directory plus local
+package aliases from the nearest `zutai.zti`. When an open
 `.zt` root checks imported `.zti` data against a type and finds a structural
 mismatch, the diagnostic is published on the offending `.zti` value with the
 typed `.zt` boundary as related information; unsaved open `.zti` changes are
@@ -310,7 +311,8 @@ compatibility form.
 
 `import` is a pure, deterministic, static, cached expression whose source is a
 literal import source: either a quoted path (`cfg ::= import "config.zti"`) or a
-dotted stdlib path (`{ map; fold; } ::= import stdlib.stream`). Importing `.zti`
+dotted package/stdlib path (`v ::= import math.vector` or
+`{ map; fold; } ::= import stdlib.stream`). Importing `.zti`
 parses data into `.zt` records and lists. Importing `.zt` evaluates the imported
 module and exposes its final expression as the binding; fields are accessed as
 `cfg.field` or `lib.Type`. Several static module aliases are written as several
@@ -466,6 +468,16 @@ the version-checked filesystem stdlib selected by `--stdlib-root`,
 `ZUTAI_STDLIB_ROOT`, or the compiler-relative installation. They are not subject
 to the quoted-path subtree check. Web builds bundle the exact resolved stdlib
 sources, so the Wasm kernel does not read a filesystem or fetch modules.
+
+The nearest ancestor `zutai.zti` declares a local package. Its inert manifest
+names public `.zt` modules and local path dependencies; a dependency alias forms
+the first segment of a dotted import such as `import math.vector`. Manifests are
+`.zti`, not executable `.zt`, so dependency discovery cannot import, evaluate,
+or depend on the graph it is constructing. The current package layer supports
+local path dependencies only: there is no registry, network fetch, semantic
+version solver, lockfile, feature selection, or build script. Package module
+paths are confined to their package roots, and portable web bundles carry the
+resolved transitive package graph.
 
 ## Feature support
 

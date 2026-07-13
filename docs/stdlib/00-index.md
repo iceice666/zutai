@@ -32,8 +32,9 @@ Two principles govern what lives where:
 
 ## Implementation home
 
-Source modules live under `crates/general/stdlib/src/modules/`; the adjacent
-`manifest.json` is the canonical module and visibility registry. `zutai-stdlib`
+Source modules live under `crates/general/stdlib/src/packages/{base,data,system,web}/modules/`.
+The root `zutai.zti` is the canonical compatibility module and visibility
+registry, and each physical unit has its own package manifest. `zutai-stdlib`
 loads and validates that filesystem tree. The semantic layer supplies the
 ambient sources to HIR and uses the same loaded set for `import stdlib.<name>`.
 No standard-library source is embedded in a Rust binary.
@@ -52,7 +53,7 @@ ambient and transitively imported modules needed by the browser program.
    private bridge such as `__moduleOp`.
 3. Classify support precisely in docs and tests: pure source, bridge-backed
    native, compile-time fold/reject, or host/effectful.
-4. Update `manifest.json`, the module doc page, import/eval/native
+4. Update the root and owning package `zutai.zti`, the module doc page, import/eval/native
    coverage, and the implementation status notes together.
 
 ## Prelude

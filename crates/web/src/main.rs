@@ -9,7 +9,7 @@ use clap::Parser;
     arg_required_else_help = true
 )]
 struct Cli {
-    /// Filesystem root containing manifest.json and the Zutai stdlib modules.
+    /// Filesystem root containing zutai.zti and the Zutai stdlib packages.
     #[arg(long, global = true, env = "ZUTAI_STDLIB_ROOT")]
     stdlib_root: Option<std::path::PathBuf>,
     #[command(subcommand)]

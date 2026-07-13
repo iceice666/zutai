@@ -14,7 +14,7 @@ mod render;
 #[cfg(target_arch = "wasm32")]
 mod dom;
 
-pub use bundle::WebBundleV2;
+pub use bundle::WebBundleV3;
 pub use css::render_stylesheet;
 pub use decode::{BrowserProgram, decode_document, decode_program};
 pub use document::*;

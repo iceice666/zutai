@@ -28,6 +28,7 @@ use zutai_thir::{
     ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern,
 };
 
+use crate::package::{PackageGraph, PortablePackageGraph};
 use crate::{Analysis, AnalysisOptions};
 use zutai_stdlib::StdlibSources;
 
@@ -49,6 +50,9 @@ pub(crate) struct ImportContext<'a> {
     source_backend: SourceBackend<'a>,
     stdlib: Rc<StdlibSources>,
     recorded_stdlib: BTreeMap<String, String>,
+    packages: PackageGraph,
+    recorded_packages: PortablePackageGraph,
+    package_setup_reported: bool,
 }
 
 impl ImportContext<'_> {
@@ -63,6 +67,9 @@ impl ImportContext<'_> {
             },
             stdlib,
             recorded_stdlib: BTreeMap::new(),
+            packages: PackageGraph::None,
+            recorded_packages: PortablePackageGraph::default(),
+            package_setup_reported: false,
         }
     }
 }
@@ -83,8 +90,17 @@ impl<'a> ImportContext<'a> {
     /// descendant importing the root is detected as a cycle.
     pub(crate) fn with_root(path: &Path, stdlib: Rc<StdlibSources>) -> Self {
         let mut ctx = Self::new(stdlib);
+        ctx.packages = PackageGraph::discover(path);
         if let Ok(canonical) = std::fs::canonicalize(path) {
             ctx.in_progress.push(canonical);
+        }
+        ctx
+    }
+
+    pub(crate) fn with_base(base: Option<&Path>, stdlib: Rc<StdlibSources>) -> Self {
+        let mut ctx = Self::new(stdlib);
+        if let Some(base) = base {
+            ctx.packages = PackageGraph::discover(base);
         }
         ctx
     }
@@ -95,6 +111,8 @@ impl<'a> ImportContext<'a> {
             .as_deref()
             .and_then(Path::parent)
             .map(Path::to_path_buf);
+        let packages = PackageGraph::discover(path);
+        let recorded_packages = packages.portable_skeleton();
         Self {
             in_progress: canonical.into_iter().collect(),
             cache: FxHashMap::default(),
@@ -105,6 +123,9 @@ impl<'a> ImportContext<'a> {
             },
             stdlib,
             recorded_stdlib: BTreeMap::new(),
+            packages,
+            recorded_packages,
+            package_setup_reported: false,
         }
     }
 
@@ -131,6 +152,8 @@ impl<'a> ImportContext<'a> {
                 "entry path must be inside the source root",
             ));
         }
+        let packages = PackageGraph::discover(path);
+        let recorded_packages = packages.portable_skeleton();
         Ok(Self {
             in_progress: vec![canonical],
             cache: FxHashMap::default(),
@@ -141,6 +164,9 @@ impl<'a> ImportContext<'a> {
             },
             stdlib,
             recorded_stdlib: BTreeMap::new(),
+            packages,
+            recorded_packages,
+            package_setup_reported: false,
         })
     }
 
@@ -148,13 +174,18 @@ impl<'a> ImportContext<'a> {
         sources: &'a BTreeMap<String, String>,
         entry: &Path,
         stdlib: Rc<StdlibSources>,
+        packages: PortablePackageGraph,
     ) -> Self {
+        let packages = PackageGraph::from_memory(packages);
         Self {
             in_progress: vec![entry.to_path_buf()],
             cache: FxHashMap::default(),
             source_backend: SourceBackend::Memory(sources),
             stdlib,
             recorded_stdlib: BTreeMap::new(),
+            packages,
+            recorded_packages: PortablePackageGraph::default(),
+            package_setup_reported: false,
         }
     }
 
@@ -175,11 +206,32 @@ impl<'a> ImportContext<'a> {
         std::mem::take(&mut self.recorded_stdlib)
     }
 
+    pub(crate) fn take_recorded_packages(&mut self) -> PortablePackageGraph {
+        std::mem::take(&mut self.recorded_packages)
+    }
+
     pub(crate) fn stdlib(&self) -> &StdlibSources {
         &self.stdlib
     }
 
+    fn take_package_setup_error(&mut self) -> Option<String> {
+        if self.package_setup_reported {
+            return None;
+        }
+        let message = self.packages.invalid_message()?.to_owned();
+        self.package_setup_reported = true;
+        Some(message)
+    }
+
     fn load(&mut self, base: &Path, rel: &str) -> Result<LoadedSource, LoadError> {
+        if let Some(result) = self.packages.package_source(base, rel) {
+            return result
+                .map(|source| LoadedSource {
+                    key: source.key,
+                    contents: source.contents,
+                })
+                .map_err(|_| LoadError::NotFound);
+        }
         match &mut self.source_backend {
             SourceBackend::Filesystem {
                 confinement_root,
@@ -200,6 +252,8 @@ impl<'a> ImportContext<'a> {
                     return Err(LoadError::Traversal);
                 }
                 let contents = std::fs::read_to_string(&canonical).map_err(LoadError::Read)?;
+                self.packages
+                    .record_source(&mut self.recorded_packages, &canonical, &contents);
                 if let Some(root) = recording_root
                     && let Ok(path) = canonical.strip_prefix(root)
                 {
@@ -316,6 +370,17 @@ pub enum ImportDiagnosticKind {
     StdlibSetup {
         message: String,
     },
+    /// The nearest `zutai.zti` package manifest or its local dependency graph
+    /// is malformed.
+    PackageSetup {
+        message: String,
+    },
+    /// A dotted package import could not resolve through the importing
+    /// package's declared dependency aliases and public module map.
+    PackageResolution {
+        path: String,
+        message: String,
+    },
     /// `import stdlib.<name>` named a module the configured standard library
     /// does not provide.
     UnknownStdlibModule {
@@ -392,6 +457,13 @@ pub(crate) fn resolve_imports(
         diagnostics: Vec::new(),
     };
 
+    if let Some(message) = ctx.take_package_setup_error() {
+        resolver.diag(
+            ImportDiagnosticKind::PackageSetup { message },
+            Span::default(),
+        );
+    }
+
     // Resolve each distinct source once, using the first span seen for diagnostics.
     let mut seen: FxHashSet<&HirImportSource> = FxHashSet::default();
     for (_, expr) in hir.expr_arena.iter() {
@@ -422,6 +494,46 @@ impl Resolver<'_> {
             && parts.first().map(String::as_str) == Some("stdlib")
         {
             return self.resolve_stdlib(source, parts, span, ctx);
+        }
+
+        if ctx.packages.invalid_message().is_some() {
+            return;
+        }
+
+        if let HirImportSource::Path(parts) = source
+            && parts.len() >= 2
+            && !matches!(parts.as_slice(), [_, extension] if matches!(extension.as_str(), "zt" | "zti"))
+        {
+            match ctx.packages.resolve(self.base, parts) {
+                Ok(Some(loaded)) => {
+                    ctx.packages.record_source(
+                        &mut ctx.recorded_packages,
+                        &loaded.key,
+                        &loaded.contents,
+                    );
+                    let rel = loaded.display.clone();
+                    return self.resolve_zt(
+                        source,
+                        LoadedSource {
+                            key: loaded.key,
+                            contents: loaded.contents,
+                        },
+                        &rel,
+                        span,
+                        ctx,
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    return self.diag(
+                        ImportDiagnosticKind::PackageResolution {
+                            path: parts.join("."),
+                            message: error.to_string(),
+                        },
+                        span,
+                    );
+                }
+            }
         }
 
         let rel = match relative_path(source) {

@@ -1768,6 +1768,7 @@ name = "zutai-semantic"
 version = "0.1.0"
 dependencies = [
  "rustc-hash 2.1.2",
+ "serde",
  "zutai-hir",
  "zutai-im",
  "zutai-stdlib",
@@ -1793,8 +1794,7 @@ dependencies = [
 name = "zutai-stdlib"
 version = "0.1.0"
 dependencies = [
- "serde",
- "serde_json",
+ "zutai-im",
 ]
 
 [[package]]

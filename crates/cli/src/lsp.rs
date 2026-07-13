@@ -280,10 +280,17 @@ impl Server {
         recorded
             .sources
             .insert(recorded.entry.clone(), root_source.to_string());
-        zutai_semantic::analyze_sources(
+        let stdlib = zutai_stdlib::StdlibSources::from_memory(
+            recorded.stdlib_compiler_compatibility.clone(),
+            recorded.stdlib_sources.clone(),
+        )
+        .ok()?;
+        zutai_semantic::analyze_sources_with_stdlib_and_packages(
             &recorded.entry,
             &recorded.sources,
             zutai_semantic::AnalysisOptions::default(),
+            &stdlib,
+            recorded.packages,
         )
         .ok()
     }

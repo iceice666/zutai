@@ -7,11 +7,11 @@ fn lower_hir_with_test_preludes(file: &zutai_syntax::File) -> zutai_hir::Lowered
         zutai_hir::SourcePreludes {
             stream: Some(include_str!(concat!(
                 env!("ZUTAI_STDLIB_ROOT"),
-                "/modules/stream.zt"
+                "/packages/base/modules/stream.zt"
             ))),
             prelude: Some(include_str!(concat!(
                 env!("ZUTAI_STDLIB_ROOT"),
-                "/modules/prelude.zt"
+                "/packages/base/modules/prelude.zt"
             ))),
         },
     )

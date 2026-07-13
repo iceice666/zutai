@@ -46,8 +46,9 @@ diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
 records and unions; LLVM/native execution is currently verified only for
 primitive and flat-record decoders, with nested-record parity still open.
 
-_Last updated: 2026-07-13 (cross-file `.zti` validation diagnostics);
-prior baseline updates: 2026-07-12 (filesystem-only stdlib and portable stdlib bundles),
+_Last updated: 2026-07-13 (local package system and split filesystem stdlib);
+prior baseline updates: 2026-07-13 (cross-file `.zti` validation diagnostics),
+2026-07-12 (filesystem-only stdlib and portable stdlib bundles),
 2026-07-12 (dedicated `zutai-web` CLI),
 2026-07-12 (unversioned stable syntax specification),
 2026-07-12 (browser kernel and self-hosted website baseline),
@@ -115,10 +116,18 @@ expansion" below. A follow-up stdlib crate extraction moved embedded `.zt`
 sources and module metadata into `zutai-stdlib`, while preserving the old
 `zutai_hir::*_MODULE_SRC` Rust re-exports and all user-facing import behavior;
 see "Stdlib crate extraction" below. The 2026-07-12 filesystem-only stdlib
-baseline supersedes that storage mechanism: `manifest.json` is canonical,
+baseline superseded that storage mechanism with a filesystem registry; the
+2026-07-13 package baseline then made root `zutai.zti` canonical,
 native tools load `.zt` sources from the selected stdlib root, HIR receives
 ambient prelude source explicitly, and web bundle v2 transports the exact
 resolved stdlib set to Wasm. There is no embedded fallback.
+The 2026-07-13 package baseline adds inert `zutai.zti` manifests, explicit
+public module maps, local path dependency aliases, transitive per-package
+resolution, package-graph diagnostics, and portable package metadata/sources in
+web bundle format v3. Existing quoted imports and `stdlib.*` imports are
+unchanged. The filesystem stdlib now uses a root `zutai.zti` compatibility
+index and is physically split into `base`, `data`, `system`, and `web` package
+units, each with its own manifest.
 The 2026-07-01 baseline adds native shared-library artifacts:
 `compile --emit=lib` links a platform shared library that exports raw, descriptor,
 and JSON entry points, with the JSON path backed by the runtime's descriptor

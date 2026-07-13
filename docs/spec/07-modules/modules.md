@@ -46,6 +46,60 @@ This works because imported `.zt` modules can contain non-serializable values li
 
 Only rendering requires serializability.
 
+### Local packages
+
+A package is a directory containing an inert `zutai.zti` manifest. Manifests
+are immediate-mode data rather than executable `.zt` modules because dependency
+resolution must complete before general-mode name resolution, type checking, or
+standard-library loading can run.
+
+```zti
+{
+  formatVersion = 1;
+  name = "app";
+  compilerCompatibility = "0.1.0";
+  modules = [];
+  dependencies = [
+    { alias = "math"; path = "../math"; };
+  ];
+}
+```
+
+A dependency package publishes modules explicitly in its own manifest:
+
+```zti
+{
+  formatVersion = 1;
+  name = "math";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "vector"; path = "src/vector.zt"; };
+  ];
+  dependencies = [];
+}
+```
+
+The importing package addresses that module through the declared alias:
+
+```zt
+vector ::= import math.vector;
+vector.length { 3; 4; }
+```
+
+The nearest ancestor `zutai.zti` owns a source file. Dependency paths are
+package-relative local filesystem paths; absolute paths, remote dependencies,
+registries, version solving, lockfiles, and executable build hooks are not part
+of the current package model. Module paths must be package-relative `.zt` paths
+and cannot escape their package root. Package dependency cycles, duplicate
+package names, duplicate aliases/modules, incompatible compiler metadata,
+unknown aliases, and unknown public modules are errors.
+
+Each package resolves aliases from its own manifest, so dependencies may import
+their own dependencies transitively without leaking those aliases into the root
+package. Relative quoted imports retain their existing per-file subtree
+confinement. Package sources and dependency metadata are carried in portable web
+bundles, so filesystem and Wasm analysis resolve the same graph.
+
 ### Standard-library imports
 
 A dotted import resolves against the configured filesystem standard library,
@@ -69,7 +123,7 @@ s.map f (s.singleton 1)
 ```
 
 `import stdlib.<name>` reads a module named by the version-checked
-`<stdlib-root>/manifest.json`. Native frontends select that root from the global
+`<stdlib-root>/zutai.zti`. Native frontends select that root from the global
 `--stdlib-root` option, then `ZUTAI_STDLIB_ROOT`, then the compiler-relative
 `../share/zutai/stdlib` installation. Stdlib resolution is not subject to the
 path-relative subtree confinement that quoted-string imports use. A missing,
@@ -83,6 +137,10 @@ are `stdlib.stream`, `stdlib.prelude`, `stdlib.optional`, `stdlib.result`,
 Portable web bundles carry the exact ambient and transitively imported stdlib
 sources selected by the native builder. The Wasm kernel resolves those sources
 from the bundle and performs no filesystem or network lookup.
+
+`stdlib` is a reserved toolchain alias. The shipped distribution is physically
+split into `base`, `data`, `system`, and `web` packages under the selected root,
+while the root `zutai.zti` keeps every existing `stdlib.<name>` import stable.
 
 ### Selective binding (destructuring import)
 

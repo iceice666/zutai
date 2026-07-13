@@ -36,6 +36,74 @@ fn write_tmp(name: &str, content: &str) -> String {
 }
 
 #[test]
+fn local_package_dependency_checks_and_runs() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root =
+        std::env::temp_dir().join(format!("zutai-cli-package-{}-{nonce}", std::process::id()));
+    let app = root.join("app");
+    let math = root.join("math");
+    std::fs::create_dir_all(app.join("src")).unwrap();
+    std::fs::create_dir_all(math.join("src")).unwrap();
+    std::fs::write(
+        app.join("zutai.zti"),
+        r#"{
+  formatVersion = 1;
+  name = "app";
+  compilerCompatibility = "0.1.0";
+  modules = [];
+  dependencies = [{ alias = "math"; path = "../math"; };];
+}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        math.join("zutai.zti"),
+        r#"{
+  formatVersion = 1;
+  name = "math";
+  compilerCompatibility = "0.1.0";
+  modules = [{ name = "answer"; path = "src/answer.zt"; };];
+  dependencies = [];
+}"#,
+    )
+    .unwrap();
+    let entry = app.join("src/main.zt");
+    std::fs::write(&entry, "math ::= import math.answer; math.value\n").unwrap();
+    std::fs::write(math.join("src/answer.zt"), "{ value = 42; }\n").unwrap();
+
+    cli().arg("check").arg(&entry).assert().success();
+    cli()
+        .arg("run")
+        .arg(&entry)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("42"));
+    cli()
+        .arg("compile")
+        .arg(&entry)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("define i64 @__entry"));
+    #[cfg(unix)]
+    if native_emit_toolchain_available() {
+        let binary = root.join("package-app");
+        cli()
+            .arg("compile")
+            .arg("--emit=bin")
+            .arg(&entry)
+            .arg("-o")
+            .arg(&binary)
+            .assert()
+            .success();
+        let output = StdCommand::new(&binary).output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+    }
+}
+
+#[test]
 fn check_reports_imported_data_mismatch_at_zti_value() {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

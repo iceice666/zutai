@@ -12,7 +12,7 @@ use std::time::Duration;
 use notify::{RecursiveMode, Watcher};
 use sha2::{Digest, Sha256};
 use tiny_http::{Header, Response, Server, StatusCode};
-use zutai_browser::{BrowserProgram, WebBundleV2, decode_program, prerender_document};
+use zutai_browser::{BrowserProgram, WebBundleV3, decode_program, prerender_document};
 use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
 
 use clap::Subcommand;
@@ -207,11 +207,12 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
     let model = program.initialize(&session, &effects)?;
     let document = program.render(&session, model)?;
 
-    let bundle = WebBundleV2::new(
+    let bundle = WebBundleV3::new(
         recorded.entry,
         recorded.sources,
         recorded.stdlib_compiler_compatibility,
         recorded.stdlib_sources,
+        recorded.packages,
     );
     // Re-run through the memory loader at build time. This proves the emitted
     // bundle is complete and path-portable before it reaches a browser.
@@ -219,11 +220,12 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
         bundle.stdlib_compiler_compatibility.clone(),
         bundle.stdlib_sources.clone(),
     )?;
-    let bundled_analysis = zutai_semantic::analyze_sources_with_stdlib(
+    let bundled_analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
         &bundle.entry,
         &bundle.sources,
         zutai_semantic::AnalysisOptions::default(),
         &bundled_stdlib,
+        bundle.packages.clone(),
     )?;
     let bundled_session = TlcSession::from_analysis(&bundled_analysis)?;
     let _: BrowserProgram = decode_program(&bundled_session, bundled_session.entry()?)?;

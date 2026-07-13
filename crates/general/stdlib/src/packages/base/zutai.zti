@@ -1,0 +1,16 @@
+{
+  formatVersion = 1;
+  name = "zutai_stdlib_base";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "stream"; path = "modules/stream.zt"; };
+    { name = "prelude"; path = "modules/prelude.zt"; };
+    { name = "optional"; path = "modules/optional.zt"; };
+    { name = "result"; path = "modules/result.zt"; };
+    { name = "num"; path = "modules/num.zt"; };
+    { name = "text"; path = "modules/text.zt"; };
+    { name = "cmp"; path = "modules/cmp.zt"; };
+    { name = "list"; path = "modules/list.zt"; };
+  ];
+  dependencies = [];
+}

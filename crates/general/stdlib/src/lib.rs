@@ -10,32 +10,28 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-use serde::{Deserialize, Serialize};
-
 pub const MANIFEST_FORMAT_VERSION: u32 = 1;
 pub const COMPILER_COMPATIBILITY: &str = env!("CARGO_PKG_VERSION");
 pub const STDLIB_ROOT_ENV: &str = "ZUTAI_STDLIB_ROOT";
+pub const MANIFEST_NAME: &str = "zutai.zti";
 
 static PROCESS_STDLIB_ROOT: OnceLock<PathBuf> = OnceLock::new();
 static CONFIGURED_STDLIB: OnceLock<Result<StdlibSources, String>> = OnceLock::new();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdlibVisibility {
     Ambient,
     Explicit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct StdlibManifest {
     format_version: u32,
     compiler_compatibility: String,
     modules: Vec<ManifestModule>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ManifestModule {
     name: String,
     path: String,
@@ -73,21 +69,19 @@ pub struct StdlibSources {
 impl StdlibSources {
     pub fn load(root: impl AsRef<Path>) -> Result<Self, StdlibError> {
         let root = root.as_ref();
-        let manifest_path = root.join("manifest.json");
+        let manifest_path = root.join(MANIFEST_NAME);
         let bytes = fs::read(&manifest_path)
             .map_err(|source| StdlibError::read(manifest_path.clone(), source))?;
         let text = String::from_utf8(bytes)
             .map_err(|_| StdlibError::invalid(manifest_path.clone(), "manifest is not UTF-8"))?;
-        let manifest: StdlibManifest = serde_json::from_str(&text).map_err(|source| {
-            StdlibError::invalid(manifest_path.clone(), format!("invalid JSON: {source}"))
-        })?;
+        let manifest = parse_manifest(&manifest_path, &text)?;
         Self::load_manifest(root, manifest)
     }
 
     fn load_manifest(root: &Path, manifest: StdlibManifest) -> Result<Self, StdlibError> {
         if manifest.format_version != MANIFEST_FORMAT_VERSION {
             return Err(StdlibError::invalid(
-                root.join("manifest.json"),
+                root.join(MANIFEST_NAME),
                 format!(
                     "unsupported format version {}; expected {MANIFEST_FORMAT_VERSION}",
                     manifest.format_version
@@ -96,7 +90,7 @@ impl StdlibSources {
         }
         if manifest.compiler_compatibility != COMPILER_COMPATIBILITY {
             return Err(StdlibError::invalid(
-                root.join("manifest.json"),
+                root.join(MANIFEST_NAME),
                 format!(
                     "stdlib compatibility {:?} does not match compiler {:?}",
                     manifest.compiler_compatibility, COMPILER_COMPATIBILITY
@@ -110,20 +104,20 @@ impl StdlibSources {
         for entry in manifest.modules {
             if !valid_module_name(&entry.name) {
                 return Err(StdlibError::invalid(
-                    root.join("manifest.json"),
+                    root.join(MANIFEST_NAME),
                     format!("invalid module name {:?}", entry.name),
                 ));
             }
             let relative = Path::new(&entry.path);
             if !safe_relative_zt_path(relative) {
                 return Err(StdlibError::invalid(
-                    root.join("manifest.json"),
+                    root.join(MANIFEST_NAME),
                     format!("unsafe module path {:?}", entry.path),
                 ));
             }
             if modules.contains_key(&entry.name) {
                 return Err(StdlibError::invalid(
-                    root.join("manifest.json"),
+                    root.join(MANIFEST_NAME),
                     format!("duplicate module {:?}", entry.name),
                 ));
             }
@@ -150,13 +144,13 @@ impl StdlibSources {
         for required in ["stream", "prelude"] {
             let Some(module) = modules.get(required) else {
                 return Err(StdlibError::invalid(
-                    root.join("manifest.json"),
+                    root.join(MANIFEST_NAME),
                     format!("missing required ambient module {required:?}"),
                 ));
             };
             if module.visibility != StdlibVisibility::Ambient {
                 return Err(StdlibError::invalid(
-                    root.join("manifest.json"),
+                    root.join(MANIFEST_NAME),
                     format!("required module {required:?} must be ambient"),
                 ));
             }
@@ -169,7 +163,7 @@ impl StdlibSources {
             .collect();
         if !unexpected_ambient.is_empty() {
             return Err(StdlibError::invalid(
-                root.join("manifest.json"),
+                root.join(MANIFEST_NAME),
                 format!("unexpected ambient modules: {unexpected_ambient:?}"),
             ));
         }
@@ -273,6 +267,98 @@ impl StdlibSources {
             .iter()
             .map(|(name, module)| (name.clone(), module.source.clone()))
             .collect()
+    }
+}
+
+fn parse_manifest(path: &Path, source: &str) -> Result<StdlibManifest, StdlibError> {
+    let block = zutai_im::parse_syntax(source)
+        .map_err(|error| StdlibError::invalid(path.to_path_buf(), error.to_string()))?;
+    let mut seen = BTreeSet::new();
+    for pair in block.iter() {
+        if !seen.insert(pair.field_name.as_str()) {
+            return Err(StdlibError::invalid(
+                path.to_path_buf(),
+                format!("duplicate field {:?}", pair.field_name),
+            ));
+        }
+    }
+    let format_version = manifest_integer(path, &block, "formatVersion")?;
+    let format_version = u32::try_from(format_version)
+        .map_err(|_| StdlibError::invalid(path.to_path_buf(), "formatVersion must fit in u32"))?;
+    let compiler_compatibility = manifest_string(path, &block, "compilerCompatibility")?.to_owned();
+    let modules_value = manifest_value(path, &block, "modules")?;
+    let zutai_im::Value::Array(entries) = modules_value else {
+        return Err(StdlibError::invalid(
+            path.to_path_buf(),
+            "modules must be an array",
+        ));
+    };
+    let mut modules = Vec::new();
+    for entry in entries {
+        let zutai_im::Value::Block(entry) = entry else {
+            return Err(StdlibError::invalid(
+                path.to_path_buf(),
+                "module entries must be blocks",
+            ));
+        };
+        let name = manifest_string(path, entry, "name")?.to_owned();
+        let module_path = manifest_string(path, entry, "path")?.to_owned();
+        let visibility = match manifest_value(path, entry, "visibility")? {
+            zutai_im::Value::Atom(value) if value == "ambient" => StdlibVisibility::Ambient,
+            zutai_im::Value::Atom(value) if value == "explicit" => StdlibVisibility::Explicit,
+            _ => {
+                return Err(StdlibError::invalid(
+                    path.to_path_buf(),
+                    "module visibility must be #ambient or #explicit",
+                ));
+            }
+        };
+        modules.push(ManifestModule {
+            name,
+            path: module_path,
+            visibility,
+        });
+    }
+    Ok(StdlibManifest {
+        format_version,
+        compiler_compatibility,
+        modules,
+    })
+}
+
+fn manifest_value<'a>(
+    path: &Path,
+    block: &'a zutai_im::Block,
+    field: &str,
+) -> Result<&'a zutai_im::Value, StdlibError> {
+    block
+        .iter()
+        .find(|pair| pair.field_name == field)
+        .map(|pair| &pair.value)
+        .ok_or_else(|| StdlibError::invalid(path.to_path_buf(), format!("missing field {field:?}")))
+}
+
+fn manifest_string<'a>(
+    path: &Path,
+    block: &'a zutai_im::Block,
+    field: &str,
+) -> Result<&'a str, StdlibError> {
+    match manifest_value(path, block, field)? {
+        zutai_im::Value::String(value) => Ok(value),
+        _ => Err(StdlibError::invalid(
+            path.to_path_buf(),
+            format!("field {field:?} must be a string"),
+        )),
+    }
+}
+
+fn manifest_integer(path: &Path, block: &zutai_im::Block, field: &str) -> Result<i64, StdlibError> {
+    match manifest_value(path, block, field)? {
+        zutai_im::Value::Integer(value) => Ok(*value),
+        _ => Err(StdlibError::invalid(
+            path.to_path_buf(),
+            format!("field {field:?} must be an integer"),
+        )),
     }
 }
 

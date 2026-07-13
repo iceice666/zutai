@@ -6,7 +6,7 @@ Accepted and implemented as an explicit filesystem source module:
 `r ::= import stdlib.result`. Result and Validation helpers stay opt-in and do
 not become ambient prelude names.
 
-The module source lives at `crates/general/stdlib/src/modules/result.zt` and is
+The module source lives at `crates/general/stdlib/src/packages/base/modules/result.zt` and is
 registered by the filesystem stdlib manifest.
 
 ## API

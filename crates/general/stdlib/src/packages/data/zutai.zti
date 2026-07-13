@@ -1,0 +1,14 @@
+{
+  formatVersion = 1;
+  name = "zutai_stdlib_data";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "data"; path = "modules/data.zt"; };
+    { name = "validate"; path = "modules/validate.zt"; };
+    { name = "config"; path = "modules/config.zt"; };
+    { name = "reflect"; path = "modules/reflect.zt"; };
+  ];
+  dependencies = [
+    { alias = "base"; path = "../base"; };
+  ];
+}

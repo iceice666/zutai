@@ -1,0 +1,10 @@
+{
+  formatVersion = 1;
+  name = "zutai_stdlib_system";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "fs"; path = "modules/fs.zt"; };
+    { name = "net"; path = "modules/net.zt"; };
+  ];
+  dependencies = [];
+}

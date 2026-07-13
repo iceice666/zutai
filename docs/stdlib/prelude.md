@@ -37,7 +37,7 @@ numeric scalar bridge `__numAbs`/`__numRem`/`__numPow`/`__numToFloat`/
 `__numRound`/`__numTruncate` used by explicit `stdlib.num` — plus the builtin
 type constructors (`List`, `Optional`, `Maybe`, `Patch`, `DeepPatch`). The
 **source** layer is two ambient prelude files declared by the filesystem stdlib
-manifest under `crates/general/stdlib/src/modules/`; semantic analysis passes
+manifest under `crates/general/stdlib/src/packages/`; semantic analysis passes
 their loaded source to the HIR lowerer for fallback injection:
 
 - the *stream* prelude `stream.zt`, so `Data`,

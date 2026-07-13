@@ -1,0 +1,13 @@
+{
+  formatVersion = 1;
+  name = "zutai_stdlib_web";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "css"; path = "modules/css.zt"; };
+    { name = "html"; path = "modules/html.zt"; };
+    { name = "browser"; path = "modules/browser.zt"; };
+  ];
+  dependencies = [
+    { alias = "base"; path = "../base"; };
+  ];
+}

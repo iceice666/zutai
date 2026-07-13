@@ -27,8 +27,10 @@ pub fn configure_stdlib_root(root: impl Into<std::path::PathBuf>) -> Result<(), 
 }
 
 mod import;
+mod package;
 
 pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
+pub use package::{PortablePackage, PortablePackageGraph};
 
 #[derive(Debug)]
 pub struct Analysis {
@@ -57,6 +59,7 @@ pub struct RecordedAnalysis {
     pub sources: BTreeMap<String, String>,
     pub stdlib_compiler_compatibility: String,
     pub stdlib_sources: BTreeMap<String, String>,
+    pub packages: PortablePackageGraph,
     pub analysis: Analysis,
 }
 
@@ -593,6 +596,22 @@ pub fn analyze_sources_with_stdlib(
     options: AnalysisOptions,
     stdlib: &StdlibSources,
 ) -> Result<Analysis, SourceMapError> {
+    analyze_sources_with_stdlib_and_packages(
+        entry,
+        sources,
+        options,
+        stdlib,
+        PortablePackageGraph::default(),
+    )
+}
+
+pub fn analyze_sources_with_stdlib_and_packages(
+    entry: &str,
+    sources: &BTreeMap<String, String>,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
+    packages: PortablePackageGraph,
+) -> Result<Analysis, SourceMapError> {
     validate_source_path(entry)?;
     for path in sources.keys() {
         validate_source_path(path)?;
@@ -604,7 +623,8 @@ pub fn analyze_sources_with_stdlib(
         })?;
     let entry_path = Path::new(entry);
     let base = entry_path.parent().unwrap_or_else(|| Path::new(""));
-    let mut ctx = import::ImportContext::with_memory(sources, entry_path, Rc::new(stdlib.clone()));
+    let mut ctx =
+        import::ImportContext::with_memory(sources, entry_path, Rc::new(stdlib.clone()), packages);
     Ok(analyze_inner(
         input,
         Some(base),
@@ -662,7 +682,7 @@ pub fn analyze_with_base_and_stdlib(
     options: AnalysisOptions,
     stdlib: &StdlibSources,
 ) -> Analysis {
-    let mut ctx = import::ImportContext::new(Rc::new(stdlib.clone()));
+    let mut ctx = import::ImportContext::with_base(base, Rc::new(stdlib.clone()));
     analyze_inner(input, base, None, options, &mut ctx)
 }
 
@@ -713,6 +733,7 @@ fn recorded_analysis(
         sources: ctx.take_recorded_sources(),
         stdlib_compiler_compatibility: compatibility,
         stdlib_sources,
+        packages: ctx.take_recorded_packages(),
         analysis,
     }
 }
