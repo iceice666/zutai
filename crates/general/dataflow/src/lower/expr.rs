@@ -146,7 +146,8 @@ impl<'m> Lowerer<'m> {
                     .collect();
                 for ((binding, ty, _), (_, name)) in bindings.iter().zip(lifted.iter()) {
                     let df_ty = self.lower_type(*ty);
-                    let ref_node = self.alloc_node(DfNodeKind::GlobalRef(name.clone()), df_ty, span);
+                    let ref_node =
+                        self.alloc_node(DfNodeKind::GlobalRef(name.clone()), df_ty, span);
                     self.local_env.insert(*binding, ref_node);
                 }
                 for ((_, _, value_id), (_, name)) in bindings.iter().zip(lifted.iter()) {
