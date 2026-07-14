@@ -151,6 +151,23 @@ pub enum ThirDiagnosticKind {
         constraint: String,
         definition: Span,
     },
+    /// A `Code`-typed derive recipe promised a witness record but its pure
+    /// reducer could not reduce it to one (e.g. it stalls on arithmetic or a
+    /// comparison the compile-time reducer does not evaluate). Refused rather
+    /// than falling through to a structural witness the recipe never described.
+    DeriveRecipeIrreducible {
+        constraint: String,
+        definition: Span,
+    },
+    /// A structural derive (`eq`/`show`/`compare`, or a structural-code recipe)
+    /// targets an *open* record or union row. The visible members do not
+    /// determine the full value, so a derived witness would be unsound. Refused
+    /// to match the reflection and `FromData` open-row boundaries.
+    DeriveOpenRowTarget {
+        constraint: String,
+        target: String,
+        definition: Span,
+    },
     DeriveRecipeTypeMismatch {
         constraint: String,
         method: String,
@@ -253,6 +270,15 @@ impl ThirDiagnostic {
             | DeriveRecipeFuelExhausted {
                 constraint,
                 definition,
+            }
+            | DeriveRecipeIrreducible {
+                constraint,
+                definition,
+            }
+            | DeriveOpenRowTarget {
+                constraint,
+                definition,
+                ..
             }
             | DeriveRecipeTypeMismatch {
                 constraint,

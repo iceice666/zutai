@@ -54,6 +54,7 @@ pub fn check_well_typed(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile
                     matches!(
                         d.kind,
                         zutai_thir::ThirDiagnosticKind::DeriveRecipeFuelExhausted { .. }
+                            | zutai_thir::ThirDiagnosticKind::DeriveRecipeIrreducible { .. }
                     )
                 })
                 .map(describe_thir_diagnostic)
@@ -178,6 +179,16 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         DeriveRecipeFuelExhausted { constraint, .. } => {
             format!("derive recipe for `{constraint}` exhausted type-level fuel")
         }
+        DeriveRecipeIrreducible { constraint, .. } => {
+            format!(
+                "derive recipe for `{constraint}` did not reduce to a witness record; a `Code`-typed recipe must produce a quoted record through the pure compile-time reducer"
+            )
+        }
+        DeriveOpenRowTarget {
+            constraint, target, ..
+        } => format!(
+            "cannot derive `{constraint}` for open-row target `{target}`; close the row before deriving a structural witness"
+        ),
         DeriveRecipeTypeMismatch {
             constraint,
             method,

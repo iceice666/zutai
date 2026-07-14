@@ -137,6 +137,87 @@ constant "ignored"
 }
 
 #[test]
+fn quoted_recipe_reduces_structural_recursion() {
+    // A recipe that recurses over a nullary/payload union at compile time must
+    // reduce through the recursion, selecting the terminating arm. This exercises
+    // decisive cross-constructor arm ordering: arm 1 tests a nullary `#zero`
+    // (atom) pattern against a `#succ` (payload) value — a decisive non-match that
+    // must fall through to arm 2 rather than stalling the whole reduction.
+    let src = r#"
+Nat :: type { #zero; #succ : { n : Nat; }; };
+pick :: Nat -> Code { constant : Text -> Int; }
+  = cfg => match cfg { | #zero => quote({ constant = \value. 0; }); | #succ { n = m; } => pick m; };
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => pick (#succ { n = #succ { n = #zero; }; })
+Const @Text :: derive
+constant "ignored"
+"#;
+    assert_eq!(run(src), Value::Int(0));
+}
+
+#[test]
+fn quoted_recipe_selects_first_arm_over_payload_variant() {
+    // The dual arm-ordering case: a `#succ` value tested against the nullary
+    // `#zero` arm first, then matched by the `#succ` arm. The `#succ` arm here is
+    // terminal (no recursion), so the witness comes from arm 2.
+    let src = r#"
+Nat :: type { #zero; #succ : { n : Nat; }; };
+pick :: Nat -> Code { constant : Text -> Int; }
+  = cfg => match cfg { | #zero => quote({ constant = \value. 0; }); | #succ { n = m; } => quote({ constant = \value. 1; }); };
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => pick (#succ { n = #zero; })
+Const @Text :: derive
+constant "ignored"
+"#;
+    assert_eq!(run(src), Value::Int(1));
+}
+
+#[test]
+fn quoted_recipe_irreducible_body_is_refused() {
+    // A `Code`-typed recipe whose body stalls on a comparison the pure
+    // compile-time reducer does not evaluate (`n == 0`) must be refused, not
+    // silently fall through to an empty witness that crashes at dispatch. A
+    // refused evaluation beats a wrong (missing) witness.
+    let src = r#"
+pick :: Int -> Code { constant : Text -> Int; }
+  = n => if n == 0 then quote({ constant = \value. 0; }) else quote({ constant = \value. 1; });
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => pick 0
+Const @Text :: derive
+constant "ignored"
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(src) else {
+        panic!("expected type-check failure");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("did not reduce to a witness record")),
+        "expected irreducible-recipe diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
+fn quoted_recipe_with_effect_body_is_refused() {
+    // A recipe body is a pure `Code`-returning computation. Performing an effect
+    // inside it escapes the (empty) ambient effect row and must be refused by the
+    // type system before any witness is synthesized.
+    let src = r#"
+pick :: Int -> Code { constant : Text -> Int; }
+  = n => perform io.print "hi";
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => pick 0
+Const @Text :: derive
+constant "ignored"
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(src) else {
+        panic!("expected type-check failure");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("io.print") && message.contains("effect row")),
+        "expected effect-escape diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
 fn derived_from_data_decodes_primitive() {
     let src = r#"
 result :: Validation DecodeIssue Int = decode (#int { value = 42; });

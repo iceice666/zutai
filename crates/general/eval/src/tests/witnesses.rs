@@ -293,6 +293,82 @@ fn recipe_builder_name_cannot_be_shadowed_at_top_level() {
     }
 }
 
+/// A structural derive over an *open* record row is unsound: the visible members
+/// do not determine the value, so `eq p p` could read `false` and `compare` could
+/// crash on the hidden tail. Reflection and `FromData` already refuse open rows;
+/// the top-level `eq`/`show`/`compare` derive path must match. A refused
+/// evaluation beats a wrong witness.
+#[test]
+fn derive_over_open_record_row_is_refused() {
+    let eq_src = r#"
+Point :: type { x : Int; ...; };
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Point :: derive
+0
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(eq_src) else {
+        panic!("expected type-check failure for open-row Eq derive");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("open-row target") && m.contains("Eq")),
+        "expected open-row refusal for Eq, got {messages:?}"
+    );
+
+    let show_src = r#"
+Point :: type { x : Int; ...; };
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Point :: derive
+0
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(show_src) else {
+        panic!("expected type-check failure for open-row Show derive");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("open-row target") && m.contains("Show")),
+        "expected open-row refusal for Show, got {messages:?}"
+    );
+
+    let ord_src = r#"
+Ordering :: type { #lt; #eq; #gt; };
+Point :: type { x : Int; ...; };
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => \x. x
+Ord @Point :: derive
+0
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(ord_src) else {
+        panic!("expected type-check failure for open-row Ord derive");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("open-row target") && m.contains("Ord")),
+        "expected open-row refusal for Ord, got {messages:?}"
+    );
+}
+
+/// The open-row refusal reaches unions as well as records: an open union hides
+/// variants, so a derived witness over the visible variants is unsound.
+#[test]
+fn derive_over_open_union_row_is_refused() {
+    let src = r#"
+Status :: type { #ok; #err; ...; };
+Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Status :: derive
+0
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(src) else {
+        panic!("expected type-check failure for open-row union derive");
+    };
+    assert!(
+        messages.iter().any(|m| m.contains("open-row target")),
+        "expected open-row refusal for open union, got {messages:?}"
+    );
+}
+
 // ─── Phase 13: conditional (parametric) witnesses ─────────────────────────────
 
 /// Direct call site: `eq` on two `List Int` resolves the conditional witness

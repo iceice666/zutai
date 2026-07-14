@@ -123,16 +123,35 @@ A recipe is pure, compile-time code, evaluated under the type-level fuel bound
 4. produces a witness record that is type-checked against the constraint's method
    signatures before it enters the dictionary-passing path.
 
+A recipe body may drive this expansion with structural `match` and recursion over
+a compile-time value: matching a nullary variant against a payload-carrying value
+(or the reverse) is a decisive non-match that selects the next arm, so a recipe
+that recurses toward a base constructor terminates and expands. The reducer is a
+pure structural evaluator, not a general interpreter: it does not evaluate
+arithmetic, comparisons, or other builtins. A `Code`-typed recipe whose reduction
+stalls on such an operation does not silently degrade to a partial witness — it is
+refused with a compile error (a wrong or missing witness is worse than a refused
+derivation).
+
 The resulting witness obeys the usual coherence rule: at most one witness per
 `(constraint, type)` pair (see [constraints](../06-polymorphism/constraints.md)).
-Recipe failures — a missing component witness, a fuel-exhausted recipe, or a
-result that does not match the method signatures — are compile errors whose
-primary location is the derivation request. When the constraint is declared in
-the same source, the diagnostic also carries a secondary "constraint defined
-here" location pointing at the constraint's declaration, so both the request and
-the recipe definition are visible. A constraint imported from another module or
-provided by the prelude has no in-file definition location, so only the request
-location is shown.
+Recipe failures — a missing component witness, a fuel-exhausted recipe, a
+`Code`-typed recipe that does not reduce to a witness record, or a result that
+does not match the method signatures — are compile errors whose primary location
+is the derivation request. When the constraint is declared in the same source, the
+diagnostic also carries a secondary "constraint defined here" location pointing at
+the constraint's declaration, so both the request and the recipe definition are
+visible. A constraint imported from another module or provided by the prelude has
+no in-file definition location, so only the request location is shown.
+
+A recipe body is pure compile-time `Code`: it may not perform an effect. A
+`perform` in a recipe escapes the empty ambient effect row and is a type error,
+refused before any witness is synthesized.
+
+A structural derive requires a *closed* target row. Deriving over an open record
+or union row (a `...` or `...Rest` tail) is refused: the hidden tail is not
+enumerable, so a witness built over only the visible members would be unsound.
+This matches the open-row refusals at the reflection and `FromData` boundaries.
 
 ---
 

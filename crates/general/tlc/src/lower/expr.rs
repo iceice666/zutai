@@ -504,14 +504,41 @@ impl<'thir> Lowerer<'thir> {
             });
             return None;
         }
-        let CompileTimeValue::Code(expansion) = reduced? else {
+        // A `Code`-typed recipe body promises a witness record. If reduction
+        // produced one, lower it. Otherwise, distinguish two cases by the body's
+        // static type: a `Code`-typed body that failed to reduce (e.g. it stalls
+        // on arithmetic or a comparison the pure reducer does not evaluate) is a
+        // hard error — refuse rather than fall through to a structural witness the
+        // recipe never described. A non-`Code` body (the `<T> => \x. x`
+        // method-name form) legitimately falls through to the structural
+        // synthesizers, so it returns `None` silently.
+        let record = match reduced {
+            Some(CompileTimeValue::Code(expansion)) => {
+                match self.thir.expr_arena[expansion.value].kind.clone() {
+                    ThirExprKind::Record(fields) => Some((fields, expansion.frames)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let Some((fields, frames)) = record else {
+            let body_is_code = matches!(
+                self.thir.type_arena[self.thir.expr_arena[body].ty.0 as usize].kind,
+                TypeKind::Code(_)
+            );
+            if body_is_code {
+                let constraint_name = self.thir.binding_names[constraint.0 as usize].clone();
+                self.diagnostics.push(zutai_thir::ThirDiagnostic {
+                    kind: zutai_thir::ThirDiagnosticKind::DeriveRecipeIrreducible {
+                        constraint: constraint_name,
+                        definition,
+                    },
+                    span,
+                });
+            }
             return None;
         };
-        let ThirExprKind::Record(fields) = self.thir.expr_arena[expansion.value].kind.clone()
-        else {
-            return None;
-        };
-        let saved = std::mem::replace(&mut self.code_frames, expansion.frames);
+        let saved = std::mem::replace(&mut self.code_frames, frames);
         let lowered = fields
             .into_iter()
             .map(|field| (field.name, self.lower_expr(field.value)))
@@ -729,6 +756,14 @@ impl<'thir> Lowerer<'thir> {
             (ThirPatKind::Tuple(pat_items), ThirExprKind::Tuple(val_items)) => {
                 self.match_compile_time_tuple(&pat_items, &val_items, sub, frame, fuel)
             }
+            // A nullary-variant (atom) pattern and a payload-carrying variant
+            // value — or vice versa — are distinct constructors of the same
+            // union. Both scrutinee and pattern have decided structural heads, so
+            // this is a decisive non-match: try the next arm rather than stalling
+            // the whole reduction (which would strand a structurally recursive
+            // recipe and fall through to a broken witness).
+            (ThirPatKind::Atom(_), ThirExprKind::TaggedValue { .. })
+            | (ThirPatKind::TaggedValue { .. }, ThirExprKind::Atom(_)) => Some(false),
             _ => None,
         }
     }

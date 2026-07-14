@@ -286,6 +286,18 @@ impl<'hir> Lowerer<'hir> {
                 });
                 continue;
             }
+            if self.derive_target_is_open_row(task.target) {
+                let target = self.type_name(task.target);
+                self.diagnostics.push(ThirDiagnostic {
+                    kind: ThirDiagnosticKind::DeriveOpenRowTarget {
+                        constraint: task.constraint_name.clone(),
+                        target,
+                        definition: task.definition,
+                    },
+                    span: task.span,
+                });
+                continue;
+            }
             let has_eq_method = task
                 .methods
                 .iter()
@@ -438,6 +450,24 @@ impl<'hir> Lowerer<'hir> {
                     });
                 }
             }
+        }
+    }
+
+    /// Whether a derive target's top-level shape is an *open* record or union
+    /// row (a `...` or `...Rest` tail). Structural derives (`eq`/`show`/`compare`
+    /// and the reflection/`FromData` recipes) enumerate a target's members; an
+    /// open row hides members, so a witness built over the visible members is
+    /// unsound (`eq p p` can read `false`, `compare` can crash). Reflection and
+    /// `FromData` already refuse open rows at their own boundaries; this closes
+    /// the top-level equality/show/ord derive path to match.
+    fn derive_target_is_open_row(&mut self, ty: TypeId) -> bool {
+        let span = self.type_arena[ty.0 as usize].span;
+        let resolved = self.resolve_alias(ty, &mut FxHashSet::default(), span);
+        match self.type_arena[resolved.0 as usize].kind.clone() {
+            TypeKind::Record(_, tail) | TypeKind::Union(_, tail) => {
+                matches!(tail, RowTail::Open | RowTail::Param(_))
+            }
+            _ => false,
         }
     }
 

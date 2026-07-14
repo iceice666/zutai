@@ -354,6 +354,28 @@ fn derive_witness_rejects_non_equality_method() {
     );
 }
 
+#[test]
+fn derive_over_open_row_target_is_refused() {
+    // A structural derive over an open record row is unsound (the hidden tail is
+    // not enumerable), so it must be refused with a dedicated diagnostic rather
+    // than synthesizing a witness over only the visible members.
+    let lowered = lower(
+        "Point :: type { x : Int; ...; };\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Point :: derive\n0",
+    );
+    assert!(
+        lowered.file.is_none(),
+        "open-row derive target should null LoweredThir.file"
+    );
+    assert!(
+        lowered.diagnostics.iter().any(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::DeriveOpenRowTarget { constraint, .. } if constraint == "Eq"
+        )),
+        "expected DeriveOpenRowTarget for Eq; diagnostics: {:?}",
+        lowered.diagnostics
+    );
+}
+
 // ── Increment 4: coherence checking ──────────────────────────────────────────
 
 #[test]
