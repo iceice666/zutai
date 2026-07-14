@@ -34,7 +34,7 @@ DecodePath :: type {
   #variant : { name : Text; };
 };
 DecodeIssue :: type { path : List DecodePath; error : DecodeError; };
-FromData :: <A> @A { fromData :: Data -> Validation DecodeIssue A; } derive
+FromData :: <A> @A { fromData :: Data -> Validation DecodeIssue A; } derive = <T> => deriveFromData
 FromData @Bool :: derive
 FromData @Int :: derive
 FromData @Float :: derive

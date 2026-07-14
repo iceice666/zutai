@@ -149,6 +149,23 @@ result
     assert_eq!(payload[0].1.peek(), Some(Value::Int(42)));
 }
 
+/// The prelude `FromData` recipe body (`<T> => deriveFromData`) lands in every
+/// referencing program's THIR arena. It must not poison the default path: a bare
+/// builder marker is not a `TypeValue`, so a plain decode still runs on the
+/// strict TLC evaluator, which rejects runtime Type values and reflection.
+#[test]
+fn from_data_recipe_body_does_not_poison_tlc_path() {
+    let src = r#"
+result :: Validation DecodeIssue Int = decode (#int { value = 7; });
+result
+"#;
+    let Value::TaggedValue { tag, payload } = eval_tlc_file(src).unwrap() else {
+        panic!("expected validation result on the strict TLC path");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    assert_eq!(payload[0].1.peek(), Some(Value::Int(7)));
+}
+
 #[test]
 fn derived_from_data_decodes_record_and_accumulates_errors() {
     let src = r#"

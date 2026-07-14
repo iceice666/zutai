@@ -67,17 +67,6 @@ impl<'thir> Lowerer<'thir> {
             );
         }
 
-        if self.thir.binding_names[constraint.0 as usize] == "FromData" {
-            return methods
-                .iter()
-                .filter(|method| method.name == "fromData")
-                .filter_map(|method| {
-                    self.synthesize_from_data_method(method.sig, constraint_param, target)
-                        .map(|value| (method.name.clone(), value))
-                })
-                .collect();
-        }
-
         if self.constraint_has_recipe(constraint) {
             if let Some(fields) = self.lower_quoted_recipe_record(constraint, span) {
                 return fields;
