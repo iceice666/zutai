@@ -1123,18 +1123,29 @@ impl<'thir> Lowerer<'thir> {
         };
         let path_ty = self.tlc_row_field_type(issue_ty, "path")?;
         let error_ty = self.tlc_row_field_type(issue_ty, "error")?;
+        let path_item_ty = match self.type_arena[path_ty] {
+            TlcType::List(inner) => inner,
+            _ => return None,
+        };
+        // `map` prefixes `segment` onto every issue path. To lift it to a recursive
+        // global (the only recursion the backend realizes natively), the lambda must be
+        // closed: `segment` is threaded through an explicit parameter rather than
+        // captured, so the value references only its own params and the recursive global.
         let map_binding = self.fresh_synth_binding();
+        let seg_binding = self.fresh_synth_binding();
         let xs_binding = self.fresh_synth_binding();
         let tail_binding = self.fresh_synth_binding();
         let path_binding = self.fresh_synth_binding();
         let error_binding = self.fresh_synth_binding();
-        let map_ty = self.alloc_type(TlcType::Fun(errors_ty, errors_ty, Row::REmpty));
+        let map_inner_ty = self.alloc_type(TlcType::Fun(errors_ty, errors_ty, Row::REmpty));
+        let map_ty = self.alloc_type(TlcType::Fun(path_item_ty, map_inner_ty, Row::REmpty));
         let map_var = self.alloc_expr(TlcExpr::Var(map_binding), map_ty, span);
+        let seg_var = self.alloc_expr(TlcExpr::Var(seg_binding), path_item_ty, span);
         let xs = self.alloc_expr(TlcExpr::Var(xs_binding), errors_ty, span);
         let tail = self.alloc_expr(TlcExpr::Var(tail_binding), errors_ty, span);
         let old_path = self.alloc_expr(TlcExpr::Var(path_binding), path_ty, span);
         let old_error = self.alloc_expr(TlcExpr::Var(error_binding), error_ty, span);
-        let prefix = self.alloc_expr(TlcExpr::List(vec![segment]), path_ty, span);
+        let prefix = self.alloc_expr(TlcExpr::List(vec![seg_var]), path_ty, span);
         let new_path = self.alloc_expr(TlcExpr::ListAppend(prefix, old_path), path_ty, span);
         let new_issue = self.alloc_expr(
             TlcExpr::Record(vec![
@@ -1144,7 +1155,8 @@ impl<'thir> Lowerer<'thir> {
             issue_ty,
             span,
         );
-        let mapped_tail = self.alloc_expr(TlcExpr::App(map_var, tail), errors_ty, span);
+        let map_seg = self.alloc_expr(TlcExpr::App(map_var, seg_var), map_inner_ty, span);
+        let mapped_tail = self.alloc_expr(TlcExpr::App(map_seg, tail), errors_ty, span);
         let one = self.alloc_expr(TlcExpr::List(vec![new_issue]), errors_ty, span);
         let cons = self.alloc_expr(TlcExpr::ListAppend(one, mapped_tail), errors_ty, span);
         let empty = self.alloc_expr(TlcExpr::List(Vec::new()), errors_ty, span);
@@ -1173,10 +1185,14 @@ impl<'thir> Lowerer<'thir> {
             errors_ty,
             span,
         );
-        let map_lam = self.alloc_expr(TlcExpr::Lam(xs_binding, errors_ty, map_body), map_ty, span);
+        let map_inner_lam =
+            self.alloc_expr(TlcExpr::Lam(xs_binding, errors_ty, map_body), map_inner_ty, span);
+        let map_lam =
+            self.alloc_expr(TlcExpr::Lam(seg_binding, path_item_ty, map_inner_lam), map_ty, span);
         let errors_binding = self.fresh_synth_binding();
         let errors = self.alloc_expr(TlcExpr::Var(errors_binding), errors_ty, span);
-        let mapped = self.alloc_expr(TlcExpr::App(map_var, errors), errors_ty, span);
+        let map_seg_outer = self.alloc_expr(TlcExpr::App(map_var, segment), map_inner_ty, span);
+        let mapped = self.alloc_expr(TlcExpr::App(map_seg_outer, errors), errors_ty, span);
         let invalid = self.from_data_invalid_with_errors(result_ty, mapped, span)?;
         let result_binding = self.fresh_synth_binding();
         let result_var = self.alloc_expr(TlcExpr::Var(result_binding), result_ty, span);

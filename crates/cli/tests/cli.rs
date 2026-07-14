@@ -726,6 +726,41 @@ fn compile_stdlib_data_decode_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+// Regression: derived `FromData` record decoders must compile to native code
+// that matches the interpreter oracle. Previously the `Letrec` nodes emitted by
+// the derive lowerer (list decode `go`, error path-prefix `map`, field lookup
+// `find`) fell through to `DfNodeKind::Error` in dataflow lowering, producing a
+// null closure that SIGSEGV'd at runtime. Exercises all three lifted helpers:
+// nested record (`owner`), list-of-records (`items` → `go`/`find`).
+#[test]
+fn compile_derived_from_data_nested_record_matches_oracle() {
+    let data_path = write_tmp(
+        "cli_test_derived_from_data.zti",
+        "{\n  port = 8787;\n  owner = { name = \"kernel\"; };\n  items = [ { a = 1; }; { a = 2; }; { a = 3; }; ];\n}\n",
+    );
+    let source = format!(
+        "Owner :: type {{ name : Text; }};\n\
+         Item :: type {{ a : Int; }};\n\
+         Config :: type {{ port : Int; owner : Owner; items : List Item; }};\n\
+         FromData @Owner :: derive\n\
+         FromData @Item :: derive\n\
+         FromData @Config :: derive\n\
+         decodeConfig :: Data -> Validation DecodeIssue Config = data => decode data;\n\
+         decodeConfig (loadZti \"{}\")\n",
+        zt_string_literal(&data_path)
+    );
+    let native = compile_bin_stdout("cli_test_derived_from_data", &source);
+    let interp = run_stdout("cli_test_derived_from_data_oracle.zt", &source);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.contains("#valid")
+            && native.contains("port = 8787")
+            && native.contains("name = \"kernel\"")
+            && native.contains("a = 1"),
+        "unexpected decode output: {native}"
+    );
+}
+
 const STDLIB_VALIDATE_SRC: &str = "v ::= import stdlib.validate;\n\
 missing :: Text? = #none;\n\
 checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\
