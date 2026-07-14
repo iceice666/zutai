@@ -32,6 +32,17 @@ struct DecodedRecordField {
     result: TlcExprId,
 }
 
+/// Which generic derive builder a recipe body names. A constraint whose
+/// `derive =` recipe reduces to a bare reference to one of the ambient builder
+/// builtins routes witness synthesis by builder identity rather than by the
+/// legacy method-name coincidence — the "generic recipe API".
+#[derive(Clone, Copy)]
+enum DeriveBuilder {
+    Show,
+    OrdLex,
+    FromData,
+}
+
 impl<'thir> Lowerer<'thir> {
     pub(super) fn synthesize_derive_fields(
         &mut self,
@@ -42,6 +53,19 @@ impl<'thir> Lowerer<'thir> {
         let Some((constraint_param, methods)) = self.constraint_info(constraint) else {
             return Vec::new();
         };
+
+        // Generic recipe API: a recipe body naming a builder builtin
+        // (`<T> => deriveShow`) routes witness synthesis by builder identity,
+        // superseding the FromData name-hack and method-name paths below.
+        if let Some(marker) = self.derive_builder_marker(constraint) {
+            return self.synthesize_builder_fields(
+                marker,
+                &methods,
+                constraint,
+                constraint_param,
+                target,
+            );
+        }
 
         if self.thir.binding_names[constraint.0 as usize] == "FromData" {
             return methods
@@ -105,6 +129,90 @@ impl<'thir> Lowerer<'thir> {
                     arg_ty,
                     result_ty,
                 );
+                Some((method.name.clone(), value))
+            })
+            .collect()
+    }
+
+    /// Detects a recipe body of the form `<T> => deriveShow` — the type-lambda
+    /// params live in `recipe.params`, so the body is a bare `BindingRef` to a
+    /// builder builtin. Returns which builder, or `None` for any other recipe
+    /// shape (quoted `Code`, method-name lambda, or a user binding).
+    fn derive_builder_marker(&self, constraint: BindingId) -> Option<DeriveBuilder> {
+        let body = self.thir.decls.iter().find_map(|&decl_id| {
+            let decl = &self.thir.decl_arena[decl_id];
+            if decl.binding == constraint
+                && let ThirDeclKind::Constraint {
+                    recipe: Some(recipe),
+                    ..
+                } = &decl.kind
+            {
+                Some(recipe.body)
+            } else {
+                None
+            }
+        })?;
+        let zutai_thir::ThirExprKind::BindingRef { binding, .. } = &self.thir.expr_arena[body].kind
+        else {
+            return None;
+        };
+        self.builder_marker_name(*binding)
+    }
+
+    /// Resolves a `BindingId` to its builder marker, but only when it is the
+    /// seeded builtin (first occurrence of the name, `BuiltinValue` kind) — the
+    /// same poison-free guard `builtin_overlay_name` uses, so a user binding
+    /// that shadows the name never drives synthesis.
+    fn builder_marker_name(&self, binding: BindingId) -> Option<DeriveBuilder> {
+        if !self
+            .thir
+            .binding_kinds
+            .get(binding.0 as usize)
+            .is_some_and(|kind| *kind == zutai_hir::BindingKind::BuiltinValue)
+        {
+            return None;
+        }
+        let name = self.thir.binding_names.get(binding.0 as usize)?.as_str();
+        let marker = match name {
+            "deriveShow" => DeriveBuilder::Show,
+            "deriveOrdLex" => DeriveBuilder::OrdLex,
+            "deriveFromData" => DeriveBuilder::FromData,
+            _ => return None,
+        };
+        let first = self.thir.binding_names.iter().position(|c| c == name)?;
+        (first == binding.0 as usize).then_some(marker)
+    }
+
+    /// Dispatches every constraint method through the named builder's existing
+    /// structural synthesizer at `target`. A method whose signature does not fit
+    /// the builder (e.g. a non-`A -> Text` method under `deriveShow`) yields no
+    /// field; the synthesizer's own shape validation is the safety net.
+    fn synthesize_builder_fields(
+        &mut self,
+        marker: DeriveBuilder,
+        methods: &[ThirConstraintMethod],
+        constraint: BindingId,
+        constraint_param: BindingId,
+        target: TypeId,
+    ) -> Vec<(String, TlcExprId)> {
+        methods
+            .iter()
+            .filter_map(|method| {
+                let value = match marker {
+                    DeriveBuilder::Show => {
+                        self.synthesize_show_method(method.sig, constraint_param, target)?
+                    }
+                    DeriveBuilder::OrdLex => self.synthesize_ord_method(
+                        constraint,
+                        &method.name,
+                        method.sig,
+                        constraint_param,
+                        target,
+                    )?,
+                    DeriveBuilder::FromData => {
+                        self.synthesize_from_data_method(method.sig, constraint_param, target)?
+                    }
+                };
                 Some((method.name.clone(), value))
             })
             .collect()

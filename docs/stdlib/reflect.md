@@ -12,6 +12,8 @@ registered by the filesystem stdlib manifest.
 ## API
 
 ```zt
+FieldDescriptor
+VariantDescriptor
 SchemaKind
 SchemaField
 SchemaVariant
@@ -21,8 +23,24 @@ variants
 schema
 ```
 
+`FieldDescriptor` (`{ name : Text; Type : Type; optional : Bool; }`) and
+`VariantDescriptor` (`{ name : Text; fields : List FieldDescriptor; }`) are the
+typed rank-2 descriptors: each carries the reflected component's own `Type`
+rather than the text-erased `type : Text` of the `Schema*` family. `fields` and
+`variants` reflect directly into `List FieldDescriptor` / `List VariantDescriptor`;
+`schema` returns the serialization-oriented `Schema`.
+
 `witness C @T` remains syntax and is intentionally not exported as a module
 field.
+
+### Compile-time derive builders
+
+`deriveShow`, `deriveOrdLex`, and `deriveFromData` are ambient compile-time
+markers naming the generic derive recipes. A constraint recipe body names one
+directly — `derive = <T> => deriveShow` — to fold the structural witness
+dictionary at the concrete derive target. They are not runtime values, so they
+are neither imported through `stdlib.reflect` nor applied as ordinary functions;
+see `docs/compiler/derive-recipes.md`.
 
 ## Support Level
 

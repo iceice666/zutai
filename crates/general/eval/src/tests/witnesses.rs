@@ -217,6 +217,82 @@ compare lhs rhs
     );
 }
 
+/// The generic recipe API: `derive = <T> => deriveShow` routes witness
+/// synthesis through the named builder builtin by *identity*, not by the
+/// method-name coincidence the bare `<T> => \x. x` recipe relies on. A builder
+/// marker drives the same structural Show fold at the concrete target.
+#[test]
+fn recipe_derive_show_builder_synthesizes_record_witness() {
+    let src = r#"
+Point :: type { x : Int; y : Int; };
+p :: Point = { x = 1; y = 2; };
+Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Show @Point :: derive
+show p
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+}
+
+/// `deriveOrdLex` drives the lexicographic Ord fold by builder identity: `x`
+/// ties, `y` breaks it (`2 < 3`), so the record compares `#lt`.
+#[test]
+fn recipe_derive_ord_lex_builder_synthesizes_record_witness() {
+    let src = r#"
+Ordering :: type { #lt; #eq; #gt; };
+Point :: type { x : Int; y : Int; };
+p1 :: Point = { x = 1; y = 2; };
+p2 :: Point = { x = 1; y = 3; };
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Ord @Point :: derive
+compare p1 p2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Atom("lt".into()));
+}
+
+/// Builder-marker dispatch reaches unions too, matching the method-name path's
+/// coverage: `deriveShow` prints the constructor atom, `deriveOrdLex` orders by
+/// declaration position.
+#[test]
+fn recipe_derive_builders_synthesize_union_witnesses() {
+    let show_src = r#"
+Status :: type { #ok; #err; };
+s :: Status = #err;
+Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Show @Status :: derive
+show s
+"#;
+    assert_eq!(eval_tlc_file(show_src).unwrap(), Value::Text("#err".into()));
+
+    let ord_src = r#"
+Ordering :: type { #lt; #eq; #gt; };
+Status :: type { #ok; #err; };
+ok :: Status = #ok;
+err :: Status = #err;
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Ord @Status :: derive
+compare ok err
+"#;
+    assert_eq!(eval_tlc_file(ord_src).unwrap(), Value::Atom("lt".into()));
+}
+
+/// A builder name is a seeded builtin, so a user cannot rebind it at top level:
+/// the attempt is a `DuplicateBinding` error and the program never runs. This is
+/// the poison-free guarantee behind the marker guard — no user binding can ever
+/// masquerade as `deriveShow` to drive synthesis.
+#[test]
+fn recipe_builder_name_cannot_be_shadowed_at_top_level() {
+    let src = "deriveShow :: Text -> Text = value => value;\nderiveShow \"x\"";
+    match eval_tlc_file(src).unwrap_err() {
+        EvalError::NotRunnable(messages) => assert!(
+            messages
+                .iter()
+                .any(|m| { m.contains("DuplicateBinding") && m.contains("deriveShow") }),
+            "expected duplicate-binding rejection, got {messages:?}"
+        ),
+        other => panic!("expected NotRunnable, got {other:?}"),
+    }
+}
+
 // ─── Phase 13: conditional (parametric) witnesses ─────────────────────────────
 
 /// Direct call site: `eq` on two `List Int` resolves the conditional witness

@@ -53,6 +53,15 @@ impl<'hir> Lowerer<'hir> {
             "fields" => Some(self.fields_builtin_type(span)),
             "variants" => Some(self.variants_builtin_type(span)),
             "schema" => Some(self.schema_builtin_type(span)),
+            "deriveShow" | "deriveOrdLex" | "deriveFromData" => {
+                // Compile-time derive-recipe builder markers. A recipe body names
+                // one (`<T> => deriveShow`) to route witness synthesis through the
+                // generic recipe API; the marker is recognized structurally during
+                // TLC derive lowering and never applied or lowered to a runtime
+                // value (constraint decls are filtered before TLC). The bottom
+                // scheme `<A> A` lets it stand in any recipe-body position.
+                Some(self.fresh_infer_var(span))
+            }
             "overlay" => Some(self.overlay_builtin_type(span, false)),
             "overlayDeep" => Some(self.overlay_builtin_type(span, true)),
             "listEmpty" => Some(self.list_empty_builtin_type(span)),

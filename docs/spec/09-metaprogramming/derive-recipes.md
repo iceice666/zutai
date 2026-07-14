@@ -44,13 +44,18 @@ Const :: <A> @A { constant :: A -> Int; }
 ```zt
 Show :: <A> @A {
   show :: A -> Text;
-} derive = <T> => deriveShow T;
+} derive = <T> => deriveShow;
 ```
 
-`deriveShow :: Type -> { show : T -> Text; }` runs at compile time. It reflects
-the structure of `T` and, for each component, delegates through
-`witness Show @Component`. For a record `Point :: type { x : Int; y : Int; }`,
-the recipe produces a witness equivalent to:
+`deriveShow` is a generic derive builder: an ambient compile-time marker that
+the derive machinery recognizes structurally in a recipe body. The recipe names
+it bare — `<T> => deriveShow`, not `deriveShow T` — because the derivation
+target is supplied by the derive request (`Show @Point :: derive`), not passed
+as a value argument; `T` has no value-level binding, so an applied `deriveShow T`
+is a type error. At the request the builder reflects the structure of the target
+and, for each component, delegates through `witness Show @Component`. For a record
+`Point :: type { x : Int; y : Int; }`, the recipe produces a witness equivalent
+to:
 
 ```zt
 {
@@ -84,11 +89,20 @@ component type is reachable:
   [recursive types](../05-type-system/recursive-types.md)).
 
 The embedded `Type` value in a reflected field is a first-class compile-time
-`Type` and may be used directly as the `@`-argument to `witness`:
+`Type`. A source-level fold that iterates the reflected structure and requests
+each component witness through the field's `Type` — for example:
 
 ```zt
 \field => witness Show @(field.Type)
 ```
+
+is the intended surface form for author-defined recipes. It is not yet a parsed
+construct: `@(field.Type)` requires a value-projection witness target the grammar
+does not accept, so adding it is gated by the
+[stable-syntax change policy](../../project/roadmap.md). Until then, the generic
+builders (`deriveShow`, `deriveOrdLex`, `deriveFromData`) realize this fold as
+compiler-backed markers — the bare-marker recipe body above routes to the same
+structural, per-component `witness`-delegating derivation.
 
 ---
 
@@ -138,7 +152,7 @@ constraint.
 ```zt
 Ord :: <A: Eq> @A {
   compare :: A -> A -> Ordering;
-} derive = <T> => deriveOrdLex T;
+} derive = <T> => deriveOrdLex;
 ```
 
 `deriveOrdLex` reflects the fields of `T` in declaration order and folds their
@@ -159,9 +173,16 @@ constraint declarations carry `derive = <T> => ...` recipe bodies through
 Syntax/HIR/THIR — the recipe is type-checked before TLC consumes the marker —
 and quoted witness records expand generically before TLC dictionary passing.
 The expanded record type is checked against the concrete constraint at the
-derive request. Pattern-complete evaluation and typed reflection folds are
-still open. The established Show/Ord structural builders remain compatibility fallbacks,
-including same-variant payload ordering. `witness C @T` is parsed, typed as a
+derive request. The generic derive builders (`deriveShow`, `deriveOrdLex`,
+`deriveFromData`) have **landed** as ambient compile-time markers: a bare-marker
+recipe body (`<T> => deriveShow`) routes witness synthesis through the shared
+structural folds by builder identity, and `stdlib.reflect` exposes the typed
+rank-2 descriptors (`FieldDescriptor`, `VariantDescriptor`) those folds reflect
+over. `FromData` derivation runs through the same `deriveFromData` builder rather
+than a name-keyed special case. A recipe body that is neither a builder marker
+nor a reducible quoted record still falls through to the structural Show/Ord
+builders by method name, including same-variant payload ordering. `witness C @T`
+is parsed, typed as a
 method-record dictionary, and resolved through the same concrete/conditional
 lookup as implicit dispatch (accepting conditional witnesses such as
 `Eq @(List A)` and reporting `WitnessReflectNotInScope` otherwise); type-value
