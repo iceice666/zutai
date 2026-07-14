@@ -35,18 +35,36 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
-The in-progress 2026-07-13 typed-staging slice adds compile-time-only `Code A`,
-hygienic direct/bound `quote(expr)` / `splice(expr)`, generic quoted-record
-derive recipes, and a provisional ambient `FromData`/`decode` structural
-decoder. Supported decoders accumulate path-aware record/list errors and lower
-to ordinary TLC terms; missing physical optional fields decode as absent, and
-no `Code` node or decoder runtime primitive reaches Dataflow Core. Full recipe
-evaluation, typed structural reflection descriptors, and richer expansion
-diagnostics remain open in the roadmap. Reference/TLC evaluation supports nested
-records and unions; LLVM/native execution is currently verified only for
-primitive and flat-record decoders, with nested-record parity still open.
+The 2026-07-14 typed macro kernel completes the typed-staging/decoder slice:
+compile-time-only `Code A`, hygienic direct/bound `quote(expr)` / `splice(expr)`,
+generic quoted-record derive recipes, and an ambient `FromData`/`decode`
+structural decoder routed through the generic `deriveFromData` reflection
+builder. Pure recipe evaluation reduces `match`/recursion through a bounded
+compile-time reducer that never evaluates builtins; fuel exhaustion, irreducible
+`Code` recipes, effect-carrying recipe bodies, and open-row structural derives
+are all refused with source-located diagnostics carrying request and definition
+locations. `stdlib.reflect` exposes typed rank-2 field/variant descriptors and a
+compile-time record builder. Supported decoders accumulate path-aware
+record/list errors and lower to ordinary TLC terms; missing physical optional
+fields decode as absent, and no `Code` node or decoder runtime primitive reaches
+Dataflow Core. Reference/TLC evaluation supports nested records and unions, and
+LLVM/native execution is verified for primitive, flat-record, and nested-record
+decoders, the last via a native oracle test that decodes a nested record with a
+list-of-records against the interpreter.
 
-_Last updated: 2026-07-13 (`zutai-web serve`: fixed a dev-server watcher bug found
+_Last updated: 2026-07-14 (typed macro kernel: completed the six-bullet
+macro-kernel milestone — pattern-driven pure recipe evaluation with
+source-located fuel exhaustion; typed rank-2 reflection descriptors and a
+compile-time record builder in `stdlib.reflect`; `FromData` routed through the
+generic `deriveFromData` builder; nested derived-record decoders fixed for
+LLVM/native by lifting `Letrec` bindings to globals, proven by a native oracle
+test that decodes a nested record with a list-of-records against the
+interpreter; request/definition locations on macro diagnostics; and the
+malformed-staging/effect/fuel/recursion/open-row/residual refusal envelope,
+including a new `DeriveOpenRowTarget` diagnostic and irreducible-`Code`-recipe
+refusal. The recipe reducer stays pure-structural and never evaluates builtins,
+so an arithmetic-driven recipe refuses rather than mis-deriving a witness);
+prior baseline updates: 2026-07-13 (`zutai-web serve`: fixed a dev-server watcher bug found
 while manually verifying the browser kernel reconciler (below) — the file
 watcher could see its own build activity as a source change and rebuild
 forever, each cycle forcing a full page reload. Two independent causes,
@@ -63,8 +81,7 @@ directory by its `STAGING_DIR_PREFIX` (a constant shared with `build_site`
 so the two can't drift apart). Verified empirically, not just by unit test:
 reproduced the original nested `-o dist` layout, confirmed the server holds
 at build-count 1 while idle, and confirmed a genuine source edit still
-triggers exactly one rebuild);
-prior baseline updates: 2026-07-13 (browser kernel reconciliation, milestone 5: added a
+triggers exactly one rebuild), 2026-07-13 (browser kernel reconciliation, milestone 5: added a
 wasm-bindgen-test browser harness (`crates/browser/kernel/tests/
 browser_hydration.rs`, `wasm-bindgen-test = "=0.3.71"` pinned to match this
 workspace's `wasm-bindgen 0.2.121`) exercising `start()` end to end —

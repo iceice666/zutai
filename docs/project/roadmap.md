@@ -178,31 +178,6 @@ architectural question tied to the render/dataflow layer rather than the DOM
 kernel, and should be scoped on its own once 1-4 land and profiling shows it
 matters.
 
-### Finish the typed macro kernel
-
-The first staging/decoder slice has landed locally: `Code A`, hygienic
-`quote`/`splice`, a bounded reducer for pure helpers and nested splices, generic
-type-checked witness records, and structural `FromData` synthesis. Before
-recording the milestone as complete:
-
-- complete pattern-driven pure recipe evaluation and surface fuel exhaustion
-  as a source diagnostic;
-- add typed rank-2 field/variant descriptors and the compile-time record
-  builder to `stdlib.reflect`;
-- route `FromData` through that generic recipe API instead of the provisional
-  TLC structural synthesizer;
-- fix LLVM/native execution of nested derived-record decoders; primitive and
-  flat-record binaries run, while nested record decoding still crashes in the
-  generated program;
-- add expansion definition/request locations to macro diagnostics;
-- finish malformed-staging, effect, fuel, recursion, open-row, and residual
-  metadata coverage.
-
-The syntax-stabilization pass consolidated the former numbered specifications
-by language area and promoted every parser-accepted surface form into the stable
-specification. A construct may still have a deliberately narrower execution
-envelope. Those limits are support levels, not future language versions.
-
 ## Stable-syntax change policy
 
 New surface syntax is not accepted as a speculative placeholder. A syntax
