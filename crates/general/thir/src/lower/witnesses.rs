@@ -19,6 +19,9 @@ impl<'hir> Lowerer<'hir> {
             has_recipe: bool,
             has_code_recipe: bool,
             code_recipe_type: Option<TypeId>,
+            /// Source span of the constraint declaration — the "expansion
+            /// definition" location threaded into derive/recipe diagnostics.
+            definition: Span,
         }
 
         let mut constraint_map: FxHashMap<BindingId, ConstraintInfo> = FxHashMap::default();
@@ -60,6 +63,7 @@ impl<'hir> Lowerer<'hir> {
                             matches!(self.ty(inner).kind, TypeKind::Record(_, _))
                         }),
                         code_recipe_type,
+                        definition: decl.span,
                     },
                 );
             }
@@ -83,6 +87,7 @@ impl<'hir> Lowerer<'hir> {
             has_recipe: bool,
             has_code_recipe: bool,
             code_recipe_type: Option<TypeId>,
+            definition: Span,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
         let mut derive_tasks: Vec<DeriveTask> = Vec::new();
@@ -144,6 +149,7 @@ impl<'hir> Lowerer<'hir> {
                         has_recipe: cst_info.has_recipe,
                         has_code_recipe: cst_info.has_code_recipe,
                         code_recipe_type: cst_info.code_recipe_type,
+                        definition: cst_info.definition,
                     });
                     continue;
                 }
@@ -274,6 +280,7 @@ impl<'hir> Lowerer<'hir> {
                 self.diagnostics.push(ThirDiagnostic {
                     kind: ThirDiagnosticKind::DeriveConstraintNotDerivable {
                         constraint: task.constraint_name.clone(),
+                        definition: task.definition,
                     },
                     span: task.span,
                 });
@@ -296,6 +303,7 @@ impl<'hir> Lowerer<'hir> {
                             method: "fromData".to_string(),
                             expected: "Bool, Int, Float, Text, atom, List, Optional, closed non-recursive record, or closed non-recursive union".to_string(),
                             found,
+                            definition: task.definition,
                         },
                         span: task.span,
                     });
@@ -314,6 +322,7 @@ impl<'hir> Lowerer<'hir> {
                             kind: ThirDiagnosticKind::DeriveUnsupportedMethod {
                                 constraint: task.constraint_name.clone(),
                                 method: name.clone(),
+                                definition: task.definition,
                             },
                             span: task.span,
                         });
@@ -334,6 +343,7 @@ impl<'hir> Lowerer<'hir> {
                         method: "<recipe>".to_string(),
                         expected: "supported Show/Ord-style method".to_string(),
                         found: "custom recipe".to_string(),
+                        definition: task.definition,
                     },
                     span: task.span,
                 });
@@ -352,6 +362,7 @@ impl<'hir> Lowerer<'hir> {
                             method: "<recipe>".to_string(),
                             expected: "closed witness record".to_string(),
                             found,
+                            definition: task.definition,
                         },
                         span: task.span,
                     });
@@ -386,6 +397,7 @@ impl<'hir> Lowerer<'hir> {
                                 method: field.name.clone(),
                                 expected: expected_name,
                                 found: found_name,
+                                definition: task.definition,
                             },
                             span: task.span,
                         });
@@ -420,6 +432,7 @@ impl<'hir> Lowerer<'hir> {
                         kind: ThirDiagnosticKind::DeriveComponentMissingWitness {
                             constraint: task.constraint_name.clone(),
                             component: component_name,
+                            definition: task.definition,
                         },
                         span: task.span,
                     });

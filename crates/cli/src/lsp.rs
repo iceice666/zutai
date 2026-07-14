@@ -340,7 +340,7 @@ impl Server {
             }
             output.push((
                 root_uri.to_string(),
-                diagnostic_value(root_source, diagnostic),
+                diagnostic_value(root_source, root_uri, diagnostic),
             ));
         }
         output
@@ -722,11 +722,15 @@ fn diagnostics(source: &str, analysis: &zutai_semantic::Analysis) -> Vec<Value> 
     analysis
         .diagnostics
         .iter()
-        .map(|diagnostic| diagnostic_value(source, diagnostic))
+        .map(|diagnostic| diagnostic_value(source, "file:///test.zt", diagnostic))
         .collect()
 }
 
-fn diagnostic_value(source: &str, diagnostic: &zutai_semantic::SemanticDiagnostic) -> Value {
+fn diagnostic_value(
+    source: &str,
+    uri: &str,
+    diagnostic: &zutai_semantic::SemanticDiagnostic,
+) -> Value {
     match &diagnostic.kind {
         zutai_semantic::SemanticDiagnosticKind::Parse(parse) => json!({
             "range": range(source, parse.primary_span().start as usize, parse.primary_span().end as usize),
@@ -744,12 +748,24 @@ fn diagnostic_value(source: &str, diagnostic: &zutai_semantic::SemanticDiagnosti
         _ => {
             let (message, start, end) = zutai_eval::describe_semantic_diagnostic(diagnostic)
                 .expect("HIR and THIR diagnostics always have a source span");
-            json!({
+            let mut value = json!({
                 "range": range(source, start as usize, end as usize),
                 "severity": 1,
                 "source": "zutai",
                 "message": message,
-            })
+            });
+            if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &diagnostic.kind
+                && let Some((related, label)) = thir.related_location_in(source)
+            {
+                value["relatedInformation"] = json!([{
+                    "location": {
+                        "uri": uri,
+                        "range": range(source, related.start as usize, related.end as usize),
+                    },
+                    "message": label,
+                }]);
+            }
+            value
         }
     }
 }
@@ -1532,6 +1548,41 @@ mod tests {
         let diagnostics = diagnostics("x ::= ;\nx", &analysis);
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].get("range").is_some());
+    }
+
+    #[test]
+    fn derive_diagnostic_carries_definition_related_information() {
+        let source = "Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1";
+        let analysis = analyze(source, "file:///tmp/derive.zt").unwrap();
+        let diagnostics = diagnostics(source, &analysis);
+        let derive = diagnostics
+            .iter()
+            .find(|d| {
+                d.get("message")
+                    .and_then(|m| m.as_str())
+                    .is_some_and(|m| m.contains("cannot derive `Ord`"))
+            })
+            .expect("expected the derive diagnostic");
+        let related = derive
+            .get("relatedInformation")
+            .and_then(|r| r.as_array())
+            .expect("derive diagnostic should carry relatedInformation");
+        assert_eq!(related.len(), 1);
+        assert_eq!(
+            related[0]["message"].as_str(),
+            Some("constraint defined here")
+        );
+        // The related range starts on line 0 (the constraint declaration), while
+        // the primary range is the derive request on line 1.
+        assert_eq!(
+            related[0]["location"]["range"]["start"]["line"].as_u64(),
+            Some(0)
+        );
+        assert_eq!(
+            derive["range"]["start"]["line"].as_u64(),
+            Some(1),
+            "primary range should sit at the derive request"
+        );
     }
 
     #[test]

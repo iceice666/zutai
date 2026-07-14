@@ -153,18 +153,21 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         }
         MissingWitnessField { name } => format!("missing witness field `{name}`"),
         UnknownWitnessField { name } => format!("unknown witness field `{name}`"),
-        DeriveConstraintNotDerivable { constraint } => {
+        DeriveConstraintNotDerivable { constraint, .. } => {
             format!("constraint `{constraint}` does not support derive")
         }
         DeriveComponentMissingWitness {
             constraint,
             component,
+            ..
         } => {
             format!(
                 "cannot derive `{constraint}` because component type `{component}` has no witness"
             )
         }
-        DeriveUnsupportedMethod { constraint, method } => {
+        DeriveUnsupportedMethod {
+            constraint, method, ..
+        } => {
             format!(
                 "cannot derive `{constraint}`: method `{method}` has no structural derivation recipe"
             )
@@ -172,7 +175,7 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         WitnessReflectNotInScope { constraint, target } => {
             format!("no witness in scope for `{constraint} @{target}`")
         }
-        DeriveRecipeFuelExhausted { constraint } => {
+        DeriveRecipeFuelExhausted { constraint, .. } => {
             format!("derive recipe for `{constraint}` exhausted type-level fuel")
         }
         DeriveRecipeTypeMismatch {
@@ -180,6 +183,7 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
             method,
             expected,
             found,
+            ..
         } => format!(
             "derive recipe for `{constraint}` produced `{method}` with type {found}, expected {expected}"
         ),

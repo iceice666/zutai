@@ -251,10 +251,59 @@ fn derive_witness_rejects_non_derivable_constraint() {
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
-            ThirDiagnosticKind::DeriveConstraintNotDerivable { constraint } if constraint == "Eq"
+            ThirDiagnosticKind::DeriveConstraintNotDerivable { constraint, .. } if constraint == "Eq"
         )),
         "expected DeriveConstraintNotDerivable; diagnostics: {:?}",
         lowered.diagnostics
+    );
+}
+
+/// A derive diagnostic's secondary location resolves to the constraint's name
+/// token when the constraint is declared in the same (entry) buffer, and is
+/// suppressed when the constraint lives in a prelude/imported buffer whose spans
+/// index a different source. Mirrors the request/definition split the macro
+/// diagnostics render (primary span = derive request, secondary = definition).
+#[test]
+fn derive_diagnostic_related_location_points_at_local_constraint() {
+    let src = "Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1";
+    let lowered = lower(src);
+    let diag = lowered
+        .diagnostics
+        .iter()
+        .find(|d| matches!(&d.kind, ThirDiagnosticKind::DeriveUnsupportedMethod { .. }))
+        .expect("expected DeriveUnsupportedMethod");
+    // Primary span is the derive request on line 2, not the declaration.
+    assert!(
+        &src[diag.span.start as usize..diag.span.end as usize].starts_with("Ord @Int"),
+        "primary span should cover the derive request, got {:?}",
+        &src[diag.span.start as usize..diag.span.end as usize]
+    );
+    // Secondary location resolves to the constraint's name token on line 1.
+    let (related, label) = diag
+        .related_location_in(src)
+        .expect("local constraint should yield a related definition location");
+    assert_eq!(&src[related.start as usize..related.end as usize], "Ord");
+    assert_eq!(label, "constraint defined here");
+}
+
+/// A constraint declared in a prelude (here `FromData`) shares the THIR decl
+/// arena but carries spans into a different buffer; the content-verified guard
+/// must suppress the secondary label rather than mislocate it into entry bytes.
+#[test]
+fn derive_diagnostic_related_location_suppressed_for_prelude_constraint() {
+    let src = "Pair :: type (Int, Int);\nFromData @Pair :: derive\nvalue :: Validation DecodeIssue Pair = fromData (#int { value = 1; });\nvalue";
+    let lowered = lower(src);
+    let diag = lowered
+        .diagnostics
+        .iter()
+        .find(|d| matches!(
+            &d.kind,
+            ThirDiagnosticKind::DeriveRecipeTypeMismatch { constraint, .. } if constraint == "FromData"
+        ))
+        .expect("expected DeriveRecipeTypeMismatch for FromData");
+    assert!(
+        diag.related_location_in(src).is_none(),
+        "a prelude constraint's definition span must not resolve against the entry buffer"
     );
 }
 
@@ -297,7 +346,7 @@ fn derive_witness_rejects_non_equality_method() {
     assert!(
         lowered.diagnostics.iter().any(|d| matches!(
             &d.kind,
-            ThirDiagnosticKind::DeriveUnsupportedMethod { constraint, method }
+            ThirDiagnosticKind::DeriveUnsupportedMethod { constraint, method, .. }
                 if constraint == "Ord" && method == "compare"
         )),
         "expected DeriveUnsupportedMethod for compare; diagnostics: {:?}",

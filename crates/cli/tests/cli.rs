@@ -2137,6 +2137,21 @@ fn check_renders_human_readable_type_diagnostic() {
 }
 
 #[test]
+fn check_derive_diagnostic_shows_definition_and_request_labels() {
+    // A derive failure is a dual-location diagnostic: the primary label sits at
+    // the derivation request, and a secondary "constraint defined here" label
+    // points back at the constraint declaration.
+    let src = "Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1\n";
+    let path = write_tmp("cli_test_check_derive_labels.zt", src);
+    cli().arg("check").arg(&path).assert().failure().stderr(
+        predicate::str::contains(
+            "cannot derive `Ord`: method `compare` has no structural derivation recipe",
+        )
+        .and(predicate::str::contains("constraint defined here")),
+    );
+}
+
+#[test]
 fn check_effect_program_passes() {
     let path = write_tmp("cli_test_check_effect.zt", EFFECT_SRC);
     cli()

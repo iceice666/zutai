@@ -46,12 +46,16 @@ pub(crate) fn print_semantic_errors(
             }
         }
         match zutai_eval::describe_semantic_diagnostic(err) {
-            Some((message, start, end)) => eprintln!(
-                "{:?}",
-                miette::Report::new(ZtSemanticDiagnostic::new(
-                    path, contents, message, start, end
-                ))
-            ),
+            Some((message, start, end)) => {
+                let mut diagnostic = ZtSemanticDiagnostic::new(path, contents, message, start, end);
+                if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &err.kind
+                    && let Some((related, label)) = thir.related_location_in(contents)
+                {
+                    diagnostic =
+                        diagnostic.with_related(contents, related.start, related.end, label);
+                }
+                eprintln!("{:?}", miette::Report::new(diagnostic));
+            }
             None => eprintln!("semantic error: {err:?}"),
         }
     }
@@ -173,6 +177,7 @@ pub(crate) struct ZtSemanticDiagnostic {
     source_code: NamedSource<String>,
     message: String,
     span: (usize, usize),
+    related: Option<((usize, usize), String)>,
 }
 
 impl ZtSemanticDiagnostic {
@@ -184,7 +189,23 @@ impl ZtSemanticDiagnostic {
             source_code: NamedSource::new(path, contents.to_string()),
             message,
             span: (clamped_start, len),
+            related: None,
         }
+    }
+
+    /// Attach a secondary source location (rendered as an extra label) within the
+    /// same source file — e.g. the "constraint defined here" site for a derive
+    /// failure whose primary span is the derivation request.
+    pub(crate) fn with_related(
+        mut self,
+        contents: &str,
+        start: u32,
+        end: u32,
+        label: impl Into<String>,
+    ) -> Self {
+        let (clamped_start, len) = clamp_source_span(contents, start as usize, end as usize);
+        self.related = Some(((clamped_start, len), label.into()));
+        self
     }
 }
 
@@ -221,9 +242,12 @@ impl Diagnostic for ZtSemanticDiagnostic {
     }
 
     fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
-        Some(Box::new(std::iter::once(LabeledSpan::at(
-            self.span, "here",
-        ))))
+        let primary = std::iter::once(LabeledSpan::at(self.span, "here"));
+        let related = self
+            .related
+            .iter()
+            .map(|(span, label)| LabeledSpan::at(*span, label.clone()));
+        Some(Box::new(primary.chain(related)))
     }
 }
 

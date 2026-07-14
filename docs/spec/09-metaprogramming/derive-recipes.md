@@ -112,8 +112,13 @@ A recipe is pure, compile-time code, evaluated under the type-level fuel bound
 The resulting witness obeys the usual coherence rule: at most one witness per
 `(constraint, type)` pair (see [constraints](../06-polymorphism/constraints.md)).
 Recipe failures — a missing component witness, a fuel-exhausted recipe, or a
-result that does not match the method signatures — are compile errors located at
-the derivation request.
+result that does not match the method signatures — are compile errors whose
+primary location is the derivation request. When the constraint is declared in
+the same source, the diagnostic also carries a secondary "constraint defined
+here" location pointing at the constraint's declaration, so both the request and
+the recipe definition are visible. A constraint imported from another module or
+provided by the prelude has no in-file definition location, so only the request
+location is shown.
 
 ---
 

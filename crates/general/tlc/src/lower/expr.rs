@@ -476,7 +476,7 @@ impl<'thir> Lowerer<'thir> {
         constraint: BindingId,
         span: Span,
     ) -> Option<Vec<(String, TlcExprId)>> {
-        let body = self.thir.decls.iter().find_map(|&decl_id| {
+        let (body, definition) = self.thir.decls.iter().find_map(|&decl_id| {
             let decl = &self.thir.decl_arena[decl_id];
             if decl.binding == constraint
                 && let ThirDeclKind::Constraint {
@@ -484,7 +484,7 @@ impl<'thir> Lowerer<'thir> {
                     ..
                 } = &decl.kind
             {
-                Some(recipe.body)
+                Some((recipe.body, decl.span))
             } else {
                 None
             }
@@ -498,6 +498,7 @@ impl<'thir> Lowerer<'thir> {
             self.diagnostics.push(zutai_thir::ThirDiagnostic {
                 kind: zutai_thir::ThirDiagnosticKind::DeriveRecipeFuelExhausted {
                     constraint: constraint_name,
+                    definition,
                 },
                 span,
             });

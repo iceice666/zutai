@@ -129,14 +129,19 @@ pub enum ThirDiagnosticKind {
     },
     DeriveConstraintNotDerivable {
         constraint: String,
+        /// Source location of the constraint's declaration (the "expansion
+        /// definition"), distinct from the primary `span` at the derive request.
+        definition: Span,
     },
     DeriveComponentMissingWitness {
         constraint: String,
         component: String,
+        definition: Span,
     },
     DeriveUnsupportedMethod {
         constraint: String,
         method: String,
+        definition: Span,
     },
     WitnessReflectNotInScope {
         constraint: String,
@@ -144,12 +149,14 @@ pub enum ThirDiagnosticKind {
     },
     DeriveRecipeFuelExhausted {
         constraint: String,
+        definition: Span,
     },
     DeriveRecipeTypeMismatch {
         constraint: String,
         method: String,
         expected: String,
         found: String,
+        definition: Span,
     },
     /// Two witnesses claim the same `(Constraint, Type)` pair.
     ConflictingWitness {
@@ -210,4 +217,58 @@ pub enum ThirDiagnosticKind {
     /// Unifying an inference variable with a type that contains it would build an
     /// infinite type (e.g. self-application `\x. x x`). Rejected by the occurs check.
     InfiniteType,
+}
+
+impl ThirDiagnostic {
+    /// Secondary "constraint defined here" location for a derive/recipe
+    /// diagnostic, resolved against `source` — the entry buffer the primary span
+    /// indexes — with a label describing its role. Derive/recipe failures point
+    /// their primary `span` at the derivation *request* and carry the constraint
+    /// declaration's span as the secondary *definition*.
+    ///
+    /// The `definition` span starts at the constraint's name token, so the label
+    /// is emitted only when `source` at that offset spells the constraint name.
+    /// A constraint declared in a prelude or imported module shares the THIR decl
+    /// arena but spans a *different* buffer; that content check (mirroring
+    /// `binding_range` in the LSP) keeps such a definition from mislocating a
+    /// label into unrelated entry-file bytes. The returned span covers just the
+    /// name token.
+    pub fn related_location_in(&self, source: &str) -> Option<(Span, &'static str)> {
+        use ThirDiagnosticKind::*;
+        let (constraint, definition) = match &self.kind {
+            DeriveConstraintNotDerivable {
+                constraint,
+                definition,
+            }
+            | DeriveComponentMissingWitness {
+                constraint,
+                definition,
+                ..
+            }
+            | DeriveUnsupportedMethod {
+                constraint,
+                definition,
+                ..
+            }
+            | DeriveRecipeFuelExhausted {
+                constraint,
+                definition,
+            }
+            | DeriveRecipeTypeMismatch {
+                constraint,
+                definition,
+                ..
+            } => (constraint.as_str(), *definition),
+            _ => return None,
+        };
+        let start = definition.start as usize;
+        let end = start.checked_add(constraint.len())?;
+        (source.get(start..end) == Some(constraint)).then_some((
+            Span {
+                start: definition.start,
+                end: end as u32,
+            },
+            "constraint defined here",
+        ))
+    }
 }
