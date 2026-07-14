@@ -892,6 +892,18 @@ pub(crate) fn analyze_inner(
         .and_then(|t| t.file.as_ref())
         .map(zutai_tlc::lower_thir);
 
+    // Recipe-reduction diagnostics (e.g. fuel exhaustion) are produced during
+    // TLC lowering but belong to the source program: surface them at the `Thir`
+    // stage so CLI stage-filters and the LSP render them like any type error.
+    if let Some(module) = tlc.as_ref() {
+        diagnostics.extend(module.diagnostics.iter().cloned().map(|diagnostic| {
+            SemanticDiagnostic {
+                stage: SemanticStage::Thir,
+                kind: SemanticDiagnosticKind::Thir(diagnostic),
+            }
+        }));
+    }
+
     Analysis {
         ast: Some(ast),
         hir: Some(hir),

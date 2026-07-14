@@ -526,4 +526,9 @@ pub struct TlcModule {
     /// stores the mapping here.  The DC lowerer's `Var` arm checks this map before
     /// emitting an `Error` node, turning the virtual var into a `GlobalRef`.
     pub extern_global_bindings: FxHashMap<BindingId, String>,
+    /// Compile-time recipe-reduction diagnostics raised while lowering derive
+    /// witnesses (e.g. a recipe that exhausts the code-expansion fuel bound).
+    /// These are THIR-shaped so the semantic facade can surface them at the
+    /// `Thir` stage and the evaluation gate can refuse to run.
+    pub diagnostics: Vec<zutai_thir::ThirDiagnostic>,
 }

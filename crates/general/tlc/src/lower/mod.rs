@@ -160,6 +160,15 @@ struct Lowerer<'thir> {
     /// expansion. Binding ids are globally fresh, so retaining the caller
     /// frames while entering a quoted helper is capture-free.
     code_frames: Vec<FxHashMap<BindingId, zutai_thir::ThirExprId>>,
+    /// Recipe-reduction diagnostics collected while lowering derive witnesses.
+    /// Surfaced on the finished `TlcModule` so the semantic facade can raise
+    /// them at the `Thir` stage.
+    diagnostics: Vec<zutai_thir::ThirDiagnostic>,
+    /// Set by the compile-time recipe reducer when it exhausts
+    /// `CODE_EXPANSION_FUEL`. Checked after each recipe reduction to tell fuel
+    /// exhaustion (a source diagnostic) apart from an ordinary non-reducible
+    /// recipe (which falls back to the structural synthesizers).
+    recipe_fuel_exhausted: std::cell::Cell<bool>,
 }
 
 impl<'thir> Lowerer<'thir> {
@@ -195,6 +204,8 @@ impl<'thir> Lowerer<'thir> {
             extern_global_bindings: FxHashMap::default(),
             next_virtual_binding,
             code_frames: Vec::new(),
+            diagnostics: Vec::new(),
+            recipe_fuel_exhausted: std::cell::Cell::new(false),
         }
     }
 
@@ -237,6 +248,7 @@ impl<'thir> Lowerer<'thir> {
             dict_dispatch_keys: std::mem::take(&mut self.dict_dispatch_keys),
             spans: std::mem::take(&mut self.spans),
             extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
+            diagnostics: std::mem::take(&mut self.diagnostics),
         }
     }
 

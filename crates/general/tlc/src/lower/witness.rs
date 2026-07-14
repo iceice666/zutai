@@ -137,7 +137,7 @@ impl<'thir> Lowerer<'thir> {
                         TypeKind::Bool | TypeKind::Int | TypeKind::Float | TypeKind::Text
                     )
                 {
-                    let fields = self.synthesize_derive_fields(cst_binding, inst_type_id);
+                    let fields = self.synthesize_derive_fields(cst_binding, inst_type_id, span);
                     if !fields.is_empty() {
                         let row = Row::from_fields(
                             fields

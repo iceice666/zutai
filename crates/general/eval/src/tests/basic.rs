@@ -101,6 +101,42 @@ constant 1
 }
 
 #[test]
+fn quoted_recipe_reduces_pattern_match_on_config() {
+    // A recipe that inspects a compile-time config via `match` must reduce the
+    // pattern to select the matching arm and bind the field into the expansion.
+    let src = r#"
+pick :: { constant : Int; } -> Code { constant : Text -> Int; }
+  = cfg => match cfg { | { constant = n; } => quote({ constant = \value. n; }); };
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => pick { constant = 5; }
+Const @Text :: derive
+constant "ignored"
+"#;
+    assert_eq!(run(src), Value::Int(5));
+}
+
+#[test]
+fn quoted_recipe_fuel_exhaustion_is_reported() {
+    // A recipe whose pure reducer never terminates must surface as a source
+    // diagnostic and refuse evaluation, not silently degrade to a bad witness.
+    let src = r#"
+loop :: Int -> Code { constant : Text -> Int; }
+  = n => loop (n + 1);
+Const :: <A> @A { constant :: A -> Int; } derive = <T> => loop 0
+Const @Text :: derive
+constant "ignored"
+"#;
+    let EvalError::TypeCheckFailed(messages) = run_err(src) else {
+        panic!("expected type-check failure");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("exhausted type-level fuel")),
+        "expected fuel-exhaustion diagnostic, got {messages:?}"
+    );
+}
+
+#[test]
 fn derived_from_data_decodes_primitive() {
     let src = r#"
 result :: Validation DecodeIssue Int = decode (#int { value = 42; });

@@ -3,8 +3,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use zutai_hir::BindingId;
 use zutai_syntax::{Span, ast::BinOp};
 use zutai_thir::{
-    ThirClause, ThirDeclKind, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, TypeId, TypeKind,
-    TypeRecordField,
+    ThirClause, ThirDeclKind, ThirExprId, ThirExprKind, ThirPatId, ThirPatKind, ThirRecordField,
+    ThirRecordPatField, ThirTupleItem, ThirTuplePatItem, TypeId, TypeKind, TypeRecordField,
 };
 
 use crate::ir::{
@@ -474,6 +474,7 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn lower_quoted_recipe_record(
         &mut self,
         constraint: BindingId,
+        span: Span,
     ) -> Option<Vec<(String, TlcExprId)>> {
         let body = self.thir.decls.iter().find_map(|&decl_id| {
             let decl = &self.thir.decl_arena[decl_id];
@@ -488,9 +489,21 @@ impl<'thir> Lowerer<'thir> {
                 None
             }
         })?;
-        let CompileTimeValue::Code(expansion) =
-            self.eval_compile_time(body, Vec::new(), CODE_EXPANSION_FUEL)?
-        else {
+        // Distinguish fuel exhaustion (a source diagnostic) from an ordinary
+        // non-reducible recipe (silent fall-through to structural synthesizers).
+        self.recipe_fuel_exhausted.set(false);
+        let reduced = self.eval_compile_time(body, Vec::new(), CODE_EXPANSION_FUEL);
+        if self.recipe_fuel_exhausted.replace(false) {
+            let constraint_name = self.thir.binding_names[constraint.0 as usize].clone();
+            self.diagnostics.push(zutai_thir::ThirDiagnostic {
+                kind: zutai_thir::ThirDiagnosticKind::DeriveRecipeFuelExhausted {
+                    constraint: constraint_name,
+                },
+                span,
+            });
+            return None;
+        }
+        let CompileTimeValue::Code(expansion) = reduced? else {
             return None;
         };
         let ThirExprKind::Record(fields) = self.thir.expr_arena[expansion.value].kind.clone()
@@ -512,7 +525,10 @@ impl<'thir> Lowerer<'thir> {
         frames: Vec<FxHashMap<BindingId, ThirExprId>>,
         fuel: u16,
     ) -> Option<CompileTimeValue> {
-        let fuel = fuel.checked_sub(1)?;
+        let Some(fuel) = fuel.checked_sub(1) else {
+            self.recipe_fuel_exhausted.set(true);
+            return None;
+        };
         match self.thir.expr_arena[id].kind.clone() {
             ThirExprKind::Quote(value) => {
                 Some(CompileTimeValue::Code(CodeExpansion { value, frames }))
@@ -591,6 +607,29 @@ impl<'thir> Lowerer<'thir> {
                     None => None,
                 }
             }
+            ThirExprKind::Match { scrutinee, arms } => {
+                // Try each arm in order; the matcher reduces the scrutinee (and
+                // its sub-expressions) structurally. A matched arm's body is
+                // evaluated in the match's own frames extended with the pattern
+                // bindings — pattern-leaf sub-exprs are bound raw and resolved
+                // lazily, mirroring the `Apply` binding convention. Recipes match
+                // on closed literal configs, so this frame flattening is exact.
+                for arm in &arms {
+                    if arm.guard.is_some() {
+                        return None;
+                    }
+                    let pattern = *arm.patterns.first()?;
+                    let mut frame = FxHashMap::default();
+                    if self
+                        .match_compile_time_pattern(pattern, scrutinee, &frames, &mut frame, fuel)?
+                    {
+                        let mut arm_frames = frames.clone();
+                        arm_frames.push(frame);
+                        return self.eval_compile_time(arm.body, arm_frames, fuel);
+                    }
+                }
+                None
+            }
             ThirExprKind::Perform { .. }
             | ThirExprKind::Handle { .. }
             | ThirExprKind::Resume { .. }
@@ -613,6 +652,134 @@ impl<'thir> Lowerer<'thir> {
             ThirPatKind::Wildcard => true,
             _ => false,
         }
+    }
+
+    /// Structurally match a THIR pattern against a compile-time expression for
+    /// the recipe reducer. Returns `Some(true)` on a match (binding sub-exprs
+    /// into `frame`), `Some(false)` on a decisive non-match (try the next arm),
+    /// and `None` when the match is undecidable at compile time (abort the whole
+    /// reduction and fall back to the structural synthesizers). Bound leaves
+    /// capture the raw scrutinee sub-expr id, resolved lazily in the arm frames
+    /// — exact for the closed literal configs recipes match on.
+    fn match_compile_time_pattern(
+        &self,
+        pattern: ThirPatId,
+        expr_id: ThirExprId,
+        frames: &[FxHashMap<BindingId, ThirExprId>],
+        frame: &mut FxHashMap<BindingId, ThirExprId>,
+        fuel: u16,
+    ) -> Option<bool> {
+        let pat_kind = self.thir.pat_arena[pattern].kind.clone();
+        // Irrefutable leaves need no scrutinee reduction.
+        match &pat_kind {
+            ThirPatKind::Error => return None,
+            ThirPatKind::Wildcard => return Some(true),
+            ThirPatKind::Bind(binding) => {
+                frame.insert(*binding, expr_id);
+                return Some(true);
+            }
+            _ => {}
+        }
+        // Refutable patterns require the scrutinee's structural head.
+        let CompileTimeValue::Expr(scrut) =
+            self.eval_compile_time(expr_id, frames.to_vec(), fuel)?
+        else {
+            return None;
+        };
+        let value = self.thir.expr_arena[scrut.value].kind.clone();
+        let sub = scrut.frames.as_slice();
+        match (pat_kind, value) {
+            (ThirPatKind::True, ThirExprKind::True) => Some(true),
+            (ThirPatKind::True, ThirExprKind::False) => Some(false),
+            (ThirPatKind::False, ThirExprKind::False) => Some(true),
+            (ThirPatKind::False, ThirExprKind::True) => Some(false),
+            (ThirPatKind::Integer(p), ThirExprKind::Integer(v)) => Some(p == v),
+            (ThirPatKind::Float(p), ThirExprKind::Float(v)) => Some(p.to_bits() == v.to_bits()),
+            (ThirPatKind::Posit(p), ThirExprKind::Posit(v)) => Some(p == v),
+            (ThirPatKind::String(p), ThirExprKind::String(v)) => Some(p == v),
+            (ThirPatKind::Atom(p), ThirExprKind::Atom(v)) => Some(p == v),
+            (ThirPatKind::ListNil, ThirExprKind::List(items)) => Some(items.is_empty()),
+            (ThirPatKind::Record(pat_fields), ThirExprKind::Record(val_fields)) => {
+                self.match_compile_time_record(&pat_fields, &val_fields, sub, frame, fuel)
+            }
+            (
+                ThirPatKind::TaggedValue {
+                    tag: ptag,
+                    payload: pat_fields,
+                },
+                ThirExprKind::TaggedValue { tag: vtag, payload },
+            ) => {
+                if ptag != vtag {
+                    return Some(false);
+                }
+                // A tagged value's payload is a single expr; recipes tag record
+                // payloads, so resolve it as a record to match the field patterns.
+                let CompileTimeValue::Expr(pl) =
+                    self.eval_compile_time(payload, sub.to_vec(), fuel)?
+                else {
+                    return None;
+                };
+                let ThirExprKind::Record(val_fields) = self.thir.expr_arena[pl.value].kind.clone()
+                else {
+                    return None;
+                };
+                self.match_compile_time_record(&pat_fields, &val_fields, &pl.frames, frame, fuel)
+            }
+            (ThirPatKind::Tuple(pat_items), ThirExprKind::Tuple(val_items)) => {
+                self.match_compile_time_tuple(&pat_items, &val_items, sub, frame, fuel)
+            }
+            _ => None,
+        }
+    }
+
+    fn match_compile_time_record(
+        &self,
+        pat_fields: &[ThirRecordPatField],
+        val_fields: &[ThirRecordField],
+        frames: &[FxHashMap<BindingId, ThirExprId>],
+        frame: &mut FxHashMap<BindingId, ThirExprId>,
+        fuel: u16,
+    ) -> Option<bool> {
+        for pf in pat_fields {
+            let vf = val_fields.iter().find(|f| f.name == pf.name)?;
+            if !self.match_compile_time_pattern(pf.pattern, vf.value, frames, frame, fuel)? {
+                return Some(false);
+            }
+        }
+        Some(true)
+    }
+
+    fn match_compile_time_tuple(
+        &self,
+        pat_items: &[ThirTuplePatItem],
+        val_items: &[ThirTupleItem],
+        frames: &[FxHashMap<BindingId, ThirExprId>],
+        frame: &mut FxHashMap<BindingId, ThirExprId>,
+        fuel: u16,
+    ) -> Option<bool> {
+        if pat_items.len() != val_items.len() {
+            return Some(false);
+        }
+        for (pi, vi) in pat_items.iter().zip(val_items) {
+            let (sub_pat, sub_expr) = match (pi, vi) {
+                (ThirTuplePatItem::Positional(p), ThirTupleItem::Positional(v)) => (*p, *v),
+                (
+                    ThirTuplePatItem::Named {
+                        name: pn,
+                        pattern: p,
+                        ..
+                    },
+                    ThirTupleItem::Named {
+                        name: vn, value: v, ..
+                    },
+                ) if pn == vn => (*p, *v),
+                _ => return None,
+            };
+            if !self.match_compile_time_pattern(sub_pat, sub_expr, frames, frame, fuel)? {
+                return Some(false);
+            }
+        }
+        Some(true)
     }
 
     fn compile_time_bool(&self, value: CompileTimeValue) -> Option<bool> {

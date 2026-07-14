@@ -37,6 +37,7 @@ impl<'thir> Lowerer<'thir> {
         &mut self,
         constraint: BindingId,
         target: TypeId,
+        span: zutai_syntax::Span,
     ) -> Vec<(String, TlcExprId)> {
         let Some((constraint_param, methods)) = self.constraint_info(constraint) else {
             return Vec::new();
@@ -54,7 +55,7 @@ impl<'thir> Lowerer<'thir> {
         }
 
         if self.constraint_has_recipe(constraint) {
-            if let Some(fields) = self.lower_quoted_recipe_record(constraint) {
+            if let Some(fields) = self.lower_quoted_recipe_record(constraint, span) {
                 return fields;
             }
             return methods
@@ -1185,10 +1186,16 @@ impl<'thir> Lowerer<'thir> {
             errors_ty,
             span,
         );
-        let map_inner_lam =
-            self.alloc_expr(TlcExpr::Lam(xs_binding, errors_ty, map_body), map_inner_ty, span);
-        let map_lam =
-            self.alloc_expr(TlcExpr::Lam(seg_binding, path_item_ty, map_inner_lam), map_ty, span);
+        let map_inner_lam = self.alloc_expr(
+            TlcExpr::Lam(xs_binding, errors_ty, map_body),
+            map_inner_ty,
+            span,
+        );
+        let map_lam = self.alloc_expr(
+            TlcExpr::Lam(seg_binding, path_item_ty, map_inner_lam),
+            map_ty,
+            span,
+        );
         let errors_binding = self.fresh_synth_binding();
         let errors = self.alloc_expr(TlcExpr::Var(errors_binding), errors_ty, span);
         let map_seg_outer = self.alloc_expr(TlcExpr::App(map_var, segment), map_inner_ty, span);

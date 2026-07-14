@@ -9,6 +9,7 @@ impl<'thir> Lowerer<'thir> {
     pub(super) fn lower_decl(&mut self, id: ThirDeclId) -> TlcDeclId {
         let decl = &self.thir.decl_arena[id];
         let binding = decl.binding;
+        let decl_span = decl.span;
         let tlc_decl = match decl.kind.clone() {
             ThirDeclKind::TypeAlias { params, ty } => {
                 use crate::ir::TlcType;
@@ -178,7 +179,9 @@ impl<'thir> Lowerer<'thir> {
 
                 let tlc_fields: Vec<(String, TlcExprId)> = if derive {
                     constraint
-                        .map(|constraint| self.synthesize_derive_fields(constraint, target))
+                        .map(|constraint| {
+                            self.synthesize_derive_fields(constraint, target, decl_span)
+                        })
                         .unwrap_or_default()
                 } else {
                     let span = zutai_syntax::Span::default();

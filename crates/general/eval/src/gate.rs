@@ -39,6 +39,31 @@ pub fn check_well_typed(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile
         return Err(EvalError::ErrorNodeReachable);
     }
 
+    // 5. Recipe reduction runs during TLC lowering, after THIR is already
+    //    complete, so a fuel-exhausted derive recipe leaves no THIR Error node.
+    //    Refuse to evaluate: a missing/wrong witness dictionary is worse than a
+    //    refused run. The diagnostic is rendered from the TLC module.
+    let recipe_failures: Vec<String> = analysis
+        .tlc
+        .as_ref()
+        .map(|module| {
+            module
+                .diagnostics
+                .iter()
+                .filter(|d| {
+                    matches!(
+                        d.kind,
+                        zutai_thir::ThirDiagnosticKind::DeriveRecipeFuelExhausted { .. }
+                    )
+                })
+                .map(describe_thir_diagnostic)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !recipe_failures.is_empty() {
+        return Err(EvalError::TypeCheckFailed(recipe_failures));
+    }
+
     Ok(file)
 }
 
