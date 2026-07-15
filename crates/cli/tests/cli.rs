@@ -354,6 +354,17 @@ fn run_unicode_fields_atoms_and_text_print_result() {
         "\"こんにちは 🚀\"\n"
     );
 }
+#[test]
+fn run_unknown_identifier_has_clean_miette_diagnostic_without_hir_debug_dump() {
+    let path = write_tmp("cli_test_run_unknown_identifier.zt", "nope\n");
+    cli().arg("run").arg(&path).assert().failure().stderr(
+        predicate::str::contains("unknown identifier `nope`")
+            .and(predicate::str::contains(
+                "cli_test_run_unknown_identifier.zt",
+            ))
+            .and(predicate::str::contains("HirDiagnostic").not()),
+    );
+}
 
 #[test]
 fn run_stream_generator_folds_codata_stream() {
@@ -2172,6 +2183,74 @@ fn check_higher_kinded_constraint_passes() {
         .success()
         .stdout(predicate::str::contains("check passed"));
 }
+#[test]
+fn check_reflection_fields_union_target_is_rejected() {
+    let path = write_tmp(
+        "cli_test_check_fields_union.zt",
+        "U :: type { #ok; #err; };\nfields U\n",
+    );
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("use `schema` for union variants"));
+}
+
+#[test]
+fn check_reflection_fields_type_result_is_rejected() {
+    let path = write_tmp(
+        "cli_test_check_fields_type_result.zt",
+        "{ fields; } ::= import stdlib.reflect;\n\
+        Server :: type { host : Text; port : Int; };\n\
+        fields Server\n",
+    );
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
+#[test]
+fn check_bare_witness_dict_result_is_rejected() {
+    let path = write_tmp(
+        "cli_test_check_bare_witness_dict.zt",
+        "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\nwitness Eq @Int\n",
+    );
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("did not fold to a backend value"));
+}
+
+#[test]
+fn check_bare_type_value_result_is_rejected() {
+    let path = write_tmp("cli_test_check_bare_type.zt", "type Int\n");
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("returns Type"));
+}
+
+#[test]
+fn check_folds_serializable_reflection() {
+    let path = write_tmp(
+        "cli_test_check_schema_record_reflection.zt",
+        "Server :: type { host : Text; port : Int; };\nschema Server\n",
+    );
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"));
+}
 
 #[test]
 fn check_witness_kind_mismatch_exits_nonzero() {
@@ -3270,6 +3349,7 @@ fn compiled_witness_reflection_dispatch_matches_oracle() {
 Point :: type { x : Int; y : Int; };
 p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Int :: { show = \n. "<int>"; }
 Show @Point :: derive
 (witness Show @Point).show p
 "#;

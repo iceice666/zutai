@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 mod reflect;
 #[cfg(test)]
@@ -9,11 +10,9 @@ mod toolchain;
 
 use self::reflect::*;
 use self::toolchain::*;
-use std::process::Command;
 
 use crate::diagnostics::{
-    ZtParseDiagnostic, extension_or_error, format_import_diagnostic, print_ast,
-    print_semantic_errors, print_zt_errors,
+    ZtParseDiagnostic, extension_or_error, print_ast, print_semantic_errors, print_zt_errors,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +21,58 @@ pub(crate) enum EmitMode {
     Obj,
     Bin,
     Lib,
+}
+
+fn analyze_with_cli_diagnostics(
+    path: &str,
+    contents: &str,
+    base: Option<&Path>,
+) -> zutai_semantic::Analysis {
+    let analysis = zutai_semantic::analyze_with_base(
+        contents,
+        base,
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    let parse_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter_map(|d| match &d.kind {
+            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    if !parse_errors.is_empty() {
+        print_zt_errors(path, contents, &parse_errors);
+        std::process::exit(1);
+    }
+    let semantic_errors: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.stage,
+                zutai_semantic::SemanticStage::Import
+                    | zutai_semantic::SemanticStage::Hir
+                    | zutai_semantic::SemanticStage::Thir
+            )
+        })
+        .collect();
+    if !semantic_errors.is_empty() {
+        print_semantic_errors(path, contents, &semantic_errors);
+        std::process::exit(1);
+    }
+    analysis
+}
+
+fn unsupported_cli_entry_type_reason(analysis: &zutai_semantic::Analysis) -> Option<&'static str> {
+    unsupported_thir_entry_type_reason(analysis.thir.as_ref()?.file.as_ref()?)
+}
+
+fn fold_aot_reflection_for_cli(
+    contents: &str,
+    base: Option<&Path>,
+) -> Result<FoldedAotReflection, String> {
+    fold_aot_reflection(contents, base).map_err(|err| err.to_string())
 }
 
 const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
@@ -278,41 +329,10 @@ fn exit_for_eval_failure(
     match outcome {
         EvalOutcome::Ok(_) => unreachable!("exit_for_eval_failure called with EvalOutcome::Ok"),
         EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
-            // These are parse/HIR/import errors — render with miette if possible,
-            // otherwise fall back to the semantic analyzer for pretty output.
-            let analysis = zutai_semantic::analyze_with_base(
-                contents,
-                base,
-                zutai_semantic::AnalysisOptions::default(),
-            );
-            let parse_errors: Vec<_> = analysis
-                .diagnostics
-                .iter()
-                .filter_map(|d| match &d.kind {
-                    zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
-                    _ => None,
-                })
-                .collect();
-            if !parse_errors.is_empty() {
-                print_zt_errors(path, contents, &parse_errors);
-                std::process::exit(1);
-            }
-            let import_errors: Vec<_> = analysis
-                .diagnostics
-                .iter()
-                .filter_map(|d| match &d.kind {
-                    zutai_semantic::SemanticDiagnosticKind::Import(i) => Some(i.clone()),
-                    _ => None,
-                })
-                .collect();
-            if !import_errors.is_empty() {
-                for err in &import_errors {
-                    eprintln!("import error: {}", format_import_diagnostic(err));
-                }
-                std::process::exit(1);
-            }
-            for m in msgs {
-                eprintln!("error: {m}");
+            // Prefer check-style source diagnostics for parse/import/HIR errors.
+            analyze_with_cli_diagnostics(path, contents, base);
+            for msg in msgs {
+                eprintln!("error: {msg}");
             }
             std::process::exit(1);
         }
@@ -463,45 +483,23 @@ fn zti_value_to_json(value: &zutai_im::Value) -> serde_json::Value {
 pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
-    let analysis = zutai_semantic::analyze_with_base(
-        &contents,
-        base,
-        zutai_semantic::AnalysisOptions::default(),
-    );
-    let parse_errors: Vec<_> = analysis
-        .diagnostics
-        .iter()
-        .filter_map(|d| match &d.kind {
-            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
-            _ => None,
-        })
-        .collect();
-    if !parse_errors.is_empty() {
-        print_zt_errors(path, &contents, &parse_errors);
-        std::process::exit(1);
-    }
-    let semantic_errors: Vec<_> = analysis
-        .diagnostics
-        .iter()
-        .filter(|d| {
-            matches!(
-                d.stage,
-                zutai_semantic::SemanticStage::Hir
-                    | zutai_semantic::SemanticStage::Thir
-                    | zutai_semantic::SemanticStage::Import
-            )
-        })
-        .collect();
-    if !semantic_errors.is_empty() {
-        print_semantic_errors(path, &contents, &semantic_errors);
-        std::process::exit(1);
-    }
-    if analysis.is_thir_complete() {
-        println!("check passed: {path}");
-    } else {
+    let analysis = analyze_with_cli_diagnostics(path, &contents, base);
+
+    if !analysis.is_thir_complete() {
         eprintln!("check incomplete: THIR has errors");
         std::process::exit(1);
     }
+    if let Some(reason) = unsupported_cli_entry_type_reason(&analysis) {
+        eprintln!("check error: {reason}");
+        std::process::exit(1);
+    }
+    if analysis.aot_reflection_program().is_some()
+        && let Err(err) = fold_aot_reflection_for_cli(&contents, base)
+    {
+        eprintln!("check error: {err}");
+        std::process::exit(1);
+    }
+    println!("check passed: {path}");
     Ok(())
 }
 
@@ -670,49 +668,16 @@ pub(crate) fn run_compile(
 ) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
-    let analysis = zutai_semantic::analyze_with_base(
-        &contents,
-        base,
-        zutai_semantic::AnalysisOptions::default(),
-    );
-    // Gate on parse and semantic errors.
-    let parse_errors: Vec<_> = analysis
-        .diagnostics
-        .iter()
-        .filter_map(|d| match &d.kind {
-            zutai_semantic::SemanticDiagnosticKind::Parse(p) => Some(p.clone()),
-            _ => None,
-        })
-        .collect();
-    if !parse_errors.is_empty() {
-        print_zt_errors(path, &contents, &parse_errors);
-        std::process::exit(1);
-    }
-    let semantic_errors: Vec<_> = analysis
-        .diagnostics
-        .iter()
-        .filter(|d| {
-            matches!(
-                d.stage,
-                zutai_semantic::SemanticStage::Hir
-                    | zutai_semantic::SemanticStage::Thir
-                    | zutai_semantic::SemanticStage::Import
-            )
-        })
-        .collect();
-    if !semantic_errors.is_empty() {
-        print_semantic_errors(path, &contents, &semantic_errors);
-        std::process::exit(1);
-    }
+    let analysis = analyze_with_cli_diagnostics(path, &contents, base);
     if !analysis.is_thir_complete() {
         eprintln!("compile error: THIR incomplete");
         std::process::exit(1);
     }
-    let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
-    if let Some(reason) = unsupported_thir_entry_type_reason(thir) {
+    if let Some(reason) = unsupported_cli_entry_type_reason(&analysis) {
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
+    let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
     let uses_reflection = analysis.aot_reflection_program().is_some();
 
@@ -763,7 +728,7 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
     if uses_reflection {
-        match fold_aot_reflection(&contents, base) {
+        match fold_aot_reflection_for_cli(&contents, base) {
             Ok(folded) => {
                 module = folded.module;
                 folded_bindings = Some(folded.hir_bindings);
