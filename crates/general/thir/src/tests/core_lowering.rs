@@ -164,6 +164,39 @@ fn typed_integer_mismatch_reports_type_error() {
 }
 
 #[test]
+fn tagged_value_ascription_with_method_dispatch_type_checks() {
+    let file = completed_file(
+        r#"
+Show :: <A> @A { show :: A -> Text; }
+Status :: type { #err; #ok; };
+Show @Status :: { show = \s. "status"; }
+show (#err as Status)
+"#,
+    );
+    assert!(matches!(final_type_kind(&file), TypeKind::Text));
+}
+
+#[test]
+fn tagged_value_ascription_mismatch_reports_type_mismatch() {
+    let lowered = lower(
+        r#"
+Status :: type { #err; };
+x :: Int = (#err as Status);
+x
+"#,
+    );
+
+    assert!(lowered.file.is_none());
+    let has_type_mismatch = lowered
+        .diagnostics
+        .iter()
+        .any(|diagnostic| matches!(&diagnostic.kind, ThirDiagnosticKind::TypeMismatch { .. }));
+    if !has_type_mismatch {
+        panic!("diagnostics: {:?}", lowered.diagnostics);
+    }
+}
+
+#[test]
 fn non_generic_record_alias_accepts_matching_record() {
     let file = completed_file(
         r#"

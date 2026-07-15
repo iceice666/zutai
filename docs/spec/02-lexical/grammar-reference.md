@@ -115,6 +115,7 @@ AtomExpr
    | Ident
    | Atom
    | TaggedValue
+   | TaggedValueAscription
    | Group
    | Block
    | Record
@@ -135,12 +136,14 @@ AtomExpr
    | Splice
    | Generator
 
-Literal
-  ::= "true" | "false" | Number | String
-
 TaggedValue
   ::= Atom Record
    | Atom TaggedTuplePayload
+
+TaggedValueAscription
+  ::= Atom "as" TypeExpr
+   | Atom Record "as" TypeExpr
+   | Atom TaggedTuplePayload "as" TypeExpr
 
 Group
   ::= "(" Expr ")"
@@ -474,5 +477,5 @@ grammar positions that introduce those forms.
 - `?` is postfix optional type syntax only in type context. `?.` is optional field access in value and type contexts. `??` is value-level defaulting.
 - A parenthesized single positional type `(T)` is grouping. A named type tuple item `(field : T)` remains a one-field tuple type. Value and pattern tuples require a comma except for unit `()`.
 - Tagged values and patterns support record payloads (`#tag { field = value; }`) and tuple payloads (`#tag (value, name = value)`).
-- `type TypeExpr` constructs a first-class type value in expression position. `ExprEscape` keeps pure compile-time expressions available in type contexts.
+- Tagged values also support explicit type ascription: `#tag as Type`, `#tag { ... } as Type`, and `#tag ( ... ) as Type`; this form intentionally scopes `as` to tagged-value contexts only, so bare identifiers named `as` remain ordinary.
 - General-mode `NumberTypePostfix` is valid only on `Number` literals. Integer postfixes reject fractional/exponent bodies; unsigned postfixes also reject a leading `-`; float postfixes accept integer, fractional, or exponent bodies. A non-empty alphanumeric/underscore run after a numeric body must be one of the listed postfixes.

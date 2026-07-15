@@ -383,6 +383,13 @@ Action :: type {
 
 The colon in the type declaration (`#tag: PayloadType`) is distinct from value construction, which uses no colon (`#spawn { command = "ghostty"; }`).
 
+A tagged value may carry an explicit type ascription with `as`, which pins its
+type to a named union without a separate binding: `#err as Status`,
+`#move { x = 1; y = 2; } as Action`, `#move (1, 2) as Action`. The `as`
+keyword is scoped to tagged-value contexts only, so bare identifiers named `as`
+remain ordinary. This is the one-liner form for method dispatch on a bare tag
+whose union cannot otherwise be inferred (e.g. `show (#err as Status)`).
+
 Every tagged union value exposes `.tag`, which returns the atom tag.
 
 An empty list literal `{;}` cannot infer its element type; always provide an annotation: `items :: List T = {;};`.

@@ -131,6 +131,89 @@ fn lowers_typed_local_binding_annotation() {
 }
 
 #[test]
+fn lowers_tagged_value_ascription_to_block_with_type_annotation() {
+    let lowered = lower("Status :: type { #err; };\n#err as Status");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::Block { bindings, result } = &expr.kind else {
+        panic!(
+            "expected final expression to be a block, got {:?}",
+            expr.kind
+        );
+    };
+    assert_eq!(bindings.len(), 1);
+
+    let annotation = bindings[0]
+        .annotation
+        .expect("tagged value ascription should lower annotated binding");
+    assert!(matches!(
+        type_kind(&lowered.file, annotation),
+        HirTypeKind::BindingRef(id) if binding_name(&lowered.file, *id) == "Status"
+    ));
+
+    let value = &lowered.file.expr_arena[bindings[0].value];
+    let HirExprKind::TaggedValue { tag, payload } = &value.kind else {
+        panic!("expected tagged value payload in lowered ascription");
+    };
+    assert_eq!(tag, "err");
+    assert!(matches!(
+        &lowered.file.expr_arena[*payload].kind,
+        HirExprKind::Tuple(items) if items.is_empty()
+    ));
+
+    assert!(matches!(
+        &lowered.file.expr_arena[*result].kind,
+        HirExprKind::BindingRef(id) if *id == bindings[0].binding
+    ));
+}
+
+#[test]
+fn lowers_tagged_value_ascription_with_record_payload() {
+    let lowered = lower(
+        r#"
+Status :: type {
+  #err: { code : Text; };
+};
+#err { code = "x"; } as Status
+"#,
+    );
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+
+    let expr = &lowered.file.expr_arena[lowered.file.final_expr];
+    let HirExprKind::Block { bindings, result } = &expr.kind else {
+        panic!(
+            "expected final expression to be a block, got {:?}",
+            expr.kind
+        );
+    };
+    assert_eq!(bindings.len(), 1);
+
+    let annotation = bindings[0]
+        .annotation
+        .expect("tagged value ascription should lower annotated binding");
+    assert!(matches!(
+        type_kind(&lowered.file, annotation),
+        HirTypeKind::BindingRef(id) if binding_name(&lowered.file, *id) == "Status"
+    ));
+
+    let value = &lowered.file.expr_arena[bindings[0].value];
+    let HirExprKind::TaggedValue { tag, payload } = &value.kind else {
+        panic!("expected tagged value payload in lowered ascription");
+    };
+    assert_eq!(tag, "err");
+    assert!(matches!(
+        &lowered.file.expr_arena[*payload].kind,
+        HirExprKind::Record(_)
+    ));
+
+    assert!(matches!(
+        &lowered.file.expr_arena[*result].kind,
+        HirExprKind::BindingRef(id) if *id == bindings[0].binding
+    ));
+}
+
+#[test]
 fn lowers_use_identifier_binding() {
     let lowered = lower("use ::= 1;\nuse");
     assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);

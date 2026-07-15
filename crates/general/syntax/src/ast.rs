@@ -328,9 +328,17 @@ pub enum Expr {
         source: ImportSource,
         span: Span,
     },
+    /// Tagged value (`#tag payload`) — payload syntax is preserved in parser.
     TaggedValue {
         tag: String,
         payload: Box<Expr>,
+        span: Span,
+    },
+    /// Tagged value with explicit type ascription (`(#tag as T)` etc.).
+    TaggedValueAscription {
+        tag: String,
+        payload: Option<Box<Expr>>,
+        annotation: TypeExpr,
         span: Span,
     },
     Ident {
@@ -455,39 +463,41 @@ pub enum Expr {
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
-            Expr::True(s) | Expr::False(s) => *s,
-            Expr::Integer { span, .. }
-            | Expr::Float { span, .. }
-            | Expr::Posit { span, .. }
-            | Expr::String { span, .. }
-            | Expr::Atom { span, .. }
-            | Expr::Import { span, .. }
-            | Expr::TaggedValue { span, .. }
-            | Expr::Ident { span, .. }
-            | Expr::Record { span, .. }
-            | Expr::RecordUpdate { span, .. }
-            | Expr::Tuple { span, .. }
-            | Expr::List { span, .. }
-            | Expr::SpreadOnly { span, .. }
-            | Expr::Generator { span, .. }
-            | Expr::Block { span, .. }
-            | Expr::Lambda { span, .. }
-            | Expr::If { span, .. }
-            | Expr::Match { span, .. }
-            | Expr::TypeForm { span, .. }
-            | Expr::Quote { span, .. }
-            | Expr::Splice { span, .. }
-            | Expr::WitnessReflect { span, .. }
-            | Expr::Select { span, .. }
-            | Expr::Perform { span, .. }
-            | Expr::Handle { span, .. }
-            | Expr::Resume { span, .. }
-            | Expr::Sequence { span, .. }
-            | Expr::Apply { span, .. }
-            | Expr::Access { span, .. }
-            | Expr::OptAccess { span, .. }
-            | Expr::Binary { span, .. }
-            | Expr::Pipeline { span, .. } => *span,
+            Expr::True(s)
+            | Expr::False(s)
+            | Expr::Integer { span: s, .. }
+            | Expr::Float { span: s, .. }
+            | Expr::Posit { span: s, .. }
+            | Expr::String { span: s, .. }
+            | Expr::Atom { span: s, .. }
+            | Expr::Import { span: s, .. }
+            | Expr::TaggedValue { span: s, .. }
+            | Expr::TaggedValueAscription { span: s, .. }
+            | Expr::Ident { span: s, .. }
+            | Expr::Record { span: s, .. }
+            | Expr::RecordUpdate { span: s, .. }
+            | Expr::Tuple { span: s, .. }
+            | Expr::List { span: s, .. }
+            | Expr::SpreadOnly { span: s, .. }
+            | Expr::Generator { span: s, .. }
+            | Expr::Block { span: s, .. }
+            | Expr::Lambda { span: s, .. }
+            | Expr::If { span: s, .. }
+            | Expr::Match { span: s, .. }
+            | Expr::TypeForm { span: s, .. }
+            | Expr::Quote { span: s, .. }
+            | Expr::Splice { span: s, .. }
+            | Expr::WitnessReflect { span: s, .. }
+            | Expr::Select { span: s, .. }
+            | Expr::Perform { span: s, .. }
+            | Expr::Handle { span: s, .. }
+            | Expr::Resume { span: s, .. }
+            | Expr::Sequence { span: s, .. }
+            | Expr::Apply { span: s, .. }
+            | Expr::Access { span: s, .. }
+            | Expr::OptAccess { span: s, .. }
+            | Expr::Binary { span: s, .. }
+            | Expr::Pipeline { span: s, .. } => *s,
         }
     }
 }

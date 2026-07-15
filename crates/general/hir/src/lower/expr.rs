@@ -190,6 +190,41 @@ impl Lowerer {
                 tag: tag.clone(),
                 payload: self.lower_expr(payload),
             },
+            ast::Expr::TaggedValueAscription {
+                tag,
+                payload,
+                annotation,
+                ..
+            } => {
+                let payload = if let Some(payload) = payload {
+                    self.lower_expr(payload)
+                } else {
+                    self.alloc_expr(HirExpr {
+                        kind: HirExprKind::Tuple(vec![]),
+                        span,
+                    })
+                };
+                let annotation = self.lower_type(annotation);
+                let binding = self.alloc_synthetic_local("tag-ascription", span);
+                HirExprKind::Block {
+                    bindings: vec![HirLocalBinding {
+                        binding,
+                        annotation: Some(annotation),
+                        value: self.alloc_expr(HirExpr {
+                            kind: HirExprKind::TaggedValue {
+                                tag: tag.clone(),
+                                payload,
+                            },
+                            span,
+                        }),
+                        span,
+                    }],
+                    result: self.alloc_expr(HirExpr {
+                        kind: HirExprKind::BindingRef(binding),
+                        span,
+                    }),
+                }
+            }
             ast::Expr::Ident { name, span } => self.lower_ident(name, *span),
             ast::Expr::Record { items, .. } => HirExprKind::Record(
                 items

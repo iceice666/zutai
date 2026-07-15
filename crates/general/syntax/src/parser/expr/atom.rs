@@ -4,7 +4,7 @@ use winnow::combinator::{fail, peek};
 
 use crate::ast::{
     Expr, FuncClause, GenStmt, HandleClause, ListItem, LocalBinding, RecordField, RecordItem,
-    SelectField, TupleItem, ValueSpread,
+    SelectField, TupleItem, TypeExpr, ValueSpread,
 };
 use crate::span::Span;
 
@@ -37,42 +37,75 @@ pub(super) fn parse_atom_expr_with_options(input: &mut &str, options: ExprOption
         }
         '#' => {
             let (name, atom_span) = spanned(parse_atom_name).parse_next(input)?;
-            // Try `#tag { ... }` and `#tag (...)` tagged-value forms. Save a
-            // checkpoint so that if `{ ... }` is not a valid record/block (e.g.
-            // it is a match clause block `{ | ... }`) we fall back to returning a
-            // plain atom.
+            let parse_ascription = |input: &mut &str| -> Result<TypeExpr> {
+                let as_checkpoint = *input;
+                ws(input)?;
+                if kw("as").parse_next(input).is_ok() {
+                    ws(input)?;
+                    return parse_type_expr(input);
+                }
+                *input = as_checkpoint;
+                fail.parse_next(input)
+            };
+
+            // Try `#tag { ... }` and `#tag (...)` tagged-value payload forms.
+            // Save a checkpoint so that if `{`/`(` is not a valid tagged payload,
+            // we fall back to bare `#tag` (a plain atom).
             let checkpoint = *input;
             take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
+
             if input.starts_with('{') {
-                match parse_record_or_list(input, options) {
-                    Ok(payload) => {
-                        let span = atom_span.merge(payload.span());
-                        return Ok(Expr::TaggedValue {
-                            tag: name,
-                            payload: Box::new(payload),
-                            span,
+                if let Ok(payload) = parse_record_or_list(input, options) {
+                    let payload = Box::new(payload);
+                    let span = atom_span.merge(payload.span());
+                    if let Ok(annotation) = parse_ascription(input) {
+                        let annotation_span = annotation.span();
+                        return Ok(Expr::TaggedValueAscription {
+                            tag: name.clone(),
+                            payload: Some(payload),
+                            annotation,
+                            span: atom_span.merge(annotation_span),
                         });
                     }
-                    Err(_) => {
-                        *input = checkpoint;
-                    }
+                    return Ok(Expr::TaggedValue {
+                        tag: name,
+                        payload,
+                        span,
+                    });
                 }
+                *input = checkpoint;
             } else if input.starts_with('(') {
-                match parse_tagged_tuple_payload(input, options) {
-                    Ok(payload) => {
-                        let span = atom_span.merge(payload.span());
-                        return Ok(Expr::TaggedValue {
-                            tag: name,
-                            payload: Box::new(payload),
-                            span,
+                if let Ok(payload) = parse_tagged_tuple_payload(input, options) {
+                    let payload = Box::new(payload);
+                    let span = atom_span.merge(payload.span());
+                    if let Ok(annotation) = parse_ascription(input) {
+                        let annotation_span = annotation.span();
+                        return Ok(Expr::TaggedValueAscription {
+                            tag: name.clone(),
+                            payload: Some(payload),
+                            annotation,
+                            span: atom_span.merge(annotation_span),
                         });
                     }
-                    Err(_) => {
-                        *input = checkpoint;
-                    }
+                    return Ok(Expr::TaggedValue {
+                        tag: name,
+                        payload,
+                        span,
+                    });
                 }
+                *input = checkpoint;
             } else {
                 *input = checkpoint;
+            }
+
+            if let Ok(annotation) = parse_ascription(input) {
+                let annotation_span = annotation.span();
+                return Ok(Expr::TaggedValueAscription {
+                    tag: name,
+                    payload: None,
+                    annotation,
+                    span: atom_span.merge(annotation_span),
+                });
             }
             Ok(Expr::Atom {
                 name,

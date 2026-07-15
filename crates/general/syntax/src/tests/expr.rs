@@ -84,6 +84,131 @@ fn parse_atom_hash() {
 }
 
 #[test]
+fn parse_tagged_value_ascription_bare_type() {
+    let e = parse_expr_str("#err as Status");
+    match e {
+        Expr::TaggedValueAscription {
+            tag,
+            payload,
+            annotation,
+            ..
+        } => {
+            assert_eq!(tag, "err");
+            assert!(payload.is_none());
+            match annotation {
+                TypeExpr::Ident { name, .. } => assert_eq!(name, "Status"),
+                other => panic!("expected Ident type annotation, got {other:?}"),
+            }
+        }
+        other => panic!("expected tagged value ascription, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tagged_value_ascription_with_record_payload() {
+    let e = parse_expr_str("#err { code = 1; } as Status");
+    match e {
+        Expr::TaggedValueAscription {
+            tag,
+            payload: Some(payload),
+            annotation,
+            ..
+        } => {
+            assert_eq!(tag, "err");
+            assert!(matches!(payload.as_ref(), Expr::Record { .. }));
+            match annotation {
+                TypeExpr::Ident { name, .. } => assert_eq!(name, "Status"),
+                other => panic!("expected Ident type annotation, got {other:?}"),
+            }
+        }
+        other => panic!("expected tagged value ascription with payload, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tagged_value_ascription_with_tuple_payload() {
+    let e = parse_expr_str("#err (\"x\", code = 1) as Status");
+    match e {
+        Expr::TaggedValueAscription {
+            tag,
+            payload: Some(payload),
+            annotation,
+            ..
+        } => {
+            assert_eq!(tag, "err");
+            assert!(matches!(payload.as_ref(), Expr::Tuple { .. }));
+            match annotation {
+                TypeExpr::Ident { name, .. } => assert_eq!(name, "Status"),
+                other => panic!("expected Ident type annotation, got {other:?}"),
+            }
+        }
+        other => panic!("expected tagged value ascription with tuple payload, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tagged_value_ascription_parenthesized_application() {
+    let e = parse_expr_str("show (#err as Status)");
+    match e {
+        Expr::Apply { func, arg, .. } => {
+            assert!(matches!(func.as_ref(), Expr::Ident { name, .. } if name == "show"));
+            assert!(matches!(
+                arg.as_ref(),
+                Expr::TaggedValueAscription { tag, .. } if tag == "err"
+            ));
+        }
+        other => panic!("expected function application, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tagged_value_colon_payload_rejected_for_ascription() {
+    assert!(parse_kinds("#err : Status").contains(&ParseErrorKind::TaggedValuePayloadUsesColon));
+}
+
+#[test]
+fn parse_identifier_named_as_is_allowed() {
+    let e = parse_expr_str("as");
+    assert!(matches!(e, Expr::Ident { name, .. } if name == "as"));
+}
+
+#[test]
+fn parse_apply_with_identifier_as_is_allowed() {
+    let e = parse_expr_str("f as g");
+    match e {
+        Expr::Apply { func, arg, .. } => {
+            assert!(matches!(
+                arg.as_ref(),
+                Expr::Ident { name, .. } if name == "g"
+            ));
+            match func.as_ref() {
+                Expr::Apply { func, arg, .. } => {
+                    assert!(matches!(
+                        func.as_ref(),
+                        Expr::Ident { name, .. } if name == "f"
+                    ));
+                    assert!(matches!(
+                        arg.as_ref(),
+                        Expr::Ident { name, .. } if name == "as"
+                    ));
+                }
+                other => panic!("expected left nested application, got {other:?}"),
+            }
+        }
+        other => panic!("expected application, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_ident_rejects_keywords() {
+    use crate::parser::lex::parse_ident;
+    for keyword in ["type", "cond"] {
+        crate::parser::lex::BASE_PTR.with(|c| c.set(keyword.as_ptr() as usize));
+        let mut input = keyword;
+        assert!(parse_ident(&mut input).is_err(), "{keyword}");
+    }
+}
+#[test]
 fn parse_ident_simple() {
     assert_eq!(as_ident(&parse_expr_str("x")), "x");
     assert_eq!(as_ident(&parse_expr_str("someVar")), "someVar");
@@ -95,16 +220,6 @@ fn parse_value_ident_suffixes() {
     assert_eq!(as_ident(&parse_expr_str("foldl'")), "foldl'");
     assert_eq!(as_ident(&parse_expr_str("head?")), "head?");
     assert_eq!(as_ident(&parse_expr_str("tail?")), "tail?");
-}
-
-#[test]
-fn parse_ident_rejects_keywords() {
-    use crate::parser::lex::parse_ident;
-    for keyword in ["type", "cond"] {
-        crate::parser::lex::BASE_PTR.with(|c| c.set(keyword.as_ptr() as usize));
-        let mut input = keyword;
-        assert!(parse_ident(&mut input).is_err(), "{keyword}");
-    }
 }
 
 // ---------------------------------------------------------------------------

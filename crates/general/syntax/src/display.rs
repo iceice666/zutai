@@ -178,6 +178,28 @@ fn write_expr(f: &mut fmt::Formatter<'_>, expr: &Expr, prefix: &str, indent: &st
             writeln!(f, "{prefix}TaggedValue(#{tag})")?;
             write_expr(f, payload, &format!("{indent}└─ "), &format!("{indent}   "))
         }
+        Expr::TaggedValueAscription {
+            tag,
+            payload,
+            annotation,
+            ..
+        } => {
+            writeln!(f, "{prefix}TaggedValueAscription(#{tag})")?;
+            if let Some(payload) = payload {
+                write_expr(
+                    f,
+                    payload,
+                    &format!("{indent}├─ payload: "),
+                    &format!("{indent}│  "),
+                )?;
+            }
+            write_type_expr(
+                f,
+                annotation,
+                &format!("{indent}└─ as "),
+                &format!("{indent}   "),
+            )
+        }
         Expr::Quote { value, .. } => {
             writeln!(f, "{prefix}Quote")?;
             write_expr(f, value, &format!("{indent}└─ "), &format!("{indent}   "))
