@@ -1,0 +1,11 @@
+-- deriveOrdLex: lexicographic record comparison, delegating per field.
+-- Usage: zutai-cli run examples/macro_kernel/derive/ordlex_record.zt
+
+Ordering :: type { #lt; #eq; #gt; };
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Ord @Int :: { compare = \a b. #lt; }
+Point :: type { x : Int; y : Int; };
+Ord @Point :: derive
+
+p :: Point = { x = 1; y = 2; };
+compare p p

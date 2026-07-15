@@ -1,0 +1,11 @@
+-- deriveFromData: structural record decoder.
+-- Usage: zutai-cli run examples/macro_kernel/derive/fromdata_record.zt
+
+Point :: type { x : Int; label : Text; };
+FromData @Point :: derive
+
+good :: Validation DecodeIssue Point = fromData (#record { fields = {
+  { name = "x"; value = #int { value = 3; }; };
+  { name = "label"; value = #text { value = "ok"; }; };
+}; });
+good

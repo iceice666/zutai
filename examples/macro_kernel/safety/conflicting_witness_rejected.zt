@@ -1,0 +1,7 @@
+-- Overlapping witnesses are refused for coherence.
+-- Expected: type error (conflicting witnesses).
+
+Show :: <A> @A { show :: A -> Text; }
+Show @Int :: { show = \n. "a"; }
+Show @Int :: { show = \n. "b"; }
+show 1

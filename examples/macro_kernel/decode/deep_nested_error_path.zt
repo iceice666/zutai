@@ -1,0 +1,12 @@
+-- A deep error carries its full field path.
+-- Usage: zutai-cli run examples/macro_kernel/decode/deep_nested_error_path.zt
+
+Inner :: type { z : Int; };
+Outer :: type { inner : Inner; };
+FromData @Inner :: derive
+FromData @Outer :: derive
+
+v :: Validation DecodeIssue Outer = decode (#record { fields = {
+  { name = "inner"; value = #record { fields = { { name = "z"; value = #text { value = "bad"; }; }; }; }; };
+}; });
+v

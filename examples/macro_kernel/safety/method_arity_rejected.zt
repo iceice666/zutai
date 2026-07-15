@@ -1,0 +1,6 @@
+-- Over-applying a method is a type error.
+-- Expected: type error (expected function).
+
+Show :: <A> @A { show :: A -> Text; }
+Show @Int :: { show = \n. "i"; }
+show 1 2

@@ -1,0 +1,11 @@
+-- Validation accumulates every field error.
+-- Usage: zutai-cli run examples/macro_kernel/decode/multi_error_accumulation.zt
+
+Point :: type { x : Int; y : Int; };
+FromData @Point :: derive
+
+bad :: Validation DecodeIssue Point = fromData (#record { fields = {
+  { name = "x"; value = #text { value = "a"; }; };
+  { name = "y"; value = #text { value = "b"; }; };
+}; });
+bad

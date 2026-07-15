@@ -1,0 +1,6 @@
+-- witness: retrieve and invoke a resolved constraint dictionary.
+-- Usage: zutai-cli run examples/macro_kernel/reflection/witness_dispatch.zt
+
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+Eq @Int :: derive
+(witness Eq @Int).eq 1 1

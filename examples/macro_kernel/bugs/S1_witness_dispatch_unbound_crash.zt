@@ -1,0 +1,9 @@
+-- SOUNDNESS BUG S1 (see PRESSURE_TEST_REPORT.md).
+-- Method-name dispatch is not gated on witness existence at check time.
+-- FIXED: method-name dispatch is now gated on witness existence; both check
+-- and run refuse cleanly with `no witness in scope for `Show @Text``.
+-- (Was: check passed; run crashed with internal unbound-binding BindingId(u32::MAX).)
+
+Show :: <A> @A { show :: A -> Text; }
+s :: Text = "x";
+show s

@@ -1,0 +1,7 @@
+-- A recipe body that never reduces is refused by the derive machinery.
+-- Expected: type error (derive recipe ...).
+
+Loop :: <A> @A { go :: A -> Text; } derive = <T> => go
+Loop @Int :: derive
+x ::= 1;
+go x

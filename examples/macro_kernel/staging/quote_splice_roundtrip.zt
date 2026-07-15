@@ -1,0 +1,8 @@
+-- Typed staging: quote captures a fragment, splice re-embeds it.
+-- Usage: zutai-cli run examples/macro_kernel/staging/quote_splice_roundtrip.zt
+
+idCode ::= quote(\x. x);
+applied ::= quote(splice(idCode) 41);
+
+-- The staged fragments are compile-time only; the program result is a value.
+1 + 41

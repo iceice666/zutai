@@ -1,0 +1,15 @@
+-- SOUNDNESS/CORRECTNESS BUG S3 (see PRESSURE_TEST_REPORT.md).
+-- deriveShow used to render field NAMES only, never delegating to component
+-- Show witnesses. FIXED: it now delegates; `show a` renders "{x = <INT>, y = <INT>}"
+-- via the `Show @Int` component witness.
+
+Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Show @Int :: { show = \n. "<INT>"; }
+Show @Point :: derive
+Point :: type { x : Int; y : Int; };
+
+a :: Point = { x = 7; y = 9; };
+b :: Point = { x = 0; y = 0; };
+-- Now renders "{x = <INT>, y = <INT>}": each field value is shown through its
+-- component `Show` witness (`Show @Int` above).
+show a

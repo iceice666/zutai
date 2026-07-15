@@ -1,0 +1,5 @@
+-- Nested quotation keeps inner fragments staged.
+-- Usage: zutai-cli run examples/macro_kernel/staging/nested_quote.zt
+
+q ::= quote(quote(1));
+"nested quote built"

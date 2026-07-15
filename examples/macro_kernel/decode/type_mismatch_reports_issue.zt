@@ -1,0 +1,5 @@
+-- A shape mismatch decodes to a typed #invalid, not a crash.
+-- Usage: zutai-cli run examples/macro_kernel/decode/type_mismatch_reports_issue.zt
+
+result :: Validation DecodeIssue Int = decode (#text { value = "no"; });
+result

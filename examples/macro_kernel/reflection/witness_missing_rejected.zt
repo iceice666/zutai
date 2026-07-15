@@ -1,0 +1,5 @@
+-- Requesting a witness that does not exist is a check-time error.
+-- Expected: type error (no witness in scope for Eq @Int).
+
+Eq :: <A> @A { eq :: A -> A -> Bool; } derive
+(witness Eq @Int).eq 1 1

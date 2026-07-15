@@ -1,0 +1,8 @@
+-- fields: reflect a record's fields as runtime descriptors.
+-- Run-only demo: the result embeds `Type` values (see docs/spec/09-metaprogramming
+-- /reflection.md), so `check`/`compile` refuse it as a program entry result
+-- (S4 entry-type gate); the lenient interpreter still shows it under `run`.
+-- Usage: zutai-cli run examples/macro_kernel/reflection/fields_record.zt
+
+Server :: type { host : Text; port : Int; };
+fields Server

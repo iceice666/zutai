@@ -1,0 +1,6 @@
+-- A constraint with no derivable method shape refuses derive.
+-- Expected: type error (constraint does not support derive).
+
+Weird :: type { host : Text; };
+MyC :: <A> @A { op :: A -> Int; }
+MyC @Weird :: derive

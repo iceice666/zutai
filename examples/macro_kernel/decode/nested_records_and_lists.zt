@@ -1,0 +1,15 @@
+-- Nested records + lists decode structurally.
+-- Usage: zutai-cli run examples/macro_kernel/decode/nested_records_and_lists.zt
+
+Owner :: type { name : Text; };
+Item :: type { id : Int; };
+Config :: type { owner : Owner; items : List Item; };
+FromData @Owner :: derive
+FromData @Item :: derive
+FromData @Config :: derive
+
+v :: Validation DecodeIssue Config = decode (#record { fields = {
+  { name = "owner"; value = #record { fields = { { name = "name"; value = #text { value = "a"; }; }; }; }; };
+  { name = "items"; value = #list { items = { #record { fields = { { name = "id"; value = #int { value = 1; }; }; }; }; }; }; };
+}; });
+v

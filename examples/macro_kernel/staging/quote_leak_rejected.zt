@@ -1,0 +1,4 @@
+-- A quoted fragment is compile-time only and cannot be a program result.
+-- Expected: type error (compile-time Code value cannot be a program).
+
+quote(1)

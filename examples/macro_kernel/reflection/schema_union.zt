@@ -1,0 +1,5 @@
+-- schema: reflect a union's shape as a serializable Schema value.
+-- Usage: zutai-cli run examples/macro_kernel/reflection/schema_union.zt
+
+Result :: type { #ok : { value : Text; }; #done; };
+schema Result

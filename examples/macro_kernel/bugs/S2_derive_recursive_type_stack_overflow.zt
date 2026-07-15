@@ -1,0 +1,8 @@
+-- SOUNDNESS BUG S2 (see PRESSURE_TEST_REPORT.md).
+-- Deriving over a self-recursive type used to overflow the compiler stack at check.
+-- FIXED: recursive derive synthesis is now guarded; check and run both succeed.
+-- (Was: check crashed with 'thread main has overflowed its stack', exit 134.)
+
+Tree :: type { #leaf : { v : Int; }; #node : { l : Tree; r : Tree; }; };
+FromData @Tree :: derive
+1

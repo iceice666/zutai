@@ -1,0 +1,11 @@
+-- deriveOrdLex falls through to #eq when all fields compare equal.
+-- Usage: zutai-cli run examples/macro_kernel/derive/ordlex_fallthrough_eq.zt
+
+Ordering :: type { #lt; #eq; #gt; };
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Ord @Int :: { compare = \a b. #eq; }
+Point :: type { x : Int; y : Int; };
+Ord @Point :: derive
+
+p :: Point = { x = 1; y = 2; };
+compare p p

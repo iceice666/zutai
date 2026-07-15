@@ -1,0 +1,5 @@
+-- schema reflects recursive types without diverging.
+-- Usage: zutai-cli run examples/macro_kernel/reflection/schema_recursive.zt
+
+Tree :: type { #leaf; #node : { left : Tree; right : Tree; }; };
+schema Tree

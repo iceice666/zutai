@@ -1,0 +1,10 @@
+-- A missing required field is reported with its path.
+-- Usage: zutai-cli run examples/macro_kernel/decode/record_missing_field.zt
+
+Point :: type { x : Int; label : Text; };
+FromData @Point :: derive
+
+bad :: Validation DecodeIssue Point = fromData (#record { fields = {
+  { name = "x"; value = #int { value = 3; }; };
+}; });
+bad

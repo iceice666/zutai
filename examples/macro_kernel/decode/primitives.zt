@@ -1,0 +1,5 @@
+-- decode: primitive Data -> typed value.
+-- Usage: zutai-cli run examples/macro_kernel/decode/primitives.zt
+
+result :: Validation DecodeIssue Int = decode (#int { value = 42; });
+result

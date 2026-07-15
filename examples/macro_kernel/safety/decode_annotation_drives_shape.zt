@@ -1,0 +1,5 @@
+-- The result annotation selects the decoder; a mismatch is #invalid.
+-- Usage: zutai-cli run examples/macro_kernel/safety/decode_annotation_drives_shape.zt
+
+r :: Validation DecodeIssue Bool = decode (#int { value = 1; });
+r

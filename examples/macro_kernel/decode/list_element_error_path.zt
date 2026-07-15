@@ -1,0 +1,8 @@
+-- A bad list element is reported with an index path.
+-- Usage: zutai-cli run examples/macro_kernel/decode/list_element_error_path.zt
+
+value :: Validation DecodeIssue (List Int) = fromData (#list { items = {
+  #int { value = 1; };
+  #text { value = "x"; };
+}; });
+value

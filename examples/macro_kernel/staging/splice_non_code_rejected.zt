@@ -1,0 +1,4 @@
+-- splice only accepts a Code fragment.
+-- Expected: type error (splice expects Code A).
+
+splice(1)

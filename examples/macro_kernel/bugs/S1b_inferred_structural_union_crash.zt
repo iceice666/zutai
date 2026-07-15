@@ -1,0 +1,10 @@
+-- SOUNDNESS BUG S1 variant (see PRESSURE_TEST_REPORT.md).
+-- A bare tagged literal infers as a structural union with no witness key.
+-- FIXED: check and run refuse cleanly with `no witness in scope for `Show @#err``
+-- (the bare tagged literal infers as structural union `#err`, not `Status`).
+-- (Was: check passed; run crashed with internal unbound-binding.)
+
+Status :: type { #ok; #err; };
+Show :: <A> @A { show :: A -> Text; }
+Show @Status :: { show = \s. "shown"; }
+show (#err)

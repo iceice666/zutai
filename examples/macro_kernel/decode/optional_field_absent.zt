@@ -1,0 +1,10 @@
+-- An absent optional field is valid.
+-- Usage: zutai-cli run examples/macro_kernel/decode/optional_field_absent.zt
+
+Config :: type { name : Text; note? : Text; };
+FromData @Config :: derive
+
+result :: Validation DecodeIssue Config = decode (#record { fields = {
+  { name = "name"; value = #text { value = "zutai"; }; };
+}; });
+result
