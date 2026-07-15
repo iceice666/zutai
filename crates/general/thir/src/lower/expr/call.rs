@@ -136,6 +136,7 @@ impl<'hir> Lowerer<'hir> {
         };
 
         let arg = self.check_expr(arg, from);
+
         // Resolve the return type: InferVars introduced for TypeVars may now be
         // solved after checking the argument. If the fully-applied call returns
         // an effectful computation, discharge that row into the current ambient
@@ -182,6 +183,8 @@ impl<'hir> Lowerer<'hir> {
         let effect_ty = self.resolve_alias(result_ty, &mut FxHashSet::default(), span);
         let result_ty = match self.type_arena[effect_ty.0 as usize].kind.clone() {
             TypeKind::Effect { base, row } => {
+                // Resolve flexible row effects at single-arg application
+                // sites as soon as they appear.
                 self.discharge_row(&row, span);
                 base
             }

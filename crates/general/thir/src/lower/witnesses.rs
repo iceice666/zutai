@@ -615,13 +615,19 @@ impl<'hir> Lowerer<'hir> {
             return false;
         }
 
+        // Eq and Ord lower leaves to builtin comparison ops (`Eq`/`Lt`/`Gt`), so
+        // a primitive component needs no witness. Show has no primitive
+        // rendering builtin (`Int -> Text` etc. do not exist): the spec requires
+        // every Show component to delegate through `witness Show @Component`, so a
+        // Show leaf is never builtin-eligible and a missing component witness is
+        // reported as `DeriveComponentMissingWitness`.
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
         match self.type_arena[ty.0 as usize].kind {
-            TypeKind::Int | TypeKind::Float | TypeKind::Posit(_) | TypeKind::Text => true,
-            TypeKind::Bool | TypeKind::True | TypeKind::False | TypeKind::Atom(_) => {
-                supports_eq || supports_show
+            TypeKind::Int | TypeKind::Float | TypeKind::Posit(_) | TypeKind::Text => {
+                supports_eq || supports_ord
             }
+            TypeKind::Bool | TypeKind::True | TypeKind::False | TypeKind::Atom(_) => supports_eq,
             _ => false,
         }
     }

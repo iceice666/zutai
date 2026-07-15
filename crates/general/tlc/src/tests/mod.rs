@@ -90,7 +90,79 @@ pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
         final_expr: None,
         extern_global_bindings: FxHashMap::default(),
         diagnostics: Vec::new(),
+        unresolved_dispatches: Vec::new(),
     }
+}
+
+/// The S1 relocation records a bare constraint-method dispatch as unresolved
+/// exactly when its operand dict genuinely falls back to `Lit(Nothing)` — no
+/// local witness, no derivable instance, no covering conditional. A resolvable
+/// dispatch (concrete or conditional-with-components) records nothing, so the
+/// semantic gate never false-rejects a witnessed call.
+#[test]
+fn unresolved_dispatch_recorded_only_when_witness_missing() {
+    let show = "Show :: <A> @A { show :: A -> Text; }\n";
+
+    // Conditional witness with every component present resolves locally → nothing recorded.
+    let resolved = tlc_of(&format!(
+        "{show}Show @Int :: {{ show = \\n. \"n\"; }}\n\
+         Show @(List A) :: <A: Show> {{ show = \\xs. \"list\"; }}\n\
+         r :: Text = show {{1; 2; 3;}};\nr"
+    ));
+    assert!(
+        resolved.unresolved_dispatches.is_empty(),
+        "fully-witnessed list dispatch must not be recorded: {:?}",
+        resolved.unresolved_dispatches
+    );
+
+    // Conditional witness missing its element witness → recorded on the list key.
+    let missing_component = tlc_of(&format!(
+        "{show}Show @(List A) :: <A: Show> {{ show = \\xs. \"list\"; }}\n\
+         r :: Text = show {{1; 2; 3;}};\nr"
+    ));
+    let keys: Vec<&str> = missing_component
+        .unresolved_dispatches
+        .iter()
+        .map(|u| u.target_key.as_str())
+        .collect();
+    assert_eq!(
+        keys,
+        ["[Int]"],
+        "list dispatch with no element witness must be recorded once on the list key"
+    );
+
+    // No witness at all → recorded on the concrete operand.
+    let no_witness = tlc_of(&format!("{show}s :: Text = \"x\";\nshow s"));
+    assert_eq!(no_witness.unresolved_dispatches.len(), 1);
+    assert_eq!(no_witness.unresolved_dispatches[0].constraint, "Show");
+    assert_eq!(no_witness.unresolved_dispatches[0].target_key, "Text");
+    assert_eq!(no_witness.unresolved_dispatches[0].target_display, "Text");
+
+    // Named-alias operand with a local witness resolves → nothing recorded.
+    let named = tlc_of(&format!(
+        "{show}Status :: type {{ #ok; #err; }};\n\
+         Show @Status :: {{ show = \\s. \"shown\"; }}\n\
+         x :: Status = #err;\nshow x"
+    ));
+    assert!(
+        named.unresolved_dispatches.is_empty(),
+        "named-alias dispatch with a local witness must not be recorded: {:?}",
+        named.unresolved_dispatches
+    );
+
+    // Bare structural-union operand keys as `#err`, which does not match the
+    // `Show @Status` export key `<ok|err>` → recorded (the S1b defect).
+    let structural = tlc_of(&format!(
+        "{show}Status :: type {{ #ok; #err; }};\n\
+         Show @Status :: {{ show = \\s. \"shown\"; }}\n\
+         show (#err)"
+    ));
+    let structural_keys: Vec<&str> = structural
+        .unresolved_dispatches
+        .iter()
+        .map(|u| u.target_key.as_str())
+        .collect();
+    assert_eq!(structural_keys, ["#err"]);
 }
 
 mod lower;
@@ -122,6 +194,7 @@ fn tlc_module_is_constructible() {
         final_expr: None,
         extern_global_bindings: FxHashMap::default(),
         diagnostics: Vec::new(),
+        unresolved_dispatches: Vec::new(),
     };
 }
 

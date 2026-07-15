@@ -254,6 +254,75 @@ impl<'thir> Lowerer<'thir> {
         }
     }
 
+    /// Human-readable name for a THIR type, mirroring THIR's `type_name`
+    /// renderer. Preserves nominal alias/con names (`Status`, `Tree Int`) so the
+    /// S1 witness-not-in-scope diagnostic reads the way the source wrote the
+    /// operand. Read-only: never resolves aliases or mutates arenas.
+    pub(super) fn thir_type_display(&self, ty: TypeId) -> String {
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Type(_) => "Type".to_string(),
+            TypeKind::Bool => "Bool".to_string(),
+            TypeKind::Text => "Text".to_string(),
+            TypeKind::Int => "Int".to_string(),
+            TypeKind::Float => "Float".to_string(),
+            TypeKind::FixedNum(fw) => fw.name().to_string(),
+            TypeKind::Posit(spec) => spec.type_name(),
+            TypeKind::Opaque(name) => name,
+            TypeKind::Atom(name) => format!("#{name}"),
+            TypeKind::True => "true".to_string(),
+            TypeKind::False => "false".to_string(),
+            TypeKind::List(inner) => format!("List {}", self.thir_type_display(inner)),
+            TypeKind::Optional(inner) => format!("{}?", self.thir_type_display(inner)),
+            TypeKind::Maybe(inner) => format!("Maybe {}", self.thir_type_display(inner)),
+            TypeKind::Code(inner) => format!("Code {}", self.thir_type_display(inner)),
+            TypeKind::Patch { target, deep } => {
+                let head = if deep { "DeepPatch" } else { "Patch" };
+                format!("{head} {}", self.thir_type_display(target))
+            }
+            TypeKind::Record(fields, _) => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        let marker = if f.optional { "? : " } else { " : " };
+                        format!("{}{}{}", f.name, marker, self.thir_type_display(f.ty))
+                    })
+                    .collect();
+                format!("{{ {} }}", parts.join("; "))
+            }
+            TypeKind::Union(_, _) => "union".to_string(),
+            TypeKind::Tuple(_) => "tuple".to_string(),
+            TypeKind::Function { .. } => "function".to_string(),
+            TypeKind::Effect { base, .. } => self.thir_type_display(base),
+            TypeKind::Never => "Never".to_string(),
+            TypeKind::TypeVar(binding) | TypeKind::Alias(binding) | TypeKind::Con(binding) => self
+                .thir
+                .binding_names
+                .get(binding.0 as usize)
+                .cloned()
+                .unwrap_or_else(|| format!("@{}", binding.0)),
+            TypeKind::AliasApply { binding, args } => {
+                let head = self
+                    .thir
+                    .binding_names
+                    .get(binding.0 as usize)
+                    .cloned()
+                    .unwrap_or_else(|| format!("@{}", binding.0));
+                let parts: Vec<String> = args.iter().map(|&a| self.thir_type_display(a)).collect();
+                format!("{head} {}", parts.join(" "))
+            }
+            TypeKind::Apply { func, arg } => {
+                format!(
+                    "{} {}",
+                    self.thir_type_display(func),
+                    self.thir_type_display(arg)
+                )
+            }
+            TypeKind::ForAll { body, .. } => self.thir_type_display(body),
+            TypeKind::InferVar(v) => format!("?{v}"),
+            TypeKind::Error => "<error>".to_string(),
+        }
+    }
+
     pub(super) fn type_alias_body(&self, binding: BindingId) -> Option<TypeId> {
         self.type_alias_params_body(binding).map(|(_, body)| body)
     }

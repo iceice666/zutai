@@ -88,6 +88,22 @@ same 1 1
 }
 
 #[test]
+fn show_method_call_lowers_to_get_field() {
+    let m = tlc_of(
+        r#"
+Show :: <A> @A { show :: A -> Text; }
+Show @Text :: { show = \s. s; }
+result :: Text = show "x";
+result
+"#,
+    );
+    assert!(
+        has_get_field(&m, "show"),
+        "expected TlcExpr::GetField(_, \"show\") for witnessed `show` call"
+    );
+}
+
+#[test]
 fn operator_witness_binary_lowers_to_get_field() {
     let m = tlc_of(
         r#"

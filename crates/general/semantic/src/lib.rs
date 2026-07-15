@@ -887,14 +887,44 @@ pub(crate) fn analyze_inner(
             }),
     );
 
-    let tlc = thir
+    let mut tlc = thir
         .as_ref()
         .and_then(|t| t.file.as_ref())
         .map(zutai_tlc::lower_thir);
 
+    // S1 witness-existence gate. TLC lowering records every bare
+    // constraint-method dispatch whose operand dict fell back to `Lit(Nothing)`;
+    // it cannot see imports, so a genuinely-witnessed call can appear here too.
+    // Resolve each against the merged (local + imported + derived) witness
+    // registry — exactly as the interpreter does at runtime — and raise
+    // `WitnessReflectNotInScope` for the ones no witness covers, so `check`,
+    // `compile`, and the eval gate refuse the call instead of crashing on the
+    // unbound synthetic dictionary.
+    if let Some(module) = tlc.as_mut() {
+        let mut gate_diagnostics = Vec::new();
+        for dispatch in &module.unresolved_dispatches {
+            if !import::witness_registry_covers(
+                &witness_exports,
+                &dispatch.constraint,
+                &dispatch.target_key,
+                0,
+            ) {
+                gate_diagnostics.push(zutai_thir::ThirDiagnostic {
+                    kind: zutai_thir::ThirDiagnosticKind::WitnessReflectNotInScope {
+                        constraint: dispatch.constraint.clone(),
+                        target: dispatch.target_display.clone(),
+                    },
+                    span: dispatch.span,
+                });
+            }
+        }
+        module.diagnostics.extend(gate_diagnostics);
+    }
+
     // Recipe-reduction diagnostics (e.g. fuel exhaustion) are produced during
     // TLC lowering but belong to the source program: surface them at the `Thir`
     // stage so CLI stage-filters and the LSP render them like any type error.
+    // The S1 gate diagnostics pushed above ride the same channel.
     if let Some(module) = tlc.as_ref() {
         diagnostics.extend(module.diagnostics.iter().cloned().map(|diagnostic| {
             SemanticDiagnostic {
@@ -994,6 +1024,113 @@ mod tests {
                 }) if expected == "Int" && found == "Text"
             )
         }));
+    }
+
+    /// Whether `analysis` carries a `WitnessReflectNotInScope` diagnostic whose
+    /// constraint (and, when given, target) match. Mirrors the removed THIR
+    /// bare-dispatch gate, now enforced during TLC lowering against the merged
+    /// witness registry.
+    fn has_witness_not_in_scope(
+        analysis: &Analysis,
+        constraint: &str,
+        target: Option<&str>,
+    ) -> bool {
+        analysis.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                &diagnostic.kind,
+                SemanticDiagnosticKind::Thir(zutai_thir::ThirDiagnostic {
+                    kind: zutai_thir::ThirDiagnosticKind::WitnessReflectNotInScope { constraint: c, target: t },
+                    ..
+                }) if c == constraint && target.is_none_or(|want| t == want)
+            )
+        })
+    }
+
+    /// A bare constraint-method dispatch to a concrete target with no witness in
+    /// scope is refused during analysis (relocated from the THIR gate): THIR is
+    /// complete, but the S1 witness-existence gate raises
+    /// `WitnessReflectNotInScope` so `check`/`compile`/eval refuse the call.
+    #[test]
+    fn bare_method_call_missing_witness_rejected_by_analysis() {
+        let analysis = analyze("Show :: <A> @A { show :: A -> Text; }\nshow 42");
+
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors());
+        assert!(analysis.is_thir_complete());
+        assert!(
+            has_witness_not_in_scope(&analysis, "Show", Some("Int")),
+            "expected WitnessReflectNotInScope for Show @Int; diagnostics: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    /// A bare dispatch on a structural union value (`show (#err)`) whose only
+    /// witness targets the nominal union does not match the operand key, so the
+    /// gate refuses it — the structural-target rejection the THIR gate covered.
+    #[test]
+    fn bare_method_call_structural_target_without_witness_rejected() {
+        let analysis = analyze(
+            "Status :: type { #ok; #err; };\nShow :: <A> @A { show :: A -> Text; }\nShow @Status :: { show = \\s. \"shown\"; }\nshow (#err)",
+        );
+
+        assert!(!analysis.has_parse_errors());
+        assert!(!analysis.has_hir_errors());
+        assert!(
+            has_witness_not_in_scope(&analysis, "Show", None),
+            "expected WitnessReflectNotInScope for `Show`; diagnostics: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    /// A concrete named target with a witness in scope stays valid: the gate
+    /// resolves it against the registry and emits nothing.
+    #[test]
+    fn bare_method_call_with_witness_is_accepted() {
+        let analysis = analyze(
+            "Show :: <A> @A { show :: A -> Text; }\nShow @Text :: { show = \\s. s; }\nshow \"x\"",
+        );
+
+        assert!(analysis.is_thir_complete());
+        assert!(
+            !has_witness_not_in_scope(&analysis, "Show", None),
+            "unexpected witness-not-in-scope; diagnostics: {:?}",
+            analysis.diagnostics
+        );
+    }
+
+    /// Q4 regression: a bare record-literal argument to a derived/constraint
+    /// method is inferred structurally and unified into the parameter's inference
+    /// variable, so the witness gate names a concrete record target
+    /// (`Show @{ x : Int }`) instead of leaking the raw `?N` metavariable that
+    /// the old `ExpectedRecord` refusal produced. The call still has no witness,
+    /// so it is refused — but with an actionable target name.
+    #[test]
+    fn q4_record_literal_dispatch_names_concrete_target_not_metavar() {
+        let analysis = analyze(
+            "Show :: <A> @A { show :: A -> Text; }\nShow @Int :: { show = \\n. \"N\"; }\nshow { x = 1; }",
+        );
+
+        assert!(analysis.is_thir_complete());
+        let target =
+            analysis
+                .diagnostics
+                .iter()
+                .find_map(|diagnostic| match &diagnostic.kind {
+                    SemanticDiagnosticKind::Thir(zutai_thir::ThirDiagnostic {
+                        kind:
+                            zutai_thir::ThirDiagnosticKind::WitnessReflectNotInScope {
+                                constraint,
+                                target,
+                            },
+                        ..
+                    }) if constraint == "Show" => Some(target.clone()),
+                    _ => None,
+                });
+        let target = target.expect("expected a Show witness-not-in-scope diagnostic");
+        assert!(
+            target.contains("x") && !target.contains('?'),
+            "expected a concrete record target with no leaked metavariable, got {target:?}"
+        );
     }
 
     // ── `.zti` imports ────────────────────────────────────────────────────────

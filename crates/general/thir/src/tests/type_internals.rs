@@ -36,6 +36,30 @@ fn instantiate_infer_vars_multi_param_function() {
     assert!(matches!(final_type_kind(&file), TypeKind::Int));
 }
 
+/// A generic function applied to a *bare record literal* must infer the literal
+/// structurally and unify it into the parameter's inference variable, exactly as
+/// a bare list literal already does — never refuse with a leaked `?N`
+/// metavariable via `ExpectedRecord`. Regression for the "expected record, found
+/// ?N" pressure-test finding (Q4).
+#[test]
+fn record_literal_against_infer_var_is_inferred_not_refused() {
+    let lowered = lower("id x = x;\nid { x = 1; }");
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "record literal against an unsolved InferVar should infer, not error; got {:?}",
+        lowered.diagnostics
+    );
+    let file = lowered.file.expect("valid THIR should be produced");
+    let TypeKind::Record(fields, _) = final_type_kind(&file) else {
+        panic!(
+            "expected inferred Record type, got {:?}",
+            final_type_kind(&file)
+        );
+    };
+    assert_eq!(fields.len(), 1, "inferred record should have one field");
+    assert_eq!(fields[0].name, "x");
+}
+
 #[test]
 fn instantiate_infer_vars_text_binding() {
     // Polymorphic identity used twice with different types — exercises fresh InferVar

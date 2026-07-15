@@ -33,5 +33,5 @@ pub use lower::{LoweredThir, ThirLowerOptions, lower_hir, lower_hir_with_options
 pub use pass::{ThirPass, ThirPassReport, run_default_passes, run_passes};
 pub use witness_pattern::{
     WitnessPattern, WitnessPatternField, WitnessPatternTupleItem, WitnessPatternVariant,
-    export_witness_pattern,
+    export_witness_pattern, match_pattern_key,
 };

@@ -25,7 +25,7 @@ use zutai_syntax::Span;
 use zutai_thir::{
     ImportKey, ImportedField, ImportedFieldProvenance, ImportedProvenance,
     ImportedProvenanceChildren, ImportedRowTail, ImportedTupleItem, ImportedType, ThirDeclKind,
-    ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern,
+    ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern, match_pattern_key,
 };
 
 use crate::package::{PackageGraph, PortablePackageGraph};
@@ -840,6 +840,54 @@ pub(crate) fn merge_witness_exports(
         }
     }
     (merged, diagnostics)
+}
+
+/// Whether the merged witness registry `exports` provides a witness for
+/// `constraint` at the concrete operand key `target_key`. Mirrors the
+/// interpreter's runtime dispatch (`materialize_conditional_dict`) so the
+/// compile-time S1 gate accepts exactly the calls the interpreter can run:
+///
+/// - a concrete export whose `constraint`/`target_key` match exactly, or
+/// - a conditional export whose pattern matches `target_key`, recovering each
+///   parameter's sub-key, where every one of that parameter's component
+///   constraints is itself covered at its sub-key (recursively).
+///
+/// `depth` guards against a pathological conditional cycle, matching the runtime
+/// depth bound.
+pub(crate) fn witness_registry_covers(
+    exports: &[WitnessExport],
+    constraint: &str,
+    target_key: &str,
+    depth: u32,
+) -> bool {
+    if depth > 64 {
+        return false;
+    }
+    // Concrete exact match.
+    if exports.iter().any(|e| {
+        e.constraint == constraint && e.conditional.is_none() && e.target_key == target_key
+    }) {
+        return true;
+    }
+    // Conditional match: pattern matches the key and every component bound is
+    // covered at its recovered sub-key.
+    exports.iter().any(|e| {
+        if e.constraint != constraint {
+            return false;
+        }
+        let Some(cond) = &e.conditional else {
+            return false;
+        };
+        let Some(sub_keys) = match_pattern_key(&cond.pattern, target_key, cond.param_bounds.len())
+        else {
+            return false;
+        };
+        cond.param_bounds.iter().enumerate().all(|(i, bounds)| {
+            bounds
+                .iter()
+                .all(|bound| witness_registry_covers(exports, bound, &sub_keys[i], depth + 1))
+        })
+    })
 }
 
 pub(crate) fn local_witness_exports(

@@ -9,7 +9,7 @@ use zutai_thir::{
 
 use crate::ir::{
     BuiltinOp, Literal, PrimTy, TlcAlt, TlcExpr, TlcExprId, TlcHandleClause, TlcPat, TlcPatItem,
-    TlcTupleField, TlcTupleItem, TlcType, TlcTypeId,
+    TlcTupleField, TlcTupleItem, TlcType, TlcTypeId, UnresolvedDispatch,
 };
 
 use super::Lowerer;
@@ -1039,6 +1039,31 @@ impl<'thir> Lowerer<'thir> {
             let dispatch_key = self
                 .structural_witness_key(dict_inst, &mut rustc_hash::FxHashSet::default())
                 .unwrap_or_default();
+            // S1 gate: if the dict fell back to `Lit(Nothing)` (no local witness,
+            // no derivable instance, not an abstract dict param) yet the operand
+            // is a concrete, keyable type, the witness may still be provided by an
+            // import — which this pure, import-agnostic lowering cannot see.
+            // Record the dispatch so the semantic layer can check it against the
+            // merged witness registry and refuse a genuinely-unwitnessed call.
+            if matches!(self.expr_arena[dict_expr], TlcExpr::Lit(Literal::Nothing))
+                && !dispatch_key.is_empty()
+                && !dispatch_key.contains('?')
+                && !dispatch_key.contains('@')
+            {
+                let constraint = self
+                    .thir
+                    .binding_names
+                    .get(info.constraint.0 as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                let target_display = self.thir_type_display(dict_inst);
+                self.unresolved_dispatches.push(UnresolvedDispatch {
+                    constraint,
+                    target_key: dispatch_key.clone(),
+                    target_display,
+                    span,
+                });
+            }
             self.dict_dispatch_keys.insert(acc, dispatch_key);
             // Each method-level type param becomes a `TyApp`, in declaration order.
             for &mp in &info.method_params {

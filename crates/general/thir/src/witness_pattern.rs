@@ -237,3 +237,153 @@ fn pat_of(
         _ => None,
     }
 }
+
+/// Match a conditional witness `pattern` against a concrete dispatch `key`
+/// string (the `structural_witness_key` format the TLC lowerer records in
+/// `TlcModule::dict_dispatch_keys`), recovering the sub-key bound to each of
+/// `num_holes` parameter holes. Returns `None` unless the whole key is consumed
+/// and every hole is bound consistently.
+///
+/// Shared by the reference interpreter's runtime conditional-witness
+/// materialization and the semantic layer's compile-time witness-coverage gate,
+/// so both agree on exactly which concrete operands a parametric witness covers.
+pub fn match_pattern_key(
+    pattern: &WitnessPattern,
+    key: &str,
+    num_holes: usize,
+) -> Option<Vec<String>> {
+    let mut holes: Vec<Option<String>> = vec![None; num_holes];
+    let rest = pattern_match_at(pattern, key, &mut holes)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    holes.into_iter().collect()
+}
+
+fn pattern_match_at<'k>(
+    pattern: &WitnessPattern,
+    s: &'k str,
+    holes: &mut [Option<String>],
+) -> Option<&'k str> {
+    use WitnessPattern as P;
+    use WitnessPatternTupleItem as TI;
+    match pattern {
+        P::Hole(i) => {
+            let (token, rest) = split_balanced(s)?;
+            match holes.get_mut(*i)? {
+                slot @ None => *slot = Some(token.to_string()),
+                Some(prev) if prev == token => {}
+                Some(_) => return None,
+            }
+            Some(rest)
+        }
+        P::Leaf(k) => s.strip_prefix(k.as_str()),
+        P::List(inner) => {
+            let s = s.strip_prefix('[')?;
+            let s = pattern_match_at(inner, s, holes)?;
+            s.strip_prefix(']')
+        }
+        P::Optional(inner) => {
+            // The `?` marker is a postfix at this level (`<inner>?`), so reserve it
+            // before matching the inner — otherwise a bare `Hole` inner greedily
+            // consumes the `?` and the strip below fails.
+            let (token, rest) = split_balanced(s)?;
+            let inner_key = token.strip_suffix('?')?;
+            if !pattern_match_at(inner, inner_key, holes)?.is_empty() {
+                return None;
+            }
+            Some(rest)
+        }
+        P::Maybe(inner) => {
+            let s = s.strip_prefix("Maybe[")?;
+            let s = pattern_match_at(inner, s, holes)?;
+            s.strip_prefix(']')
+        }
+        P::Record(fields) => {
+            let mut s = s.strip_prefix('{')?;
+            for (i, f) in fields.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix(',')?;
+                }
+                s = s.strip_prefix(f.name.as_str())?;
+                s = s.strip_prefix(if f.optional { "?:" } else { ":" })?;
+                s = pattern_match_at(&f.ty, s, holes)?;
+            }
+            s.strip_prefix('}')
+        }
+        P::Tuple(items) => {
+            let mut s = s.strip_prefix('(')?;
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix(',')?;
+                }
+                s = match item {
+                    TI::Positional(p) => pattern_match_at(p, s, holes)?,
+                    TI::Named { name, ty } => {
+                        let s = s.strip_prefix(name.as_str())?.strip_prefix(':')?;
+                        pattern_match_at(ty, s, holes)?
+                    }
+                };
+            }
+            s.strip_prefix(')')
+        }
+        P::Union(variants) => {
+            let mut s = s.strip_prefix('<')?;
+            for (i, v) in variants.iter().enumerate() {
+                if i > 0 {
+                    s = s.strip_prefix('|')?;
+                }
+                s = s.strip_prefix(v.name.as_str())?;
+                if let Some(payload) = &v.payload {
+                    s = s.strip_prefix('(')?;
+                    s = pattern_match_at(payload, s, holes)?;
+                    s = s.strip_prefix(')')?;
+                }
+            }
+            s.strip_prefix('>')
+        }
+        P::Function(from, to) => {
+            let s = s.strip_prefix('(')?;
+            let s = pattern_match_at(from, s, holes)?;
+            let s = s.strip_prefix("->")?;
+            let s = pattern_match_at(to, s, holes)?;
+            s.strip_prefix(')')
+        }
+    }
+}
+
+/// Split off the leading balanced type-key token from `s`, returning it and the
+/// remainder. Stops at a top-level separator (`,` `|` `->`) or a closing
+/// bracket, tracking `[] {} () <>` nesting so nested keys stay intact.
+fn split_balanced(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        // `->` is an atomic arrow: a top-level one ends the token, and a nested
+        // one must not let its `>` decrement bracket depth.
+        if bytes[i] == b'-' && bytes.get(i + 1) == Some(&b'>') {
+            if depth == 0 {
+                break;
+            }
+            i += 2;
+            continue;
+        }
+        match bytes[i] {
+            b'[' | b'{' | b'(' | b'<' => depth += 1,
+            b']' | b'}' | b')' | b'>' => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            }
+            b',' | b'|' if depth == 0 => break,
+            _ => {}
+        }
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    Some((&s[..i], &s[i..]))
+}

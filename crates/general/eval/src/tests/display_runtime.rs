@@ -380,6 +380,68 @@ schema (type Box Text)
         Value::Text("Text".into())
     );
 }
+#[test]
+fn schema_nested_named_alias_type_keeps_declared_name() {
+    let value = run(r#"
+Inner :: type { a : Int; };
+Outer :: type { inner : Inner; };
+schema Outer
+"#);
+    let fields = record_field_value(&value, "fields");
+    let inner = list_item(&fields, 0);
+    assert_eq!(
+        record_field_value(&inner, "type"),
+        Value::Text("Inner".into())
+    );
+}
+
+#[test]
+fn schema_nested_named_alias_types_remain_distinguishable() {
+    let value = run(r#"
+A :: type { value : Int; };
+B :: type { value : Text; };
+Outer :: type { left : A; right : B; };
+schema Outer
+"#);
+
+    let fields = record_field_value(&value, "fields");
+    let left = list_item(&fields, 0);
+    let right = list_item(&fields, 1);
+
+    assert_eq!(record_field_value(&left, "type"), Value::Text("A".into()));
+    assert_eq!(record_field_value(&right, "type"), Value::Text("B".into()));
+}
+
+#[test]
+fn schema_recursive_alias_label_terminates_with_structural_wrappers() {
+    let value = run(r#"
+Node :: type { children : List Node; value : Int; };
+schema Node
+"#);
+
+    let fields = record_field_value(&value, "fields");
+    let children = list_item(&fields, 0);
+    assert_eq!(
+        record_field_value(&children, "type"),
+        Value::Text("[Node]".into())
+    );
+}
+
+#[test]
+fn schema_generic_alias_application_preserves_alias_name_and_arguments() {
+    let value = run(r#"
+Pair :: <A, B> type { fst : A; snd : B; };
+Container :: type { pair : Pair Int (List Text); };
+schema Container
+"#);
+
+    let fields = record_field_value(&value, "fields");
+    let pair = list_item(&fields, 0);
+    assert_eq!(
+        record_field_value(&pair, "type"),
+        Value::Text("Pair<Int, [Text]>".into())
+    );
+}
 
 #[test]
 fn schema_union_returns_variant_schema() {

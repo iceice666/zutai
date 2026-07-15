@@ -159,6 +159,7 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         final_expr: None,
         extern_global_bindings: FxHashMap::default(),
         diagnostics: Vec::new(),
+        unresolved_dispatches: Vec::new(),
     };
 
     // With small fuel (5 steps) this must return FuelExhausted, never panic.

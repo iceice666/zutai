@@ -495,6 +495,26 @@ pub enum TlcDecl {
 
 // ── Module ────────────────────────────────────────────────────────────────────
 
+/// A bare constraint-method dispatch (`show x`, `eq x y`) whose operand type is
+/// concrete but resolved to `Lit(Nothing)` during lowering — no local witness,
+/// derivable instance, or active dict param covered it. Recorded so the semantic
+/// layer can decide, against the merged (local + imported + derived) witness
+/// registry, whether an imported witness covers the operand; if none does, it is
+/// the S1 witness-not-in-scope defect and evaluation/compilation must be refused
+/// rather than crash on the unbound synthetic dictionary at runtime.
+#[derive(Debug, Clone)]
+pub struct UnresolvedDispatch {
+    /// The constraint's declared name (e.g. `"Show"`, `"Eq"`).
+    pub constraint: String,
+    /// The operand's `structural_witness_key` string (same format as
+    /// `WitnessExport::target_key`), used for exact + conditional coverage lookup.
+    pub target_key: String,
+    /// Human-readable operand type for the diagnostic message.
+    pub target_display: String,
+    /// The dispatch call site's span.
+    pub span: Span,
+}
+
 #[derive(Debug, Clone)]
 pub struct TlcModule {
     pub decls: Vec<TlcDeclId>,
@@ -531,4 +551,10 @@ pub struct TlcModule {
     /// These are THIR-shaped so the semantic facade can surface them at the
     /// `Thir` stage and the evaluation gate can refuse to run.
     pub diagnostics: Vec<zutai_thir::ThirDiagnostic>,
+    /// Concrete bare-method dispatches that fell back to `Lit(Nothing)` — no
+    /// local/derivable witness or active dict param covered the operand. The
+    /// semantic layer resolves each against the merged witness registry (local +
+    /// imported + derived); any uncovered entry is the S1 defect and gates
+    /// evaluation and compilation.
+    pub unresolved_dispatches: Vec<UnresolvedDispatch>,
 }

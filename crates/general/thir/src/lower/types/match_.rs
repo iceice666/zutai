@@ -211,6 +211,40 @@ impl<'hir> Lowerer<'hir> {
             }
             _ => {}
         }
+        // Solve an InferVar against a *non-parametric* nominal alias without
+        // expanding it, so the call-site instantiation keeps its named identity
+        // (e.g. `Tree`, not the structural `<#leaf|#node>` it unfolds to). A
+        // closed top-level alias body cannot mention this call-site InferVar, so
+        // the occurs check is trivially satisfied and the binding terminates.
+        // Witness dispatch keys the nominal target (`Named`), so preserving the
+        // alias here is what lets a recursive derived witness resolve at the
+        // outer call instead of falling back to `Nothing`.
+        match (
+            self.type_arena[expected_head.0 as usize].kind.clone(),
+            self.type_arena[found_head.0 as usize].kind.clone(),
+        ) {
+            (TypeKind::InferVar(v), TypeKind::Alias(b))
+                if self.alias_params.get(&b).is_none_or(|p| p.is_empty())
+                    && self.alias_is_recursive(b) =>
+            {
+                self.infer_subst.insert(v, found_head);
+                if let Some(key) = guard_key {
+                    self.type_match_in_progress.remove(&key);
+                }
+                return true;
+            }
+            (TypeKind::Alias(b), TypeKind::InferVar(v))
+                if self.alias_params.get(&b).is_none_or(|p| p.is_empty())
+                    && self.alias_is_recursive(b) =>
+            {
+                self.infer_subst.insert(v, expected_head);
+                if let Some(key) = guard_key {
+                    self.type_match_in_progress.remove(&key);
+                }
+                return true;
+            }
+            _ => {}
+        }
         let expected = self.resolve_alias(expected, &mut FxHashSet::default(), e_span);
         let found = self.resolve_alias(found, &mut FxHashSet::default(), f_span);
         if expected == found {

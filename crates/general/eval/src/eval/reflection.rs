@@ -32,7 +32,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn reflect_fields(&self, ty: &RuntimeType) -> Result<Value, EvalError> {
-        match self.runtime_type_view(ty, 0)? {
+        match self.runtime_type_view(ty, 0, false)? {
             RuntimeTypeView::Record(fields, RowTail::Closed) => fields
                 .into_iter()
                 .map(|field| {
@@ -55,7 +55,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn reflect_variants(&self, ty: &RuntimeType) -> Result<Value, EvalError> {
-        match self.runtime_type_view(ty, 0)? {
+        match self.runtime_type_view(ty, 0, false)? {
             RuntimeTypeView::Union(variants, RowTail::Closed) => variants
                 .into_iter()
                 .map(|variant| self.reflect_variant(variant))
@@ -70,7 +70,7 @@ impl<'a> Evaluator<'a> {
 
     fn reflect_variant(&self, variant: ReflectedUnionVariant) -> Result<Value, EvalError> {
         let fields = match variant.payload {
-            Some(payload) => match self.runtime_type_view(&payload, 0)? {
+            Some(payload) => match self.runtime_type_view(&payload, 0, false)? {
                 RuntimeTypeView::Record(fields, RowTail::Closed) => fields
                     .into_iter()
                     .map(|field| {
@@ -98,7 +98,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn reflect_schema(&self, ty: &RuntimeType) -> Result<Value, EvalError> {
-        match self.runtime_type_view(ty, 0)? {
+        match self.runtime_type_view(ty, 0, false)? {
             RuntimeTypeView::Record(fields, RowTail::Closed) => Ok(record_value(vec![
                 ("kind", Value::Atom(Rc::from("record"))),
                 ("fields", self.schema_fields(fields)?),
@@ -142,7 +142,7 @@ impl<'a> Evaluator<'a> {
 
     fn schema_variant(&self, variant: ReflectedUnionVariant) -> Result<Value, EvalError> {
         let fields = match variant.payload {
-            Some(payload) => match self.runtime_type_view(&payload, 0)? {
+            Some(payload) => match self.runtime_type_view(&payload, 0, false)? {
                 RuntimeTypeView::Record(fields, RowTail::Closed) => self.schema_fields(fields)?,
                 RuntimeTypeView::Record(_, _) => return Err(open_row_reflection_error("record")),
                 _ => {
@@ -160,7 +160,17 @@ impl<'a> Evaluator<'a> {
     }
 
     fn type_label(&self, ty: &RuntimeType) -> Result<String, EvalError> {
-        match self.runtime_type_view(ty, 0)? {
+        match self.runtime_type_view(ty, 0, true)? {
+            RuntimeTypeView::Alias { name, args } => {
+                if args.is_empty() {
+                    return Ok(name);
+                }
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.type_label(&arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(format!("{}<{}>", name, args.join(", ")))
+            }
             RuntimeTypeView::Type => Ok("Type".to_string()),
             RuntimeTypeView::Bool => Ok("Bool".to_string()),
             RuntimeTypeView::Text => Ok("Text".to_string()),
@@ -205,6 +215,7 @@ impl<'a> Evaluator<'a> {
         &self,
         ty: &RuntimeType,
         depth: u16,
+        preserve_named_aliases: bool,
     ) -> Result<RuntimeTypeView, EvalError> {
         if depth > 256 {
             return Err(EvalError::ReflectionUnsupported(
@@ -257,7 +268,9 @@ impl<'a> Evaluator<'a> {
             }),
             TypeKind::TypeVar(binding) => {
                 match ty.subst.iter().rev().find(|(b, _)| *b == binding) {
-                    Some((_, replacement)) => self.runtime_type_view(replacement, depth + 1),
+                    Some((_, replacement)) => {
+                        self.runtime_type_view(replacement, depth + 1, preserve_named_aliases)
+                    }
                     None => Err(EvalError::ReflectionUnsupported(format!(
                         "unsubstituted type parameter `{}` cannot be reflected",
                         binding_name_in_file(file, binding)
@@ -277,9 +290,16 @@ impl<'a> Evaluator<'a> {
                         binding_name_in_file(file, binding)
                     )));
                 }
+                if preserve_named_aliases {
+                    return Ok(RuntimeTypeView::Alias {
+                        name: binding_name_in_file(file, binding).to_string(),
+                        args: Vec::new(),
+                    });
+                }
                 self.runtime_type_view(
                     &RuntimeType::with_subst(ty.module, body, ty.subst.clone()),
                     depth + 1,
+                    preserve_named_aliases,
                 )
             }
             TypeKind::AliasApply { binding, args } => {
@@ -297,10 +317,20 @@ impl<'a> Evaluator<'a> {
                         args.len()
                     )));
                 }
+                if preserve_named_aliases {
+                    return Ok(RuntimeTypeView::Alias {
+                        name: binding_name_in_file(file, binding).to_string(),
+                        args: args.into_iter().map(|arg| ty.with_ty(arg)).collect(),
+                    });
+                }
                 let subst = extend_subst(ty, &params, &args);
-                self.runtime_type_view(&RuntimeType::with_subst(ty.module, body, subst), depth + 1)
+                self.runtime_type_view(
+                    &RuntimeType::with_subst(ty.module, body, subst),
+                    depth + 1,
+                    preserve_named_aliases,
+                )
             }
-            TypeKind::Apply { .. } => self.runtime_apply_view(ty, depth),
+            TypeKind::Apply { .. } => self.runtime_apply_view(ty, depth, preserve_named_aliases),
             TypeKind::Con(binding) => Err(EvalError::ReflectionUnsupported(format!(
                 "unapplied builtin type constructor `{}` cannot be reflected",
                 binding_name_in_file(file, binding)
@@ -318,6 +348,7 @@ impl<'a> Evaluator<'a> {
         &self,
         ty: &RuntimeType,
         depth: u16,
+        preserve_named_aliases: bool,
     ) -> Result<RuntimeTypeView, EvalError> {
         let file = self.file_for_module(ty.module)?;
         let mut args = Vec::new();
@@ -343,8 +374,18 @@ impl<'a> Evaluator<'a> {
                         args.len()
                     )));
                 }
+                if preserve_named_aliases {
+                    return Ok(RuntimeTypeView::Alias {
+                        name: binding_name_in_file(file, binding).to_string(),
+                        args: args.into_iter().map(|arg| ty.with_ty(arg)).collect(),
+                    });
+                }
                 let subst = extend_subst(ty, &params, &args);
-                self.runtime_type_view(&RuntimeType::with_subst(ty.module, body, subst), depth + 1)
+                self.runtime_type_view(
+                    &RuntimeType::with_subst(ty.module, body, subst),
+                    depth + 1,
+                    preserve_named_aliases,
+                )
             }
             TypeKind::Con(binding)
                 if binding_name_in_file(file, binding) == "List" && args.len() == 1 =>
@@ -394,6 +435,10 @@ enum ReflectedTupleItem {
 }
 
 enum RuntimeTypeView {
+    Alias {
+        name: String,
+        args: Vec<RuntimeType>,
+    },
     Type,
     Bool,
     Text,
@@ -412,8 +457,13 @@ enum RuntimeTypeView {
     Record(Vec<ReflectedRecordField>, RowTail),
     Union(Vec<ReflectedUnionVariant>, RowTail),
     Tuple(Vec<ReflectedTupleItem>),
-    Function { from: RuntimeType, to: RuntimeType },
-    Effect { base: RuntimeType },
+    Function {
+        from: RuntimeType,
+        to: RuntimeType,
+    },
+    Effect {
+        base: RuntimeType,
+    },
 }
 
 fn record_value(fields: Vec<(&'static str, Value)>) -> Value {

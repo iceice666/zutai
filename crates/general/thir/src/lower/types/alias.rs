@@ -225,21 +225,25 @@ impl<'hir> Lowerer<'hir> {
     /// always produce distinct keys. This is used as the second half of
     /// the coherence-check map key `(constraint BindingId, target key)`.
     pub(in crate::lower) fn witness_target_key(&mut self, ty: TypeId) -> String {
-        self.witness_target_key_with(ty, &FxHashMap::default())
+        let mut seen = FxHashSet::default();
+        self.witness_target_key_with_cycle_guard(ty, &FxHashMap::default(), &mut seen)
     }
 
-    /// Like `witness_target_key`, but each binding in `norm` (a witness's own
-    /// type params) keys to its positional `#index` instead of `@<binding>`, so
-    /// two conditional witnesses that differ only in param identity — e.g. two
-    /// `Eq @(List A)` — produce the same key and are flagged as conflicting.
-    pub(in crate::lower) fn witness_target_key_with(
+    /// Like `witness_target_key`, but tracks previously visited concrete `TypeId`s
+    /// so recursive type shapes (e.g. `Data`, `Stream`) do not overflow.
+    fn witness_target_key_with_cycle_guard(
         &mut self,
         ty: TypeId,
         norm: &rustc_hash::FxHashMap<BindingId, usize>,
+        seen: &mut FxHashSet<TypeId>,
     ) -> String {
         let span = self.type_arena[ty.0 as usize].span;
         let ty = self.resolve_alias(ty, &mut FxHashSet::default(), span);
-        match self.type_arena[ty.0 as usize].kind.clone() {
+        if !seen.insert(ty) {
+            return format!("@cycle:{}", ty.0);
+        }
+
+        let key = match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Type(_) => "Type".to_string(),
             TypeKind::Bool => "Bool".to_string(),
             TypeKind::Text => "Text".to_string(),
@@ -251,26 +255,40 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Atom(name) => format!("#{name}"),
             TypeKind::True => "true".to_string(),
             TypeKind::False => "false".to_string(),
-            TypeKind::List(inner) => format!("[{}]", self.witness_target_key_with(inner, norm)),
+            TypeKind::List(inner) => format!(
+                "[{}]",
+                self.witness_target_key_with_cycle_guard(inner, norm, seen)
+            ),
             TypeKind::Optional(inner) => {
-                format!("{}?", self.witness_target_key_with(inner, norm))
+                format!(
+                    "{}?",
+                    self.witness_target_key_with_cycle_guard(inner, norm, seen)
+                )
             }
             TypeKind::Maybe(inner) => {
-                format!("Maybe[{}]", self.witness_target_key_with(inner, norm))
+                format!(
+                    "Maybe[{}]",
+                    self.witness_target_key_with_cycle_guard(inner, norm, seen)
+                )
             }
             TypeKind::Code(inner) => {
-                format!("Code[{}]", self.witness_target_key_with(inner, norm))
+                format!(
+                    "Code[{}]",
+                    self.witness_target_key_with_cycle_guard(inner, norm, seen)
+                )
             }
             TypeKind::Patch { target, deep } => {
                 let head = if deep { "DeepPatch" } else { "Patch" };
-                format!("{head}[{}]", self.witness_target_key_with(target, norm))
+                format!(
+                    "{head}[{}]",
+                    self.witness_target_key_with_cycle_guard(target, norm, seen)
+                )
             }
             TypeKind::Record(fields, tail) => {
-                // Sort by name — records are order-independent.
                 let mut parts: Vec<String> = fields
                     .iter()
                     .map(|f| {
-                        let k = self.witness_target_key_with(f.ty, norm);
+                        let k = self.witness_target_key_with_cycle_guard(f.ty, norm, seen);
                         if f.optional {
                             format!("{}?:{}", f.name, k)
                         } else {
@@ -285,7 +303,11 @@ impl<'hir> Lowerer<'hir> {
                 let parts: Vec<String> = variants
                     .iter()
                     .map(|v| match v.payload {
-                        Some(p) => format!("{}({})", v.name, self.witness_target_key_with(p, norm)),
+                        Some(p) => format!(
+                            "{}({})",
+                            v.name,
+                            self.witness_target_key_with_cycle_guard(p, norm, seen)
+                        ),
                         None => v.name.clone(),
                     })
                     .collect();
@@ -296,9 +318,15 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|item| match item {
                         TypeTupleItem::Named { name, ty, .. } => {
-                            format!("{}:{}", name, self.witness_target_key_with(*ty, norm))
+                            format!(
+                                "{}:{}",
+                                name,
+                                self.witness_target_key_with_cycle_guard(*ty, norm, seen)
+                            )
                         }
-                        TypeTupleItem::Positional(ty) => self.witness_target_key_with(*ty, norm),
+                        TypeTupleItem::Positional(ty) => {
+                            self.witness_target_key_with_cycle_guard(*ty, norm, seen)
+                        }
                     })
                     .collect();
                 format!("({})", parts.join(","))
@@ -306,8 +334,8 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::Function { from, to } => {
                 format!(
                     "({}->{})",
-                    self.witness_target_key_with(from, norm),
-                    self.witness_target_key_with(to, norm)
+                    self.witness_target_key_with_cycle_guard(from, norm, seen),
+                    self.witness_target_key_with_cycle_guard(to, norm, seen)
                 )
             }
             TypeKind::Effect { base, row } => {
@@ -318,22 +346,20 @@ impl<'hir> Lowerer<'hir> {
                         format!(
                             "{}:{}->{}",
                             op.name,
-                            self.witness_target_key_with(op.param, norm),
-                            self.witness_target_key_with(op.result, norm)
+                            self.witness_target_key_with_cycle_guard(op.param, norm, seen),
+                            self.witness_target_key_with_cycle_guard(op.result, norm, seen)
                         )
                     })
                     .collect::<Vec<_>>()
                     .join(",");
                 format!(
                     "{}!{{{}{}}}",
-                    self.witness_target_key_with(base, norm),
+                    self.witness_target_key_with_cycle_guard(base, norm, seen),
                     ops,
                     row_tail_key(row.tail)
                 )
             }
             TypeKind::Never => "Never".to_string(),
-            // Witness params normalize to positional holes; other vars/aliases
-            // key by binding index (shadow-safe).
             TypeKind::TypeVar(b) => match norm.get(&b) {
                 Some(i) => format!("#{i}"),
                 None => format!("@{}", b.0),
@@ -342,7 +368,7 @@ impl<'hir> Lowerer<'hir> {
             TypeKind::AliasApply { binding, args } => {
                 let parts: Vec<String> = args
                     .iter()
-                    .map(|&a| self.witness_target_key_with(a, norm))
+                    .map(|&a| self.witness_target_key_with_cycle_guard(a, norm, seen))
                     .collect();
                 format!("${}[{}]", binding.0, parts.join(","))
             }
@@ -355,11 +381,11 @@ impl<'hir> Lowerer<'hir> {
                         None => format!("@{}", b.0),
                     },
                     TypeKind::Alias(b) | TypeKind::Con(b) => format!("@{}", b.0),
-                    _ => self.witness_target_key_with(head, norm),
+                    _ => self.witness_target_key_with_cycle_guard(head, norm, seen),
                 };
                 let parts: Vec<String> = args
                     .iter()
-                    .map(|&a| self.witness_target_key_with(a, norm))
+                    .map(|&a| self.witness_target_key_with_cycle_guard(a, norm, seen))
                     .collect();
                 format!("{}[{}]", head_key, parts.join(","))
             }
@@ -371,12 +397,24 @@ impl<'hir> Lowerer<'hir> {
                 format!(
                     "forall[{}].{}",
                     names.join(","),
-                    self.witness_target_key_with(body, norm)
+                    self.witness_target_key_with_cycle_guard(body, norm, seen)
                 )
             }
             TypeKind::InferVar(v) => format!("?{v}"),
             TypeKind::Error => "<error>".to_string(),
-        }
+        };
+
+        seen.remove(&ty);
+        key
+    }
+
+    pub(in crate::lower) fn witness_target_key_with(
+        &mut self,
+        ty: TypeId,
+        norm: &rustc_hash::FxHashMap<BindingId, usize>,
+    ) -> String {
+        let mut seen = FxHashSet::default();
+        self.witness_target_key_with_cycle_guard(ty, norm, &mut seen)
     }
 }
 

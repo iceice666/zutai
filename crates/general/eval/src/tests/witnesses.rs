@@ -148,10 +148,14 @@ fn recipe_show_derives_record_witness() {
 Point :: type { x : Int; y : Int; };
 p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Int :: { show = \n. "<int>"; }
 Show @Point :: derive
 show p
 "#;
-    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+    assert_eq!(
+        eval_tlc_file(src).unwrap(),
+        Value::Text("{x = <int>, y = <int>}".into())
+    );
 }
 
 #[test]
@@ -160,10 +164,14 @@ fn recipe_witness_reflection_dispatches_derived_dictionary() {
 Point :: type { x : Int; y : Int; };
 p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => \x. x
+Show @Int :: { show = \n. "<int>"; }
 Show @Point :: derive
 (witness Show @Point).show p
 "#;
-    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+    assert_eq!(
+        eval_tlc_file(src).unwrap(),
+        Value::Text("{x = <int>, y = <int>}".into())
+    );
 }
 
 #[test]
@@ -227,10 +235,14 @@ fn recipe_derive_show_builder_synthesizes_record_witness() {
 Point :: type { x : Int; y : Int; };
 p :: Point = { x = 1; y = 2; };
 Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Show @Int :: { show = \n. "<int>"; }
 Show @Point :: derive
 show p
 "#;
-    assert_eq!(eval_tlc_file(src).unwrap(), Value::Text("{x, y}".into()));
+    assert_eq!(
+        eval_tlc_file(src).unwrap(),
+        Value::Text("{x = <int>, y = <int>}".into())
+    );
 }
 
 /// `deriveOrdLex` drives the lexicographic Ord fold by builder identity: `x`
@@ -273,6 +285,45 @@ Ord @Status :: derive
 compare ok err
 "#;
     assert_eq!(eval_tlc_file(ord_src).unwrap(), Value::Atom("lt".into()));
+}
+
+/// S2/Q2 regression: deriving over a self-recursive type must terminate rather
+/// than overflow the compiler stack. The derived `Ord @Tree` fold reaches the
+/// recursive `child : Tree` component through the registered witness dictionary
+/// (a runtime self-reference) instead of expanding structurally forever. Two
+/// single-level trees compare `#lt` via the seeded `Ord @Int` on `value`.
+#[test]
+fn recipe_recursive_ord_tree_terminates_and_dispatches() {
+    let src = r#"
+Ordering :: type { #lt; #eq; #gt; };
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Ord @Int :: { compare = \a b. #lt; }
+Tree :: type { #leaf; #node: { value : Int; child : Tree; }; };
+Ord @Tree :: derive
+t1 :: Tree = #node { value = 1; child = #leaf; };
+t2 :: Tree = #node { value = 2; child = #leaf; };
+compare t1 t2
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Atom("lt".into()));
+}
+
+/// S2/S3 regression: the recursive `deriveShow` fold also terminates and
+/// delegates. The `child` component resolves through the derived `Show @Tree`
+/// dictionary self-reference; `value` renders through the seeded `Show @Int`.
+#[test]
+fn recipe_recursive_show_tree_terminates_and_delegates() {
+    let src = r#"
+Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Show @Int :: { show = \n. "N"; }
+Tree :: type { #leaf; #node: { value : Int; child : Tree; }; };
+Show @Tree :: derive
+t :: Tree = #node { value = 1; child = #leaf; };
+show t
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap(),
+        Value::Text("#node {value = N, child = #leaf}".into())
+    );
 }
 
 /// A builder name is a seeded builtin, so a user cannot rebind it at top level:
@@ -534,16 +585,22 @@ eq b1 b2
 // Increment 5: method-name resolution — eval invariant tests
 // ---------------------------------------------------------------------------
 
-/// T-INV-5: `eq 1 2` type-checks (THIR is complete) but has no runtime value yet
-/// (no dictionary-passing).  The interpreter must refuse with `UnboundBinding`
-/// rather than guessing a value — the oracle must not invent semantics.
+/// T-INV-5: `eq 1 2` type-checks (THIR is complete) but has no witness in scope,
+/// so the S1 witness-existence gate refuses it before the interpreter is reached
+/// — a missing dictionary is caught at check time rather than crashing on an
+/// unbound synthetic dict. The oracle must not invent semantics.
 #[test]
 fn t_inv5_method_call_type_checks_but_refuses_eval() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
     let err = run_err(src);
+    let EvalError::TypeCheckFailed(messages) = &err else {
+        panic!("expected EvalError::TypeCheckFailed for un-dispatched method call, got {err:?}");
+    };
     assert!(
-        matches!(err, EvalError::UnboundBinding(_)),
-        "expected EvalError::UnboundBinding for un-dispatched method call, got {err:?}"
+        messages
+            .iter()
+            .any(|m| m.contains("no witness in scope") && m.contains("Eq @Int")),
+        "expected witness-not-in-scope refusal, got {messages:?}"
     );
 }
 
@@ -617,15 +674,58 @@ Eq @Bool :: { eq = \\a b. false; }
     }
 }
 
-/// Refusal: method with constraint but NO witness → still `UnboundBinding`.
-/// The oracle must decline rather than invent a value.
+/// Refusal: method with constraint but NO witness in scope. The S1 gate refuses
+/// at check time with `no witness in scope`, so the interpreter is never asked
+/// to invent a value for the missing dictionary.
 #[test]
 fn dispatch_refusal_no_witness() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
     let err = run_err(src);
+    let EvalError::TypeCheckFailed(messages) = &err else {
+        panic!("expected TypeCheckFailed when no witness is in scope, got {err:?}");
+    };
     assert!(
-        matches!(err, EvalError::UnboundBinding(_)),
-        "expected UnboundBinding when no witness is in scope, got {err:?}"
+        messages
+            .iter()
+            .any(|m| m.contains("no witness in scope") && m.contains("Eq @Int")),
+        "expected witness-not-in-scope refusal, got {messages:?}"
+    );
+}
+
+/// S1 regression: a bare method-name dispatch to a concrete named type with no
+/// witness in scope (`show s` where `s : Text` and no `Show @Text`) type-checks
+/// but must be refused by the witness-existence gate rather than crashing the
+/// interpreter on the unbound synthetic dictionary (`BindingId(u32::MAX)`).
+#[test]
+fn s1_bare_dispatch_missing_concrete_witness_refused() {
+    let src = "Show :: <A> @A { show :: A -> Text; }\ns :: Text = \"x\";\nshow s";
+    let err = run_err(src);
+    let EvalError::TypeCheckFailed(messages) = &err else {
+        panic!("expected TypeCheckFailed for missing Show @Text witness, got {err:?}");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("no witness in scope") && m.contains("Show @Text")),
+        "expected Show @Text refusal, got {messages:?}"
+    );
+}
+
+/// S1b regression: a bare tagged literal (`#err`) infers as a structural union
+/// whose operand key (`#err`) does not match the nominal `Show @Status` witness
+/// (`<ok|err>`), so dispatch has no witness and must be refused — not crash.
+#[test]
+fn s1b_bare_structural_union_dispatch_refused() {
+    let src = "Status :: type { #ok; #err; };\nShow :: <A> @A { show :: A -> Text; }\nShow @Status :: { show = \\s. \"shown\"; }\nshow (#err)";
+    let err = run_err(src);
+    let EvalError::TypeCheckFailed(messages) = &err else {
+        panic!("expected TypeCheckFailed for structural-union dispatch, got {err:?}");
+    };
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("no witness in scope") && m.contains("Show")),
+        "expected Show refusal, got {messages:?}"
     );
 }
 

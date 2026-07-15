@@ -448,6 +448,21 @@ impl<'hir> Lowerer<'hir> {
     ) -> ThirExprId {
         let span = self.hir_expr(id).span;
         let Some((expected_fields, expected_tail)) = self.record_row(expected, span) else {
+            let resolved = self.resolve_alias_for_expr(expected);
+            let resolved = self.resolve(resolved);
+            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                // Expected type is an as-yet-unsolved inference variable (e.g. a
+                // generic function's instantiated parameter). A record literal is
+                // structurally principal — its fields are fully determined by the
+                // literal — so infer it and unify the result into the variable,
+                // mirroring `list_item_type`'s mint-and-unify for list literals.
+                // Refusing here would leak the raw `?N` metavariable into
+                // user-facing diagnostics instead of solving the variable.
+                let lowered = self.infer_record_expr(id, items, span);
+                let found = self.expr(lowered).ty;
+                self.type_matches(expected, found);
+                return lowered;
+            }
             let found = self.type_name(expected);
             self.diagnostics.push(ThirDiagnostic {
                 kind: ThirDiagnosticKind::ExpectedRecord { found },

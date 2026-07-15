@@ -575,7 +575,7 @@ fn multi_param_constraint_witness_emits_diagnostic() {
 /// T5-1: a named method call `eq 1 2` type-checks to Bool (positive, monomorphic).
 #[test]
 fn method_call_eq_int_typechecks_to_bool() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\neq 1 2";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; }\neq 1 2";
     let file = completed_file(src);
     assert!(
         matches!(final_type_kind(&file), TypeKind::Bool),
@@ -588,7 +588,7 @@ fn method_call_eq_int_typechecks_to_bool() {
 /// so `(eq 1 2, eq true false)` type-checks without mixing the two instances.
 #[test]
 fn method_call_polymorphic_independent_instantiation() {
-    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n(eq 1 2, eq true false)";
+    let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nEq @Int :: { eq = \\a b. true; }\nEq @Bool :: { eq = \\a b. true; }\n(eq 1 2, eq true false)";
     let file = completed_file(src);
     // The result is a 2-tuple; just check the file is complete.
     assert!(
@@ -617,7 +617,20 @@ fn method_call_arg_type_mismatch_emits_diagnostic() {
     );
 }
 
-/// T5-4: the lowered `ThirConstraintMethod.binding` is `Some(_)` for a named method.
+/// T5-6: a concrete named target with a witness in scope remains valid dispatch.
+#[test]
+fn method_call_show_with_witness_preserves_dispatch() {
+    let file = completed_file(
+        "Show :: <A> @A { show :: A -> Text; }\nShow @Text :: { show = \\s. s; }\nshow \"x\"",
+    );
+    assert!(
+        matches!(final_type_kind(&file), TypeKind::Text),
+        "show over Text should return Text, got {:?}",
+        final_type_kind(&file)
+    );
+}
+
+/// T5-7: the lowered `ThirConstraintMethod.binding` is `Some(_)` for a named method.
 #[test]
 fn thir_constraint_method_binding_is_some_for_named() {
     let src = "Eq :: <A> @A { eq :: A -> A -> Bool; }\n1";

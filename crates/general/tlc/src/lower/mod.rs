@@ -7,6 +7,7 @@ use zutai_thir::{RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind};
 
 use crate::ir::{
     TlcDecl, TlcDeclId, TlcExpr, TlcExprId, TlcModule, TlcType, TlcTypeId, TlcTypeVar,
+    UnresolvedDispatch,
 };
 
 mod decl;
@@ -100,6 +101,10 @@ struct Lowerer<'thir> {
     /// (operand type's `target_key` string). Collected into
     /// `TlcModule::dict_dispatch_keys` for runtime imported-witness dispatch.
     dict_dispatch_keys: FxHashMap<TlcExprId, String>,
+    /// Concrete constraint-method dispatches whose dict resolved to `Lit(Nothing)`
+    /// (no local/derivable witness, not an abstract dict param). Collected into
+    /// `TlcModule::unresolved_dispatches` for the semantic witness-coverage gate.
+    unresolved_dispatches: Vec<UnresolvedDispatch>,
     type_cache: FxHashMap<u32, TlcTypeId>,
     infer_to_tyvar: FxHashMap<u32, TlcTypeVar>,
     named_to_tyvar: FxHashMap<u32, TlcTypeVar>,
@@ -183,6 +188,7 @@ impl<'thir> Lowerer<'thir> {
             spans: FxHashMap::default(),
             dict_field_slots: FxHashMap::default(),
             dict_dispatch_keys: FxHashMap::default(),
+            unresolved_dispatches: Vec::new(),
             type_cache: FxHashMap::default(),
             infer_to_tyvar: FxHashMap::default(),
             named_to_tyvar: FxHashMap::default(),
@@ -249,6 +255,7 @@ impl<'thir> Lowerer<'thir> {
             spans: std::mem::take(&mut self.spans),
             extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
             diagnostics: std::mem::take(&mut self.diagnostics),
+            unresolved_dispatches: std::mem::take(&mut self.unresolved_dispatches),
         }
     }
 
