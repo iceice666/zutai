@@ -423,8 +423,8 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
         if input.starts_with("?.") {
             "?.".parse_next(input)?;
             ws(input)?;
-            let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
-            let span = node.span();
+            let (field, field_span) = spanned(parse_value_field_name).parse_next(input)?;
+            let span = node.span().merge(field_span);
             node = Expr::OptAccess {
                 receiver: Box::new(node),
                 field,
@@ -433,8 +433,8 @@ pub(super) fn parse_postfix_with_options(input: &mut &str, options: ExprOptions)
         } else if input.starts_with('.') && !input.starts_with("..") {
             '.'.parse_next(input)?;
             ws(input)?;
-            let (field, _) = spanned(parse_value_field_name).parse_next(input)?;
-            let span = node.span();
+            let (field, field_span) = spanned(parse_value_field_name).parse_next(input)?;
+            let span = node.span().merge(field_span);
             node = Expr::Access {
                 receiver: Box::new(node),
                 field,

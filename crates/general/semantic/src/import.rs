@@ -51,6 +51,7 @@ pub(crate) struct ImportContext<'a> {
     recorded_stdlib: BTreeMap<String, String>,
     packages: PackageGraph,
     recorded_packages: PortablePackageGraph,
+    recorded_source_paths: BTreeMap<PathBuf, PathBuf>,
     package_setup_reported: bool,
 }
 
@@ -68,6 +69,7 @@ impl ImportContext<'_> {
             recorded_stdlib: BTreeMap::new(),
             packages: PackageGraph::None,
             recorded_packages: PortablePackageGraph::default(),
+            recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
         }
     }
@@ -124,6 +126,7 @@ impl<'a> ImportContext<'a> {
             recorded_stdlib: BTreeMap::new(),
             packages,
             recorded_packages,
+            recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
         }
     }
@@ -165,6 +168,7 @@ impl<'a> ImportContext<'a> {
             recorded_stdlib: BTreeMap::new(),
             packages,
             recorded_packages,
+            recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
         })
     }
@@ -184,6 +188,7 @@ impl<'a> ImportContext<'a> {
             recorded_stdlib: BTreeMap::new(),
             packages,
             recorded_packages: PortablePackageGraph::default(),
+            recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
         }
     }
@@ -207,6 +212,10 @@ impl<'a> ImportContext<'a> {
 
     pub(crate) fn take_recorded_packages(&mut self) -> PortablePackageGraph {
         std::mem::take(&mut self.recorded_packages)
+    }
+
+    pub(crate) fn take_recorded_source_paths(&mut self) -> BTreeMap<PathBuf, PathBuf> {
+        std::mem::take(&mut self.recorded_source_paths)
     }
 
     pub(crate) fn stdlib(&self) -> &StdlibSources {
@@ -510,6 +519,13 @@ impl Resolver<'_> {
                         &loaded.key,
                         &loaded.contents,
                     );
+                    if let Some(path) = loaded.filesystem_path.as_ref() {
+                        let stable = ctx
+                            .packages
+                            .stable_source_key(path)
+                            .unwrap_or_else(|| loaded.key.clone());
+                        ctx.recorded_source_paths.insert(stable, path.clone());
+                    }
                     let rel = loaded.display.clone();
                     return self.resolve_zt(
                         source,
@@ -570,6 +586,9 @@ impl Resolver<'_> {
             }
             Err(LoadError::Read(err)) => return self.read_error(&rel, &err, span),
         };
+        if let Ok(path) = std::fs::canonicalize(&loaded.key) {
+            ctx.recorded_source_paths.insert(loaded.key.clone(), path);
+        }
 
         match kind {
             Kind::Zti => self.resolve_zti(source, &loaded.contents, &rel, span),

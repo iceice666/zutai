@@ -50,6 +50,7 @@ pub(crate) struct ResolvedPackageSource {
     pub key: PathBuf,
     pub contents: String,
     pub display: String,
+    pub filesystem_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,6 +143,15 @@ impl PackageGraph {
             Self::Memory(graph) => load_memory_relative(graph, base, rel),
             _ => None,
         }
+    }
+
+    pub(crate) fn stable_source_key(&self, path: &Path) -> Option<PathBuf> {
+        let Self::Filesystem(graph) = self else {
+            return None;
+        };
+        let package = graph.owner(path)?;
+        let relative = path.strip_prefix(&package.root).ok()?;
+        Some(synthetic_key(&package.name, &path_key(relative)))
     }
 
     pub(crate) fn record_source(
@@ -240,9 +250,10 @@ impl FilesystemPackageGraph {
             message: error.to_string(),
         })?;
         Ok(ResolvedPackageSource {
-            key: path,
+            key: path.clone(),
             contents,
             display: format!("{alias}.{module}"),
+            filesystem_path: Some(path),
         })
     }
 
@@ -733,6 +744,7 @@ fn resolve_memory(
         key: synthetic_key(target_name, path),
         contents,
         display: format!("{alias}.{module}"),
+        filesystem_path: None,
     })
 }
 
@@ -775,6 +787,7 @@ fn load_memory_relative(
             key: synthetic_key(owner, &key),
             contents,
             display: rel.to_owned(),
+            filesystem_path: None,
         })
     }))
 }

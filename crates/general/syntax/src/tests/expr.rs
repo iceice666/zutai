@@ -484,6 +484,17 @@ fn parse_field_access() {
 }
 
 #[test]
+fn field_access_span_reaches_selected_field() {
+    let source = "cfg.host";
+    let e = parse_expr_str(source);
+    assert_eq!(e.span(), crate::Span::new(0, source.len()));
+
+    let optional = "cfg?.port";
+    let e = parse_expr_str(optional);
+    assert_eq!(e.span(), crate::Span::new(0, optional.len()));
+}
+
+#[test]
 fn tight_minus_after_field_access_is_subtraction() {
     let e = parse_expr_str("cfg.target-triple");
     let (op, lhs, rhs) = as_binary(&e);

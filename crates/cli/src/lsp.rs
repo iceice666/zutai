@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
@@ -38,6 +38,25 @@ struct Server {
 struct Document {
     text: String,
     version: Option<i64>,
+}
+
+struct ProjectAnalysis {
+    analysis: zutai_semantic::Analysis,
+    root_path: PathBuf,
+    source_paths: std::collections::BTreeMap<PathBuf, PathBuf>,
+}
+
+impl ProjectAnalysis {
+    fn path_for(&self, analysis: &zutai_semantic::Analysis) -> Option<PathBuf> {
+        if std::ptr::eq(analysis, &self.analysis) {
+            return Some(self.root_path.clone());
+        }
+        let source = analysis.source_path.as_ref()?;
+        self.source_paths
+            .get(source)
+            .cloned()
+            .or_else(|| Some(source.clone()))
+    }
 }
 
 impl Server {
@@ -227,7 +246,9 @@ impl Server {
             let Some(analysis) = self.analyze_with_overlays(&root_uri, &root_source) else {
                 continue;
             };
-            for (uri, diagnostic) in self.routed_diagnostics(&root_uri, &root_source, &analysis) {
+            for (uri, diagnostic) in
+                self.routed_diagnostics(&root_uri, &root_source, &analysis.analysis)
+            {
                 routed.entry(uri).or_default().push(diagnostic);
             }
         }
@@ -253,16 +274,42 @@ impl Server {
         Ok(())
     }
 
-    fn analyze_with_overlays(
-        &self,
-        root_uri: &str,
-        root_source: &str,
-    ) -> Option<zutai_semantic::Analysis> {
+    fn analyze_with_overlays(&self, root_uri: &str, root_source: &str) -> Option<ProjectAnalysis> {
         let root_path = file_path(root_uri)?;
         let root_dir = root_path.parent()?;
         let Some(mut recorded) = zutai_semantic::analyze_path_recording(&root_path).ok() else {
-            return analyze(root_source, root_uri);
+            return analyze(root_source, root_uri).map(|analysis| ProjectAnalysis {
+                analysis,
+                root_path,
+                source_paths: std::collections::BTreeMap::new(),
+            });
         };
+        let package_setup: Vec<_> = recorded
+            .analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                matches!(
+                    diagnostic.kind,
+                    zutai_semantic::SemanticDiagnosticKind::Import(
+                        zutai_semantic::ImportDiagnostic {
+                            kind: zutai_semantic::ImportDiagnosticKind::PackageSetup { .. },
+                            ..
+                        }
+                    )
+                )
+            })
+            .cloned()
+            .collect();
+        if !package_setup.is_empty() {
+            let mut analysis = analyze(root_source, root_uri)?;
+            analysis.diagnostics.extend(package_setup);
+            return Some(ProjectAnalysis {
+                analysis,
+                root_path,
+                source_paths: std::collections::BTreeMap::new(),
+            });
+        }
         for (uri, document) in &self.documents {
             let Some(path) = file_path(uri) else {
                 continue;
@@ -277,6 +324,19 @@ impl Server {
                 .join("/");
             recorded.sources.insert(key, document.text.clone());
         }
+        for (analysis_path, filesystem_path) in &recorded.source_paths {
+            let uri = self.uri_for_path(filesystem_path);
+            let Some(document) = self.documents.get(&uri) else {
+                continue;
+            };
+            if let Some((package, path)) = portable_package_path(analysis_path)
+                && let Some(package) = recorded.packages.packages.get_mut(package)
+            {
+                package
+                    .sources
+                    .insert(path.to_owned(), document.text.clone());
+            }
+        }
         recorded
             .sources
             .insert(recorded.entry.clone(), root_source.to_string());
@@ -285,14 +345,19 @@ impl Server {
             recorded.stdlib_sources.clone(),
         )
         .ok()?;
-        zutai_semantic::analyze_sources_with_stdlib_and_packages(
+        let analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
             &recorded.entry,
             &recorded.sources,
             zutai_semantic::AnalysisOptions::default(),
             &stdlib,
             recorded.packages,
         )
-        .ok()
+        .ok()?;
+        Some(ProjectAnalysis {
+            analysis,
+            root_path,
+            source_paths: recorded.source_paths,
+        })
     }
 
     fn routed_diagnostics(
@@ -390,10 +455,15 @@ impl Server {
         else {
             return Value::Null;
         };
-        let Some(analysis) = analyze(&source, uri) else {
+        let Some(project) = self.analyze_with_overlays(uri, &source) else {
             return Value::Null;
         };
-        let Some(file) = analysis.thir.and_then(|lowered| lowered.file) else {
+        let Some(file) = project
+            .analysis
+            .thir
+            .as_ref()
+            .and_then(|lowered| lowered.file.as_ref())
+        else {
             return Value::Null;
         };
         let expr = file
@@ -405,7 +475,7 @@ impl Server {
         let Some(expr) = expr else {
             return Value::Null;
         };
-        let contents = format!("```zutai\n{}\n```", render_type(&file, expr.ty));
+        let contents = format!("```zutai\n{}\n```", render_type(file, expr.ty));
         json!({
             "contents": { "kind": "markdown", "value": contents },
             "range": range(&source, expr.span.start as usize, expr.span.end as usize),
@@ -413,10 +483,43 @@ impl Server {
     }
 
     fn definition(&self, params: &Value) -> Value {
-        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(source) = self.source_for(uri) else {
+            return Value::Null;
+        };
+        let Some(offset) = params
+            .get("position")
+            .and_then(|position| offset_at(&source, position))
+        else {
+            return Value::Null;
+        };
+        let Some(project) = self.analyze_with_overlays(uri, &source) else {
+            return Value::Null;
+        };
+
+        if let Some((module, path, member)) = self.imported_member_target(&source, offset, &project)
+        {
+            let target_uri = self.uri_for_path(&path);
+            let Some(target_source) = self.source_for(&target_uri) else {
+                return Value::Null;
+            };
+            let Some((start, end)) = exported_member_range(&target_source, module, &member) else {
+                return Value::Null;
+            };
+            return json!({
+                "uri": target_uri,
+                "range": range(&target_source, start, end),
+            });
+        }
+
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Null;
+        };
+        let Some(binding) =
+            binding_at(hir, offset).or_else(|| binding_declaration_at(&source, hir, offset))
+        else {
             return Value::Null;
         };
         let Some(binding) = hir.bindings.get(binding.0 as usize) else {
@@ -429,10 +532,10 @@ impl Server {
     }
 
     fn references(&self, params: &Value) -> Value {
-        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+        let Some((uri, source, project, binding)) = self.binding_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Null;
         };
         let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
@@ -460,10 +563,10 @@ impl Server {
         let Some(source) = self.source_for(uri) else {
             return Value::Null;
         };
-        let Some(analysis) = analyze(&source, uri) else {
+        let Some(project) = self.analyze_with_overlays(uri, &source) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Array(Vec::new());
         };
         Value::Array(
@@ -497,10 +600,10 @@ impl Server {
         else {
             return Value::Null;
         };
-        let Some(analysis) = analyze(&source, uri) else {
+        let Some(project) = self.analyze_with_overlays(uri, &source) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Array(Vec::new());
         };
         let (start, prefix) = completion_prefix(&source, offset);
@@ -537,10 +640,10 @@ impl Server {
     }
 
     fn prepare_rename(&self, params: &Value) -> Value {
-        let Some((_, source, analysis, binding)) = self.binding_at_position(params) else {
+        let Some((_, source, project, binding)) = self.binding_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Null;
         };
         let Some(binding) = hir.bindings.get(binding.0 as usize) else {
@@ -560,10 +663,10 @@ impl Server {
         if !valid_identifier(new_name) {
             return Value::Null;
         }
-        let Some((uri, source, analysis, binding)) = self.binding_at_position(params) else {
+        let Some((uri, source, project, binding)) = self.binding_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Null;
         };
         let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
@@ -580,9 +683,10 @@ impl Server {
     }
 
     fn signature_help(&self, params: &Value) -> Value {
-        let Some((_, source, analysis, binding)) = self.binding_at_position(params) else {
+        let Some((_, source, project, binding)) = self.binding_at_position(params) else {
             return Value::Null;
         };
+        let analysis = &project.analysis;
         let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
             return Value::Null;
         };
@@ -632,11 +736,12 @@ impl Server {
         let Some(source) = self.source_for(uri) else {
             return Value::Null;
         };
-        let Some(analysis) = analyze(&source, uri) else {
+        let Some(project) = self.analyze_with_overlays(uri, &source) else {
             return Value::Null;
         };
         Value::Array(
-            analysis
+            project
+                .analysis
                 .diagnostics
                 .iter()
                 .filter_map(|diagnostic| match &diagnostic.kind {
@@ -667,23 +772,32 @@ impl Server {
         )
     }
 
+    fn imported_member_target<'a>(
+        &self,
+        source: &str,
+        offset: usize,
+        project: &'a ProjectAnalysis,
+    ) -> Option<(&'a zutai_semantic::Analysis, PathBuf, String)> {
+        let hir = project.analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+        let (binding, member) = imported_member_at(source, hir, offset)?;
+        let import = import_source_for_binding(hir, binding)?;
+        let module = project.analysis.import_modules.get(&import)?;
+        let path = project.path_for(module)?;
+        Some((module.as_ref(), path, member))
+    }
+
     fn binding_at_position(
         &self,
         params: &Value,
-    ) -> Option<(
-        String,
-        String,
-        zutai_semantic::Analysis,
-        zutai_hir::BindingId,
-    )> {
+    ) -> Option<(String, String, ProjectAnalysis, zutai_hir::BindingId)> {
         let uri = params.pointer("/textDocument/uri")?.as_str()?.to_owned();
         let source = self.source_for(&uri)?;
         let offset = offset_at(&source, params.get("position")?)?;
-        let analysis = analyze(&source, &uri)?;
-        let hir = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+        let project = self.analyze_with_overlays(&uri, &source)?;
+        let hir = project.analysis.hir.as_ref().map(|lowered| &lowered.file)?;
         let binding =
             binding_at(hir, offset).or_else(|| binding_declaration_at(&source, hir, offset))?;
-        Some((uri, source, analysis, binding))
+        Some((uri, source, project, binding))
     }
 
     fn source_for(&self, uri: &str) -> Option<String> {
@@ -703,6 +817,16 @@ fn document_text(params: &Value) -> Option<(String, Document)> {
             version: document.get("version").and_then(Value::as_i64),
         },
     ))
+}
+
+fn portable_package_path(path: &std::path::Path) -> Option<(&str, &str)> {
+    let mut components = path.components();
+    (components.next()?.as_os_str() == "<package>").then_some(())?;
+    let package = components.next()?.as_os_str().to_str()?;
+    let source = path
+        .strip_prefix(Path::new("<package>").join(package))
+        .ok()?;
+    source.to_str().map(|source| (package, source))
 }
 
 fn analyze(source: &str, uri: &str) -> Option<zutai_semantic::Analysis> {
@@ -740,7 +864,7 @@ fn diagnostic_value(
             "message": parse.message,
         }),
         zutai_semantic::SemanticDiagnosticKind::Import(import) => json!({
-            "range": range(source, 0, 0),
+            "range": range(source, import.span.start as usize, import.span.end as usize),
             "severity": 1,
             "source": "zutai",
             "message": format_import_diagnostic(import),
@@ -855,6 +979,120 @@ fn binding_reference_ranges(
     ranges.sort_unstable();
     ranges.dedup();
     ranges
+}
+
+fn imported_member_at(
+    source: &str,
+    file: &zutai_hir::HirFile,
+    offset: usize,
+) -> Option<(zutai_hir::BindingId, String)> {
+    file.expr_arena
+        .iter()
+        .filter_map(|(_, expr)| {
+            let zutai_hir::HirExprKind::Access { receiver, field } = &expr.kind else {
+                return None;
+            };
+            let field_range = access_field_range(source, expr.span, field)?;
+            if !(field_range.0..=field_range.1).contains(&offset) {
+                return None;
+            }
+            let zutai_hir::HirExprKind::BindingRef(binding) = file.expr_arena[*receiver].kind
+            else {
+                return None;
+            };
+            Some((binding, field.clone(), field_range.1 - field_range.0))
+        })
+        .chain(file.type_arena.iter().filter_map(|(_, ty)| {
+            let zutai_hir::HirTypeKind::Access { receiver, field } = &ty.kind else {
+                return None;
+            };
+            let field_range = access_field_range(source, ty.span, field)?;
+            if !(field_range.0..=field_range.1).contains(&offset) {
+                return None;
+            }
+            let zutai_hir::HirTypeKind::BindingRef(binding) = file.type_arena[*receiver].kind
+            else {
+                return None;
+            };
+            Some((binding, field.clone(), field_range.1 - field_range.0))
+        }))
+        .min_by_key(|(_, _, length)| *length)
+        .map(|(binding, member, _)| (binding, member))
+}
+
+fn import_source_for_binding(
+    file: &zutai_hir::HirFile,
+    binding: zutai_hir::BindingId,
+) -> Option<zutai_hir::HirImportSource> {
+    file.decl_arena.iter().find_map(|(_, decl)| {
+        if decl.binding != binding {
+            return None;
+        }
+        let zutai_hir::HirDeclKind::Value { value, .. } = decl.kind else {
+            return None;
+        };
+        match &file.expr_arena[value].kind {
+            zutai_hir::HirExprKind::Import(source) => Some(source.clone()),
+            _ => None,
+        }
+    })
+}
+
+fn exported_member_range(
+    source: &str,
+    analysis: &zutai_semantic::Analysis,
+    member: &str,
+) -> Option<(usize, usize)> {
+    let file = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+    if let zutai_hir::HirExprKind::Record(items) = &file.expr_arena[file.final_expr].kind {
+        for item in items {
+            let zutai_hir::HirRecordItem::Field(field) = item else {
+                continue;
+            };
+            if field.name != member {
+                continue;
+            }
+            if let zutai_hir::HirExprKind::BindingRef(binding) = file.expr_arena[field.value].kind
+                && let Some(binding) = file.bindings.get(binding.0 as usize)
+                && let Some(range) = binding_range(source, binding)
+            {
+                return Some(range);
+            }
+            return name_range_in_span(source, field.span, member);
+        }
+    }
+    file.decl_arena.iter().find_map(|(_, decl)| {
+        let binding = file.bindings.get(decl.binding.0 as usize)?;
+        (binding.name == member)
+            .then(|| binding_range(source, binding))
+            .flatten()
+    })
+}
+
+fn access_field_range(
+    source: &str,
+    span: zutai_syntax::Span,
+    field: &str,
+) -> Option<(usize, usize)> {
+    let start = span.start as usize;
+    let end = span.end as usize;
+    let slice = source.get(start..end)?;
+    let needle = format!(".{field}");
+    let relative = slice.rfind(&needle)?;
+    let field_start = start + relative + 1;
+    Some((field_start, field_start + field.len()))
+}
+
+fn name_range_in_span(
+    source: &str,
+    span: zutai_syntax::Span,
+    name: &str,
+) -> Option<(usize, usize)> {
+    let start = span.start as usize;
+    let end = span.end as usize;
+    let relative = source.get(start..end)?.find(name)?;
+    let name_start = start + relative;
+    Some((name_start, name_start + name.len()))
 }
 
 const KEYWORDS: &[&str] = &[
@@ -1649,6 +1887,226 @@ mod tests {
         let cleared = String::from_utf8_lossy(&output);
         assert!(cleared.contains(&a_uri), "{cleared}");
         assert!(cleared.contains("\"diagnostics\":[]"), "{cleared}");
+    }
+
+    fn package_manifest(name: &str, modules: &str, dependencies: &str) -> String {
+        let modules = if modules.is_empty() {
+            "[]".to_owned()
+        } else {
+            format!("[{modules};]")
+        };
+        let dependencies = if dependencies.is_empty() {
+            "[]".to_owned()
+        } else {
+            format!("[{dependencies};]")
+        };
+        format!(
+            "{{ formatVersion = 1; name = \"{name}\"; compilerCompatibility = \"{}\"; modules = {modules}; dependencies = {dependencies}; }}",
+            env!("CARGO_PKG_VERSION")
+        )
+    }
+
+    #[test]
+    fn package_graph_navigation_overlays_and_diagnostics_match_cli_analysis() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("zutai-lsp-package-{}-{nonce}", std::process::id()));
+        let app = root.join("app");
+        let dep = root.join("dep");
+        std::fs::create_dir_all(app.join("src")).unwrap();
+        std::fs::create_dir_all(dep.join("src")).unwrap();
+        std::fs::write(
+            app.join("zutai.zti"),
+            package_manifest("app", "", "{ alias = \"dep\"; path = \"../dep\"; }"),
+        )
+        .unwrap();
+        std::fs::write(
+            dep.join("zutai.zti"),
+            package_manifest("dep", "{ name = \"api\"; path = \"src/api.zt\"; }", ""),
+        )
+        .unwrap();
+
+        let app_path = app.join("src/main.zt");
+        let dep_path = dep.join("src/api.zt");
+        let app_source = "api ::= import dep.api;\nvalue :: api.Count = api.answer;\nvalue\n";
+        let dep_source = "Count :: type Int;\nanswer :: Count = 42;\n{ answer = answer; }\n";
+        std::fs::write(&app_path, app_source).unwrap();
+        std::fs::write(&dep_path, dep_source).unwrap();
+        let app_uri = file_uri(&app_path);
+        let dep_uri = file_uri(&dep_path);
+
+        let mut server = Server::default();
+        server.documents.insert(
+            app_uri.clone(),
+            Document {
+                text: app_source.to_owned(),
+                version: Some(1),
+            },
+        );
+        server.documents.insert(
+            dep_uri.clone(),
+            Document {
+                text: dep_source.to_owned(),
+                version: Some(1),
+            },
+        );
+
+        let value = server.definition(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 1, "character": 27 }
+        }));
+        assert_eq!(
+            value.get("uri").and_then(Value::as_str),
+            Some(dep_uri.as_str())
+        );
+        assert_eq!(
+            value.pointer("/range/start").cloned(),
+            Some(json!({ "line": 1, "character": 0 }))
+        );
+
+        let ty = server.definition(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 1, "character": 14 }
+        }));
+        assert_eq!(
+            ty.get("uri").and_then(Value::as_str),
+            Some(dep_uri.as_str())
+        );
+        assert_eq!(
+            ty.pointer("/range/start").cloned(),
+            Some(json!({ "line": 0, "character": 0 }))
+        );
+
+        server.documents.get_mut(&dep_uri).unwrap().text =
+            "Count :: type Bool;\nanswer :: Count = true;\n{ answer = answer; }\n".to_owned();
+        let hover = server.hover(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 1, "character": 27 }
+        }));
+        assert_eq!(
+            hover.pointer("/contents/value").and_then(Value::as_str),
+            Some("```zutai\nBool\n```")
+        );
+
+        let bad_source = "api ::= import missing.api;\napi\n";
+        std::fs::write(&app_path, bad_source).unwrap();
+        server.documents.get_mut(&app_uri).unwrap().text = bad_source.to_owned();
+        let cli = zutai_semantic::analyze_path(&app_path).unwrap();
+        let cli_import = cli
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                zutai_semantic::SemanticDiagnosticKind::Import(import) => Some(import),
+                _ => None,
+            })
+            .expect("CLI analysis should report the unresolved dependency");
+        let project = server.analyze_with_overlays(&app_uri, bad_source).unwrap();
+        let lsp_import = project
+            .analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                zutai_semantic::SemanticDiagnosticKind::Import(import) => Some(import),
+                _ => None,
+            })
+            .expect("LSP analysis should report the unresolved dependency");
+        assert_eq!(lsp_import, cli_import);
+        let diagnostic = diagnostic_value(
+            bad_source,
+            &app_uri,
+            project
+                .analysis
+                .diagnostics
+                .iter()
+                .find(|diagnostic| {
+                    matches!(
+                        diagnostic.kind,
+                        zutai_semantic::SemanticDiagnosticKind::Import(_)
+                    )
+                })
+                .unwrap(),
+        );
+        assert_eq!(
+            diagnostic.pointer("/range/start").cloned(),
+            Some(position_at(bad_source, cli_import.span.start as usize))
+        );
+        assert_eq!(
+            diagnostic.pointer("/range/end").cloned(),
+            Some(position_at(bad_source, cli_import.span.end as usize))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_package_manifest_diagnostic_survives_overlay_analysis() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-lsp-package-setup-{}-{nonce}",
+            std::process::id()
+        ));
+        let entry = root.join("src/main.zt");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(
+            root.join("zutai.zti"),
+            "{ formatVersion = \"bad\"; name = \"app\"; modules = []; dependencies = []; }\n",
+        )
+        .unwrap();
+        let source = "1\n";
+        std::fs::write(&entry, source).unwrap();
+
+        let cli = zutai_semantic::analyze_path(&entry).unwrap();
+        let cli_setup = cli
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                zutai_semantic::SemanticDiagnosticKind::Import(import)
+                    if matches!(
+                        import.kind,
+                        zutai_semantic::ImportDiagnosticKind::PackageSetup { .. }
+                    ) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("CLI analysis should report the malformed package manifest");
+
+        let uri = file_uri(&entry);
+        let mut server = Server::default();
+        server.documents.insert(
+            uri.clone(),
+            Document {
+                text: source.to_owned(),
+                version: Some(1),
+            },
+        );
+        let project = server.analyze_with_overlays(&uri, source).unwrap();
+        let lsp_setup = project
+            .analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                zutai_semantic::SemanticDiagnosticKind::Import(import)
+                    if matches!(
+                        import.kind,
+                        zutai_semantic::ImportDiagnosticKind::PackageSetup { .. }
+                    ) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("LSP analysis should preserve the malformed package manifest diagnostic");
+        assert_eq!(lsp_setup, cli_setup);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

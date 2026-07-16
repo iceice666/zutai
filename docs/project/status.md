@@ -52,7 +52,18 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-14 (typed macro kernel: completed the six-bullet
+_Last updated: 2026-07-16 (package-aware LSP: editor analysis now records and
+replays the same local `zutai.zti` package graph as CLI analysis, maps stable
+package source identities back to filesystem URIs, consumes unsaved overlays
+from dependency packages, and navigates imported value and type-valued members
+across package boundaries. Import ranges now cover selected fields exactly, so
+unresolved dependency diagnostics and definition targets use CLI-equivalent
+locations. Malformed package-setup diagnostics survive overlay fallback, and a
+two-package fixture proves navigation, type hover from an unsaved dependency
+overlay, and unresolved-dependency diagnostic parity. The no-argument CLI path
+also emits a normal clap usage error when `ZUTAI_STDLIB_ROOT` is configured
+instead of panicking);
+prior baseline updates: 2026-07-14 (typed macro kernel: completed the six-bullet
 macro-kernel milestone — pattern-driven pure recipe evaluation with
 source-located fuel exhaustion; typed rank-2 reflection descriptors and a
 compile-time record builder in `stdlib.reflect`; `FromData` routed through the
@@ -257,8 +268,11 @@ and Result/Validation convenience helpers as pure source exports; see
 "Stdlib helper slice" below.
 The 2026-07-12 editor tooling pass adds `zutai-cli lsp`: a stdio LSP service
 with incremental diagnostics, THIR-derived hover/signature types, and
-HIR-derived navigation, rename, symbols, completion, and parser quick fixes; see "Language Server
-Protocol editor baseline" below.
+HIR-derived navigation, rename, symbols, completion, and parser quick fixes.
+The 2026-07-16 package-aware pass routes filesystem and overlay analysis through
+the same recorded local-package graph as CLI analysis, including imported value
+and type-valued member navigation across package boundaries; see "Language
+Server Protocol editor baseline" and "Package-aware LSP analysis" below.
 The 2026-07-13 diagnostic-provenance pass keeps the immediate runtime AST
 source-free while adding an opt-in located `.zti` parse tree. Static type
 mismatches discovered when a `.zt` typed boundary consumes imported `.zti`

@@ -54,6 +54,16 @@ fn parse_type_optional_postfix() {
 }
 
 #[test]
+fn type_access_span_reaches_selected_field() {
+    let source = "type module.Config";
+    let e = parse_expr_str(source);
+    let Expr::TypeForm { ty, .. } = e else {
+        panic!("expected TypeForm");
+    };
+    assert_eq!(ty.span(), crate::Span::new(5, source.len()));
+}
+
+#[test]
 fn question_mark_value_suffix_does_not_steal_optional_type() {
     let e = parse_expr_str("type Int?");
     match &e {

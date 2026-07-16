@@ -119,8 +119,8 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
         if input.starts_with("?.") {
             "?.".parse_next(input)?;
             ws(input)?;
-            let field = parse_field_name(input)?;
-            let span = node.span().merge(Span::new(0, 0)); // approximate
+            let (field, field_span) = spanned(parse_field_name).parse_next(input)?;
+            let span = node.span().merge(field_span);
             node = TypeExpr::Access {
                 receiver: Box::new(node),
                 field,
@@ -129,8 +129,8 @@ fn parse_type_postfix(input: &mut &str) -> Result<TypeExpr> {
         } else if input.starts_with('.') && !input.starts_with("..") {
             '.'.parse_next(input)?;
             ws(input)?;
-            let field = parse_field_name(input)?;
-            let span = node.span();
+            let (field, field_span) = spanned(parse_field_name).parse_next(input)?;
+            let span = node.span().merge(field_span);
             node = TypeExpr::Access {
                 receiver: Box::new(node),
                 field,

@@ -26,28 +26,20 @@ packages before adding any new surface area.
 
 Milestones:
 
-1. **Package graph in the LSP.** `zutai-cli lsp` should resolve the same
-   `zutai.zti` package graph as the CLI analysis path, not only same-document
-   or ad-hoc file URIs. Go-to-definition, hover, references, rename, document
-   symbols, completion, signature help, and quick fixes must preserve current
-   error-tolerant THIR behavior when one imported module fails. Acceptance: an
-   editor fixture with two local packages proves imported values, imported
-   type-valued members, and unresolved dependency diagnostics all point at the
-   same source locations as CLI analysis.
-2. **Import provenance everywhere diagnostics cross a file boundary.** Package,
+1. **Import provenance everywhere diagnostics cross a file boundary.** Package,
    module, witness, derive, and backend refusal diagnostics should carry both
    request and definition/import-chain locations when available. Acceptance:
    focused CLI/LSP tests cover unknown aliases, duplicate dependency aliases,
    package cycles, non-matchable witness exports, malformed derive recipes, and
    native-gated imports without losing the original use site.
-3. **Deterministic package-analysis cache.** Reuse parsed and lowered package
+2. **Deterministic package-analysis cache.** Reuse parsed and lowered package
    modules across CLI, LSP, web-bundle construction, and tests without changing
    language semantics. Cache invalidation must be keyed by source content,
    manifest content, stdlib identity, and compiler compatibility, not by ambient
    process state. Acceptance: repeated analysis of a package graph avoids
    duplicate work while still invalidating exactly the changed module and its
    dependents.
-4. **Locked Git package acquisition.** Implement the accepted
+3. **Locked Git package acquisition.** Implement the accepted
    [locked-source package decision](decisions.md#package-distribution-locked-git-source-snapshots):
    manifest format 2 source variants, root-scoped `zutai.lock.zti`, node-ID
    package graphs, immutable content-addressed snapshots, and explicit native

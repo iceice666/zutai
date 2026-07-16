@@ -16,7 +16,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub use stdlib::{
@@ -41,6 +41,10 @@ pub struct Analysis {
     pub hir: Option<zutai_hir::LoweredHir>,
     pub thir: Option<zutai_thir::LoweredThir>,
     pub diagnostics: Vec<SemanticDiagnostic>,
+    /// Canonical or synthetic identity of this analyzed source. Filesystem analyses
+    /// use canonical paths; portable package and stdlib analyses use stable
+    /// `<package>/...` and `<stdlib>/...` identities.
+    pub source_path: Option<PathBuf>,
     pub pass_reports: Vec<SemanticPassReport>,
     /// Parsed `.zti` import values, keyed by import source, for the evaluator.
     pub import_values: FxHashMap<zutai_thir::ImportKey, zutai_im::Value>,
@@ -59,6 +63,9 @@ pub struct Analysis {
 #[derive(Debug)]
 pub struct RecordedAnalysis {
     pub entry: String,
+    /// Maps stable analysis identities to filesystem source paths for editor
+    /// navigation after replaying a recorded package graph.
+    pub source_paths: BTreeMap<PathBuf, PathBuf>,
     pub sources: BTreeMap<String, String>,
     pub stdlib_compiler_compatibility: String,
     pub stdlib_sources: BTreeMap<String, String>,
@@ -698,6 +705,7 @@ fn stdlib_error_analysis(error: StdlibError) -> Analysis {
         ast: None,
         hir: None,
         thir: None,
+        source_path: None,
         diagnostics: vec![SemanticDiagnostic {
             stage: SemanticStage::Import,
             kind: SemanticDiagnosticKind::Import(ImportDiagnostic {
@@ -737,6 +745,7 @@ fn recorded_analysis(
         stdlib_compiler_compatibility: compatibility,
         stdlib_sources,
         packages: ctx.take_recorded_packages(),
+        source_paths: ctx.take_recorded_source_paths(),
         analysis,
     }
 }
@@ -766,6 +775,7 @@ pub(crate) fn analyze_inner(
             ast: parsed.into_ast(),
             hir: None,
             thir: None,
+            source_path: current.map(Path::to_path_buf),
             diagnostics: parse_diagnostics,
             pass_reports: Vec::new(),
             import_values: FxHashMap::default(),
@@ -780,6 +790,7 @@ pub(crate) fn analyze_inner(
             ast: None,
             hir: None,
             thir: None,
+            source_path: current.map(Path::to_path_buf),
             diagnostics: parse_diagnostics,
             pass_reports: Vec::new(),
             import_values: FxHashMap::default(),
@@ -938,6 +949,7 @@ pub(crate) fn analyze_inner(
         ast: Some(ast),
         hir: Some(hir),
         thir,
+        source_path: current.map(Path::to_path_buf),
         diagnostics,
         pass_reports,
         import_values,

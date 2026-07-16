@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum, error::ErrorKind};
 
 mod commands;
 mod diagnostics;
@@ -23,10 +23,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Web { command }) => command.run()?,
         Some(Commands::Repl) => commands::run_repl()?,
         Some(Commands::Lsp) => lsp::run()?,
-        None => {
-            let path = cli.path.expect("clap requires a subcommand or path");
-            commands::run_bare_path(&path)?;
-        }
+        None => match cli.path {
+            Some(path) => commands::run_bare_path(&path)?,
+            None => Cli::command()
+                .error(
+                    ErrorKind::MissingRequiredArgument,
+                    "a subcommand or path is required",
+                )
+                .exit(),
+        },
     }
     Ok(())
 }
