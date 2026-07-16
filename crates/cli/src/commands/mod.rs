@@ -27,11 +27,13 @@ fn analyze_with_cli_diagnostics(
     path: &str,
     contents: &str,
     base: Option<&Path>,
+    cache: &zutai_semantic::AnalysisCache,
 ) -> zutai_semantic::Analysis {
-    let analysis = zutai_semantic::analyze_with_base(
+    let analysis = zutai_semantic::analyze_with_base_and_cache(
         contents,
         base,
         zutai_semantic::AnalysisOptions::default(),
+        cache,
     );
     let parse_errors: Vec<_> = analysis
         .diagnostics
@@ -330,7 +332,12 @@ fn exit_for_eval_failure(
         EvalOutcome::Ok(_) => unreachable!("exit_for_eval_failure called with EvalOutcome::Ok"),
         EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
             // Prefer check-style source diagnostics for parse/import/HIR errors.
-            analyze_with_cli_diagnostics(path, contents, base);
+            analyze_with_cli_diagnostics(
+                path,
+                contents,
+                base,
+                &zutai_semantic::AnalysisCache::default(),
+            );
             for msg in msgs {
                 eprintln!("error: {msg}");
             }
@@ -483,7 +490,8 @@ fn zti_value_to_json(value: &zutai_im::Value) -> serde_json::Value {
 pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
-    let analysis = analyze_with_cli_diagnostics(path, &contents, base);
+    let cache = zutai_semantic::AnalysisCache::default();
+    let analysis = analyze_with_cli_diagnostics(path, &contents, base, &cache);
 
     if !analysis.is_thir_complete() {
         eprintln!("check incomplete: THIR has errors");
@@ -661,7 +669,8 @@ pub(crate) fn run_compile(
 ) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
-    let analysis = analyze_with_cli_diagnostics(path, &contents, base);
+    let cache = zutai_semantic::AnalysisCache::default();
+    let analysis = analyze_with_cli_diagnostics(path, &contents, base, &cache);
     if !analysis.is_thir_complete() {
         eprintln!("compile error: THIR incomplete");
         std::process::exit(1);

@@ -172,7 +172,8 @@ struct BuiltSite {
 }
 
 pub fn run_web_build(options: WebBuildOptions) -> Result<(), Box<dyn Error>> {
-    let built = build_site(&options)?;
+    let cache = zutai_semantic::AnalysisCache::default();
+    let built = build_site(&options, &cache)?;
     println!(
         "Zutai web build complete: {} (kernel {})",
         built.out_dir.display(),
@@ -181,7 +182,10 @@ pub fn run_web_build(options: WebBuildOptions) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
+fn build_site(
+    options: &WebBuildOptions,
+    cache: &zutai_semantic::AnalysisCache,
+) -> Result<BuiltSite, Box<dyn Error>> {
     let entry = absolute_existing_file(&options.entry)?;
     let entry_parent = entry
         .parent()
@@ -207,7 +211,8 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
     let out_dir = absolute_path(&options.out_dir);
     guard_output_directory(&out_dir, &source_root)?;
 
-    let recorded = zutai_semantic::analyze_path_recording_with_root(&entry, &source_root)?;
+    let recorded =
+        zutai_semantic::analyze_path_recording_with_root_and_cache(&entry, &source_root, cache)?;
     let session = TlcSession::from_analysis(&recorded.analysis)?;
     let program = decode_program(&session, session.entry()?)?;
     let effects = BuildEffects::default();
@@ -227,12 +232,13 @@ fn build_site(options: &WebBuildOptions) -> Result<BuiltSite, Box<dyn Error>> {
         bundle.stdlib_compiler_compatibility.clone(),
         bundle.stdlib_sources.clone(),
     )?;
-    let bundled_analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
+    let bundled_analysis = zutai_semantic::analyze_sources_with_stdlib_packages_and_cache(
         &bundle.entry,
         &bundle.sources,
         zutai_semantic::AnalysisOptions::default(),
         &bundled_stdlib,
         bundle.packages.clone(),
+        Some(cache),
     )?;
     let bundled_session = TlcSession::from_analysis(&bundled_analysis)?;
     let _: BrowserProgram = decode_program(&bundled_session, bundled_session.entry()?)?;
@@ -497,6 +503,7 @@ pub fn run_web_serve(
     addr: &str,
     no_build: bool,
 ) -> Result<(), Box<dyn Error>> {
+    let cache = zutai_semantic::AnalysisCache::default();
     let built = if no_build {
         let out_dir = absolute_path(&options.out_dir);
         if !out_dir.join("index.html").is_file() {
@@ -511,7 +518,7 @@ pub fn run_web_serve(
             hash: "existing".into(),
         }
     } else {
-        build_site(&options)?
+        build_site(&options, &cache)?
     };
     let status = Arc::new(Mutex::new(DevStatus {
         revision: 1,
@@ -531,6 +538,7 @@ pub fn run_web_serve(
 
 fn spawn_watcher(options: WebBuildOptions, out_dir: PathBuf, status: Arc<Mutex<DevStatus>>) {
     thread::spawn(move || {
+        let cache = zutai_semantic::AnalysisCache::default();
         let (send, receive) = mpsc::channel();
         let mut watcher = match notify::recommended_watcher(move |result| {
             let _ = send.send(result);
@@ -571,7 +579,7 @@ fn spawn_watcher(options: WebBuildOptions, out_dir: PathBuf, status: Arc<Mutex<D
                     if !worth_rebuilding {
                         continue;
                     }
-                    match build_site(&options) {
+                    match build_site(&options, &cache) {
                         Ok(_) => {
                             let mut status = status.lock().unwrap();
                             status.revision = status.revision.wrapping_add(1);

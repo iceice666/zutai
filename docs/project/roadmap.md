@@ -26,13 +26,6 @@ packages before adding any new surface area.
 
 Milestones:
 
-2. **Deterministic package-analysis cache.** Reuse parsed and lowered package
-   modules across CLI, LSP, web-bundle construction, and tests without changing
-   language semantics. Cache invalidation must be keyed by source content,
-   manifest content, stdlib identity, and compiler compatibility, not by ambient
-   process state. Acceptance: repeated analysis of a package graph avoids
-   duplicate work while still invalidating exactly the changed module and its
-   dependents.
 3. **Locked Git package acquisition.** Implement the accepted
    [locked-source package decision](decisions.md#package-distribution-locked-git-source-snapshots):
    manifest format 2 source variants, root-scoped `zutai.lock.zti`, node-ID

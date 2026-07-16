@@ -28,9 +28,12 @@ pub fn configure_stdlib_root(root: impl Into<std::path::PathBuf>) -> Result<(), 
     stdlib::set_process_root(root.into())
 }
 
+mod cache;
 mod import;
 mod package;
 mod stdlib;
+
+pub use cache::{AnalysisCache, AnalysisCacheStats};
 
 pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 pub use package::{PortablePackage, PortablePackageGraph};
@@ -565,14 +568,28 @@ pub fn analyze_path(path: &Path) -> std::io::Result<Analysis> {
 }
 
 pub fn analyze_path_with_stdlib(path: &Path, stdlib: &StdlibSources) -> std::io::Result<Analysis> {
+    analyze_path_with_stdlib_and_cache(path, stdlib, None)
+}
+
+pub fn analyze_path_with_cache(path: &Path, cache: &AnalysisCache) -> std::io::Result<Analysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_with_stdlib_and_cache(path, &stdlib, Some(cache))
+}
+
+fn analyze_path_with_stdlib_and_cache(
+    path: &Path,
+    stdlib: &StdlibSources,
+    cache: Option<&AnalysisCache>,
+) -> std::io::Result<Analysis> {
+    let options = AnalysisOptions::default();
     let input = std::fs::read_to_string(path)?;
-    let mut ctx = import::ImportContext::with_root(path, Rc::new(stdlib.clone()));
+    let mut ctx = import::ImportContext::with_root(path, Rc::new(stdlib.clone()), cache, options);
     let current = std::fs::canonicalize(path).ok();
     Ok(analyze_inner(
         &input,
         path.parent(),
         current.as_deref(),
-        AnalysisOptions::default(),
+        options,
         &mut ctx,
     ))
 }
@@ -592,6 +609,23 @@ pub fn analyze_path_recording_with_stdlib(
     path: &Path,
     stdlib: &StdlibSources,
 ) -> std::io::Result<RecordedAnalysis> {
+    analyze_path_recording_with_stdlib_and_cache(path, stdlib, None)
+}
+
+pub fn analyze_path_recording_with_cache(
+    path: &Path,
+    cache: &AnalysisCache,
+) -> std::io::Result<RecordedAnalysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_recording_with_stdlib_and_cache(path, &stdlib, Some(cache))
+}
+
+fn analyze_path_recording_with_stdlib_and_cache(
+    path: &Path,
+    stdlib: &StdlibSources,
+    cache: Option<&AnalysisCache>,
+) -> std::io::Result<RecordedAnalysis> {
+    let options = AnalysisOptions::default();
     let input = std::fs::read_to_string(path)?;
     let entry = path
         .file_name()
@@ -603,16 +637,11 @@ pub fn analyze_path_recording_with_stdlib(
             )
         })?
         .to_string();
-    let mut ctx = import::ImportContext::with_recording_root(path, Rc::new(stdlib.clone()));
+    let mut ctx =
+        import::ImportContext::with_recording_root(path, Rc::new(stdlib.clone()), cache, options);
     ctx.record_root_source(&entry, &input);
     let current = std::fs::canonicalize(path).ok();
-    let analysis = analyze_inner(
-        &input,
-        path.parent(),
-        current.as_deref(),
-        AnalysisOptions::default(),
-        &mut ctx,
-    );
+    let analysis = analyze_inner(&input, path.parent(), current.as_deref(), options, &mut ctx);
     Ok(recorded_analysis(entry, analysis, &mut ctx))
 }
 
@@ -630,11 +659,30 @@ pub fn analyze_path_recording_with_root(
     analyze_path_recording_with_root_and_stdlib(path, source_root, &stdlib)
 }
 
+pub fn analyze_path_recording_with_root_and_cache(
+    path: &Path,
+    source_root: &Path,
+    cache: &AnalysisCache,
+) -> std::io::Result<RecordedAnalysis> {
+    let stdlib = configured_stdlib_io(None)?;
+    analyze_path_recording_with_root_and_stdlib_and_cache(path, source_root, &stdlib, Some(cache))
+}
+
 pub fn analyze_path_recording_with_root_and_stdlib(
     path: &Path,
     source_root: &Path,
     stdlib: &StdlibSources,
 ) -> std::io::Result<RecordedAnalysis> {
+    analyze_path_recording_with_root_and_stdlib_and_cache(path, source_root, stdlib, None)
+}
+
+fn analyze_path_recording_with_root_and_stdlib_and_cache(
+    path: &Path,
+    source_root: &Path,
+    stdlib: &StdlibSources,
+    cache: Option<&AnalysisCache>,
+) -> std::io::Result<RecordedAnalysis> {
+    let options = AnalysisOptions::default();
     let input = std::fs::read_to_string(path)?;
     let canonical = std::fs::canonicalize(path)?;
     let canonical_root = std::fs::canonicalize(if source_root.as_os_str().is_empty() {
@@ -657,15 +705,11 @@ pub fn analyze_path_recording_with_root_and_stdlib(
         path,
         source_root,
         Rc::new(stdlib.clone()),
+        cache,
+        options,
     )?;
     ctx.record_root_source(&entry, &input);
-    let analysis = analyze_inner(
-        &input,
-        path.parent(),
-        Some(&canonical),
-        AnalysisOptions::default(),
-        &mut ctx,
-    );
+    let analysis = analyze_inner(&input, path.parent(), Some(&canonical), options, &mut ctx);
     Ok(recorded_analysis(entry, analysis, &mut ctx))
 }
 
@@ -709,6 +753,17 @@ pub fn analyze_sources_with_stdlib_and_packages(
     stdlib: &StdlibSources,
     packages: PortablePackageGraph,
 ) -> Result<Analysis, SourceMapError> {
+    analyze_sources_with_stdlib_packages_and_cache(entry, sources, options, stdlib, packages, None)
+}
+
+pub fn analyze_sources_with_stdlib_packages_and_cache(
+    entry: &str,
+    sources: &BTreeMap<String, String>,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
+    packages: PortablePackageGraph,
+    cache: Option<&AnalysisCache>,
+) -> Result<Analysis, SourceMapError> {
     validate_source_path(entry)?;
     for path in sources.keys() {
         validate_source_path(path)?;
@@ -720,8 +775,14 @@ pub fn analyze_sources_with_stdlib_and_packages(
         })?;
     let entry_path = Path::new(entry);
     let base = entry_path.parent().unwrap_or_else(|| Path::new(""));
-    let mut ctx =
-        import::ImportContext::with_memory(sources, entry_path, Rc::new(stdlib.clone()), packages);
+    let mut ctx = import::ImportContext::with_memory(
+        sources,
+        entry_path,
+        Rc::new(stdlib.clone()),
+        packages,
+        cache,
+        options,
+    );
     Ok(analyze_inner(
         input,
         Some(base),
@@ -779,7 +840,31 @@ pub fn analyze_with_base_and_stdlib(
     options: AnalysisOptions,
     stdlib: &StdlibSources,
 ) -> Analysis {
-    let mut ctx = import::ImportContext::with_base(base, Rc::new(stdlib.clone()));
+    analyze_with_base_stdlib_and_cache(input, base, options, stdlib, None)
+}
+
+pub fn analyze_with_base_and_cache(
+    input: &str,
+    base: Option<&Path>,
+    options: AnalysisOptions,
+    cache: &AnalysisCache,
+) -> Analysis {
+    match StdlibSources::load_configured(None) {
+        Ok(stdlib) => {
+            analyze_with_base_stdlib_and_cache(input, base, options, &stdlib, Some(cache))
+        }
+        Err(error) => stdlib_error_analysis(error),
+    }
+}
+
+fn analyze_with_base_stdlib_and_cache(
+    input: &str,
+    base: Option<&Path>,
+    options: AnalysisOptions,
+    stdlib: &StdlibSources,
+    cache: Option<&AnalysisCache>,
+) -> Analysis {
+    let mut ctx = import::ImportContext::with_base(base, Rc::new(stdlib.clone()), cache, options);
     analyze_inner(input, base, None, options, &mut ctx)
 }
 
@@ -1902,6 +1987,188 @@ mod tests {
             recorded.analysis.diagnostics
         );
 
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn analysis_cache_reuses_unchanged_import_graph() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-cache-reuse-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(&entry, "mid ::= import \"mid.zt\";\nmid\n").unwrap();
+        std::fs::write(root.join("mid.zt"), "leaf ::= import \"leaf.zt\";\nleaf\n").unwrap();
+        std::fs::write(root.join("leaf.zt"), "42\n").unwrap();
+
+        let cache = AnalysisCache::default();
+        let first = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(first.is_thir_complete(), "{:?}", first.diagnostics);
+        assert_eq!(
+            cache.stats(),
+            AnalysisCacheStats {
+                module_hits: 0,
+                module_misses: 2,
+            }
+        );
+
+        let second = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(second.is_thir_complete(), "{:?}", second.diagnostics);
+        assert_eq!(
+            cache.stats(),
+            AnalysisCacheStats {
+                module_hits: 1,
+                module_misses: 2,
+            }
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn analysis_cache_invalidates_changed_module_and_dependents_only() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-cache-invalidation-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(
+            &entry,
+            "left ::= import \"left.zt\";\nright ::= import \"right.zt\";\nleft + right\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("left.zt"), "leaf ::= import \"leaf.zt\";\nleaf\n").unwrap();
+        std::fs::write(root.join("right.zt"), "2\n").unwrap();
+        std::fs::write(root.join("leaf.zt"), "1\n").unwrap();
+
+        let cache = AnalysisCache::default();
+        let first = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(first.is_thir_complete(), "{:?}", first.diagnostics);
+        assert_eq!(cache.stats().module_misses, 3);
+
+        std::fs::write(root.join("leaf.zt"), "3\n").unwrap();
+        let second = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(second.is_thir_complete(), "{:?}", second.diagnostics);
+        assert_eq!(
+            cache.stats(),
+            AnalysisCacheStats {
+                module_hits: 1,
+                module_misses: 5,
+            },
+            "the independent right module should hit while leaf and left miss"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn analysis_cache_invalidates_data_import_dependents() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-cache-data-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(&entry, "m ::= import \"module.zt\";\nm.port\n").unwrap();
+        std::fs::write(
+            root.join("module.zt"),
+            "cfg ::= import \"config.zti\";\ncfg\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("config.zti"), "{ port = 1; }\n").unwrap();
+
+        let cache = AnalysisCache::default();
+        let first = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(first.is_thir_complete(), "{:?}", first.diagnostics);
+        std::fs::write(root.join("config.zti"), "{ port = 2; }\n").unwrap();
+        let second = analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(second.is_thir_complete(), "{:?}", second.diagnostics);
+        assert_eq!(
+            cache.stats(),
+            AnalysisCacheStats {
+                module_hits: 0,
+                module_misses: 2,
+            }
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn analysis_cache_hits_preserve_recorded_source_graph() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-cache-recording-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(&entry, "mid ::= import \"mid.zt\";\nmid\n").unwrap();
+        std::fs::write(
+            root.join("mid.zt"),
+            "cfg ::= import \"config.zti\";\ncfg.port\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("config.zti"), "{ port = 1; }\n").unwrap();
+
+        let cache = AnalysisCache::default();
+        let first = analyze_path_recording_with_root_and_cache(&entry, &root, &cache).unwrap();
+        let second = analyze_path_recording_with_root_and_cache(&entry, &root, &cache).unwrap();
+        assert!(
+            second.analysis.is_thir_complete(),
+            "{:?}",
+            second.analysis.diagnostics
+        );
+        assert_eq!(second.sources, first.sources);
+        assert_eq!(second.source_paths, first.source_paths);
+        assert!(cache.stats().module_hits >= 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn analysis_cache_hits_preserve_explicit_stdlib_sources() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-cache-stdlib-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry = root.join("main.zt");
+        std::fs::write(&entry, "mid ::= import \"mid.zt\";\nmid\n").unwrap();
+        std::fs::write(
+            root.join("mid.zt"),
+            "num ::= import stdlib.num;\nnum.abs -1\n",
+        )
+        .unwrap();
+
+        let cache = AnalysisCache::default();
+        let first = analyze_path_recording_with_root_and_cache(&entry, &root, &cache).unwrap();
+        let second = analyze_path_recording_with_root_and_cache(&entry, &root, &cache).unwrap();
+        assert!(
+            second.analysis.is_thir_complete(),
+            "{:?}",
+            second.analysis.diagnostics
+        );
+        assert_eq!(second.stdlib_sources, first.stdlib_sources);
+        assert!(second.stdlib_sources.contains_key("num"));
+        assert!(cache.stats().module_hits >= 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 

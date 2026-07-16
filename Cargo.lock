@@ -1876,6 +1876,7 @@ version = "0.1.0"
 dependencies = [
  "rustc-hash 2.1.2",
  "serde",
+ "sha2",
  "zutai-hir",
  "zutai-im",
  "zutai-syntax",

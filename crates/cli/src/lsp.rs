@@ -32,6 +32,7 @@ pub(crate) fn run() -> io::Result<()> {
 struct Server {
     documents: HashMap<String, Document>,
     published_diagnostics: HashSet<String>,
+    analysis_cache: zutai_semantic::AnalysisCache,
 }
 
 #[derive(Clone)]
@@ -286,7 +287,10 @@ impl Server {
     fn analyze_with_overlays(&self, root_uri: &str, root_source: &str) -> Option<ProjectAnalysis> {
         let root_path = file_path(root_uri)?;
         let root_dir = root_path.parent()?;
-        let Some(mut recorded) = zutai_semantic::analyze_path_recording(&root_path).ok() else {
+        let Some(mut recorded) =
+            zutai_semantic::analyze_path_recording_with_cache(&root_path, &self.analysis_cache)
+                .ok()
+        else {
             return analyze(root_source, root_uri).map(|analysis| ProjectAnalysis {
                 analysis,
                 root_path,
@@ -354,12 +358,13 @@ impl Server {
             recorded.stdlib_sources.clone(),
         )
         .ok()?;
-        let analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
+        let analysis = zutai_semantic::analyze_sources_with_stdlib_packages_and_cache(
             &recorded.entry,
             &recorded.sources,
             zutai_semantic::AnalysisOptions::default(),
             &stdlib,
             recorded.packages,
+            Some(&self.analysis_cache),
         )
         .ok()?;
         Some(ProjectAnalysis {

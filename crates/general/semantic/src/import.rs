@@ -28,6 +28,10 @@ use zutai_thir::{
     ThirExprKind, ThirFile, WitnessPattern, export_witness_pattern, match_pattern_key,
 };
 
+use crate::cache::{
+    AnalysisCache, CacheDependency, CacheDependencyKind, CacheDependencySource, CachedAnalysis,
+    Fingerprint, ModuleCacheSlot, fingerprint_parts, fingerprint_text, module_fingerprint,
+};
 use crate::package::{PackageGraph, PortablePackageGraph};
 use crate::{Analysis, AnalysisOptions, StdlibSources};
 
@@ -46,6 +50,10 @@ enum SourceBackend<'a> {
 pub(crate) struct ImportContext<'a> {
     in_progress: Vec<PathBuf>,
     cache: FxHashMap<PathBuf, Rc<Analysis>>,
+    fingerprints: FxHashMap<PathBuf, Fingerprint>,
+    analysis_cache: Option<&'a AnalysisCache>,
+    dependency_stack: Vec<Vec<CacheDependency>>,
+    options: AnalysisOptions,
     source_backend: SourceBackend<'a>,
     stdlib: Rc<StdlibSources>,
     recorded_stdlib: BTreeMap<String, String>,
@@ -53,13 +61,23 @@ pub(crate) struct ImportContext<'a> {
     recorded_packages: PortablePackageGraph,
     recorded_source_paths: BTreeMap<PathBuf, PathBuf>,
     package_setup_reported: bool,
+    context_fingerprint: Fingerprint,
 }
 
-impl ImportContext<'_> {
-    pub(crate) fn new(stdlib: Rc<StdlibSources>) -> Self {
+impl<'a> ImportContext<'a> {
+    pub(crate) fn new(
+        stdlib: Rc<StdlibSources>,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
+    ) -> Self {
+        let context_fingerprint = context_fingerprint(&stdlib, &PackageGraph::None);
         Self {
             in_progress: Vec::new(),
             cache: FxHashMap::default(),
+            fingerprints: FxHashMap::default(),
+            analysis_cache,
+            dependency_stack: Vec::new(),
+            options,
             source_backend: SourceBackend::Filesystem {
                 confinement_root: None,
                 recording_root: None,
@@ -71,6 +89,7 @@ impl ImportContext<'_> {
             recorded_packages: PortablePackageGraph::default(),
             recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
+            context_fingerprint,
         }
     }
 }
@@ -89,34 +108,55 @@ enum LoadError {
 impl<'a> ImportContext<'a> {
     /// Seed the in-progress stack with the root file's canonical path so that a
     /// descendant importing the root is detected as a cycle.
-    pub(crate) fn with_root(path: &Path, stdlib: Rc<StdlibSources>) -> Self {
-        let mut ctx = Self::new(stdlib);
+    pub(crate) fn with_root(
+        path: &Path,
+        stdlib: Rc<StdlibSources>,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
+    ) -> Self {
+        let mut ctx = Self::new(stdlib, analysis_cache, options);
         ctx.packages = PackageGraph::discover(path);
+        ctx.refresh_context_fingerprint();
         if let Ok(canonical) = std::fs::canonicalize(path) {
             ctx.in_progress.push(canonical);
         }
         ctx
     }
 
-    pub(crate) fn with_base(base: Option<&Path>, stdlib: Rc<StdlibSources>) -> Self {
-        let mut ctx = Self::new(stdlib);
+    pub(crate) fn with_base(
+        base: Option<&Path>,
+        stdlib: Rc<StdlibSources>,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
+    ) -> Self {
+        let mut ctx = Self::new(stdlib, analysis_cache, options);
         if let Some(base) = base {
             ctx.packages = PackageGraph::discover(base);
+            ctx.refresh_context_fingerprint();
         }
         ctx
     }
-
-    pub(crate) fn with_recording_root(path: &Path, stdlib: Rc<StdlibSources>) -> Self {
+    pub(crate) fn with_recording_root(
+        path: &Path,
+        stdlib: Rc<StdlibSources>,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
+    ) -> Self {
         let canonical = std::fs::canonicalize(path).ok();
         let recording_root = canonical
             .as_deref()
             .and_then(Path::parent)
             .map(Path::to_path_buf);
         let packages = PackageGraph::discover(path);
+        let context_fingerprint = context_fingerprint(&stdlib, &packages);
         let recorded_packages = packages.portable_skeleton();
         Self {
             in_progress: canonical.into_iter().collect(),
             cache: FxHashMap::default(),
+            fingerprints: FxHashMap::default(),
+            analysis_cache,
+            dependency_stack: Vec::new(),
+            options,
             source_backend: SourceBackend::Filesystem {
                 confinement_root: None,
                 recording_root,
@@ -128,13 +168,15 @@ impl<'a> ImportContext<'a> {
             recorded_packages,
             recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
+            context_fingerprint,
         }
     }
-
     pub(crate) fn with_explicit_recording_root(
         path: &Path,
         source_root: &Path,
         stdlib: Rc<StdlibSources>,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
     ) -> std::io::Result<Self> {
         let canonical = std::fs::canonicalize(path)?;
         let source_root = std::fs::canonicalize(if source_root.as_os_str().is_empty() {
@@ -155,10 +197,15 @@ impl<'a> ImportContext<'a> {
             ));
         }
         let packages = PackageGraph::discover(path);
+        let context_fingerprint = context_fingerprint(&stdlib, &packages);
         let recorded_packages = packages.portable_skeleton();
         Ok(Self {
             in_progress: vec![canonical],
             cache: FxHashMap::default(),
+            fingerprints: FxHashMap::default(),
+            analysis_cache,
+            dependency_stack: Vec::new(),
+            options,
             source_backend: SourceBackend::Filesystem {
                 confinement_root: Some(source_root.clone()),
                 recording_root: Some(source_root),
@@ -170,6 +217,7 @@ impl<'a> ImportContext<'a> {
             recorded_packages,
             recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
+            context_fingerprint,
         })
     }
 
@@ -178,11 +226,18 @@ impl<'a> ImportContext<'a> {
         entry: &Path,
         stdlib: Rc<StdlibSources>,
         packages: PortablePackageGraph,
+        analysis_cache: Option<&'a AnalysisCache>,
+        options: AnalysisOptions,
     ) -> Self {
         let packages = PackageGraph::from_memory(packages);
+        let context_fingerprint = context_fingerprint(&stdlib, &packages);
         Self {
             in_progress: vec![entry.to_path_buf()],
             cache: FxHashMap::default(),
+            fingerprints: FxHashMap::default(),
+            analysis_cache,
+            dependency_stack: Vec::new(),
+            options,
             source_backend: SourceBackend::Memory(sources),
             stdlib,
             recorded_stdlib: BTreeMap::new(),
@@ -190,6 +245,7 @@ impl<'a> ImportContext<'a> {
             recorded_packages: PortablePackageGraph::default(),
             recorded_source_paths: BTreeMap::new(),
             package_setup_reported: false,
+            context_fingerprint,
         }
     }
 
@@ -222,6 +278,177 @@ impl<'a> ImportContext<'a> {
         &self.stdlib
     }
 
+    fn refresh_context_fingerprint(&mut self) {
+        self.context_fingerprint = context_fingerprint(&self.stdlib, &self.packages);
+    }
+
+    fn begin_module(&mut self) {
+        self.dependency_stack.push(Vec::new());
+    }
+
+    fn finish_module(&mut self) -> Vec<CacheDependency> {
+        self.dependency_stack
+            .pop()
+            .expect("module dependency collection is balanced")
+    }
+
+    fn record_dependency(&mut self, dependency: CacheDependency) {
+        if let Some(dependencies) = self.dependency_stack.last_mut() {
+            dependencies.push(dependency);
+        }
+    }
+
+    fn try_cached_module(
+        &mut self,
+        key: &Path,
+        contents: &str,
+    ) -> Option<(Rc<Analysis>, Fingerprint)> {
+        let cache = self.analysis_cache?;
+        let slot = ModuleCacheSlot::new(key.to_path_buf(), self.options);
+        let cached = match cache.get(&slot) {
+            Some(cached) => cached,
+            None => {
+                cache.record_miss();
+                return None;
+            }
+        };
+        if cached.source != fingerprint_text(contents)
+            || cached.context != self.context_fingerprint
+            || cached
+                .dependencies
+                .iter()
+                .any(|dependency| !self.dependency_is_current(dependency))
+        {
+            cache.record_miss();
+            return None;
+        }
+        let dependencies = cached.dependencies.clone();
+        self.replay_cached_dependencies(&dependencies)?;
+        self.cache
+            .insert(key.to_path_buf(), cached.analysis.clone());
+        self.fingerprints
+            .insert(key.to_path_buf(), cached.fingerprint);
+        cache.record_hit();
+        Some((cached.analysis, cached.fingerprint))
+    }
+
+    fn replay_cached_dependencies(&mut self, dependencies: &[CacheDependency]) -> Option<()> {
+        for dependency in dependencies {
+            let (contents, key) = self.load_dependency_source(&dependency.source)?;
+            if let CacheDependencySource::Stdlib { name } = &dependency.source {
+                self.recorded_stdlib.insert(name.clone(), contents.clone());
+            } else {
+                self.record_loaded_source(&key, &contents);
+            }
+            if dependency.kind == CacheDependencyKind::Module {
+                let cache = self.analysis_cache?;
+                let slot = ModuleCacheSlot::new(key, self.options);
+                let cached = cache.get(&slot)?;
+                self.replay_cached_dependencies(&cached.dependencies)?;
+            }
+        }
+        Some(())
+    }
+
+    fn record_loaded_source(&mut self, key: &Path, contents: &str) {
+        self.packages
+            .record_source(&mut self.recorded_packages, key, contents);
+        if let SourceBackend::Filesystem {
+            recording_root: Some(root),
+            recorded,
+            ..
+        } = &mut self.source_backend
+            && let Ok(relative) = key.strip_prefix(root)
+        {
+            recorded.insert(path_to_bundle_key(relative), contents.to_owned());
+        }
+        if let Ok(path) = std::fs::canonicalize(key) {
+            let stable = self
+                .packages
+                .stable_source_key(&path)
+                .unwrap_or_else(|| key.to_path_buf());
+            self.recorded_source_paths.insert(stable, path);
+        }
+    }
+
+    fn dependency_is_current(&self, dependency: &CacheDependency) -> bool {
+        let Some((contents, key)) = self.load_dependency_source(&dependency.source) else {
+            return false;
+        };
+        match dependency.kind {
+            CacheDependencyKind::Data => fingerprint_text(&contents) == dependency.fingerprint,
+            CacheDependencyKind::Module => {
+                let Some(cache) = self.analysis_cache else {
+                    return false;
+                };
+                let slot = ModuleCacheSlot::new(key, self.options);
+                let Some(cached) = cache.get(&slot) else {
+                    return false;
+                };
+                cached.source == fingerprint_text(&contents)
+                    && cached.context == self.context_fingerprint
+                    && cached.fingerprint == dependency.fingerprint
+                    && cached
+                        .dependencies
+                        .iter()
+                        .all(|child| self.dependency_is_current(child))
+            }
+        }
+    }
+
+    fn load_dependency_source(&self, source: &CacheDependencySource) -> Option<(String, PathBuf)> {
+        match source {
+            CacheDependencySource::Relative { base, path } => {
+                let loaded =
+                    load_relative_source(&self.source_backend, &self.packages, base, path)?;
+                Some((loaded.contents, loaded.key))
+            }
+            CacheDependencySource::Stdlib { name } => self.stdlib.source(name).map(|contents| {
+                (
+                    contents.to_owned(),
+                    PathBuf::from("<stdlib>").join(format!("{name}.zt")),
+                )
+            }),
+            CacheDependencySource::Package { importer, parts } => self
+                .packages
+                .resolve(importer.as_deref(), parts)
+                .ok()
+                .flatten()
+                .map(|loaded| (loaded.contents, loaded.key)),
+        }
+    }
+
+    fn store_cached_module(
+        &mut self,
+        key: &Path,
+        contents: &str,
+        dependencies: Vec<CacheDependency>,
+        analysis: Rc<Analysis>,
+    ) -> Fingerprint {
+        let slot = ModuleCacheSlot::new(key.to_path_buf(), self.options);
+        let source = fingerprint_text(contents);
+        let fingerprint =
+            module_fingerprint(&slot, source, self.context_fingerprint, &dependencies);
+        self.cache.insert(key.to_path_buf(), analysis.clone());
+        self.fingerprints.insert(key.to_path_buf(), fingerprint);
+        if let Some(cache) = self.analysis_cache {
+            cache.insert(
+                slot,
+                CachedAnalysis {
+                    source,
+                    context: self.context_fingerprint,
+                    fingerprint,
+                    dependencies,
+                    analysis,
+                },
+            );
+        }
+        fingerprint
+    }
+
+    fn cached_fingerprint(&self, key: &Path) -> Option<Fingerprint> {
+        self.fingerprints.get(key).copied()
+    }
     fn take_package_setup_error(&mut self) -> Option<crate::package::PackageSetupError> {
         if self.package_setup_reported {
             return None;
@@ -281,6 +508,66 @@ impl<'a> ImportContext<'a> {
                     .ok_or(LoadError::NotFound)?;
                 Ok(LoadedSource { key, contents })
             }
+        }
+    }
+}
+
+fn context_fingerprint(stdlib: &StdlibSources, packages: &PackageGraph) -> Fingerprint {
+    let manifest = packages.manifest_fingerprint();
+    let graph = packages.graph_fingerprint();
+    let mut parts: Vec<&[u8]> = vec![
+        env!("CARGO_PKG_VERSION").as_bytes(),
+        stdlib.compiler_compatibility().as_bytes(),
+        &manifest,
+        &graph,
+    ];
+    for module in stdlib.modules() {
+        parts.push(module.name().as_bytes());
+        parts.push(module.source().as_bytes());
+        parts.push(match module.visibility() {
+            crate::stdlib::StdlibVisibility::Ambient => b"ambient",
+            crate::stdlib::StdlibVisibility::Explicit => b"explicit",
+        });
+    }
+    fingerprint_parts(parts)
+}
+fn load_relative_source(
+    backend: &SourceBackend<'_>,
+    packages: &PackageGraph,
+    base: &Path,
+    rel: &str,
+) -> Option<LoadedSource> {
+    if let Some(result) = packages.package_source(base, rel) {
+        return result.ok().map(|source| LoadedSource {
+            key: source.key,
+            contents: source.contents,
+        });
+    }
+    match backend {
+        SourceBackend::Filesystem {
+            confinement_root, ..
+        } => {
+            let base_dir = if base.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                base
+            };
+            let canonical_base = std::fs::canonicalize(base_dir).ok()?;
+            let canonical = std::fs::canonicalize(base_dir.join(rel)).ok()?;
+            let allowed_root = confinement_root.as_deref().unwrap_or(&canonical_base);
+            if !canonical.starts_with(allowed_root) {
+                return None;
+            }
+            let contents = std::fs::read_to_string(&canonical).ok()?;
+            Some(LoadedSource {
+                key: canonical,
+                contents,
+            })
+        }
+        SourceBackend::Memory(sources) => {
+            let key = normalize_memory_join(base, rel)?;
+            let contents = sources.get(&path_to_bundle_key(&key))?.clone();
+            Some(LoadedSource { key, contents })
         }
     }
 }
@@ -555,6 +842,10 @@ impl Resolver<'_> {
                         },
                         &rel,
                         span,
+                        CacheDependencySource::Package {
+                            importer: self.base.map(Path::to_path_buf),
+                            parts: parts.to_vec(),
+                        },
                         ctx,
                     );
                 }
@@ -611,14 +902,47 @@ impl Resolver<'_> {
         }
 
         match kind {
-            Kind::Zti => self.resolve_zti(source, &loaded.contents, &rel, span),
-            Kind::Zt => self.resolve_zt(source, loaded, &rel, span, ctx),
+            Kind::Zti => self.resolve_zti(
+                source,
+                &loaded.contents,
+                &rel,
+                span,
+                CacheDependencySource::Relative {
+                    base: base.to_path_buf(),
+                    path: rel.clone(),
+                },
+                ctx,
+            ),
+            Kind::Zt => self.resolve_zt(
+                source,
+                loaded,
+                &rel,
+                span,
+                CacheDependencySource::Relative {
+                    base: base.to_path_buf(),
+                    path: rel.clone(),
+                },
+                ctx,
+            ),
         }
     }
 
-    fn resolve_zti(&mut self, source: &HirImportSource, contents: &str, rel: &str, span: Span) {
+    fn resolve_zti(
+        &mut self,
+        source: &HirImportSource,
+        contents: &str,
+        rel: &str,
+        span: Span,
+        dependency_source: CacheDependencySource,
+        ctx: &mut ImportContext<'_>,
+    ) {
         match zutai_im::parse_located(contents) {
             Ok(block) => {
+                ctx.record_dependency(CacheDependency {
+                    source: dependency_source,
+                    kind: CacheDependencyKind::Data,
+                    fingerprint: fingerprint_text(contents),
+                });
                 let provenance = block_provenance(&block);
                 let value = zutai_im::Value::Block(block.value);
                 let ty = imported_type(&value);
@@ -642,6 +966,7 @@ impl Resolver<'_> {
         loaded: LoadedSource,
         rel: &str,
         span: Span,
+        dependency_source: CacheDependencySource,
         ctx: &mut ImportContext,
     ) {
         if ctx.in_progress.iter().any(|p| p == &loaded.key) {
@@ -669,10 +994,16 @@ impl Resolver<'_> {
             );
         }
 
-        let module = match ctx.cache.get(&loaded.key) {
-            Some(module) => module.clone(),
-            None => {
-                match self.analyze_zt(
+        let (module, fingerprint) = match ctx.cache.get(&loaded.key) {
+            Some(module) => {
+                let fingerprint = ctx
+                    .cached_fingerprint(&loaded.key)
+                    .expect("session cache entries carry fingerprints");
+                (module.clone(), fingerprint)
+            }
+            None => match ctx.try_cached_module(&loaded.key, &loaded.contents) {
+                Some(cached) => cached,
+                None => match self.analyze_zt(
                     &loaded.key,
                     loaded.key.parent(),
                     &loaded.contents,
@@ -680,11 +1011,16 @@ impl Resolver<'_> {
                     span,
                     ctx,
                 ) {
-                    Some(module) => module,
+                    Some(cached) => cached,
                     None => return,
-                }
-            }
+                },
+            },
         };
+        ctx.record_dependency(CacheDependency {
+            source: dependency_source,
+            kind: CacheDependencyKind::Module,
+            fingerprint,
+        });
 
         self.register_zt_module(source, module, rel, span);
     }
@@ -727,13 +1063,28 @@ impl Resolver<'_> {
         if ctx.in_progress.iter().any(|p| p == &key) {
             return self.diag(ImportDiagnosticKind::ImportCycle { path: rel }, span);
         }
-        let module = match ctx.cache.get(&key) {
-            Some(module) => module.clone(),
-            None => match self.analyze_zt(&key, key.parent(), &contents, &rel, span, ctx) {
-                Some(module) => module,
-                None => return,
+        let (module, fingerprint) = match ctx.cache.get(&key) {
+            Some(module) => {
+                let fingerprint = ctx
+                    .cached_fingerprint(&key)
+                    .expect("session cache entries carry fingerprints");
+                (module.clone(), fingerprint)
+            }
+            None => match ctx.try_cached_module(&key, &contents) {
+                Some(cached) => cached,
+                None => match self.analyze_zt(&key, key.parent(), &contents, &rel, span, ctx) {
+                    Some(cached) => cached,
+                    None => return,
+                },
             },
         };
+        ctx.record_dependency(CacheDependency {
+            source: CacheDependencySource::Stdlib {
+                name: name.to_owned(),
+            },
+            kind: CacheDependencyKind::Module,
+            fingerprint,
+        });
 
         self.register_zt_module(source, module, &rel, span);
     }
@@ -751,11 +1102,12 @@ impl Resolver<'_> {
         rel: &str,
         span: Span,
         ctx: &mut ImportContext<'_>,
-    ) -> Option<Rc<Analysis>> {
+    ) -> Option<(Rc<Analysis>, Fingerprint)> {
+        ctx.begin_module();
         ctx.in_progress.push(key.to_path_buf());
-        let analysis =
-            crate::analyze_inner(contents, parent, Some(key), AnalysisOptions::default(), ctx);
+        let analysis = crate::analyze_inner(contents, parent, Some(key), ctx.options, ctx);
         ctx.in_progress.pop();
+        let dependencies = ctx.finish_module();
 
         if analysis.blocking_diagnostics().next().is_some() || !analysis.is_thir_complete() {
             let nested =
@@ -794,8 +1146,8 @@ impl Resolver<'_> {
             return None;
         }
         let module = Rc::new(analysis);
-        ctx.cache.insert(key.to_path_buf(), module.clone());
-        Some(module)
+        let fingerprint = ctx.store_cached_module(key, contents, dependencies, module.clone());
+        Some((module, fingerprint))
     }
 
     /// Type a resolved `.zt` module by its exported (final-expression) type and

@@ -36,6 +36,7 @@ struct FilesystemPackage {
 pub(crate) struct FilesystemPackageGraph {
     root_package: String,
     packages: BTreeMap<PathBuf, FilesystemPackage>,
+    manifest_sources: BTreeMap<PathBuf, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,6 +143,41 @@ impl PackageGraph {
         }
     }
 
+    pub(crate) fn manifest_fingerprint(&self) -> crate::cache::Fingerprint {
+        let mut parts: Vec<&[u8]> = vec![COMPILER_COMPATIBILITY.as_bytes()];
+        match self {
+            Self::None | Self::Memory(_) => parts.push(b"none"),
+            Self::Invalid(error) => {
+                parts.push(b"invalid");
+                parts.push(error.message.as_bytes());
+            }
+            Self::Filesystem(graph) => {
+                parts.push(b"filesystem");
+                for (path, source) in &graph.manifest_sources {
+                    parts.push(path.as_os_str().as_encoded_bytes());
+                    parts.push(source.as_bytes());
+                }
+            }
+        }
+        crate::cache::fingerprint_parts(parts)
+    }
+
+    pub(crate) fn graph_fingerprint(&self) -> crate::cache::Fingerprint {
+        let portable;
+        let graph = match self {
+            Self::Filesystem(graph) => {
+                portable = graph.portable_skeleton();
+                &portable
+            }
+            Self::Memory(graph) => graph,
+            Self::None | Self::Invalid(_) => {
+                return crate::cache::fingerprint_parts([b"none".as_slice()]);
+            }
+        };
+        let parts = graph.fingerprint_parts();
+        crate::cache::fingerprint_parts(parts.iter().map(Vec::as_slice))
+    }
+
     pub(crate) fn resolve(
         &self,
         importer: Option<&Path>,
@@ -212,6 +248,31 @@ impl PackageGraph {
     }
 }
 
+impl PortablePackageGraph {
+    fn fingerprint_parts(&self) -> Vec<Vec<u8>> {
+        let mut parts = Vec::new();
+        parts.push(
+            self.root_package
+                .as_deref()
+                .unwrap_or_default()
+                .as_bytes()
+                .to_vec(),
+        );
+        for (name, package) in &self.packages {
+            parts.push(name.as_bytes().to_vec());
+            for (alias, target) in &package.dependencies {
+                parts.push(alias.as_bytes().to_vec());
+                parts.push(target.as_bytes().to_vec());
+            }
+            for (module, path) in &package.modules {
+                parts.push(module.as_bytes().to_vec());
+                parts.push(path.as_bytes().to_vec());
+            }
+        }
+        parts
+    }
+}
+
 impl FilesystemPackageGraph {
     fn discover(path: &Path) -> Result<Option<Self>, PackageSetupError> {
         let start = if path.is_dir() {
@@ -231,10 +292,18 @@ impl FilesystemPackageGraph {
         let mut packages = BTreeMap::new();
         let mut names = BTreeMap::new();
         let mut stack = Vec::new();
-        let root_name = load_package(&root, &mut packages, &mut names, &mut stack)?;
+        let mut manifest_sources = BTreeMap::new();
+        let root_name = load_package(
+            &root,
+            &mut packages,
+            &mut names,
+            &mut stack,
+            &mut manifest_sources,
+        )?;
         Ok(Some(Self {
             root_package: root_name,
             packages,
+            manifest_sources,
         }))
     }
 
@@ -340,6 +409,7 @@ fn load_package(
     packages: &mut BTreeMap<PathBuf, FilesystemPackage>,
     names: &mut BTreeMap<String, PathBuf>,
     stack: &mut Vec<PathBuf>,
+    manifest_sources: &mut BTreeMap<PathBuf, String>,
 ) -> Result<String, PackageSetupError> {
     let root = fs::canonicalize(root).map_err(|error| {
         PackageSetupError::new(format!(
@@ -369,6 +439,7 @@ fn load_package(
             manifest_path.display()
         ))
     })?;
+    manifest_sources.insert(manifest_path.clone(), source.clone());
     let manifest = parse_manifest(&manifest_path, &source).map_err(PackageSetupError::new)?;
     if let Some(existing) = names.get(&manifest.name)
         && existing != &root
@@ -464,7 +535,8 @@ fn load_package(
                 dependency_root.display()
             )));
         }
-        if let Err(error) = load_package(&dependency_root, packages, names, stack) {
+        if let Err(error) = load_package(&dependency_root, packages, names, stack, manifest_sources)
+        {
             let label = if error.message.contains("package dependency cycle") {
                 "package dependency cycle continues here"
             } else {
@@ -1123,6 +1195,48 @@ mod tests {
         .unwrap();
         assert!(replayed.blocking_diagnostics().next().is_none());
         assert!(replayed.is_thir_complete());
+    }
+
+    #[test]
+    fn cache_invalidates_when_package_manifest_changes() {
+        let temp = Temp::new();
+        let app = temp.0.join("app");
+        let dep = temp.0.join("dep");
+        fs::create_dir_all(app.join("src")).unwrap();
+        fs::create_dir_all(dep.join("src")).unwrap();
+        fs::write(
+            app.join(MANIFEST_NAME),
+            manifest("app", "", "{ alias = \"dep\"; path = \"../dep\"; }"),
+        )
+        .unwrap();
+        fs::write(
+            dep.join(MANIFEST_NAME),
+            manifest("dep", "{ name = \"value\"; path = \"src/value.zt\"; }", ""),
+        )
+        .unwrap();
+        let entry = app.join("src/main.zt");
+        fs::write(&entry, "v ::= import dep.value; v.answer").unwrap();
+        fs::write(dep.join("src/value.zt"), "{ answer = 42; }").unwrap();
+
+        let cache = crate::AnalysisCache::default();
+        let first = crate::analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(first.is_thir_complete(), "{:?}", first.diagnostics);
+        let before = cache.stats();
+        assert_eq!(before.module_misses, 1);
+
+        fs::write(dep.join("src/unused.zt"), "0").unwrap();
+        fs::write(
+            dep.join(MANIFEST_NAME),
+            manifest(
+                "dep",
+                "{ name = \"value\"; path = \"src/value.zt\"; }; { name = \"unused\"; path = \"src/unused.zt\"; }",
+                "",
+            ),
+        )
+        .unwrap();
+        let second = crate::analyze_path_with_cache(&entry, &cache).unwrap();
+        assert!(second.is_thir_complete(), "{:?}", second.diagnostics);
+        assert_eq!(cache.stats().module_misses, before.module_misses + 1);
     }
 
     #[test]
