@@ -505,13 +505,6 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
 
 // ── Module-import program assembly ─────────────────────────────────────────────
 
-/// Reject reason when native lowering cannot safely link an imported witness
-/// export: concrete and structurally matchable conditional witnesses lower
-/// through extern tables, but higher-kinded / non-matchable shapes still have no
-/// static dispatch key the backend can preserve.
-const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or \
-    otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
-
 /// Collect the transitive `.zt` dependency analyses of `analysis` in topological
 /// order (post-order DFS), so a dependency always precedes the modules that
 /// import it (`deps[i]` may only import `deps[j]` with `j < i`). Dependencies that
@@ -686,18 +679,29 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
 
+    if let Some(diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
+        let semantic = zutai_semantic::SemanticDiagnostic {
+            stage: zutai_semantic::SemanticStage::Import,
+            kind: zutai_semantic::SemanticDiagnosticKind::Import(
+                zutai_semantic::ImportDiagnostic {
+                    kind: zutai_semantic::ImportDiagnosticKind::UnsupportedExport {
+                        path: "native import".to_owned(),
+                        reason: diagnostic.message,
+                    },
+                    span: diagnostic.span,
+                    path: None,
+                    related: diagnostic.related,
+                },
+            ),
+        };
+        print_semantic_errors(path, &contents, &[&semantic]);
+        std::process::exit(1);
+    }
+
     // Collect deps early (needed to build extern witness list for TLC lowering).
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    // Build the concrete + conditional extern-witness tables. A parametric
-    // witness with no dispatchable shape (e.g. higher-kinded) still gates to the
-    // interpreter; concrete and matchable-conditional witnesses lower natively.
-    let (extern_witnesses, extern_conditionals) = match extern_witness_tables(&dep_analyses) {
-        Ok(tables) => tables,
-        Err(()) => {
-            eprintln!("compile error: {IMPORT_WITNESS_REASON}");
-            std::process::exit(1);
-        }
-    };
+    let (extern_witnesses, extern_conditionals) = extern_witness_tables(&dep_analyses)
+        .expect("native import diagnostics reject every non-matchable witness export");
     let dep_modules = backend_dep_modules(&dep_analyses);
 
     // TLC lowering. Effectful programs enter DC only when TLC lowering has
@@ -868,14 +872,13 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
+    if let Some(diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
+        eprintln!("error: {}", diagnostic.message);
+        std::process::exit(1);
+    }
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
-    let (extern_witnesses_df, extern_conditionals_df) = match extern_witness_tables(&dep_analyses) {
-        Ok(tables) => tables,
-        Err(()) => {
-            eprintln!("error: {IMPORT_WITNESS_REASON}");
-            std::process::exit(1);
-        }
-    };
+    let (extern_witnesses_df, extern_conditionals_df) = extern_witness_tables(&dep_analyses)
+        .expect("native import diagnostics reject every non-matchable witness export");
     let dep_modules = backend_dep_modules(&dep_analyses);
 
     let mut module = if extern_witnesses_df.is_empty() && extern_conditionals_df.is_empty() {

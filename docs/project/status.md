@@ -52,17 +52,20 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-16 (package-aware LSP: editor analysis now records and
-replays the same local `zutai.zti` package graph as CLI analysis, maps stable
-package source identities back to filesystem URIs, consumes unsaved overlays
-from dependency packages, and navigates imported value and type-valued members
-across package boundaries. Import ranges now cover selected fields exactly, so
-unresolved dependency diagnostics and definition targets use CLI-equivalent
-locations. Malformed package-setup diagnostics survive overlay fallback, and a
-two-package fixture proves navigation, type hover from an unsaved dependency
-overlay, and unresolved-dependency diagnostic parity. The no-argument CLI path
-also emits a normal clap usage error when `ZUTAI_STDLIB_ROOT` is configured
-instead of panicking);
+_Last updated: 2026-07-16 (cross-file import diagnostics: package setup and
+resolution, module cycles, imported witness conflicts, derive failures, and
+native-only import refusals now retain request, definition, manifest, and
+import-chain locations where available. CLI miette output reads the owning
+source for every primary and related span; LSP routing publishes diagnostics to
+the owning URI with related information for the rest of the chain. Focused
+semantic/CLI/LSP fixtures cover unknown aliases, duplicate dependency aliases,
+package and module cycles, non-matchable witness exports, malformed derive
+recipes, and native-gated imports without losing the original use site);
+prior baseline updates: 2026-07-16 (package-aware LSP: editor analysis records
+and replays the CLI package graph, maps stable package identities to filesystem
+URIs, consumes dependency overlays, and navigates imported value and type-valued
+members; malformed package setup survives overlay fallback and CLI parity is
+covered);
 prior baseline updates: 2026-07-14 (typed macro kernel: completed the six-bullet
 macro-kernel milestone — pattern-driven pure recipe evaluation with
 source-located fuel exhaustion; typed rank-2 reflection descriptors and a
@@ -273,6 +276,13 @@ The 2026-07-16 package-aware pass routes filesystem and overlay analysis through
 the same recorded local-package graph as CLI analysis, including imported value
 and type-valued member navigation across package boundaries; see "Language
 Server Protocol editor baseline" and "Package-aware LSP analysis" below.
+The 2026-07-16 import-provenance pass gives package setup/resolution, module
+cycles, imported witnesses, derive failures, and native backend refusals
+structured request and cross-file related locations. CLI diagnostics render the
+owning source buffers, while the LSP routes primaries to their source URIs and
+uses `relatedInformation` for manifest declarations, import chains, and witness
+definitions.
+
 The 2026-07-13 diagnostic-provenance pass keeps the immediate runtime AST
 source-free while adding an opt-in located `.zti` parse tree. Static type
 mismatches discovered when a `.zt` typed boundary consumes imported `.zti`

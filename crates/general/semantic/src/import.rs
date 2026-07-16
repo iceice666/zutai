@@ -222,13 +222,13 @@ impl<'a> ImportContext<'a> {
         &self.stdlib
     }
 
-    fn take_package_setup_error(&mut self) -> Option<String> {
+    fn take_package_setup_error(&mut self) -> Option<crate::package::PackageSetupError> {
         if self.package_setup_reported {
             return None;
         }
-        let message = self.packages.invalid_message()?.to_owned();
+        let error = self.packages.invalid_error()?.clone();
         self.package_setup_reported = true;
-        Some(message)
+        Some(error)
     }
 
     fn load(&mut self, base: &Path, rel: &str) -> Result<LoadedSource, LoadError> {
@@ -331,6 +331,8 @@ pub(crate) struct ResolvedImports {
     pub modules: FxHashMap<ImportKey, Rc<Analysis>>,
     /// Witnesses exported by imported `.zt` modules, including re-exports.
     pub witnesses: Vec<WitnessExport>,
+    /// Source spans for each distinct import expression.
+    pub sites: FxHashMap<ImportKey, Span>,
     pub diagnostics: Vec<ImportDiagnostic>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,6 +365,8 @@ pub struct ConditionalWitnessShape {
 pub struct ImportDiagnostic {
     pub kind: ImportDiagnosticKind,
     pub span: Span,
+    pub path: Option<PathBuf>,
+    pub related: Vec<crate::SourceLocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -445,6 +449,7 @@ struct Resolver<'a> {
     modules: FxHashMap<ImportKey, Rc<Analysis>>,
     witnesses: Vec<WitnessExport>,
     witness_keys: FxHashMap<(String, String), PathBuf>,
+    sites: FxHashMap<ImportKey, Span>,
     diagnostics: Vec<ImportDiagnostic>,
 }
 
@@ -462,14 +467,27 @@ pub(crate) fn resolve_imports(
         modules: FxHashMap::default(),
         witnesses: Vec::new(),
         witness_keys: FxHashMap::default(),
+        sites: FxHashMap::default(),
         diagnostics: Vec::new(),
     };
 
-    if let Some(message) = ctx.take_package_setup_error() {
-        resolver.diag(
-            ImportDiagnosticKind::PackageSetup { message },
-            Span::default(),
-        );
+    if let Some(error) = ctx.take_package_setup_error() {
+        let span = error.span.unwrap_or_else(|| {
+            hir.expr_arena
+                .iter()
+                .find_map(|(_, expr)| {
+                    matches!(expr.kind, HirExprKind::Import(_)).then_some(expr.span)
+                })
+                .unwrap_or_default()
+        });
+        resolver.diagnostics.push(ImportDiagnostic {
+            kind: ImportDiagnosticKind::PackageSetup {
+                message: error.message,
+            },
+            span,
+            path: error.path,
+            related: error.related,
+        });
     }
 
     // Resolve each distinct source once, using the first span seen for diagnostics.
@@ -489,12 +507,14 @@ pub(crate) fn resolve_imports(
         values: resolver.values,
         modules: resolver.modules,
         witnesses: resolver.witnesses,
+        sites: resolver.sites,
         diagnostics: resolver.diagnostics,
     }
 }
 
 impl Resolver<'_> {
     fn resolve_one(&mut self, source: &HirImportSource, span: Span, ctx: &mut ImportContext) {
+        self.sites.entry(source.clone()).or_insert(span);
         // `import stdlib.<name>` resolves from the validated stdlib source set
         // (outside quoted-import subtree confinement). This is checked before
         // `relative_path` so `stdlib.stream` is not mistaken for `stem.ext`.
@@ -504,7 +524,7 @@ impl Resolver<'_> {
             return self.resolve_stdlib(source, parts, span, ctx);
         }
 
-        if ctx.packages.invalid_message().is_some() {
+        if ctx.packages.invalid_error().is_some() {
             return;
         }
 
@@ -625,11 +645,27 @@ impl Resolver<'_> {
         ctx: &mut ImportContext,
     ) {
         if ctx.in_progress.iter().any(|p| p == &loaded.key) {
-            return self.diag(
+            let related = ctx
+                .in_progress
+                .iter()
+                .skip_while(|path| *path != &loaded.key)
+                .map(|path| crate::SourceLocation {
+                    path: path.clone(),
+                    span: Span::default(),
+                    label: "module in this import cycle".to_owned(),
+                })
+                .chain(std::iter::once(crate::SourceLocation {
+                    path: loaded.key.clone(),
+                    span: Span::default(),
+                    label: "cycle returns to this module".to_owned(),
+                }))
+                .collect();
+            return self.diag_with_related(
                 ImportDiagnosticKind::ImportCycle {
                     path: rel.to_string(),
                 },
                 span,
+                related,
             );
         }
 
@@ -722,10 +758,19 @@ impl Resolver<'_> {
         ctx.in_progress.pop();
 
         if analysis.blocking_diagnostics().next().is_some() || !analysis.is_thir_complete() {
-            // A cycle is first detected on the back-edge, one module deeper;
-            // propagate it so every level on the chain reports the cycle rather
-            // than a vague "module has errors".
-            let kind = if contains_cycle(&analysis) {
+            let nested =
+                analysis
+                    .diagnostics
+                    .iter()
+                    .find_map(|diagnostic| match &diagnostic.kind {
+                        crate::SemanticDiagnosticKind::Import(import)
+                            if matches!(import.kind, ImportDiagnosticKind::ImportCycle { .. }) =>
+                        {
+                            Some(import)
+                        }
+                        _ => None,
+                    });
+            let kind = if nested.is_some() {
                 ImportDiagnosticKind::ImportCycle {
                     path: rel.to_string(),
                 }
@@ -734,7 +779,18 @@ impl Resolver<'_> {
                     path: rel.to_string(),
                 }
             };
-            self.diag(kind, span);
+            let related = nested
+                .map(|nested| {
+                    let mut related = vec![crate::SourceLocation {
+                        path: key.to_path_buf(),
+                        span: nested.span,
+                        label: "import cycle continues here".to_owned(),
+                    }];
+                    related.extend(nested.related.clone());
+                    related
+                })
+                .unwrap_or_default();
+            self.diag_with_related(kind, span, related);
             return None;
         }
         let module = Rc::new(analysis);
@@ -795,7 +851,26 @@ impl Resolver<'_> {
     }
 
     fn diag(&mut self, kind: ImportDiagnosticKind, span: Span) {
-        self.diagnostics.push(ImportDiagnostic { kind, span });
+        self.diagnostics.push(ImportDiagnostic {
+            kind,
+            span,
+            path: None,
+            related: Vec::new(),
+        });
+    }
+
+    fn diag_with_related(
+        &mut self,
+        kind: ImportDiagnosticKind,
+        span: Span,
+        related: Vec<crate::SourceLocation>,
+    ) {
+        self.diagnostics.push(ImportDiagnostic {
+            kind,
+            span,
+            path: None,
+            related,
+        });
     }
 
     fn merge_witnesses(&mut self, witnesses: &[WitnessExport], span: Span) {
@@ -821,17 +896,6 @@ impl Resolver<'_> {
     }
 }
 
-/// Whether `analysis` failed (at least in part) because of an import cycle.
-fn contains_cycle(analysis: &Analysis) -> bool {
-    analysis.diagnostics.iter().any(|diagnostic| {
-        matches!(
-            &diagnostic.kind,
-            crate::SemanticDiagnosticKind::Import(import)
-                if matches!(import.kind, ImportDiagnosticKind::ImportCycle { .. })
-        )
-    })
-}
-
 pub(crate) fn merge_witness_exports(
     imported: Vec<WitnessExport>,
     local: Vec<WitnessExport>,
@@ -849,6 +913,8 @@ pub(crate) fn merge_witness_exports(
                         target: witness.target_display.clone(),
                     },
                     span: witness.span,
+                    path: Some(witness.origin.clone()),
+                    related: Vec::new(),
                 });
             }
             Some(_) => {}

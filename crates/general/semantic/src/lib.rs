@@ -35,6 +35,22 @@ mod stdlib;
 pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 pub use package::{PortablePackage, PortablePackageGraph};
 
+pub const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLocation {
+    pub path: PathBuf,
+    pub span: zutai_syntax::Span,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendDiagnostic {
+    pub message: &'static str,
+    pub span: zutai_syntax::Span,
+    pub related: Vec<SourceLocation>,
+}
+
 #[derive(Debug)]
 pub struct Analysis {
     pub ast: Option<zutai_syntax::File>,
@@ -51,6 +67,8 @@ pub struct Analysis {
     /// Analyzed `.zt` sub-modules, keyed by import source, for the evaluator to
     /// evaluate recursively.
     pub import_modules: FxHashMap<zutai_thir::ImportKey, Rc<Analysis>>,
+    /// Source spans for each import expression in this module.
+    pub import_sites: FxHashMap<zutai_thir::ImportKey, zutai_syntax::Span>,
     /// TLC module produced by lowering THIR; `None` when THIR is incomplete.
     pub tlc: Option<zutai_tlc::TlcModule>,
     pub witness_exports: Vec<WitnessExport>,
@@ -165,6 +183,75 @@ impl Analysis {
                 SemanticStage::Parse | SemanticStage::Hir | SemanticStage::Import
             )
         })
+    }
+
+    /// Backend-only import refusals. These do not make semantic analysis or the
+    /// reference interpreter fail; compile/dataflow render them as errors and
+    /// editor diagnostics expose them as native-support warnings.
+    pub fn native_import_diagnostics(&self) -> Vec<BackendDiagnostic> {
+        let mut imports: Vec<_> = self.import_modules.iter().collect();
+        imports.sort_by_key(|(source, _)| format!("{source:?}"));
+        imports
+            .into_iter()
+            .filter_map(|(source, module)| {
+                let span = self.import_sites.get(source).copied()?;
+                let related = module.non_matchable_witness_chain()?;
+                Some(BackendDiagnostic {
+                    message: IMPORT_WITNESS_REASON,
+                    span,
+                    related,
+                })
+            })
+            .collect()
+    }
+
+    fn non_matchable_witness_chain(&self) -> Option<Vec<SourceLocation>> {
+        if let Some(witness) = self.witness_exports.iter().find(|witness| {
+            witness.conditional.is_none()
+                && witness.target_key.contains('?')
+                && self
+                    .source_path
+                    .as_ref()
+                    .is_some_and(|path| path == &witness.origin)
+        }) {
+            return Some(vec![SourceLocation {
+                path: witness.origin.clone(),
+                span: witness.span,
+                label: "non-matchable witness exported here".to_owned(),
+            }]);
+        }
+
+        let mut imports: Vec<_> = self.import_modules.iter().collect();
+        imports.sort_by_key(|(source, _)| format!("{source:?}"));
+        for (source, module) in imports {
+            let Some(mut related) = module.non_matchable_witness_chain() else {
+                continue;
+            };
+            if let (Some(path), Some(span)) =
+                (self.source_path.as_ref(), self.import_sites.get(source))
+            {
+                related.insert(
+                    0,
+                    SourceLocation {
+                        path: path.clone(),
+                        span: *span,
+                        label: "import chain continues here".to_owned(),
+                    },
+                );
+            }
+            return Some(related);
+        }
+
+        self.witness_exports
+            .iter()
+            .find(|witness| witness.conditional.is_none() && witness.target_key.contains('?'))
+            .map(|witness| {
+                vec![SourceLocation {
+                    path: witness.origin.clone(),
+                    span: witness.span,
+                    label: "non-matchable witness exported here".to_owned(),
+                }]
+            })
     }
 
     pub fn effectful_program(&self) -> Option<&'static str> {
@@ -713,11 +800,14 @@ fn stdlib_error_analysis(error: StdlibError) -> Analysis {
                     message: error.to_string(),
                 },
                 span: zutai_syntax::Span::default(),
+                path: None,
+                related: Vec::new(),
             }),
         }],
         pass_reports: Vec::new(),
         import_values: FxHashMap::default(),
         import_modules: FxHashMap::default(),
+        import_sites: FxHashMap::default(),
         tlc: None,
         witness_exports: Vec::new(),
     }
@@ -780,6 +870,7 @@ pub(crate) fn analyze_inner(
             pass_reports: Vec::new(),
             import_values: FxHashMap::default(),
             import_modules: FxHashMap::default(),
+            import_sites: FxHashMap::default(),
             tlc: None,
             witness_exports: Vec::new(),
         };
@@ -795,6 +886,7 @@ pub(crate) fn analyze_inner(
             pass_reports: Vec::new(),
             import_values: FxHashMap::default(),
             import_modules: FxHashMap::default(),
+            import_sites: FxHashMap::default(),
             tlc: None,
             witness_exports: Vec::new(),
         };
@@ -832,6 +924,7 @@ pub(crate) fn analyze_inner(
 
     let mut import_values = FxHashMap::default();
     let mut import_modules = FxHashMap::default();
+    let mut import_sites = FxHashMap::default();
     let mut imported_witnesses = Vec::new();
     let thir =
         if hir.diagnostics.is_empty() {
@@ -848,6 +941,7 @@ pub(crate) fn analyze_inner(
             }));
             import_values = resolved.values;
             import_modules = resolved.modules;
+            import_sites = resolved.sites;
             imported_witnesses = resolved.witnesses;
 
             let lowered = zutai_thir::lower_hir_with_options(
@@ -954,6 +1048,7 @@ pub(crate) fn analyze_inner(
         pass_reports,
         import_values,
         import_modules,
+        import_sites,
         tlc,
         witness_exports,
     }
@@ -1863,6 +1958,29 @@ mod tests {
     }
 
     #[test]
+    fn native_import_refusal_retains_request_and_export_locations() {
+        let source = "m ::= import \"nonmatchable_witness.zt\";\nm\n";
+        let analysis = analyze_in_imports(source);
+        let diagnostics = analysis.native_import_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        let diagnostic = &diagnostics[0];
+        assert_eq!(
+            &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
+            "import \"nonmatchable_witness.zt\""
+        );
+        assert_eq!(diagnostic.related.len(), 1);
+        assert!(
+            diagnostic.related[0]
+                .path
+                .ends_with("nonmatchable_witness.zt")
+        );
+        assert_eq!(
+            diagnostic.related[0].label,
+            "non-matchable witness exported here"
+        );
+    }
+
+    #[test]
     fn cross_module_conflicting_witnesses_report_import_error() {
         let analysis = analyze_in_imports(
             r#"
@@ -1953,6 +2071,25 @@ b ::= import "witness_reexport_b.zt";
             SemanticDiagnosticKind::Import(import)
                 if matches!(import.kind, ImportDiagnosticKind::ImportCycle { .. })
         )));
+        let cycle = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                SemanticDiagnosticKind::Import(import)
+                    if matches!(import.kind, ImportDiagnosticKind::ImportCycle { .. }) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("cycle diagnostic");
+        assert!(!cycle.related.is_empty());
+        assert!(cycle.related.iter().all(|location| {
+            location
+                .path
+                .extension()
+                .is_some_and(|extension| extension == "zt")
+        }));
     }
 
     #[test]

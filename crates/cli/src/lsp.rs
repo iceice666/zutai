@@ -55,10 +55,21 @@ impl ProjectAnalysis {
         self.source_paths
             .get(source)
             .cloned()
-            .or_else(|| Some(source.clone()))
+            .or_else(|| Some(self.filesystem_path(source)))
+    }
+
+    fn filesystem_path(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+        self.source_paths.get(path).cloned().unwrap_or_else(|| {
+            self.root_path
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(path)
+        })
     }
 }
-
 impl Server {
     fn handle(&mut self, message: Value, output: &mut impl Write) -> io::Result<bool> {
         let Some(method) = message.get("method").and_then(Value::as_str) else {
@@ -243,12 +254,10 @@ impl Server {
             let Some(root_source) = self.source_for(&root_uri) else {
                 continue;
             };
-            let Some(analysis) = self.analyze_with_overlays(&root_uri, &root_source) else {
+            let Some(project) = self.analyze_with_overlays(&root_uri, &root_source) else {
                 continue;
             };
-            for (uri, diagnostic) in
-                self.routed_diagnostics(&root_uri, &root_source, &analysis.analysis)
-            {
+            for (uri, diagnostic) in self.routed_diagnostics(&root_uri, &root_source, &project) {
                 routed.entry(uri).or_default().push(diagnostic);
             }
         }
@@ -364,8 +373,9 @@ impl Server {
         &self,
         root_uri: &str,
         root_source: &str,
-        analysis: &zutai_semantic::Analysis,
+        project: &ProjectAnalysis,
     ) -> Vec<(String, Value)> {
+        let analysis = &project.analysis;
         let mut output = Vec::new();
         for diagnostic in &analysis.diagnostics {
             if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &diagnostic.kind
@@ -403,12 +413,83 @@ impl Server {
                     continue;
                 }
             }
-            output.push((
-                root_uri.to_string(),
-                diagnostic_value(root_source, root_uri, diagnostic),
-            ));
+            if let zutai_semantic::SemanticDiagnosticKind::Import(import) = &diagnostic.kind {
+                let primary_path = import
+                    .path
+                    .as_deref()
+                    .map(|path| project.filesystem_path(path));
+                let primary_uri = primary_path
+                    .as_deref()
+                    .map(|path| self.uri_for_path(path))
+                    .unwrap_or_else(|| root_uri.to_string());
+                let primary_source = primary_path
+                    .as_deref()
+                    .and_then(|path| {
+                        self.source_for(&primary_uri)
+                            .or_else(|| std::fs::read_to_string(path).ok())
+                    })
+                    .unwrap_or_else(|| root_source.to_string());
+                let mut value = diagnostic_value(&primary_source, &primary_uri, diagnostic);
+                let related: Vec<_> = import
+                    .related
+                    .iter()
+                    .map(|location| {
+                        let path = project.filesystem_path(&location.path);
+                        json!({
+                            "location": {
+                                "uri": self.uri_for_path(&path),
+                                "range": self.range_for_analysis_path(&path, location.span),
+                            },
+                            "message": location.label,
+                        })
+                    })
+                    .collect();
+                if !related.is_empty() {
+                    value["relatedInformation"] = Value::Array(related);
+                }
+                output.push((primary_uri, value));
+            } else {
+                output.push((
+                    root_uri.to_string(),
+                    diagnostic_value(root_source, root_uri, diagnostic),
+                ));
+            }
         }
+        for diagnostic in analysis.native_import_diagnostics() {
+            let mut value = json!({
+                "range": range(root_source, diagnostic.span.start as usize, diagnostic.span.end as usize),
+                "severity": 2,
+                "source": "zutai",
+                "message": diagnostic.message,
+            });
+            let related: Vec<_> = diagnostic
+                .related
+                .iter()
+                .map(|location| {
+                    let path = project.filesystem_path(&location.path);
+                    json!({
+                        "location": {
+                            "uri": self.uri_for_path(&path),
+                            "range": self.range_for_analysis_path(&path, location.span),
+                        },
+                        "message": location.label,
+                    })
+                })
+                .collect();
+            if !related.is_empty() {
+                value["relatedInformation"] = Value::Array(related);
+            }
+            output.push((root_uri.to_string(), value));
+        }
+
         output
+    }
+
+    fn range_for_analysis_path(&self, path: &Path, span: zutai_syntax::Span) -> Value {
+        let uri = self.uri_for_path(path);
+        self.source_for(&uri)
+            .map(|source| range(&source, span.start as usize, span.end as usize))
+            .unwrap_or_else(|| range("", 0, 0))
     }
 
     fn uri_for_path(&self, path: &std::path::Path) -> String {
@@ -1792,6 +1873,7 @@ mod tests {
     fn derive_diagnostic_carries_definition_related_information() {
         let source = "Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1";
         let analysis = analyze(source, "file:///tmp/derive.zt").unwrap();
+
         let diagnostics = diagnostics(source, &analysis);
         let derive = diagnostics
             .iter()
@@ -1821,6 +1903,60 @@ mod tests {
             Some(1),
             "primary range should sit at the derive request"
         );
+    }
+
+    #[test]
+    fn native_gated_import_warning_retains_use_and_export_locations() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "zutai-lsp-native-import-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dep_path = dir.join("dep.zt");
+        let root_path = dir.join("main.zt");
+        let dep_source = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\n1\n";
+        let root_source = "m ::= import \"dep.zt\";\nm\n";
+        std::fs::write(&dep_path, dep_source).unwrap();
+        std::fs::write(&root_path, root_source).unwrap();
+        let root_uri = file_uri(&root_path);
+        let mut server = Server::default();
+        server.documents.insert(
+            root_uri.clone(),
+            Document {
+                text: root_source.to_owned(),
+                version: Some(1),
+            },
+        );
+        let project = server
+            .analyze_with_overlays(&root_uri, root_source)
+            .expect("project analysis");
+        let diagnostics = server.routed_diagnostics(&root_uri, root_source, &project);
+        let warning = diagnostics
+            .iter()
+            .map(|(_, diagnostic)| diagnostic)
+            .find(|diagnostic| {
+                diagnostic
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains("non-matchable typeclass instances"))
+            })
+            .expect("native import warning");
+        assert_eq!(warning["severity"], json!(2));
+        assert_eq!(warning["range"]["start"]["line"], json!(0));
+        let related = warning["relatedInformation"].as_array().unwrap();
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0]["location"]["uri"], json!(file_uri(&dep_path)));
+        assert_eq!(related[0]["location"]["range"]["start"]["line"], json!(1));
+        assert_eq!(
+            related[0]["message"],
+            json!("non-matchable witness exported here")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -2036,6 +2172,146 @@ mod tests {
         assert_eq!(
             diagnostic.pointer("/range/end").cloned(),
             Some(position_at(bad_source, cli_import.span.end as usize))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn package_diagnostics_route_imports_and_manifest_provenance() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-lsp-package-diagnostics-{}-{nonce}",
+            std::process::id()
+        ));
+
+        let unknown = root.join("unknown");
+        std::fs::create_dir_all(unknown.join("src")).unwrap();
+        std::fs::write(
+            unknown.join("zutai.zti"),
+            package_manifest("unknown", "", ""),
+        )
+        .unwrap();
+        let unknown_path = unknown.join("src/main.zt");
+        let unknown_source = "api ::= import missing.api;\napi\n";
+        std::fs::write(&unknown_path, unknown_source).unwrap();
+        let unknown_uri = file_uri(&unknown_path);
+        let mut server = Server::default();
+        server.documents.insert(
+            unknown_uri.clone(),
+            Document {
+                text: unknown_source.to_owned(),
+                version: Some(1),
+            },
+        );
+        let project = server
+            .analyze_with_overlays(&unknown_uri, unknown_source)
+            .unwrap();
+        let routed = server.routed_diagnostics(&unknown_uri, unknown_source, &project);
+        let (uri, diagnostic) = routed
+            .iter()
+            .find(|(_, diagnostic)| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("unknown package dependency alias"))
+            })
+            .expect("unknown package alias diagnostic");
+        assert_eq!(uri, &unknown_uri);
+        assert_eq!(diagnostic["range"]["start"]["line"], json!(0));
+
+        let duplicate = root.join("duplicate");
+        let dep = root.join("dep");
+        std::fs::create_dir_all(duplicate.join("src")).unwrap();
+        std::fs::create_dir_all(dep.join("src")).unwrap();
+        std::fs::write(dep.join("zutai.zti"), package_manifest("dep", "", "")).unwrap();
+        let duplicate_manifest = package_manifest(
+            "duplicate",
+            "",
+            "{ alias = \"dep\"; path = \"../dep\"; }; { alias = \"dep\"; path = \"../dep\"; }",
+        );
+        let duplicate_manifest_path = duplicate.join("zutai.zti");
+        std::fs::write(&duplicate_manifest_path, &duplicate_manifest).unwrap();
+        let duplicate_path = duplicate.join("src/main.zt");
+        let duplicate_source = "api ::= import dep.api;\napi\n";
+        std::fs::write(&duplicate_path, duplicate_source).unwrap();
+        let duplicate_uri = file_uri(&duplicate_path);
+        let duplicate_manifest_uri = file_uri(&duplicate_manifest_path);
+        server.documents.insert(
+            duplicate_uri.clone(),
+            Document {
+                text: duplicate_source.to_owned(),
+                version: Some(1),
+            },
+        );
+        let project = server
+            .analyze_with_overlays(&duplicate_uri, duplicate_source)
+            .unwrap();
+        let routed = server.routed_diagnostics(&duplicate_uri, duplicate_source, &project);
+        let (uri, diagnostic) = routed
+            .iter()
+            .find(|(_, diagnostic)| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("duplicate dependency alias"))
+            })
+            .expect("duplicate dependency alias diagnostic");
+        assert_eq!(uri, &duplicate_manifest_uri);
+        let second_alias = duplicate_manifest.rfind("\"dep\"").unwrap();
+        assert_eq!(
+            diagnostic["range"]["start"],
+            position_at(&duplicate_manifest, second_alias)
+        );
+
+        let a = root.join("a");
+        let b = root.join("b");
+        std::fs::create_dir_all(a.join("src")).unwrap();
+        std::fs::create_dir_all(b.join("src")).unwrap();
+        std::fs::write(
+            a.join("zutai.zti"),
+            package_manifest("a", "", "{ alias = \"b\"; path = \"../b\"; }"),
+        )
+        .unwrap();
+        std::fs::write(
+            b.join("zutai.zti"),
+            package_manifest("b", "", "{ alias = \"a\"; path = \"../a\"; }"),
+        )
+        .unwrap();
+        let cycle_path = a.join("src/main.zt");
+        let cycle_source = "api ::= import b.api;\napi\n";
+        std::fs::write(&cycle_path, cycle_source).unwrap();
+        let cycle_uri = file_uri(&cycle_path);
+        server.documents.insert(
+            cycle_uri.clone(),
+            Document {
+                text: cycle_source.to_owned(),
+                version: Some(1),
+            },
+        );
+        let project = server
+            .analyze_with_overlays(&cycle_uri, cycle_source)
+            .unwrap();
+        let routed = server.routed_diagnostics(&cycle_uri, cycle_source, &project);
+        let (uri, diagnostic) = routed
+            .iter()
+            .find(|(_, diagnostic)| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("package dependency cycle"))
+            })
+            .expect("package dependency cycle diagnostic");
+        assert_eq!(uri, &cycle_uri);
+        let related = diagnostic["relatedInformation"].as_array().unwrap();
+        assert_eq!(related.len(), 2);
+        assert_eq!(
+            related[0]["location"]["uri"],
+            json!(file_uri(&a.join("zutai.zti")))
+        );
+        assert_eq!(
+            related[1]["location"]["uri"],
+            json!(file_uri(&b.join("zutai.zti")))
         );
 
         let _ = std::fs::remove_dir_all(root);

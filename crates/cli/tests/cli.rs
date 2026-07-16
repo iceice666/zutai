@@ -104,6 +104,103 @@ fn local_package_dependency_checks_and_runs() {
 }
 
 #[test]
+fn package_diagnostics_render_import_and_manifest_locations() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "zutai-cli-package-diagnostics-{}-{nonce}",
+        std::process::id()
+    ));
+
+    let unknown = root.join("unknown");
+    std::fs::create_dir_all(unknown.join("src")).unwrap();
+    std::fs::write(
+        unknown.join("zutai.zti"),
+        format!(
+            "{{ formatVersion = 1; name = \"unknown\"; compilerCompatibility = \"{}\"; modules = []; dependencies = []; }}",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    let unknown_entry = unknown.join("src/main.zt");
+    std::fs::write(&unknown_entry, "api ::= import missing.api;\napi\n").unwrap();
+    cli()
+        .arg("check")
+        .arg(&unknown_entry)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown package dependency"))
+        .stderr(predicate::str::contains("alias `missing`"))
+        .stderr(predicate::str::contains("import missing.api"));
+
+    let duplicate = root.join("duplicate");
+    let dep = root.join("dep");
+    std::fs::create_dir_all(duplicate.join("src")).unwrap();
+    std::fs::create_dir_all(dep.join("src")).unwrap();
+    let dep_manifest = format!(
+        "{{ formatVersion = 1; name = \"dep\"; compilerCompatibility = \"{}\"; modules = []; dependencies = []; }}",
+        env!("CARGO_PKG_VERSION")
+    );
+    std::fs::write(dep.join("zutai.zti"), dep_manifest).unwrap();
+    let duplicate_manifest = format!(
+        "{{ formatVersion = 1; name = \"duplicate\"; compilerCompatibility = \"{}\"; modules = []; dependencies = [{{ alias = \"dep\"; path = \"../dep\"; }}; {{ alias = \"dep\"; path = \"../dep\"; }};]; }}",
+        env!("CARGO_PKG_VERSION")
+    );
+    std::fs::write(duplicate.join("zutai.zti"), duplicate_manifest).unwrap();
+    let duplicate_entry = duplicate.join("src/main.zt");
+    std::fs::write(&duplicate_entry, "api ::= import dep.api;\napi\n").unwrap();
+    cli()
+        .arg("check")
+        .arg(&duplicate_entry)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("duplicate dependency alias"))
+        .stderr(predicate::str::contains("\"dep\""))
+        .stderr(predicate::str::contains("zutai.zti"))
+        .stderr(predicate::str::contains("alias = \"dep\""));
+
+    let a = root.join("a");
+    let b = root.join("b");
+    std::fs::create_dir_all(a.join("src")).unwrap();
+    std::fs::create_dir_all(b.join("src")).unwrap();
+    std::fs::write(
+        a.join("zutai.zti"),
+        format!(
+            "{{ formatVersion = 1; name = \"a\"; compilerCompatibility = \"{}\"; modules = []; dependencies = [{{ alias = \"b\"; path = \"../b\"; }};]; }}",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        b.join("zutai.zti"),
+        format!(
+            "{{ formatVersion = 1; name = \"b\"; compilerCompatibility = \"{}\"; modules = []; dependencies = [{{ alias = \"a\"; path = \"../a\"; }};]; }}",
+            env!("CARGO_PKG_VERSION")
+        ),
+    )
+    .unwrap();
+    let cycle_entry = a.join("src/main.zt");
+    std::fs::write(&cycle_entry, "api ::= import b.api;\napi\n").unwrap();
+    cli()
+        .arg("check")
+        .arg(&cycle_entry)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("package dependency cycle"))
+        .stderr(predicate::str::contains("dependency cycle continues here"))
+        .stderr(predicate::str::contains(
+            a.join("zutai.zti").to_string_lossy().to_string(),
+        ))
+        .stderr(predicate::str::contains(
+            b.join("zutai.zti").to_string_lossy().to_string(),
+        ));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn check_reports_imported_data_mismatch_at_zti_value() {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1425,7 +1522,9 @@ fn run_zt_with_import_error_exits_nonzero() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("import error"));
+        .stderr(predicate::str::contains(
+            "file not found: ./does_not_exist.zti",
+        ));
 }
 
 #[test]
@@ -1858,8 +1957,9 @@ fn parse_zt_with_import_error_surfaces_root_cause() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("import error"))
-        .stderr(predicate::str::contains("file not found"));
+        .stderr(predicate::str::contains(
+            "file not found: ./does_not_exist_parse.zti",
+        ));
 }
 
 // ─── `check` subcommand ────────────────────────────────────────────────────────
@@ -5501,6 +5601,44 @@ fn compile_zt_diamond_import_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
     assert!(native.trim().contains("23"), "expected 23, got {native:?}");
 }
+#[test]
+fn compile_imported_nonmatchable_witness_reports_use_and_export_sources() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "zutai-cli-import-warning-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dep_path = dir.join("dep.zt");
+    let root_path = dir.join("main.zt");
+    let output_path = dir.join("main-bin");
+    std::fs::write(
+        &dep_path,
+        "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\n1\n",
+    )
+    .unwrap();
+    std::fs::write(&root_path, "m ::= import \"dep.zt\";\nm\n").unwrap();
+
+    cli()
+        .args(["compile", root_path.to_str().unwrap(), "-o"])
+        .arg(&output_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("main.zt"))
+        .stderr(predicate::str::contains(
+            "non-matchable typeclass instances",
+        ))
+        .stderr(predicate::str::contains("dep.zt"))
+        .stderr(predicate::str::contains(
+            "non-matchable witness exported here",
+        ));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn compile_zt_imported_concrete_witness_matches_oracle() {
     // Cross-module concrete witness dispatch: dep declares the constraint + witness,

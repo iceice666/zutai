@@ -26,12 +26,6 @@ packages before adding any new surface area.
 
 Milestones:
 
-1. **Import provenance everywhere diagnostics cross a file boundary.** Package,
-   module, witness, derive, and backend refusal diagnostics should carry both
-   request and definition/import-chain locations when available. Acceptance:
-   focused CLI/LSP tests cover unknown aliases, duplicate dependency aliases,
-   package cycles, non-matchable witness exports, malformed derive recipes, and
-   native-gated imports without losing the original use site.
 2. **Deterministic package-analysis cache.** Reuse parsed and lowered package
    modules across CLI, LSP, web-bundle construction, and tests without changing
    language semantics. Cache invalidation must be keyed by source content,

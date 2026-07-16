@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use zutai_im::{Block, Value};
+use zutai_im::{Block, LocatedChildren, Value};
 
 pub(crate) const MANIFEST_NAME: &str = "zutai.zti";
 const FORMAT_VERSION: i64 = 1;
@@ -39,11 +39,44 @@ pub(crate) struct FilesystemPackageGraph {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct PackageSetupError {
+    pub message: String,
+    pub path: Option<PathBuf>,
+    pub span: Option<zutai_syntax::Span>,
+    pub related: Vec<crate::SourceLocation>,
+}
+
+impl PackageSetupError {
+    fn new(message: String) -> Self {
+        Self {
+            message,
+            path: None,
+            span: None,
+            related: Vec::new(),
+        }
+    }
+
+    fn at(path: PathBuf, span: zutai_im::ByteSpan, message: String) -> Self {
+        Self {
+            message,
+            path: Some(path),
+            span: Some(immediate_span(span)),
+            related: Vec::new(),
+        }
+    }
+
+    fn with_related(mut self, related: crate::SourceLocation) -> Self {
+        self.related.insert(0, related);
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum PackageGraph {
     None,
     Filesystem(FilesystemPackageGraph),
     Memory(PortablePackageGraph),
-    Invalid(String),
+    Invalid(PackageSetupError),
 }
 
 pub(crate) struct ResolvedPackageSource {
@@ -91,18 +124,20 @@ impl PackageGraph {
             return if graph.root_package.is_none() && graph.packages.is_empty() {
                 Self::None
             } else {
-                Self::Invalid("portable package graph has an incomplete root".to_owned())
+                Self::Invalid(PackageSetupError::new(
+                    "portable package graph has an incomplete root".to_owned(),
+                ))
             };
         }
         match validate_portable(&graph) {
             Ok(()) => Self::Memory(graph),
-            Err(error) => Self::Invalid(error),
+            Err(error) => Self::Invalid(PackageSetupError::new(error)),
         }
     }
 
-    pub(crate) fn invalid_message(&self) -> Option<&str> {
+    pub(crate) fn invalid_error(&self) -> Option<&PackageSetupError> {
         match self {
-            Self::Invalid(message) => Some(message),
+            Self::Invalid(error) => Some(error),
             _ => None,
         }
     }
@@ -178,7 +213,7 @@ impl PackageGraph {
 }
 
 impl FilesystemPackageGraph {
-    fn discover(path: &Path) -> Result<Option<Self>, String> {
+    fn discover(path: &Path) -> Result<Option<Self>, PackageSetupError> {
         let start = if path.is_dir() {
             path
         } else {
@@ -187,8 +222,12 @@ impl FilesystemPackageGraph {
         let Some(root) = find_manifest_root(start) else {
             return Ok(None);
         };
-        let root = fs::canonicalize(&root)
-            .map_err(|error| format!("cannot resolve package root {}: {error}", root.display()))?;
+        let root = fs::canonicalize(&root).map_err(|error| {
+            PackageSetupError::new(format!(
+                "cannot resolve package root {}: {error}",
+                root.display()
+            ))
+        })?;
         let mut packages = BTreeMap::new();
         let mut names = BTreeMap::new();
         let mut stack = Vec::new();
@@ -301,9 +340,13 @@ fn load_package(
     packages: &mut BTreeMap<PathBuf, FilesystemPackage>,
     names: &mut BTreeMap<String, PathBuf>,
     stack: &mut Vec<PathBuf>,
-) -> Result<String, String> {
-    let root = fs::canonicalize(root)
-        .map_err(|error| format!("cannot resolve package path {}: {error}", root.display()))?;
+) -> Result<String, PackageSetupError> {
+    let root = fs::canonicalize(root).map_err(|error| {
+        PackageSetupError::new(format!(
+            "cannot resolve package path {}: {error}",
+            root.display()
+        ))
+    })?;
     if let Some(package) = packages.get(&root) {
         return Ok(package.name.clone());
     }
@@ -313,70 +356,87 @@ fn load_package(
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
         cycle.push(root.display().to_string());
-        return Err(format!("package dependency cycle: {}", cycle.join(" -> ")));
+        return Err(PackageSetupError::new(format!(
+            "package dependency cycle: {}",
+            cycle.join(" -> ")
+        )));
     }
     stack.push(root.clone());
     let manifest_path = root.join(MANIFEST_NAME);
     let source = fs::read_to_string(&manifest_path).map_err(|error| {
-        format!(
+        PackageSetupError::new(format!(
             "cannot read package manifest {}: {error}",
             manifest_path.display()
-        )
+        ))
     })?;
-    let manifest = parse_manifest(&manifest_path, &source)?;
+    let manifest = parse_manifest(&manifest_path, &source).map_err(PackageSetupError::new)?;
     if let Some(existing) = names.get(&manifest.name)
         && existing != &root
     {
-        return Err(format!(
+        return Err(PackageSetupError::new(format!(
             "duplicate package name {:?} at {} and {}",
             manifest.name,
             existing.display(),
             root.display()
-        ));
+        )));
     }
     names.insert(manifest.name.clone(), root.clone());
 
     let mut modules = BTreeMap::new();
     for (name, relative) in manifest.modules {
-        validate_module_name(&name)?;
+        validate_module_name(&name).map_err(PackageSetupError::new)?;
         let relative_path = Path::new(&relative);
         if relative.contains('\0')
             || relative.contains('\\')
             || !safe_relative_path(relative_path, "zt")
         {
-            return Err(format!(
+            return Err(PackageSetupError::new(format!(
                 "unsafe module path {relative:?} in {}",
                 manifest_path.display()
-            ));
+            )));
         }
         let canonical = fs::canonicalize(root.join(relative_path)).map_err(|error| {
-            format!(
+            PackageSetupError::new(format!(
                 "cannot resolve module {name:?} at {}: {error}",
                 root.join(relative_path).display()
-            )
+            ))
         })?;
         if !canonical.starts_with(&root) {
-            return Err(format!(
+            return Err(PackageSetupError::new(format!(
                 "module {name:?} escapes package root {}",
                 root.display()
-            ));
+            )));
         }
         if modules
             .insert(name.clone(), path_key(relative_path))
             .is_some()
         {
-            return Err(format!(
+            return Err(PackageSetupError::new(format!(
                 "duplicate module {name:?} in {}",
                 manifest_path.display()
-            ));
+            )));
         }
     }
 
     let mut dependencies = BTreeMap::new();
-    for (alias, relative) in manifest.dependencies {
-        validate_name("dependency alias", &alias)?;
+    for dependency in manifest.dependencies {
+        let alias = dependency.alias;
+        let relative = dependency.path;
+        validate_name("dependency alias", &alias).map_err(PackageSetupError::new)?;
         if alias == "stdlib" {
-            return Err("dependency alias `stdlib` is reserved by the toolchain".to_owned());
+            return Err(PackageSetupError::new(
+                "dependency alias `stdlib` is reserved by the toolchain".to_owned(),
+            ));
+        }
+        if dependencies.contains_key(&alias) {
+            return Err(PackageSetupError::at(
+                manifest_path.clone(),
+                dependency.alias_span,
+                format!(
+                    "duplicate dependency alias {alias:?} in {}",
+                    manifest_path.display()
+                ),
+            ));
         }
         let relative_path = Path::new(&relative);
         if relative_path.is_absolute()
@@ -388,30 +448,35 @@ fn load_package(
                 .components()
                 .any(|component| matches!(component, Component::Prefix(_) | Component::RootDir))
         {
-            return Err(format!("invalid local dependency path {relative:?}"));
+            return Err(PackageSetupError::new(format!(
+                "invalid local dependency path {relative:?}"
+            )));
         }
         let dependency_root = fs::canonicalize(root.join(relative_path)).map_err(|error| {
-            format!(
+            PackageSetupError::new(format!(
                 "cannot resolve dependency {alias:?} at {}: {error}",
                 root.join(relative_path).display()
-            )
+            ))
         })?;
         if !dependency_root.join(MANIFEST_NAME).is_file() {
-            return Err(format!(
+            return Err(PackageSetupError::new(format!(
                 "dependency {alias:?} has no {MANIFEST_NAME} at {}",
                 dependency_root.display()
-            ));
+            )));
         }
-        load_package(&dependency_root, packages, names, stack)?;
-        if dependencies
-            .insert(alias.clone(), dependency_root)
-            .is_some()
-        {
-            return Err(format!(
-                "duplicate dependency alias {alias:?} in {}",
-                manifest_path.display()
-            ));
+        if let Err(error) = load_package(&dependency_root, packages, names, stack) {
+            let label = if error.message.contains("package dependency cycle") {
+                "package dependency cycle continues here"
+            } else {
+                "dependency declared here"
+            };
+            return Err(error.with_related(crate::SourceLocation {
+                path: manifest_path.clone(),
+                span: immediate_span(dependency.alias_span),
+                label: label.to_owned(),
+            }));
         }
+        dependencies.insert(alias, dependency_root);
     }
     stack.pop();
     let name = manifest.name.clone();
@@ -431,31 +496,38 @@ fn load_package(
 struct Manifest {
     name: String,
     modules: Vec<(String, String)>,
-    dependencies: Vec<(String, String)>,
+    dependencies: Vec<ManifestDependency>,
+}
+
+#[derive(Debug)]
+struct ManifestDependency {
+    alias: String,
+    path: String,
+    alias_span: zutai_im::ByteSpan,
 }
 
 fn parse_manifest(path: &Path, source: &str) -> Result<Manifest, String> {
-    let block = zutai_im::parse_syntax(source)
+    let block = zutai_im::parse_located(source)
         .map_err(|error| format!("invalid package manifest {}: {error}", path.display()))?;
-    reject_duplicate_fields(path, &block)?;
-    let format_version = integer_field(path, &block, "formatVersion")?;
+    reject_duplicate_fields(path, &block.value)?;
+    let format_version = integer_field(path, &block.value, "formatVersion")?;
     if format_version != FORMAT_VERSION {
         return Err(format!(
             "unsupported package manifest format {format_version} in {}; expected {FORMAT_VERSION}",
             path.display()
         ));
     }
-    let name = string_field(path, &block, "name")?.to_owned();
+    let name = string_field(path, &block.value, "name")?.to_owned();
     validate_name("package", &name)?;
-    let compatibility = string_field(path, &block, "compilerCompatibility")?;
+    let compatibility = string_field(path, &block.value, "compilerCompatibility")?;
     if compatibility != COMPILER_COMPATIBILITY {
         return Err(format!(
             "package compatibility {compatibility:?} in {} does not match compiler {COMPILER_COMPATIBILITY:?}",
             path.display()
         ));
     }
-    let modules = entry_list(path, &block, "modules", "name", "path")?;
-    let dependencies = optional_entry_list(path, &block, "dependencies", "alias", "path")?;
+    let modules = entry_list(path, &block.value, "modules", "name", "path")?;
+    let dependencies = located_dependencies(path, &block)?;
     let known = [
         "formatVersion",
         "name",
@@ -464,6 +536,7 @@ fn parse_manifest(path: &Path, source: &str) -> Result<Manifest, String> {
         "dependencies",
     ];
     if let Some(field) = block
+        .value
         .iter()
         .find(|pair| !known.contains(&pair.field_name.as_str()))
     {
@@ -564,17 +637,79 @@ fn entry_list(
         .collect()
 }
 
-fn optional_entry_list(
+fn located_dependencies(
     path: &Path,
-    block: &Block,
-    field: &str,
-    key_field: &str,
-    value_field_name: &str,
-) -> Result<Vec<(String, String)>, String> {
-    if block.iter().any(|pair| pair.field_name == field) {
-        entry_list(path, block, field, key_field, value_field_name)
-    } else {
-        Ok(Vec::new())
+    block: &zutai_im::LocatedBlock,
+) -> Result<Vec<ManifestDependency>, String> {
+    let Some(field) = block
+        .fields
+        .iter()
+        .find(|field| field.field_name == "dependencies")
+    else {
+        return Ok(Vec::new());
+    };
+    let LocatedChildren::Array(entries) = &field.value.children else {
+        return Err(format!(
+            "field \"dependencies\" must be an array in {}",
+            path.display()
+        ));
+    };
+    entries
+        .iter()
+        .map(|entry| {
+            let LocatedChildren::Block(fields) = &entry.children else {
+                return Err(format!(
+                    "entries in \"dependencies\" must be blocks in {}",
+                    path.display()
+                ));
+            };
+            let Value::Block(value) = &entry.value else {
+                unreachable!("located block children match their value")
+            };
+            reject_duplicate_fields(path, value)?;
+            if fields.iter().any(|field| {
+                field.field_name != "alias"
+                    && field.field_name != "path"
+                    && field.field_name != "visibility"
+            }) {
+                return Err(format!(
+                    "entries in \"dependencies\" contain an unknown field in {}",
+                    path.display()
+                ));
+            }
+            let alias = fields
+                .iter()
+                .find(|field| field.field_name == "alias")
+                .ok_or_else(|| format!("missing field \"alias\" in {}", path.display()))?;
+            let relative = fields
+                .iter()
+                .find(|field| field.field_name == "path")
+                .ok_or_else(|| format!("missing field \"path\" in {}", path.display()))?;
+            let Value::String(alias_value) = &alias.value.value else {
+                return Err(format!(
+                    "field \"alias\" must be a string in {}",
+                    path.display()
+                ));
+            };
+            let Value::String(relative_value) = &relative.value.value else {
+                return Err(format!(
+                    "field \"path\" must be a string in {}",
+                    path.display()
+                ));
+            };
+            Ok(ManifestDependency {
+                alias: alias_value.clone(),
+                path: relative_value.clone(),
+                alias_span: alias.value.span,
+            })
+        })
+        .collect()
+}
+
+fn immediate_span(span: zutai_im::ByteSpan) -> zutai_syntax::Span {
+    zutai_syntax::Span {
+        start: span.start as u32,
+        end: span.end as u32,
     }
 }
 
@@ -920,10 +1055,14 @@ mod tests {
                 },
             )]),
         };
-        let PackageGraph::Invalid(message) = PackageGraph::from_memory(graph) else {
+        let PackageGraph::Invalid(error) = PackageGraph::from_memory(graph) else {
             panic!("invalid portable graph was accepted");
         };
-        assert!(message.contains("missing package"), "{message}");
+        assert!(
+            error.message.contains("missing package"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]
@@ -1007,12 +1146,112 @@ mod tests {
         fs::write(&entry, "x ::= import b.missing; x").unwrap();
         let stdlib = crate::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
         let analysis = crate::analyze_path_with_stdlib(&entry, &stdlib).unwrap();
-        assert!(analysis.diagnostics.iter().any(|diagnostic| matches!(
-            &diagnostic.kind,
-            crate::SemanticDiagnosticKind::Import(crate::ImportDiagnostic {
-                kind: crate::ImportDiagnosticKind::PackageSetup { message },
-                ..
-            }) if message.contains("package dependency cycle")
-        )));
+        let diagnostic = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                crate::SemanticDiagnosticKind::Import(import)
+                    if matches!(
+                        &import.kind,
+                        crate::ImportDiagnosticKind::PackageSetup { message }
+                            if message.contains("package dependency cycle")
+                    ) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("package dependency cycle diagnostic");
+        assert_eq!(diagnostic.related.len(), 2);
+        assert_eq!(diagnostic.related[0].path, a.join(MANIFEST_NAME));
+        assert_eq!(diagnostic.related[1].path, b.join(MANIFEST_NAME));
+        assert_eq!(
+            diagnostic.related[0].label,
+            "package dependency cycle continues here"
+        );
+        assert_eq!(
+            diagnostic.related[1].label,
+            "package dependency cycle continues here"
+        );
+    }
+
+    #[test]
+    fn duplicate_dependency_alias_points_at_manifest_entry() {
+        let temp = Temp::new();
+        let app = temp.0.join("app");
+        let dep = temp.0.join("dep");
+        fs::create_dir_all(app.join("src")).unwrap();
+        fs::create_dir_all(dep.join("src")).unwrap();
+        fs::write(dep.join(MANIFEST_NAME), manifest("dep", "", "")).unwrap();
+        let manifest_source = manifest(
+            "app",
+            "",
+            "{ alias = \"dep\"; path = \"../dep\"; }; { alias = \"dep\"; path = \"../dep\"; }",
+        );
+        fs::write(app.join(MANIFEST_NAME), &manifest_source).unwrap();
+        let entry = app.join("src/main.zt");
+        fs::write(&entry, "x ::= import dep.api; x").unwrap();
+        let stdlib = crate::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+        let analysis = crate::analyze_path_with_stdlib(&entry, &stdlib).unwrap();
+        let diagnostic = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                crate::SemanticDiagnosticKind::Import(import)
+                    if matches!(
+                        &import.kind,
+                        crate::ImportDiagnosticKind::PackageSetup { message }
+                            if message.contains("duplicate dependency alias")
+                    ) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("duplicate dependency alias diagnostic");
+        assert_eq!(
+            diagnostic.path.as_deref(),
+            Some(app.join(MANIFEST_NAME).as_path())
+        );
+        assert_eq!(
+            &manifest_source[diagnostic.span.start as usize..diagnostic.span.end as usize],
+            "\"dep\""
+        );
+    }
+
+    #[test]
+    fn package_setup_error_points_at_first_import() {
+        let temp = Temp::new();
+        let app = temp.0.join("app");
+        fs::create_dir_all(app.join("src")).unwrap();
+        fs::write(
+            app.join(MANIFEST_NAME),
+            manifest("app", "", "{ alias = \"dep\"; path = \"../missing\"; }"),
+        )
+        .unwrap();
+        let source = "x ::= import dep.api;\nx\n";
+        let entry = app.join("src/main.zt");
+        fs::write(&entry, source).unwrap();
+        let stdlib = crate::StdlibSources::load(env!("ZUTAI_STDLIB_ROOT")).unwrap();
+        let analysis = crate::analyze_path_with_stdlib(&entry, &stdlib).unwrap();
+        let diagnostic = analysis
+            .diagnostics
+            .iter()
+            .find_map(|diagnostic| match &diagnostic.kind {
+                crate::SemanticDiagnosticKind::Import(import)
+                    if matches!(
+                        import.kind,
+                        crate::ImportDiagnosticKind::PackageSetup { .. }
+                    ) =>
+                {
+                    Some(import)
+                }
+                _ => None,
+            })
+            .expect("invalid dependency should produce a package setup diagnostic");
+        assert_eq!(
+            &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
+            "import dep.api"
+        );
     }
 }

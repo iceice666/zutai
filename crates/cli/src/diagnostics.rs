@@ -12,7 +12,44 @@ pub(crate) fn print_semantic_errors(
 ) {
     for err in errs {
         if let zutai_semantic::SemanticDiagnosticKind::Import(import) = &err.kind {
-            eprintln!("import error: {}", format_import_diagnostic(import));
+            let primary_path = import.path.as_deref().unwrap_or_else(|| Path::new(path));
+            let primary_contents = if import.path.is_some() {
+                std::fs::read_to_string(primary_path).unwrap_or_else(|_| contents.to_owned())
+            } else {
+                contents.to_owned()
+            };
+            let primary_path = primary_path.to_string_lossy();
+            let diagnostic = ZtSemanticDiagnostic::new(
+                &primary_path,
+                &primary_contents,
+                format_import_diagnostic(import),
+                import.span.start,
+                import.span.end,
+            );
+            eprintln!("{:?}", miette::Report::new(diagnostic));
+            for related in &import.related {
+                let related_path = if related.path.is_absolute() {
+                    related.path.clone()
+                } else {
+                    Path::new(path)
+                        .parent()
+                        .unwrap_or_else(|| Path::new(""))
+                        .join(&related.path)
+                };
+                if let Ok(related_contents) = std::fs::read_to_string(&related_path) {
+                    let related_path = related_path.to_string_lossy();
+                    eprintln!(
+                        "{:?}",
+                        miette::Report::new(ZtSemanticDiagnostic::new(
+                            &related_path,
+                            &related_contents,
+                            related.label.clone(),
+                            related.span.start,
+                            related.span.end,
+                        ))
+                    );
+                }
+            }
             continue;
         }
         if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &err.kind
@@ -303,6 +340,8 @@ mod tests {
         zutai_semantic::ImportDiagnostic {
             kind,
             span: zutai_syntax::Span { start: 0, end: 1 },
+            path: None,
+            related: Vec::new(),
         }
     }
 
@@ -447,5 +486,47 @@ mod tests {
         let d = ZtParseDiagnostic::new("f.zt", contents, err);
         // We just need to ensure the span was clamped (no panic, valid len ≥ 1).
         assert!(d.span.1 >= 1);
+    }
+
+    #[test]
+    fn cross_file_import_diagnostic_uses_its_own_source() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "zutai-cross-file-diagnostic-{}-{nonce}.zt",
+            std::process::id()
+        ));
+        let source = "Eq @Int :: { eq = \\a b. true; }\n";
+        std::fs::write(&path, source).unwrap();
+        let diagnostic = zutai_semantic::ImportDiagnostic {
+            kind: zutai_semantic::ImportDiagnosticKind::ConflictingWitness {
+                constraint: "Eq".to_owned(),
+                target: "Int".to_owned(),
+            },
+            span: zutai_syntax::Span { start: 0, end: 7 },
+            path: Some(path.clone()),
+            related: Vec::new(),
+        };
+        let primary_path = diagnostic.path.as_deref().unwrap();
+        let primary_contents = std::fs::read_to_string(primary_path).unwrap();
+        let rendered = format!(
+            "{:?}",
+            miette::Report::new(ZtSemanticDiagnostic::new(
+                &primary_path.to_string_lossy(),
+                &primary_contents,
+                format_import_diagnostic(&diagnostic),
+                diagnostic.span.start,
+                diagnostic.span.end,
+            ))
+        );
+        assert!(
+            rendered.contains(&path.to_string_lossy().to_string()),
+            "{rendered}"
+        );
+        assert!(rendered.contains("Eq @Int"), "{rendered}");
+
+        let _ = std::fs::remove_file(path);
     }
 }
