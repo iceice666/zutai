@@ -27,6 +27,8 @@ const EXPECTED_ZTI_PARSE: &[&str] = &[
     "docs/spec/02-lexical/conventions.md#15",
     "docs/spec/03-immediate-mode/immediate-mode.md#02",
     "docs/spec/03-immediate-mode/immediate-mode.md#06",
+    "docs/spec/07-modules/modules.md#03",
+    "docs/spec/07-modules/modules.md#04",
     "docs/spec/07-modules/serialization-boundary.md#05",
     "docs/spec/09-metaprogramming/reflection.md#06",
     "docs/spec/11-reference/complete-example.md#01",
@@ -106,6 +108,7 @@ const EXPECTED_ZT_CHECK: &[&str] = &[
     "docs/spec/07-modules/serialization-boundary.md#06",
     "docs/spec/08-effects/host-capabilities.md#01",
     "docs/spec/09-metaprogramming/reflection.md#04",
+    "docs/spec/09-metaprogramming/reflection.md#10",
     "docs/spec/11-reference/complete-example.md#05",
 ];
 const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
@@ -218,6 +221,7 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     ),
     ("docs/spec/08-effects/host-capabilities.md#01", "()"),
     ("docs/spec/09-metaprogramming/reflection.md#04", "()"),
+    ("docs/spec/09-metaprogramming/reflection.md#10", "42"),
     ("docs/spec/11-reference/complete-example.md#05", "()"),
 ];
 
