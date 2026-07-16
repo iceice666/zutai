@@ -86,19 +86,28 @@ vector ::= import math.vector;
 vector.length { 3; 4; }
 ```
 
-The nearest ancestor `zutai.zti` owns a source file. Dependency paths are
-package-relative local filesystem paths; absolute paths, remote dependencies,
-registries, version solving, lockfiles, and executable build hooks are not part
-of the current package model. Module paths must be package-relative `.zt` paths
-and cannot escape their package root. Package dependency cycles, duplicate
-package names, duplicate aliases/modules, incompatible compiler metadata,
-unknown aliases, and unknown public modules are errors.
+The nearest ancestor `zutai.zti` owns a source file. The implemented manifest
+format is version 1 and accepts package-relative local filesystem dependencies
+only. Absolute paths, remote acquisition, registries, version solving,
+lockfiles, and executable build hooks are not implemented. Module paths must be
+package-relative `.zt` paths and cannot escape their package root. Package
+dependency cycles, duplicate package names, duplicate aliases/modules,
+incompatible compiler metadata, unknown aliases, and unknown public modules are
+errors.
 
 Each package resolves aliases from its own manifest, so dependencies may import
 their own dependencies transitively without leaking those aliases into the root
 package. Relative quoted imports retain their existing per-file subtree
 confinement. Package sources and dependency metadata are carried in portable web
 bundles, so filesystem and Wasm analysis resolve the same graph.
+
+A future manifest format 2 and root `zutai.lock.zti` have an accepted design for
+locked HTTPS Git sources, immutable content-addressed snapshots, and explicit
+native acquisition commands. That package-distribution design remains
+unimplemented and does not change the current accepted manifest grammar or
+runtime behavior. See the
+[package distribution decision](../../project/decisions.md#package-distribution-locked-git-source-snapshots)
+and its [roadmap milestone](../../project/roadmap.md#near-term-package-aware-editor-and-diagnostics-hardening).
 
 ### Standard-library imports
 

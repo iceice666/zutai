@@ -480,11 +480,13 @@ The nearest ancestor `zutai.zti` declares a local package. Its inert manifest
 names public `.zt` modules and local path dependencies; a dependency alias forms
 the first segment of a dotted import such as `import math.vector`. Manifests are
 `.zti`, not executable `.zt`, so dependency discovery cannot import, evaluate,
-or depend on the graph it is constructing. The current package layer supports
-local path dependencies only: there is no registry, network fetch, semantic
-version solver, lockfile, feature selection, or build script. Package module
-paths are confined to their package roots, and portable web bundles carry the
-resolved transitive package graph.
+or depend on the graph it is constructing. The implemented format-1 package
+layer supports local path dependencies only: there is no registry, network
+fetch, semantic version solver, lockfile, feature selection, or build script.
+Package module paths are confined to their package roots, and portable web
+bundles carry the resolved transitive package graph. A locked HTTPS Git design
+has been accepted but remains unimplemented; see the
+[package distribution decision](project/decisions.md#package-distribution-locked-git-source-snapshots).
 
 ## Feature support
 

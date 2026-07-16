@@ -5,7 +5,7 @@ is one stable surface specified under the [language specification](../spec/00-in
 Implementation history lives under [`docs/history/`](../history/README.md); this file contains
 only concrete open work.
 
-## Status (2026-07-15)
+## Status (2026-07-16)
 
 The implemented baseline is no longer syntax discovery. Zutai already has one
 stable surface with parser, HIR, THIR, TLC, reference-interpreter, native-AOT,
@@ -47,10 +47,18 @@ Milestones:
    process state. Acceptance: repeated analysis of a package graph avoids
    duplicate work while still invalidating exactly the changed module and its
    dependents.
+4. **Locked Git package acquisition.** Implement the accepted
+   [locked-source package decision](decisions.md#package-distribution-locked-git-source-snapshots):
+   manifest format 2 source variants, root-scoped `zutai.lock.zti`, node-ID
+   package graphs, immutable content-addressed snapshots, and explicit native
+   `package sync` / `fetch` / `update` commands. There is no registry or version
+   solver. Analysis, LSP, compilation, and Wasm remain network-free and consume
+   only a valid prepared graph. Acceptance: hermetic Git fixtures prove exact
+   commit/ref resolution, two revisions of one package in one graph, monorepo
+   `subdir` plus in-repository path dependencies, deterministic lock rewriting,
+   offline cache reuse, stale-manifest and tampered-source refusal, actionable
+   missing-cache diagnostics, and identical CLI/web-bundle import locations.
 
-Deferred here: remote dependencies. Local packages are sufficient until a real
-multi-repository Zutai program needs native fetch, cache, lockfile, and trust
-rules.
 
 ## Mid-term: backend parity and reproducible native builds
 
@@ -107,45 +115,6 @@ Milestones:
    refusal behavior, and migration risk before it can become a scheduled
    milestone.
 
-## Open design question: GitHub-style remote dependencies
-
-The current package model (see
-[local packages](../spec/07-modules/modules.md#local-packages)) is
-local-path-only: a `zutai.zti` manifest declares dependencies as
-package-relative filesystem paths. There is no registry, no remote fetch, no
-version solving, and no lockfile. This is deliberate — package resolution must
-finish before general-mode name resolution or type checking can start, so remote
-fetch is IO the compiler does not currently perform.
-
-A Go-modules-style alternative has been proposed: address a dependency by its
-repository location (for example, a `github.com/...` path) plus a git ref, using
-git itself as the distribution mechanism instead of a central package registry.
-This fits Zutai's existing "no registry" posture better than an npm-style model
-would, but it is not yet a scheduled milestone. Before it becomes one, the
-following need concrete answers:
-
-- **Manifest shape.** Dependency entries currently take `{ alias; path; }`. A
-  remote entry needs at least `{ alias; url; rev; }` or `{ alias; url; tag; }`;
-  decide whether `path` and `url` are mutually exclusive variants of one
-  dependency shape or visibly distinct forms.
-- **Fetch and cache.** Something must git-clone or shallow-fetch into a local
-  module cache before typed work starts, since package resolution is synchronous
-  and pre-typecheck today. This is new process/network IO; decide which crate
-  owns it and how it stays gated to native builds.
-- **Version identity.** Choose exact commits, tag pins, or semver ranges with a
-  solver. `compilerCompatibility` already gates compiler compatibility and is
-  orthogonal to dependency version selection.
-- **Lockfile.** Reproducible remote builds need resolved commit hashes recorded
-  somewhere durable; the current local-path model intentionally has no lockfile.
-- **Wasm / portable bundles.** Package sources are carried pre-resolved into
-  portable web bundles today; the Wasm kernel must continue to do no filesystem
-  or network lookup.
-- **Trust surface.** Arbitrary git fetch during compilation is a supply-chain
-  surface. Decide whether fetched sources need pinning-by-hash verification
-  before they become trusted input to name resolution.
-
-Not scheduled. Add a concrete milestone here only when a real multi-repository
-Zutai program needs it.
 
 ## Reserved design boundaries
 
