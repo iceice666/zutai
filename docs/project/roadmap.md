@@ -26,17 +26,6 @@ packages before adding any new surface area.
 
 Milestones:
 
-3. **Locked Git package acquisition.** Implement the accepted
-   [locked-source package decision](decisions.md#package-distribution-locked-git-source-snapshots):
-   manifest format 2 source variants, root-scoped `zutai.lock.zti`, node-ID
-   package graphs, immutable content-addressed snapshots, and explicit native
-   `package sync` / `fetch` / `update` commands. There is no registry or version
-   solver. Analysis, LSP, compilation, and Wasm remain network-free and consume
-   only a valid prepared graph. Acceptance: hermetic Git fixtures prove exact
-   commit/ref resolution, two revisions of one package in one graph, monorepo
-   `subdir` plus in-repository path dependencies, deterministic lock rewriting,
-   offline cache reuse, stale-manifest and tampered-source refusal, actionable
-   missing-cache diagnostics, and identical CLI/web-bundle import locations.
 
 
 ## Mid-term: backend parity and reproducible native builds

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+mod package;
 mod reflect;
 #[cfg(test)]
 mod tests;
@@ -10,6 +11,7 @@ mod toolchain;
 
 use self::reflect::*;
 use self::toolchain::*;
+pub(crate) use package::PackageCommand;
 
 use crate::diagnostics::{
     ZtParseDiagnostic, extension_or_error, print_ast, print_semantic_errors, print_zt_errors,

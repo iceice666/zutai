@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
         Some(Commands::Web { command }) => command.run()?,
+        Some(Commands::Package { command }) => command.run()?,
         Some(Commands::Repl) => commands::run_repl()?,
         Some(Commands::Lsp) => lsp::run()?,
         None => match cli.path {
@@ -115,6 +116,11 @@ enum Commands {
     Web {
         #[command(subcommand)]
         command: zutai_web::WebCommand,
+    },
+    /// Prepare and maintain a locked package graph
+    Package {
+        #[command(subcommand)]
+        command: commands::PackageCommand,
     },
     /// Run an interactive REPL
     Repl,

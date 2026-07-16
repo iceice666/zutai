@@ -3,6 +3,7 @@ members = [
   "crates/browser/kernel",
   "crates/cli",
   "crates/web",
+  "crates/package",
   "crates/general/anf",
   "crates/general/codegen",
   "crates/general/dataflow",

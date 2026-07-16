@@ -72,6 +72,7 @@ mod tests {
             packages: BTreeMap::from([(
                 "app".to_owned(),
                 zutai_semantic::PortablePackage {
+                    name: "app".to_owned(),
                     dependencies: BTreeMap::from([("math".to_owned(), "math".to_owned())]),
                     modules: BTreeMap::new(),
                     sources: BTreeMap::new(),
