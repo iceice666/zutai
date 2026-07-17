@@ -1,0 +1,2 @@
+Server :: type { host : Text; };
+fields Server

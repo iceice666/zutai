@@ -1,0 +1,3 @@
+readFile :: Path -> Text ! { fs.read : Path -> Text; }
+  = path => perform fs.read path;
+readFile

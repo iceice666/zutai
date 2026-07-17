@@ -35,6 +35,13 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-16 backend refusal matrix locks seven intentional support boundaries
+into executable fixtures. CLI coverage now exercises higher-kinded witness
+execution, residual reflection, unhandled effects, ungranted capabilities,
+non-principal row inference, non-matchable imported witness exports, and
+non-tail `yield from` through the applicable `check`, reference-interpreter
+`run`, and strict-AOT `compile` paths.
+
 The 2026-07-16 locked Git package baseline adds manifest format 2 path/Git
 sources, deterministic root-scoped lockfiles, content-addressed package nodes,
 and immutable tree-hashed snapshots. Native `zutai-cli package sync`, `fetch`,
@@ -72,11 +79,16 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-16 (locked Git package acquisition: manifest format 2,
-deterministic root lockfiles, content-addressed nodes/snapshots, isolated native
-`package sync`/`fetch`/`update`, network-free prepared-graph consumers, portable
-CLI/browser source identities, offline reuse, and stale/missing/tampered-source
-refusal are implemented and covered by hermetic Git fixtures);
+_Last updated: 2026-07-16 (backend refusal matrix: seven executable fixtures now
+lock the documented frontend, reference-interpreter, and strict-AOT boundaries
+for higher-kinded witnesses, residual reflection, effects/capabilities,
+non-principal inference, imported witness exports, and non-tail delegation);
+prior baseline updates: 2026-07-16 (locked Git package acquisition: manifest
+format 2, deterministic root lockfiles, content-addressed nodes/snapshots,
+isolated native `package sync`/`fetch`/`update`, network-free prepared-graph
+consumers, portable CLI/browser source identities, offline reuse, and
+stale/missing/tampered-source refusal are implemented and covered by hermetic
+Git fixtures);
 prior baseline updates: 2026-07-16 (deterministic package-analysis cache:
 imported-module analyses are reused by CLI, LSP, and web rebuild lifetimes
 through an explicit caller-owned cache. Source, manifest/graph, complete stdlib,

@@ -242,6 +242,15 @@ fn general_fixture(name: &str) -> String {
         .to_owned()
 }
 
+fn refusal_fixture(name: &str) -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../general/fixtures/refusals")
+        .join(name)
+        .to_str()
+        .expect("fixture path must be UTF-8")
+        .to_owned()
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -5370,6 +5379,114 @@ fn compile_non_capability_function_entry_is_rejected() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("function"));
+}
+
+#[test]
+fn backend_refusal_matrix_matches_documented_support() {
+    let check_passes = [
+        "unhandled_host_effect.zt",
+        "ungranted_capability.zt",
+        "nonmatchable_witness_export.zt",
+    ];
+    for fixture in check_passes {
+        check_path_passes(&refusal_fixture(fixture));
+    }
+    for (fixture, reason) in [
+        (
+            "higher_kinded_execution.zt",
+            "reflection entry did not fold to a backend value",
+        ),
+        (
+            "residual_reflection.zt",
+            "compiled entry point returns Type, which cannot be shown by the runtime ABI",
+        ),
+        (
+            "nonprincipal_inference.zt",
+            "row-polymorphic inference is not principal here; add a type annotation",
+        ),
+        (
+            "non_tail_yield_from.zt",
+            "`yield from` is only supported in tail position of a generator block",
+        ),
+    ] {
+        cli()
+            .arg("check")
+            .arg(refusal_fixture(fixture))
+            .current_dir(workspace_root())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(reason));
+    }
+
+    for (fixture, reason) in [
+        (
+            "nonprincipal_inference.zt",
+            "row-polymorphic inference is not principal here; add a type annotation",
+        ),
+        (
+            "non_tail_yield_from.zt",
+            "`yield from` is only supported in tail position of a generator block",
+        ),
+    ] {
+        cli()
+            .arg("run")
+            .arg(refusal_fixture(fixture))
+            .current_dir(workspace_root())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(reason));
+    }
+    assert_eq!(
+        run_path_stdout(&refusal_fixture("higher_kinded_execution.zt")),
+        "{ map = <function/1> }\n"
+    );
+    assert!(run_path_stdout(&refusal_fixture("residual_reflection.zt")).contains("Type = <type>"));
+    for fixture in ["unhandled_host_effect.zt", "ungranted_capability.zt"] {
+        assert_eq!(run_path_stdout(&refusal_fixture(fixture)), "<function/1>\n");
+    }
+    assert_eq!(
+        run_path_stdout(&refusal_fixture("nonmatchable_witness_export.zt")),
+        "1\n"
+    );
+
+    for (fixture, reason) in [
+        (
+            "higher_kinded_execution.zt",
+            "reflection entry did not fold to a backend value",
+        ),
+        (
+            "residual_reflection.zt",
+            "compiled entry point returns Type, which cannot be shown by the runtime ABI",
+        ),
+        (
+            "unhandled_host_effect.zt",
+            "algebraic effects remain after TLC lowering",
+        ),
+        (
+            "ungranted_capability.zt",
+            "compiled entry point returns a function, which cannot be shown by the runtime ABI",
+        ),
+        (
+            "nonmatchable_witness_export.zt",
+            "non-matchable typeclass instances",
+        ),
+        (
+            "nonprincipal_inference.zt",
+            "row-polymorphic inference is not principal here; add a type annotation",
+        ),
+        (
+            "non_tail_yield_from.zt",
+            "`yield from` is only supported in tail position of a generator block",
+        ),
+    ] {
+        cli()
+            .arg("compile")
+            .arg(refusal_fixture(fixture))
+            .current_dir(workspace_root())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(reason));
+    }
 }
 
 #[test]

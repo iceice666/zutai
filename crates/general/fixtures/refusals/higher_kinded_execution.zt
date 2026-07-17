@@ -1,0 +1,5 @@
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @List :: { map = \f xs. xs; }
+mapTwice :: <F: Functor, A> (A -> A) -> F A -> F A
+  = f xs => map f (map f xs);
+witness Functor @List
