@@ -45,6 +45,7 @@ cargo run -q -p zutai-cli -- run examples/service_health.zt
 | `text_report.zt` | `stdlib.text` normalization, replacement, joining, and parsing | Prints a text report record |
 | `from_data_runtime.zt` + `from_data_runtime.zti` | Hygienic staging-backed `FromData` derivation at `loadZti` | Prints a typed nested config validation result and ignores an extra input field |
 | `stdlib_ergonomics.zt` + `stdlib_ergonomics.zti` | Records, tagged unions, streams, nested `FromData` derive, and an explicit `Load` capability in one flow | Prints a typed health report; `run` and native output match |
+| `host_capabilities.zt` + `host_capabilities_mock.zt` | `stdlib.env`, `stdlib.clock`, `stdlib.rng`, and `stdlib.load` composed through one explicit capability record, plus source-handler mocks for every wrapper | Host-backed stable fields and shapes agree between `run` and native output; the mock fixture prints deterministic intercepted values |
 | `stdlib_browser.zt` | Small typed `stdlib.html` / `stdlib.css` / `stdlib.browser` application | `check` passes; use `zutai-web build` for browser execution |
 | `net_echo.zt` | `stdlib.net` `withConnection` for one TCP request | Waits on port 7777 until a client sends a line |
 | `echo_http.zt` | Recursive `stdlib.net` `withConnection` for a tiny HTTP responder | Waits on port 8080 and keeps accepting clients |

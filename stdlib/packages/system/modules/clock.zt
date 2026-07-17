@@ -1,0 +1,7 @@
+-- Explicit wall-clock helper over the existing host effect.
+-- Explicit import only: `clock ::= import stdlib.clock`; these names are not ambient.
+NowEffects :: type Unit ! { clock.now : Unit -> Instant; };
+Now :: <A> type A ! { * NowEffects; };
+now :: Clock -> Now Instant
+  = clock => perform clock.now ();
+{ now = now; }

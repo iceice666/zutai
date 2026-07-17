@@ -1,0 +1,23 @@
+-- Existing host capability modules composed through one explicit entry record.
+-- Usage: zutai-cli run examples/host_capabilities.zt
+
+env ::= import stdlib.env;
+clock ::= import stdlib.clock;
+rng ::= import stdlib.rng;
+load ::= import stdlib.load;
+
+main :: { env : Env; clock : Clock; rng : Rng; load : Load; }
+  -> { environment : Text; instant : Instant; random : Int; loadedKind : Text; }
+  ! { * env.GetEffects; * clock.NowEffects; * rng.NextEffects; * load.ZtiEffects; }
+  = caps => [
+      environment := env.get caps.env "ZUTAI_CAPABILITY_EXAMPLE" ?? "missing";
+      instant := clock.now caps.clock;
+      random := rng.next caps.rng;
+      loaded := load.zti caps.load "examples/from_data_runtime.zti";
+      loadedKind := match loaded {
+        | #record { fields = _; } => "record";
+        | _ => "other";
+      };
+      { environment =; instant =; random =; loadedKind =; }
+    ];
+main

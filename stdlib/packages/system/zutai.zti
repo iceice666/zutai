@@ -5,6 +5,10 @@
   modules = [
     { name = "fs"; path = "modules/fs.zt"; };
     { name = "net"; path = "modules/net.zt"; };
+    { name = "env"; path = "modules/env.zt"; };
+    { name = "clock"; path = "modules/clock.zt"; };
+    { name = "rng"; path = "modules/rng.zt"; };
+    { name = "load"; path = "modules/load.zt"; };
   ];
   dependencies = [];
 }

@@ -548,6 +548,16 @@ mod tests {
         let stdlib = StdlibSources::load(fixture_root()).unwrap();
         assert!(stdlib.source("stream").is_some());
         assert!(stdlib.source("browser").is_some());
+        for name in ["env", "clock", "rng", "load"] {
+            let module = stdlib
+                .module(name)
+                .unwrap_or_else(|| panic!("missing stdlib capability module {name}"));
+            assert_eq!(module.visibility(), StdlibVisibility::Explicit);
+            assert!(
+                module.source().contains("perform"),
+                "{name} should remain a source wrapper over a host operation"
+            );
+        }
         assert_eq!(
             stdlib.module("prelude").unwrap().visibility(),
             StdlibVisibility::Ambient

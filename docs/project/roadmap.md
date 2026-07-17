@@ -35,20 +35,14 @@ purity, typed host effects, or the TLC/Dataflow Core boundary.
 
 Milestones, in order:
 
-1. **Source modules for the existing host capability set.** Add explicit
-   `stdlib.env`, `stdlib.clock`, `stdlib.rng`, and `stdlib.load` wrappers and effect
-   aliases over the already implemented host operations. This adds no ambient
-   authority and no new runtime operation. Gate: each module has handler-based
-   mock coverage plus `run`/native parity, and one application fixture composes
-   multiple capabilities through an explicit entry record.
-2. **Independent application qualification.** Add a production-shaped workload
+1. **Independent application qualification.** Add a production-shaped workload
    distinct from the website: locked packages, typed inert configuration,
    validation, explicit filesystem/environment/network capabilities, and both
    binary and shared-library deployment. Its acceptance gate is package sync,
    editor analysis, interpreter execution, native output parity, deterministic
    metadata, and supported-target builds from one source graph. This workload is
    the evidence gate for the next two ergonomics milestones.
-3. **Constraint-backed collection vocabulary.** After imported higher-kinded
+2. **Constraint-backed collection vocabulary.** After imported higher-kinded
    witnesses compile natively, use repeated abstractions found in the qualification
    workload to define explicit standard-library `Functor` and `Foldable`
    constraints and instances. Start as opt-in modules; changing ambient
@@ -56,7 +50,7 @@ Milestones, in order:
    Gate: List/Optional/Result package-boundary examples check, evaluate, and
    compile with coherent witness selection and no regression to specialized
    helpers.
-4. **Derived first-order data encoding.** If the qualification workload needs
+3. **Derived first-order data encoding.** If the qualification workload needs
    typed interchange back to a host or browser boundary, add a `ToData`-style
    constraint and structural derive builder mirroring the supported closed
    `FromData` shapes, without changing `.zti` or tagged-union syntax. Gate:
@@ -65,7 +59,7 @@ Milestones, in order:
    and browser bundle; open rows, tuples, recursive targets, fixed-width/posit
    scalars, opaque handles, functions, and `Type` values refuse at the derive
    request.
-5. **Demand-gated language boundary review.** Revisit reserved boundaries only
+4. **Demand-gated language boundary review.** Revisit reserved boundaries only
    with a motivating program and a concrete semantic rule. Each proposal must
    name parser impact, HIR/THIR/TLC impact, Dataflow Core/runtime impact,
    refusal behavior, and migration risk before it can become a scheduled

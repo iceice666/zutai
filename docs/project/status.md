@@ -35,6 +35,13 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 host-capability source-module baseline adds explicit
+`stdlib.env`, `stdlib.clock`, `stdlib.rng`, and `stdlib.load` wrappers and named
+effect aliases over the existing host operations. The modules add no ambient
+authority or runtime primitive; source handlers mock each wrapper, and checked-in
+fixtures cover explicit capability-record composition plus interpreter/native
+host-boundary parity.
+
 The 2026-07-17 measured-optimization baseline adds a repeatable release-mode
 measurement harness for four representative workloads. Five timed samples after
 one warmup record compile/build latency, interpreter and native runtime,
@@ -168,13 +175,16 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (measured optimization gate: repeatable website,
-configuration/decoder, stream, and effectful-service release baselines now
-record compile/runtime/allocation/output-size evidence and interpreter/native
-parity; the website kernel toolchain is the measured compile-time and output-size
-outlier, with no optimization scheduled before profiling); prior baseline updates:
-2026-07-17 (imported higher-kinded witness execution: bare first-order constructor
-witnesses retain stable structural target keys across module/package boundaries
+_Last updated: 2026-07-17 (host-capability source modules: explicit environment,
+clock, randomness, and dynamic-load wrappers now expose composable effect aliases
+with handler mock coverage and interpreter/native application gates); prior
+baseline updates: 2026-07-17 (measured optimization gate: repeatable website,
+configuration/decoder, stream, and effectful-service release baselines record
+compile/runtime/allocation/output-size evidence and interpreter/native parity;
+the website kernel toolchain remains the measured outlier, with no optimization
+scheduled before profiling); prior baseline updates: 2026-07-17 (imported
+higher-kinded witness execution: bare first-order constructor witnesses retain
+stable structural target keys across module/package boundaries
 and match the TLC evaluator at multiple element types; higher-order or otherwise
 non-matchable exports keep source-located native refusal);
 prior baseline updates: 2026-07-17 (import-aware completion and workspace symbols: package aliases, nested public modules, imported members,

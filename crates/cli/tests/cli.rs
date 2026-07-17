@@ -894,6 +894,45 @@ fn real_examples_check_run_and_compile_match() {
 }
 
 #[test]
+fn host_capability_modules_have_mock_coverage_and_native_parity() {
+    let mock_path = example_fixture("host_capabilities_mock.zt");
+    check_path_passes(&mock_path);
+    let mocked = run_path_stdout(&mock_path);
+    for snippet in [
+        "environment = \"missing\"",
+        "instant = \"mock-instant\"",
+        "loadedKind = \"mock-data\"",
+        "random = 7",
+    ] {
+        assert!(
+            mocked.contains(snippet),
+            "mocked capability output should contain `{snippet}`; got {mocked}"
+        );
+    }
+
+    let path = example_fixture("host_capabilities.zt");
+    check_path_passes(&path);
+    let rendered = run_path_stdout(&path);
+    let native = compile_path_bin_stdout("cli_test_example_host_capabilities", &path);
+    for snippet in [
+        "environment = \"missing\"",
+        "loadedKind = \"record\"",
+        "random = 1618330555464769024",
+    ] {
+        assert!(
+            rendered.contains(snippet) && native.contains(snippet),
+            "host capability outputs should contain `{snippet}`; run={rendered}, native={native}"
+        );
+    }
+    for output in [&rendered, &native] {
+        assert!(
+            output.contains("instant = \"") && !output.contains("instant = \"\""),
+            "host capability clock result should be non-empty: {output}"
+        );
+    }
+}
+
+#[test]
 fn browser_stdlib_example_checks_at_its_documented_support_level() {
     check_path_passes(&example_fixture("stdlib_browser.zt"));
 }

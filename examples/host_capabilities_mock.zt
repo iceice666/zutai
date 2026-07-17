@@ -1,0 +1,39 @@
+-- Every capability wrapper can be intercepted by an ordinary source handler.
+env ::= import stdlib.env;
+clock ::= import stdlib.clock;
+rng ::= import stdlib.rng;
+load ::= import stdlib.load;
+
+absent :: Text? = #none;
+mockData :: Data = #text { value = "mock-data"; };
+
+environment :: Env -> Text ! { * env.GetEffects; }
+  = cap => handle (env.get cap "NAME" ?? "missing") with {
+      env.get = \name. resume absent;
+    };
+instant :: Clock -> Instant ! { * clock.NowEffects; }
+  = cap => handle clock.now cap with {
+      clock.now = \unit. resume "mock-instant";
+    };
+random :: Rng -> Int ! { * rng.NextEffects; }
+  = cap => handle rng.next cap with {
+      rng.next = \unit. resume 7;
+    };
+loadedKind :: Load -> Text ! { * load.ZtiEffects; }
+  = cap => handle match load.zti cap "ignored.zti" {
+      | #text { value = value; } => value;
+      | _ => "other";
+    } with {
+      load.zti = \path. resume mockData;
+    };
+
+main :: { env : Env; clock : Clock; rng : Rng; load : Load; }
+  -> { environment : Text; instant : Instant; random : Int; loadedKind : Text; }
+  ! { * env.GetEffects; * clock.NowEffects; * rng.NextEffects; * load.ZtiEffects; }
+  = caps => {
+      environment = environment caps.env;
+      instant = instant caps.clock;
+      random = random caps.rng;
+      loadedKind = loadedKind caps.load;
+    };
+main

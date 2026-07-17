@@ -1,0 +1,7 @@
+-- Explicit deterministic-host RNG helper over the existing host effect.
+-- Explicit import only: `rng ::= import stdlib.rng`; these names are not ambient.
+NextEffects :: type Unit ! { rng.next : Unit -> Int; };
+Next :: <A> type A ! { * NextEffects; };
+next :: Rng -> Next Int
+  = rng => perform rng.next ();
+{ next = next; }

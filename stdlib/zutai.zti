@@ -17,6 +17,10 @@
     { name = "reflect"; path = "packages/data/modules/reflect.zt"; visibility = #explicit; };
     { name = "fs"; path = "packages/system/modules/fs.zt"; visibility = #explicit; };
     { name = "net"; path = "packages/system/modules/net.zt"; visibility = #explicit; };
+    { name = "env"; path = "packages/system/modules/env.zt"; visibility = #explicit; };
+    { name = "clock"; path = "packages/system/modules/clock.zt"; visibility = #explicit; };
+    { name = "rng"; path = "packages/system/modules/rng.zt"; visibility = #explicit; };
+    { name = "load"; path = "packages/system/modules/load.zt"; visibility = #explicit; };
     { name = "css"; path = "packages/web/modules/css.zt"; visibility = #explicit; };
     { name = "html"; path = "packages/web/modules/html.zt"; visibility = #explicit; };
     { name = "browser"; path = "packages/web/modules/browser.zt"; visibility = #explicit; };

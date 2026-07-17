@@ -1,0 +1,13 @@
+-- Explicit dynamic data-loading helpers over the existing host effects.
+-- Explicit import only: `load ::= import stdlib.load`; these names are not ambient.
+ZtiEffects :: type Unit ! { load.zti : Path -> Data; };
+ZtEffects :: type Unit ! { load.zt : Path -> Data; };
+Effects :: type Unit ! { * ZtiEffects; * ZtEffects; };
+Zti :: <A> type A ! { * ZtiEffects; };
+Zt :: <A> type A ! { * ZtEffects; };
+DynamicLoad :: <A> type A ! { * Effects; };
+zti :: Load -> Path -> Zti Data
+  = load path => perform load.zti path;
+zt :: Load -> Path -> Zt Data
+  = load path => perform load.zt path;
+{ zti = zti; zt = zt; }
