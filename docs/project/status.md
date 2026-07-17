@@ -35,6 +35,16 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-16 reproducible native-artifact baseline adds deterministic
+`compile --metadata <path>` JSON containing the logical package roots,
+package-graph and stdlib identities, compiler compatibility, target triple, PIC
+relocation model, artifact kind, and explicit runtime ABI version. Native
+binary/library compilation resolves a prebuilt target runtime from
+`ZUTAI_RUNTIME_ARCHIVE` or the executable-relative installation and no longer
+invokes Cargo or depends on the caller's working directory; the install recipe
+ships the matching target archive. Cross-checkout CLI coverage proves identical
+metadata for the same package graph without absolute checkout paths.
+
 The 2026-07-16 native value-shape parity baseline extends full
 parse-to-LLVM execution coverage to decoded `.zti` records, finite stream
 results, source-handled effects at the value boundary, and local package
@@ -87,7 +97,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-16 (native value-shape parity: decoded `.zti` records,
+_Last updated: 2026-07-16 (reproducible native artifacts: deterministic build
+metadata records logical package roots, package/stdlib identities, compiler
+compatibility, target/PIC mode, artifact kind, and runtime ABI version;
+binary/library links consume a prebuilt explicit or installed runtime archive
+without invoking Cargo, and cross-checkout builds produce identical metadata);
+prior baseline updates: 2026-07-16 (native value-shape parity: decoded `.zti` records,
 finite stream results, handled-effect boundaries, and local package imports now
 run through parse -> HIR -> THIR -> TLC -> Dataflow Core -> ANF -> SSA -> LLVM;
 both shared-library JSON exports match the interpreter and exact expected shapes);

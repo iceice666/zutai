@@ -15,9 +15,11 @@ build-release:
 
 # Install native frontends and the filesystem stdlib under one prefix.
 install PREFIX="${HOME}/.local":
-    cargo build --release -p zutai-cli -p zutai-web
-    install -d "{{ PREFIX }}/bin" "{{ PREFIX }}/share/zutai/stdlib"
-    install -m755 target/release/zutai-cli target/release/zutai-web "{{ PREFIX }}/bin/"
+    cargo build --release -p zutai-cli -p zutai-web -p zutai-rt
+    target_triple="$$(rustc -vV | sed -n 's/^host: //p')"; \
+      install -d "{{ PREFIX }}/bin" "{{ PREFIX }}/share/zutai/stdlib" "{{ PREFIX }}/lib/zutai/$${target_triple}"; \
+      install -m755 target/release/zutai-cli target/release/zutai-web "{{ PREFIX }}/bin/"; \
+      install -m644 target/release/libzutai_rt.a "{{ PREFIX }}/lib/zutai/$${target_triple}/libzutai_rt.a"
     install -m644 stdlib/zutai.zti "{{ PREFIX }}/share/zutai/stdlib/zutai.zti"
     cp -R stdlib/packages "{{ PREFIX }}/share/zutai/stdlib/"
 

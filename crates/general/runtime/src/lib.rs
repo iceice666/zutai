@@ -17,6 +17,11 @@
 //!
 //! Closures (D-0003) are built and applied inline by codegen, so no closure
 //! symbol lives here. `TAG_CLOSURE` is reserved for the header layout only.
+/// Version of the native runtime ABI consumed by generated code.
+///
+/// Increment this when a symbol signature, value representation, descriptor
+/// layout, or host boundary changes incompatibly.
+pub const ABI_VERSION: u32 = 1;
 
 use fast_posit::{Posit, RoundInto};
 use zutai_eval::{EvalError, Value as EvalValue};

@@ -443,13 +443,18 @@ does neither; the default-on conservative collector is the committed endpoint.
 
 The driver discovers `clang`/`llc` from `PATH` (overridable via
 `ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and emits a precise, actionable
-diagnostic when the toolchain is absent rather than failing opaquely. The Rust
-runtime archive is built by `cargo` and located via the workspace target tree.
-On Linux the binary linker shape is
+diagnostic when the toolchain is absent rather than failing opaquely. Native
+binary and library modes resolve `libzutai_rt.a` from `ZUTAI_RUNTIME_ARCHIVE`,
+then the executable-relative `../lib/zutai/<target>/` installation. Workspace
+builds may use an already-built development archive, but compilation never runs
+Cargo or rebuilds the runtime implicitly. On Linux the binary linker shape is
 `clang <obj> <libzutai_rt.a> -pie -lpthread -ldl -lm -o <out>`. Shared-library
 mode uses the platform shared-library flag (`-shared` on Linux, `-dynamiclib` on
 macOS) and force-loads the runtime archive so host-facing helper aliases are
-exported with the generated entry symbols.
+exported with the generated entry symbols. `--metadata <path>` writes a
+deterministic JSON record containing the logical package roots, package-graph
+and stdlib identities, compiler compatibility, target triple, PIC relocation
+model, artifact kind, and runtime ABI version.
 
 Library-mode LLVM omits `main` and exports:
 

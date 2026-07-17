@@ -668,16 +668,80 @@ pub(crate) fn run_compile(
     path: &str,
     output_path: Option<&str>,
     emit: EmitMode,
+    metadata_path: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     let base = Path::new(path).parent();
     let cache = zutai_semantic::AnalysisCache::default();
-    let analysis = analyze_with_cli_diagnostics(path, &contents, base, &cache);
+    if metadata_path.is_some() {
+        let recorded = zutai_semantic::analyze_path_recording_with_cache(Path::new(path), &cache)?;
+        if recorded.analysis.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.stage,
+                zutai_semantic::SemanticStage::Parse
+                    | zutai_semantic::SemanticStage::Hir
+                    | zutai_semantic::SemanticStage::Import
+                    | zutai_semantic::SemanticStage::Thir
+            )
+        }) {
+            analyze_with_cli_diagnostics(path, &contents, base, &cache);
+        }
+        run_compile_analysis(
+            CompileRequest {
+                path,
+                output_path,
+                emit,
+                metadata_path,
+                contents: &contents,
+                base,
+            },
+            &recorded.analysis,
+            Some(&recorded),
+        )
+    } else {
+        let analysis = analyze_with_cli_diagnostics(path, &contents, base, &cache);
+        run_compile_analysis(
+            CompileRequest {
+                path,
+                output_path,
+                emit,
+                metadata_path,
+                contents: &contents,
+                base,
+            },
+            &analysis,
+            None,
+        )
+    }
+}
+
+struct CompileRequest<'a> {
+    path: &'a str,
+    output_path: Option<&'a str>,
+    emit: EmitMode,
+    metadata_path: Option<&'a Path>,
+    contents: &'a str,
+    base: Option<&'a Path>,
+}
+
+fn run_compile_analysis(
+    request: CompileRequest<'_>,
+    analysis: &zutai_semantic::Analysis,
+    recorded: Option<&zutai_semantic::RecordedAnalysis>,
+) -> Result<(), Box<dyn Error>> {
+    let CompileRequest {
+        path,
+        output_path,
+        emit,
+        metadata_path,
+        contents,
+        base,
+    } = request;
     if !analysis.is_thir_complete() {
         eprintln!("compile error: THIR incomplete");
         std::process::exit(1);
     }
-    if let Some(reason) = unsupported_cli_entry_type_reason(&analysis) {
+    if let Some(reason) = unsupported_cli_entry_type_reason(analysis) {
         eprintln!("compile error: {reason}");
         std::process::exit(1);
     }
@@ -705,12 +769,10 @@ pub(crate) fn run_compile(
                 },
             ),
         };
-        print_semantic_errors(path, &contents, &[&semantic]);
+        print_semantic_errors(path, contents, &[&semantic]);
         std::process::exit(1);
     }
-
-    // Collect deps early (needed to build extern witness list for TLC lowering).
-    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
+    let (dep_analyses, ptr_to_idx) = collect_dep_analyses(analysis);
     let (extern_witnesses, extern_conditionals) = extern_witness_tables(&dep_analyses)
         .expect("native import diagnostics reject every non-matchable witness export");
     let dep_modules = backend_dep_modules(&dep_analyses);
@@ -743,7 +805,7 @@ pub(crate) fn run_compile(
         std::process::exit(1);
     }
     if uses_reflection {
-        match fold_aot_reflection_for_cli(&contents, base) {
+        match fold_aot_reflection_for_cli(contents, base) {
             Ok(folded) => {
                 module = folded.module;
                 folded_bindings = Some(folded.hir_bindings);
@@ -773,7 +835,7 @@ pub(crate) fn run_compile(
         root: zutai_dataflow::ModuleInput {
             module: &module,
             hir_bindings,
-            imports: build_module_imports(&analysis, &ptr_to_idx),
+            imports: build_module_imports(analysis, &ptr_to_idx),
         },
         deps: dep_module_inputs(&dep_analyses, &dep_modules, &ptr_to_idx),
     };
@@ -813,8 +875,8 @@ pub(crate) fn run_compile(
             let obj = out.with_extension("o");
             fs::write(&ll, &llvm_ir)?;
             assemble_object(&ll, &obj)?;
-            let rt = build_runtime_archive()?;
-            link_binary(&obj, rt.path(), &out)?;
+            let rt = runtime_archive_path()?;
+            link_binary(&obj, &rt, &out)?;
         }
         EmitMode::Lib => {
             let out = output_path_for(path, output_path, EmitMode::Lib);
@@ -822,9 +884,16 @@ pub(crate) fn run_compile(
             let obj = out.with_extension("o");
             fs::write(&ll, &llvm_ir)?;
             assemble_object(&ll, &obj)?;
-            let rt = build_runtime_archive()?;
-            link_shared_library(&obj, rt.path(), &out)?;
+            let rt = runtime_archive_path()?;
+            link_shared_library(&obj, &rt, &out)?;
         }
+    }
+    if let Some(metadata_path) = metadata_path {
+        write_build_metadata(
+            metadata_path,
+            emit,
+            recorded.expect("metadata compilation records its analysis inputs"),
+        )?;
     }
     Ok(())
 }

@@ -16,8 +16,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
         Some(Commands::Json { path }) => commands::run_json(&path)?,
         Some(Commands::Check { path }) => commands::run_check(&path)?,
-        Some(Commands::Compile { path, output, emit }) => {
-            commands::run_compile(&path, output.as_deref(), emit.into())?;
+        Some(Commands::Compile {
+            path,
+            output,
+            emit,
+            metadata,
+        }) => {
+            commands::run_compile(&path, output.as_deref(), emit.into(), metadata.as_deref())?;
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
         Some(Commands::Web { command }) => command.run()?,
@@ -106,6 +111,9 @@ enum Commands {
         /// Artifact to emit
         #[arg(long, value_enum, default_value_t = CompileEmit::Llvm)]
         emit: CompileEmit,
+        /// Write deterministic build metadata as JSON
+        #[arg(long, value_name = "PATH")]
+        metadata: Option<std::path::PathBuf>,
     },
     /// Print the Dataflow Core graph for a .zt file
     Dataflow {

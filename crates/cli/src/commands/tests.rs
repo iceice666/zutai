@@ -136,6 +136,17 @@ fn output_path_for_derives_default_paths() {
 }
 
 #[test]
+fn build_metadata_names_artifacts_and_runtime_contract() {
+    assert_eq!(emit_name(EmitMode::Llvm), "llvm");
+    assert_eq!(emit_name(EmitMode::Obj), "obj");
+    assert_eq!(emit_name(EmitMode::Bin), "bin");
+    assert_eq!(emit_name(EmitMode::Lib), "lib");
+    assert_eq!(RELOCATION_MODEL, "pic");
+    assert_eq!(zutai_rt::ABI_VERSION, 1);
+    assert!(!zutai_codegen::target_triple().is_empty());
+}
+
+#[test]
 fn missing_native_tool_message_points_to_env_var_and_dev_shell() {
     let mut command = Command::new("__zutai_missing_tool_for_test__");
     let err = run_tool(&mut command, "llc", "assembling LLVM IR")

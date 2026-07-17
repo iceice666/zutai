@@ -19,6 +19,10 @@ use crate::instr::*;
 use crate::preamble::*;
 
 // ── Public API ─────────────────────────────────────────────────────────────────
+/// Native target triple encoded in emitted LLVM IR.
+pub fn target_triple() -> &'static str {
+    preamble::host_target_triple()
+}
 
 /// Emit a complete LLVM IR `.ll` file from an SSA module.
 pub fn emit_llvm(module: &SsaModule) -> String {

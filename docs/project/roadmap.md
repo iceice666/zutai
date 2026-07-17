@@ -35,11 +35,6 @@ subset already accepted by the frontend.
 
 Milestones:
 
-1. **Reproducible native artifacts.** Make the CLI expose enough build metadata
-   to explain what was compiled: package roots, stdlib identity, compiler
-   compatibility, target triple, relocation mode, and runtime ABI version.
-   Acceptance: two clean builds of the same package graph produce explainable
-   metadata and no hidden dependency on host working directory layout.
 
 Deferred here: optimizing laziness beyond the current Dataflow Core sharing
 model. Profile real programs first; do not add thunk machinery or memoization

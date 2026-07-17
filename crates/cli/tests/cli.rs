@@ -3686,6 +3686,67 @@ fn compile_emit_obj_writes_object() {
 }
 
 #[test]
+fn compile_metadata_is_stable_across_checkout_paths_and_working_directories() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "zutai-cli-build-metadata-{}-{nonce}",
+        std::process::id()
+    ));
+    let mut metadata = Vec::new();
+    for name in ["first", "second"] {
+        let package = root.join(name);
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(
+            package.join("zutai.zti"),
+            format!(
+                "{{ formatVersion = 1; name = \"app\"; compilerCompatibility = \"{}\"; modules = []; dependencies = []; }}",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+        .unwrap();
+        let entry = package.join("src/main.zt");
+        std::fs::write(&entry, "42\n").unwrap();
+        let metadata_path = package.join("build.json");
+        cli()
+            .current_dir(&package)
+            .arg("compile")
+            .arg("--emit=llvm")
+            .arg("src/main.zt")
+            .arg("-o")
+            .arg(package.join("main.ll"))
+            .arg("--metadata")
+            .arg(&metadata_path)
+            .assert()
+            .success();
+        metadata.push(std::fs::read_to_string(metadata_path).unwrap());
+    }
+
+    assert_eq!(metadata[0], metadata[1]);
+    assert!(!metadata[0].contains(root.to_str().unwrap()));
+    let json: serde_json::Value = serde_json::from_str(&metadata[0]).unwrap();
+    assert_eq!(json["formatVersion"], 1);
+    assert_eq!(json["artifact"], "llvm");
+    assert_eq!(json["entry"], "main.zt");
+    assert_eq!(json["relocationModel"], "pic");
+    assert_eq!(json["runtimeAbiVersion"], 1);
+    assert!(json["targetTriple"].as_str().is_some_and(|s| !s.is_empty()));
+    assert!(
+        json["stdlib"]["identity"]
+            .as_str()
+            .is_some_and(|s| s.starts_with("sha256:"))
+    );
+    assert!(
+        json["packages"]["identity"]
+            .as_str()
+            .is_some_and(|s| s.starts_with("sha256:"))
+    );
+    assert_eq!(json["packages"]["roots"][0]["name"], "app");
+}
+
+#[test]
 fn compile_emit_bin_runs() {
     let path = write_tmp("cli_test_compile_emit_bin.zt", "42\n");
     let out = write_tmp("cli_test_compile_emit_bin", "");
