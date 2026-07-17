@@ -22,9 +22,9 @@ in the dated [implementation history](../history/README.md).
 
 ## Package distribution: locked Git source snapshots
 
-_Accepted 2026-07-16. Implementation remains open in the roadmap._
+_Accepted and implemented 2026-07-16; retained here as the package trust and identity contract._
 
-Zutai will extend the existing local package graph with **locked Git sources**,
+Zutai extends the existing local package graph with **locked Git sources**,
 not a registry or a semantic-version solver. Imports remain alias-based
 (`math.vector`); repository locations and revisions never become language-level
 module names.

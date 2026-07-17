@@ -476,17 +476,19 @@ the version-checked filesystem stdlib selected by `--stdlib-root`,
 to the quoted-path subtree check. Web builds bundle the exact resolved stdlib
 sources, so the Wasm kernel does not read a filesystem or fetch modules.
 
-The nearest ancestor `zutai.zti` declares a local package. Its inert manifest
-names public `.zt` modules and local path dependencies; a dependency alias forms
-the first segment of a dotted import such as `import math.vector`. Manifests are
-`.zti`, not executable `.zt`, so dependency discovery cannot import, evaluate,
-or depend on the graph it is constructing. The implemented format-1 package
-layer supports local path dependencies only: there is no registry, network
-fetch, semantic version solver, lockfile, feature selection, or build script.
-Package module paths are confined to their package roots, and portable web
-bundles carry the resolved transitive package graph. A locked HTTPS Git design
-has been accepted but remains unimplemented; see the
-[package distribution decision](project/decisions.md#package-distribution-locked-git-source-snapshots).
+The nearest ancestor `zutai.zti` declares a package. Its inert manifest names
+public `.zt` modules and dependency aliases; an alias forms the first segment of
+a dotted import such as `import math.vector`. Manifests are `.zti`, not
+executable `.zt`, so dependency discovery cannot import, evaluate, or depend on
+the graph it is constructing. Format 1 supports package-relative local path
+dependencies. Format 2 adds local path and locked HTTPS Git sources, with a
+root-owned deterministic `zutai.lock.zti` and explicit native `package sync`,
+`fetch`, and `update` acquisition commands. Normal checking, LSP analysis,
+compilation, and browser execution are network-free and consume only a validated
+prepared graph. There is still no registry, dependency-version solver, feature
+selection, or build script. Package module paths are confined to their package
+roots, and portable web bundles carry the resolved transitive package graph. See
+the [package distribution decision](project/decisions.md#package-distribution-locked-git-source-snapshots).
 
 ## Feature support
 
