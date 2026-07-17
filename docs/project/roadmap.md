@@ -35,13 +35,7 @@ subset already accepted by the frontend.
 
 Milestones:
 
-1. **Native value-shape parity.** Extend native execution coverage beyond the
-   current primitive/record/tuple/union/text/atom/posit matrix to application
-   shapes built from decoded `.zti` records, streams, effects-at-boundaries, and
-   package imports. Acceptance: each fixture runs through parse -> HIR -> THIR
-   -> TLC -> Dataflow Core -> ANF -> SSA -> LLVM and compares `zutai_entry_json`
-   against the reference interpreter.
-2. **Reproducible native artifacts.** Make the CLI expose enough build metadata
+1. **Reproducible native artifacts.** Make the CLI expose enough build metadata
    to explain what was compiled: package roots, stdlib identity, compiler
    compatibility, target triple, relocation mode, and runtime ABI version.
    Acceptance: two clean builds of the same package graph produce explainable

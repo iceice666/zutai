@@ -1,0 +1,9 @@
+metrics ::= import metrics.summary;
+
+summary ::= metrics.summarize {5; 8; 13;};
+
+{
+  package = "native-value-shapes";
+  count = summary.count;
+  total = summary.total;
+}

@@ -1,0 +1,10 @@
+summarize :: Int -> { handled : Bool; value : Int; } ! { tick : Int -> Int; }
+  = input => [
+      value := perform tick input;
+      { handled = true; value =; }
+    ];
+
+handle summarize 21 with {
+  value = \summary. summary;
+  tick = \value. resume (value * 2);
+}

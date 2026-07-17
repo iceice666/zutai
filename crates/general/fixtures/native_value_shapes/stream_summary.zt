@@ -1,0 +1,15 @@
+s ::= import stdlib.stream;
+
+values ::= s.toList (
+  s.take 3 (
+    s.map (\value. value * 2) (
+      stream { yield 2; yield 4; yield 6; yield 8; }
+    )
+  )
+);
+
+{
+  values =;
+  count = length values;
+  total = fold (\sum value. sum + value) 0 values;
+}

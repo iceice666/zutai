@@ -1,0 +1,6 @@
+{
+  owner = { name = "native-parity"; };
+  port = 8787;
+  samples = [3; 5; 8;];
+  ignoredFutureField = true;
+}

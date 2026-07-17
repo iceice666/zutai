@@ -1,0 +1,20 @@
+Owner :: type { name : Text; };
+Config :: type { owner : Owner; port : Int; samples : List Int; };
+
+FromData @Owner :: derive
+FromData @Config :: derive
+
+decodeConfig :: Data -> Validation DecodeIssue Config
+  = data => decode data;
+
+match decodeConfig (loadZti "__DATA_PATH__") {
+  | #valid { value = cfg; } => [
+      total := fold (\sum sample. sum + sample) 0 cfg.samples;
+      { owner = cfg.owner.name; port = cfg.port; sampleTotal = total; }
+    ];
+  | #invalid { errors = _; } => {
+      owner = "invalid";
+      port = 0;
+      sampleTotal = 0;
+    };
+}

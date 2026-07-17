@@ -264,8 +264,36 @@ fn example_fixture(name: &str) -> String {
         .to_owned()
 }
 
+fn native_value_shape_fixture(name: &str) -> PathBuf {
+    workspace_root()
+        .join("crates/general/fixtures/native_value_shapes")
+        .join(name)
+}
+
 fn zt_string_literal(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn materialize_native_value_shape_fixture(name: &str) -> PathBuf {
+    let path = native_value_shape_fixture(name);
+    if name != "decoded_record.zt" {
+        return path;
+    }
+
+    let template = std::fs::read_to_string(&path).expect("decoded record fixture must be readable");
+    let data_path = native_value_shape_fixture("decoded_record.zti");
+    let source = template.replace(
+        "__DATA_PATH__",
+        &zt_string_literal(
+            data_path
+                .to_str()
+                .expect("decoded record data path must be UTF-8"),
+        ),
+    );
+    PathBuf::from(write_tmp(
+        "cli_test_native_value_shape_decoded_record.zt",
+        &source,
+    ))
 }
 
 fn shared_library_extension() -> &'static str {
@@ -3816,45 +3844,43 @@ fn runtime_text_to_string(value: i64, text_ptr: UnaryAbiFn, text_len: UnaryAbiFn
 }
 
 #[cfg(unix)]
-#[test]
-fn deploy_readiness_emit_lib_rust_host_json_matches_cli_json() {
-    if !native_emit_toolchain_available() {
-        eprintln!("skipping --emit=lib Rust host test: llc/clang unavailable");
-        return;
-    }
+fn cli_json(path: &Path) -> serde_json::Value {
+    let stdout = cli()
+        .arg("json")
+        .arg(path)
+        .current_dir(workspace_root())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&stdout).expect("`zutai json` output must be valid JSON")
+}
 
-    let root = workspace_root();
-    let source = "examples/deploy_readiness.zt";
+#[cfg(unix)]
+fn compiled_library_json(
+    path: &Path,
+    fixture_name: &str,
+) -> (serde_json::Value, serde_json::Value) {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let out = std::env::temp_dir().join(format!(
-        "libcli_test_deploy_readiness_{unique}{}",
+        "libcli_test_{fixture_name}_{unique}{}",
         shared_library_extension()
     ));
 
     cli()
         .arg("compile")
         .arg("--emit=lib")
-        .arg(source)
+        .arg(path)
         .arg("-o")
-        .arg(out.to_str().unwrap())
-        .current_dir(&root)
+        .arg(&out)
+        .current_dir(workspace_root())
         .assert()
         .success();
     assert!(std::fs::metadata(&out).unwrap().len() > 0);
-
-    let expected_stdout = cli()
-        .arg("json")
-        .arg(source)
-        .current_dir(&root)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let expected_json: serde_json::Value = serde_json::from_slice(&expected_stdout).unwrap();
 
     let library = SharedLibrary::open(&out);
     let entry: EntryFn = library.symbol("zutai_entry");
@@ -3872,20 +3898,100 @@ fn deploy_readiness_emit_lib_rust_host_json_matches_cli_json() {
         "zutai_entry_descriptor returned a null descriptor pointer"
     );
 
-    let json_from_pair_text =
+    let pair_text =
         runtime_text_to_string(unsafe { to_json(value, descriptor) }, text_ptr, text_len);
-    let json_from_entry_text = runtime_text_to_string(unsafe { entry_json() }, text_ptr, text_len);
-    let json_from_pair: serde_json::Value = serde_json::from_str(&json_from_pair_text).unwrap();
-    let json_from_entry: serde_json::Value = serde_json::from_str(&json_from_entry_text).unwrap();
+    let entry_text = runtime_text_to_string(unsafe { entry_json() }, text_ptr, text_len);
+    (
+        serde_json::from_str(&pair_text).expect("zutai_to_json output must be valid JSON"),
+        serde_json::from_str(&entry_text).expect("zutai_entry_json output must be valid JSON"),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn deploy_readiness_emit_lib_rust_host_json_matches_cli_json() {
+    if !native_emit_toolchain_available() {
+        eprintln!("skipping --emit=lib Rust host test: llc/clang unavailable");
+        return;
+    }
+
+    let source = workspace_root().join("examples/deploy_readiness.zt");
+    let expected = cli_json(&source);
+    let (from_pair, from_entry) = compiled_library_json(&source, "deploy_readiness");
 
     assert_eq!(
-        json_from_pair, expected_json,
+        from_pair, expected,
         "zutai_to_json(zutai_entry(), zutai_entry_descriptor()) must match `zutai json`"
     );
     assert_eq!(
-        json_from_entry, expected_json,
+        from_entry, expected,
         "zutai_entry_json() must match `zutai json`"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn native_value_shapes_match_interpreter_json() {
+    if !native_emit_toolchain_available() {
+        eprintln!("skipping native value-shape parity test: llc/clang unavailable");
+        return;
+    }
+
+    let cases = [
+        (
+            "decoded_record",
+            materialize_native_value_shape_fixture("decoded_record.zt"),
+            serde_json::json!({
+                "owner": "native-parity",
+                "port": 8787,
+                "sampleTotal": 16,
+            }),
+        ),
+        (
+            "stream_summary",
+            materialize_native_value_shape_fixture("stream_summary.zt"),
+            serde_json::json!({
+                "count": 3,
+                "total": 24,
+                "values": [4, 8, 12],
+            }),
+        ),
+        (
+            "effect_boundary",
+            materialize_native_value_shape_fixture("effect_boundary.zt"),
+            serde_json::json!({
+                "handled": true,
+                "value": 42,
+            }),
+        ),
+        (
+            "package_import",
+            materialize_native_value_shape_fixture("package/app/src/main.zt"),
+            serde_json::json!({
+                "count": 3,
+                "package": "native-value-shapes",
+                "total": 26,
+            }),
+        ),
+    ];
+
+    for (name, path, expected_shape) in cases {
+        let interpreter_json = cli_json(&path);
+        assert_eq!(
+            interpreter_json, expected_shape,
+            "interpreter JSON shape drifted for {name}"
+        );
+
+        let (from_pair, from_entry) = compiled_library_json(&path, name);
+        assert_eq!(
+            from_pair, interpreter_json,
+            "zutai_to_json(zutai_entry(), zutai_entry_descriptor()) must match the interpreter for {name}"
+        );
+        assert_eq!(
+            from_entry, interpreter_json,
+            "zutai_entry_json() must match the interpreter for {name}"
+        );
+    }
 }
 
 #[test]

@@ -1,0 +1,7 @@
+summarize :: List Int -> { count : Int; total : Int; }
+  = values => {
+      count = length values;
+      total = fold (\sum value. sum + value) 0 values;
+    };
+
+{ summarize =; }

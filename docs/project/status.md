@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-16 native value-shape parity baseline extends full
+parse-to-LLVM execution coverage to decoded `.zti` records, finite stream
+results, source-handled effects at the value boundary, and local package
+imports. A shared-library host matrix compares both exported JSON paths —
+`zutai_to_json(zutai_entry(), zutai_entry_descriptor())` and
+`zutai_entry_json()` — with the reference interpreter and exact expected JSON
+shapes for every fixture.
+
 The 2026-07-16 backend refusal matrix locks seven intentional support boundaries
 into executable fixtures. CLI coverage now exercises higher-kinded witness
 execution, residual reflection, unhandled effects, ungranted capabilities,
@@ -79,7 +87,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-16 (backend refusal matrix: seven executable fixtures now
+_Last updated: 2026-07-16 (native value-shape parity: decoded `.zti` records,
+finite stream results, handled-effect boundaries, and local package imports now
+run through parse -> HIR -> THIR -> TLC -> Dataflow Core -> ANF -> SSA -> LLVM;
+both shared-library JSON exports match the interpreter and exact expected shapes);
+prior baseline updates: 2026-07-16 (backend refusal matrix: seven executable fixtures now
 lock the documented frontend, reference-interpreter, and strict-AOT boundaries
 for higher-kinded witnesses, residual reflection, effects/capabilities,
 non-principal inference, imported witness exports, and non-tail delegation);
