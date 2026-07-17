@@ -3997,6 +3997,45 @@ mod tests {
     }
 
     #[test]
+    fn independent_qualification_app_lsp_matches_cli_and_navigates_policy() {
+        let root =
+            std::fs::canonicalize(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+                .unwrap();
+        let entry = root.join("examples/qualification/app/src/main.zt");
+        let policy = root.join("examples/qualification/app/policy/src/service.zt");
+        let entry_source = std::fs::read_to_string(&entry).unwrap();
+        let entry_uri = file_uri(&entry);
+        let policy_uri = file_uri(&policy);
+
+        let cli = zutai_semantic::analyze_path(&entry).unwrap();
+        let mut server = Server::default();
+        server.documents.insert(
+            entry_uri.clone(),
+            Document {
+                text: entry_source.clone(),
+                version: Some(1),
+            },
+        );
+        let project = server
+            .analyze_with_overlays(&entry_uri, &entry_source)
+            .unwrap();
+        assert_eq!(project.analysis.diagnostics, cli.diagnostics);
+
+        let location = server.definition(&json!({
+            "textDocument": { "uri": entry_uri },
+            "position": { "line": 44, "character": 28 }
+        }));
+        assert_eq!(
+            location.get("uri").and_then(Value::as_str),
+            Some(policy_uri.as_str())
+        );
+        assert_eq!(
+            location.pointer("/range/start").cloned(),
+            Some(json!({ "line": 1, "character": 0 }))
+        );
+    }
+
+    #[test]
     fn framing_round_trip() {
         let input = b"Content-Length: 17\r\n\r\n{\"method\":\"ping\"}";
         assert_eq!(

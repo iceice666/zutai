@@ -35,6 +35,15 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 independent-qualification baseline adds a checked-in downstream
+application under `examples/qualification/app`: a deterministic locked path
+package graph, typed inert configuration, a package-owned validation policy,
+and explicit filesystem, environment, and source-handled network capability
+flows. One acceptance gate runs package sync twice, CLI and LSP analysis,
+interpreter execution, binary and shared-library hosts, deterministic package
+metadata, and LLVM emission for every supported native target descriptor from
+the same source graph.
+
 The 2026-07-17 host-capability source-module baseline adds explicit
 `stdlib.env`, `stdlib.clock`, `stdlib.rng`, and `stdlib.load` wrappers and named
 effect aliases over the existing host operations. The modules add no ambient

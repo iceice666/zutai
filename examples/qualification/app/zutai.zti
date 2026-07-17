@@ -1,0 +1,11 @@
+{
+  formatVersion = 2;
+  name = "qualification_app";
+  compilerCompatibility = ">=0.1.0, <0.2.0";
+  modules = [
+    { name = "main"; path = "src/main.zt"; };
+  ];
+  dependencies = [
+    { alias = "policy"; source = { kind = #path; path = "policy"; }; };
+  ];
+}

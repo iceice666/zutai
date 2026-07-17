@@ -1,0 +1,13 @@
+
+assess :: Text -> Int -> Text -> { valid : Bool; errorCount : Int; }
+= service port mode => [
+  serviceErrors := if __textLength service > 0 then 0 else 1;
+  portErrors := if port >= 1 && port <= 65535 then 0 else 1;
+  modeErrors := if mode == "qualification" || mode == "production" then 0 else 1;
+  errorCount := serviceErrors + portErrors + modeErrors;
+  { valid = errorCount == 0; errorCount = errorCount; }
+];
+
+{
+  assess = assess;
+}

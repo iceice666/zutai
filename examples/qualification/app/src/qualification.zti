@@ -1,0 +1,7 @@
+{
+  service = "payments-api";
+  listenPort = 8080;
+  inputPath = "data/request.txt";
+  outputPath = "qualification.out";
+  defaultMode = "qualification";
+}

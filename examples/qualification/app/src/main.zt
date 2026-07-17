@@ -1,0 +1,67 @@
+policy ::= import policy.service;
+fs ::= import stdlib.fs;
+env ::= import stdlib.env;
+t ::= import stdlib.text;
+
+Config :: type {
+  service : Text;
+  listenPort : Int;
+  inputPath : Path;
+  outputPath : Path;
+  defaultMode : Text;
+};
+
+config :: Config = import "qualification.zti";
+
+networkProbe :: Net -> Int -> Text
+= cap port => handle [
+  listener := perform net.listen port;
+  connection := perform net.accept listener;
+  request := perform net.read connection;
+  perform net.write "HTTP/1.1 200 OK";
+  perform net.close connection;
+  request
+] with {
+  net.listen = \requestedPort. resume requestedPort;
+  net.accept = \listener. resume listener;
+  net.read = \connection. resume "GET /health HTTP/1.1";
+  net.write = \response. resume ();
+  net.close = \connection. resume ();
+};
+
+main :: { read : FsRead; write : FsWrite; env : Env; net : Net; }
+-> {
+  application : Text;
+  policyPackage : Text;
+  configValid : Bool;
+  validationErrors : Int;
+  environmentChecked : Bool;
+  fileRequest : Text;
+  networkRequest : Text;
+  wroteReport : Bool;
+}
+! { * fs.WholeFileEffects; * env.GetEffects; }
+= caps => [
+  assessment := policy.assess config.service config.listenPort config.defaultMode;
+  environment := env.get caps.env "ZUTAI_QUALIFICATION_MODE";
+  environmentChecked := match environment {
+    | #none => true;
+    | #some (_) => true;
+  };
+  fileRequest := fs.readAll caps.read config.inputPath;
+  networkRequest := networkProbe caps.net config.listenPort;
+  report := t.join " / " { config.service; config.defaultMode; fileRequest; networkRequest; };
+  fs.writeAll caps.write config.outputPath report;
+  {
+    application = "independent-qualification";
+    policyPackage = "qualification_policy";
+    configValid = assessment.valid;
+    validationErrors = assessment.errorCount;
+    environmentChecked = environmentChecked;
+    fileRequest = fileRequest;
+    networkRequest = networkRequest;
+    wroteReport = true;
+  }
+];
+
+main

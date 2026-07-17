@@ -1,0 +1,9 @@
+{
+  formatVersion = 2;
+  name = "qualification_policy";
+  compilerCompatibility = ">=0.1.0, <0.2.0";
+  modules = [
+    { name = "service"; path = "src/service.zt"; };
+  ];
+  dependencies = [];
+}

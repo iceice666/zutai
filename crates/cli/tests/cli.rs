@@ -944,6 +944,134 @@ fn network_examples_check_with_stdlib_net() {
     }
 }
 
+#[test]
+fn independent_qualification_app_sync_check_run_and_compile() {
+    let app = workspace_root().join("examples/qualification/app");
+    let entry = app.join("src/main.zt");
+    let lock = app.join("zutai.lock.zti");
+    let report = app.join("qualification.out");
+
+    cli().args(["package", "sync"]).arg(&app).assert().success();
+    let first_lock = std::fs::read_to_string(&lock).unwrap();
+    cli().args(["package", "sync"]).arg(&app).assert().success();
+    assert_eq!(std::fs::read_to_string(&lock).unwrap(), first_lock);
+    assert_eq!(
+        first_lock,
+        include_str!("../../../examples/qualification/app/zutai.lock.zti")
+    );
+    cli().arg("check").arg(&entry).assert().success();
+
+    let expected = "{ application = \"independent-qualification\";  configValid = true;  environmentChecked = true;  fileRequest = \"GET /payments/health\\n\";  networkRequest = \"GET /health HTTP/1.1\";  policyPackage = \"qualification_policy\";  validationErrors = 0;  wroteReport = true }";
+    cli()
+        .env_remove("ZUTAI_QUALIFICATION_MODE")
+        .current_dir(&app)
+        .arg("run")
+        .arg(&entry)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected));
+    assert_eq!(
+        std::fs::read_to_string(&report).unwrap(),
+        "payments-api / qualification / GET /payments/health\n / GET /health HTTP/1.1"
+    );
+
+    let llvm = std::env::temp_dir().join("zutai-qualification-acceptance.ll");
+    let metadata = std::env::temp_dir().join("zutai-qualification-acceptance.json");
+    cli()
+        .args(["compile", "--emit=llvm"])
+        .arg(&entry)
+        .arg("-o")
+        .arg(&llvm)
+        .arg("--metadata")
+        .arg(&metadata)
+        .assert()
+        .success();
+    let llvm = std::fs::read_to_string(llvm).unwrap();
+    assert!(llvm.contains("define i64 @__entry"), "{llvm}");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(metadata).unwrap()).unwrap();
+    assert_eq!(metadata["entry"], "main.zt");
+    assert_eq!(
+        metadata["packages"]["roots"][0]["name"],
+        "qualification_app"
+    );
+    assert_eq!(
+        metadata["packages"]["roots"][1]["name"],
+        "qualification_policy"
+    );
+    for (target_index, (target, layout)) in SUPPORTED_NATIVE_TARGETS.iter().enumerate() {
+        let llvm = std::env::temp_dir().join(format!(
+            "zutai-qualification-acceptance-target-{target_index}.ll"
+        ));
+        let metadata = std::env::temp_dir().join(format!(
+            "zutai-qualification-acceptance-target-{target_index}.json"
+        ));
+        cli()
+            .args(["compile", "--emit=llvm", "--target"])
+            .arg(target)
+            .arg(&entry)
+            .arg("-o")
+            .arg(&llvm)
+            .arg("--metadata")
+            .arg(&metadata)
+            .assert()
+            .success();
+        let llvm = std::fs::read_to_string(llvm).unwrap();
+        assert!(
+            llvm.contains(&format!("target triple = \"{target}\"")),
+            "{llvm}"
+        );
+        assert!(
+            llvm.contains(&format!("target datalayout = \"{layout}\"")),
+            "{llvm}"
+        );
+        let metadata: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(metadata).unwrap()).unwrap();
+        assert_eq!(metadata["targetTriple"], *target);
+        assert_eq!(metadata["targetDataLayout"], *layout);
+        assert_eq!(
+            metadata["packages"]["roots"][0]["name"],
+            "qualification_app"
+        );
+        assert_eq!(
+            metadata["packages"]["roots"][1]["name"],
+            "qualification_policy"
+        );
+    }
+
+    #[cfg(unix)]
+    if native_emit_toolchain_available() {
+        let binary = std::env::temp_dir().join("zutai-qualification-acceptance-bin");
+        cli()
+            .args(["compile", "--emit=bin"])
+            .arg(&entry)
+            .arg("-o")
+            .arg(&binary)
+            .assert()
+            .success();
+        let output = StdCommand::new(binary)
+            .current_dir(&app)
+            .env_remove("ZUTAI_QUALIFICATION_MODE")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
+        let (from_pair, from_entry) = compiled_library_json_in_host(&entry, "qualification", &app);
+        let expected_json = serde_json::json!({
+            "application": "independent-qualification",
+            "configValid": true,
+            "environmentChecked": true,
+            "fileRequest": "GET /payments/health\n",
+            "networkRequest": "GET /health HTTP/1.1",
+            "policyPackage": "qualification_policy",
+            "validationErrors": 0,
+            "wroteReport": true,
+        });
+        assert_eq!(from_pair, expected_json);
+        assert_eq!(from_entry, expected_json);
+    }
+}
+
 // V3-G1: `Stream A` is demand-driven codata (`Unit -> StreamCell A`). A finite
 // generator folds to the same value the interpreter computes.
 const CODATA_STREAM_FINITE_SRC: &str = "sumS :: Stream Int -> Int\n  = s => match s () {\n    | #nil => 0;\n    | #cons { head = h; tail = t; } => h + sumS t;\n  };\nsumS (stream { yield 1; yield 2; yield 3; })\n";
@@ -4430,6 +4558,91 @@ fn compiled_library_json(
         serde_json::from_str(&pair_text).expect("zutai_to_json output must be valid JSON"),
         serde_json::from_str(&entry_text).expect("zutai_entry_json output must be valid JSON"),
     )
+}
+
+#[cfg(unix)]
+fn compiled_library_json_in_host(
+    path: &Path,
+    fixture_name: &str,
+    current_dir: &Path,
+) -> (serde_json::Value, serde_json::Value) {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let out = std::env::temp_dir().join(format!(
+        "libcli_test_{fixture_name}_{unique}{}",
+        shared_library_extension()
+    ));
+    cli()
+        .arg("compile")
+        .arg("--emit=lib")
+        .arg(path)
+        .arg("-o")
+        .arg(&out)
+        .current_dir(workspace_root())
+        .assert()
+        .success();
+
+    let host = write_tmp(
+        &format!("cli_test_{fixture_name}_{unique}_host.c"),
+        r#"
+#include <stdint.h>
+#include <stdio.h>
+
+int64_t zutai_entry(void);
+int64_t zutai_entry_descriptor(void);
+int64_t zutai_entry_json(void);
+int64_t zutai_to_json(int64_t value, int64_t descriptor);
+int64_t zutai_text_len(int64_t value);
+int64_t zutai_text_ptr(int64_t value);
+
+static int write_json(int64_t text) {
+  const void *ptr = (const void *)(uintptr_t)zutai_text_ptr(text);
+  size_t len = (size_t)zutai_text_len(text);
+  return fwrite(ptr, 1, len, stdout) == len && fputc('\n', stdout) != EOF ? 0 : 2;
+}
+
+int main(void) {
+  int64_t value = zutai_entry();
+  int64_t descriptor = zutai_entry_descriptor();
+  if (write_json(zutai_to_json(value, descriptor)) != 0) return 2;
+  return write_json(zutai_entry_json());
+}
+"#,
+    );
+    let executable = std::env::temp_dir().join(format!("cli_test_{fixture_name}_{unique}_host"));
+    let clang = configured_tool("ZUTAI_CLANG", "CLANG", "clang");
+    let status = StdCommand::new(clang)
+        .arg(&host)
+        .arg(&out)
+        .arg(format!("-Wl,-rpath,{}", out.parent().unwrap().display()))
+        .arg("-o")
+        .arg(&executable)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "shared-library host failed to link: {status}"
+    );
+
+    let output = StdCommand::new(executable)
+        .current_dir(current_dir)
+        .env_remove("ZUTAI_QUALIFICATION_MODE")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let mut lines = stdout.lines();
+    let pair = serde_json::from_str(lines.next().expect("missing zutai_to_json output"))
+        .expect("zutai_to_json output must be valid JSON");
+    let entry = serde_json::from_str(lines.next().expect("missing zutai_entry_json output"))
+        .expect("zutai_entry_json output must be valid JSON");
+    assert!(
+        lines.next().is_none(),
+        "shared-library host emitted extra output"
+    );
+    (pair, entry)
 }
 
 #[cfg(unix)]

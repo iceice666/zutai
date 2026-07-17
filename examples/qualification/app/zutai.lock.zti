@@ -1,0 +1,24 @@
+{
+  formatVersion = 1;
+  generatedBy = "zutai-cli 0.1.0";
+  root = "pkg:576onpjaerbacli5x6elo72u3cbxey5224u423elgtsomzjadksa";
+  packages = [
+    {
+      id = "pkg:576onpjaerbacli5x6elo72u3cbxey5224u423elgtsomzjadksa";
+      name = "qualification_app";
+      source = { kind = #path; path = "."; };
+      manifestHash = "sha256:b1161114166b7fd9884ad409dd1c2bd177f9d404cb899ee91c686ca0f752d2c1";
+      dependencies = [
+        { alias = "policy"; package = "pkg:b63tv77tegmtuh22446on6e4xkmttvddlbdcefvwudg7iopih6ma"; };
+      ];
+    };
+    {
+      id = "pkg:b63tv77tegmtuh22446on6e4xkmttvddlbdcefvwudg7iopih6ma";
+      name = "qualification_policy";
+      source = { kind = #path; path = "policy"; };
+      manifestHash = "sha256:5b8b8ce14effbeac1cf240ef6d596879cc1efa01bec0e439b0df438f1f311229";
+      dependencies = [
+      ];
+    };
+  ];
+}

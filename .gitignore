@@ -9,5 +9,6 @@
 examples/*.ll
 examples/*.o
 examples/*.out
+examples/qualification/app/qualification.out
 examples/echo_http
 examples/net_echo
