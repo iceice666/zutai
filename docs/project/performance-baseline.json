@@ -1,0 +1,240 @@
+{
+  "host": {
+    "clang": "clang version 21.1.8",
+    "compiler": "zutai-cli 0.1.0 (a5dfd4a7109345c74f285e5316555674ada9fae59b694c72f9baeb5d5900702d)",
+    "llc": "LLVM version 21.1.8",
+    "machine": "x86_64",
+    "platform": "Linux-7.0.9-zen1-x86_64-with-glibc2.42",
+    "processor": "AMD Ryzen AI 7 350 w/ Radeon 860M",
+    "python": "3.13.13",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: x86_64-unknown-linux-gnu\nrelease: 1.96.0\nLLVM version: 22.1.2",
+    "wasm_bindgen": "wasm-bindgen 0.2.121",
+    "wasm_opt": "wasm-opt version 129"
+  },
+  "measurement_policy": {
+    "clock": "Python time.perf_counter_ns around child-process completion",
+    "native_allocation": "ZUTAI_HEAP_STATS with the default-on collector",
+    "repeat": 5,
+    "summary": "median with min/max and raw samples",
+    "warmup": 1,
+    "website_runtime": "headless Chromium process startup, local bundle hydration, and DOM dump when chromium is available"
+  },
+  "schema_version": 1,
+  "workloads": [
+    {
+      "compile": {
+        "max_ms": 6869.964,
+        "median_ms": 6784.202,
+        "min_ms": 6774.636,
+        "samples_ms": [
+          6779.308,
+          6774.636,
+          6809.758,
+          6869.964,
+          6784.202
+        ]
+      },
+      "determinism": "all repeated output tree SHA-256 values match",
+      "entry": "website/main.zt",
+      "kind": "web",
+      "name": "website",
+      "output_bytes": 1757205,
+      "output_files": {
+        "_headers": 646,
+        "_zutai/68e112eb9fd772a6dbba0fae/bootstrap.js": 464,
+        "_zutai/68e112eb9fd772a6dbba0fae/zutai.bundle.json": 192441,
+        "_zutai/68e112eb9fd772a6dbba0fae/zutai_browser.js": 26873,
+        "_zutai/68e112eb9fd772a6dbba0fae/zutai_browser_bg.wasm": 1504045,
+        "favicon.svg": 298,
+        "index.html": 32415,
+        "robots.txt": 23
+      },
+      "runtime": {
+        "max_ms": 395.189,
+        "median_ms": 390.627,
+        "min_ms": 378.37,
+        "samples_ms": [
+          390.627,
+          381.718,
+          394.098,
+          395.189,
+          378.37
+        ],
+        "scope": "headless Chromium process start, local bundle hydration, and DOM dump",
+        "stdout_sha256": "92a655883d82487f4fafec0b756e7d0770546df00b14e05ee0f129d6fbfb0139"
+      },
+      "runtime_allocation": "browser-hosted; native heap counters do not cover Wasm execution"
+    },
+    {
+      "allocation": {
+        "bytes": 3360,
+        "closure_raw": 9,
+        "cons": 4,
+        "objects": 140,
+        "peak": 1048576,
+        "record": 43,
+        "text": 6,
+        "tuple": 24,
+        "variant": 54
+      },
+      "compile": {
+        "max_ms": 402.701,
+        "median_ms": 398.596,
+        "min_ms": 381.898,
+        "samples_ms": [
+          387.814,
+          399.175,
+          381.898,
+          402.701,
+          398.596
+        ],
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "entry": "examples/from_data_runtime.zt",
+      "interpreter_runtime": {
+        "max_ms": 8.195,
+        "median_ms": 7.221,
+        "min_ms": 5.205,
+        "samples_ms": [
+          8.195,
+          7.221,
+          5.74,
+          7.903,
+          5.205
+        ],
+        "stdout_sha256": "49d3eb74d63b44b335a422733f70ee3a26589cacac199ed96afb975ccc01c934"
+      },
+      "kind": "native",
+      "name": "configuration_decoder",
+      "native_runtime": {
+        "max_ms": 1.22,
+        "median_ms": 1.028,
+        "min_ms": 0.769,
+        "samples_ms": [
+          1.22,
+          0.989,
+          1.132,
+          0.769,
+          1.028
+        ],
+        "stdout_sha256": "49d3eb74d63b44b335a422733f70ee3a26589cacac199ed96afb975ccc01c934"
+      },
+      "output_bytes": 12911632,
+      "parity": "interpreter/native stdout SHA-256 match"
+    },
+    {
+      "allocation": {
+        "bytes": 12416,
+        "closure_raw": 150,
+        "cons": 24,
+        "objects": 338,
+        "peak": 1048576,
+        "record": 61,
+        "text": 1,
+        "tuple": 57,
+        "variant": 45
+      },
+      "compile": {
+        "max_ms": 359.604,
+        "median_ms": 348.784,
+        "min_ms": 337.613,
+        "samples_ms": [
+          342.005,
+          348.784,
+          337.613,
+          359.604,
+          353.184
+        ],
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "entry": "examples/stream_summary.zt",
+      "interpreter_runtime": {
+        "max_ms": 14.677,
+        "median_ms": 12.204,
+        "min_ms": 8.496,
+        "samples_ms": [
+          14.677,
+          12.204,
+          10.415,
+          13.07,
+          8.496
+        ],
+        "stdout_sha256": "5e6b9b399a552a94f8733f99f033f97172d3afdab61b639514c67554cb102cd0"
+      },
+      "kind": "native",
+      "name": "stream",
+      "native_runtime": {
+        "max_ms": 1.048,
+        "median_ms": 1.008,
+        "min_ms": 0.695,
+        "samples_ms": [
+          1.014,
+          0.695,
+          1.008,
+          0.997,
+          1.048
+        ],
+        "stdout_sha256": "5e6b9b399a552a94f8733f99f033f97172d3afdab61b639514c67554cb102cd0"
+      },
+      "output_bytes": 12998592,
+      "parity": "interpreter/native stdout SHA-256 match"
+    },
+    {
+      "allocation": {
+        "bytes": 1856,
+        "closure_raw": 5,
+        "cons": 0,
+        "objects": 13,
+        "peak": 1048576,
+        "record": 4,
+        "text": 2,
+        "tuple": 1,
+        "variant": 1
+      },
+      "compile": {
+        "max_ms": 322.664,
+        "median_ms": 313.773,
+        "min_ms": 304.646,
+        "samples_ms": [
+          313.773,
+          307.106,
+          304.646,
+          322.021,
+          322.664
+        ],
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "entry": "examples/host_stream_read.zt",
+      "interpreter_runtime": {
+        "max_ms": 9.153,
+        "median_ms": 7.245,
+        "min_ms": 5.403,
+        "samples_ms": [
+          5.403,
+          7.245,
+          8.446,
+          5.675,
+          9.153
+        ],
+        "stdout_sha256": "39cbd0aa837ecf8843f55b380b4474339ba4aca215cffb12f8d037a41b319003"
+      },
+      "kind": "native",
+      "name": "effectful_service",
+      "native_runtime": {
+        "max_ms": 2.572,
+        "median_ms": 0.885,
+        "min_ms": 0.588,
+        "samples_ms": [
+          2.572,
+          0.946,
+          0.588,
+          0.885,
+          0.741
+        ],
+        "stdout_sha256": "39cbd0aa837ecf8843f55b380b4474339ba4aca215cffb12f8d037a41b319003"
+      },
+      "output_bytes": 12849984,
+      "parity": "interpreter/native stdout SHA-256 match"
+    }
+  ]
+}

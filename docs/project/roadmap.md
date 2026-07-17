@@ -21,24 +21,12 @@ gate are explicit.
 
 ## Near-term: package-aware editor and diagnostics hardening
 
-Package-aware navigation, completion, stable diagnostics, and canonical source
-formatting are complete. New near-term work should be added here only with an
-explicit refusal model and validation gate; the next scheduled milestone is the
-native target model below.
+Package-aware navigation, completion, stable diagnostics, canonical formatting,
+native target portability, and the measured optimization gate are complete. New
+near-term or backend work should be added only with an explicit refusal model,
+validation gate, and workload evidence. No optimization is scheduled: the
+recorded website build/toolchain outlier still requires focused profiling.
 
-## Mid-term: backend parity and portable native builds
-
-Goal: make native output a boring deployment target for the stable language
-subset already accepted by the frontend.
-
-Milestones, in order:
-
-1. **Measured optimization gate.** Establish repeatable compile-time, runtime,
-   allocation, and output-size baselines for the website, configuration/decoder,
-   stream, and effectful service workloads. Profile before scheduling an
-   optimization. The first optimization milestone must cite the measured
-   bottleneck and preserve interpreter/native parity; no speculative thunk,
-   memoization, CSE, or closure-specialization project enters the roadmap.
 
 ## Long-term: application ergonomics on the stable core
 

@@ -35,6 +35,20 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 measured-optimization baseline adds a repeatable release-mode
+measurement harness for four representative workloads. Five timed samples after
+one warmup record compile/build latency, interpreter and native runtime,
+`ZUTAI_HEAP_STATS` allocation, and artifact bytes in
+[`performance-baseline.json`](performance-baseline.json); native workloads also
+require byte-identical interpreter/native stdout. On the recorded Ryzen AI 7 350
+host, native compile medians are 314–399 ms and runtime medians 0.9–1.0 ms, with
+1.8–12.1 KiB allocated and 12.3–12.4 MiB binaries. The website build is the clear
+measured compile outlier at 6.78 s; headless Chromium startup, local bundle
+hydration, and DOM dump take 391 ms. The 1.68 MiB output is dominated by the
+1.43 MiB optimized Wasm kernel, and every build deliberately reruns Cargo,
+`wasm-bindgen`, and `wasm-opt`. This establishes evidence but schedules no optimization:
+future work must profile that pipeline and preserve the existing parity gates.
+
 The 2026-07-17 canonical-formatting baseline adds idempotent `.zt` and `.zti`
 formatters exposed through `zutai format` and LSP document formatting. General
 mode preserves comments, compatibility spellings, token order, and line
@@ -154,12 +168,16 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (imported higher-kinded witness execution: bare
-first-order constructor witnesses retain stable structural target keys across
-module/package boundaries and match the TLC evaluator at multiple element
-types; higher-order or otherwise non-matchable exports keep source-located
-native refusal); prior baseline updates: 2026-07-17 (import-aware completion and
-workspace symbols: package aliases, nested public modules, imported members,
+_Last updated: 2026-07-17 (measured optimization gate: repeatable website,
+configuration/decoder, stream, and effectful-service release baselines now
+record compile/runtime/allocation/output-size evidence and interpreter/native
+parity; the website kernel toolchain is the measured compile-time and output-size
+outlier, with no optimization scheduled before profiling); prior baseline updates:
+2026-07-17 (imported higher-kinded witness execution: bare first-order constructor
+witnesses retain stable structural target keys across module/package boundaries
+and match the TLC evaluator at multiple element types; higher-order or otherwise
+non-matchable exports keep source-located native refusal);
+prior baseline updates: 2026-07-17 (import-aware completion and workspace symbols: package aliases, nested public modules, imported members,
 and unopened dependency symbols use the prepared recorded graph with exact
 overlay-aware locations);
 prior baseline updates: 2026-07-17 (package-wide editor references and safe rename:
