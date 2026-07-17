@@ -76,8 +76,9 @@ Short module aliases keep pipelines readable in example-sized programs:
 `s ::= import stdlib.stream;`, `n ::= import stdlib.num;`,
 `t ::= import stdlib.text;`, `r ::= import stdlib.result;`, and
 `c ::= import stdlib.cmp;` are common local names. Larger opt-in surfaces often
-use `l ::= import stdlib.list;`, `d ::= import stdlib.data;`,
-`v ::= import stdlib.validate;`, `cfg ::= import stdlib.config;`, and
+use `l ::= import stdlib.list;`, `_ ::= import stdlib.collection;`,
+`d ::= import stdlib.data;`, `v ::= import stdlib.validate;`,
+`cfg ::= import stdlib.config;`, and
 `refl ::= import stdlib.reflect;`. Network examples use
 `net ::= import stdlib.net;`. Prefer typed helper functions when the logic is
 nontrivial; for simple projections in an already-typed context, field sections

@@ -72,14 +72,16 @@ fn session_retains_callable_next_to_erased_type_export() {
         Value::Int(42)
     );
 
-    // Strict legacy TLC entry points still reject runtime observation of Type
-    // values, including an otherwise-unused Type export in an imported module.
-    let strict = eval_tlc_with_base(
-        "module ::= import \"value_type_members.zt\";\nmodule.defaultPort",
-        Some(&imports_dir()),
-    )
-    .unwrap_err();
-    assert!(matches!(strict, EvalError::ReflectionUnsupported(_)));
+    // Strict TLC entry points permit a type-free root expression to use a value
+    // exported beside an erased Type member in a dependency.
+    assert_eq!(
+        eval_tlc_with_base(
+            "module ::= import \"value_type_members.zt\";\nmodule.defaultPort",
+            Some(&imports_dir()),
+        )
+        .unwrap(),
+        Value::Int(8080)
+    );
     assert!(matches!(
         crate::eval_tlc_file("T :: type Int;\nT").unwrap_err(),
         EvalError::ReflectionUnsupported(_)
@@ -109,6 +111,62 @@ fn session_retains_imported_operator_witnesses_across_calls() {
             .unwrap(),
         Value::Bool(false)
     );
+}
+
+#[test]
+fn session_materializes_imported_partial_alias_witness() {
+    let analysis = zutai_semantic::analyze_with_base(
+        "_ ::= import \"hkt_witness_result.zt\";\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nResult :: <E, A> type { #ok : { value : A; }; #err : { error : E; }; };\ngood :: Result Text Int = #ok { value = 5; };\nmap (\\x. x + 1) good",
+        Some(&imports_dir()),
+        zutai_semantic::AnalysisOptions::default(),
+    );
+    assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    let session =
+        TlcSession::from_analysis(&analysis).expect("partial alias witness should materialize");
+    assert_eq!(
+        session.entry().expect("imported map should evaluate"),
+        run("#ok { value = 5; }")
+    );
+}
+
+#[test]
+fn session_dispatches_imported_collection_list_witness() {
+    let analysis = zutai_semantic::analyze(
+        "_ ::= import stdlib.collection;\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nxs :: List Int = { 1; 2; };\nmap (\\x. x + 1) xs",
+    );
+    assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    assert_eq!(
+        TlcSession::from_analysis(&analysis)
+            .unwrap()
+            .entry()
+            .unwrap(),
+        run("{ 2; 3; }")
+    );
+    assert_eq!(
+        crate::eval_file(
+            "_ ::= import stdlib.collection;\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nxs :: List Int = { 1; 2; };\nmap (\\x. x + 1) xs",
+        )
+        .unwrap(),
+        run("{ 2; 3; }")
+    );
+}
+
+#[test]
+fn default_eval_dispatches_all_collection_witnesses() {
+    let source = r#"
+_ ::= import stdlib.collection;
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+Result :: <E, A> type { #ok : { value : A; }; #err : { error : E; }; };
+listValue :: List Int = { 1; 2; 3; };
+optionalValue :: Int? = #some (4);
+resultValue :: Result Text Int = #ok { value = 5; };
+list ::= fold (\sum value. sum + value) 0 (map (\value. value * 2) listValue);
+optional ::= fold (\sum value. sum + value) 0 (map (\value. value + 1) optionalValue);
+result ::= fold (\sum value. sum + value) 0 (map (\value. value + 1) resultValue);
+{ list; optional; result; }
+"#;
+    assert_eq!(crate::eval_file(source).unwrap(), run("{ 12; 5; 6; }"));
 }
 
 #[test]

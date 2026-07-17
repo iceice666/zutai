@@ -1,0 +1,4 @@
+Result :: <E, A> type { #ok : { value : A; }; #err : { error : E; }; };
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @(Result E) :: <E> { map = \f result. result; }
+1

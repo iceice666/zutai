@@ -267,6 +267,7 @@ impl<'thir> Lowerer<'thir> {
                 };
 
                 if let Some((binding, func_thir_ty, func_span)) = func_binding_info {
+                    let arg_thir_ty = Some(self.thir.expr_arena[arg].ty);
                     if let Some(op) = self.builtin_effect_op(binding) {
                         let arg_tlc = self.lower_expr(arg);
                         return self.alloc_expr(
@@ -347,6 +348,7 @@ impl<'thir> Lowerer<'thir> {
                         func_thir_ty,
                         func_span,
                         &instantiation,
+                        arg_thir_ty,
                         tlc_ty,
                         span,
                     ) {
@@ -1164,12 +1166,14 @@ impl<'thir> Lowerer<'thir> {
     /// needs no such dispatch (the caller then uses the plain `Var`, possibly with
     /// InferVar poly-scheme `TyApp`s). Shared by the `Apply` callee path and a
     /// standalone `BindingRef` (a polymorphic value used outside callee position).
+    #[allow(clippy::too_many_arguments)]
     fn lower_instantiated_callee(
         &mut self,
         binding: BindingId,
         callee_thir_ty: TypeId,
         callee_span: Span,
         instantiation: &[TypeId],
+        arg_thir_ty: Option<TypeId>,
         tlc_ty: TlcTypeId,
         span: Span,
     ) -> Option<TlcExprId> {
@@ -1196,11 +1200,36 @@ impl<'thir> Lowerer<'thir> {
                 });
             let index_of = |b: BindingId| vars.iter().position(|v| *v == b);
 
-            // The constraint param's instantiation selects the dict.
+            let higher_kinded_dispatch = matches!(
+                self.thir.type_param_kinds.get(&info.constraint_param),
+                Some(zutai_thir::Kind::Arrow(_, _))
+            );
             let dict_inst = index_of(info.constraint_param)
                 .and_then(|i| instantiation.get(i).copied())
                 .unwrap_or(instantiation[0]);
-            let dict_expr = self.get_dict_expr(info.constraint, dict_inst, callee_span);
+            let dispatch = if higher_kinded_dispatch {
+                self.constraint_dispatch_target(&info, instantiation, arg_thir_ty)
+            } else {
+                None
+            };
+            let dispatch_key = dispatch.as_ref().map(|(key, _)| key.clone());
+            let extern_inst = dispatch
+                .as_ref()
+                .map(|(_, target)| *target)
+                .unwrap_or(dict_inst);
+            let dict_expr = if higher_kinded_dispatch {
+                let constraint = self
+                    .thir
+                    .binding_names
+                    .get(info.constraint.0 as usize)
+                    .map(String::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                self.try_extern_dict_by_name(&constraint, extern_inst, callee_span)
+                    .unwrap_or_else(|| self.get_dict_expr(info.constraint, dict_inst, callee_span))
+            } else {
+                self.get_dict_expr(info.constraint, dict_inst, callee_span)
+            };
             let method_ty = self.lower_type(callee_thir_ty);
             let method_name = info.name.clone();
             let mut acc = self.alloc_expr(
@@ -1209,12 +1238,17 @@ impl<'thir> Lowerer<'thir> {
                 span,
             );
             self.register_dict_field_slot(acc, info.constraint, &method_name);
-            // Record the concrete dispatch key (the instantiated operand type) so
-            // the interpreter can dispatch an imported witness method to the
-            // instance whose target matches the operand. An abstract/unkeyable
-            // operand yields "" (never matches a witness → dispatch refuses).
-            let dispatch_key = self
-                .structural_witness_key(dict_inst, &mut rustc_hash::FxHashSet::default())
+            let dispatch_key = dispatch_key
+                .or_else(|| {
+                    self.structural_witness_key(
+                        if higher_kinded_dispatch {
+                            extern_inst
+                        } else {
+                            dict_inst
+                        },
+                        &mut rustc_hash::FxHashSet::default(),
+                    )
+                })
                 .unwrap_or_default();
             // S1 gate: if the dict fell back to `Lit(Nothing)` (no local witness,
             // no derivable instance, not an abstract dict param) yet the operand
@@ -1233,7 +1267,7 @@ impl<'thir> Lowerer<'thir> {
                     .get(info.constraint.0 as usize)
                     .cloned()
                     .unwrap_or_default();
-                let target_display = self.thir_type_display(dict_inst);
+                let target_display = self.thir_type_display(extern_inst);
                 self.unresolved_dispatches.push(UnresolvedDispatch {
                     constraint,
                     target_key: dispatch_key.clone(),
@@ -1274,6 +1308,130 @@ impl<'thir> Lowerer<'thir> {
 
         None
     }
+    fn constraint_dispatch_target(
+        &self,
+        info: &super::witness::ConstraintMethodInfo,
+        instantiation: &[TypeId],
+        arg_thir_ty: Option<TypeId>,
+    ) -> Option<(String, TypeId)> {
+        if !matches!(
+            self.thir.type_param_kinds.get(&info.constraint_param),
+            Some(zutai_thir::Kind::Arrow(_, _))
+        ) {
+            return None;
+        }
+        arg_thir_ty?;
+        let sig = self.method_sig_for(info.constraint, &info.name)?;
+        let vars = self.collect_thir_type_vars(sig);
+        let constructor_ty = vars
+            .iter()
+            .position(|binding| *binding == info.constraint_param)
+            .and_then(|index| instantiation.get(index))
+            .copied()?;
+        let mut subst = FxHashMap::default();
+        for (binding, ty) in vars.iter().copied().zip(instantiation.iter().copied()) {
+            if binding != info.constraint_param {
+                subst.insert(binding, ty);
+            }
+        }
+        let applied_type_arg =
+            self.method_constructor_element_arg(sig, info.constraint_param, 0)?;
+        let concrete_type_arg = match self.thir.type_arena[applied_type_arg.0 as usize].kind {
+            TypeKind::TypeVar(binding) => subst.get(&binding).copied().unwrap_or(applied_type_arg),
+            _ => applied_type_arg,
+        };
+        let mut seen = rustc_hash::FxHashSet::default();
+        match self.thir.type_arena[constructor_ty.0 as usize].kind {
+            TypeKind::Apply { .. } => {
+                let (head, mut args) = self.thir_app_spine(constructor_ty);
+                let binding = match self.thir.type_arena[head.0 as usize].kind {
+                    TypeKind::Alias(binding) | TypeKind::Con(binding) => binding,
+                    _ => return None,
+                };
+                let name = self.thir.binding_names.get(binding.0 as usize)?;
+                let saturated = self
+                    .thir
+                    .type_arena
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, ty)| match ty.kind {
+                        TypeKind::Apply { func, arg }
+                            if self.thir_types_equal(func, constructor_ty)
+                                && self.thir_types_equal(arg, concrete_type_arg) =>
+                        {
+                            Some(TypeId(index as u32))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(constructor_ty);
+                args.push(concrete_type_arg);
+                let mut key = name.clone();
+                for arg in args {
+                    let argument_key = self.structural_witness_key_env(arg, &subst, &mut seen)?;
+                    key.push('[');
+                    key.push_str(&argument_key);
+                    key.push(']');
+                }
+                Some((key, saturated))
+            }
+            TypeKind::Con(binding) | TypeKind::Alias(binding) => {
+                let name = self.thir.binding_names.get(binding.0 as usize)?;
+                let argument_key = self.structural_witness_key(concrete_type_arg, &mut seen)?;
+                Some((format!("{name}[{argument_key}]"), constructor_ty))
+            }
+            _ => None,
+        }
+    }
+
+    fn method_constructor_element_arg(
+        &self,
+        ty: TypeId,
+        constructor_param: BindingId,
+        depth: u32,
+    ) -> Option<TypeId> {
+        if depth > 64 {
+            return None;
+        }
+        if let Some(element) = self.constructor_application_arg(ty, constructor_param) {
+            return Some(element);
+        }
+        let recur =
+            |nested| self.method_constructor_element_arg(nested, constructor_param, depth + 1);
+        match self.thir.type_arena[ty.0 as usize].kind.clone() {
+            TypeKind::Function { from, to } => recur(from).or_else(|| recur(to)),
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner) => recur(inner),
+            TypeKind::Patch { target, .. } | TypeKind::Effect { base: target, .. } => recur(target),
+            TypeKind::Record(fields, _) => fields.into_iter().find_map(|field| recur(field.ty)),
+            TypeKind::Union(variants, _) => variants
+                .into_iter()
+                .filter_map(|variant| variant.payload)
+                .find_map(recur),
+            TypeKind::Tuple(items) => items.into_iter().find_map(|item| match item {
+                zutai_thir::TypeTupleItem::Named { ty, .. }
+                | zutai_thir::TypeTupleItem::Positional(ty) => recur(ty),
+            }),
+            TypeKind::AliasApply { args, .. } => args.into_iter().find_map(recur),
+            TypeKind::ForAll { body, .. } => recur(body),
+            _ => None,
+        }
+    }
+
+    fn constructor_application_arg(
+        &self,
+        ty: TypeId,
+        constructor_param: BindingId,
+    ) -> Option<TypeId> {
+        let (head, args) = self.thir_app_spine(ty);
+        matches!(
+            self.thir.type_arena[head.0 as usize].kind,
+            TypeKind::TypeVar(binding) if binding == constructor_param
+        )
+        .then(|| args.last().copied())
+        .flatten()
+    }
 
     fn lower_binding_ref(
         &mut self,
@@ -1302,9 +1460,15 @@ impl<'thir> Lowerer<'thir> {
         // A polymorphic value used outside callee position carries a recorded
         // instantiation (THIR `lower_binding_ref` freshened its `<A>` TypeVars):
         // emit the same TyApp + dict-App prefix the Apply path would.
-        if let Some(callee) =
-            self.lower_instantiated_callee(binding, ref_thir_ty, span, instantiation, tlc_ty, span)
-        {
+        if let Some(callee) = self.lower_instantiated_callee(
+            binding,
+            ref_thir_ty,
+            span,
+            instantiation,
+            None,
+            tlc_ty,
+            span,
+        ) {
             return callee;
         }
 

@@ -1331,9 +1331,15 @@ pub(crate) fn witness_registry_covers(
     if depth > 64 {
         return false;
     }
-    // Concrete exact match.
+    // Concrete exact match. A bare higher-kinded constructor witness such as
+    // `Functor @List` also covers each saturated application key (`List[Int]`).
     if exports.iter().any(|e| {
-        e.constraint == constraint && e.conditional.is_none() && e.target_key == target_key
+        e.constraint == constraint
+            && e.conditional.is_none()
+            && (e.target_key == target_key
+                || target_key
+                    .strip_prefix(e.target_key.as_str())
+                    .is_some_and(|suffix| suffix.starts_with('[')))
     }) {
         return true;
     }

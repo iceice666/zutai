@@ -245,6 +245,41 @@ impl<'hir> Lowerer<'hir> {
             }
             _ => {}
         }
+        // Preserve a saturated nominal constructor while solving an inferred
+        // higher-kinded head (`?F A ~ Result E B`). Expanding the alias here
+        // would lose both the constructor identity needed for witness dispatch
+        // and the distinction between its prefix and final type argument.
+        match (
+            self.type_arena[expected_head.0 as usize].kind.clone(),
+            self.type_arena[found_head.0 as usize].kind.clone(),
+        ) {
+            (TypeKind::Apply { func, arg }, concrete @ TypeKind::AliasApply { .. })
+                if matches!(self.ty(self.resolve(func)).kind, TypeKind::InferVar(_)) =>
+            {
+                let result =
+                    self.match_abstract_constructor_apply(func, arg, found_head, &concrete, e_span);
+                if let Some(key) = guard_key {
+                    self.type_match_in_progress.remove(&key);
+                }
+                return result;
+            }
+            (concrete @ TypeKind::AliasApply { .. }, TypeKind::Apply { func, arg })
+                if matches!(self.ty(self.resolve(func)).kind, TypeKind::InferVar(_)) =>
+            {
+                let result = self.match_abstract_constructor_apply(
+                    func,
+                    arg,
+                    expected_head,
+                    &concrete,
+                    f_span,
+                );
+                if let Some(key) = guard_key {
+                    self.type_match_in_progress.remove(&key);
+                }
+                return result;
+            }
+            _ => {}
+        }
         let expected = self.resolve_alias(expected, &mut FxHashSet::default(), e_span);
         let found = self.resolve_alias(found, &mut FxHashSet::default(), f_span);
         if expected == found {
@@ -423,31 +458,28 @@ impl<'hir> Lowerer<'hir> {
         concrete: &TypeKind,
         span: Span,
     ) -> bool {
-        let (head, concrete_arg) = match concrete {
-            TypeKind::List(item) => ("List", *item),
-            TypeKind::Optional(item) => ("Optional", *item),
-            TypeKind::Maybe(item) => ("Maybe", *item),
-            TypeKind::Code(item) => ("Code", *item),
+        let (constructor, concrete_arg) = match concrete {
+            TypeKind::List(item) => (self.builtin_constructor("List", span), *item),
+            TypeKind::Optional(item) => (self.builtin_constructor("Optional", span), *item),
+            TypeKind::Maybe(item) => (self.builtin_constructor("Maybe", span), *item),
+            TypeKind::Code(item) => (self.builtin_constructor("Code", span), *item),
             TypeKind::Patch {
                 target,
                 deep: false,
-            } => ("Patch", *target),
-            TypeKind::Patch { target, deep: true } => ("DeepPatch", *target),
+            } => (self.builtin_constructor("Patch", span), *target),
+            TypeKind::Patch { target, deep: true } => {
+                (self.builtin_constructor("DeepPatch", span), *target)
+            }
+            TypeKind::AliasApply { binding, args } if !args.is_empty() => {
+                let constructor =
+                    self.partial_alias_constructor(*binding, &args[..args.len() - 1], span);
+                (Some(constructor), args[args.len() - 1])
+            }
             _ => return false,
         };
-        let Some(binding) = self
-            .hir
-            .bindings
-            .iter()
-            .position(|binding| binding.kind == BindingKind::BuiltinType && binding.name == head)
-            .map(|index| BindingId(index as u32))
-        else {
+        let Some(constructor) = constructor else {
             return false;
         };
-        let constructor = self.alloc_type(Type {
-            kind: TypeKind::Con(binding),
-            span,
-        });
         self.type_matches(func, constructor) && self.type_matches(arg, concrete_arg)
     }
 

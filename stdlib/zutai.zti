@@ -11,6 +11,7 @@
     { name = "text"; path = "packages/base/modules/text.zt"; visibility = #explicit; };
     { name = "cmp"; path = "packages/base/modules/cmp.zt"; visibility = #explicit; };
     { name = "list"; path = "packages/base/modules/list.zt"; visibility = #explicit; };
+    { name = "collection"; path = "packages/base/modules/collection.zt"; visibility = #explicit; };
     { name = "data"; path = "packages/data/modules/data.zt"; visibility = #explicit; };
     { name = "validate"; path = "packages/data/modules/validate.zt"; visibility = #explicit; };
     { name = "config"; path = "packages/data/modules/config.zt"; visibility = #explicit; };

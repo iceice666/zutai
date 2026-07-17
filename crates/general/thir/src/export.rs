@@ -52,13 +52,45 @@ pub fn export_witness_target(
     file: &ThirFile,
     ty: TypeId,
 ) -> Result<ImportedType, ExportUnsupported> {
-    match file.type_arena[ty.0 as usize].kind {
+    match &file.type_arena[ty.0 as usize].kind {
         TypeKind::Con(binding) => Ok(ImportedType::ConApply {
             ctor: file.binding_names[binding.0 as usize].clone(),
             args: Vec::new(),
         }),
+        TypeKind::Apply { .. } => {
+            let (head, args) = witness_apply_spine(file, ty);
+            let TypeKind::Alias(binding) = file.type_arena[head.0 as usize].kind else {
+                return export_type(file, ty);
+            };
+            let aliases = build_alias_map(file);
+            let Some(params) = aliases.params.get(&binding) else {
+                return export_type(file, ty);
+            };
+            if args.len() >= params.len() {
+                return export_type(file, ty);
+            }
+            let exported_args = args
+                .into_iter()
+                .map(|arg| export_type(file, arg))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ImportedType::ConApply {
+                ctor: file.binding_names[binding.0 as usize].clone(),
+                args: exported_args,
+            })
+        }
         _ => export_type(file, ty),
     }
+}
+
+fn witness_apply_spine(file: &ThirFile, ty: TypeId) -> (TypeId, Vec<TypeId>) {
+    let mut args = Vec::new();
+    let mut head = ty;
+    while let TypeKind::Apply { func, arg } = file.type_arena[head.0 as usize].kind {
+        args.push(arg);
+        head = func;
+    }
+    args.reverse();
+    (head, args)
 }
 
 /// Export a type-value's denotation, preserving a parametric constructor's

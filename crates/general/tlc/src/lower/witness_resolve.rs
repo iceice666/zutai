@@ -329,7 +329,7 @@ impl<'thir> Lowerer<'thir> {
 
     /// Resolve a dict from the imported extern tables (concrete then conditional)
     /// by constraint name alone.
-    fn try_extern_dict_by_name(
+    pub(super) fn try_extern_dict_by_name(
         &mut self,
         cst_name: &str,
         inst_type_id: TypeId,
@@ -452,6 +452,38 @@ impl<'thir> Lowerer<'thir> {
                 Some(Some(prev)) => self.thir_types_equal(*prev, resolved),
                 None => false,
             };
+        }
+        if matches!(pat, WitnessPattern::Any) {
+            return true;
+        }
+        if let WitnessPattern::ConApply {
+            ctor,
+            args,
+            remaining,
+        } = pat
+        {
+            let (binding, concrete_args) =
+                match self.thir.type_arena[concrete.0 as usize].kind.clone() {
+                    TypeKind::AliasApply { binding, args } => (binding, args),
+                    TypeKind::Apply { .. } => {
+                        let (head, args) = self.thir_app_spine(concrete);
+                        let binding = match self.thir.type_arena[head.0 as usize].kind {
+                            TypeKind::Alias(binding) | TypeKind::Con(binding) => binding,
+                            _ => return false,
+                        };
+                        (binding, args)
+                    }
+                    _ => return false,
+                };
+            return self
+                .thir
+                .binding_names
+                .get(binding.0 as usize)
+                .is_some_and(|name| name == ctor)
+                && concrete_args.len() == args.len() + remaining
+                && args.iter().zip(concrete_args.iter()).all(|(pattern, ty)| {
+                    self.match_witness_pattern(pattern, *ty, cenv, holes, depth + 1)
+                });
         }
         let no_holes = FxHashSet::default();
         let (concrete, cenv) = self.norm_ty(concrete, cenv, &no_holes);

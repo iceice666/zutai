@@ -327,9 +327,41 @@ fn import_zt_type_module() {
 }
 
 #[test]
-fn strict_tlc_rejects_imported_type_value() {
+fn strict_tlc_rejects_imported_type_value_when_it_escapes() {
     let src = "m ::= import \"type_module.zt\";\nm";
     match eval_tlc_with_base(src, Some(&imports_dir())).unwrap_err() {
+        EvalError::ReflectionUnsupported(message) => {
+            assert!(message.contains("runtime Type values"));
+        }
+        other => panic!("expected ReflectionUnsupported, got {other:?}"),
+    }
+}
+
+#[test]
+fn default_eval_preserves_nested_imported_type_value() {
+    let value = run_import("m ::= import \"type_module.zt\";\n{ item = m; }");
+    let Value::Record(fields) = value else {
+        panic!("expected record");
+    };
+    assert!(
+        matches!(fields[0].1.peek(), Some(Value::TypeValue(_))),
+        "nested imported Type value must use the THIR oracle"
+    );
+}
+
+#[test]
+fn default_eval_preserves_imported_type_member_value() {
+    let value = run_import("module ::= import \"value_type_members.zt\";\nmodule.Server");
+    assert!(
+        matches!(value, Value::TypeValue(_)),
+        "imported Type-valued member must use the THIR oracle"
+    );
+}
+
+#[test]
+fn strict_tlc_rejects_imported_type_member_value() {
+    let source = "module ::= import \"value_type_members.zt\";\nmodule.Server";
+    match eval_tlc_with_base(source, Some(&imports_dir())).unwrap_err() {
         EvalError::ReflectionUnsupported(message) => {
             assert!(message.contains("runtime Type values"));
         }
@@ -679,19 +711,14 @@ fn imported_stream_matches_ambient_stream() {
 }
 
 #[test]
-fn strict_tlc_gates_imported_parametric_constructor_module() {
-    // TLC elaboration of `m.Stream Int` succeeds (otherwise this would be a type
-    // error, not `ReflectionUnsupported`); only the pre-existing runtime
-    // type-value gate refuses, because the module exports a `Stream` type value.
+fn strict_tlc_runs_imported_parametric_constructor_module() {
     let src = "m ::= import \"stream_module.zt\";\n\
                xs :: m.Stream Int = m.fromList {1; 2; 3;};\n\
                m.takeList 2 xs == {1; 2;}";
-    match eval_tlc_with_base(src, Some(&imports_dir())).unwrap_err() {
-        EvalError::ReflectionUnsupported(message) => {
-            assert!(message.contains("runtime Type values"));
-        }
-        other => panic!("expected ReflectionUnsupported, got {other:?}"),
-    }
+    assert_eq!(
+        eval_tlc_with_base(src, Some(&imports_dir())).unwrap(),
+        Value::Bool(true)
+    );
 }
 
 #[test]

@@ -260,6 +260,44 @@ fn export_witness_target_preserves_bare_builtin_constructor() {
     ));
 }
 
+#[test]
+fn export_partial_alias_witness_pattern_matches_saturated_targets() {
+    let file = completed_file(
+        "Result :: <E, A> type { #ok : { value : A; }; #err : { error : E; }; };\nFunctor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @(Result E) :: <E> { map = \\f r. r; }\n1",
+    );
+    let (target, params) = file
+        .decl_arena
+        .iter()
+        .find_map(|(_, decl)| match &decl.kind {
+            ThirDeclKind::Witness { target, params, .. } => Some((*target, params.clone())),
+            _ => None,
+        })
+        .expect("witness target");
+    let pattern = export_witness_pattern(&file, target, &params)
+        .expect("partial alias witness should export a runtime matcher");
+    assert_eq!(
+        pattern,
+        WitnessPattern::ConApply {
+            ctor: "Result".to_string(),
+            args: vec![WitnessPattern::Hole(0)],
+            remaining: 1,
+        }
+    );
+    assert_eq!(
+        match_pattern_key(&pattern, "Result[Text][Int]", params.len()),
+        Some(vec!["Text".to_string()]),
+    );
+    assert_eq!(
+        match_pattern_key(
+            &pattern,
+            "<ok({value:Int})|err({error:Text})>",
+            params.len()
+        ),
+        None,
+        "structurally equal aliases must not share conditional witnesses",
+    );
+}
+
 // ── type_matches: Record / Tuple / Union / List deep match ───────────────────
 
 #[test]

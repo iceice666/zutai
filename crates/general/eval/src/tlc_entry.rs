@@ -1,5 +1,4 @@
 use super::*;
-use crate::analysis_eval::has_runtime_type_values;
 use std::rc::Rc;
 
 /// Evaluate a `.zt` source string using the TLC eager evaluator.
@@ -47,7 +46,7 @@ fn completed_tlc_inputs_strict(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<(&ThirFile, &zutai_tlc::TlcModule), EvalError> {
     let inputs = completed_tlc_inputs_for_session(analysis)?;
-    if has_runtime_type_values(analysis) {
+    if crate::analysis_eval::root_has_runtime_type_values(analysis) {
         return Err(EvalError::ReflectionUnsupported(
             "runtime Type values are not represented in the TLC evaluator yet".to_string(),
         ));
@@ -125,9 +124,9 @@ impl TlcSession {
         let (thir_file, root_module) = completed_tlc_inputs_for_session(analysis)?;
         let registry: Vec<&zutai_tlc::TlcModule> = modules.iter().map(Rc::as_ref).collect();
 
-        // Instantiate imported conditional witnesses for concrete dispatch keys
-        // needed by the root module.
-        if !tables.conditionals.is_empty() {
+        // Instantiate imported conditional and bare constructor witnesses for
+        // the concrete dispatch keys needed by the root module.
+        if !tables.conditionals.is_empty() || !tables.concrete_dicts.is_empty() {
             let mat_ev = evaluator_with_handler(&registry, root, &imports, None, handler)?;
             let needed: Vec<String> = root_module.dict_dispatch_keys.values().cloned().collect();
             let WitnessTables {
@@ -136,11 +135,22 @@ impl TlcSession {
                 conditionals,
             } = &mut tables;
             let conds: &[ConditionalRuntimeWitness] = conditionals;
-            for cw in conds {
-                for key in &needed {
+            for key in &needed {
+                let mut constraints: Vec<String> = conds
+                    .iter()
+                    .map(|witness| witness.constraint.clone())
+                    .chain(
+                        concrete_dicts
+                            .keys()
+                            .map(|(constraint, _)| constraint.clone()),
+                    )
+                    .collect();
+                constraints.sort();
+                constraints.dedup();
+                for constraint in constraints {
                     let Some(Value::Record(fields)) = materialize_conditional_dict(
                         &mat_ev,
-                        &cw.constraint,
+                        &constraint,
                         key,
                         conds,
                         concrete_dicts,
@@ -489,6 +499,17 @@ fn materialize_conditional_dict(
         return None;
     }
     if let Some(dict) = concrete_dicts.get(&(constraint.to_string(), key.to_string())) {
+        return Some(dict.clone());
+    }
+    if let Some((_, dict)) = concrete_dicts
+        .iter()
+        .find(|((dict_constraint, dict_key), _)| {
+            dict_constraint == constraint
+                && key
+                    .strip_prefix(dict_key.as_str())
+                    .is_some_and(|suffix| suffix.starts_with('['))
+        })
+    {
         return Some(dict.clone());
     }
     for cw in conditionals {

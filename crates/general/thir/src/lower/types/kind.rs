@@ -27,6 +27,50 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
+    /// Instantiate a stored kind scheme for one independent use. Kind annotations
+    /// are level-polymorphic; reusing their inference metas across witnesses would
+    /// let the first target constrain every later target and create false cycles.
+    pub(in crate::lower) fn freshen_kind_metas(&mut self, kind: &Kind) -> Kind {
+        fn freshen(
+            lowerer: &mut Lowerer<'_>,
+            kind: &Kind,
+            metas: &mut FxHashMap<u32, UniverseLevel>,
+        ) -> Kind {
+            match kind {
+                Kind::Type(level) => Kind::Type(freshen_level(lowerer, level, metas)),
+                Kind::Row(element) => Kind::Row(Box::new(freshen(lowerer, element, metas))),
+                Kind::Arrow(from, to) => Kind::Arrow(
+                    Box::new(freshen(lowerer, from, metas)),
+                    Box::new(freshen(lowerer, to, metas)),
+                ),
+            }
+        }
+
+        fn freshen_level(
+            lowerer: &mut Lowerer<'_>,
+            level: &UniverseLevel,
+            metas: &mut FxHashMap<u32, UniverseLevel>,
+        ) -> UniverseLevel {
+            match level {
+                UniverseLevel::Known(level) => UniverseLevel::Known(*level),
+                UniverseLevel::Meta(id) => metas
+                    .entry(*id)
+                    .or_insert_with(|| lowerer.fresh_level_meta())
+                    .clone(),
+                UniverseLevel::Max(levels) => UniverseLevel::max(
+                    levels
+                        .iter()
+                        .map(|level| freshen_level(lowerer, level, metas)),
+                ),
+                UniverseLevel::Succ(level) => {
+                    UniverseLevel::succ(freshen_level(lowerer, level, metas))
+                }
+            }
+        }
+
+        freshen(self, kind, &mut FxHashMap::default())
+    }
+
     /// Compute the kind of a type. Concrete, saturated forms return
     /// `Kind::Type(level)`; constructors return arrows over universe-carrying
     /// kinds. Cumulativity is checked by `kind_compatible`, not exact equality.

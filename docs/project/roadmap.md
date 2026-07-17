@@ -33,17 +33,10 @@ recorded website build/toolchain outlier still requires focused profiling.
 Goal: prove Zutai can carry real applications without weakening `.zti` inertness,
 purity, typed host effects, or the TLC/Dataflow Core boundary.
 
-Milestones, in order:
+The constraint-backed collection vocabulary is complete. Remaining milestones,
+in order:
 
-1. **Constraint-backed collection vocabulary.** After imported higher-kinded
-   witnesses compile natively, use repeated abstractions found in the qualification
-   workload to define explicit standard-library `Functor` and `Foldable`
-   constraints and instances. Start as opt-in modules; changing ambient
-   `map`/`fold` or comparator names requires a separate compatibility decision.
-   Gate: List/Optional/Result package-boundary examples check, evaluate, and
-   compile with coherent witness selection and no regression to specialized
-   helpers.
-2. **Derived first-order data encoding.** If the qualification workload needs
+1. **Derived first-order data encoding.** If the qualification workload needs
    typed interchange back to a host or browser boundary, add a `ToData`-style
    constraint and structural derive builder mirroring the supported closed
    `FromData` shapes, without changing `.zti` or tagged-union syntax. Gate:
@@ -52,11 +45,12 @@ Milestones, in order:
    and browser bundle; open rows, tuples, recursive targets, fixed-width/posit
    scalars, opaque handles, functions, and `Type` values refuse at the derive
    request.
-3. **Demand-gated language boundary review.** Revisit reserved boundaries only
+2. **Demand-gated language boundary review.** Revisit reserved boundaries only
    with a motivating program and a concrete semantic rule. Each proposal must
    name parser impact, HIR/THIR/TLC impact, Dataflow Core/runtime impact,
    refusal behavior, and migration risk before it can become a scheduled
    milestone.
+
 
 Deferred across these phases: optimizing laziness beyond the current Dataflow
 Core sharing model, general non-tail `yield from`, asynchronous or binary host

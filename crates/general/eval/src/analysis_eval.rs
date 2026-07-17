@@ -62,7 +62,7 @@ pub fn eval_thir_with_base(source: &str, base: Option<&Path>) -> Result<Value, E
 pub(super) fn eval_default_analysis(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<Value, EvalError> {
-    if has_runtime_type_values(analysis) || analysis.reflection_builtin_program().is_some() {
+    if root_has_runtime_type_values(analysis) || analysis.reflection_builtin_program().is_some() {
         if has_tlc_effect_syntax_recursive(analysis) {
             return Err(EvalError::EffectfulNotExecutable(
                 "program combines runtime Type values/reflection with source effect syntax; TLC does not yet represent Type values and the THIR oracle cannot execute source effects"
@@ -134,21 +134,19 @@ fn eval_analysis_allow_repointed_print(
     force_deep(result, &evaluator)
 }
 
-pub(super) fn has_runtime_type_values(analysis: &zutai_semantic::Analysis) -> bool {
-    let root_has_type_values = analysis
+pub(super) fn root_has_runtime_type_values(analysis: &zutai_semantic::Analysis) -> bool {
+    analysis
         .thir
         .as_ref()
         .and_then(|thir| thir.file.as_ref())
         .is_some_and(|file| {
-            file.expr_arena
-                .iter()
-                .any(|(_, expr)| matches!(expr.kind, ThirExprKind::TypeValue(_)))
-        });
-    root_has_type_values
-        || analysis
-            .import_modules
-            .values()
-            .any(|module| has_runtime_type_values(module.as_ref()))
+            file.expr_arena.iter().any(|(_, expr)| {
+                matches!(
+                    file.type_arena[expr.ty.0 as usize].kind,
+                    zutai_thir::TypeKind::Type(_)
+                )
+            })
+        })
 }
 
 fn has_tlc_effect_syntax(analysis: &zutai_semantic::Analysis) -> bool {

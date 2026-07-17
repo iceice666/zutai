@@ -2407,6 +2407,40 @@ mod tests {
     }
 
     #[test]
+    fn imported_partial_alias_witness_is_runtime_matchable() {
+        let source = "m ::= import \"hkt_witness_result.zt\";\nm\n";
+        let analysis = analyze_in_imports(source);
+        assert!(analysis.native_import_diagnostics().is_empty());
+        let witness = analysis
+            .witness_exports
+            .iter()
+            .find(|witness| witness.constraint == "Functor")
+            .expect("Functor witness export");
+        assert!(witness.target_key.starts_with("Result['"));
+        let conditional = witness
+            .conditional
+            .as_ref()
+            .expect("partial alias witness should export a matcher");
+        assert_eq!(conditional.param_bounds.len(), 1);
+        assert!(
+            zutai_thir::match_pattern_key(
+                &conditional.pattern,
+                "Result[Text][Int]",
+                conditional.param_bounds.len(),
+            )
+            .is_some()
+        );
+        assert!(
+            zutai_thir::match_pattern_key(
+                &conditional.pattern,
+                "<ok({value:Int})|err({error:Text})>",
+                conditional.param_bounds.len(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn genuinely_nonmatchable_witness_keeps_source_located_refusal() {
         let source = "m ::= import \"nonmatchable_witness.zt\";\nm\n";
         let analysis = analyze_in_imports(source);

@@ -1155,6 +1155,54 @@ fn compile_stdlib_optional_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_COLLECTION_LIST_SRC: &str = r#"_ ::= import stdlib.collection;
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+listValue :: List Int = { 1; 2; 3; };
+fold (\sum value. sum + value) 0 (map (\value. value * 2) listValue)
+"#;
+
+const STDLIB_COLLECTION_OPTIONAL_SRC: &str = r#"_ ::= import stdlib.collection;
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+optionalValue :: Int? = #some (4);
+fold (\sum value. sum + value) 0 (map (\value. value + 1) optionalValue)
+"#;
+
+const STDLIB_COLLECTION_RESULT_SRC: &str = r#"_ ::= import stdlib.collection;
+r ::= import stdlib.result;
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+resultValue :: r.Result Text Int = #ok { value = 5; };
+fold (\sum value. sum + value) 0 (map (\value. value + 1) resultValue)
+"#;
+
+#[test]
+fn check_stdlib_collection_module() {
+    let path = write_tmp(
+        "cli_test_stdlib_collection_check.zt",
+        "_ ::= import stdlib.collection;\n1\n",
+    );
+    cli().arg("check").arg(path).assert().success();
+}
+
+#[test]
+fn compile_stdlib_collection_matches_oracle() {
+    for (name, source, expected) in [
+        ("list", STDLIB_COLLECTION_LIST_SRC, "12"),
+        ("optional", STDLIB_COLLECTION_OPTIONAL_SRC, "5"),
+        ("result", STDLIB_COLLECTION_RESULT_SRC, "6"),
+    ] {
+        let native = compile_bin_stdout(&format!("cli_test_stdlib_collection_{name}"), source);
+        let interp = run_stdout(
+            &format!("cli_test_stdlib_collection_{name}_oracle.zt"),
+            source,
+        );
+        assert_eq!(native.trim(), expected);
+        assert_eq!(native, interp, "native must match the interpreter oracle");
+    }
+}
+
 const STDLIB_RESULT_PIPELINE_SRC: &str = "r ::= import stdlib.result;\n\
 good :: r.Result Text Int = r.ok 3;\n\
 bad :: r.Result Int Int = r.err 4;\n\

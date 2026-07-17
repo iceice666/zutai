@@ -11,6 +11,7 @@
     { name = "text"; path = "modules/text.zt"; };
     { name = "cmp"; path = "modules/cmp.zt"; };
     { name = "list"; path = "modules/list.zt"; };
+    { name = "collection"; path = "modules/collection.zt"; };
   ];
   dependencies = [];
 }

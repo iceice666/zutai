@@ -1,0 +1,34 @@
+-- Opt-in collection constraints. Importing this module does not change ambient helpers.
+l ::= import stdlib.list;
+o ::= import stdlib.optional;
+r ::= import stdlib.result;
+
+listMap :: <A, B> (A -> B) -> List A -> List B
+  = f xs => l.map f xs;
+listFold :: <A, B> (B -> A -> B) -> B -> List A -> B
+  = f initial xs => l.fold f initial xs;
+optionalMap :: <A, B> (A -> B) -> A? -> B?
+  = f opt => o.map f opt;
+optionalFold :: <A, B> (B -> A -> B) -> B -> A? -> B
+  = f initial opt => match opt { | #none => initial; | #some (value) => f initial value; };
+resultMap :: <E, A, B> (A -> B) -> r.Result E A -> r.Result E B
+  = f result => r.map f result;
+resultFold :: <E, A, B> (B -> A -> B) -> B -> r.Result E A -> B
+  = f initial result => match result { | #ok { value = value; } => f initial value; | #err { error = _; } => initial; };
+
+Functor :: <F :: Type -> Type> @F {
+  map :: <A, B> (A -> B) -> F A -> F B;
+}
+
+Foldable :: <F :: Type -> Type> @F {
+  fold :: <A, B> (B -> A -> B) -> B -> F A -> B;
+}
+
+Functor @List :: { map = listMap; }
+Foldable @List :: { fold = listFold; }
+Functor @Optional :: { map = optionalMap; }
+Foldable @Optional :: { fold = optionalFold; }
+Functor @(r.Result E) :: <E> { map = resultMap; }
+Foldable @(r.Result E) :: <E> { fold = resultFold; }
+
+{}

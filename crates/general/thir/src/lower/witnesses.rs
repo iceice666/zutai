@@ -206,6 +206,7 @@ impl<'hir> Lowerer<'hir> {
                 .type_param_kinds
                 .get(&task.constraint_param)
                 .cloned()
+                .map(|kind| self.freshen_kind_metas(&kind))
                 .unwrap_or_else(Kind::ground);
             let target_kind = self.kind_of(task.target, task.span);
             if !self.kind_compatible(&expected_kind, &target_kind, task.span) {

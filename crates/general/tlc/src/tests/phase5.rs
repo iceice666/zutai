@@ -330,6 +330,57 @@ Functor @(Result E) :: <E> { map = \f r. r; }
     }
 }
 
+#[test]
+fn hkt_list_call_records_constructor_dispatch_key() {
+    let m = tlc_of(
+        r#"
+Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
+Functor @List :: { map = \f xs. xs; }
+xs :: List Int = { 1; 2; };
+map (\x. x + 1) xs
+"#,
+    );
+    assert!(
+        m.dict_dispatch_keys.values().any(|key| key == "List[Int]"),
+        "expected List Int dispatch key, got {:?}",
+        m.dict_dispatch_keys
+    );
+}
+
+#[test]
+fn hkt_curried_fold_call_records_constructor_dispatch_key() {
+    let m = tlc_of(
+        r#"
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+Foldable @List :: { fold = \f initial xs. initial; }
+xs :: List Int = { 1; 2; };
+fold (\sum value. sum + value) 0 xs
+"#,
+    );
+    assert!(
+        m.dict_dispatch_keys.values().any(|key| key == "List[Int]"),
+        "expected List Int dispatch key, got {:?}",
+        m.dict_dispatch_keys
+    );
+}
+
+#[test]
+fn hkt_fold_dispatch_key_uses_element_not_accumulator_type() {
+    let m = tlc_of(
+        r#"
+Foldable :: <F :: Type -> Type> @F { fold :: <A, B> (B -> A -> B) -> B -> F A -> B; }
+Foldable @List :: { fold = \f initial xs. initial; }
+xs :: List Int = { 1; 2; };
+fold (\text value. text) "" xs
+"#,
+    );
+    assert!(
+        m.dict_dispatch_keys.values().any(|key| key == "List[Int]"),
+        "expected List Int dispatch key, got {:?}",
+        m.dict_dispatch_keys
+    );
+}
+
 /// A constraint method may declare a type param it never uses in its signature
 /// (`phantom :: <A, B> F A -> F A` — `B` is unused). The witness field must be
 /// wrapped in one `TyLam` per param that actually appears in the signature (here

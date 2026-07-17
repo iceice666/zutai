@@ -448,31 +448,28 @@ impl<'hir> Lowerer<'hir> {
         span: Span,
         seen_alias_pairs: &mut FxHashSet<(BindingId, BindingId)>,
     ) -> bool {
-        let (head, concrete_arg) = match concrete {
-            TypeKind::List(item) => ("List", *item),
-            TypeKind::Optional(item) => ("Optional", *item),
-            TypeKind::Maybe(item) => ("Maybe", *item),
-            TypeKind::Code(item) => ("Code", *item),
+        let (constructor, concrete_arg) = match concrete {
+            TypeKind::List(item) => (self.builtin_constructor("List", span), *item),
+            TypeKind::Optional(item) => (self.builtin_constructor("Optional", span), *item),
+            TypeKind::Maybe(item) => (self.builtin_constructor("Maybe", span), *item),
+            TypeKind::Code(item) => (self.builtin_constructor("Code", span), *item),
             TypeKind::Patch {
                 target,
                 deep: false,
-            } => ("Patch", *target),
-            TypeKind::Patch { target, deep: true } => ("DeepPatch", *target),
+            } => (self.builtin_constructor("Patch", span), *target),
+            TypeKind::Patch { target, deep: true } => {
+                (self.builtin_constructor("DeepPatch", span), *target)
+            }
+            TypeKind::AliasApply { binding, args } if !args.is_empty() => {
+                let constructor =
+                    self.partial_alias_constructor(*binding, &args[..args.len() - 1], span);
+                (Some(constructor), args[args.len() - 1])
+            }
             _ => return false,
         };
-        let Some(binding) = self
-            .hir
-            .bindings
-            .iter()
-            .position(|binding| binding.kind == BindingKind::BuiltinType && binding.name == head)
-            .map(|index| BindingId(index as u32))
-        else {
+        let Some(constructor) = constructor else {
             return false;
         };
-        let constructor = self.alloc_type(Type {
-            kind: TypeKind::Con(binding),
-            span,
-        });
         self.unify_inner(func, constructor, span, seen_alias_pairs);
         self.unify_inner(arg, concrete_arg, span, seen_alias_pairs);
 
@@ -480,6 +477,36 @@ impl<'hir> Lowerer<'hir> {
         // zonking; the two component unifications above carry the real solving.
         let _ = concrete_ty;
         true
+    }
+
+    pub(in crate::lower) fn builtin_constructor(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> Option<TypeId> {
+        let binding = self
+            .hir
+            .bindings
+            .iter()
+            .position(|binding| binding.kind == BindingKind::BuiltinType && binding.name == name)
+            .map(|index| BindingId(index as u32))?;
+        Some(self.alloc_type(Type {
+            kind: TypeKind::Con(binding),
+            span,
+        }))
+    }
+
+    pub(in crate::lower) fn partial_alias_constructor(
+        &mut self,
+        binding: BindingId,
+        prefix: &[TypeId],
+        span: Span,
+    ) -> TypeId {
+        let head = self.alloc_type(Type {
+            kind: TypeKind::Alias(binding),
+            span,
+        });
+        self.fold_apply(head, prefix, span)
     }
 
     pub(in crate::lower) fn expand_alias_apply_once(

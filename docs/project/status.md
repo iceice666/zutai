@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 collection-constraint baseline adds opt-in `stdlib.collection`
+`Functor` and `Foldable` witnesses for `List`, `Optional`, and `Result E` without
+changing ambient list helpers. Imported bare-constructor and conditional witness
+coverage routes type-free root programs through TLC even when dependency modules
+export type values. All three shapes check and execute across the stdlib boundary
+with interpreter/native parity; higher-order or otherwise non-matchable imported
+constructor witnesses retain the source-located backend refusal.
+
 The 2026-07-17 independent-qualification baseline adds a checked-in downstream
 application under `examples/qualification/app`: a deterministic locked path
 package graph, typed inert configuration, a package-owned validation policy,

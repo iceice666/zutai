@@ -27,6 +27,15 @@ pub enum WitnessPattern {
     /// A witness type parameter, identified by its index in the witness's
     /// parameter list (parallel to `param_bounds`).
     Hole(usize),
+    /// One structurally matched type that does not become a witness parameter.
+    Any,
+    /// A partially-applied named alias constructor with fixed prefix arguments.
+    /// `remaining` counts unapplied parameters filled by the method operand.
+    ConApply {
+        ctor: String,
+        args: Vec<WitnessPattern>,
+        remaining: usize,
+    },
     /// A concrete leaf, identified by its structural witness key string
     /// (`"Int"`, `"Bool"`, `"Text"`, `"#ok"`, a fixed-width or posit name…).
     Leaf(String),
@@ -70,7 +79,7 @@ pub fn export_witness_pattern(
 ) -> Option<WitnessPattern> {
     let aliases = build_alias_params_body(file);
     let env = FxHashMap::default();
-    pat_of(file, &aliases, target, &env, params, 0)
+    pat_of(file, &aliases, target, &env, params, &[], 0)
 }
 
 type AliasMap = FxHashMap<BindingId, (Vec<BindingId>, TypeId)>;
@@ -94,6 +103,7 @@ fn norm(
     ty: TypeId,
     env: &FxHashMap<BindingId, TypeId>,
     params: &[BindingId],
+    wildcards: &[BindingId],
 ) -> (TypeId, FxHashMap<BindingId, TypeId>) {
     let mut ty = ty;
     let mut env = env.clone();
@@ -101,10 +111,12 @@ fn norm(
     while fuel > 0 {
         fuel -= 1;
         match file.type_arena[ty.0 as usize].kind.clone() {
-            TypeKind::TypeVar(b) if !params.contains(&b) => match env.get(&b) {
-                Some(&next) => ty = next,
-                None => break,
-            },
+            TypeKind::TypeVar(b) if !params.contains(&b) && !wildcards.contains(&b) => {
+                match env.get(&b) {
+                    Some(&next) => ty = next,
+                    None => break,
+                }
+            }
             TypeKind::Alias(b) => match aliases.get(&b) {
                 Some((_, body)) => ty = *body,
                 None => break,
@@ -122,12 +134,16 @@ fn norm(
                 let (head, args) = app_spine(file, ty);
                 if let TypeKind::Alias(b) = file.type_arena[head.0 as usize].kind
                     && let Some((aparams, body)) = aliases.get(&b)
-                    && aparams.len() == args.len()
+                    && args.len() <= aparams.len()
                 {
                     for (p, a) in aparams.iter().zip(args.iter()) {
                         env.insert(*p, *a);
                     }
-                    ty = *body;
+                    if args.len() == aparams.len() {
+                        ty = *body;
+                    } else {
+                        break;
+                    }
                 } else {
                     break;
                 }
@@ -155,18 +171,21 @@ fn pat_of(
     ty: TypeId,
     env: &FxHashMap<BindingId, TypeId>,
     params: &[BindingId],
+    wildcards: &[BindingId],
     depth: u32,
 ) -> Option<WitnessPattern> {
     if depth > 64 {
         return None;
     }
-    let (ty, env) = norm(file, aliases, ty, env, params);
+    let (ty, env) = norm(file, aliases, ty, env, params, wildcards);
     let kind = file.type_arena[ty.0 as usize].kind.clone();
     if let TypeKind::TypeVar(b) = kind {
-        let idx = params.iter().position(|p| *p == b)?;
-        return Some(WitnessPattern::Hole(idx));
+        if let Some(index) = params.iter().position(|param| *param == b) {
+            return Some(WitnessPattern::Hole(index));
+        }
+        return wildcards.contains(&b).then_some(WitnessPattern::Any);
     }
-    let recur = |t: TypeId| pat_of(file, aliases, t, &env, params, depth + 1);
+    let recur = |t: TypeId| pat_of(file, aliases, t, &env, params, wildcards, depth + 1);
     match kind {
         TypeKind::Int => Some(WitnessPattern::Leaf("Int".to_string())),
         TypeKind::Float => Some(WitnessPattern::Leaf("Float".to_string())),
@@ -234,6 +253,29 @@ fn pat_of(
             Box::new(recur(from)?),
             Box::new(recur(to)?),
         )),
+        TypeKind::Apply { .. } => {
+            let (head, args) = app_spine(file, ty);
+            let TypeKind::Alias(binding) = file.type_arena[head.0 as usize].kind else {
+                return None;
+            };
+            let (alias_params, _) = aliases.get(&binding)?;
+            if args.len() >= alias_params.len() {
+                return None;
+            }
+
+            // Preserve a partially-applied alias constructor as a stable head
+            // plus its fixed prefix arguments. Expanding it to the structural
+            // body loses constructor identity, so two aliases with the same
+            // representation could select each other's conditional witness.
+            // Every unapplied alias parameter is a wildcard: it is filled by the
+            // collection method's own type argument, not by a witness TyApp.
+            let remaining = alias_params.len() - args.len();
+            Some(WitnessPattern::ConApply {
+                ctor: file.binding_names[binding.0 as usize].clone(),
+                args: args.into_iter().map(recur).collect::<Option<Vec<_>>>()?,
+                remaining,
+            })
+        }
         _ => None,
     }
 }
@@ -276,6 +318,28 @@ fn pattern_match_at<'k>(
                 Some(_) => return None,
             }
             Some(rest)
+        }
+        P::Any => {
+            let (_, rest) = split_balanced(s)?;
+            Some(rest)
+        }
+        P::ConApply {
+            ctor,
+            args,
+            remaining,
+        } => {
+            let mut s = s.strip_prefix(ctor.as_str())?;
+            for arg in args {
+                s = s.strip_prefix('[')?;
+                s = pattern_match_at(arg, s, holes)?;
+                s = s.strip_prefix(']')?;
+            }
+            for _ in 0..*remaining {
+                s = s.strip_prefix('[')?;
+                let (_, rest) = split_balanced(s)?;
+                s = rest.strip_prefix(']')?;
+            }
+            Some(s)
         }
         P::Leaf(k) => s.strip_prefix(k.as_str()),
         P::List(inner) => {
