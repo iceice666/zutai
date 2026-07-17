@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 import-aware editor baseline completes package aliases and public
+module paths from the prepared package graph, completes exported members from
+the analyzed import target, and searches root, imported, and otherwise-unopened
+public dependency modules with deterministic source locations. Filesystem
+recording eagerly captures every public module without network access; package
+fixtures cover nested module namespaces, transitive symbols, visibility,
+shadowing, malformed-package fallback, and unsaved overlays.
+
 The 2026-07-17 package-wide editor baseline extends references and rename across
 the root package and transitive dependencies using the same recorded package
 graph and unsaved overlays as checking. Value and type member references follow
@@ -122,7 +130,10 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (package-wide editor references and safe rename:
+_Last updated: 2026-07-17 (import-aware completion and workspace symbols:
+package aliases, nested public modules, imported members, and unopened dependency
+symbols use the prepared recorded graph with exact overlay-aware locations);
+prior baseline updates: 2026-07-17 (package-wide editor references and safe rename:
 cross-package value/type references follow exact re-export origins through
 unsaved overlays, rename preserves a valid project and refuses locked-Git or
 non-source bindings);

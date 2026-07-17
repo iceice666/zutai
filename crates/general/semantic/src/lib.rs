@@ -2107,6 +2107,69 @@ mod tests {
     }
 
     #[test]
+    fn analysis_recording_captures_all_public_package_modules() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-semantic-recorded-public-modules-{}-{unique}",
+            std::process::id()
+        ));
+        let app = root.join("app");
+        let dep = root.join("dep");
+        std::fs::create_dir_all(app.join("src")).unwrap();
+        std::fs::create_dir_all(dep.join("src")).unwrap();
+        std::fs::write(
+            app.join("zutai.zti"),
+            format!(
+                "{{ formatVersion = 1; name = \"app\"; compilerCompatibility = \"{}\"; modules = []; dependencies = [{{ alias = \"dep\"; path = \"../dep\"; }};]; }}",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dep.join("zutai.zti"),
+            format!(
+                "{{ formatVersion = 1; name = \"dep\"; compilerCompatibility = \"{}\"; modules = [{{ name = \"api\"; path = \"src/api.zt\"; }}; {{ name = \"unused\"; path = \"src/unused.zt\"; }};]; dependencies = []; }}",
+                env!("CARGO_PKG_VERSION")
+            ),
+        )
+        .unwrap();
+        let entry = app.join("src/main.zt");
+        let api = dep.join("src/api.zt");
+        let unused = dep.join("src/unused.zt");
+        std::fs::write(&entry, "api ::= import dep.api;\napi.answer\n").unwrap();
+        std::fs::write(&api, "answer ::= 1;\n{ answer = answer; }\n").unwrap();
+        std::fs::write(&unused, "unused ::= 2;\n{ unused = unused; }\n").unwrap();
+
+        let recorded = analyze_path_recording(&entry).unwrap();
+        let dep_package = recorded
+            .packages
+            .packages
+            .values()
+            .find(|package| package.name == "dep")
+            .unwrap();
+        assert_eq!(
+            dep_package.sources.keys().cloned().collect::<Vec<_>>(),
+            vec!["src/api.zt", "src/unused.zt"]
+        );
+        assert_eq!(
+            recorded
+                .source_paths
+                .values()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                std::fs::canonicalize(api).unwrap(),
+                std::fs::canonicalize(unused).unwrap(),
+            ])
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn analysis_cache_hits_preserve_recorded_source_graph() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

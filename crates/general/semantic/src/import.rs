@@ -149,7 +149,9 @@ impl<'a> ImportContext<'a> {
             .map(Path::to_path_buf);
         let packages = PackageGraph::discover(path);
         let context_fingerprint = context_fingerprint(&stdlib, &packages);
-        let recorded_packages = packages.portable_skeleton();
+        let mut recorded_packages = packages.portable_skeleton();
+        let mut recorded_source_paths = BTreeMap::new();
+        packages.record_public_modules(&mut recorded_packages, &mut recorded_source_paths);
         Self {
             in_progress: canonical.into_iter().collect(),
             cache: FxHashMap::default(),
@@ -166,7 +168,7 @@ impl<'a> ImportContext<'a> {
             recorded_stdlib: BTreeMap::new(),
             packages,
             recorded_packages,
-            recorded_source_paths: BTreeMap::new(),
+            recorded_source_paths,
             package_setup_reported: false,
             context_fingerprint,
         }
@@ -198,7 +200,9 @@ impl<'a> ImportContext<'a> {
         }
         let packages = PackageGraph::discover(path);
         let context_fingerprint = context_fingerprint(&stdlib, &packages);
-        let recorded_packages = packages.portable_skeleton();
+        let mut recorded_packages = packages.portable_skeleton();
+        let mut recorded_source_paths = BTreeMap::new();
+        packages.record_public_modules(&mut recorded_packages, &mut recorded_source_paths);
         Ok(Self {
             in_progress: vec![canonical],
             cache: FxHashMap::default(),
@@ -215,7 +219,7 @@ impl<'a> ImportContext<'a> {
             recorded_stdlib: BTreeMap::new(),
             packages,
             recorded_packages,
-            recorded_source_paths: BTreeMap::new(),
+            recorded_source_paths,
             package_setup_reported: false,
             context_fingerprint,
         })

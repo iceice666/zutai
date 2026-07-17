@@ -26,19 +26,13 @@ multi-package project before adding any new surface area.
 
 Milestones, in order:
 
-1. **Import-aware completion and workspace symbols.** Complete package aliases,
-   public modules, and exported members from the same recorded graph used by
-   checking; add workspace-symbol search over root and dependency modules.
-   Results must respect visibility, shadowing, malformed-package fallback, and
-   unsaved overlays. Gate: CLI/LSP package fixtures prove deterministic results
-   and exact source locations without network access.
-2. **Stable semantic diagnostic identities and fixes.** Give HIR, import, THIR,
+1. **Stable semantic diagnostic identities and fixes.** Give HIR, import, THIR,
    derive, and backend-gate diagnostics stable codes like the parser already has;
    preserve the same code, severity, primary source, and related locations in CLI
    and LSP rendering. Add a quick fix only where the replacement is unambiguous.
    Gate: the backend-refusal and cross-file diagnostic matrices assert codes and
    protocol payloads rather than message substrings alone.
-3. **Canonical source formatting.** Add idempotent formatters for `.zt` and
+2. **Canonical source formatting.** Add idempotent formatters for `.zt` and
    `.zti`, then expose them through the CLI and LSP. General-mode formatting must
    preserve comments and accepted compatibility spellings unless a separate
    compatibility decision approves a rewrite; immediate-mode formatting must

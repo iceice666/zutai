@@ -68,6 +68,19 @@ struct SymbolPosition {
     source: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CompletionCandidate {
+    name: String,
+    kind: u8,
+    detail: String,
+}
+
+struct ImportCompletionContext {
+    completed: Vec<String>,
+    prefix: String,
+    start: usize,
+}
+
 impl ProjectAnalysis {
     fn path_for(&self, analysis: &zutai_semantic::Analysis) -> Option<PathBuf> {
         if std::ptr::eq(analysis, &self.analysis) {
@@ -103,6 +116,28 @@ impl ProjectAnalysis {
             .packages
             .get(package)
             .map(|package| package.source)
+    }
+
+    fn completion_packages(&self) -> &zutai_semantic::PortablePackageGraph {
+        &self.packages
+    }
+
+    fn package_for_analysis(
+        &self,
+        analysis: &zutai_semantic::Analysis,
+    ) -> Option<(&str, &zutai_semantic::PortablePackage)> {
+        let (id, _) = portable_package_path(analysis.source_path.as_ref()?)?;
+        self.completion_packages()
+            .packages
+            .get_key_value(id)
+            .map(|(id, package)| (id.as_str(), package))
+    }
+
+    fn owner_package(&self, analysis: &zutai_semantic::Analysis) -> Option<&str> {
+        if std::ptr::eq(analysis, &self.analysis) {
+            return self.completion_packages().root_package.as_deref();
+        }
+        self.package_for_analysis(analysis).map(|(id, _)| id)
     }
 
     fn module_identity(&self, analysis: &zutai_semantic::Analysis) -> PathBuf {
@@ -145,6 +180,36 @@ impl ProjectAnalysis {
             &mut HashSet::new(),
             &mut modules,
         );
+        modules
+    }
+
+    fn public_modules(
+        &self,
+        stdlib: &zutai_semantic::StdlibSources,
+    ) -> Vec<(String, String, zutai_semantic::Analysis)> {
+        let mut modules = Vec::new();
+        for (id, package) in &self.packages.packages {
+            for (name, path) in &package.modules {
+                let entry = path_key(&Path::new("<package>").join(id).join(path));
+                let mut graph = self.packages.clone();
+                graph.root_package = Some(id.clone());
+                let mut sources = package.sources.clone();
+                let Some(entry_source) = package.sources.get(path) else {
+                    continue;
+                };
+                sources.insert(entry.clone(), entry_source.clone());
+                let Ok(analysis) = zutai_semantic::analyze_sources_with_stdlib_and_packages(
+                    &entry,
+                    &sources,
+                    zutai_semantic::AnalysisOptions::default(),
+                    stdlib,
+                    graph,
+                ) else {
+                    continue;
+                };
+                modules.push((package.name.clone(), name.clone(), analysis));
+            }
+        }
         modules
     }
 
@@ -205,6 +270,7 @@ impl Server {
                                     "definitionProvider": true,
                                     "referencesProvider": true,
                                     "documentSymbolProvider": true,
+                                    "workspaceSymbolProvider": true,
                                     "completionProvider": {
                                         "triggerCharacters": [".", ":"],
                                         "resolveProvider": false
@@ -321,6 +387,15 @@ impl Server {
                     )?;
                 }
             }
+            "workspace/symbol" => {
+                if let Some(id) = id {
+                    let result = self.workspace_symbols(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
             "textDocument/codeAction" => {
                 if let Some(id) = id {
                     let result = self.code_actions(&params);
@@ -428,9 +503,9 @@ impl Server {
             return Some(ProjectAnalysis {
                 analysis,
                 root_path,
-                source_paths: std::collections::BTreeMap::new(),
-                sources: std::collections::BTreeMap::new(),
-                packages: zutai_semantic::PortablePackageGraph::default(),
+                source_paths: recorded.source_paths,
+                sources: recorded.sources,
+                packages: recorded.packages,
             });
         }
         for (uri, document) in &self.documents {
@@ -756,28 +831,100 @@ impl Server {
         let Some(source) = self.source_for(uri) else {
             return Value::Null;
         };
-        let Some(project) = self.analyze_with_overlays(uri, &source) else {
+        let Some(project) = self.project_for_document(uri, &source) else {
             return Value::Null;
         };
-        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        let requested = file_path(uri).map(|path| std::fs::canonicalize(&path).unwrap_or(path));
+        let analysis = requested.as_ref().and_then(|requested| {
+            project.modules().into_iter().find(|analysis| {
+                project
+                    .path_for(analysis)
+                    .is_some_and(|path| std::fs::canonicalize(&path).unwrap_or(path) == *requested)
+            })
+        });
+        let Some(analysis) = analysis else {
             return Value::Array(Vec::new());
         };
-        Value::Array(
-            hir.decl_arena
-                .iter()
-                .filter_map(|(_, decl)| {
-                    let binding = hir.bindings.get(decl.binding.0 as usize)?;
-                    let (start, end) = binding_range(&source, binding)?;
-                    Some(json!({
-                        "name": binding.name,
-                        "detail": binding_kind_label(binding.kind),
-                        "kind": symbol_kind(binding.kind),
-                        "range": range(&source, decl.span.start as usize, decl.span.end as usize),
-                        "selectionRange": range(&source, start, end),
-                    }))
-                })
-                .collect(),
-        )
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Array(Vec::new());
+        };
+        Value::Array(document_symbol_values(&source, hir))
+    }
+
+    fn workspace_symbols(&self, params: &Value) -> Value {
+        let query = params
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_lowercase();
+        let Ok(stdlib) = zutai_semantic::StdlibSources::load_configured(None) else {
+            return Value::Array(Vec::new());
+        };
+        let mut roots: Vec<_> = self
+            .documents
+            .iter()
+            .filter(|(uri, _)| {
+                file_path(uri).and_then(|path| path.extension()?.to_str().map(str::to_owned))
+                    == Some("zt".to_owned())
+            })
+            .map(|(uri, document)| (uri.clone(), document.text.clone()))
+            .collect();
+        roots.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut seen = HashSet::new();
+        let mut symbols = Vec::new();
+        for (uri, source) in roots {
+            let Some(project) = self.analyze_with_overlays(&uri, &source) else {
+                continue;
+            };
+            let public = project.public_modules(&stdlib);
+            for (package, module, analysis) in &public {
+                let Some(source_path) = analysis.source_path.as_ref() else {
+                    continue;
+                };
+                if !seen.insert(source_path.clone()) {
+                    continue;
+                }
+                let Some(path) = project.source_paths.get(source_path) else {
+                    continue;
+                };
+                let module_uri = self.uri_for_path(path);
+                let module_source = self
+                    .source_for(&module_uri)
+                    .or_else(|| project.recorded_source(analysis).map(str::to_owned));
+                let Some(module_source) = module_source else {
+                    continue;
+                };
+                append_workspace_symbols(
+                    &mut symbols,
+                    &query,
+                    analysis,
+                    &module_uri,
+                    &module_source,
+                    &format!("{package}.{module}"),
+                );
+            }
+            for analysis in project.modules() {
+                let identity = project.module_identity(analysis);
+                if !seen.insert(identity) {
+                    continue;
+                }
+                let Some((module_uri, module_source)) =
+                    self.source_for_analysis(&project, analysis)
+                else {
+                    continue;
+                };
+                append_workspace_symbols(
+                    &mut symbols,
+                    &query,
+                    analysis,
+                    &module_uri,
+                    &module_source,
+                    &workspace_symbol_container(&project, analysis),
+                );
+            }
+        }
+        symbols.sort_by_key(workspace_symbol_key);
+        Value::Array(symbols)
     }
 
     fn completion(&self, params: &Value) -> Value {
@@ -793,43 +940,61 @@ impl Server {
         else {
             return Value::Null;
         };
-        let Some(project) = self.analyze_with_overlays(uri, &source) else {
+        let Some(project) = self.project_for_document(uri, &source) else {
             return Value::Null;
         };
-        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
-            return Value::Array(Vec::new());
-        };
+        let requested = file_path(uri).map(|path| std::fs::canonicalize(&path).unwrap_or(path));
+        let analysis = requested.as_ref().and_then(|requested| {
+            project.modules().into_iter().find(|analysis| {
+                project
+                    .path_for(analysis)
+                    .is_some_and(|path| std::fs::canonicalize(&path).unwrap_or(path) == *requested)
+            })
+        });
         let (start, prefix) = completion_prefix(&source, offset);
         let replacement = range(&source, start, offset);
+
+        if let Some(import_context) = import_completion_context(&source, offset) {
+            let analysis = analysis.unwrap_or(&project.analysis);
+            return completion_items(
+                package_import_candidates(&project, analysis, &import_context.completed),
+                &import_context.prefix,
+                range(&source, import_context.start, offset),
+            );
+        }
+
+        let Some(analysis) = analysis else {
+            return Value::Array(Vec::new());
+        };
+        let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+            return Value::Array(Vec::new());
+        };
+        if let Some(binding) = member_completion_binding(&source, hir, start) {
+            let Some(import) = import_source_for_binding(hir, binding) else {
+                return Value::Array(Vec::new());
+            };
+            let Some(target) = analysis.import_modules.get(&import) else {
+                return Value::Array(Vec::new());
+            };
+            return completion_items(exported_member_candidates(target), &prefix, replacement);
+        }
+
         let mut candidates: Vec<_> = hir
             .bindings
             .iter()
             .filter(|binding| completion_binding(binding, &source, offset))
-            .map(|binding| (binding.name.clone(), binding.kind))
+            .map(|binding| CompletionCandidate {
+                name: binding.name.clone(),
+                kind: completion_kind(binding.kind),
+                detail: binding_kind_label(binding.kind).to_owned(),
+            })
             .collect();
-        candidates.extend(
-            KEYWORDS
-                .iter()
-                .map(|keyword| ((*keyword).to_owned(), zutai_hir::BindingKind::BuiltinValue)),
-        );
-        candidates.sort_by(|left, right| left.0.cmp(&right.0));
-        candidates.dedup_by(|left, right| left.0 == right.0);
-        Value::Array(
-            candidates
-                .into_iter()
-                .filter(|(name, _)| name.starts_with(&prefix))
-                .map(|(name, kind)| {
-                    let is_keyword = KEYWORDS.contains(&name.as_str());
-                    json!({
-                        "label": name,
-                        "kind": if is_keyword { 14 } else { completion_kind(kind) },
-                        "detail": if is_keyword { "keyword" } else { binding_kind_label(kind) },
-                        "sortText": name,
-                        "textEdit": { "range": replacement, "newText": name },
-                    })
-                })
-                .collect(),
-        )
+        candidates.extend(KEYWORDS.iter().map(|keyword| CompletionCandidate {
+            name: (*keyword).to_owned(),
+            kind: 14,
+            detail: "keyword".to_owned(),
+        }));
+        completion_items(candidates, &prefix, replacement)
     }
 
     fn prepare_rename(&self, params: &Value) -> Value {
@@ -1663,6 +1828,304 @@ fn imported_member_at(
         .map(|(binding, member, _)| (binding, member))
 }
 
+fn document_symbol_values(source: &str, hir: &zutai_hir::HirFile) -> Vec<Value> {
+    hir.decl_arena
+        .iter()
+        .filter_map(|(_, decl)| {
+            let binding = hir.bindings.get(decl.binding.0 as usize)?;
+            let (start, end) = binding_range(source, binding)?;
+            Some(json!({
+                "name": binding.name,
+                "detail": binding_kind_label(binding.kind),
+                "kind": symbol_kind(binding.kind),
+                "range": range(source, decl.span.start as usize, decl.span.end as usize),
+                "selectionRange": range(source, start, end),
+            }))
+        })
+        .collect()
+}
+
+fn append_workspace_symbols(
+    symbols: &mut Vec<Value>,
+    query: &str,
+    analysis: &zutai_semantic::Analysis,
+    uri: &str,
+    source: &str,
+    container: &str,
+) {
+    let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        return;
+    };
+    symbols.extend(hir.decl_arena.iter().filter_map(|(_, decl)| {
+        let binding = hir.bindings.get(decl.binding.0 as usize)?;
+        if binding.name.starts_with('$')
+            || (!query.is_empty() && !binding.name.to_lowercase().contains(query))
+        {
+            return None;
+        }
+        let (start, end) = binding_range(source, binding)?;
+        Some(json!({
+            "name": binding.name,
+            "kind": symbol_kind(binding.kind),
+            "location": {
+                "uri": uri,
+                "range": range(source, start, end),
+            },
+            "containerName": container,
+        }))
+    }));
+}
+
+fn workspace_symbol_key(symbol: &Value) -> (String, String, u64, u64) {
+    (
+        symbol
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        symbol
+            .pointer("/location/uri")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        symbol
+            .pointer("/location/range/start/line")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        symbol
+            .pointer("/location/range/start/character")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+    )
+}
+
+fn workspace_symbol_container(
+    project: &ProjectAnalysis,
+    analysis: &zutai_semantic::Analysis,
+) -> String {
+    if std::ptr::eq(analysis, &project.analysis) {
+        return project
+            .completion_packages()
+            .root_package
+            .as_ref()
+            .and_then(|id| project.completion_packages().packages.get(id))
+            .map(|package| package.name.clone())
+            .unwrap_or_else(|| "root".to_owned());
+    }
+    if let Some((id, source)) = analysis
+        .source_path
+        .as_deref()
+        .and_then(portable_package_path)
+        && let Some(package) = project.completion_packages().packages.get(id)
+    {
+        let module = package
+            .modules
+            .iter()
+            .find(|(_, path)| path.as_str() == source)
+            .map(|(module, _)| module.as_str())
+            .unwrap_or(source);
+        return format!("{}.{}", package.name, module);
+    }
+    analysis
+        .source_path
+        .as_ref()
+        .and_then(|path| path.file_stem())
+        .and_then(|name| name.to_str())
+        .unwrap_or("module")
+        .to_owned()
+}
+
+fn import_completion_context(source: &str, offset: usize) -> Option<ImportCompletionContext> {
+    let before = source.get(..offset)?;
+    let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+    let line = before.get(line_start..)?;
+    let import = line.rfind("import")?;
+    if line[..import]
+        .chars()
+        .next_back()
+        .is_some_and(zutai_syntax::ident::is_ident_continue)
+    {
+        return None;
+    }
+    let mut tail_start = line_start + import + "import".len();
+    if source[tail_start..offset]
+        .chars()
+        .next()
+        .is_some_and(|character| !character.is_whitespace())
+    {
+        return None;
+    }
+    while source[tail_start..offset]
+        .chars()
+        .next()
+        .is_some_and(char::is_whitespace)
+    {
+        tail_start += source[tail_start..offset].chars().next()?.len_utf8();
+    }
+    let tail = source.get(tail_start..offset)?;
+    if tail.starts_with('"')
+        || tail.chars().any(|character| {
+            !(zutai_syntax::ident::is_ident_continue(character) || character == '.')
+        })
+    {
+        return None;
+    }
+    let last_dot = tail.rfind('.');
+    let completed = last_dot
+        .map(|index| &tail[..index])
+        .unwrap_or_default()
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let prefix_start = last_dot.map_or(tail_start, |index| tail_start + index + 1);
+    Some(ImportCompletionContext {
+        completed,
+        prefix: source[prefix_start..offset].to_owned(),
+        start: prefix_start,
+    })
+}
+
+fn package_import_candidates(
+    project: &ProjectAnalysis,
+    analysis: &zutai_semantic::Analysis,
+    completed: &[String],
+) -> Vec<CompletionCandidate> {
+    let graph = project.completion_packages();
+    let Some(owner) = project.owner_package(analysis) else {
+        return Vec::new();
+    };
+    let Some(package) = graph.packages.get(owner) else {
+        return Vec::new();
+    };
+    if completed.is_empty() {
+        return package
+            .dependencies
+            .keys()
+            .map(|alias| CompletionCandidate {
+                name: alias.clone(),
+                kind: 9,
+                detail: "package alias".to_owned(),
+            })
+            .collect();
+    }
+    let Some(target) = package
+        .dependencies
+        .get(&completed[0])
+        .and_then(|target| graph.packages.get(target))
+    else {
+        return Vec::new();
+    };
+    let module_prefix = completed.get(1..).unwrap_or_default().join(".");
+    let prefix = (!module_prefix.is_empty()).then(|| format!("{module_prefix}."));
+    target
+        .modules
+        .keys()
+        .filter_map(|module| {
+            let candidate = match prefix.as_deref() {
+                Some(prefix) => module.strip_prefix(prefix)?,
+                None => module.as_str(),
+            };
+            let segment = candidate.split('.').next()?;
+            Some(CompletionCandidate {
+                name: segment.to_owned(),
+                kind: 9,
+                detail: if candidate.contains('.') {
+                    "module namespace".to_owned()
+                } else {
+                    "public module".to_owned()
+                },
+            })
+        })
+        .collect()
+}
+
+fn member_completion_binding(
+    source: &str,
+    file: &zutai_hir::HirFile,
+    prefix_start: usize,
+) -> Option<zutai_hir::BindingId> {
+    let dot = source.get(..prefix_start)?.strip_suffix('.')?;
+    let mut start = dot.len();
+    while let Some(character) = source[..start].chars().next_back() {
+        if !zutai_syntax::ident::is_ident_continue(character) {
+            break;
+        }
+        start -= character.len_utf8();
+    }
+    let receiver = source.get(start..dot.len())?;
+    file.bindings
+        .iter()
+        .enumerate()
+        .filter(|(_, binding)| {
+            binding.name == receiver && completion_binding(binding, source, prefix_start)
+        })
+        .max_by_key(|(_, binding)| binding.span.start)
+        .map(|(index, _)| zutai_hir::BindingId(index as u32))
+}
+
+fn exported_member_candidates(analysis: &zutai_semantic::Analysis) -> Vec<CompletionCandidate> {
+    let Some(file) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        return Vec::new();
+    };
+    let zutai_hir::HirExprKind::Record(items) = &file.expr_arena[file.final_expr].kind else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            let zutai_hir::HirRecordItem::Field(field) = item else {
+                return None;
+            };
+            let (kind, detail) = match file.expr_arena[field.value].kind {
+                zutai_hir::HirExprKind::BindingRef(binding) => file
+                    .bindings
+                    .get(binding.0 as usize)
+                    .map(|binding| {
+                        (
+                            completion_kind(binding.kind),
+                            binding_kind_label(binding.kind).to_owned(),
+                        )
+                    })
+                    .unwrap_or((6, "exported member".to_owned())),
+                zutai_hir::HirExprKind::TypeForm(_) => (7, "type".to_owned()),
+                _ => (6, "exported member".to_owned()),
+            };
+            Some(CompletionCandidate {
+                name: field.name.clone(),
+                kind,
+                detail,
+            })
+        })
+        .collect()
+}
+
+fn completion_items(
+    mut candidates: Vec<CompletionCandidate>,
+    prefix: &str,
+    replacement: Value,
+) -> Value {
+    candidates.sort_by(|left, right| {
+        (&left.name, left.kind, &left.detail).cmp(&(&right.name, right.kind, &right.detail))
+    });
+    candidates.dedup_by(|left, right| left.name == right.name);
+    Value::Array(
+        candidates
+            .into_iter()
+            .filter(|candidate| candidate.name.starts_with(prefix))
+            .map(|candidate| {
+                json!({
+                    "label": candidate.name,
+                    "kind": candidate.kind,
+                    "detail": candidate.detail,
+                    "sortText": candidate.name,
+                    "textEdit": { "range": replacement, "newText": candidate.name },
+                })
+            })
+            .collect(),
+    )
+}
+
 fn import_source_for_binding(
     file: &zutai_hir::HirFile,
     binding: zutai_hir::BindingId,
@@ -2391,6 +2854,33 @@ mod tests {
     }
 
     #[test]
+    fn completion_does_not_treat_import_prefixed_identifiers_as_imports() {
+        let uri = "file:///tmp/import-prefixed.zt";
+        let mut server = Server::default();
+        let source = "important ::= 1;\nimportant";
+        server.documents.insert(
+            uri.to_owned(),
+            Document {
+                text: source.to_owned(),
+                version: None,
+            },
+        );
+
+        let completions = server.completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": position_at(source, source.len())
+        }));
+        assert!(
+            completions
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| { item.get("label").and_then(Value::as_str) == Some("important") }),
+            "{completions}"
+        );
+    }
+
+    #[test]
     fn parser_fixes_are_published_as_quick_fixes() {
         let uri = "file:///tmp/fix.zt";
         let mut server = Server::default();
@@ -2677,6 +3167,7 @@ mod tests {
                 version: Some(1),
             },
         );
+
         server.documents.insert(
             dep_uri.clone(),
             Document {
@@ -2684,7 +3175,6 @@ mod tests {
                 version: Some(1),
             },
         );
-
         let value = server.definition(&json!({
             "textDocument": { "uri": app_uri },
             "position": { "line": 1, "character": 27 }
@@ -2767,6 +3257,166 @@ mod tests {
         assert_eq!(
             diagnostic.pointer("/range/end").cloned(),
             Some(position_at(bad_source, cli_import.span.end as usize))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn package_completion_and_workspace_symbols_respect_graph_overlays_and_visibility() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-lsp-package-completion-{}-{nonce}",
+            std::process::id()
+        ));
+        let app = root.join("app");
+        let middle = root.join("middle");
+        let leaf = root.join("leaf");
+        std::fs::create_dir_all(app.join("src")).unwrap();
+        std::fs::create_dir_all(middle.join("src")).unwrap();
+        std::fs::create_dir_all(leaf.join("src")).unwrap();
+        std::fs::write(
+            app.join("zutai.zti"),
+            package_manifest("app", "", "{ alias = \"middle\"; path = \"../middle\"; }"),
+        )
+        .unwrap();
+        std::fs::write(
+            middle.join("zutai.zti"),
+            package_manifest(
+                "middle",
+                "{ name = \"api\"; path = \"src/api.zt\"; }; { name = \"extra.tools\"; path = \"src/extra.zt\"; }; { name = \"unused\"; path = \"src/unused.zt\"; }",
+                "{ alias = \"leaf\"; path = \"../leaf\"; }",
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            leaf.join("zutai.zti"),
+            package_manifest("leaf", "{ name = \"api\"; path = \"src/api.zt\"; }", ""),
+        )
+        .unwrap();
+
+        let app_path = app.join("src/main.zt");
+        let middle_path = middle.join("src/api.zt");
+        let extra_path = middle.join("src/extra.zt");
+        let unused_path = middle.join("src/unused.zt");
+        let leaf_path = leaf.join("src/api.zt");
+        let app_source = "m ::= import middle.api;\nvalue ::= m.answer;\nvalue\n";
+        let middle_source = "l ::= import leaf.api;\nmiddleOnly ::= 1;\n{ Count = l.Count; answer = l.answer; middleOnly = middleOnly; }\n";
+        let middle_overlay = "l ::= import leaf.api;\noverlayOnly ::= 2;\n{ Count = l.Count; answer = l.answer; overlayOnly = overlayOnly; }\n";
+        let extra_source = "extraTool ::= 7;\n{ extraTool = extraTool; }\n";
+        let unused_source = "unusedSymbol ::= 8;\n{ unusedSymbol = unusedSymbol; }\n";
+        let leaf_source =
+            "Count :: type Int;\nanswer :: Count = 41;\n{ Count = Count; answer = answer; }\n";
+        for (path, source) in [
+            (&app_path, app_source),
+            (&middle_path, middle_source),
+            (&extra_path, extra_source),
+            (&unused_path, unused_source),
+            (&leaf_path, leaf_source),
+        ] {
+            std::fs::write(path, source).unwrap();
+        }
+        let app_uri = file_uri(&app_path);
+        let middle_uri = file_uri(&middle_path);
+        let unused_uri = file_uri(&unused_path);
+        let leaf_uri = file_uri(&leaf_path);
+        let mut server = Server::default();
+        for (uri, text) in [(&app_uri, app_source), (&middle_uri, middle_overlay)] {
+            server.documents.insert(
+                uri.clone(),
+                Document {
+                    text: text.to_owned(),
+                    version: Some(1),
+                },
+            );
+        }
+
+        let complete = |server: &Server, source: &str| {
+            server.completion(&json!({
+                "textDocument": { "uri": app_uri },
+                "position": position_at(source, source.trim_end_matches('\n').len())
+            }))
+        };
+        server.documents.get_mut(&app_uri).unwrap().text = "m ::= import mid\n".to_owned();
+        let aliases = complete(&server, "m ::= import mid\n");
+        assert_eq!(
+            aliases.as_array().unwrap()[0]["label"],
+            json!("middle"),
+            "{aliases}"
+        );
+        assert_eq!(
+            aliases.as_array().unwrap()[0]["textEdit"]["range"]["start"],
+            json!({ "line": 0, "character": 13 })
+        );
+
+        server.documents.get_mut(&app_uri).unwrap().text = "m ::= import middle.ex\n".to_owned();
+        let modules = complete(&server, "m ::= import middle.ex\n");
+        assert_eq!(modules.as_array().unwrap()[0]["label"], json!("extra"));
+        assert_eq!(
+            modules.as_array().unwrap()[0]["detail"],
+            json!("module namespace")
+        );
+
+        server.documents.get_mut(&app_uri).unwrap().text =
+            "m ::= import middle.extra.to\n".to_owned();
+        let nested = complete(&server, "m ::= import middle.extra.to\n");
+        assert_eq!(nested.as_array().unwrap()[0]["label"], json!("tools"));
+
+        server.documents.get_mut(&app_uri).unwrap().text = app_source.to_owned();
+        let members = server.completion(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 1, "character": 12 }
+        }));
+        let member_names: Vec<_> = members
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item.get("label").and_then(Value::as_str))
+            .collect();
+        assert!(member_names.contains(&"answer"), "{members}");
+        assert!(member_names.contains(&"overlayOnly"), "{members}");
+        assert!(!member_names.contains(&"middleOnly"), "{members}");
+
+        let symbols = server.workspace_symbols(&json!({ "query": "unusedSymbol" }));
+        let symbol = &symbols.as_array().unwrap()[0];
+        assert_eq!(symbol["name"], json!("unusedSymbol"));
+        assert_eq!(symbol["location"]["uri"], json!(unused_uri));
+        assert_eq!(
+            symbol["location"]["range"],
+            range(unused_source, 0, "unusedSymbol".len())
+        );
+        assert_eq!(symbol["containerName"], json!("middle.unused"));
+
+        let overlay_symbols = server.workspace_symbols(&json!({ "query": "overlayOnly" }));
+        let overlay_symbol = &overlay_symbols.as_array().unwrap()[0];
+        assert_eq!(overlay_symbol["location"]["uri"], json!(middle_uri));
+        assert_eq!(
+            overlay_symbol["location"]["range"],
+            range(
+                middle_overlay,
+                middle_overlay.find("overlayOnly").unwrap(),
+                middle_overlay.find("overlayOnly").unwrap() + "overlayOnly".len()
+            )
+        );
+        assert_eq!(
+            server.workspace_symbols(&json!({ "query": "middleOnly" })),
+            json!([])
+        );
+        let imported_symbols = server.workspace_symbols(&json!({ "query": "answer" }));
+        assert!(
+            imported_symbols.as_array().unwrap().iter().any(|symbol| {
+                symbol["location"]["uri"] == json!(leaf_uri)
+                    && symbol["location"]["range"]
+                        == range(
+                            leaf_source,
+                            leaf_source.find("answer").unwrap(),
+                            leaf_source.find("answer").unwrap() + "answer".len(),
+                        )
+            }),
+            "{imported_symbols}"
         );
 
         let _ = std::fs::remove_dir_all(root);

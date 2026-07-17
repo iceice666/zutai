@@ -239,6 +239,34 @@ impl PackageGraph {
         Some(synthetic_key(&package.id, &path_key(relative)))
     }
 
+    pub(crate) fn record_public_modules(
+        &self,
+        portable: &mut PortablePackageGraph,
+        source_paths: &mut BTreeMap<PathBuf, PathBuf>,
+    ) {
+        let Self::Filesystem(graph) = self else {
+            return;
+        };
+        for (id, package) in &graph.packages {
+            let Some(target) = portable.packages.get_mut(id) else {
+                continue;
+            };
+            for relative in package.modules.values() {
+                let path = package.root.join(relative);
+                let Ok(canonical) = fs::canonicalize(&path) else {
+                    continue;
+                };
+                let Ok(contents) = fs::read_to_string(&canonical) else {
+                    continue;
+                };
+                target
+                    .sources
+                    .insert(path_key(Path::new(relative)), contents);
+                source_paths.insert(synthetic_key(id, relative), canonical);
+            }
+        }
+    }
+
     pub(crate) fn record_source(
         &self,
         portable: &mut PortablePackageGraph,
