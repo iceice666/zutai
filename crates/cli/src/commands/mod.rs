@@ -442,6 +442,31 @@ pub(crate) fn run_parse_zti(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub(crate) fn run_format(path: &str, check: bool) -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string(path)?;
+    let formatted = match extension_or_error(path)?.as_str() {
+        "zt" => match zutai_syntax::format_source(&contents) {
+            Ok(formatted) => formatted,
+            Err(diagnostics) => {
+                print_zt_errors(path, &contents, &diagnostics);
+                std::process::exit(1);
+            }
+        },
+        "zti" => zutai_im::format_source(&contents)
+            .map_err(|error| format!("Failed to format .zti: {error}"))?,
+        other => return Err(format!("Unsupported extension: {other}").into()),
+    };
+
+    if formatted == contents {
+        return Ok(());
+    }
+    if check {
+        return Err(format!("formatting required: {path}").into());
+    }
+    fs::write(path, formatted)?;
+    Ok(())
+}
+
 /// Parse a `.zti` or evaluate a `.zt` file and print the final result as
 /// natural JSON.
 ///

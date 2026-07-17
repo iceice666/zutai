@@ -281,7 +281,8 @@ impl Server {
                                     },
                                     "codeActionProvider": {
                                         "codeActionKinds": ["quickfix"]
-                                    }
+                                    },
+                                    "documentFormattingProvider": true,
                                 },
                                 "serverInfo": { "name": "zutai", "version": env!("CARGO_PKG_VERSION") }
                             }
@@ -399,6 +400,15 @@ impl Server {
             "textDocument/codeAction" => {
                 if let Some(id) = id {
                     let result = self.code_actions(&params);
+                    send(
+                        output,
+                        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                    )?;
+                }
+            }
+            "textDocument/formatting" => {
+                if let Some(id) = id {
+                    let result = self.formatting(&params);
                     send(
                         output,
                         json!({ "jsonrpc": "2.0", "id": id, "result": result }),
@@ -1124,6 +1134,38 @@ impl Server {
                 })
                 .collect(),
         )
+    }
+
+    fn formatting(&self, params: &Value) -> Value {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str) else {
+            return Value::Null;
+        };
+        let Some(source) = self.source_for(uri) else {
+            return Value::Null;
+        };
+        let Some(path) = file_path(uri) else {
+            return Value::Null;
+        };
+        let formatted = match path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("zt") => zutai_syntax::format_source(&source).ok(),
+            Some("zti") => zutai_im::format_source(&source).ok(),
+            _ => None,
+        };
+        let Some(formatted) = formatted else {
+            return Value::Null;
+        };
+        if formatted == source {
+            return Value::Array(Vec::new());
+        }
+        json!([{
+            "range": range(&source, 0, source.len()),
+            "newText": formatted,
+        }])
     }
 
     fn imported_member_target<'a>(
@@ -2684,6 +2726,52 @@ mod tests {
     }
 
     #[test]
+    fn document_formatting_uses_overlays_and_full_utf16_ranges() {
+        let zt_uri = "file:///tmp/format.zt";
+        let zt_source = "名 ::= {\nx = 1;\n};\n名";
+        let mut server = Server::default();
+        server.documents.insert(
+            zt_uri.to_owned(),
+            Document {
+                text: zt_source.to_owned(),
+                version: Some(2),
+            },
+        );
+        let edits = server.formatting(&json!({
+            "textDocument": { "uri": zt_uri },
+            "options": { "tabSize": 8, "insertSpaces": false }
+        }));
+        assert_eq!(
+            edits.pointer("/0/newText").and_then(Value::as_str),
+            Some("名 ::= {\n  x = 1;\n};\n名\n")
+        );
+        assert_eq!(
+            edits.pointer("/0/range"),
+            Some(&range(zt_source, 0, zt_source.len()))
+        );
+
+        let zti_uri = "file:///tmp/format.zti";
+        server.documents.insert(
+            zti_uri.to_owned(),
+            Document {
+                text: "{second=[2;1;];first=true;}".to_owned(),
+                version: None,
+            },
+        );
+        let zti_edits = server.formatting(&json!({
+            "textDocument": { "uri": zti_uri },
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }));
+        let formatted = zti_edits
+            .pointer("/0/newText")
+            .and_then(Value::as_str)
+            .unwrap();
+        assert!(formatted.find("second").unwrap() < formatted.find("first").unwrap());
+        assert!(formatted.find("2;").unwrap() < formatted.find("1;").unwrap());
+        assert_eq!(zutai_im::format_source(formatted).unwrap(), formatted);
+    }
+
+    #[test]
     fn definition_works_when_later_type_checking_fails() {
         let uri = "file:///tmp/incomplete.zt";
         let mut server = Server::default();
@@ -2721,6 +2809,7 @@ mod tests {
         assert!(message.contains("renameProvider"));
         assert!(message.contains("completionProvider"));
         assert!(message.contains("codeActionProvider"));
+        assert!(message.contains("documentFormattingProvider"));
     }
 
     #[test]

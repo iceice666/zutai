@@ -6,6 +6,7 @@
 pub mod ast;
 pub mod diagnostic;
 pub mod error;
+pub mod format;
 pub mod ident;
 pub mod line_index;
 pub mod numlit;
@@ -24,6 +25,7 @@ pub use diagnostic::{
     Applicability, Diagnostic, DiagnosticFix, DiagnosticLabel, LabelStyle, Severity, TextEdit,
 };
 pub use error::{ParseError, ParseErrorKind};
+pub use format::format_source;
 pub use line_index::{LineCol, LineIndex, Utf16LineCol};
 pub use span::Span;
 pub use syntax::{

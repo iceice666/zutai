@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Run { path }) => commands::run_file(&path)?,
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
         Some(Commands::Json { path }) => commands::run_json(&path)?,
+        Some(Commands::Format { path, check }) => commands::run_format(&path, check)?,
         Some(Commands::Check { path }) => commands::run_check(&path)?,
         Some(Commands::Compile {
             path,
@@ -95,6 +96,14 @@ enum Commands {
     Json {
         /// Path to the .zt or .zti file
         path: String,
+    },
+    /// Format a .zt or .zti file in place
+    Format {
+        /// Path to the .zt or .zti file
+        path: String,
+        /// Exit unsuccessfully instead of writing when formatting is needed
+        #[arg(long)]
+        check: bool,
     },
     /// Type-check a .zt file and print diagnostics
     Check {

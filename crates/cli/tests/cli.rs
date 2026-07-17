@@ -36,6 +36,59 @@ fn write_tmp(name: &str, content: &str) -> String {
 }
 
 #[test]
+fn format_zt_preserves_comments_and_compatibility_spellings() {
+    let path = write_tmp(
+        "cli_test_format.zt",
+        "--| docs\r\nchoice ::= if true then {\n1;\n} else {\n2;\n};\nid ::= \\x => x;\nchoice",
+    );
+    cli().arg("format").arg(&path).assert().success();
+    let formatted = std::fs::read_to_string(&path).unwrap();
+    assert!(formatted.contains("--| docs\n"));
+    assert!(formatted.contains("if true then"));
+    assert!(formatted.contains("\\x => x"));
+    assert!(formatted.contains("  1;\n"));
+    cli().arg("format").arg(&path).assert().success();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), formatted);
+}
+
+#[test]
+fn format_zti_preserves_field_and_item_order() {
+    let path = write_tmp(
+        "cli_test_format.zti",
+        "{second=[2;1;];first={z=true;y=false;};}",
+    );
+    cli().arg("format").arg(&path).assert().success();
+    let formatted = std::fs::read_to_string(&path).unwrap();
+    assert!(formatted.find("second").unwrap() < formatted.find("first").unwrap());
+    assert!(formatted.find("2;").unwrap() < formatted.find("1;").unwrap());
+    assert!(formatted.find("z =").unwrap() < formatted.find("y =").unwrap());
+    cli().arg("format").arg(&path).assert().success();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), formatted);
+}
+
+#[test]
+fn format_check_reports_noncanonical_source_without_writing() {
+    let source = "value ::= {\nx = 1;\n};\nvalue";
+    let path = write_tmp("cli_test_format_check.zt", source);
+    cli()
+        .arg("format")
+        .arg("--check")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("formatting required"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), source);
+}
+
+#[test]
+fn format_invalid_source_exits_nonzero_without_writing() {
+    let source = "value ::= ;\nvalue";
+    let path = write_tmp("cli_test_format_invalid.zt", source);
+    cli().arg("format").arg(&path).assert().failure();
+    assert_eq!(std::fs::read_to_string(path).unwrap(), source);
+}
+
+#[test]
 fn local_package_dependency_checks_and_runs() {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

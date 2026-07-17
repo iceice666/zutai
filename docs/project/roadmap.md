@@ -21,18 +21,10 @@ gate are explicit.
 
 ## Near-term: package-aware editor and diagnostics hardening
 
-Goal: make the existing stable language pleasant and safe to use across a
-multi-package project before adding any new surface area.
-
-Milestones, in order:
-
-1. **Canonical source formatting.** Add idempotent formatters for `.zt` and
-   `.zti`, then expose them through the CLI and LSP. General-mode formatting must
-   preserve comments and accepted compatibility spellings unless a separate
-   compatibility decision approves a rewrite; immediate-mode formatting must
-   preserve field/item order. Gate: parse-format-parse structural equality,
-   comment/order preservation, second-pass byte equality, and the full
-   specification/example/manifest corpus.
+Package-aware navigation, completion, stable diagnostics, and canonical source
+formatting are complete. New near-term work should be added here only with an
+explicit refusal model and validation gate; the next scheduled milestone is the
+native target model below.
 
 ## Mid-term: backend parity and portable native builds
 

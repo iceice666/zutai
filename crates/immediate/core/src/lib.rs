@@ -57,6 +57,11 @@ pub fn parse_located(input: &str) -> Result<LocatedBlock, Error> {
     Ok(block)
 }
 
+#[cfg(feature = "syntax")]
+pub fn format_source(input: &str) -> Result<String, Error> {
+    zutai_im_syntax::format_source(input).map_err(Error::Syntax)
+}
+
 #[cfg(feature = "simd")]
 pub fn parse_simd(input: &str) -> Result<Block, Error> {
     Ok(zutai_im_simd::parse(input)?)

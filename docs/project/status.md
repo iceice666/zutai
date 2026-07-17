@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 canonical-formatting baseline adds idempotent `.zt` and `.zti`
+formatters exposed through `zutai format` and LSP document formatting. General
+mode preserves comments, compatibility spellings, token order, and line
+boundaries while normalizing delimiter indentation and line endings; immediate
+mode preserves parsed field and item order. Unit, CLI, protocol, tracked-source,
+and specification-fence gates cover parse preservation and second-pass byte
+equality.
+
 The 2026-07-17 stable-diagnostic baseline gives parser, HIR, import, THIR,
 derive, and backend-gate diagnostics stable semantic identities. CLI and LSP
 renderers preserve each code, severity, primary source range, and related

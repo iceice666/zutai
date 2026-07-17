@@ -12,3 +12,6 @@ num-bigint = "0.4.6"
 num-traits = "0.2.19"
 rustc-hash = "2.0.0"
 unicode-ident = "1"
+
+[dev-dependencies]
+zutai-im-syntax = { path = "../../immediate/syntax" }
