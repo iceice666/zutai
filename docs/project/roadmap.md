@@ -26,26 +26,19 @@ multi-package project before adding any new surface area.
 
 Milestones, in order:
 
-1. **Package-wide references and safe rename.** Extend the package-aware
-   definition path to find references across the root package and transitive
-   dependencies. Rename may edit the root package and writable path dependencies;
-   it must refuse builtins, ambient prelude bindings, generated bindings, and
-   immutable locked-Git snapshots. Gate: a three-package fixture with shadowed
-   names, imported value/type members, unsaved overlays, and an attempted rename
-   into a locked dependency produces complete locations and no unrelated edits.
-2. **Import-aware completion and workspace symbols.** Complete package aliases,
+1. **Import-aware completion and workspace symbols.** Complete package aliases,
    public modules, and exported members from the same recorded graph used by
    checking; add workspace-symbol search over root and dependency modules.
    Results must respect visibility, shadowing, malformed-package fallback, and
    unsaved overlays. Gate: CLI/LSP package fixtures prove deterministic results
    and exact source locations without network access.
-3. **Stable semantic diagnostic identities and fixes.** Give HIR, import, THIR,
+2. **Stable semantic diagnostic identities and fixes.** Give HIR, import, THIR,
    derive, and backend-gate diagnostics stable codes like the parser already has;
    preserve the same code, severity, primary source, and related locations in CLI
    and LSP rendering. Add a quick fix only where the replacement is unambiguous.
    Gate: the backend-refusal and cross-file diagnostic matrices assert codes and
    protocol payloads rather than message substrings alone.
-4. **Canonical source formatting.** Add idempotent formatters for `.zt` and
+3. **Canonical source formatting.** Add idempotent formatters for `.zt` and
    `.zti`, then expose them through the CLI and LSP. General-mode formatting must
    preserve comments and accepted compatibility spellings unless a separate
    compatibility decision approves a rewrite; immediate-mode formatting must

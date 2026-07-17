@@ -45,6 +45,27 @@ struct ProjectAnalysis {
     analysis: zutai_semantic::Analysis,
     root_path: PathBuf,
     source_paths: std::collections::BTreeMap<PathBuf, PathBuf>,
+    sources: std::collections::BTreeMap<String, String>,
+    packages: zutai_semantic::PortablePackageGraph,
+}
+
+#[derive(Clone)]
+enum SymbolTarget {
+    Binding {
+        module: PathBuf,
+        binding: zutai_hir::BindingId,
+    },
+    ExportedMember {
+        module: PathBuf,
+        member: String,
+    },
+}
+
+struct SymbolPosition {
+    project: ProjectAnalysis,
+    target: SymbolTarget,
+    selection: (usize, usize),
+    source: String,
 }
 
 impl ProjectAnalysis {
@@ -59,6 +80,74 @@ impl ProjectAnalysis {
             .or_else(|| Some(self.filesystem_path(source)))
     }
 
+    fn recorded_source(&self, analysis: &zutai_semantic::Analysis) -> Option<&str> {
+        let path = analysis.source_path.as_ref()?;
+        if let Some((package, source)) = portable_package_path(path) {
+            return self
+                .packages
+                .packages
+                .get(package)?
+                .sources
+                .get(source)
+                .map(String::as_str);
+        }
+        self.sources.get(&path_key(path)).map(String::as_str)
+    }
+
+    fn package_source(
+        &self,
+        analysis: &zutai_semantic::Analysis,
+    ) -> Option<zutai_package::PortablePackageSource> {
+        let (package, _) = portable_package_path(analysis.source_path.as_ref()?)?;
+        self.packages
+            .packages
+            .get(package)
+            .map(|package| package.source)
+    }
+
+    fn module_identity(&self, analysis: &zutai_semantic::Analysis) -> PathBuf {
+        if std::ptr::eq(analysis, &self.analysis) {
+            return self.root_path.clone();
+        }
+        analysis
+            .source_path
+            .clone()
+            .or_else(|| self.path_for(analysis))
+            .unwrap_or_else(|| self.root_path.clone())
+    }
+
+    fn modules(&self) -> Vec<&zutai_semantic::Analysis> {
+        fn visit<'a>(
+            analysis: &'a zutai_semantic::Analysis,
+            identity: PathBuf,
+            seen: &mut HashSet<PathBuf>,
+            modules: &mut Vec<&'a zutai_semantic::Analysis>,
+        ) {
+            if !seen.insert(identity) {
+                return;
+            }
+            modules.push(analysis);
+            let mut imported: Vec<_> = analysis.import_modules.values().collect();
+            imported.sort_by_key(|module| module.source_path.clone());
+            for module in imported {
+                let identity = module
+                    .source_path
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("<unknown>"));
+                visit(module, identity, seen, modules);
+            }
+        }
+
+        let mut modules = Vec::new();
+        visit(
+            &self.analysis,
+            self.module_identity(&self.analysis),
+            &mut HashSet::new(),
+            &mut modules,
+        );
+        modules
+    }
+
     fn filesystem_path(&self, path: &Path) -> PathBuf {
         if path.is_absolute() {
             return path.to_path_buf();
@@ -69,6 +158,23 @@ impl ProjectAnalysis {
                 .unwrap_or_else(|| Path::new(""))
                 .join(path)
         })
+    }
+
+    fn module(&self, identity: &Path) -> Option<&zutai_semantic::Analysis> {
+        self.modules()
+            .into_iter()
+            .find(|analysis| self.module_identity(analysis) == identity)
+    }
+
+    fn writable(&self, analysis: &zutai_semantic::Analysis) -> bool {
+        if analysis
+            .source_path
+            .as_deref()
+            .is_some_and(|path| path.starts_with("<stdlib>"))
+        {
+            return false;
+        }
+        self.package_source(analysis) != Some(zutai_package::PortablePackageSource::LockedGit)
     }
 }
 impl Server {
@@ -295,6 +401,8 @@ impl Server {
                 analysis,
                 root_path,
                 source_paths: std::collections::BTreeMap::new(),
+                sources: std::collections::BTreeMap::new(),
+                packages: zutai_semantic::PortablePackageGraph::default(),
             });
         };
         let package_setup: Vec<_> = recorded
@@ -321,6 +429,8 @@ impl Server {
                 analysis,
                 root_path,
                 source_paths: std::collections::BTreeMap::new(),
+                sources: std::collections::BTreeMap::new(),
+                packages: zutai_semantic::PortablePackageGraph::default(),
             });
         }
         for (uri, document) in &self.documents {
@@ -358,6 +468,8 @@ impl Server {
             recorded.stdlib_sources.clone(),
         )
         .ok()?;
+        let packages = recorded.packages.clone();
+        let sources = recorded.sources.clone();
         let analysis = zutai_semantic::analyze_sources_with_stdlib_packages_and_cache(
             &recorded.entry,
             &recorded.sources,
@@ -371,6 +483,8 @@ impl Server {
             analysis,
             root_path,
             source_paths: recorded.source_paths,
+            sources,
+            packages,
         })
     }
 
@@ -452,7 +566,7 @@ impl Server {
                 if !related.is_empty() {
                     value["relatedInformation"] = Value::Array(related);
                 }
-                output.push((primary_uri, value));
+                output.push((primary_uri.to_owned(), value));
             } else {
                 output.push((
                     root_uri.to_string(),
@@ -618,26 +732,19 @@ impl Server {
     }
 
     fn references(&self, params: &Value) -> Value {
-        let Some((uri, source, project, binding)) = self.binding_at_position(params) else {
+        let Some(position) = self.symbol_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
-            return Value::Null;
-        };
-        let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
-            return Value::Null;
-        };
-        if binding_range(&source, binding_data).is_none() {
-            return Value::Null;
-        }
         let include_declaration = params
             .pointer("/context/includeDeclaration")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         Value::Array(
-            binding_reference_ranges(&source, hir, binding, include_declaration)
+            self.symbol_references(&position.project, &position.target, include_declaration)
                 .into_iter()
-                .map(|(start, end)| json!({ "uri": uri, "range": range(&source, start, end) }))
+                .map(|(uri, source, start, end)| {
+                    json!({ "uri": uri, "range": range(&source, start, end) })
+                })
                 .collect(),
         )
     }
@@ -726,20 +833,13 @@ impl Server {
     }
 
     fn prepare_rename(&self, params: &Value) -> Value {
-        let Some((_, source, project, binding)) = self.binding_at_position(params) else {
+        let Some(position) = self.symbol_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
-            return Value::Null;
-        };
-        let Some(binding) = hir.bindings.get(binding.0 as usize) else {
-            return Value::Null;
-        };
-        if !renameable_binding(&source, binding) {
+        if !self.renameable_symbol(&position.project, &position.target) {
             return Value::Null;
         }
-        let (start, end) = binding_range(&source, binding).expect("renameable binding has a range");
-        range(&source, start, end)
+        range(&position.source, position.selection.0, position.selection.1)
     }
 
     fn rename(&self, params: &Value) -> Value {
@@ -749,23 +849,24 @@ impl Server {
         if !valid_identifier(new_name) {
             return Value::Null;
         }
-        let Some((uri, source, project, binding)) = self.binding_at_position(params) else {
+        let Some(position) = self.symbol_at_position(params) else {
             return Value::Null;
         };
-        let Some(hir) = project.analysis.hir.as_ref().map(|lowered| &lowered.file) else {
-            return Value::Null;
-        };
-        let Some(binding_data) = hir.bindings.get(binding.0 as usize) else {
-            return Value::Null;
-        };
-        if !renameable_binding(&source, binding_data) {
+        if !self.renameable_symbol(&position.project, &position.target) {
             return Value::Null;
         }
-        let edits: Vec<_> = binding_reference_ranges(&source, hir, binding, true)
-            .into_iter()
-            .map(|(start, end)| json!({ "range": range(&source, start, end), "newText": new_name }))
-            .collect();
-        json!({ "changes": { uri: edits } })
+        let mut changes = serde_json::Map::new();
+        for (uri, source, start, end) in
+            self.symbol_references(&position.project, &position.target, true)
+        {
+            let edits = changes
+                .entry(uri)
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+                .expect("rename change entry is an array");
+            edits.push(json!({ "range": range(&source, start, end), "newText": new_name }));
+        }
+        json!({ "changes": changes })
     }
 
     fn signature_help(&self, params: &Value) -> Value {
@@ -872,6 +973,269 @@ impl Server {
         Some((module.as_ref(), path, member))
     }
 
+    fn project_for_document(&self, uri: &str, source: &str) -> Option<ProjectAnalysis> {
+        let requested = file_path(uri)?;
+        let requested = std::fs::canonicalize(&requested).unwrap_or(requested);
+        let mut roots: Vec<_> = self.documents.keys().cloned().collect();
+        if !roots.iter().any(|root| root == uri) {
+            roots.push(uri.to_owned());
+        }
+        roots.sort();
+        roots.dedup();
+
+        let mut best = None;
+        let mut best_size = 0;
+        for root_uri in roots {
+            let Some(root_path) = file_path(&root_uri) else {
+                continue;
+            };
+            if root_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("zt")
+            {
+                continue;
+            }
+            let root_source = if root_uri == uri {
+                source.to_owned()
+            } else if let Some(source) = self.source_for(&root_uri) {
+                source
+            } else {
+                continue;
+            };
+            let Some(project) = self.analyze_with_overlays(&root_uri, &root_source) else {
+                continue;
+            };
+            let modules = project.modules();
+            let contains = modules.iter().any(|analysis| {
+                project
+                    .path_for(analysis)
+                    .is_some_and(|path| std::fs::canonicalize(&path).unwrap_or(path) == requested)
+            });
+            if contains && modules.len() > best_size {
+                best_size = modules.len();
+                best = Some(project);
+            }
+        }
+        best.or_else(|| self.analyze_with_overlays(uri, source))
+    }
+
+    fn symbol_at_position(&self, params: &Value) -> Option<SymbolPosition> {
+        let uri = params.pointer("/textDocument/uri")?.as_str()?;
+        let source = self.source_for(uri)?;
+        let offset = offset_at(&source, params.get("position")?)?;
+        let requested = file_path(uri)?;
+        let requested = std::fs::canonicalize(&requested).unwrap_or(requested);
+        let project = self.project_for_document(uri, &source)?;
+        let analysis = project.modules().into_iter().find(|analysis| {
+            project
+                .path_for(analysis)
+                .is_some_and(|path| std::fs::canonicalize(&path).unwrap_or(path) == requested)
+        })?;
+        let module = project.module_identity(analysis);
+        let hir = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+
+        if let Some((import_binding, member)) = imported_member_at(&source, hir, offset) {
+            let selection = imported_member_selection(&source, hir, offset)?;
+            let import = import_source_for_binding(hir, import_binding)?;
+            let target = analysis.import_modules.get(&import)?;
+            return Some(SymbolPosition {
+                target: SymbolTarget::ExportedMember {
+                    module: project.module_identity(target),
+                    member,
+                },
+                project,
+                selection,
+                source,
+            });
+        }
+
+        let binding =
+            binding_at(hir, offset).or_else(|| binding_declaration_at(&source, hir, offset))?;
+        let binding_data = hir.bindings.get(binding.0 as usize)?;
+        let selection = binding_range(&source, binding_data)?;
+        Some(SymbolPosition {
+            target: SymbolTarget::Binding { module, binding },
+            project,
+            selection,
+            source,
+        })
+    }
+
+    fn renameable_symbol(&self, project: &ProjectAnalysis, target: &SymbolTarget) -> bool {
+        let (analysis, binding) = match target {
+            SymbolTarget::Binding { module, binding } => {
+                let Some(analysis) = project.module(module) else {
+                    return false;
+                };
+                (analysis, Some(*binding))
+            }
+            SymbolTarget::ExportedMember { module, member } => {
+                let Some(analysis) = project.module(module) else {
+                    return false;
+                };
+                let Some(source) = self
+                    .source_for_analysis(project, analysis)
+                    .map(|(_, source)| source)
+                else {
+                    return false;
+                };
+                let binding = exported_member_local_binding(analysis, member);
+                if exported_field_range(&source, analysis, member).is_none() {
+                    return false;
+                }
+                (analysis, binding)
+            }
+        };
+        if !project.writable(analysis) {
+            return false;
+        }
+        if let Some(binding) = binding {
+            let Some(source) = self
+                .source_for_analysis(project, analysis)
+                .map(|(_, source)| source)
+            else {
+                return false;
+            };
+            let Some(binding) = analysis
+                .hir
+                .as_ref()
+                .and_then(|lowered| lowered.file.bindings.get(binding.0 as usize))
+            else {
+                return false;
+            };
+            if !renameable_binding(&source, binding) {
+                return false;
+            }
+        }
+        self.symbol_reference_locations(project, target, true)
+            .into_iter()
+            .all(|(module, _, _, _, _)| {
+                project
+                    .module(&module)
+                    .is_some_and(|analysis| project.writable(analysis))
+            })
+    }
+
+    fn symbol_references(
+        &self,
+        project: &ProjectAnalysis,
+        target: &SymbolTarget,
+        include_declaration: bool,
+    ) -> Vec<(String, String, usize, usize)> {
+        self.symbol_reference_locations(project, target, include_declaration)
+            .into_iter()
+            .map(|(_, uri, source, start, end)| (uri, source, start, end))
+            .collect()
+    }
+
+    fn symbol_reference_locations(
+        &self,
+        project: &ProjectAnalysis,
+        target: &SymbolTarget,
+        include_declaration: bool,
+    ) -> Vec<(PathBuf, String, String, usize, usize)> {
+        let (target_module, member, binding) = match target {
+            SymbolTarget::Binding { module, binding } => {
+                let Some(analysis) = project.module(module) else {
+                    return Vec::new();
+                };
+                (
+                    module.clone(),
+                    exported_member_for_binding(analysis, *binding),
+                    Some(*binding),
+                )
+            }
+            SymbolTarget::ExportedMember { module, member } => {
+                let Some(analysis) = project.module(module) else {
+                    return Vec::new();
+                };
+                let (module, member) = resolve_exported_member_target(project, analysis, member);
+                let binding = project
+                    .module(&module)
+                    .and_then(|analysis| exported_member_local_binding(analysis, &member));
+                (module, Some(member), binding)
+            }
+        };
+
+        let mut locations = Vec::new();
+        if let Some(analysis) = project.module(&target_module)
+            && let Some((uri, source)) = self.source_for_analysis(project, analysis)
+            && let Some(hir) = analysis.hir.as_ref().map(|lowered| &lowered.file)
+        {
+            if let Some(binding) = binding {
+                locations.extend(
+                    binding_reference_ranges(&source, hir, binding, include_declaration)
+                        .into_iter()
+                        .map(|(start, end)| {
+                            (
+                                target_module.clone(),
+                                uri.clone(),
+                                source.clone(),
+                                start,
+                                end,
+                            )
+                        }),
+                );
+            }
+            if include_declaration
+                && let Some(member) = member.as_deref()
+                && let Some((start, end)) = exported_field_range(&source, analysis, member)
+            {
+                locations.push((target_module.clone(), uri, source, start, end));
+            }
+        }
+
+        if let Some(member) = member.as_deref() {
+            for analysis in project.modules() {
+                let module = project.module_identity(analysis);
+                let Some((uri, source)) = self.source_for_analysis(project, analysis) else {
+                    continue;
+                };
+                locations.extend(
+                    imported_member_reference_ranges(
+                        &source,
+                        analysis,
+                        project,
+                        &target_module,
+                        member,
+                    )
+                    .into_iter()
+                    .map(|(start, end)| (module.clone(), uri.clone(), source.clone(), start, end)),
+                );
+                if include_declaration
+                    && module != target_module
+                    && let Some((origin, origin_member)) =
+                        exported_member_origin(project, analysis, member)
+                    && origin == target_module
+                    && origin_member == member
+                    && let Some((start, end)) = exported_field_range(&source, analysis, member)
+                {
+                    locations.push((module, uri, source, start, end));
+                }
+            }
+        }
+
+        locations
+            .sort_by(|left, right| (&left.1, left.3, left.4).cmp(&(&right.1, right.3, right.4)));
+        locations
+            .dedup_by(|left, right| left.1 == right.1 && left.3 == right.3 && left.4 == right.4);
+        locations
+    }
+
+    fn source_for_analysis(
+        &self,
+        project: &ProjectAnalysis,
+        analysis: &zutai_semantic::Analysis,
+    ) -> Option<(String, String)> {
+        let path = project.path_for(analysis)?;
+        let uri = self.uri_for_path(&path);
+        let source = self
+            .source_for(&uri)
+            .or_else(|| project.recorded_source(analysis).map(str::to_owned))?;
+        Some((uri, source))
+    }
+
     fn binding_at_position(
         &self,
         params: &Value,
@@ -894,6 +1258,192 @@ impl Server {
     }
 }
 
+fn imported_member_selection(
+    source: &str,
+    file: &zutai_hir::HirFile,
+    offset: usize,
+) -> Option<(usize, usize)> {
+    file.expr_arena
+        .iter()
+        .filter_map(|(_, expr)| match &expr.kind {
+            zutai_hir::HirExprKind::Access { field, .. } => {
+                let range = access_field_range(source, expr.span, field)?;
+                ((range.0..=range.1).contains(&offset)).then_some(range)
+            }
+            _ => None,
+        })
+        .chain(file.type_arena.iter().filter_map(|(_, ty)| match &ty.kind {
+            zutai_hir::HirTypeKind::Access { field, .. } => {
+                let range = access_field_range(source, ty.span, field)?;
+                ((range.0..=range.1).contains(&offset)).then_some(range)
+            }
+            _ => None,
+        }))
+        .min_by_key(|(start, end)| end - start)
+}
+
+fn exported_member_origin(
+    project: &ProjectAnalysis,
+    analysis: &zutai_semantic::Analysis,
+    member: &str,
+) -> Option<(PathBuf, String)> {
+    let file = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+    let field = match &file.expr_arena[file.final_expr].kind {
+        zutai_hir::HirExprKind::Record(items) => items.iter().find_map(|item| match item {
+            zutai_hir::HirRecordItem::Field(field) if field.name == member => Some(field),
+            _ => None,
+        })?,
+        _ => return None,
+    };
+    let zutai_hir::HirExprKind::Access { receiver, field } = &file.expr_arena[field.value].kind
+    else {
+        return None;
+    };
+    let zutai_hir::HirExprKind::BindingRef(import_binding) = file.expr_arena[*receiver].kind else {
+        return None;
+    };
+    let import = import_source_for_binding(file, import_binding)?;
+    let target = analysis.import_modules.get(&import)?;
+    Some(resolve_exported_member_target(project, target, field))
+}
+
+fn resolve_exported_member_target(
+    project: &ProjectAnalysis,
+    analysis: &zutai_semantic::Analysis,
+    member: &str,
+) -> (PathBuf, String) {
+    exported_member_origin(project, analysis, member)
+        .unwrap_or_else(|| (project.module_identity(analysis), member.to_owned()))
+}
+
+fn exported_member_local_binding(
+    analysis: &zutai_semantic::Analysis,
+    member: &str,
+) -> Option<zutai_hir::BindingId> {
+    let file = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+    let zutai_hir::HirExprKind::Record(items) = &file.expr_arena[file.final_expr].kind else {
+        return None;
+    };
+    items.iter().find_map(|item| {
+        let zutai_hir::HirRecordItem::Field(field) = item else {
+            return None;
+        };
+        if field.name != member {
+            return None;
+        }
+        match file.expr_arena[field.value].kind {
+            zutai_hir::HirExprKind::BindingRef(binding) => file
+                .bindings
+                .get(binding.0 as usize)
+                .is_some_and(|binding| binding.name == member)
+                .then_some(binding),
+            _ => None,
+        }
+    })
+}
+
+fn exported_member_for_binding(
+    analysis: &zutai_semantic::Analysis,
+    binding: zutai_hir::BindingId,
+) -> Option<String> {
+    let file = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+    let zutai_hir::HirExprKind::Record(items) = &file.expr_arena[file.final_expr].kind else {
+        return None;
+    };
+    items.iter().find_map(|item| {
+        let zutai_hir::HirRecordItem::Field(field) = item else {
+            return None;
+        };
+        matches!(file.expr_arena[field.value].kind, zutai_hir::HirExprKind::BindingRef(candidate) if candidate == binding)
+            .then(|| field.name.clone())
+    })
+}
+
+fn exported_field_range(
+    source: &str,
+    analysis: &zutai_semantic::Analysis,
+    member: &str,
+) -> Option<(usize, usize)> {
+    let file = analysis.hir.as_ref().map(|lowered| &lowered.file)?;
+    let zutai_hir::HirExprKind::Record(items) = &file.expr_arena[file.final_expr].kind else {
+        return None;
+    };
+    items.iter().find_map(|item| {
+        let zutai_hir::HirRecordItem::Field(field) = item else {
+            return None;
+        };
+        (field.name == member)
+            .then(|| name_range_in_span(source, field.span, member))
+            .flatten()
+    })
+}
+
+fn imported_member_reference_ranges(
+    source: &str,
+    analysis: &zutai_semantic::Analysis,
+    project: &ProjectAnalysis,
+    target_module: &Path,
+    member: &str,
+) -> Vec<(usize, usize)> {
+    let Some(file) = analysis.hir.as_ref().map(|lowered| &lowered.file) else {
+        return Vec::new();
+    };
+    let imports: HashSet<_> = file
+        .decl_arena
+        .iter()
+        .filter_map(|(_, decl)| {
+            let zutai_hir::HirDeclKind::Value { value, .. } = decl.kind else {
+                return None;
+            };
+            let zutai_hir::HirExprKind::Import(import) = &file.expr_arena[value].kind else {
+                return None;
+            };
+            let module = analysis.import_modules.get(import)?;
+            let (origin, origin_member) = resolve_exported_member_target(project, module, member);
+            (origin == target_module && origin_member == member).then_some(decl.binding)
+        })
+        .collect();
+    let mut ranges: Vec<_> = file
+        .expr_arena
+        .iter()
+        .filter_map(|(_, expr)| {
+            let zutai_hir::HirExprKind::Access { receiver, field } = &expr.kind else {
+                return None;
+            };
+            if field != member {
+                return None;
+            }
+            let zutai_hir::HirExprKind::BindingRef(binding) = file.expr_arena[*receiver].kind
+            else {
+                return None;
+            };
+            imports
+                .contains(&binding)
+                .then(|| access_field_range(source, expr.span, field))
+                .flatten()
+        })
+        .chain(file.type_arena.iter().filter_map(|(_, ty)| {
+            let zutai_hir::HirTypeKind::Access { receiver, field } = &ty.kind else {
+                return None;
+            };
+            if field != member {
+                return None;
+            }
+            let zutai_hir::HirTypeKind::BindingRef(binding) = file.type_arena[*receiver].kind
+            else {
+                return None;
+            };
+            imports
+                .contains(&binding)
+                .then(|| access_field_range(source, ty.span, field))
+                .flatten()
+        }))
+        .collect();
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
 fn document_text(params: &Value) -> Option<(String, Document)> {
     let document = params.get("textDocument")?;
     Some((
@@ -903,6 +1453,13 @@ fn document_text(params: &Value) -> Option<(String, Document)> {
             version: document.get("version").and_then(Value::as_i64),
         },
     ))
+}
+
+fn path_key(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn portable_package_path(path: &std::path::Path) -> Option<(&str, &str)> {
@@ -2211,6 +2768,208 @@ mod tests {
             diagnostic.pointer("/range/end").cloned(),
             Some(position_at(bad_source, cli_import.span.end as usize))
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn package_wide_references_and_safe_rename_respect_overlays_and_shadowing() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zutai-lsp-package-references-{}-{nonce}",
+            std::process::id()
+        ));
+        let app = root.join("app");
+        let middle = root.join("middle");
+        let leaf = root.join("leaf");
+        std::fs::create_dir_all(app.join("src")).unwrap();
+        std::fs::create_dir_all(middle.join("src")).unwrap();
+        std::fs::create_dir_all(leaf.join("src")).unwrap();
+        std::fs::write(
+            app.join("zutai.zti"),
+            package_manifest("app", "", "{ alias = \"middle\"; path = \"../middle\"; }"),
+        )
+        .unwrap();
+        std::fs::write(
+            middle.join("zutai.zti"),
+            package_manifest(
+                "middle",
+                "{ name = \"api\"; path = \"src/api.zt\"; }; { name = \"other\"; path = \"src/other.zt\"; }",
+                "{ alias = \"leaf\"; path = \"../leaf\"; }",
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            leaf.join("zutai.zti"),
+            package_manifest("leaf", "{ name = \"api\"; path = \"src/api.zt\"; }", ""),
+        )
+        .unwrap();
+
+        let app_path = app.join("src/main.zt");
+        let middle_path = middle.join("src/api.zt");
+        let leaf_path = leaf.join("src/api.zt");
+        let other_path = middle.join("src/other.zt");
+        let app_source = "m ::= import middle.api;\no ::= import middle.other;\nvalue :: m.Count = m.answer + m.answer;\nunrelated ::= o.answer;\nvalue\n";
+        let middle_source = "l ::= import leaf.api;\nvalue :: l.Count = l.answer;\n{ Count = l.Count; answer = l.answer; }\n";
+        let other_source =
+            "l ::= import leaf.api;\nown ::= 99;\n{ answer = own; retained = l.answer; }\n";
+        let leaf_source = "Count :: type Int;\nanswer :: Count = 41;\nshadow ::= (\\answer. answer) 1;\n{ Count = Count; answer = answer; }\n";
+        let leaf_overlay = "Count :: type Int;\nanswer :: Count = 42;\nshadow ::= (\\answer. answer) 1;\n{ Count = Count; answer = answer; }\n";
+        std::fs::write(&other_path, other_source).unwrap();
+        std::fs::write(&app_path, app_source).unwrap();
+        std::fs::write(&middle_path, middle_source).unwrap();
+        std::fs::write(&leaf_path, leaf_source).unwrap();
+        let app_uri = file_uri(&app_path);
+        let middle_uri = file_uri(&middle_path);
+        let other_uri = file_uri(&other_path);
+        let leaf_uri = file_uri(&leaf_path);
+
+        let mut server = Server::default();
+        for (uri, text) in [
+            (&app_uri, app_source),
+            (&middle_uri, middle_source),
+            (&other_uri, other_source),
+            (&leaf_uri, leaf_overlay),
+        ] {
+            server.documents.insert(
+                uri.clone(),
+                Document {
+                    text: text.to_owned(),
+                    version: Some(1),
+                },
+            );
+        }
+
+        let references = server.references(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 2, "character": 27 },
+            "context": { "includeDeclaration": true }
+        }));
+        let locations = references.as_array().unwrap();
+        assert_eq!(locations.len(), 9, "{references}");
+        let by_uri = |uri: &str| {
+            locations
+                .iter()
+                .filter(|location| location.get("uri").and_then(Value::as_str) == Some(uri))
+                .count()
+        };
+        assert_eq!(by_uri(&app_uri), 2, "{references}");
+        assert_eq!(by_uri(&middle_uri), 3, "{references}");
+        assert_eq!(by_uri(&leaf_uri), 3, "{references}");
+        assert_eq!(by_uri(&other_uri), 1, "{references}");
+        assert!(!locations.iter().any(|location| {
+            location.get("uri").and_then(Value::as_str) == Some(leaf_uri.as_str())
+                && location
+                    .pointer("/range/start/line")
+                    .and_then(Value::as_u64)
+                    == Some(2)
+        }));
+
+        let rename = server.rename(&json!({
+            "textDocument": { "uri": leaf_uri },
+            "position": { "line": 1, "character": 2 },
+            "newName": "total"
+        }));
+        let changes = rename
+            .pointer("/changes")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(changes.len(), 4, "{rename}");
+        assert_eq!(changes[&app_uri].as_array().map(Vec::len), Some(2));
+        assert_eq!(changes[&middle_uri].as_array().map(Vec::len), Some(3));
+        assert_eq!(changes[&leaf_uri].as_array().map(Vec::len), Some(3));
+        assert_eq!(changes[&other_uri].as_array().map(Vec::len), Some(1));
+        assert!(
+            !changes[&leaf_uri].as_array().unwrap().iter().any(|edit| {
+                edit.pointer("/range/start/line").and_then(Value::as_u64) == Some(2)
+            })
+        );
+
+        let apply_edits = |source: &str, edits: &Value| {
+            let mut replacements: Vec<_> = edits
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|edit| {
+                    let edit_range = edit.get("range").unwrap();
+                    let start = offset_at(source, edit_range.get("start").unwrap()).unwrap();
+                    let end = offset_at(source, edit_range.get("end").unwrap()).unwrap();
+                    (start, end, edit.get("newText").unwrap().as_str().unwrap())
+                })
+                .collect();
+            replacements.sort_unstable_by_key(|(start, _, _)| std::cmp::Reverse(*start));
+            let mut renamed = source.to_owned();
+            for (start, end, replacement) in replacements {
+                renamed.replace_range(start..end, replacement);
+            }
+            renamed
+        };
+        let renamed_app = apply_edits(app_source, &changes[&app_uri]);
+        let renamed_middle = apply_edits(middle_source, &changes[&middle_uri]);
+        let renamed_leaf = apply_edits(leaf_overlay, &changes[&leaf_uri]);
+        let renamed_other = apply_edits(other_source, &changes[&other_uri]);
+        let mut renamed_server = Server::default();
+        for (uri, text) in [
+            (&app_uri, &renamed_app),
+            (&middle_uri, &renamed_middle),
+            (&other_uri, &renamed_other),
+            (&leaf_uri, &renamed_leaf),
+        ] {
+            renamed_server.documents.insert(
+                uri.clone(),
+                Document {
+                    text: text.clone(),
+                    version: Some(2),
+                },
+            );
+        }
+        let renamed_project = renamed_server
+            .project_for_document(&app_uri, &renamed_app)
+            .expect("renamed project analysis");
+        assert!(
+            renamed_project
+                .modules()
+                .into_iter()
+                .all(|analysis| analysis.diagnostics.is_empty()),
+            "renamed sources must remain valid: {renamed_app}\n{renamed_middle}\n{renamed_leaf}"
+        );
+
+        let type_references = server.references(&json!({
+            "textDocument": { "uri": app_uri },
+            "position": { "line": 2, "character": 13 },
+            "context": { "includeDeclaration": true }
+        }));
+        assert_eq!(type_references.as_array().map(Vec::len), Some(8));
+
+        let mut locked_project = server
+            .project_for_document(&app_uri, app_source)
+            .expect("three-package project");
+        let leaf_id = locked_project
+            .packages
+            .packages
+            .iter()
+            .find(|(_, package)| package.name == "leaf")
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        locked_project
+            .packages
+            .packages
+            .get_mut(&leaf_id)
+            .unwrap()
+            .source = zutai_package::PortablePackageSource::LockedGit;
+        let leaf_analysis = locked_project
+            .modules()
+            .into_iter()
+            .find(|analysis| locked_project.path_for(analysis).as_deref() == Some(&leaf_path))
+            .unwrap();
+        let target = SymbolTarget::ExportedMember {
+            module: locked_project.module_identity(leaf_analysis),
+            member: "answer".to_owned(),
+        };
+        assert!(!server.renameable_symbol(&locked_project, &target));
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -45,6 +45,14 @@ pub enum ManifestSource {
     },
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PortablePackageSource {
+    #[default]
+    Path,
+    LockedGit,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PortablePackageGraph {
@@ -55,6 +63,8 @@ pub struct PortablePackageGraph {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PortablePackage {
+    #[serde(default)]
+    pub source: PortablePackageSource,
     pub name: String,
     pub dependencies: BTreeMap<String, String>,
     pub modules: BTreeMap<String, String>,

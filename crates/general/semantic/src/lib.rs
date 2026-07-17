@@ -37,6 +37,7 @@ pub use cache::{AnalysisCache, AnalysisCacheStats};
 
 pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind, WitnessExport};
 pub use package::{PortablePackage, PortablePackageGraph};
+pub use zutai_package::PortablePackageSource;
 
 pub const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
 

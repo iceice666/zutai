@@ -10,6 +10,7 @@ pub(crate) const MANIFEST_NAME: &str = zutai_package::MANIFEST_NAME;
 #[derive(Clone, Debug)]
 struct FilesystemPackage {
     id: String,
+    source: zutai_package::PortablePackageSource,
     name: String,
     root: PathBuf,
     dependencies: BTreeMap<String, String>,
@@ -304,6 +305,7 @@ impl FilesystemPackageGraph {
                             id.clone(),
                             FilesystemPackage {
                                 id: id.clone(),
+                                source: package.source,
                                 name: package.name.clone(),
                                 root,
                                 dependencies: package.dependencies.clone(),
@@ -409,6 +411,7 @@ impl FilesystemPackageGraph {
                     (
                         id.clone(),
                         PortablePackage {
+                            source: package.source,
                             name: package.name.clone(),
                             dependencies: package.dependencies.clone(),
                             modules: package.modules.clone(),
@@ -535,6 +538,7 @@ fn load_v1_package(
         id.clone(),
         FilesystemPackage {
             id: id.clone(),
+            source: zutai_package::PortablePackageSource::Path,
             name: manifest.name,
             root,
             dependencies,
@@ -762,6 +766,7 @@ mod tests {
             packages: BTreeMap::from([(
                 root,
                 PortablePackage {
+                    source: zutai_package::PortablePackageSource::Path,
                     name: "app".to_owned(),
                     dependencies: BTreeMap::from([("missing".to_owned(), "nope".to_owned())]),
                     modules: BTreeMap::new(),

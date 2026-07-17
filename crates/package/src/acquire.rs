@@ -191,6 +191,10 @@ pub fn prepare_graph(
         prepared.graph.packages.insert(
             package.id.clone(),
             PortablePackage {
+                source: match &package.source {
+                    LockedSource::Path { .. } => PortablePackageSource::Path,
+                    LockedSource::Git { .. } => PortablePackageSource::LockedGit,
+                },
                 name: package.name.clone(),
                 dependencies: package.dependencies.clone(),
                 modules: manifest.modules,

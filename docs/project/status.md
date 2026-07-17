@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 package-wide editor baseline extends references and rename across
+the root package and transitive dependencies using the same recorded package
+graph and unsaved overlays as checking. Value and type member references follow
+exact re-export origins without crossing shadowed or unrelated members; rename
+updates intermediate re-export fields, refuses builtins/generated bindings and
+immutable locked-Git snapshots, and is regression-tested by applying the edits
+and rechecking the renamed three-package project.
+
 The 2026-07-17 self-hosted website integration baseline makes the official site
 a local package with a package-owned demo domain and one portable web bundle
 shared by native and Wasm browser coverage. Native tests compare filesystem and
@@ -114,7 +122,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (self-hosted website integration: the official site is
+_Last updated: 2026-07-17 (package-wide editor references and safe rename:
+cross-package value/type references follow exact re-export origins through
+unsaved overlays, rename preserves a valid project and refuses locked-Git or
+non-source bindings);
+prior baseline updates: 2026-07-17 (self-hosted website integration: the official site is
 a local package, native and Wasm browser tests consume the same portable package
 bundle, WebDriver covers hydration/interactions, and live serve reloads after a
 successful rebuild while preserving the last good revision across errors);

@@ -149,6 +149,7 @@ pub fn website_bundle() -> WebBundleV3 {
             (
                 WEBSITE_ROOT_PACKAGE.to_owned(),
                 zutai_semantic::PortablePackage {
+                    source: zutai_semantic::PortablePackageSource::Path,
                     name: "zutai_website".to_owned(),
                     dependencies: BTreeMap::from([(
                         "demo".to_owned(),
@@ -161,6 +162,7 @@ pub fn website_bundle() -> WebBundleV3 {
             (
                 WEBSITE_DEMO_PACKAGE.to_owned(),
                 zutai_semantic::PortablePackage {
+                    source: zutai_semantic::PortablePackageSource::Path,
                     name: "zutai_website_demo".to_owned(),
                     dependencies: BTreeMap::new(),
                     modules: BTreeMap::from([("service".to_owned(), "service.zt".to_owned())]),
