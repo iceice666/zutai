@@ -733,11 +733,12 @@ fn extern_witness_tables(
     Ok((concrete, conditional))
 }
 
-/// Compile a `.zt` file. LLVM emits text; native artifact modes invoke the host LLVM toolchain.
+/// Compile a `.zt` file for an explicit validated target.
 pub(crate) fn run_compile(
     path: &str,
     output_path: Option<&str>,
     emit: EmitMode,
+    target: zutai_codegen::NativeTarget,
     metadata_path: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
@@ -761,6 +762,7 @@ pub(crate) fn run_compile(
                 path,
                 output_path,
                 emit,
+                target,
                 metadata_path,
                 contents: &contents,
                 base,
@@ -775,6 +777,7 @@ pub(crate) fn run_compile(
                 path,
                 output_path,
                 emit,
+                target,
                 metadata_path,
                 contents: &contents,
                 base,
@@ -789,6 +792,7 @@ struct CompileRequest<'a> {
     path: &'a str,
     output_path: Option<&'a str>,
     emit: EmitMode,
+    target: zutai_codegen::NativeTarget,
     metadata_path: Option<&'a Path>,
     contents: &'a str,
     base: Option<&'a Path>,
@@ -803,6 +807,7 @@ fn run_compile_analysis(
         path,
         output_path,
         emit,
+        target,
         metadata_path,
         contents,
         base,
@@ -989,9 +994,14 @@ fn run_compile_analysis(
         );
         std::process::exit(1);
     }
+    let native_preflight = if matches!(emit, EmitMode::Obj | EmitMode::Bin | EmitMode::Lib) {
+        Some(preflight_native(emit, target)?)
+    } else {
+        None
+    };
     let llvm_ir = match emit {
-        EmitMode::Lib => zutai_codegen::emit_llvm_library(&ssa),
-        EmitMode::Llvm | EmitMode::Obj | EmitMode::Bin => zutai_codegen::emit_llvm(&ssa),
+        EmitMode::Lib => zutai_codegen::emit_llvm_library(&ssa, target),
+        EmitMode::Llvm | EmitMode::Obj | EmitMode::Bin => zutai_codegen::emit_llvm(&ssa, target),
     };
 
     match emit {
@@ -1000,34 +1010,48 @@ fn run_compile_analysis(
             None => println!("{llvm_ir}"),
         },
         EmitMode::Obj => {
-            let out = output_path_for(path, output_path, EmitMode::Obj);
-            let ll = out.with_extension("ll");
-            fs::write(&ll, &llvm_ir)?;
-            assemble_object(&ll, &out)?;
+            let out = output_path_for(path, output_path, EmitMode::Obj, target);
+            let intermediates = NativeIntermediates::new(&out)?;
+            fs::write(&intermediates.llvm, &llvm_ir)?;
+            assemble_object(&intermediates.llvm, &intermediates.object, target)?;
+            fs::rename(&intermediates.object, &out)?;
         }
         EmitMode::Bin => {
-            let out = output_path_for(path, output_path, EmitMode::Bin);
-            let ll = out.with_extension("ll");
-            let obj = out.with_extension("o");
-            fs::write(&ll, &llvm_ir)?;
-            assemble_object(&ll, &obj)?;
-            let rt = runtime_archive_path()?;
-            link_binary(&obj, &rt, &out)?;
+            let out = output_path_for(path, output_path, EmitMode::Bin, target);
+            let preflight = native_preflight.as_ref().unwrap();
+            let intermediates = NativeIntermediates::new(&out)?;
+            let pending = &intermediates.pending;
+            fs::write(&intermediates.llvm, &llvm_ir)?;
+            assemble_object(&intermediates.llvm, &intermediates.object, target)?;
+            link_binary(
+                &intermediates.object,
+                preflight.runtime.as_ref().unwrap(),
+                pending,
+                target,
+            )?;
+            fs::rename(pending, out)?;
         }
         EmitMode::Lib => {
-            let out = output_path_for(path, output_path, EmitMode::Lib);
-            let ll = out.with_extension("ll");
-            let obj = out.with_extension("o");
-            fs::write(&ll, &llvm_ir)?;
-            assemble_object(&ll, &obj)?;
-            let rt = runtime_archive_path()?;
-            link_shared_library(&obj, &rt, &out)?;
+            let out = output_path_for(path, output_path, EmitMode::Lib, target);
+            let preflight = native_preflight.as_ref().unwrap();
+            let intermediates = NativeIntermediates::new(&out)?;
+            let pending = &intermediates.pending;
+            fs::write(&intermediates.llvm, &llvm_ir)?;
+            assemble_object(&intermediates.llvm, &intermediates.object, target)?;
+            link_shared_library(
+                &intermediates.object,
+                preflight.runtime.as_ref().unwrap(),
+                pending,
+                target,
+            )?;
+            fs::rename(pending, out)?;
         }
     }
     if let Some(metadata_path) = metadata_path {
         write_build_metadata(
             metadata_path,
             emit,
+            target,
             recorded.expect("metadata compilation records its analysis inputs"),
         )?;
     }

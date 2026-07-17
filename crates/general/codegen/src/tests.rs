@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::*;
 use zutai_syntax::posit::{PositLiteral, PositSpec};
 
@@ -50,6 +52,60 @@ fn posit_module(spec: PositSpec, op: DfPositOp, entry_ty: DfTy) -> SsaModule {
 }
 
 #[test]
+fn native_targets_are_explicit_and_complete() {
+    let expected = [
+        (
+            NativeTarget::X86_64_LINUX,
+            "x86_64-unknown-linux-gnu",
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+        ),
+        (
+            NativeTarget::AARCH64_LINUX,
+            "aarch64-unknown-linux-gnu",
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32",
+        ),
+        (
+            NativeTarget::X86_64_MACOS,
+            "x86_64-apple-darwin",
+            "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+        ),
+        (
+            NativeTarget::AARCH64_MACOS,
+            "aarch64-apple-darwin",
+            "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
+        ),
+    ];
+    assert_eq!(NativeTarget::SUPPORTED.len(), expected.len());
+    for (target, triple, layout) in expected {
+        assert_eq!(target.triple(), triple);
+        assert_eq!(target.data_layout(), layout);
+        assert_eq!(NativeTarget::from_str(triple).unwrap(), target);
+    }
+    assert!(NativeTarget::from_str("wasm32-unknown-unknown").is_err());
+    assert!(NativeTarget::from_arch_os("riscv64", "linux").is_err());
+}
+
+#[test]
+fn llvm_preamble_uses_selected_target() {
+    let module = posit_module(
+        PositSpec { nbits: 32, es: 3 },
+        DfPositOp::Add,
+        DfTy::Posit(PositSpec { nbits: 32, es: 3 }),
+    );
+    for target in NativeTarget::SUPPORTED {
+        let llvm = emit_llvm(&module, target);
+        assert!(
+            llvm.contains(&format!("target triple = \"{}\"", target.triple())),
+            "{llvm}"
+        );
+        assert!(
+            llvm.contains(&format!("target datalayout = \"{}\"", target.data_layout())),
+            "{llvm}"
+        );
+    }
+}
+
+#[test]
 fn host_op_emits_runtime_capability_helper_call() {
     let module = test_module(
         Vec::new(),
@@ -72,7 +128,7 @@ fn host_op_emits_runtime_capability_helper_call() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("declare i64 @zutai.host.fs_read(i64)"));
     assert!(llvm.contains("declare i64 @zutai.list_append(i64, i64)"));
     assert!(llvm.contains("call i64 @zutai.host.fs_read"));
@@ -101,7 +157,7 @@ fn coalesce_emits_runtime_helper_call() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("call i64 @zutai.coalesce"));
     assert!(!llvm.contains("icmp ne i64"), "{llvm}");
 }
@@ -138,7 +194,7 @@ fn num_prim_emits_runtime_helper_calls() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("declare i64 @zutai.num_pow(i64, i64)"));
     assert!(llvm.contains("call i64 @zutai.num_pow(i64 2, i64 10)"));
     assert!(llvm.contains("declare i64 @zutai.num_to_float(i64)"));
@@ -181,7 +237,7 @@ fn text_prim_emits_runtime_helper_calls() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("declare i64 @zutai.text_length(i64)"));
     assert!(llvm.contains("call i64 @zutai.text_length"));
     assert!(llvm.contains("declare i64 @zutai.text_replace(i64, i64, i64)"));
@@ -211,7 +267,7 @@ fn record_update_emits_runtime_helper_call() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("declare i64 @zutai.record_update"));
     assert!(llvm.contains("call i64 @zutai.record_update"));
     assert!(llvm.contains("call i64 @zutai.record_update(i64 %base, i64 1, i64 8080)"));
@@ -220,7 +276,10 @@ fn record_update_emits_runtime_helper_call() {
 #[test]
 fn posit32_builtin_emits_helper_call_with_truncation() {
     let spec = PositSpec { nbits: 32, es: 3 };
-    let llvm = emit_llvm(&posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)));
+    let llvm = emit_llvm(
+        &posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)),
+        NativeTarget::X86_64_LINUX,
+    );
     assert!(llvm.contains("declare i32 @zutai.posit32e3.add(i32, i32)"));
     assert!(llvm.contains("trunc i64"));
     assert!(llvm.contains("call i32 @zutai.posit32e3.add"));
@@ -230,7 +289,10 @@ fn posit32_builtin_emits_helper_call_with_truncation() {
 #[test]
 fn posit64_builtin_emits_helper_call_without_truncation() {
     let spec = PositSpec { nbits: 64, es: 5 };
-    let llvm = emit_llvm(&posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)));
+    let llvm = emit_llvm(
+        &posit_module(spec, DfPositOp::Add, DfTy::Posit(spec)),
+        NativeTarget::X86_64_LINUX,
+    );
     assert!(llvm.contains("declare i64 @zutai.posit64e5.add(i64, i64)"));
     assert!(llvm.contains("call i64 @zutai.posit64e5.add"));
     assert!(!llvm.contains("trunc i64"), "{llvm}");
@@ -239,7 +301,10 @@ fn posit64_builtin_emits_helper_call_without_truncation() {
 #[test]
 fn posit32_comparison_emits_bool_helper_and_zext() {
     let spec = PositSpec { nbits: 32, es: 3 };
-    let llvm = emit_llvm(&posit_module(spec, DfPositOp::Lt, DfTy::Bool));
+    let llvm = emit_llvm(
+        &posit_module(spec, DfPositOp::Lt, DfTy::Bool),
+        NativeTarget::X86_64_LINUX,
+    );
     assert!(llvm.contains("declare i1 @zutai.posit32e3.lt(i32, i32)"));
     assert!(llvm.contains("call i1 @zutai.posit32e3.lt"));
     assert!(llvm.contains("zext i1"));
@@ -277,7 +342,7 @@ fn top_level_function_emits_static_closure() {
         vec!["inc".to_string()],
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(
         llvm.contains("@zutai.closure.inc = internal constant { i64, ptr } { i64 7, ptr @inc }"),
         "{llvm}"
@@ -324,7 +389,7 @@ fn unicode_identifiers_emit_ascii_llvm_names() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("define i64 @_u540d$_u524d$(i64 %_u5f15$_u6570$)"));
     assert!(llvm.contains("%_u7d50$_u679c$ = add i64 %_u5f15$_u6570$, 1"));
     assert!(llvm.contains("%_u5024$ = call i64 @_u540d$_u524d$(i64 41)"));
@@ -351,7 +416,7 @@ fn library_artifact_exports_entry_descriptor_and_json_without_main() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm_library(&module);
+    let llvm = emit_llvm_library(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("define i64 @zutai_entry()"), "{llvm}");
     assert!(
         llvm.contains("define i64 @zutai_entry_descriptor()"),
@@ -387,7 +452,7 @@ fn closure_apply_loads_code_and_passes_self() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(llvm.contains("getelementptr i64, ptr"), "{llvm}");
     assert!(llvm.contains("load i64, ptr"), "{llvm}");
     assert!(
@@ -431,7 +496,7 @@ fn tail_apply_emits_musttail() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     assert!(
         llvm.contains("musttail call i64 %"),
         "tail apply should emit musttail: {llvm}"
@@ -461,7 +526,7 @@ fn capturing_lambda_allocates_heap_closure() {
         Vec::new(),
     );
 
-    let llvm = emit_llvm(&module);
+    let llvm = emit_llvm(&module, NativeTarget::X86_64_LINUX);
     // (2 + 1 capture) * 8 bytes = 24.
     assert!(llvm.contains("call i64 @zutai.alloc(i64 24)"), "{llvm}");
     // Header for one capture: (1 << 8) | 7 = 263.

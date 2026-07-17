@@ -1,6 +1,6 @@
 //! LLVM IR text emission from Zutai SSA modules.
 //!
-//! Produces `.ll` files for the host LLVM target.
+//! Produces `.ll` files for an explicit validated native target.
 //! All Zutai values are represented as `i64` for v0 simplicity:
 //! integers are stored directly, booleans as 0/1, and compound
 //! values (records, tuples, lists, closures, text) are heap-allocated
@@ -11,22 +11,19 @@ mod descriptors;
 mod format;
 mod instr;
 mod preamble;
+pub mod target;
 #[cfg(test)]
 mod tests;
 
 use crate::descriptors::*;
 use crate::instr::*;
 use crate::preamble::*;
+pub use target::{NativeArch, NativeOs, NativeTarget, NativeTargetError};
 
 // ── Public API ─────────────────────────────────────────────────────────────────
-/// Native target triple encoded in emitted LLVM IR.
-pub fn target_triple() -> &'static str {
-    preamble::host_target_triple()
-}
-
-/// Emit a complete LLVM IR `.ll` file from an SSA module.
-pub fn emit_llvm(module: &SsaModule) -> String {
-    emit_llvm_artifact(module, ArtifactKind::Executable)
+/// Emit a complete LLVM IR `.ll` file for a validated native target.
+pub fn emit_llvm(module: &SsaModule, target: NativeTarget) -> String {
+    emit_llvm_artifact(module, target, ArtifactKind::Executable)
 }
 
 /// Emit LLVM IR for a native library artifact.
@@ -36,8 +33,8 @@ pub fn emit_llvm(module: &SsaModule) -> String {
 /// - `zutai_entry() -> i64` — raw v0 ABI value,
 /// - `zutai_entry_descriptor() -> i64` — static descriptor pointer as an `i64`,
 /// - `zutai_entry_json() -> i64` — JSON text value serialized through `serde_json`.
-pub fn emit_llvm_library(module: &SsaModule) -> String {
-    emit_llvm_artifact(module, ArtifactKind::Library)
+pub fn emit_llvm_library(module: &SsaModule, target: NativeTarget) -> String {
+    emit_llvm_artifact(module, target, ArtifactKind::Library)
 }
 
 #[derive(Clone, Copy)]
@@ -46,9 +43,9 @@ enum ArtifactKind {
     Library,
 }
 
-fn emit_llvm_artifact(module: &SsaModule, artifact: ArtifactKind) -> String {
+fn emit_llvm_artifact(module: &SsaModule, target: NativeTarget, artifact: ArtifactKind) -> String {
     let mut out = String::with_capacity(8192);
-    emit_preamble(&mut out);
+    emit_preamble(&mut out, target);
     emit_type_decls(&mut out);
     emit_runtime_decls(&mut out);
     emit_posit_runtime_decls(module, &mut out);

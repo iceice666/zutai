@@ -21,9 +21,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             path,
             output,
             emit,
+            target,
             metadata,
         }) => {
-            commands::run_compile(&path, output.as_deref(), emit.into(), metadata.as_deref())?;
+            let target = target.resolve()?;
+            commands::run_compile(
+                &path,
+                output.as_deref(),
+                emit.into(),
+                target,
+                metadata.as_deref(),
+            )?;
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
         Some(Commands::Web { command }) => command.run()?,
@@ -80,6 +88,33 @@ impl From<CompileEmit> for commands::EmitMode {
     }
 }
 
+#[derive(Clone, Debug)]
+enum CompileTarget {
+    Host,
+    Native(zutai_codegen::NativeTarget),
+}
+
+impl CompileTarget {
+    fn resolve(self) -> Result<zutai_codegen::NativeTarget, zutai_codegen::NativeTargetError> {
+        match self {
+            Self::Host => zutai_codegen::NativeTarget::host(),
+            Self::Native(target) => Ok(target),
+        }
+    }
+}
+
+impl std::str::FromStr for CompileTarget {
+    type Err = zutai_codegen::NativeTargetError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value == "host" {
+            Ok(Self::Host)
+        } else {
+            value.parse().map(Self::Native)
+        }
+    }
+}
+
 #[derive(clap::Subcommand)]
 enum Commands {
     /// Evaluate a .zt file and print the result
@@ -105,6 +140,7 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
     /// Type-check a .zt file and print diagnostics
     Check {
         /// Path to the .zt file
@@ -120,6 +156,9 @@ enum Commands {
         /// Artifact to emit
         #[arg(long, value_enum, default_value_t = CompileEmit::Llvm)]
         emit: CompileEmit,
+        /// Native target triple, or `host`
+        #[arg(long, default_value = "host", value_name = "TARGET")]
+        target: CompileTarget,
         /// Write deterministic build metadata as JSON
         #[arg(long, value_name = "PATH")]
         metadata: Option<std::path::PathBuf>,

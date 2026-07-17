@@ -83,6 +83,15 @@ A typed browser example and shared native/Wasm fixture cover `stdlib.html`,
 rendering, and `zutai-web build` lock each surface to its documented support
 level without changing language syntax.
 
+The 2026-07-17 explicit-native-target baseline replaces host-derived fallback
+with one validated descriptor for Linux/macOS on x86-64/AArch64. The selected
+target drives LLVM triple and data layout, deterministic metadata, `llc`
+assembly, runtime-archive lookup, shared-library naming, and `clang` linker
+shape. Native prerequisites are preflighted and intermediates stay temporary;
+unsupported or unavailable target/toolchain combinations leave no partial
+artifact. Four-target LLVM/metadata/object-driver gates complement actual host
+binary and shared-library execution.
+
 The 2026-07-16 reproducible native-artifact baseline adds deterministic
 `compile --metadata <path>` JSON containing the logical package roots,
 package-graph and stdlib identities, compiler compatibility, target triple, PIC

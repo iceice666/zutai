@@ -20,15 +20,14 @@ fn count_decls_in_returns_two_for_two_decls() {
 }
 
 #[test]
-fn runtime_link_flags_never_request_non_pie() {
-    assert!(!runtime_link_flags().contains(&"-no-pie"));
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn linux_runtime_link_flags_request_pie() {
-    assert!(runtime_link_flags().contains(&"-pie"));
-    assert!(!shared_runtime_link_flags().contains(&"-pie"));
+fn native_target_link_flags_are_platform_specific() {
+    assert!(!runtime_link_flags(zutai_codegen::NativeTarget::X86_64_LINUX).contains(&"-no-pie"));
+    assert!(runtime_link_flags(zutai_codegen::NativeTarget::X86_64_LINUX).contains(&"-pie"));
+    assert!(
+        !shared_runtime_link_flags(zutai_codegen::NativeTarget::X86_64_LINUX).contains(&"-pie")
+    );
+    assert!(runtime_link_flags(zutai_codegen::NativeTarget::X86_64_MACOS).is_empty());
+    assert!(shared_runtime_link_flags(zutai_codegen::NativeTarget::X86_64_MACOS).is_empty());
 }
 
 #[test]
@@ -112,25 +111,31 @@ fn value_to_source_covers_tuple_tagged_absent_and_none() {
 }
 
 #[test]
-fn output_path_for_derives_default_paths() {
+fn output_path_for_derives_target_specific_paths() {
+    let linux = zutai_codegen::NativeTarget::X86_64_LINUX;
+    let macos = zutai_codegen::NativeTarget::AARCH64_MACOS;
     assert_eq!(
-        output_path_for("main.zt", None, EmitMode::Llvm),
+        output_path_for("main.zt", None, EmitMode::Llvm, linux),
         PathBuf::from("main.ll")
     );
     assert_eq!(
-        output_path_for("main.zt", None, EmitMode::Obj),
+        output_path_for("main.zt", None, EmitMode::Obj, linux),
         PathBuf::from("main.o")
     );
     assert_eq!(
-        output_path_for("main.zt", None, EmitMode::Bin),
+        output_path_for("main.zt", None, EmitMode::Bin, linux),
         PathBuf::from("main")
     );
     assert_eq!(
-        output_path_for("main.zt", None, EmitMode::Lib),
-        PathBuf::from(format!("libmain{}", shared_library_extension()))
+        output_path_for("main.zt", None, EmitMode::Lib, linux),
+        PathBuf::from("libmain.so")
     );
     assert_eq!(
-        output_path_for("main.zt", Some("custom.out"), EmitMode::Bin),
+        output_path_for("main.zt", None, EmitMode::Lib, macos),
+        PathBuf::from("libmain.dylib")
+    );
+    assert_eq!(
+        output_path_for("main.zt", Some("custom.out"), EmitMode::Bin, linux),
         PathBuf::from("custom.out")
     );
 }
@@ -143,7 +148,10 @@ fn build_metadata_names_artifacts_and_runtime_contract() {
     assert_eq!(emit_name(EmitMode::Lib), "lib");
     assert_eq!(RELOCATION_MODEL, "pic");
     assert_eq!(zutai_rt::ABI_VERSION, 1);
-    assert!(!zutai_codegen::target_triple().is_empty());
+    for target in zutai_codegen::NativeTarget::SUPPORTED {
+        assert!(!target.triple().is_empty());
+        assert!(!target.data_layout().is_empty());
+    }
 }
 
 #[test]

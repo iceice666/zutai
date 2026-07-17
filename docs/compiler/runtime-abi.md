@@ -434,27 +434,37 @@ does neither; the default-on conservative collector is the committed endpoint.
 
 ### D-0010 — Toolchain driver
 
-`compile` has an emit selector:
+`compile` accepts `--target=host` (default) or one of the four validated native
+triples: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
+`x86_64-apple-darwin`, and `aarch64-apple-darwin`. The resolved descriptor owns
+the LLVM triple and data layout, object target, shared-library suffix, runtime
+archive identity, and linker shape; unsupported hosts and triples do not fall
+back to a different platform.
+
+The emit selector remains:
 
 - `--emit=llvm` (default; write `.ll` text or stdout),
-- `--emit=obj` (invoke `llc -filetype=obj -relocation-model=pic -o <out> <ll>` → object file),
-- `--emit=bin` (assemble, then link against `libzutai_rt` → native executable),
-- `--emit=lib` (assemble, then link against `libzutai_rt` → native shared library).
+- `--emit=obj` (invoke `llc -filetype=obj -mtriple=<target>
+  -relocation-model=pic` → object file),
+- `--emit=bin` (assemble, then link against the matching `libzutai_rt` → native
+  executable),
+- `--emit=lib` (assemble, then link against the matching `libzutai_rt` → native
+  shared library).
 
 The driver discovers `clang`/`llc` from `PATH` (overridable via
-`ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and emits a precise, actionable
-diagnostic when the toolchain is absent rather than failing opaquely. Native
-binary and library modes resolve `libzutai_rt.a` from `ZUTAI_RUNTIME_ARCHIVE`,
-then the executable-relative `../lib/zutai/<target>/` installation. Workspace
-builds may use an already-built development archive, but compilation never runs
-Cargo or rebuilds the runtime implicitly. On Linux the binary linker shape is
-`clang <obj> <libzutai_rt.a> -pie -lpthread -ldl -lm -o <out>`. Shared-library
-mode uses the platform shared-library flag (`-shared` on Linux, `-dynamiclib` on
-macOS) and force-loads the runtime archive so host-facing helper aliases are
-exported with the generated entry symbols. `--metadata <path>` writes a
-deterministic JSON record containing the logical package roots, package-graph
-and stdlib identities, compiler compatibility, target triple, PIC relocation
-model, artifact kind, and runtime ABI version.
+`ZUTAI_CLANG`/`CLANG` and `ZUTAI_LLC`/`LLC`) and preflights the required tools
+and target runtime before creating native intermediates. Native assembly and
+linking happen in a temporary sibling directory; the requested artifact is
+renamed into place only after success, so unavailable targets/toolchains do not
+leave partial outputs. Binary and library modes resolve `libzutai_rt.a` from
+`ZUTAI_RUNTIME_ARCHIVE`, then executable-relative
+`../lib/zutai/<target>/libzutai_rt.a`; only the host target may reuse the
+workspace development archive. Linux binaries use `-pie -lpthread -ldl -lm`;
+shared libraries use the selected platform's `.so`/`.dylib`, shared-library
+flag, and archive force-loading form. `--metadata <path>` records the logical
+package roots, package/stdlib identities, compiler compatibility, selected
+target triple and data layout, PIC relocation model, artifact kind, and runtime
+ABI version.
 
 Library-mode LLVM omits `main` and exports:
 

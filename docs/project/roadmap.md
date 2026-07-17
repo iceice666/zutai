@@ -33,28 +33,20 @@ subset already accepted by the frontend.
 
 Milestones, in order:
 
-1. **Explicit native target model.** Replace host-derived target selection with
-   a validated target descriptor used by LLVM preambles, data layouts, metadata,
-   runtime-archive lookup, object assembly, and linking. Support the four current
-   intended native pairs first: Linux/macOS on x86-64/AArch64. Gate: same-source
-   object builds and deterministic metadata for every supported target; binary
-   and library links run where a matching linker and runtime archive are present,
-   and unavailable target/toolchain combinations refuse before writing a partial
-   artifact.
-2. **Imported higher-kinded witness execution.** Carry matchable constructor
+1. **Imported higher-kinded witness execution.** Carry matchable constructor
    witnesses such as `Functor @List` and `Foldable @List` across package
    boundaries through TLC, Dataflow Core, and native codegen. Higher-order kind
    targets remain out of scope. Gate: path-package and locked-Git fixtures use
    one imported constructor witness at multiple element types and match the TLC
    evaluator; genuinely non-matchable exports keep the existing source-located
    refusal.
-3. **General closed config-overlay lowering.** Remove the current call-shape gate
+2. **General closed config-overlay lowering.** Remove the current call-shape gate
    for well-typed closed `Patch`/`DeepPatch` values, including computed and
    partially applied overlays plus optional nested records. Keep open rows and
    deletion semantics refused until independently specified. Gate: shallow/deep,
    qualified/destructured, computed, and optional-record cases match the
    reference evaluator through native binaries and shared-library JSON exports.
-4. **Measured optimization gate.** Establish repeatable compile-time, runtime,
+3. **Measured optimization gate.** Establish repeatable compile-time, runtime,
    allocation, and output-size baselines for the website, configuration/decoder,
    stream, and effectful service workloads. Profile before scheduling an
    optimization. The first optimization milestone must cite the measured

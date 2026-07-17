@@ -3742,6 +3742,181 @@ c
     );
 }
 
+const SUPPORTED_NATIVE_TARGETS: [(&str, &str); 4] = [
+    (
+        "x86_64-unknown-linux-gnu",
+        "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+    ),
+    (
+        "aarch64-unknown-linux-gnu",
+        "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32",
+    ),
+    (
+        "x86_64-apple-darwin",
+        "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+    ),
+    (
+        "aarch64-apple-darwin",
+        "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
+    ),
+];
+
+#[test]
+fn compile_llvm_and_metadata_use_explicit_target_matrix() {
+    let path = write_tmp("cli_test_compile_explicit_targets.zt", "42\n");
+    for (index, (target, layout)) in SUPPORTED_NATIVE_TARGETS.iter().enumerate() {
+        let llvm_path = std::env::temp_dir().join(format!("cli_test_target_{index}.ll"));
+        let metadata_path = std::env::temp_dir().join(format!("cli_test_target_{index}.json"));
+        cli()
+            .arg("compile")
+            .arg("--emit=llvm")
+            .arg("--target")
+            .arg(target)
+            .arg(&path)
+            .arg("-o")
+            .arg(&llvm_path)
+            .arg("--metadata")
+            .arg(&metadata_path)
+            .assert()
+            .success();
+        let llvm = std::fs::read_to_string(&llvm_path).unwrap();
+        assert!(
+            llvm.contains(&format!("target triple = \"{target}\"")),
+            "{llvm}"
+        );
+        assert!(
+            llvm.contains(&format!("target datalayout = \"{layout}\"")),
+            "{llvm}"
+        );
+        let metadata: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&metadata_path).unwrap()).unwrap();
+        assert_eq!(metadata["targetTriple"], *target);
+        assert_eq!(metadata["targetDataLayout"], *layout);
+    }
+}
+
+#[test]
+fn unsupported_target_refuses_before_output() {
+    let path = write_tmp("cli_test_compile_bad_target.zt", "42\n");
+    let out = std::env::temp_dir().join("cli_test_compile_bad_target.ll");
+    let _ = std::fs::remove_file(&out);
+    cli()
+        .arg("compile")
+        .arg("--target=wasm32-unknown-unknown")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsupported native target"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn missing_native_tool_refuses_before_partial_artifacts() {
+    let path = write_tmp("cli_test_compile_missing_tool_target.zt", "42\n");
+    let out = std::env::temp_dir().join("cli_test_compile_missing_tool_target.o");
+    let ll = out.with_extension("ll");
+    let _ = std::fs::remove_file(&out);
+    let _ = std::fs::remove_file(&ll);
+    cli()
+        .env("ZUTAI_LLC", "__zutai_missing_target_llc__")
+        .arg("compile")
+        .arg("--emit=obj")
+        .arg("--target=x86_64-unknown-linux-gnu")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("x86_64-unknown-linux-gnu"));
+    assert!(!ll.exists());
+    assert!(!out.exists());
+}
+
+#[test]
+fn missing_target_runtime_refuses_before_partial_artifacts() {
+    let path = write_tmp("cli_test_compile_missing_target_runtime.zt", "42\n");
+    let out = std::env::temp_dir().join("cli_test_compile_missing_target_runtime");
+    let ll = out.with_extension("ll");
+    let obj = out.with_extension("o");
+    let metadata = out.with_extension("json");
+    for artifact in [&out, &ll, &obj, &metadata] {
+        let _ = std::fs::remove_file(artifact);
+    }
+    cli()
+        .env("ZUTAI_RUNTIME_ARCHIVE", out.with_extension("missing.a"))
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg("--target=aarch64-apple-darwin")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .arg("--metadata")
+        .arg(&metadata)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ZUTAI_RUNTIME_ARCHIVE"));
+    assert!(!ll.exists());
+    assert!(!obj.exists());
+    assert!(!out.exists());
+    assert!(!metadata.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn object_driver_receives_every_explicit_target() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!("zutai-cli-target-driver-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let script = root.join("fake-llc");
+    let log = root.join("args.log");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+if [ "$1" = "--version" ]; then exit 0; fi
+printf '%s\n' "$@" >> "$ZUTAI_TOOL_LOG"
+out=''
+previous=''
+for argument in "$@"; do
+  if [ "$previous" = "-o" ]; then out="$argument"; fi
+  previous="$argument"
+done
+printf object > "$out"
+"#,
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&script, permissions).unwrap();
+    let path = write_tmp("cli_test_compile_target_driver.zt", "42\n");
+    for (index, (target, _)) in SUPPORTED_NATIVE_TARGETS.iter().enumerate() {
+        let out = root.join(format!("target-{index}.o"));
+        cli()
+            .env("ZUTAI_LLC", &script)
+            .env("ZUTAI_TOOL_LOG", &log)
+            .arg("compile")
+            .arg("--emit=obj")
+            .arg("--target")
+            .arg(target)
+            .arg(&path)
+            .arg("-o")
+            .arg(&out)
+            .assert()
+            .success();
+        assert_eq!(std::fs::read(&out).unwrap(), b"object");
+    }
+    let arguments = std::fs::read_to_string(log).unwrap();
+    for (target, _) in SUPPORTED_NATIVE_TARGETS {
+        assert!(
+            arguments.contains(&format!("-mtriple={target}")),
+            "{arguments}"
+        );
+    }
+}
+
 #[test]
 fn compile_emit_obj_writes_object() {
     let path = write_tmp("cli_test_compile_emit_obj.zt", "42\n");
