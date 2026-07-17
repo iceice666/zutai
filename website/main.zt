@@ -5,6 +5,7 @@
 -- `styles.zt` produces the typed stylesheet.
 browser ::= import stdlib.browser;
 html ::= import stdlib.html;
+demo ::= import demo.service;
 
 copy ::= import "content.zti";
 sections ::= import "sections.zt";
@@ -17,7 +18,7 @@ Mode :: type {
 
 Model :: type {
   mode : Mode;
-  services : List sections.Service;
+  services : List demo.Service;
   draft : Text;
 };
 
@@ -50,23 +51,6 @@ demoHandlers ::= {
   clearErrors = clearErrorsMessage;
 };
 
-setError :: Text -> Int -> sections.Service -> sections.Service
-  = key errors service =>
-    if service.name == key then service with { errors = errors; } else service;
-
-newService :: Text -> sections.Service
-  = name => { name = name; errors = 0; enabled = true; };
-
-keepService :: Text -> sections.Service -> Bool
-  = key service => not (service.name == key);
-
-toggleService :: Text -> sections.Service -> sections.Service
-  = key service =>
-    if service.name == key then service with { enabled = not service.enabled; } else service;
-
-bumpError :: Text -> sections.Service -> sections.Service
-  = key service =>
-    if service.name == key then service with { errors = service.errors + 1; } else service;
 
 init :: Unit -> browser.Browser Model
   = _ => {
@@ -83,20 +67,20 @@ update :: Msg -> Model -> browser.Browser Model
     | #addService => [
         next := if model.draft == "" then model
           else model with {
-            services = append model.services { newService model.draft; };
+            services = append model.services { demo.new model.draft; };
             draft = "";
           };
         browser.focus "demo-draft";
         next
       ];
     | #removeService { key = k; } =>
-        model with { services = filter (keepService k) model.services; };
+        model with { services = filter (demo.keep k) model.services; };
     | #toggleService { key = k; } =>
-        model with { services = map (toggleService k) model.services; };
+        model with { services = map (demo.toggle k) model.services; };
     | #logError { key = k; } =>
-        model with { services = map (bumpError k) model.services; };
+        model with { services = map (demo.bumpError k) model.services; };
     | #clearErrors { key = k; } =>
-        model with { services = map (setError k 0) model.services; };
+        model with { services = map (demo.setErrors k 0) model.services; };
   };
 
 view :: Model -> html.Document Msg

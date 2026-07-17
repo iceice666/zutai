@@ -35,6 +35,15 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 self-hosted website integration baseline makes the official site
+a local package with a package-owned demo domain and one portable web bundle
+shared by native and Wasm browser coverage. Native tests compare filesystem and
+in-memory package-graph analysis, prerendering, and interactions; the WebDriver
+scenario hydrates that same fixture and proves events, keyed reordering,
+controlled inputs, focus effects, and package-backed updates. Development serve
+keeps the last successful revision during failed rebuilds and reloads after
+recovery; a live browser smoke test covers the watcher and reload path.
+
 The 2026-07-17 standard-library ergonomics baseline adds application-shaped
 examples for records, tagged unions, streams, nested `FromData` derivation, and
 an explicit `Load` capability, with reference-interpreter/native output parity.
@@ -105,7 +114,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (standard-library ergonomics: application-shaped
+_Last updated: 2026-07-17 (self-hosted website integration: the official site is
+a local package, native and Wasm browser tests consume the same portable package
+bundle, WebDriver covers hydration/interactions, and live serve reloads after a
+successful rebuild while preserving the last good revision across errors);
+prior baseline updates: 2026-07-17 (standard-library ergonomics: application-shaped
 record/union/stream/`FromData`/host-capability examples now have CLI,
 reference-interpreter, and native parity coverage; HTML/CSS/browser docs,
 diagnostics, fixture rendering, and web-build support levels are executable);

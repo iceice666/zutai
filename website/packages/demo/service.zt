@@ -1,0 +1,50 @@
+-- Package-owned domain logic for the website's interactive service roster.
+
+Service :: type { name : Text; errors : Int; enabled : Bool; };
+DemoStatus :: type { #ready; #paused; #erroring; };
+
+new :: Text -> Service
+  = name => { name = name; errors = 0; enabled = true; };
+
+setErrors :: Text -> Int -> Service -> Service
+  = key errors service =>
+    if service.name == key then service with { errors = errors; } else service;
+
+keep :: Text -> Service -> Bool
+  = key service => not (service.name == key);
+
+toggle :: Text -> Service -> Service
+  = key service =>
+    if service.name == key then service with { enabled = not service.enabled; } else service;
+
+bumpError :: Text -> Service -> Service
+  = key service =>
+    if service.name == key then service with { errors = service.errors + 1; } else service;
+
+healthy :: Service -> Bool
+  = service => service.enabled && service.errors == 0;
+
+status :: Service -> DemoStatus
+  = service =>
+    if not service.enabled then #paused
+    else if service.errors > 0 then #erroring
+    else #ready;
+
+statusRank :: Service -> Int
+  = service =>
+    if not service.enabled then 2
+    else if service.errors > 0 then 1
+    else 0;
+
+{
+  Service = Service;
+  DemoStatus = DemoStatus;
+  new = new;
+  setErrors = setErrors;
+  keep = keep;
+  toggle = toggle;
+  bumpError = bumpError;
+  healthy = healthy;
+  status = status;
+  statusRank = statusRank;
+}

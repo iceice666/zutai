@@ -1,0 +1,9 @@
+{
+  formatVersion = 1;
+  name = "zutai_website_demo";
+  compilerCompatibility = "0.1.0";
+  modules = [
+    { name = "service"; path = "service.zt"; };
+  ];
+  dependencies = [];
+}

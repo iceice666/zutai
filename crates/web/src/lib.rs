@@ -492,10 +492,22 @@ fn absolute_path(path: &Path) -> PathBuf {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct DevStatus {
     revision: u64,
     error: Option<String>,
+}
+
+impl DevStatus {
+    fn record_rebuild(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => {
+                self.revision = self.revision.wrapping_add(1);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
 }
 
 pub fn run_web_serve(
@@ -579,14 +591,10 @@ fn spawn_watcher(options: WebBuildOptions, out_dir: PathBuf, status: Arc<Mutex<D
                     if !worth_rebuilding {
                         continue;
                     }
-                    match build_site(&options, &cache) {
-                        Ok(_) => {
-                            let mut status = status.lock().unwrap();
-                            status.revision = status.revision.wrapping_add(1);
-                            status.error = None;
-                        }
-                        Err(err) => status.lock().unwrap().error = Some(err.to_string()),
-                    }
+                    let result = build_site(&options, &cache)
+                        .map(|_| ())
+                        .map_err(|error| error.to_string());
+                    status.lock().unwrap().record_rebuild(result);
                 }
                 Ok(Err(err)) => status.lock().unwrap().error = Some(err.to_string()),
                 Err(_) => return,
@@ -905,6 +913,25 @@ mod tests {
         );
         let wrong_argument = effects.handle("browser.focus", Value::Int(1)).unwrap_err();
         assert!(wrong_argument.to_string().contains("non-Text"));
+    }
+
+    #[test]
+    fn rebuild_status_preserves_revision_on_error_and_advances_after_recovery() {
+        let mut status = DevStatus {
+            revision: 7,
+            error: None,
+        };
+
+        status.record_rebuild(Err("zutai::check: imported module has errors".to_owned()));
+        assert_eq!(status.revision, 7);
+        assert_eq!(
+            status.error.as_deref(),
+            Some("zutai::check: imported module has errors")
+        );
+
+        status.record_rebuild(Ok(()));
+        assert_eq!(status.revision, 8);
+        assert_eq!(status.error, None);
     }
 
     #[test]

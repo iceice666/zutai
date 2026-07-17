@@ -16,6 +16,20 @@ const STREAM_ZT: &str = include_str!("../../../../../stdlib/packages/base/module
 const PRELUDE_ZT: &str = include_str!("../../../../../stdlib/packages/base/modules/prelude.zt");
 const HTML_ZT: &str = include_str!("../../../../../stdlib/packages/web/modules/html.zt");
 const CSS_ZT: &str = include_str!("../../../../../stdlib/packages/web/modules/css.zt");
+const BROWSER_ZT: &str = include_str!("../../../../../stdlib/packages/web/modules/browser.zt");
+const TEXT_ZT: &str = include_str!("../../../../../stdlib/packages/base/modules/text.zt");
+const CMP_ZT: &str = include_str!("../../../../../stdlib/packages/base/modules/cmp.zt");
+const LIST_ZT: &str = include_str!("../../../../../stdlib/packages/base/modules/list.zt");
+
+const WEBSITE_MAIN_ZT: &str = include_str!("../../../../../website/main.zt");
+const WEBSITE_SECTIONS_ZT: &str = include_str!("../../../../../website/sections.zt");
+const WEBSITE_STYLES_ZT: &str = include_str!("../../../../../website/styles.zt");
+const WEBSITE_CONTENT_ZTI: &str = include_str!("../../../../../website/content.zti");
+const WEBSITE_DEMO_SERVICE_ZT: &str =
+    include_str!("../../../../../website/packages/demo/service.zt");
+
+const WEBSITE_ROOT_PACKAGE: &str = "pkg:576onpjaerbacli5x6elo72u3cbxey5224u423elgtsomzjadksa";
+const WEBSITE_DEMO_PACKAGE: &str = "pkg:p5nzwy3uv4ovxxqnqlx7telefznwag5pl6krdz6zyurwrluwyujq";
 
 /// A small model/update/view program: a toggleable status, a keyed list of
 /// text items (add via a draft `<input>`, remove per-item), covering
@@ -106,6 +120,64 @@ pub fn bundle() -> WebBundleV3 {
         zutai_semantic::STDLIB_COMPILER_COMPATIBILITY.to_string(),
         stdlib_sources,
         Default::default(),
+    )
+}
+
+/// The official self-hosted website as one filesystem-free bundle. Native and
+/// wasm browser tests consume this exact fixture, including its local package
+/// edge, quoted modules, inert data, and transitive stdlib closure.
+pub fn website_bundle() -> WebBundleV3 {
+    let sources = BTreeMap::from([
+        ("main.zt".to_owned(), WEBSITE_MAIN_ZT.to_owned()),
+        ("sections.zt".to_owned(), WEBSITE_SECTIONS_ZT.to_owned()),
+        ("styles.zt".to_owned(), WEBSITE_STYLES_ZT.to_owned()),
+        ("content.zti".to_owned(), WEBSITE_CONTENT_ZTI.to_owned()),
+    ]);
+    let stdlib_sources = BTreeMap::from([
+        ("stream".to_owned(), STREAM_ZT.to_owned()),
+        ("prelude".to_owned(), PRELUDE_ZT.to_owned()),
+        ("browser".to_owned(), BROWSER_ZT.to_owned()),
+        ("html".to_owned(), HTML_ZT.to_owned()),
+        ("css".to_owned(), CSS_ZT.to_owned()),
+        ("text".to_owned(), TEXT_ZT.to_owned()),
+        ("cmp".to_owned(), CMP_ZT.to_owned()),
+        ("list".to_owned(), LIST_ZT.to_owned()),
+    ]);
+    let packages = zutai_semantic::PortablePackageGraph {
+        root_package: Some(WEBSITE_ROOT_PACKAGE.to_owned()),
+        packages: BTreeMap::from([
+            (
+                WEBSITE_ROOT_PACKAGE.to_owned(),
+                zutai_semantic::PortablePackage {
+                    name: "zutai_website".to_owned(),
+                    dependencies: BTreeMap::from([(
+                        "demo".to_owned(),
+                        WEBSITE_DEMO_PACKAGE.to_owned(),
+                    )]),
+                    modules: BTreeMap::from([("main".to_owned(), "main.zt".to_owned())]),
+                    sources: BTreeMap::new(),
+                },
+            ),
+            (
+                WEBSITE_DEMO_PACKAGE.to_owned(),
+                zutai_semantic::PortablePackage {
+                    name: "zutai_website_demo".to_owned(),
+                    dependencies: BTreeMap::new(),
+                    modules: BTreeMap::from([("service".to_owned(), "service.zt".to_owned())]),
+                    sources: BTreeMap::from([(
+                        "service.zt".to_owned(),
+                        WEBSITE_DEMO_SERVICE_ZT.to_owned(),
+                    )]),
+                },
+            ),
+        ]),
+    };
+    WebBundleV3::new(
+        "main.zt".to_owned(),
+        sources,
+        zutai_semantic::STDLIB_COMPILER_COMPATIBILITY.to_owned(),
+        stdlib_sources,
+        packages,
     )
 }
 

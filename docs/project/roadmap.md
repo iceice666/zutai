@@ -5,7 +5,7 @@ is one stable surface specified under the [language specification](../spec/00-in
 Implementation history lives under [`docs/history/`](../history/README.md); this file contains
 only concrete open work.
 
-## Status (2026-07-16)
+## Status (2026-07-17)
 
 The implemented baseline is no longer syntax discovery. Zutai already has one
 stable surface with parser, HIR, THIR, TLC, reference-interpreter, native-AOT,
@@ -47,12 +47,6 @@ purity, typed host effects, or the TLC/Dataflow Core boundary.
 
 Milestones:
 
-2. **Self-hosted website as integration workload.** Treat the browser kernel and
-   web bundle path as a full-stack regression target: local packages, stdlib
-   imports, prerendered HTML hydration, retained-tree reconciliation, events,
-   keyed lists, controlled inputs, and live reload. Acceptance: focused native
-   tests plus the wasm-browser hydration scenario cover the same fixture, with
-   manual browser checks only where WebDriver is unavailable.
 3. **Demand-gated language boundary review.** Revisit reserved boundaries only
    with a motivating program and a concrete semantic rule. Each proposal must
    name parser impact, HIR/THIR/TLC impact, Dataflow Core/runtime impact,

@@ -2,6 +2,8 @@
 // from disk, so this test is native-only (see tests/fixture/mod.rs).
 #![cfg(not(target_arch = "wasm32"))]
 
+mod fixture;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -10,6 +12,7 @@ use zutai_browser::{
     decode_program, diff_children, prerender_document,
 };
 use zutai_eval::{EffectHandler, EvalError, TlcSession, Value};
+use zutai_semantic::{AnalysisOptions, StdlibSources};
 
 #[derive(Default)]
 struct RecordFocus {
@@ -59,6 +62,37 @@ fn load_website_program() -> (TlcSession, BrowserProgram, Value) {
     let session = TlcSession::from_analysis(&analysis).unwrap();
     let program = decode_program(&session, session.entry().unwrap()).unwrap();
     let model = program.initialize(&session, &RejectEffects).unwrap();
+    (session, program, model)
+}
+
+fn load_bundled_website_program() -> (TlcSession, BrowserProgram, Value) {
+    let bundle = fixture::website_bundle();
+    let json = serde_json::to_string(&bundle).expect("website bundle serializes");
+    let bundle: zutai_browser::WebBundleV3 =
+        serde_json::from_str(&json).expect("website bundle deserializes");
+    bundle
+        .validate_version()
+        .expect("website bundle version matches");
+    let stdlib =
+        StdlibSources::from_memory(bundle.stdlib_compiler_compatibility, bundle.stdlib_sources)
+            .expect("embedded website stdlib subset is well-formed");
+    let analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
+        &bundle.entry,
+        &bundle.sources,
+        AnalysisOptions::default(),
+        &stdlib,
+        bundle.packages,
+    )
+    .expect("website analyzes from its portable package graph");
+    let session = TlcSession::from_analysis(&analysis).expect("bundled website type-checks");
+    let program = decode_program(
+        &session,
+        session.entry().expect("website has an entry value"),
+    )
+    .expect("bundled website decodes as a browser program");
+    let model = program
+        .initialize(&session, &RejectEffects)
+        .expect("bundled website initializes without effects");
     (session, program, model)
 }
 
@@ -232,6 +266,51 @@ fn self_hosted_website_decodes_and_prerenders_through_the_browser_contract() {
     assert!(page.html.starts_with("<!doctype html><html lang=\"en\">"));
     assert!(page.html.contains("data-zutai-bootstrap"));
     assert!(page.html.contains("Zutai"));
+}
+
+#[test]
+fn self_hosted_website_portable_package_bundle_matches_native_entry() {
+    let (native_session, native_program, native_model) = load_website_program();
+    let (bundle_session, bundle_program, bundle_model) = load_bundled_website_program();
+
+    let native_document = native_program
+        .render(&native_session, native_model)
+        .expect("native website render succeeds");
+    let bundled_document = bundle_program
+        .render(&bundle_session, bundle_model.clone())
+        .expect("bundled website render succeeds");
+    let native_page = prerender_document(&native_document, "/_zutai/test/bootstrap.js")
+        .expect("native website prerenders");
+    let bundled_page = prerender_document(&bundled_document, "/_zutai/test/bootstrap.js")
+        .expect("bundled website prerenders");
+    assert_eq!(bundled_page.html, native_page.html);
+
+    let toggle_button = find_by_id(&bundled_document.body, "toggle-payments-edge")
+        .expect("package-backed toggle button renders");
+    let toggled_model = bundle_program
+        .transition(
+            &bundle_session,
+            click_message(toggle_button),
+            bundle_model,
+            &RejectEffects,
+        )
+        .expect("package-backed transition succeeds");
+    let keys = render_demo_roster_keys(&bundle_session, &bundle_program, &toggled_model);
+    assert_eq!(
+        keys,
+        vec![
+            "auth-core",
+            "search-index",
+            "batch-archiver",
+            "payments-edge"
+        ]
+    );
+    let toggled_document = bundle_program
+        .render(&bundle_session, toggled_model)
+        .expect("package-backed re-render succeeds");
+    let row = roster_row(&toggled_document, "payments-edge")
+        .expect("package-backed service row still renders");
+    assert!(has_class(row, "is-paused"));
 }
 
 #[test]

@@ -12,11 +12,9 @@
 //! cargo test --target wasm32-unknown-unknown -p zutai-browser --test browser_hydration
 //! ```
 //!
-//! Scoped to `--test browser_hydration` deliberately: this is the only test
-//! binary in the crate written against `wasm-bindgen-test`, and it shares
-//! one browser page/DOM across its tests, which is why everything below is
-//! one `#[wasm_bindgen_test]` walking a single scenario end to end rather
-//! than several independent tests that could stomp on each other's `<body>`.
+//! Scoped to `--test browser_hydration` deliberately: this test binary owns
+//! one browser page/DOM, so the test walks the small reconciler fixture and the
+//! official package-backed website fixture as one sequential scenario.
 #![cfg(target_arch = "wasm32")]
 
 mod fixture;
@@ -32,6 +30,21 @@ fn document() -> web_sys::Document {
         .expect("browser window")
         .document()
         .expect("browser document")
+}
+
+fn preserve_test_output() {
+    let document = document();
+    let output = document
+        .get_element_by_id("output")
+        .expect("wasm-bindgen-test output element");
+    output
+        .set_attribute("hidden", "")
+        .expect("test output can be hidden");
+    document
+        .head()
+        .expect("browser document head")
+        .append_child(&output)
+        .expect("test output can move outside the application body");
 }
 
 fn query(selector: &str) -> Element {
@@ -62,7 +75,11 @@ fn same_node(a: &Node, b: &Node) -> bool {
 }
 
 #[wasm_bindgen_test]
-fn hydrates_reconciles_keyed_list_and_restores_focus() {
+fn hydrates_reconciles_and_runs_the_package_backed_website() {
+    // `start()` owns and patches the whole body. wasm-bindgen-test writes its
+    // completion marker through `#output`, so keep that node connected in the
+    // head while Zutai exercises the application body.
+    preserve_test_output();
     let bundle_json = serde_json::to_string(&fixture::bundle()).expect("bundle serializes");
     zutai_browser::start(&bundle_json, false).expect("start hydrates the document");
 
@@ -173,4 +190,66 @@ fn hydrates_reconciles_keyed_list_and_restores_focus() {
     let active_input: HtmlInputElement = active.dyn_into().expect("draft input stays an input");
     assert_eq!(active_input.selection_start().ok().flatten(), Some(2));
     assert_eq!(active_input.selection_end().ok().flatten(), Some(5));
+
+    // --- Official self-hosted website through the same package-backed bundle
+    // exercised by native tests ---
+    let bundle_json =
+        serde_json::to_string(&fixture::website_bundle()).expect("website bundle serializes");
+    zutai_browser::start(&bundle_json, false).expect("self-hosted website hydrates");
+
+    assert_eq!(
+        query("#demo-ready-count").text_content().as_deref(),
+        Some("2")
+    );
+    assert_eq!(
+        query("#demo-total-count").text_content().as_deref(),
+        Some("4")
+    );
+    let auth_node: Node = query("[data-zutai-key='auth-core']").into();
+
+    type_into("#demo-draft", "cache-warm");
+    click("#demo-add");
+    assert_eq!(
+        query("#demo-ready-count").text_content().as_deref(),
+        Some("3")
+    );
+    assert_eq!(
+        query("#demo-total-count").text_content().as_deref(),
+        Some("5")
+    );
+    assert!(
+        same_node(&auth_node, &query("[data-zutai-key='auth-core']").into()),
+        "adding a package-backed row must retain existing keyed nodes"
+    );
+    let draft: HtmlInputElement = query("#demo-draft").dyn_into().unwrap();
+    assert_eq!(draft.value(), "");
+    assert!(
+        same_node(
+            draft.as_ref(),
+            document().active_element().unwrap().as_ref()
+        ),
+        "browser.focus from the package-backed update restores the controlled input"
+    );
+
+    click("#toggle-payments-edge");
+    assert_eq!(
+        query("#demo-ready-count").text_content().as_deref(),
+        Some("2")
+    );
+    assert!(
+        query("[data-zutai-key='payments-edge']")
+            .get_attribute("class")
+            .as_deref()
+            .is_some_and(|classes| classes.split_whitespace().any(|class| class == "is-paused"))
+    );
+    let roster = query("#demo-roster");
+    let last = roster.last_element_child().expect("roster has a final row");
+    assert_eq!(
+        last.get_attribute("data-zutai-key").as_deref(),
+        Some("payments-edge")
+    );
+    assert!(
+        same_node(&auth_node, &query("[data-zutai-key='auth-core']").into()),
+        "keyed reorder must retain unaffected website rows"
+    );
 }

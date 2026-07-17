@@ -6,6 +6,7 @@ html ::= import stdlib.html;
 text ::= import stdlib.text;
 cmp ::= import stdlib.cmp;
 list ::= import stdlib.list;
+demoDomain ::= import demo.service;
 copy ::= import "content.zti";
 
 -- ── Shared shapes ────────────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ Stage :: type { name : Text; note : Text; };
 Step :: type { command : Text; note : Text; };
 FooterGroup :: type { head : Text; links : List Resource; };
 ModeCopy :: type { tab : Text; label : Text; title : Text; body : Text; code : List (List Token); };
-Service :: type { name : Text; errors : Int; enabled : Bool; };
+Service :: type demoDomain.Service;
 
 TokenKind :: type { #kw; #ty; #fn; #pn; #op; #st; #cm; #at; #nm; #pl; };
 Token :: type { k : TokenKind; t : Text; };
@@ -177,7 +178,7 @@ modes :: <M> Bool -> M -> M -> html.Html M
 -- logic the hero shows, so adding, pausing, or erroring a service recomputes
 -- the readiness rollup live. Every render feeds the browser kernel's retained-
 -- tree reconciler — keyed rows move by health, status pills diff in place.
-DemoStatus :: type { #ready; #paused; #erroring; };
+DemoStatus :: type demoDomain.DemoStatus;
 DemoHandlers :: <M> type {
   add : M;
   setDraft : Text -> M;
@@ -187,23 +188,14 @@ DemoHandlers :: <M> type {
   clearErrors : Text -> M;
 };
 
-healthy :: Service -> Bool
-  = svc => svc.enabled && svc.errors == 0;
+healthy :: Service -> Bool = demoDomain.healthy;
 
 ready :: List Service -> Int
   = services => length (filter healthy services);
 
-serviceStatus :: Service -> DemoStatus
-  = svc =>
-    if not svc.enabled then #paused
-    else if svc.errors > 0 then #erroring
-    else #ready;
+serviceStatus :: Service -> DemoStatus = demoDomain.status;
 
-statusRank :: Service -> Int
-  = svc =>
-    if not svc.enabled then 2
-    else if svc.errors > 0 then 1
-    else 0;
+statusRank :: Service -> Int = demoDomain.statusRank;
 
 compareService :: Service -> Service -> cmp.Ordering
   = left right => [
@@ -212,7 +204,7 @@ compareService :: Service -> Service -> cmp.Ordering
   ];
 
 sortServices :: List Service -> List Service
-  = svcs => list.sortBy compareService svcs;
+  = services => list.sortBy compareService services;
 
 digitText :: Int -> Text
   = digit =>
