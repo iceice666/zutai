@@ -214,7 +214,7 @@ impl<'thir> Lowerer<'thir> {
                 seen.remove(&binding);
                 result
             }
-            TypeKind::Con(binding) => Some(format!("@{}", binding.0)),
+            TypeKind::Con(binding) => self.thir.binding_names.get(binding.0 as usize).cloned(),
             TypeKind::Apply { .. } => {
                 let (head, args) = self.thir_app_spine(ty);
                 // Saturated named-alias application keys like the AliasApply arm.

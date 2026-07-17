@@ -382,6 +382,22 @@ impl<'hir> Lowerer<'hir> {
             (TypeKind::Apply { func: ef, arg: ea }, TypeKind::Apply { func: ff, arg: fa }) => {
                 self.type_matches(ef, ff) && self.type_matches(ea, fa)
             }
+            // First-order constructor inference mirrors `unify_inner`: a call
+            // whose expected type is `?F A` may discover a concrete unary
+            // constructor from a value of type `List B` (and the other supported
+            // builtin constructors). Do not synthesize arbitrary higher-order
+            // constructor functions.
+            (TypeKind::Apply { func, arg }, concrete)
+                if matches!(self.ty(self.resolve(func)).kind, TypeKind::InferVar(_)) =>
+            {
+                self.match_abstract_constructor_apply(func, arg, found, &concrete, e_span)
+            }
+            (concrete, TypeKind::Apply { func, arg })
+                if matches!(self.ty(self.resolve(func)).kind, TypeKind::InferVar(_)) =>
+            {
+                self.match_abstract_constructor_apply(func, arg, expected, &concrete, f_span)
+            }
+
             // Two universes match up to cumulativity on their levels. The found
             // type-value's universe must fit within the expected (annotated) one;
             // `check_universe_fits` emits `ExplicitLevelTooLow` on a concrete
@@ -397,6 +413,42 @@ impl<'hir> Lowerer<'hir> {
             self.type_match_in_progress.remove(&key);
         }
         result
+    }
+
+    fn match_abstract_constructor_apply(
+        &mut self,
+        func: TypeId,
+        arg: TypeId,
+        _concrete_ty: TypeId,
+        concrete: &TypeKind,
+        span: Span,
+    ) -> bool {
+        let (head, concrete_arg) = match concrete {
+            TypeKind::List(item) => ("List", *item),
+            TypeKind::Optional(item) => ("Optional", *item),
+            TypeKind::Maybe(item) => ("Maybe", *item),
+            TypeKind::Code(item) => ("Code", *item),
+            TypeKind::Patch {
+                target,
+                deep: false,
+            } => ("Patch", *target),
+            TypeKind::Patch { target, deep: true } => ("DeepPatch", *target),
+            _ => return false,
+        };
+        let Some(binding) = self
+            .hir
+            .bindings
+            .iter()
+            .position(|binding| binding.kind == BindingKind::BuiltinType && binding.name == head)
+            .map(|index| BindingId(index as u32))
+        else {
+            return false;
+        };
+        let constructor = self.alloc_type(Type {
+            kind: TypeKind::Con(binding),
+            span,
+        });
+        self.type_matches(func, constructor) && self.type_matches(arg, concrete_arg)
     }
 
     fn forall_matches_type(

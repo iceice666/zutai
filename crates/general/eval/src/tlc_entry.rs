@@ -610,6 +610,7 @@ fn thir_runtime_target_key_inner(
             seen.pop();
             key
         }
+        TypeKind::Con(binding) => thir_file.binding_names.get(binding.0 as usize).cloned(),
         _ => None,
     }
 }

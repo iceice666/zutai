@@ -16,7 +16,10 @@ pub mod witness_pattern;
 mod tests;
 
 pub use diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
-pub use export::{ExportUnsupported, export_type, export_type_alias_value, export_type_value};
+pub use export::{
+    ExportUnsupported, export_type, export_type_alias_value, export_type_value,
+    export_witness_target,
+};
 pub use import::{
     ImportKey, ImportedEffectOp, ImportedField, ImportedFieldProvenance, ImportedProvenance,
     ImportedProvenanceChildren, ImportedRowTail, ImportedTupleItem, ImportedType,

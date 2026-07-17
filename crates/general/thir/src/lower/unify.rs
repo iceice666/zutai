@@ -371,6 +371,38 @@ impl<'hir> Lowerer<'hir> {
                 self.unify_inner(a1, a2, span, seen_alias_pairs);
             }
 
+            // First-order constructor inference: when an abstract constructor
+            // application meets a saturated concrete constructor, solve the
+            // abstract head and then compare the application arguments. This is
+            // the Miller-pattern case needed by `F A ~ List B`; the kind checker
+            // has already constrained `F` to `Type -> Type`, and we intentionally
+            // do not synthesize higher-order constructor functions here.
+            (TypeKind::Apply { func, arg }, concrete)
+                if matches!(
+                    self.type_arena[self.resolve(func).0 as usize].kind,
+                    TypeKind::InferVar(_)
+                ) && self.unify_abstract_constructor_apply(
+                    func,
+                    arg,
+                    t2,
+                    &concrete,
+                    span,
+                    seen_alias_pairs,
+                ) => {}
+
+            (concrete, TypeKind::Apply { func, arg })
+                if matches!(
+                    self.type_arena[self.resolve(func).0 as usize].kind,
+                    TypeKind::InferVar(_)
+                ) && self.unify_abstract_constructor_apply(
+                    func,
+                    arg,
+                    t1,
+                    &concrete,
+                    span,
+                    seen_alias_pairs,
+                ) => {}
+
             (left, right) => {
                 // Cross-form applications: canonicalize via `resolve_alias` (folds
                 // builtin `Con` apps and expands saturated named-alias apps) so a
@@ -401,6 +433,53 @@ impl<'hir> Lowerer<'hir> {
                 }
             }
         }
+    }
+
+    /// Solve the first-order constructor metavariable in `Apply(?f, arg)` when
+    /// the other side is a saturated unary constructor such as `List item`.
+    /// Returns `false` for non-constructor shapes so ordinary mismatch handling
+    /// remains authoritative.
+    fn unify_abstract_constructor_apply(
+        &mut self,
+        func: TypeId,
+        arg: TypeId,
+        concrete_ty: TypeId,
+        concrete: &TypeKind,
+        span: Span,
+        seen_alias_pairs: &mut FxHashSet<(BindingId, BindingId)>,
+    ) -> bool {
+        let (head, concrete_arg) = match concrete {
+            TypeKind::List(item) => ("List", *item),
+            TypeKind::Optional(item) => ("Optional", *item),
+            TypeKind::Maybe(item) => ("Maybe", *item),
+            TypeKind::Code(item) => ("Code", *item),
+            TypeKind::Patch {
+                target,
+                deep: false,
+            } => ("Patch", *target),
+            TypeKind::Patch { target, deep: true } => ("DeepPatch", *target),
+            _ => return false,
+        };
+        let Some(binding) = self
+            .hir
+            .bindings
+            .iter()
+            .position(|binding| binding.kind == BindingKind::BuiltinType && binding.name == head)
+            .map(|index| BindingId(index as u32))
+        else {
+            return false;
+        };
+        let constructor = self.alloc_type(Type {
+            kind: TypeKind::Con(binding),
+            span,
+        });
+        self.unify_inner(func, constructor, span, seen_alias_pairs);
+        self.unify_inner(arg, concrete_arg, span, seen_alias_pairs);
+
+        // Preserve the concrete type's identity for diagnostics and downstream
+        // zonking; the two component unifications above carry the real solving.
+        let _ = concrete_ty;
+        true
     }
 
     pub(in crate::lower) fn expand_alias_apply_once(

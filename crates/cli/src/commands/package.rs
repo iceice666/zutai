@@ -14,6 +14,9 @@ pub(crate) enum PackageCommand {
         /// Refuse all network access and use only cached Git objects/snapshots
         #[arg(long)]
         offline: bool,
+        /// Local transport override for deterministic package fixtures
+        #[arg(long, value_names = ["URL", "PATH"], num_args = 2, hide = true)]
+        transport_override: Option<Vec<String>>,
     },
     /// Fill the cache from an unchanged valid lockfile
     Fetch {
@@ -23,6 +26,9 @@ pub(crate) enum PackageCommand {
         /// Refuse all network access and use only cached Git objects/snapshots
         #[arg(long)]
         offline: bool,
+        /// Local transport override for deterministic package fixtures
+        #[arg(long, value_names = ["URL", "PATH"], num_args = 2, hide = true)]
+        transport_override: Option<Vec<String>>,
     },
     /// Re-resolve all or selected root dependency aliases and rewrite the lock
     Update {
@@ -34,27 +40,48 @@ pub(crate) enum PackageCommand {
         /// Refuse all network access and use only cached Git objects/snapshots
         #[arg(long)]
         offline: bool,
+        /// Local transport override for deterministic package fixtures
+        #[arg(long, value_names = ["URL", "PATH"], num_args = 2, hide = true)]
+        transport_override: Option<Vec<String>>,
     },
 }
 
 impl PackageCommand {
     pub(crate) fn run(self) -> Result<(), Box<dyn Error>> {
-        let (path, offline, operation) = match &self {
-            Self::Sync { path, offline } => (path, *offline, Operation::Sync),
-            Self::Fetch { path, offline } => (path, *offline, Operation::Fetch),
+        let (path, offline, operation, transport_override) = match &self {
+            Self::Sync {
+                path,
+                offline,
+                transport_override,
+            } => (path, *offline, Operation::Sync, transport_override),
+            Self::Fetch {
+                path,
+                offline,
+                transport_override,
+            } => (path, *offline, Operation::Fetch, transport_override),
             Self::Update {
                 aliases,
                 path,
                 offline,
-            } => (path, *offline, Operation::Update(aliases)),
+                transport_override,
+            } => (
+                path,
+                *offline,
+                Operation::Update(aliases),
+                transport_override,
+            ),
         };
+        let transport_overrides = transport_override
+            .as_ref()
+            .map(|values| [(values[0].clone(), PathBuf::from(&values[1]))])
+            .unwrap_or_default();
         let root = package_root(path)?;
         let lock = zutai_package::acquire::run(AcquireOptions {
             root: &root,
             cache_dir: None,
             offline,
             operation,
-            transport_overrides: &[],
+            transport_overrides: &transport_overrides,
         })?;
         println!(
             "Prepared {} package nodes in {}",

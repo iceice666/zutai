@@ -1,3 +1,4 @@
-Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }
-Functor @List :: { map = \f xs. xs; }
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Config :: type { port : Int; };
+Eq @(Patch Config) :: { eq = \a b. true; }
 1

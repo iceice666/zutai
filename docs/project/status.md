@@ -154,9 +154,14 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (import-aware completion and workspace symbols:
-package aliases, nested public modules, imported members, and unopened dependency
-symbols use the prepared recorded graph with exact overlay-aware locations);
+_Last updated: 2026-07-17 (imported higher-kinded witness execution: bare
+first-order constructor witnesses retain stable structural target keys across
+module/package boundaries and match the TLC evaluator at multiple element
+types; higher-order or otherwise non-matchable exports keep source-located
+native refusal); prior baseline updates: 2026-07-17 (import-aware completion and
+workspace symbols: package aliases, nested public modules, imported members,
+and unopened dependency symbols use the prepared recorded graph with exact
+overlay-aware locations);
 prior baseline updates: 2026-07-17 (package-wide editor references and safe rename:
 cross-package value/type references follow exact re-export origins through
 unsaved overlays, rename preserves a valid project and refuses locked-Git or
@@ -490,9 +495,10 @@ compatibility `zutai-cli web` subcommand), and a pure-Zutai official website; se
   imports compile natively** via one-arena Dataflow Core merge (Phase A): imported
   modules are lowered into the same graph under a `$dep{idx}$` namespace prefix;
   the root references the dep's module-value global (`$dep{idx}$$value`).
-  Imported concrete witnesses and structurally matchable conditional witnesses
-  compile natively through extern witness tables; higher-kinded or otherwise
-  non-matchable witness exports still reject before DC by the witness gate.
+  Imported concrete, bare first-order constructor, and structurally matchable
+  conditional witnesses compile natively through stable-keyed extern witness
+  tables; higher-order or otherwise non-matchable witness exports still reject
+  before Dataflow Core with source-located diagnostics.
 - `compile --emit=llvm|obj|bin` selects LLVM text, object, or native binary
   output. Object/binary modes invoke `llc`/`clang`, link `libzutai_rt`, emit
   actionable diagnostics when the host toolchain is absent, and produce

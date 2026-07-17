@@ -2378,7 +2378,22 @@ mod tests {
     }
 
     #[test]
-    fn native_import_refusal_retains_request_and_export_locations() {
+    fn imported_higher_kinded_witness_is_native_matchable() {
+        let source = "m ::= import \"hkt_witness_list.zt\";\nm\n";
+        let analysis = analyze_in_imports(source);
+        assert!(
+            analysis.native_import_diagnostics().is_empty(),
+            "bare first-order constructor witness should cross imports"
+        );
+        assert!(analysis.witness_exports.iter().any(|witness| {
+            witness.constraint == "Functor"
+                && witness.target_key == "List"
+                && witness.conditional.is_none()
+        }));
+    }
+
+    #[test]
+    fn genuinely_nonmatchable_witness_keeps_source_located_refusal() {
         let source = "m ::= import \"nonmatchable_witness.zt\";\nm\n";
         let analysis = analyze_in_imports(source);
         let diagnostics = analysis.native_import_diagnostics();
@@ -2399,7 +2414,6 @@ mod tests {
             "non-matchable witness exported here"
         );
     }
-
     #[test]
     fn cross_module_conflicting_witnesses_report_import_error() {
         let analysis = analyze_in_imports(

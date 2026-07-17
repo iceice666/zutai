@@ -241,6 +241,25 @@ fn export_higher_kinded_constructor_param_is_refused() {
     );
 }
 
+#[test]
+fn export_witness_target_preserves_bare_builtin_constructor() {
+    let file = completed_file(
+        "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\n1",
+    );
+    let target = file
+        .decl_arena
+        .iter()
+        .find_map(|(_, decl)| match &decl.kind {
+            ThirDeclKind::Witness { target, .. } => Some(*target),
+            _ => None,
+        })
+        .expect("witness target");
+    assert!(matches!(
+        export_witness_target(&file, target),
+        Ok(ImportedType::ConApply { ctor, args }) if ctor == "List" && args.is_empty()
+    ));
+}
+
 // ── type_matches: Record / Tuple / Union / List deep match ───────────────────
 
 #[test]

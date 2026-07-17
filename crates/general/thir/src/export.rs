@@ -44,6 +44,23 @@ pub fn export_type(file: &ThirFile, ty: TypeId) -> Result<ImportedType, ExportUn
     export(file, &aliases, ty, &mut seen)
 }
 
+/// Export a witness target into a portable structural descriptor. Unlike an
+/// ordinary value type, a witness may target a bare first-order constructor
+/// (`Functor @List`), which must retain that constructor identity across module
+/// arenas instead of collapsing to [`ImportedType::Unknown`].
+pub fn export_witness_target(
+    file: &ThirFile,
+    ty: TypeId,
+) -> Result<ImportedType, ExportUnsupported> {
+    match file.type_arena[ty.0 as usize].kind {
+        TypeKind::Con(binding) => Ok(ImportedType::ConApply {
+            ctor: file.binding_names[binding.0 as usize].clone(),
+            args: Vec::new(),
+        }),
+        _ => export_type(file, ty),
+    }
+}
+
 /// Export a type-value's denotation, preserving a parametric constructor's
 /// binder so it can be applied on the import side (`s.Stream Int`).
 ///

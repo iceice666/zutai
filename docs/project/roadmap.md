@@ -33,20 +33,13 @@ subset already accepted by the frontend.
 
 Milestones, in order:
 
-1. **Imported higher-kinded witness execution.** Carry matchable constructor
-   witnesses such as `Functor @List` and `Foldable @List` across package
-   boundaries through TLC, Dataflow Core, and native codegen. Higher-order kind
-   targets remain out of scope. Gate: path-package and locked-Git fixtures use
-   one imported constructor witness at multiple element types and match the TLC
-   evaluator; genuinely non-matchable exports keep the existing source-located
-   refusal.
-2. **General closed config-overlay lowering.** Remove the current call-shape gate
+1. **General closed config-overlay lowering.** Remove the current call-shape gate
    for well-typed closed `Patch`/`DeepPatch` values, including computed and
    partially applied overlays plus optional nested records. Keep open rows and
    deletion semantics refused until independently specified. Gate: shallow/deep,
    qualified/destructured, computed, and optional-record cases match the
    reference evaluator through native binaries and shared-library JSON exports.
-3. **Measured optimization gate.** Establish repeatable compile-time, runtime,
+2. **Measured optimization gate.** Establish repeatable compile-time, runtime,
    allocation, and output-size baselines for the website, configuration/decoder,
    stream, and effectful service workloads. Profile before scheduling an
    optimization. The first optimization milestone must cite the measured

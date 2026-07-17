@@ -1375,7 +1375,7 @@ pub(crate) fn local_witness_exports(
         else {
             continue;
         };
-        let Ok(exported_target) = zutai_thir::export_type(file, *target) else {
+        let Ok(exported_target) = zutai_thir::export_witness_target(file, *target) else {
             continue;
         };
         let constraint = binding_name(hir, *constraint).to_string();
@@ -1503,8 +1503,12 @@ fn imported_type_key(ty: &ImportedType) -> String {
             format!("\\<{}>{}", ps.join(","), imported_type_key(body))
         }
         ImportedType::ConApply { ctor, args } => {
-            let parts: Vec<String> = args.iter().map(imported_type_key).collect();
-            format!("{ctor}[{}]", parts.join(","))
+            if args.is_empty() {
+                ctor.clone()
+            } else {
+                let parts: Vec<String> = args.iter().map(imported_type_key).collect();
+                format!("{ctor}[{}]", parts.join(","))
+            }
         }
         ImportedType::TyVar(id) => format!("'{id}"),
         ImportedType::Unknown => "?".to_string(),

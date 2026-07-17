@@ -35,6 +35,79 @@ fn write_tmp(name: &str, content: &str) -> String {
     path.to_str().unwrap().to_string()
 }
 
+fn package_manifest(name: &str, modules: &str, dependencies: &str) -> String {
+    format!(
+        "{{ formatVersion = 2; name = \"{name}\"; compilerCompatibility = \">=0.1.0, <0.2.0\"; modules = {modules}; dependencies = {dependencies}; }}"
+    )
+}
+
+fn git_worktree<const N: usize>(repo: &Path, args: [&str; N]) {
+    let output = StdCommand::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn git_worktree_text<const N: usize>(repo: &Path, args: [&str; N]) -> String {
+    let output = StdCommand::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git failed: {output:?}");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+fn hkt_functor_module() -> &'static str {
+    concat!(
+        "listMap :: <A, B> (A -> B) -> List A -> List B = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (listMap f t); };\n",
+        "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\n",
+        "Functor @List :: { map = listMap; }\n",
+        "{ marker = 1; }\n",
+    )
+}
+
+fn hkt_functor_entry(import: &str) -> String {
+    format!(
+        "_ ::= import {import};\nFunctor :: <F :: Type -> Type> @F {{ map :: <A, B> (A -> B) -> F A -> F B; }}\nints :: List Int = {{ 1; 2; }};\ntexts :: List Text = {{ \"a\"; \"b\"; }};\n(length (map (\\x. x + 1) ints), length (map (\\x. x) texts))\n"
+    )
+}
+
+fn assert_run_compile_parity(entry: &Path, binary: &Path, cache: Option<&Path>) -> String {
+    let mut run = cli();
+    run.arg("run").arg(entry);
+    if let Some(cache) = cache {
+        run.env("ZUTAI_PACKAGE_CACHE", cache);
+    }
+    let interp = run.assert().success().get_output().stdout.clone();
+    let interp = String::from_utf8(interp).expect("run output should be UTF-8");
+
+    let mut compile = cli();
+    compile
+        .arg("compile")
+        .arg("--emit=bin")
+        .arg(entry)
+        .arg("-o")
+        .arg(binary);
+    if let Some(cache) = cache {
+        compile.env("ZUTAI_PACKAGE_CACHE", cache);
+    }
+    compile.assert().success();
+    let native = StdCommand::new(binary).output().unwrap();
+    assert!(native.status.success(), "{native:?}");
+    let native = String::from_utf8(native.stdout).expect("native output should be UTF-8");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    native
+}
+
 #[test]
 fn format_zt_preserves_comments_and_compatibility_spellings() {
     let path = write_tmp(
@@ -154,6 +227,111 @@ fn local_package_dependency_checks_and_runs() {
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
     }
+}
+
+#[test]
+fn path_package_higher_kinded_witness_matches_oracle_at_multiple_element_types() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "zutai-cli-hkt-path-package-{}-{nonce}",
+        std::process::id()
+    ));
+    let app = root.join("app");
+    let functor = root.join("functor");
+    std::fs::create_dir_all(app.join("src")).unwrap();
+    std::fs::create_dir_all(functor.join("src")).unwrap();
+    std::fs::write(
+        app.join("zutai.zti"),
+        r#"{
+  formatVersion = 1;
+  name = "app";
+  compilerCompatibility = "0.1.0";
+  modules = [];
+  dependencies = [{ alias = "functor"; path = "../functor"; };];
+}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        functor.join("zutai.zti"),
+        r#"{
+  formatVersion = 1;
+  name = "functor";
+  compilerCompatibility = "0.1.0";
+  modules = [{ name = "api"; path = "src/api.zt"; };];
+  dependencies = [];
+}"#,
+    )
+    .unwrap();
+    std::fs::write(functor.join("src/api.zt"), hkt_functor_module()).unwrap();
+    let entry = app.join("src/main.zt");
+    std::fs::write(&entry, hkt_functor_entry("functor.api")).unwrap();
+
+    let output = assert_run_compile_parity(&entry, &root.join("path-package-bin"), None);
+    assert_eq!(output.trim(), "(2, 2)");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn locked_git_package_higher_kinded_witness_matches_oracle_at_multiple_element_types() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "zutai-cli-hkt-git-package-{}-{nonce}",
+        std::process::id()
+    ));
+    let repo = root.join("repo");
+    let app = root.join("app");
+    let cache = root.join("cache");
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::create_dir_all(app.join("src")).unwrap();
+    git_worktree(&repo, ["init"]);
+    git_worktree(&repo, ["config", "user.email", "test@example.com"]);
+    git_worktree(&repo, ["config", "user.name", "Zutai Test"]);
+    std::fs::write(
+        repo.join("zutai.zti"),
+        package_manifest(
+            "functor",
+            "[{ name = \"api\"; path = \"src/api.zt\"; };]",
+            "[]",
+        ),
+    )
+    .unwrap();
+    std::fs::write(repo.join("src/api.zt"), hkt_functor_module()).unwrap();
+    git_worktree(&repo, ["add", "."]);
+    git_worktree(&repo, ["commit", "-m", "fixture"]);
+    let commit = git_worktree_text(&repo, ["rev-parse", "HEAD"]);
+    let url = "https://fixtures.invalid/functor.git";
+    std::fs::write(
+        app.join("zutai.zti"),
+        package_manifest(
+            "app",
+            "[]",
+            &format!(
+                "[{{ alias = \"functor\"; source = {{ kind = #git; url = \"{url}\"; rev = \"{commit}\"; }}; }};]"
+            ),
+        ),
+    )
+    .unwrap();
+    let entry = app.join("src/main.zt");
+    std::fs::write(&entry, hkt_functor_entry("functor.api")).unwrap();
+
+    cli()
+        .env("ZUTAI_PACKAGE_CACHE", &cache)
+        .args(["package", "sync", "--transport-override", url])
+        .arg(&repo)
+        .arg(&app)
+        .assert()
+        .success();
+    let output = assert_run_compile_parity(&entry, &root.join("git-package-bin"), Some(&cache));
+    assert_eq!(output.trim(), "(2, 2)");
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -5882,14 +6060,14 @@ fn backend_refusal_matrix_matches_documented_support() {
             "zutai::backend::entry_type_unsupported",
         ),
         (
-            "nonmatchable_witness_export.zt",
-            "zutai::backend::import_witness_non_matchable",
-        ),
-        (
             "nonprincipal_inference.zt",
             "zutai::thir::row_annotation_required",
         ),
         ("non_tail_yield_from.zt", "zutai::hir::non_tail_yield_from"),
+        (
+            "nonmatchable_witness_export.zt",
+            "zutai::backend::import_witness_non_matchable",
+        ),
     ] {
         cli()
             .arg("compile")
@@ -6131,41 +6309,37 @@ fn compile_zt_diamond_import_matches_oracle() {
     assert!(native.trim().contains("23"), "expected 23, got {native:?}");
 }
 #[test]
-fn compile_imported_nonmatchable_witness_reports_use_and_export_sources() {
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "zutai-cli-import-warning-{}-{nonce}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let dep_path = dir.join("dep.zt");
-    let root_path = dir.join("main.zt");
-    let output_path = dir.join("main-bin");
-    std::fs::write(
-        &dep_path,
-        "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\n1\n",
-    )
-    .unwrap();
-    std::fs::write(&root_path, "m ::= import \"dep.zt\";\nm\n").unwrap();
-
-    cli()
-        .args(["compile", root_path.to_str().unwrap(), "-o"])
-        .arg(&output_path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("main.zt"))
-        .stderr(predicate::str::contains(
-            "zutai::backend::import_witness_non_matchable",
-        ))
-        .stderr(predicate::str::contains("dep.zt"))
-        .stderr(predicate::str::contains(
-            "non-matchable witness exported here",
-        ));
-
-    let _ = std::fs::remove_dir_all(dir);
+fn compile_zt_imported_higher_kinded_witness_matches_oracle() {
+    // A bare first-order constructor witness (`Functor @List`) must retain the
+    // constructor's stable structural key across the import boundary. Exercise
+    // one imported dictionary at two independent method instantiations.
+    let (interp, native) = import_run_vs_compile(
+        "zt_witness_hkt_list",
+        "main.zt",
+        &[
+            (
+                "functor_lib.zt",
+                concat!(
+                    "listMap :: <A, B> (A -> B) -> List A -> List B = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (listMap f t); };\n",
+                    "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\n",
+                    "Functor @List :: { map = listMap; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ ::= import \"functor_lib.zt\";\n",
+                    "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\n",
+                    "ints :: List Int = { 1; 2; };\n",
+                    "texts :: List Text = { \"a\"; \"b\"; };\n",
+                    "(length (map (\\x. x + 1) ints), length (map (\\x. x) texts))\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert_eq!(native.trim(), "(2, 2)");
 }
 
 #[test]

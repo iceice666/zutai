@@ -3123,7 +3123,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let dep_path = dir.join("dep.zt");
         let root_path = dir.join("main.zt");
-        let dep_source = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @List :: { map = \\f xs. xs; }\n1\n";
+        let dep_source = "Eq :: <A> @A { eq :: A -> A -> Bool; }\nConfig :: type { port : Int; };\nEq @(Patch Config) :: { eq = \\a b. true; }\n1\n";
         let root_source = "m ::= import \"dep.zt\";\nm\n";
         std::fs::write(&dep_path, dep_source).unwrap();
         std::fs::write(&root_path, root_source).unwrap();
@@ -3159,7 +3159,7 @@ mod tests {
         let related = warning["relatedInformation"].as_array().unwrap();
         assert_eq!(related.len(), 1);
         assert_eq!(related[0]["location"]["uri"], json!(file_uri(&dep_path)));
-        assert_eq!(related[0]["location"]["range"]["start"]["line"], json!(1));
+        assert_eq!(related[0]["location"]["range"]["start"]["line"], json!(2));
         assert_eq!(
             related[0]["message"],
             json!("non-matchable witness exported here")
