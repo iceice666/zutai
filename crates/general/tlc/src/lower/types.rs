@@ -526,7 +526,7 @@ impl<'thir> Lowerer<'thir> {
         }
     }
 
-    fn lower_patch_type_with_subst(
+    pub(super) fn lower_patch_type_with_subst(
         &mut self,
         target: TypeId,
         deep: bool,

@@ -188,13 +188,21 @@ impl<'a> TlcEvaluator<'a> {
         &self,
         fields: &Rc<Vec<(Rc<str>, Thunk)>>,
         field: &str,
-    ) -> Value {
-        match fields.iter().find(|(name, _)| name.as_ref() == field) {
-            None => Value::Atom(Rc::from("absent")),
-            Some((_, thunk)) => Value::TaggedValue {
+    ) -> Result<Value, EvalError> {
+        let Some((_, thunk)) = fields.iter().find(|(name, _)| name.as_ref() == field) else {
+            return Ok(Value::Atom(Rc::from("absent")));
+        };
+        match thunk.force_tlc(self)? {
+            Value::Atom(tag) if tag.as_ref() == "absent" => Ok(Value::Atom(tag)),
+            Value::TaggedValue { tag, payload }
+                if tag.as_ref() == "absent" || tag.as_ref() == "present" =>
+            {
+                Ok(Value::TaggedValue { tag, payload })
+            }
+            value => Ok(Value::TaggedValue {
                 tag: Rc::from("present"),
-                payload: Rc::new(vec![(Rc::from("0"), thunk.clone())]),
-            },
+                payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+            }),
         }
     }
 
@@ -205,7 +213,7 @@ impl<'a> TlcEvaluator<'a> {
         field: &str,
     ) -> Result<Value, EvalError> {
         if let Some((true, _)) = self.tlc_field_meta(ty_id, field) {
-            return Ok(self.project_maybe_field(fields, field));
+            return self.project_maybe_field(fields, field);
         }
         match fields.iter().find(|(name, _)| name.as_ref() == field) {
             Some((_, thunk)) => thunk.force_tlc(self),

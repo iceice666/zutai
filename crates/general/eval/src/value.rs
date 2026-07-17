@@ -705,6 +705,9 @@ where
             .iter()
             .all(|(base_name, _)| base_name.as_ref() != patch_name.as_ref())
         {
+            if deep && matches!(force(patch_thunk)?, Value::Record(_)) {
+                continue;
+            }
             out.push((patch_name.clone(), patch_thunk.clone()));
         }
     }

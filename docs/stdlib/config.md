@@ -42,10 +42,9 @@ Module-qualified and destructured aliases are recognized by THIR call lowering:
 overlayDeep { nested = { tls = true; }; } base
 ```
 
-Supported full applications with record-literal patches lower exactly like the
-ambient builtin forms before TLC/Dataflow lowering. Partial overlay values,
-unsupported patch shapes, and unsupported optional nested-record deep overlays
-remain backend-gated.
+Supported closed-row applications lower before TLC/Dataflow, including computed
+and partially applied overlays plus optional nested records. Open-row and
+deletion semantics remain backend-gated.
 
 ## Shallow overlay
 
@@ -112,6 +111,11 @@ raw ::=
 - Present `#none`: set field to `#none`, if the type allows it.
 - Unknown field: type error unless a row-polymorphic open-record target type explicitly permits it.
 ```
+
+For an optional nested-record field, recursive merge requires an existing lower
+record. If the lower field is absent, a present partial deep patch does not
+synthesize a record with missing required fields; the result remains absent. Use
+a shallow `overlay` with a complete nested value to introduce that field.
 
 Lists are not concatenated by default. List merge behavior is domain-specific and should be explicit.
 

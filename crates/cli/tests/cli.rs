@@ -5357,6 +5357,55 @@ patch :: DeepPatch Config = { server = { port = 8080; }; };
 defaults |> overlayDeep patch
 "#;
 
+const OVERLAY_COMPUTED_SRC: &str = r#"
+Config :: type { host : Text; port : Int; };
+defaults :: Config = { host = "localhost"; port = 80; };
+choose :: Bool -> Patch Config
+  = true => { port = 8080; };
+  = false => { host = "remote"; };
+applyPatch :: Patch Config -> Config -> Config = overlay;
+applyPatch (choose true) defaults
+"#;
+
+const OVERLAY_OPTIONAL_DEEP_SRC: &str = r#"
+Server :: type { host : Text; port : Int; };
+Config :: type { server? : Server; name : Text; };
+defaults :: Config = {
+  server = { host = "localhost"; port = 80; };
+  name = "dev";
+};
+patch :: DeepPatch Config = { server = { port = 8080; }; };
+server ::= match (overlayDeep patch defaults).server {
+  | #absent => { host = "missing"; port = 0; };
+  | #present (value) => value;
+};
+{ name = "dev"; host = server.host; port = server.port; }
+"#;
+
+const OVERLAY_OPTIONAL_ABSENT_SRC: &str = r#"
+Server :: type { host : Text; port : Int; };
+Config :: type { server? : Server; name : Text; };
+defaults :: Config = { name = "dev"; };
+patch :: DeepPatch Config = { server = { port = 8080; }; };
+result ::= overlayDeep patch defaults;
+server ::= match result.server {
+  | #absent => { host = "absent"; port = 0; };
+  | #present (value) => value;
+};
+{ name = result.name; host = server.host; port = server.port; }
+"#;
+
+const OVERLAY_OPTIONAL_SCALAR_SRC: &str = r#"
+Config :: type { port? : Int; name : Text; };
+defaults :: Config = { port = 80; name = "dev"; };
+patch :: Patch Config = { port = 8080; };
+port ::= match (overlay patch defaults).port {
+  | #absent => 0;
+  | #present (value) => value;
+};
+{ name = "dev"; port = port; }
+"#;
+
 #[test]
 fn check_overlay_passes() {
     let path = write_tmp("cli_test_check_overlay.zt", OVERLAY_SRC);
@@ -5434,6 +5483,83 @@ fn compile_overlay_deep_emit_bin_runs() {
     assert!(stdout.contains("host = \"localhost\""), "{stdout}");
     assert!(stdout.contains("port = 8080"), "{stdout}");
     assert!(stdout.contains("name = \"dev\""), "{stdout}");
+}
+
+#[test]
+fn computed_partial_overlay_matches_interpreter_and_native() {
+    let path = PathBuf::from(write_tmp(
+        "cli_test_computed_partial_overlay.zt",
+        OVERLAY_COMPUTED_SRC,
+    ));
+    let out = std::env::temp_dir().join("cli_test_computed_partial_overlay_bin");
+    let output = assert_run_compile_parity(&path, &out, None);
+    assert!(output.contains("host = \"localhost\""), "{output}");
+    assert!(output.contains("port = 8080"), "{output}");
+}
+
+#[test]
+fn optional_nested_overlay_matches_interpreter_and_native() {
+    let path = PathBuf::from(write_tmp(
+        "cli_test_optional_nested_overlay.zt",
+        OVERLAY_OPTIONAL_DEEP_SRC,
+    ));
+    let out = std::env::temp_dir().join("cli_test_optional_nested_overlay_bin");
+    let output = assert_run_compile_parity(&path, &out, None);
+    assert!(output.contains("host = \"localhost\""), "{output}");
+    assert!(output.contains("port = 8080"), "{output}");
+    assert!(output.contains("name = \"dev\""), "{output}");
+}
+
+#[test]
+fn optional_absent_nested_overlay_matches_interpreter_and_native() {
+    let path = PathBuf::from(write_tmp(
+        "cli_test_optional_absent_nested_overlay.zt",
+        OVERLAY_OPTIONAL_ABSENT_SRC,
+    ));
+    let out = std::env::temp_dir().join("cli_test_optional_absent_nested_overlay_bin");
+    let output = assert_run_compile_parity(&path, &out, None);
+    assert!(output.contains("host = \"absent\""), "{output}");
+    assert!(output.contains("port = 0"), "{output}");
+    assert!(output.contains("name = \"dev\""), "{output}");
+}
+
+#[test]
+fn optional_scalar_overlay_matches_interpreter_and_native() {
+    let path = PathBuf::from(write_tmp(
+        "cli_test_optional_scalar_overlay.zt",
+        OVERLAY_OPTIONAL_SCALAR_SRC,
+    ));
+    let out = std::env::temp_dir().join("cli_test_optional_scalar_overlay_bin");
+    let output = assert_run_compile_parity(&path, &out, None);
+    assert!(output.contains("port = 8080"), "{output}");
+    assert!(output.contains("name = \"dev\""), "{output}");
+}
+
+#[cfg(unix)]
+#[test]
+fn overlay_shared_library_json_matches_interpreter() {
+    if !native_emit_toolchain_available() {
+        eprintln!("skipping config-overlay shared-library parity: llc/clang unavailable");
+        return;
+    }
+
+    for (name, source) in [
+        ("shallow", OVERLAY_SRC),
+        ("deep", OVERLAY_DEEP_SRC),
+        ("computed", OVERLAY_COMPUTED_SRC),
+        ("optional", OVERLAY_OPTIONAL_DEEP_SRC),
+        ("optional_scalar", OVERLAY_OPTIONAL_SCALAR_SRC),
+        ("optional_absent", OVERLAY_OPTIONAL_ABSENT_SRC),
+    ] {
+        let path = PathBuf::from(write_tmp(
+            &format!("cli_test_overlay_{name}_library.zt"),
+            source,
+        ));
+        let expected = cli_json(&path);
+        let (from_pair, from_entry) = compiled_library_json(&path, &format!("overlay_{name}"));
+        assert_eq!(from_pair, expected, "zutai_to_json parity for {name}");
+        assert_eq!(from_entry, expected, "zutai_entry_json parity for {name}");
+    }
 }
 
 #[test]

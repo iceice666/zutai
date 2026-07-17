@@ -273,7 +273,12 @@ impl<'m> Lowerer<'m> {
         let mut out = Vec::with_capacity(type_fields.len());
         for field in type_fields {
             let value = match provided.remove(&field.name) {
-                Some(value) if field.optional => self.make_maybe_present(value, field.ty, span),
+                Some(value)
+                    if field.optional
+                        && !matches!(self.types[self.nodes[value].ty], DfTy::Maybe(_)) =>
+                {
+                    self.make_maybe_present(value, field.ty, span)
+                }
                 Some(value) => value,
                 None if field.optional => self.make_maybe_absent(field.ty, span),
                 None => self.alloc_node(DfNodeKind::Error, field.ty, span),
@@ -290,7 +295,9 @@ impl<'m> Lowerer<'m> {
         fields: Vec<(String, NodeId)>,
         span: Option<Span>,
     ) -> Vec<(String, NodeId)> {
-        if self.tlc_record_type_is_open(tlc_ty, &mut FxHashSet::default()) {
+        if self.tlc_record_type_is_open(tlc_ty, &mut FxHashSet::default())
+            || self.tlc_type_is_wrapper(tlc_ty)
+        {
             let mut fields = fields;
             fields.sort_by(|a, b| a.0.cmp(&b.0));
             fields
@@ -320,6 +327,13 @@ impl<'m> Lowerer<'m> {
         }
     }
 
+    fn tlc_type_is_wrapper(&self, ty: TlcTypeId) -> bool {
+        matches!(
+            self.module.type_arena[ty],
+            TlcType::Optional(_) | TlcType::Maybe(_)
+        )
+    }
+
     fn record_storage_update_value(
         &mut self,
         record_ty: DfTyId,
@@ -336,7 +350,12 @@ impl<'m> Lowerer<'m> {
         else {
             return value;
         };
-        if field.optional {
+        if field.optional
+            && !matches!(
+                self.types[self.nodes[value].ty],
+                DfTy::Maybe(_) | DfTy::Optional(_)
+            )
+        {
             self.make_maybe_present(value, field.ty, span)
         } else {
             value

@@ -58,6 +58,7 @@ impl<'a> TlcEvaluator<'a> {
             .get(&receiver)
             .copied()
             .and_then(|ty| self.tlc_record_field_order(ty));
+        let receiver_ty = self.module.expr_types.get(&receiver).copied();
         let updates = Rc::new(fields);
         let receiver_control = self.eval_control(receiver, &env, resume.clone())?;
         self.bind_control(receiver_control, move |base, this| {
@@ -83,7 +84,8 @@ impl<'a> TlcEvaluator<'a> {
                         )
                     })
                     .collect();
-                return Ok(EvalControl::Value(update_record_value(
+                return Ok(EvalControl::Value(this.update_tlc_record_value(
+                    receiver_ty,
                     &metadata,
                     &base_fields,
                     &update_thunks,
@@ -97,6 +99,7 @@ impl<'a> TlcEvaluator<'a> {
                     .collect::<Vec<_>>(),
             );
             let ids = Rc::new(updates.iter().map(|(_, id)| *id).collect::<Vec<_>>());
+            let finish_ev = this;
             let finish: FinishValues<'eval> = Rc::new(move |values| {
                 let update_thunks: Vec<(String, Thunk)> = names
                     .iter()
@@ -104,10 +107,50 @@ impl<'a> TlcEvaluator<'a> {
                     .zip(values)
                     .map(|(name, value)| (name, Thunk::ready(value)))
                     .collect();
-                update_record_value(&metadata, &base_fields, &update_thunks)
+                finish_ev.update_tlc_record_value(
+                    receiver_ty,
+                    &metadata,
+                    &base_fields,
+                    &update_thunks,
+                )
             });
             this.eval_expr_values(ids, env.clone(), resume.clone(), 0, Vec::new(), finish)
         })
+    }
+
+    fn update_tlc_record_value(
+        &self,
+        receiver_ty: Option<TlcTypeId>,
+        metadata: &[(String, bool)],
+        base_fields: &Rc<Vec<(Rc<str>, Thunk)>>,
+        updates: &[(String, Thunk)],
+    ) -> Value {
+        let updates: Vec<(String, Thunk)> = updates
+            .iter()
+            .map(|(name, thunk)| {
+                let optional = receiver_ty
+                    .and_then(|ty| self.tlc_field_meta(ty, name))
+                    .is_some_and(|(optional, _)| optional);
+                if !optional {
+                    return (name.clone(), thunk.clone());
+                }
+                let value = match thunk.peek() {
+                    Some(Value::Atom(tag)) if tag.as_ref() == "absent" => thunk.clone(),
+                    Some(Value::TaggedValue { tag, .. })
+                        if tag.as_ref() == "absent" || tag.as_ref() == "present" =>
+                    {
+                        thunk.clone()
+                    }
+                    Some(value) => Thunk::ready(Value::TaggedValue {
+                        tag: Rc::from("present"),
+                        payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+                    }),
+                    None => thunk.clone(),
+                };
+                (name.clone(), value)
+            })
+            .collect();
+        update_record_value(metadata, base_fields, &updates)
     }
 
     pub(super) fn eval_tuple<'eval>(

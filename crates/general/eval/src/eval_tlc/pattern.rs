@@ -83,9 +83,31 @@ impl<'a> TlcEvaluator<'a> {
                     if val_tag.as_ref() != tag.as_str() {
                         return Ok(false);
                     }
-                    // Match inner pattern against a synthetic Record of the payload.
-                    let payload_val = Value::Record(Rc::clone(payload));
-                    self.match_pattern(inner_pat, &payload_val, env)
+                    if let TlcPat::Tuple(items) = inner_pat.as_ref()
+                        && items.len() == 1
+                        && payload.len() == 1
+                    {
+                        let thunk = payload[0].1.clone();
+                        let item = match &items[0] {
+                            TlcPatItem::Positional(pattern)
+                            | TlcPatItem::Named { pat: pattern, .. } => pattern,
+                        };
+                        match item {
+                            TlcPat::Wildcard => Ok(true),
+                            TlcPat::Bind(binding) => {
+                                env.insert(*binding, thunk);
+                                Ok(true)
+                            }
+                            _ => {
+                                let value = thunk.force_tlc(self)?;
+                                self.match_pattern(item, &value, env)
+                            }
+                        }
+                    } else {
+                        // Match record-style payload patterns against the field envelope.
+                        let payload_val = Value::Record(Rc::clone(payload));
+                        self.match_pattern(inner_pat, &payload_val, env)
+                    }
                 } else if let Value::Atom(a) = val {
                     // Bare atom variant — no payload; inner must be Wildcard.
                     Ok(

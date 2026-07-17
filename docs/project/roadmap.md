@@ -33,13 +33,7 @@ subset already accepted by the frontend.
 
 Milestones, in order:
 
-1. **General closed config-overlay lowering.** Remove the current call-shape gate
-   for well-typed closed `Patch`/`DeepPatch` values, including computed and
-   partially applied overlays plus optional nested records. Keep open rows and
-   deletion semantics refused until independently specified. Gate: shallow/deep,
-   qualified/destructured, computed, and optional-record cases match the
-   reference evaluator through native binaries and shared-library JSON exports.
-2. **Measured optimization gate.** Establish repeatable compile-time, runtime,
+1. **Measured optimization gate.** Establish repeatable compile-time, runtime,
    allocation, and output-size baselines for the website, configuration/decoder,
    stream, and effectful service workloads. Profile before scheduling an
    optimization. The first optimization milestone must cite the measured

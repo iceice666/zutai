@@ -753,6 +753,20 @@ patch :: DeepPatch Config = {
 }
 
 #[test]
+fn overlay_deep_keeps_absent_optional_nested_record_in_all_evaluators() {
+    let src = r#"
+Server :: type { host : Text; port : Int; };
+Config :: type { server? : Server; name : Text; };
+base :: Config = { name = "dev"; };
+patch :: DeepPatch Config = { server = { port = 8080; }; };
+(overlayDeep patch base).server
+"#;
+    assert_eq!(eval_file(src).unwrap().to_string(), "#absent");
+    assert_eq!(eval_tlc_file(src).unwrap().to_string(), "#absent");
+    assert_eq!(eval_thir_file(src).unwrap().to_string(), "#absent");
+}
+
+#[test]
 fn overlay_partial_application_runs_in_both_evaluators() {
     let src = r#"
 Config :: type {

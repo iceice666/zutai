@@ -19,6 +19,8 @@ pub use lower::{
     ExternConditionalWitness, lower_thir, lower_thir_for_backend, lower_thir_with_extern_witnesses,
     lower_thir_with_extern_witnesses_for_backend,
 };
+#[doc(hidden)]
+pub use monomorphize::push_child_exprs;
 pub use monomorphize::{monomorphize_open_row_selects, reachable_exprs};
 pub use normalize::{DEFAULT_FUEL, NormalizeError};
 

@@ -675,7 +675,7 @@ fn has_open_row_select(module: &TlcModule, root: TlcExprId) -> bool {
     false
 }
 
-pub(crate) fn push_child_exprs(expr: &TlcExpr, out: &mut Vec<TlcExprId>) {
+pub fn push_child_exprs(expr: &TlcExpr, out: &mut Vec<TlcExprId>) {
     match expr {
         TlcExpr::Var(_) | TlcExpr::Lit(_) | TlcExpr::Import(_) => {}
         TlcExpr::Lam(_, _, body) | TlcExpr::TyLam(_, _, body) | TlcExpr::TyApp(body, _) => {

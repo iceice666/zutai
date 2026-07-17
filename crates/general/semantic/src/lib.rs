@@ -446,16 +446,30 @@ impl Analysis {
         }
         let hir = &self.hir.as_ref()?.file;
         let module = self.tlc.as_ref()?;
-        let uses_overlay = module.expr_arena.iter().any(|(_, expr)| {
-            let zutai_tlc::TlcExpr::Var(binding) = expr else {
-                return false;
-            };
-            let Some(hir_binding) = hir.bindings.get(binding.0 as usize) else {
-                return false;
-            };
-            hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
-                && (hir_binding.name == "overlay" || hir_binding.name == "overlayDeep")
-        });
+        let binding_uses_overlay = |binding: zutai_hir::BindingId| {
+            hir.bindings
+                .get(binding.0 as usize)
+                .is_some_and(|hir_binding| {
+                    hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                        && (hir_binding.name == "overlay" || hir_binding.name == "overlayDeep")
+                })
+        };
+        let expr_uses_overlay = |root| {
+            let mut seen = rustc_hash::FxHashSet::default();
+            let mut stack = vec![root];
+            while let Some(id) = stack.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                if matches!(module.expr_arena[id], zutai_tlc::TlcExpr::Var(binding) if binding_uses_overlay(binding))
+                {
+                    return true;
+                }
+                zutai_tlc::push_child_exprs(&module.expr_arena[id], &mut stack);
+            }
+            false
+        };
+        let uses_overlay = module.final_expr.is_some_and(expr_uses_overlay);
         if uses_overlay {
             Some(
                 "config overlay builtins could not be lowered to pure backend IR before Dataflow Core",

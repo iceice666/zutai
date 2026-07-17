@@ -528,13 +528,15 @@ compatibility `zutai-cli web` subcommand), and a pure-Zutai official website; se
   programs through the THIR type-value evaluator before Dataflow Core.
   Reflection combined with effectful code remains rejected so AOT reflection does
   not consume host effects at compile time.
-- Supported full config-overlay calls lower before Dataflow Core: patch-first
-  `overlay`/`overlayDeep` applications with record-literal patch values become
-  ordinary record updates, and required nested records merge recursively.
-- Unsupported residual overlay forms, optional nested-record deep overlays,
-  reflection combined with effectful code, unsupported host operations/effect
-  rows, function entries, and `Type` entries still reject before DC. Dynamic
-  `load.zt` also rejects non-first-order final values at the host boundary.
+- Closed-row config-overlay values lower before Dataflow Core: patch-first
+  `overlay`/`overlayDeep` applications, including computed and partially applied
+  values, become ordinary record updates. Required nested records merge
+  recursively; optional nested records merge when present and remain absent when
+  no lower record exists.
+- Open-row overlays, deletion semantics, reflection combined with effectful code,
+  unsupported host operations/effect rows, function entries, and `Type` entries
+  still reject before DC. Dynamic `load.zt` also rejects non-first-order final
+  values at the host boundary.
 
 ## Validation notes
 
