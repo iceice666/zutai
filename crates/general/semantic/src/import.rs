@@ -660,6 +660,12 @@ pub struct ImportDiagnostic {
     pub related: Vec<crate::SourceLocation>,
 }
 
+impl ImportDiagnostic {
+    pub fn code(&self) -> &'static str {
+        self.kind.code()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportDiagnosticKind {
     /// An `import` appeared but the analysis has no base directory to resolve
@@ -725,6 +731,27 @@ pub enum ImportDiagnosticKind {
     PathTraversal {
         path: String,
     },
+}
+
+impl ImportDiagnosticKind {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::NoBaseDirectory => "zutai::import::no_base_directory",
+            Self::UnsupportedImportForm { .. } => "zutai::import::unsupported_form",
+            Self::StdlibSetup { .. } => "zutai::import::stdlib_setup",
+            Self::PackageSetup { .. } => "zutai::import::package_setup",
+            Self::PackageResolution { .. } => "zutai::import::package_resolution",
+            Self::UnknownStdlibModule { .. } => "zutai::import::unknown_stdlib_module",
+            Self::FileNotFound { .. } => "zutai::import::file_not_found",
+            Self::ReadError { .. } => "zutai::import::read_error",
+            Self::ParseError { .. } => "zutai::import::parse_error",
+            Self::ImportCycle { .. } => "zutai::import::cycle",
+            Self::ModuleHasErrors { .. } => "zutai::import::module_has_errors",
+            Self::UnsupportedExport { .. } => "zutai::import::unsupported_export",
+            Self::ConflictingWitness { .. } => "zutai::import::conflicting_witness",
+            Self::PathTraversal { .. } => "zutai::import::path_traversal",
+        }
+    }
 }
 
 enum Kind {

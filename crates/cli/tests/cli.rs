@@ -1327,7 +1327,7 @@ fn run_zt_type_error_exits_nonzero() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("error"));
+        .stderr(predicate::str::contains("zutai::thir::type_mismatch"));
 }
 
 #[test]
@@ -1413,7 +1413,7 @@ fn json_zt_type_error_exits_nonzero() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("type error"));
+        .stderr(predicate::str::contains("zutai::thir::type_mismatch"));
 }
 
 #[test]
@@ -2308,7 +2308,10 @@ fn check_derive_diagnostic_shows_definition_and_request_labels() {
         predicate::str::contains(
             "cannot derive `Ord`: method `compare` has no structural derivation recipe",
         )
-        .and(predicate::str::contains("constraint defined here")),
+        .and(predicate::str::contains("constraint defined here"))
+        .and(predicate::str::contains(
+            "zutai::thir::derive_unsupported_method",
+        )),
     );
 }
 
@@ -2344,7 +2347,10 @@ fn check_reflection_fields_union_target_is_rejected() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("use `schema` for union variants"));
+        .stderr(predicate::str::contains(
+            "zutai::backend::reflection_not_foldable",
+        ))
+        .stderr(predicate::str::contains("use `schema`"));
 }
 
 #[test]
@@ -5069,7 +5075,8 @@ fn dataflow_effect_program_is_rejected_by_residual_effect_gate() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("effect"));
+        .stderr(predicate::str::contains("effect"))
+        .stderr(predicate::str::contains("zutai::backend::residual_effect"));
 }
 
 #[test]
@@ -5094,7 +5101,10 @@ fn dataflow_type_entry_is_rejected_before_backend_lowering() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("returns Type"));
+        .stderr(predicate::str::contains("returns Type"))
+        .stderr(predicate::str::contains(
+            "zutai::backend::entry_type_unsupported",
+        ));
 }
 
 #[test]
@@ -5108,7 +5118,10 @@ fn dataflow_type_alias_value_entry_is_rejected_before_backend_lowering() {
         .arg(&path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("returns Type"));
+        .stderr(predicate::str::contains("returns Type"))
+        .stderr(predicate::str::contains(
+            "zutai::backend::entry_type_unsupported",
+        ));
 }
 
 // ─── prelude `print` effect binding ───────────────────────────────────────────
@@ -5571,23 +5584,20 @@ fn backend_refusal_matrix_matches_documented_support() {
     for fixture in check_passes {
         check_path_passes(&refusal_fixture(fixture));
     }
-    for (fixture, reason) in [
+    for (fixture, code) in [
         (
             "higher_kinded_execution.zt",
-            "reflection entry did not fold to a backend value",
+            "zutai::backend::reflection_not_foldable",
         ),
         (
             "residual_reflection.zt",
-            "compiled entry point returns Type, which cannot be shown by the runtime ABI",
+            "zutai::backend::reflection_not_foldable",
         ),
         (
             "nonprincipal_inference.zt",
-            "row-polymorphic inference is not principal here; add a type annotation",
+            "zutai::thir::row_annotation_required",
         ),
-        (
-            "non_tail_yield_from.zt",
-            "`yield from` is only supported in tail position of a generator block",
-        ),
+        ("non_tail_yield_from.zt", "zutai::hir::non_tail_yield_from"),
     ] {
         cli()
             .arg("check")
@@ -5595,18 +5605,15 @@ fn backend_refusal_matrix_matches_documented_support() {
             .current_dir(workspace_root())
             .assert()
             .failure()
-            .stderr(predicate::str::contains(reason));
+            .stderr(predicate::str::contains(code));
     }
 
-    for (fixture, reason) in [
+    for (fixture, code) in [
         (
             "nonprincipal_inference.zt",
-            "row-polymorphic inference is not principal here; add a type annotation",
+            "zutai::thir::row_annotation_required",
         ),
-        (
-            "non_tail_yield_from.zt",
-            "`yield from` is only supported in tail position of a generator block",
-        ),
+        ("non_tail_yield_from.zt", "zutai::hir::non_tail_yield_from"),
     ] {
         cli()
             .arg("run")
@@ -5614,7 +5621,7 @@ fn backend_refusal_matrix_matches_documented_support() {
             .current_dir(workspace_root())
             .assert()
             .failure()
-            .stderr(predicate::str::contains(reason));
+            .stderr(predicate::str::contains(code));
     }
     assert_eq!(
         run_path_stdout(&refusal_fixture("higher_kinded_execution.zt")),
@@ -5629,35 +5636,32 @@ fn backend_refusal_matrix_matches_documented_support() {
         "1\n"
     );
 
-    for (fixture, reason) in [
+    for (fixture, code) in [
         (
             "higher_kinded_execution.zt",
-            "reflection entry did not fold to a backend value",
+            "zutai::backend::reflection_not_foldable",
         ),
         (
             "residual_reflection.zt",
-            "compiled entry point returns Type, which cannot be shown by the runtime ABI",
+            "zutai::backend::reflection_not_foldable",
         ),
         (
             "unhandled_host_effect.zt",
-            "algebraic effects remain after TLC lowering",
+            "zutai::backend::residual_effect",
         ),
         (
             "ungranted_capability.zt",
-            "compiled entry point returns a function, which cannot be shown by the runtime ABI",
+            "zutai::backend::entry_type_unsupported",
         ),
         (
             "nonmatchable_witness_export.zt",
-            "non-matchable typeclass instances",
+            "zutai::backend::import_witness_non_matchable",
         ),
         (
             "nonprincipal_inference.zt",
-            "row-polymorphic inference is not principal here; add a type annotation",
+            "zutai::thir::row_annotation_required",
         ),
-        (
-            "non_tail_yield_from.zt",
-            "`yield from` is only supported in tail position of a generator block",
-        ),
+        ("non_tail_yield_from.zt", "zutai::hir::non_tail_yield_from"),
     ] {
         cli()
             .arg("compile")
@@ -5665,7 +5669,7 @@ fn backend_refusal_matrix_matches_documented_support() {
             .current_dir(workspace_root())
             .assert()
             .failure()
-            .stderr(predicate::str::contains(reason));
+            .stderr(predicate::str::contains(code));
     }
 }
 
@@ -5926,7 +5930,7 @@ fn compile_imported_nonmatchable_witness_reports_use_and_export_sources() {
         .failure()
         .stderr(predicate::str::contains("main.zt"))
         .stderr(predicate::str::contains(
-            "non-matchable typeclass instances",
+            "zutai::backend::import_witness_non_matchable",
         ))
         .stderr(predicate::str::contains("dep.zt"))
         .stderr(predicate::str::contains(

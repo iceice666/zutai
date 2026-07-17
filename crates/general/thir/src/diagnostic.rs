@@ -8,6 +8,12 @@ pub struct ThirDiagnostic {
     pub span: Span,
 }
 
+impl ThirDiagnostic {
+    pub fn code(&self) -> &'static str {
+        self.kind.code()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowOverlapItem {
     RecordField,
@@ -234,6 +240,78 @@ pub enum ThirDiagnosticKind {
     /// Unifying an inference variable with a type that contains it would build an
     /// infinite type (e.g. self-application `\x. x x`). Rejected by the occurs check.
     InfiniteType,
+}
+
+impl ThirDiagnosticKind {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::TypeCheckerNotImplemented => "zutai::thir::type_checker_not_implemented",
+            Self::UnsupportedFeature { .. } => "zutai::thir::unsupported_feature",
+            Self::TypeMismatch { .. } => "zutai::thir::type_mismatch",
+            Self::ImportedDataTypeMismatch { .. } => "zutai::thir::imported_data_type_mismatch",
+            Self::ExpectedFunction { .. } => "zutai::thir::expected_function",
+            Self::FunctionClauseArityMismatch { .. } => {
+                "zutai::thir::function_clause_arity_mismatch"
+            }
+            Self::ExpectedRecord { .. } => "zutai::thir::expected_record",
+            Self::ExpectedList { .. } => "zutai::thir::expected_list",
+            Self::ExpectedTuple { .. } => "zutai::thir::expected_tuple",
+            Self::ExpectedOptionalOrMaybe { .. } => "zutai::thir::expected_optional_or_maybe",
+            Self::EmptyListNeedsType => "zutai::thir::empty_list_needs_type",
+            Self::SpreadOnlyLiteralNeedsType => "zutai::thir::spread_only_literal_needs_type",
+            Self::TupleArityMismatch { .. } => "zutai::thir::tuple_arity_mismatch",
+            Self::TupleFieldNameMismatch { .. } => "zutai::thir::tuple_field_name_mismatch",
+            Self::InvalidBinaryOperands { .. } => "zutai::thir::invalid_binary_operands",
+            Self::NumericLiteralOutOfRange { .. } => "zutai::thir::numeric_literal_out_of_range",
+            Self::MissingRecordField { .. } => "zutai::thir::missing_record_field",
+            Self::UnexpectedRecordField { .. } => "zutai::thir::unexpected_record_field",
+            Self::UnknownField { .. } => "zutai::thir::unknown_field",
+            Self::AliasCycle { .. } => "zutai::thir::alias_cycle",
+            Self::TypeConstructorArityMismatch { .. } => {
+                "zutai::thir::type_constructor_arity_mismatch"
+            }
+            Self::TypeLevelEvalLimitExceeded => "zutai::thir::type_level_eval_limit_exceeded",
+            Self::UniverseLevelCycle { .. } => "zutai::thir::universe_level_cycle",
+            Self::ExplicitLevelTooLow { .. } => "zutai::thir::explicit_level_too_low",
+            Self::ValueTypeUnavailable { .. } => "zutai::thir::value_type_unavailable",
+            Self::InvalidTypeExpression { .. } => "zutai::thir::invalid_type_expression",
+            Self::LambdaNeedsTypeContext => "zutai::thir::lambda_needs_type_context",
+            Self::MatchArmPatternCountMismatch { .. } => {
+                "zutai::thir::match_arm_pattern_count_mismatch"
+            }
+            Self::NonExhaustiveMatch { .. } => "zutai::thir::non_exhaustive_match",
+            Self::UnreachableMatchArm => "zutai::thir::unreachable_match_arm",
+            Self::WitnessFieldTypeMismatch { .. } => "zutai::thir::witness_field_type_mismatch",
+            Self::MissingWitnessField { .. } => "zutai::thir::missing_witness_field",
+            Self::UnknownWitnessField { .. } => "zutai::thir::unknown_witness_field",
+            Self::DeriveConstraintNotDerivable { .. } => {
+                "zutai::thir::derive_constraint_not_derivable"
+            }
+            Self::DeriveComponentMissingWitness { .. } => {
+                "zutai::thir::derive_component_missing_witness"
+            }
+            Self::DeriveUnsupportedMethod { .. } => "zutai::thir::derive_unsupported_method",
+            Self::WitnessReflectNotInScope { .. } => "zutai::thir::witness_reflect_not_in_scope",
+            Self::DeriveRecipeFuelExhausted { .. } => "zutai::thir::derive_recipe_fuel_exhausted",
+            Self::DeriveRecipeIrreducible { .. } => "zutai::thir::derive_recipe_irreducible",
+            Self::DeriveOpenRowTarget { .. } => "zutai::thir::derive_open_row_target",
+            Self::DeriveRecipeTypeMismatch { .. } => "zutai::thir::derive_recipe_type_mismatch",
+            Self::ConflictingWitness { .. } => "zutai::thir::conflicting_witness",
+            Self::RecursiveWitness { .. } => "zutai::thir::recursive_witness",
+            Self::WitnessTargetKindMismatch { .. } => "zutai::thir::witness_target_kind_mismatch",
+            Self::UnsupportedMultiParamConstraint { .. } => {
+                "zutai::thir::unsupported_multi_param_constraint"
+            }
+            Self::OverlappingRowField { .. } => "zutai::thir::overlapping_row_field",
+            Self::RowAnnotationRequired { .. } => "zutai::thir::row_annotation_required",
+            Self::EffectNotInRow { .. } => "zutai::thir::effect_not_in_row",
+            Self::MalformedEffectOp { .. } => "zutai::thir::malformed_effect_op",
+            Self::ResumeTypeMismatch { .. } => "zutai::thir::resume_type_mismatch",
+            Self::HandlerClauseArityMismatch { .. } => "zutai::thir::handler_clause_arity_mismatch",
+            Self::MultipleResume { .. } => "zutai::thir::multiple_resume",
+            Self::InfiniteType => "zutai::thir::infinite_type",
+        }
+    }
 }
 
 impl ThirDiagnostic {

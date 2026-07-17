@@ -26,13 +26,7 @@ multi-package project before adding any new surface area.
 
 Milestones, in order:
 
-1. **Stable semantic diagnostic identities and fixes.** Give HIR, import, THIR,
-   derive, and backend-gate diagnostics stable codes like the parser already has;
-   preserve the same code, severity, primary source, and related locations in CLI
-   and LSP rendering. Add a quick fix only where the replacement is unambiguous.
-   Gate: the backend-refusal and cross-file diagnostic matrices assert codes and
-   protocol payloads rather than message substrings alone.
-2. **Canonical source formatting.** Add idempotent formatters for `.zt` and
+1. **Canonical source formatting.** Add idempotent formatters for `.zt` and
    `.zti`, then expose them through the CLI and LSP. General-mode formatting must
    preserve comments and accepted compatibility spellings unless a separate
    compatibility decision approves a rewrite; immediate-mode formatting must

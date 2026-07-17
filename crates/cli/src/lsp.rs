@@ -592,7 +592,8 @@ impl Server {
                         uri.clone(),
                         json!({
                             "range": range(&source, origin.span.start as usize, origin.span.end as usize),
-                            "severity": 1,
+                            "severity": severity(diagnostic.metadata().severity),
+                            "code": diagnostic.metadata().code,
                             "source": "zutai",
                             "message": format!("type mismatch: expected {expected}, found {found}"),
                             "relatedInformation": [{
@@ -649,12 +650,13 @@ impl Server {
                 ));
             }
         }
-        for diagnostic in analysis.native_import_diagnostics() {
+        for diagnostic in analysis.backend_diagnostics() {
             let mut value = json!({
                 "range": range(root_source, diagnostic.span.start as usize, diagnostic.span.end as usize),
-                "severity": 2,
+                "severity": severity(diagnostic.severity),
+                "code": diagnostic.code,
                 "source": "zutai",
-                "message": diagnostic.message,
+                "message": diagnostic.message.clone(),
             });
             let related: Vec<_> = diagnostic
                 .related
@@ -1663,43 +1665,48 @@ fn diagnostic_value(
     uri: &str,
     diagnostic: &zutai_semantic::SemanticDiagnostic,
 ) -> Value {
-    match &diagnostic.kind {
-        zutai_semantic::SemanticDiagnosticKind::Parse(parse) => json!({
-            "range": range(source, parse.primary_span().start as usize, parse.primary_span().end as usize),
-            "severity": severity(parse.severity),
-            "code": parse.code,
-            "source": "zutai",
-            "message": parse.message,
-        }),
-        zutai_semantic::SemanticDiagnosticKind::Import(import) => json!({
-            "range": range(source, import.span.start as usize, import.span.end as usize),
-            "severity": 1,
-            "source": "zutai",
-            "message": format_import_diagnostic(import),
-        }),
+    let metadata = diagnostic.metadata();
+    let message = match &diagnostic.kind {
+        zutai_semantic::SemanticDiagnosticKind::Parse(parse) => parse.message.clone(),
+        zutai_semantic::SemanticDiagnosticKind::Import(import) => format_import_diagnostic(import),
         _ => {
-            let (message, start, end) = zutai_eval::describe_semantic_diagnostic(diagnostic)
-                .expect("HIR and THIR diagnostics always have a source span");
-            let mut value = json!({
-                "range": range(source, start as usize, end as usize),
-                "severity": 1,
-                "source": "zutai",
-                "message": message,
-            });
-            if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &diagnostic.kind
-                && let Some((related, label)) = thir.related_location_in(source)
-            {
-                value["relatedInformation"] = json!([{
-                    "location": {
-                        "uri": uri,
-                        "range": range(source, related.start as usize, related.end as usize),
-                    },
-                    "message": label,
-                }]);
-            }
-            value
+            zutai_eval::describe_semantic_diagnostic(diagnostic)
+                .expect("HIR and THIR diagnostics always have a source span")
+                .0
         }
+    };
+    let mut value = json!({
+        "range": range(
+            source,
+            metadata.primary_span.start as usize,
+            metadata.primary_span.end as usize,
+        ),
+        "severity": severity(metadata.severity),
+        "code": metadata.code,
+        "source": "zutai",
+        "message": message,
+    });
+    if let Some((related, label)) = metadata.related {
+        value["relatedInformation"] = json!([{
+            "location": {
+                "uri": uri,
+                "range": range(source, related.start as usize, related.end as usize),
+            },
+            "message": label,
+        }]);
     }
+    if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &diagnostic.kind
+        && let Some((related, label)) = thir.related_location_in(source)
+    {
+        value["relatedInformation"] = json!([{
+            "location": {
+                "uri": uri,
+                "range": range(source, related.start as usize, related.end as usize),
+            },
+            "message": label,
+        }]);
+    }
+    value
 }
 
 /// Find the narrowest resolved value or type reference at an LSP byte offset.
@@ -2914,6 +2921,24 @@ mod tests {
     }
 
     #[test]
+    fn hir_diagnostic_carries_code_severity_and_related_information() {
+        let source = "T :: type { a : Int; a : Text; };\nT";
+        let analysis = analyze(source, "file:///tmp/duplicate.zt").unwrap();
+        let duplicate = diagnostics(source, &analysis)
+            .into_iter()
+            .find(|diagnostic| {
+                diagnostic["code"] == json!("zutai::hir::duplicate_type_record_field")
+            })
+            .expect("expected duplicate-type-record-field diagnostic");
+
+        assert_eq!(duplicate["severity"], json!(1));
+        assert_eq!(duplicate["source"], json!("zutai"));
+        let related = duplicate["relatedInformation"].as_array().unwrap();
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0]["message"], json!("first occurrence"));
+    }
+
+    #[test]
     fn parser_diagnostic_includes_protocol_range() {
         let analysis = analyze("x ::= ;\nx", "file:///tmp/bad.zt").unwrap();
         let diagnostics = diagnostics("x ::= ;\nx", &analysis);
@@ -2983,6 +3008,12 @@ mod tests {
             related[0]["location"]["range"]["start"]["line"].as_u64(),
             Some(0)
         );
+
+        assert_eq!(
+            derive["code"],
+            json!("zutai::thir::derive_unsupported_method")
+        );
+        assert_eq!(derive["severity"], json!(1));
         assert_eq!(
             derive["range"]["start"]["line"].as_u64(),
             Some(1),
@@ -3030,6 +3061,10 @@ mod tests {
                     .is_some_and(|message| message.contains("non-matchable typeclass instances"))
             })
             .expect("native import warning");
+        assert_eq!(
+            warning["code"],
+            json!("zutai::backend::import_witness_non_matchable")
+        );
         assert_eq!(warning["severity"], json!(2));
         assert_eq!(warning["range"]["start"]["line"], json!(0));
         let related = warning["relatedInformation"].as_array().unwrap();
@@ -3042,6 +3077,41 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn backend_warnings_expose_stable_codes_and_entry_ranges() {
+        for (source, code) in [
+            ("perform io.print \"x\"", "zutai::backend::residual_effect"),
+            (
+                "Server :: type { host : Text; };\nfields Server",
+                "zutai::backend::reflection_not_foldable",
+            ),
+        ] {
+            let uri = "file:///tmp/backend-warning.zt";
+            let mut server = Server::default();
+            server.documents.insert(
+                uri.to_owned(),
+                Document {
+                    text: source.to_owned(),
+                    version: Some(1),
+                },
+            );
+            let project = server
+                .analyze_with_overlays(uri, source)
+                .expect("project analysis");
+            let warning = server
+                .routed_diagnostics(uri, source, &project)
+                .into_iter()
+                .map(|(_, diagnostic)| diagnostic)
+                .find(|diagnostic| diagnostic["code"] == json!(code))
+                .unwrap_or_else(|| panic!("missing {code} warning"));
+            assert_eq!(warning["severity"], json!(2));
+            assert_ne!(
+                warning["range"]["start"], warning["range"]["end"],
+                "backend warning must point at the entry expression"
+            );
+        }
     }
 
     #[test]
@@ -3094,6 +3164,11 @@ mod tests {
             "{published}"
         );
         assert!(published.contains("relatedInformation"), "{published}");
+        assert!(
+            published.contains("zutai::thir::imported_data_type_mismatch"),
+            "{published}"
+        );
+        assert!(published.contains("\"severity\":1"), "{published}");
 
         output.clear();
         server

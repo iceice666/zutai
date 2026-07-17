@@ -22,6 +22,8 @@ pub(crate) fn print_semantic_errors(
             let diagnostic = ZtSemanticDiagnostic::new(
                 &primary_path,
                 &primary_contents,
+                err.metadata().code,
+                err.metadata().severity,
                 format_import_diagnostic(import),
                 import.span.start,
                 import.span.end,
@@ -43,6 +45,8 @@ pub(crate) fn print_semantic_errors(
                         miette::Report::new(ZtSemanticDiagnostic::new(
                             &related_path,
                             &related_contents,
+                            err.metadata().code,
+                            err.metadata().severity,
                             related.label.clone(),
                             related.span.start,
                             related.span.end,
@@ -72,6 +76,8 @@ pub(crate) fn print_semantic_errors(
                     miette::Report::new(ZtSemanticDiagnostic::new(
                         &imported_path,
                         &imported_contents,
+                        err.metadata().code,
+                        err.metadata().severity,
                         format!(
                             "type mismatch in imported data: expected {expected}, found {found} (required by {path})"
                         ),
@@ -84,7 +90,20 @@ pub(crate) fn print_semantic_errors(
         }
         match zutai_eval::describe_semantic_diagnostic(err) {
             Some((message, start, end)) => {
-                let mut diagnostic = ZtSemanticDiagnostic::new(path, contents, message, start, end);
+                let metadata = err.metadata();
+                let mut diagnostic = ZtSemanticDiagnostic::new(
+                    path,
+                    contents,
+                    metadata.code,
+                    metadata.severity,
+                    message,
+                    start,
+                    end,
+                );
+                if let Some((related, label)) = metadata.related {
+                    diagnostic =
+                        diagnostic.with_related(contents, related.start, related.end, label);
+                }
                 if let zutai_semantic::SemanticDiagnosticKind::Thir(thir) = &err.kind
                     && let Some((related, label)) = thir.related_location_in(contents)
                 {
@@ -94,6 +113,49 @@ pub(crate) fn print_semantic_errors(
                 eprintln!("{:?}", miette::Report::new(diagnostic));
             }
             None => eprintln!("semantic error: {err:?}"),
+        }
+    }
+}
+
+pub(crate) fn print_backend_error(
+    path: &str,
+    contents: &str,
+    diagnostic: &zutai_semantic::BackendDiagnostic,
+) {
+    eprintln!(
+        "{:?}",
+        miette::Report::new(ZtSemanticDiagnostic::new(
+            path,
+            contents,
+            diagnostic.code,
+            diagnostic.severity,
+            diagnostic.message.clone(),
+            diagnostic.span.start,
+            diagnostic.span.end,
+        ))
+    );
+    for related in &diagnostic.related {
+        let related_path = if related.path.is_absolute() {
+            related.path.clone()
+        } else {
+            Path::new(path)
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(&related.path)
+        };
+        if let Ok(related_contents) = std::fs::read_to_string(&related_path) {
+            eprintln!(
+                "{:?}",
+                miette::Report::new(ZtSemanticDiagnostic::new(
+                    &related_path.to_string_lossy(),
+                    &related_contents,
+                    diagnostic.code,
+                    diagnostic.severity,
+                    related.label.clone(),
+                    related.span.start,
+                    related.span.end,
+                ))
+            );
         }
     }
 }
@@ -155,6 +217,7 @@ pub(crate) struct ZtParseDiagnostic {
     source_code: NamedSource<String>,
     message: String,
     code: &'static str,
+    severity: zutai_syntax::Severity,
     help: Option<String>,
     label: String,
     span: (usize, usize),
@@ -176,6 +239,7 @@ impl ZtParseDiagnostic {
             source_code: NamedSource::new(path, contents.to_string()),
             message: err.message,
             code: err.code,
+            severity: err.severity,
             help: err.help,
             label,
             span: (clamped_start, len),
@@ -186,6 +250,10 @@ impl ZtParseDiagnostic {
 impl Diagnostic for ZtParseDiagnostic {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         Some(Box::new(self.code))
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        Some(miette_severity(self.severity))
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
@@ -213,18 +281,32 @@ impl Diagnostic for ZtParseDiagnostic {
 pub(crate) struct ZtSemanticDiagnostic {
     source_code: NamedSource<String>,
     message: String,
+    code: &'static str,
+    severity: zutai_syntax::Severity,
+
     span: (usize, usize),
     related: Option<((usize, usize), String)>,
 }
 
 impl ZtSemanticDiagnostic {
-    pub(crate) fn new(path: &str, contents: &str, message: String, start: u32, end: u32) -> Self {
+    pub(crate) fn new(
+        path: &str,
+        contents: &str,
+        code: &'static str,
+        severity: zutai_syntax::Severity,
+        message: String,
+        start: u32,
+        end: u32,
+    ) -> Self {
         let start = start as usize;
         let end = end as usize;
         let (clamped_start, len) = clamp_source_span(contents, start, end);
         Self {
             source_code: NamedSource::new(path, contents.to_string()),
             message,
+            code,
+            severity,
+
             span: (clamped_start, len),
             related: None,
         }
@@ -271,7 +353,11 @@ fn ceil_char_boundary(s: &str, mut offset: usize) -> usize {
 
 impl Diagnostic for ZtSemanticDiagnostic {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
-        Some(Box::new("zutai::check"))
+        Some(Box::new(self.code))
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        Some(miette_severity(self.severity))
     }
 
     fn source_code(&self) -> Option<&dyn SourceCode> {
@@ -285,6 +371,14 @@ impl Diagnostic for ZtSemanticDiagnostic {
             .iter()
             .map(|(span, label)| LabeledSpan::at(*span, label.clone()));
         Some(Box::new(primary.chain(related)))
+    }
+}
+
+fn miette_severity(severity: zutai_syntax::Severity) -> miette::Severity {
+    match severity {
+        zutai_syntax::Severity::Error => miette::Severity::Error,
+        zutai_syntax::Severity::Warning => miette::Severity::Warning,
+        zutai_syntax::Severity::Info | zutai_syntax::Severity::Hint => miette::Severity::Advice,
     }
 }
 
@@ -516,6 +610,8 @@ mod tests {
             miette::Report::new(ZtSemanticDiagnostic::new(
                 &primary_path.to_string_lossy(),
                 &primary_contents,
+                diagnostic.code(),
+                zutai_syntax::Severity::Error,
                 format_import_diagnostic(&diagnostic),
                 diagnostic.span.start,
                 diagnostic.span.end,

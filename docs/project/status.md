@@ -35,6 +35,13 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 stable-diagnostic baseline gives parser, HIR, import, THIR,
+derive, and backend-gate diagnostics stable semantic identities. CLI and LSP
+renderers preserve each code, severity, primary source range, and related
+cross-file locations; parser-authored unambiguous fixes remain available as LSP
+quick fixes. Backend-refusal and cross-file diagnostic matrices now assert the
+machine-readable contract instead of relying on message text alone.
+
 The 2026-07-17 import-aware editor baseline completes package aliases and public
 module paths from the prepared package graph, completes exported members from
 the analyzed import target, and searches root, imported, and otherwise-unopened

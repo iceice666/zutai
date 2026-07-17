@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
 
 mod package;
 mod reflect;
@@ -14,7 +15,8 @@ use self::toolchain::*;
 pub(crate) use package::PackageCommand;
 
 use crate::diagnostics::{
-    ZtParseDiagnostic, extension_or_error, print_ast, print_semantic_errors, print_zt_errors,
+    ZtParseDiagnostic, extension_or_error, print_ast, print_backend_error, print_semantic_errors,
+    print_zt_errors,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +79,15 @@ fn fold_aot_reflection_for_cli(
     base: Option<&Path>,
 ) -> Result<FoldedAotReflection, String> {
     fold_aot_reflection(contents, base).map_err(|err| err.to_string())
+}
+
+fn backend_entry_span(analysis: &zutai_semantic::Analysis) -> zutai_syntax::Span {
+    analysis
+        .thir
+        .as_ref()
+        .and_then(|lowered| lowered.file.as_ref())
+        .map(|file| file.expr_arena[file.final_expr].span)
+        .unwrap_or_default()
 }
 
 const UNSUPPORTED_TYPE_ENTRY_REASON: &str =
@@ -333,21 +344,30 @@ fn exit_for_eval_failure(
     match outcome {
         EvalOutcome::Ok(_) => unreachable!("exit_for_eval_failure called with EvalOutcome::Ok"),
         EvalOutcome::Err(zutai_eval::EvalError::NotRunnable(msgs)) => {
-            // Prefer check-style source diagnostics for parse/import/HIR errors.
-            analyze_with_cli_diagnostics(
+            let analysis = analyze_with_cli_diagnostics(
                 path,
                 contents,
                 base,
                 &zutai_semantic::AnalysisCache::default(),
             );
-            for msg in msgs {
-                eprintln!("error: {msg}");
+            if analysis.diagnostics.is_empty() {
+                for msg in msgs {
+                    eprintln!("error: {msg}");
+                }
             }
             std::process::exit(1);
         }
         EvalOutcome::Err(zutai_eval::EvalError::TypeCheckFailed(msgs)) => {
-            for m in msgs {
-                eprintln!("type error: {m}");
+            let analysis = analyze_with_cli_diagnostics(
+                path,
+                contents,
+                base,
+                &zutai_semantic::AnalysisCache::default(),
+            );
+            if analysis.diagnostics.is_empty() {
+                for msg in msgs {
+                    eprintln!("type error: {msg}");
+                }
             }
             std::process::exit(1);
         }
@@ -500,14 +520,37 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     if let Some(reason) = unsupported_cli_entry_type_reason(&analysis) {
-        eprintln!("check error: {reason}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_ENTRY_TYPE_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     if analysis.aot_reflection_program().is_some()
         && let Err(err) = fold_aot_reflection_for_cli(&contents, base)
     {
-        eprintln!("check error: {err}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_REFLECTION_FOLD_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: err.to_string(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
+    }
+    for diagnostic in analysis.native_import_diagnostics() {
+        print_backend_error(path, &contents, &diagnostic);
     }
     println!("check passed: {path}");
     Ok(())
@@ -569,9 +612,11 @@ fn build_module_imports<'a>(
         map.insert(source.clone(), zutai_dataflow::ImportTarget::Zti(value));
     }
     for (source, dep) in &module_analysis.import_modules {
-        if let Some(&idx) = ptr_to_idx.get(&std::rc::Rc::as_ptr(dep)) {
-            map.insert(source.clone(), zutai_dataflow::ImportTarget::Zt(idx));
-        }
+        let ptr = Rc::as_ptr(dep);
+        let idx = *ptr_to_idx
+            .get(&ptr)
+            .expect("all transitive import modules must be collected");
+        map.insert(source.clone(), zutai_dataflow::ImportTarget::Zt(idx));
     }
     map
 }
@@ -742,7 +787,17 @@ fn run_compile_analysis(
         std::process::exit(1);
     }
     if let Some(reason) = unsupported_cli_entry_type_reason(analysis) {
-        eprintln!("compile error: {reason}");
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_ENTRY_TYPE_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
@@ -750,26 +805,23 @@ fn run_compile_analysis(
     let uses_reflection = analysis.aot_reflection_program().is_some();
 
     if let Some(reason) = analysis.config_overlay_builtin_program() {
-        eprintln!("compile error: {reason}");
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_CONFIG_OVERLAY_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
 
-    if let Some(diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
-        let semantic = zutai_semantic::SemanticDiagnostic {
-            stage: zutai_semantic::SemanticStage::Import,
-            kind: zutai_semantic::SemanticDiagnosticKind::Import(
-                zutai_semantic::ImportDiagnostic {
-                    kind: zutai_semantic::ImportDiagnosticKind::UnsupportedExport {
-                        path: "native import".to_owned(),
-                        reason: diagnostic.message,
-                    },
-                    span: diagnostic.span,
-                    path: None,
-                    related: diagnostic.related,
-                },
-            ),
-        };
-        print_semantic_errors(path, contents, &[&semantic]);
+    if let Some(mut diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
+        diagnostic.severity = zutai_syntax::Severity::Error;
+        print_backend_error(path, contents, &diagnostic);
         std::process::exit(1);
     }
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(analysis);
@@ -799,8 +851,17 @@ fn run_compile_analysis(
     let residual_effect_reason =
         zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants);
     if uses_reflection && (has_host_io_print || has_unfolded_effects) {
-        eprintln!(
-            "compile error: reflection builtins cannot be AOT-folded with effectful code yet"
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_REFLECTION_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: "reflection builtins cannot be AOT-folded with effectful code yet"
+                    .to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
         );
         std::process::exit(1);
     }
@@ -811,18 +872,48 @@ fn run_compile_analysis(
                 folded_bindings = Some(folded.hir_bindings);
             }
             Err(err) => {
-                eprintln!("compile error: {err}");
+                print_backend_error(
+                    path,
+                    contents,
+                    &zutai_semantic::BackendDiagnostic {
+                        code: zutai_semantic::BACKEND_REFLECTION_FOLD_CODE,
+                        severity: zutai_syntax::Severity::Error,
+                        message: err.to_string(),
+                        span: backend_entry_span(analysis),
+                        related: Vec::new(),
+                    },
+                );
                 std::process::exit(1);
             }
         }
     } else if let Some(reason) = residual_effect_reason {
-        eprintln!("compile error: {reason}");
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_RESIDUAL_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     if let Some(reason) =
         zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants)
     {
-        eprintln!("compile error: {reason}");
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_RESIDUAL_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     // Row-erased monomorphization: inline open-row field selects at concrete call
@@ -843,14 +934,34 @@ fn run_compile_analysis(
         match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {
             Ok(g) => g,
             Err(reason) => {
-                eprintln!("compile error: {reason}");
+                print_backend_error(
+                    path,
+                    contents,
+                    &zutai_semantic::BackendDiagnostic {
+                        code: zutai_semantic::BACKEND_DATAFLOW_CODE,
+                        severity: zutai_syntax::Severity::Error,
+                        message: reason.to_owned(),
+                        span: backend_entry_span(analysis),
+                        related: Vec::new(),
+                    },
+                );
                 std::process::exit(1);
             }
         };
     let anf = zutai_anf::lower_dc(&graph);
     let ssa = zutai_ssa::lower_anf(&anf);
     if let Some(reason) = zutai_codegen::unsupported_entry_type_reason(&ssa) {
-        eprintln!("compile error: {reason}");
+        print_backend_error(
+            path,
+            contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_ENTRY_TYPE_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     let llvm_ir = match emit {
@@ -941,19 +1052,40 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     }
     let thir = analysis.thir.as_ref().unwrap().file.as_ref().unwrap();
     if let Some(reason) = unsupported_thir_entry_type_reason(thir) {
-        eprintln!("error: {reason}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_ENTRY_TYPE_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     let original_hir_bindings = &analysis.hir.as_ref().unwrap().file.bindings;
 
     let uses_reflection = analysis.aot_reflection_program().is_some();
     if let Some(reason) = analysis.config_overlay_builtin_program() {
-        eprintln!("error: {reason}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_CONFIG_OVERLAY_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
 
-    if let Some(diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
-        eprintln!("error: {}", diagnostic.message);
+    if let Some(mut diagnostic) = analysis.native_import_diagnostics().into_iter().next() {
+        diagnostic.severity = zutai_syntax::Severity::Error;
+        print_backend_error(path, &contents, &diagnostic);
         std::process::exit(1);
     }
     let (dep_analyses, ptr_to_idx) = collect_dep_analyses(&analysis);
@@ -979,7 +1111,18 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
     let residual_effect_reason =
         zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants);
     if uses_reflection && (has_host_io_print || has_unfolded_effects) {
-        eprintln!("error: reflection builtins cannot be AOT-folded with effectful code yet");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_REFLECTION_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: "reflection builtins cannot be AOT-folded with effectful code yet"
+                    .to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     if uses_reflection {
@@ -989,18 +1132,48 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
                 folded_bindings = Some(folded.hir_bindings);
             }
             Err(err) => {
-                eprintln!("error: {err}");
+                print_backend_error(
+                    path,
+                    &contents,
+                    &zutai_semantic::BackendDiagnostic {
+                        code: zutai_semantic::BACKEND_REFLECTION_FOLD_CODE,
+                        severity: zutai_syntax::Severity::Error,
+                        message: err.to_string(),
+                        span: backend_entry_span(&analysis),
+                        related: Vec::new(),
+                    },
+                );
                 std::process::exit(1);
             }
         }
     } else if let Some(reason) = residual_effect_reason {
-        eprintln!("error: {reason}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_RESIDUAL_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     if let Some(reason) =
         zutai_tlc::residual_effect_reason_with_grants(&module, boundary_host_grants)
     {
-        eprintln!("error: {reason}");
+        print_backend_error(
+            path,
+            &contents,
+            &zutai_semantic::BackendDiagnostic {
+                code: zutai_semantic::BACKEND_RESIDUAL_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Error,
+                message: reason.to_owned(),
+                span: backend_entry_span(&analysis),
+                related: Vec::new(),
+            },
+        );
         std::process::exit(1);
     }
     zutai_tlc::monomorphize_open_row_selects(&mut module);
@@ -1019,7 +1192,17 @@ pub(crate) fn run_dataflow(path: &str) -> Result<(), Box<dyn Error>> {
         match zutai_dataflow::try_lower_program_with_host_grants(&program, boundary_host_grants) {
             Ok(g) => g,
             Err(reason) => {
-                eprintln!("error: {reason}");
+                print_backend_error(
+                    path,
+                    &contents,
+                    &zutai_semantic::BackendDiagnostic {
+                        code: zutai_semantic::BACKEND_DATAFLOW_CODE,
+                        severity: zutai_syntax::Severity::Error,
+                        message: reason.to_owned(),
+                        span: backend_entry_span(&analysis),
+                        related: Vec::new(),
+                    },
+                );
                 std::process::exit(1);
             }
         };

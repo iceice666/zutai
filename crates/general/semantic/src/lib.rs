@@ -39,6 +39,14 @@ pub use import::{ConditionalWitnessShape, ImportDiagnostic, ImportDiagnosticKind
 pub use package::{PortablePackage, PortablePackageGraph};
 pub use zutai_package::PortablePackageSource;
 
+pub const BACKEND_IMPORT_WITNESS_CODE: &str = "zutai::backend::import_witness_non_matchable";
+pub const BACKEND_ENTRY_TYPE_CODE: &str = "zutai::backend::entry_type_unsupported";
+pub const BACKEND_REFLECTION_EFFECT_CODE: &str = "zutai::backend::reflection_effectful";
+pub const BACKEND_REFLECTION_FOLD_CODE: &str = "zutai::backend::reflection_not_foldable";
+pub const BACKEND_RESIDUAL_EFFECT_CODE: &str = "zutai::backend::residual_effect";
+pub const BACKEND_DATAFLOW_CODE: &str = "zutai::backend::dataflow_lowering";
+pub const BACKEND_CONFIG_OVERLAY_CODE: &str = "zutai::backend::config_overlay";
+
 pub const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,9 +56,19 @@ pub struct SourceLocation {
     pub label: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticMetadata {
+    pub code: &'static str,
+    pub severity: zutai_syntax::Severity,
+    pub primary_span: zutai_syntax::Span,
+    pub related: Option<(zutai_syntax::Span, &'static str)>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendDiagnostic {
-    pub message: &'static str,
+    pub code: &'static str,
+    pub severity: zutai_syntax::Severity,
+    pub message: String,
     pub span: zutai_syntax::Span,
     pub related: Vec<SourceLocation>,
 }
@@ -146,6 +164,37 @@ pub enum SemanticDiagnosticKind {
     Thir(zutai_thir::ThirDiagnostic),
 }
 
+impl SemanticDiagnostic {
+    pub fn metadata(&self) -> DiagnosticMetadata {
+        match &self.kind {
+            SemanticDiagnosticKind::Parse(parse) => DiagnosticMetadata {
+                code: parse.code,
+                severity: parse.severity,
+                primary_span: parse.primary_span(),
+                related: None,
+            },
+            SemanticDiagnosticKind::Hir(hir) => DiagnosticMetadata {
+                code: hir.code(),
+                severity: zutai_syntax::Severity::Error,
+                primary_span: hir.span,
+                related: hir.related_location(),
+            },
+            SemanticDiagnosticKind::Import(import) => DiagnosticMetadata {
+                code: import.code(),
+                severity: zutai_syntax::Severity::Error,
+                primary_span: import.span,
+                related: None,
+            },
+            SemanticDiagnosticKind::Thir(thir) => DiagnosticMetadata {
+                code: thir.code(),
+                severity: zutai_syntax::Severity::Error,
+                primary_span: thir.span,
+                related: None,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnalysisOptions {
     pub run_hir_passes: bool,
@@ -201,12 +250,52 @@ impl Analysis {
                 let span = self.import_sites.get(source).copied()?;
                 let related = module.non_matchable_witness_chain()?;
                 Some(BackendDiagnostic {
-                    message: IMPORT_WITNESS_REASON,
+                    code: BACKEND_IMPORT_WITNESS_CODE,
+                    severity: zutai_syntax::Severity::Warning,
+                    message: IMPORT_WITNESS_REASON.to_owned(),
                     span,
                     related,
                 })
             })
             .collect()
+    }
+
+    pub fn backend_diagnostics(&self) -> Vec<BackendDiagnostic> {
+        let span = self
+            .thir
+            .as_ref()
+            .and_then(|lowered| lowered.file.as_ref())
+            .map(|file| file.expr_arena[file.final_expr].span)
+            .unwrap_or_default();
+        let mut diagnostics = self.native_import_diagnostics();
+        if let Some(message) = self.effectful_program() {
+            diagnostics.push(BackendDiagnostic {
+                code: BACKEND_RESIDUAL_EFFECT_CODE,
+                severity: zutai_syntax::Severity::Warning,
+                message: message.to_owned(),
+                span,
+                related: Vec::new(),
+            });
+        }
+        if let Some(message) = self.aot_reflection_program() {
+            diagnostics.push(BackendDiagnostic {
+                code: BACKEND_REFLECTION_FOLD_CODE,
+                severity: zutai_syntax::Severity::Warning,
+                message: message.to_owned(),
+                span,
+                related: Vec::new(),
+            });
+        }
+        if let Some(message) = self.config_overlay_builtin_program() {
+            diagnostics.push(BackendDiagnostic {
+                code: BACKEND_CONFIG_OVERLAY_CODE,
+                severity: zutai_syntax::Severity::Warning,
+                message: message.to_owned(),
+                span,
+                related: Vec::new(),
+            });
+        }
+        diagnostics
     }
 
     fn non_matchable_witness_chain(&self) -> Option<Vec<SourceLocation>> {

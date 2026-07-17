@@ -6,6 +6,16 @@ pub struct HirDiagnostic {
     pub span: Span,
 }
 
+impl HirDiagnostic {
+    pub fn code(&self) -> &'static str {
+        self.kind.code()
+    }
+
+    pub fn related_location(&self) -> Option<(Span, &'static str)> {
+        self.kind.related_location()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirDiagnosticKind {
     DuplicateBinding {
@@ -85,4 +95,50 @@ pub enum HirDiagnosticKind {
     UnusedLevelParam {
         name: String,
     },
+}
+
+impl HirDiagnosticKind {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::DuplicateBinding { .. } => "zutai::hir::duplicate_binding",
+            Self::DuplicateRecordField { .. } => "zutai::hir::duplicate_record_field",
+            Self::DuplicateTypeRecordField { .. } => "zutai::hir::duplicate_type_record_field",
+            Self::DuplicateRecordPatternField { .. } => {
+                "zutai::hir::duplicate_record_pattern_field"
+            }
+            Self::DuplicateTupleField { .. } => "zutai::hir::duplicate_tuple_field",
+            Self::DuplicateTypeTupleField { .. } => "zutai::hir::duplicate_type_tuple_field",
+            Self::DuplicateTuplePatternField { .. } => "zutai::hir::duplicate_tuple_pattern_field",
+            Self::UnknownIdentifier { .. } => "zutai::hir::unknown_identifier",
+            Self::DuplicateConstraintMethod { .. } => "zutai::hir::duplicate_constraint_method",
+            Self::DuplicateWitnessField { .. } => "zutai::hir::duplicate_witness_field",
+            Self::UnknownConstraint { .. } => "zutai::hir::unknown_constraint",
+            Self::DuplicateSelectField { .. } => "zutai::hir::duplicate_select_field",
+            Self::InvalidRowTailTarget { .. } => "zutai::hir::invalid_row_tail_target",
+            Self::ResumeOutsideHandler => "zutai::hir::resume_outside_handler",
+            Self::NonTailYieldFrom => "zutai::hir::non_tail_yield_from",
+            Self::LevelVarAsType { .. } => "zutai::hir::level_var_as_type",
+            Self::NonLevelAsLevel { .. } => "zutai::hir::non_level_as_level",
+            Self::UnknownLevelVar { .. } => "zutai::hir::unknown_level_var",
+            Self::UnusedLevelParam { .. } => "zutai::hir::unused_level_param",
+        }
+    }
+
+    fn related_location(&self) -> Option<(Span, &'static str)> {
+        match self {
+            Self::DuplicateBinding { first_span, .. }
+            | Self::DuplicateRecordField { first_span, .. }
+            | Self::DuplicateTypeRecordField { first_span, .. }
+            | Self::DuplicateRecordPatternField { first_span, .. }
+            | Self::DuplicateTupleField { first_span, .. }
+            | Self::DuplicateTypeTupleField { first_span, .. }
+            | Self::DuplicateTuplePatternField { first_span, .. }
+            | Self::DuplicateConstraintMethod { first_span, .. }
+            | Self::DuplicateWitnessField { first_span, .. }
+            | Self::DuplicateSelectField { first_span, .. } => {
+                Some((*first_span, "first occurrence"))
+            }
+            _ => None,
+        }
+    }
 }
