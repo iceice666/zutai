@@ -35,6 +35,14 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 
 ## Current baseline
 
+The 2026-07-17 standard-library ergonomics baseline adds application-shaped
+examples for records, tagged unions, streams, nested `FromData` derivation, and
+an explicit `Load` capability, with reference-interpreter/native output parity.
+A typed browser example and shared native/Wasm fixture cover `stdlib.html`,
+`stdlib.css`, and `stdlib.browser`; CLI checks, LSP diagnostic fixtures, safe CSS
+rendering, and `zutai-web build` lock each surface to its documented support
+level without changing language syntax.
+
 The 2026-07-16 reproducible native-artifact baseline adds deterministic
 `compile --metadata <path>` JSON containing the logical package roots,
 package-graph and stdlib identities, compiler compatibility, target triple, PIC
@@ -97,7 +105,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-16 (reproducible native artifacts: deterministic build
+_Last updated: 2026-07-17 (standard-library ergonomics: application-shaped
+record/union/stream/`FromData`/host-capability examples now have CLI,
+reference-interpreter, and native parity coverage; HTML/CSS/browser docs,
+diagnostics, fixture rendering, and web-build support levels are executable);
+prior baseline updates: 2026-07-16 (reproducible native artifacts: deterministic build
 metadata records logical package roots, package/stdlib identities, compiler
 compatibility, target/PIC mode, artifact kind, and runtime ABI version;
 binary/library links consume a prebuilt explicit or installed runtime archive

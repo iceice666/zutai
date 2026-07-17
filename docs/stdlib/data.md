@@ -37,8 +37,8 @@ Decoder results use the `stdlib.result.Result DecodeError A` shape. The module
 exports `Result` as a forwarding type alias so imported decoder results can be
 pattern-matched ergonomically.
 
-Runtime-loaded `Data` can also be decoded structurally through the provisional
-ambient `FromData` constraint and `decode` helper:
+Runtime-loaded `Data` can also be decoded structurally through the ambient
+`FromData` constraint and `decode` helper:
 
 ```zt
 Config :: type { port : Int; owner : { name : Text; }; };
@@ -79,14 +79,14 @@ Supported derived targets are `Bool`, `Int`, `Float`, `Text`, atom singleton
 types, `List`, `Optional`, closed records (including physical optional fields),
 and closed unions. A missing optional field becomes absent; a present one is
 decoded normally. Open rows, tuples, recursive targets, and fixed-width/posit
-scalars are rejected at the derive request. The constraint and helper are
-ambient in this slice; `stdlib.data` exports the shared
-`Validation`, `DecodePath`, and `DecodeIssue` types. Moving synthesis onto the
-typed reflection recipe API remains roadmap work.
+scalars are rejected at the derive request. `FromData` now synthesizes through
+the generic typed `deriveFromData` reflection builder; `stdlib.data` exports the
+shared `Validation`, `DecodePath`, and `DecodeIssue` types.
 
 The reference/TLC evaluator supports the full target set above. Native output
-currently runs primitive and flat-record decoders; nested derived records remain
-an explicit backend-parity blocker rather than a claimed support level.
+supports the same documented closed shapes, including nested records and lists;
+`examples/stdlib_ergonomics.zt` exercises a nested runtime load through both
+`run` and native compilation.
 
 `field name data` rejects missing fields with `#missingField`. `field? name data`
 returns `#ok #none` for a missing field and still returns `#err` when `data` is

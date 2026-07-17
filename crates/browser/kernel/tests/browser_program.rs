@@ -6,7 +6,7 @@
 
 mod fixture;
 
-use zutai_browser::{Html, WebBundleV3, decode_program};
+use zutai_browser::{HeadNode, Html, WebBundleV3, decode_program, render_stylesheet};
 use zutai_eval::TlcSession;
 use zutai_semantic::{AnalysisOptions, StdlibSources};
 
@@ -40,6 +40,18 @@ fn keyed_list_program_round_trips_through_the_bundle_and_analyzes() {
         .expect("initial render succeeds");
 
     assert_eq!(document.title, "Test");
+    let sheet = document
+        .head
+        .iter()
+        .find_map(|node| match node {
+            HeadNode::Style(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("typed stylesheet renders in the document head");
+    assert_eq!(
+        render_stylesheet(sheet, false).expect("structured stylesheet renders safely"),
+        "#status{font-weight:700;color:#0f7285;}@media (prefers-reduced-motion:reduce){*{transition:none;}}"
+    );
     let status = fixture::find_by_id(&document.body, "status").expect("status span renders");
     assert_eq!(fixture::element_text(status), "off");
     let list = fixture::find_by_id(&document.body, "list").expect("list renders");

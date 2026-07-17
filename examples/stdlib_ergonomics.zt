@@ -1,0 +1,47 @@
+-- Standard-library ergonomics integration example
+-- Usage: zutai-cli run examples/stdlib_ergonomics.zt
+-- Records, tagged unions, streams, FromData, derive, and an explicit host
+-- capability meet in one application-shaped value. HTML/CSS use the same model
+-- in the browser fixture documented under docs/stdlib/html.md and css.md.
+
+t ::= import stdlib.text;
+
+Owner :: type { name : Text; };
+Service :: type { name : Text; owner : Owner; samples : List Int; };
+Config :: type { service : Service; };
+Health :: type { #healthy : { average : Int; }; #degraded : { average : Int; }; };
+Report :: type { service : Text; owner : Text; health : Health; };
+
+FromData @Owner :: derive
+FromData @Service :: derive
+FromData @Config :: derive
+
+average :: List Int -> Int
+  = values => [
+      count := length values;
+      total := values |> fromList |> takeList count |> fold (\sum value. sum + value) 0;
+      if count == 0 then 0 else total / count
+    ];
+
+report :: Config -> Report
+  = config => [
+      score := average config.service.samples;
+      health : Health = if score >= 90
+        then #healthy { average = score; }
+        else #degraded { average = score; };
+      {
+        service = t.toUpper config.service.name;
+        owner = config.service.owner.name;
+        health = health;
+      }
+    ];
+
+main :: Load -> Validation DecodeIssue Report ! { load.zti : Path -> Data; }
+  = load => [
+      decoded : Validation DecodeIssue Config = decode (loadZti "examples/stdlib_ergonomics.zti");
+      match decoded {
+        | #valid { value = config; } => #valid { value = report config; };
+        | #invalid { errors = errors; } => #invalid { errors = errors; };
+      }
+    ];
+main

@@ -1,0 +1,53 @@
+-- Typed HTML/CSS/browser application
+-- Usage: zutai-cli check examples/stdlib_browser.zt
+-- Browser programs are validated and run by `zutai-web build`, not by the
+-- terminal reference-interpreter renderer.
+
+browser ::= import stdlib.browser;
+html ::= import stdlib.html;
+css ::= import stdlib.css;
+
+Model :: type { saved : Bool; };
+Msg :: type { #save; };
+
+saveMessage :: Msg = #save;
+
+init :: Unit -> browser.Browser Model
+  = _ => { saved = false; };
+
+update :: Msg -> Model -> browser.Browser Model
+  = message model => match message {
+      | #save => model with { saved = true; };
+    };
+
+sheet :: css.Stylesheet = css.stylesheet {
+  css.rule { css.class "card"; } {
+    css.padding (css.rem 1.5);
+    css.borderRadius (css.rem 0.75);
+    css.background (css.namedColor "white");
+  };
+  css.rule { css.hover (css.class "card"); } {
+    css.color (css.hex "#0f7285");
+  };
+};
+
+view :: Model -> html.Document Msg
+  = model =>
+    (html.document
+      "en"
+      "Profile"
+      {
+        html.description "Profile editor";
+        html.style sheet;
+      }
+      { html.bodyClass "page"; }
+      {
+        html.main { html.classAttr "card"; } {
+          html.h1 {;} { html.text "Profile"; };
+          html.button { html.onClick saveMessage; } {
+            html.text (if model.saved then "Saved" else "Save");
+          };
+        };
+      });
+
+browser.application init update view

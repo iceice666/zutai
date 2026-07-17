@@ -44,6 +44,8 @@ cargo run -q -p zutai-cli -- run examples/service_health.zt
 | `stdlib_fs_whole_file.zt` | `stdlib.fs` `writeAll`/`readAll` compatibility wrappers | Writes and reads a whole text file through the old `fs.write`/`fs.read` host boundary |
 | `text_report.zt` | `stdlib.text` normalization, replacement, joining, and parsing | Prints a text report record |
 | `from_data_runtime.zt` + `from_data_runtime.zti` | Hygienic staging-backed `FromData` derivation at `loadZti` | Prints a typed nested config validation result and ignores an extra input field |
+| `stdlib_ergonomics.zt` + `stdlib_ergonomics.zti` | Records, tagged unions, streams, nested `FromData` derive, and an explicit `Load` capability in one flow | Prints a typed health report; `run` and native output match |
+| `stdlib_browser.zt` | Small typed `stdlib.html` / `stdlib.css` / `stdlib.browser` application | `check` passes; use `zutai-web build` for browser execution |
 | `net_echo.zt` | `stdlib.net` `withConnection` for one TCP request | Waits on port 7777 until a client sends a line |
 | `echo_http.zt` | Recursive `stdlib.net` `withConnection` for a tiny HTTP responder | Waits on port 8080 and keeps accepting clients |
 
@@ -54,6 +56,10 @@ The filesystem examples should be run from the workspace root because host
 source file through the host boundary instead. A second cell points at a missing
 file; the successful output is the laziness check. The `stdlib_fs_*.zt`
 examples create ignored `examples/*.out` files.
+
+`stdlib_browser.zt` is intentionally check/build-oriented: a browser program
+returns callable `init`/`update`/`view` fields and is executed by `zutai-web`, not
+rendered as a terminal value by `zutai-cli run`.
 
 ## Network Demos
 

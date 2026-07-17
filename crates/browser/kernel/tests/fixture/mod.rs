@@ -21,8 +21,9 @@ const CSS_ZT: &str = include_str!("../../../../../stdlib/packages/web/modules/cs
 /// text items (add via a draft `<input>`, remove per-item), covering
 /// hydration, keyed-list add/remove, `value` live-sync, and (via the
 /// `description` head entry) head-node identity in one program.
-pub const SOURCE: &str = r#"
+pub const SOURCE: &str = r##"
 html ::= import stdlib.html;
+css ::= import stdlib.css;
 
 Model :: type {
   active : Bool;
@@ -59,12 +60,22 @@ listItem :: Text -> html.Html Msg
       html.button { html.onClick (removeItemMsg itemText); } { html.text "remove"; };
     };
 
+sheet :: css.Stylesheet = css.stylesheet {
+  css.rule { css.id "status"; } {
+    css.fontWeight (css.keyword "700");
+    css.color (css.hex "#0f7285");
+  };
+  css.reducedMotion {
+    css.rule { css.all; } { css.transition (css.keyword "none"); };
+  };
+};
+
 view :: Model -> html.Document Msg
   = model =>
     (html.document
       "en"
       "Test"
-      { html.description "test app"; }
+      { html.description "test app"; html.style sheet; }
       {;}
       {
         html.span { html.idAttr "status"; } { html.text (if model.active then "on" else "off"); };
@@ -75,7 +86,7 @@ view :: Model -> html.Document Msg
       });
 
 { init = init; update = update; view = view; }
-"#;
+"##;
 
 /// A portable `WebBundleV3` for `SOURCE`, with only the stdlib modules it
 /// actually imports (transitively: `html` -> `css`, plus the always-required

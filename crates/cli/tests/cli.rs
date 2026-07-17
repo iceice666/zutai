@@ -635,6 +635,14 @@ fn real_examples_check_run_and_compile_match() {
             "stdlib_fs_whole_file.zt",
             ["exact = true", "mentionsSecond = true", "bytes = 30"],
         ),
+        (
+            "stdlib_ergonomics.zt",
+            [
+                "health = #healthy { average = 92 }",
+                "owner = \"platform\"",
+                "service = \"API\"",
+            ],
+        ),
     ];
 
     for (name, snippets) in cases {
@@ -652,6 +660,11 @@ fn real_examples_check_run_and_compile_match() {
         let native = compile_path_bin_stdout(&format!("cli_test_example_{name}"), &path);
         assert_eq!(native, rendered, "{name} native output must match run");
     }
+}
+
+#[test]
+fn browser_stdlib_example_checks_at_its_documented_support_level() {
+    check_path_passes(&example_fixture("stdlib_browser.zt"));
 }
 
 #[test]

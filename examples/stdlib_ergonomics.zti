@@ -1,0 +1,7 @@
+{
+  service = {
+    name = "api";
+    owner = { name = "platform"; };
+    samples = [96; 92; 88;];
+  };
+}

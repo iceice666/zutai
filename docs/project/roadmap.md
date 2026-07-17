@@ -47,12 +47,6 @@ purity, typed host effects, or the TLC/Dataflow Core boundary.
 
 Milestones:
 
-1. **Standard-library ergonomics pass.** Expand documented stdlib examples and
-   fixtures around records, tagged unions, streams, `FromData`, `derive`, HTML,
-   CSS, and host capabilities. The work is library/API polish unless a concrete
-   program demonstrates a language gap. Acceptance: examples compile or refuse
-   at their documented support level through CLI, LSP diagnostics, and the
-   reference interpreter where applicable.
 2. **Self-hosted website as integration workload.** Treat the browser kernel and
    web bundle path as a full-stack regression target: local packages, stdlib
    imports, prerendered HTML hydration, retained-tree reconciliation, events,

@@ -1875,6 +1875,39 @@ mod tests {
     }
 
     #[test]
+    fn stdlib_html_and_css_type_errors_publish_lsp_diagnostics() {
+        let cases = [
+            (
+                "file:///tmp/bad-html.zt",
+                "html ::= import stdlib.html;\nMsg :: type { #save; };\nbad :: html.Html Msg = html.button { html.onClick 1; } { html.text \"save\"; };\nbad",
+                "type mismatch",
+            ),
+            (
+                "file:///tmp/bad-css.zt",
+                "css ::= import stdlib.css;\nbad :: css.Stylesheet = css.stylesheet { css.rule { css.class \"card\"; } { css.padding (css.rem \"large\"); }; };\nbad",
+                "expected Float, found Text",
+            ),
+        ];
+
+        for (uri, source, expected) in cases {
+            let analysis = analyze(source, uri).unwrap();
+            let diagnostics = diagnostics(source, &analysis);
+            assert!(
+                diagnostics.iter().any(|diagnostic| diagnostic
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| message.contains(expected))),
+                "expected `{expected}` for {uri}, got {diagnostics:?}"
+            );
+            assert!(
+                diagnostics
+                    .iter()
+                    .all(|diagnostic| diagnostic.get("range").is_some())
+            );
+        }
+    }
+
+    #[test]
     fn derive_diagnostic_carries_definition_related_information() {
         let source = "Ord :: <A> @A { compare :: A -> A -> Bool; } derive\nOrd @Int :: derive\n1";
         let analysis = analyze(source, "file:///tmp/derive.zt").unwrap();
