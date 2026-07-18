@@ -48,4 +48,16 @@ Functions are first-class and curried. The `|>` pipeline operator is the idiomat
 
 Type-level computation uses the same pure expression language as runtime code. Type constructors are ordinary functions that return `Type`, and type-level evaluation is deterministic and bounded by implementation limits.
 
+### Scope discipline
+
+Language and library work serves the data workflow above. New abstractions
+should be ordinary `.zt` libraries when the stable language can express them;
+new syntax or a new trusted-core node requires a concrete program that cannot
+be served by the existing library or explicit host boundary.
+
+Compiler backends, packages, editor tooling, and browser integration support
+and validate the language. Their independent feature completeness is not a
+language-design goal, and tooling or deployment convenience alone does not
+justify expanding the language core.
+
 ---

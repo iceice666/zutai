@@ -8,6 +8,20 @@ feature versions. This manual summarizes support levels, and the
 [implementation status](project/status.md#current-baseline) records validation
 evidence.
 
+## What Zutai is for
+
+Zutai's primary workflow is inert data, followed by typed validation or
+transformation, followed by serializable output. Use `.zti` for configuration
+or input data and `.zt` for pure structural checking, decoding, aggregation,
+and transformation. When a program needs the filesystem, network, environment,
+clock, randomness, dynamic loading, or a browser host, that integration remains
+explicit at an effect and capability boundary.
+
+Native compilation, packages, editor tooling, and browser execution deploy and
+validate the same data-oriented language. They are supported integration
+surfaces, not a commitment to turn Zutai into a general-purpose application or
+frontend framework.
+
 ## Quick start
 
 Create `app.zti`:
@@ -72,15 +86,18 @@ program in named helpers with explicit input and output types. This gives row
 checking enough information for record projections and keeps diagnostics close
 to the helper that needs an annotation.
 
-Short module aliases keep pipelines readable in example-sized programs:
-`s ::= import stdlib.stream;`, `n ::= import stdlib.num;`,
-`t ::= import stdlib.text;`, `r ::= import stdlib.result;`, and
-`c ::= import stdlib.cmp;` are common local names. Larger opt-in surfaces often
-use `l ::= import stdlib.list;`, `_ ::= import stdlib.collection;`,
-`d ::= import stdlib.data;`, `v ::= import stdlib.validate;`,
-`cfg ::= import stdlib.config;`, and
-`refl ::= import stdlib.reflect;`. Network examples use
-`net ::= import stdlib.net;`. Prefer typed helper functions when the logic is
+Short module aliases keep pipelines readable in example-sized programs. Common
+data workflows use `s ::= import stdlib.stream;`,
+`l ::= import stdlib.list;`, `n ::= import stdlib.num;`,
+`t ::= import stdlib.text;`, `r ::= import stdlib.result;`,
+`c ::= import stdlib.cmp;`, `d ::= import stdlib.data;`,
+`v ::= import stdlib.validate;`, and `cfg ::= import stdlib.config;`.
+`_ ::= import stdlib.collection;` opts into shared collection witnesses.
+
+`refl ::= import stdlib.reflect;` exposes advanced compile-time facilities.
+Filesystem, network, environment, clock, randomness, dynamic-load, HTML, CSS,
+and browser modules are explicit host or platform integrations rather than the
+default data workflow. Prefer typed helper functions when the logic is
 nontrivial; for simple projections in an already-typed context, field sections
 such as `filter _.enabled services`, `map _.owner.name services`, and
 `services |> filter _.enabled |> map _.owner` keep list/stream folds readable.

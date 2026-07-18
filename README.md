@@ -1,13 +1,17 @@
 # Zutai
 
-Zutai is an experimental two-mode language system for data, configuration, validation, and pure data transformation.
+Zutai is a typed data-transformation language built around inert input, pure
+computation, structural validation, and explicit host boundaries.
 
 - `.zti` is an inert data literal format: deterministic, non-evaluating, and optimized for fast parsing and lazy materialization.
 - `.zt` is a pure, lazy, typed computation language over data.
 
-The current repository is an early Rust workspace containing the parser,
-semantic IR, CLI, editor support, and one stable language specification under
-`docs/spec/`.
+The core workflow is inert data, followed by typed validation or
+transformation, followed by serializable output. Native compilation, packages,
+editor support, and browser execution support and validate that workflow; they
+are not independent product directions. New capabilities are admitted only
+when a concrete data-oriented program demonstrates that the existing language,
+library, or host boundary is insufficient.
 
 ## Repository layout
 
@@ -74,9 +78,10 @@ For conventions used by larger examples, see the
 
 ## Official website
 
-The project website under [website](website) is a Zutai browser application:
-its state loop, HTML tree, and typed stylesheet are all `.zt`, while its copy is
-inert `.zti` data. Build its prerendered WebAssembly bundle with:
+The project website under [website](website) is the browser portability and
+integration workload for the stable language. Its state loop, HTML tree, and
+typed stylesheet are `.zt`, while its copy is inert `.zti` data. Build its
+prerendered WebAssembly bundle with:
 
 ```sh
 just web-build
@@ -84,7 +89,8 @@ just web-build
 cargo run -p zutai-web -- build website/main.zt
 ```
 
-`zutai-web` is the dedicated browser-application CLI. The older
+`zutai-web` owns this supported integration surface; it is not a commitment to
+grow Zutai into a general-purpose frontend framework. The older
 `zutai-cli web ...` spelling remains available as a compatibility alias.
 
 See [website/README.md](website/README.md) for the source layout, local preview,
@@ -125,8 +131,11 @@ Zutai's currently accepted syntax is stable and documented as one language.
 Some constructs have narrower interpreter or native-backend support; those
 limits are recorded per feature rather than represented as language versions.
 
-Current implementation highlights:
+The implementation is organized by role:
 
-- Immediate mode has syntax and SIMD parser crates behind the `zutai-im` facade.
-- General mode parses `.zt`, lowers through HIR and THIR, elaborates to TLC, and has test-covered Dataflow Core, ANF, SSA, LLVM IR, object, and native binary driver stages.
-- Constraints/witnesses support named methods and operator methods. Direct, bounded, conditional, and imported witness calls dispatch through TLC dictionary passing on the default evaluator, with the THIR evaluator retained as a regression oracle.
+- **Core language and data workflow:** immediate-mode data, general-mode parsing and checking, structural validation, data encoding and decoding, reference evaluation, and the `check`/`run`/`format` CLI paths.
+- **Supported deployment and tooling:** the Dataflow Core-to-LLVM native pipeline, local packages, diagnostics, formatting, and editor integration.
+- **Maintained integration surfaces:** locked Git acquisition, package-wide editor operations, native libraries, browser/Wasm execution, and web tooling. Existing contracts remain tested, but expansion requires a motivating workload and roadmap promotion.
+
+See the [implementation status](docs/project/status.md) for exact support levels
+and the [roadmap](docs/project/roadmap.md) for the investment policy.

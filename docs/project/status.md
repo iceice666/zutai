@@ -33,6 +33,45 @@ Design details: [`docs/compiler/tlc.md`](../compiler/tlc.md),
 [`docs/compiler/dataflow-core.md`](../compiler/dataflow-core.md), [`docs/compiler/anf.md`](../compiler/anf.md), and
 [`docs/compiler/runtime-abi.md`](../compiler/runtime-abi.md).
 
+## Subsystem roles
+
+The implemented surface is broader than the product core. These roles describe
+maintenance and admission policy; they do not reduce any documented support
+level or make accepted syntax provisional.
+
+### Core language and data workflow
+
+- `.zti` parsing, inert-data representation, and typed import validation;
+- `.zt` syntax, HIR, THIR, TLC, diagnostics, and reference evaluation;
+- records, lists, tuples, unions, row-based validation and transformation;
+- structural `Data` encoding/decoding and data-oriented derivation;
+- `check`, `run`, and `format`, local imports/packages, and the base/data
+  standard-library modules.
+
+Core work may improve correctness, diagnostics, security, portability, and
+real data/configuration/validation workflows without a separate scope review.
+
+### Supported deployment and tooling
+
+- Dataflow Core, ANF, SSA, LLVM/native AOT, native libraries, and the JSON ABI;
+- local package analysis, deterministic build inputs, and basic editor support;
+- explicit host effects and capabilities needed to integrate pure programs.
+
+These layers remain supported. Expansion must still be justified by a core
+workflow rather than by backend or tooling completeness for its own sake.
+
+### Maintained integration surfaces
+
+- locked Git acquisition and content-addressed package snapshots;
+- package-wide completion, references, rename, and dependency indexing;
+- browser/Wasm execution, `zutai-web`, and HTML/CSS/browser modules;
+- generic typed staging beyond data derivation, higher-order witness backend
+  coverage, and the effectful-generator native envelope.
+
+Existing documented contracts remain tested and regressions are fixed. New
+capabilities in these areas require a motivating program and promotion through
+the [roadmap investment policy](roadmap.md#investment-policy).
+
 ## Current baseline
 
 The 2026-07-17 collection-constraint baseline adds opt-in `stdlib.collection`
@@ -201,10 +240,13 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (derived first-order data encoding: `ToData`/`encode`
-round-trip supported closed shapes through evaluator, native JSON, and browser
-bundle gates while unsupported targets refuse at derivation); prior baseline
-updates: 2026-07-17 (host-capability source modules: explicit environment,
+_Last updated: 2026-07-18 (scope classification: the implemented baseline is
+grouped into core language/data workflow, supported deployment/tooling, and
+maintained integration surfaces without changing syntax or support levels);
+prior baseline updates: 2026-07-17 (derived first-order data encoding:
+`ToData`/`encode` round-trip supported closed shapes through evaluator, native
+JSON, and browser bundle gates while unsupported targets refuse at derivation);
+prior baseline updates: 2026-07-17 (host-capability source modules: explicit environment,
 clock, randomness, and dynamic-load wrappers now expose composable effect aliases
 with handler mock coverage and interpreter/native application gates); prior
 baseline updates: 2026-07-17 (measured optimization gate: repeatable website,

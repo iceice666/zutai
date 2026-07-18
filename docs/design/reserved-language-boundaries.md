@@ -15,6 +15,10 @@ type-system or runtime cost.
 - Dataflow Core represents sharing and recursion structurally. New syntax must
   elaborate into the existing core unless a separately justified kernel change
   is approved.
+- New syntax must first demonstrate that an ordinary `.zt` library or the
+  existing explicit host boundary cannot express the required behavior.
+- A tooling, backend, package, or browser requirement does not by itself justify
+  enlarging the trusted language core.
 - Evaluation never proceeds from incomplete typed IR.
 - The native runtime uses conservative default-on collection. A new feature
   must not silently require a moving collector or write barrier.
@@ -62,7 +66,10 @@ top of aliases without a concrete interoperability or abstraction need.
 
 ## Promotion rule
 
-When a real program requires one of these boundaries, add a scoped milestone to
-[the roadmap](../project/roadmap.md) with the motivating program, semantic rule, parser impact,
-IR impact, refusal behavior, and acceptance gates. Do not assign a speculative
-language-version number.
+When a real data-oriented program requires one of these boundaries, first
+compare an ordinary library, tooling change, host adapter, and language change.
+Only when the first three are insufficient may a scoped milestone be added to
+the [roadmap](../project/roadmap.md). It must name the motivating program,
+semantic rule, parser and IR impact, refusal behavior, migration risk, and
+executable acceptance gates. Do not assign a speculative language-version
+number.

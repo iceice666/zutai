@@ -5,49 +5,72 @@ is one stable surface specified under the [language specification](../spec/00-in
 Implementation history lives under [`docs/history/`](../history/README.md); this file contains
 only concrete open work.
 
-## Status (2026-07-17)
+## Status (2026-07-18)
 
-The implemented baseline is no longer syntax discovery. Zutai already has one
-stable surface with parser, HIR, THIR, TLC, reference-interpreter, native-AOT,
-browser, package, LSP, typed-staging, reflection, and decoder coverage recorded
-in [status](status.md) and [history](../history/README.md). Future work should
-therefore improve confidence, portability, and real-program ergonomics without
-adding speculative syntax.
+Syntax discovery and broad platform construction are complete. Zutai already
+has a stable surface plus reference evaluation, native AOT, packages, LSP,
+typed staging, browser execution, reflection, and data codecs. Their existence
+does not create independent expansion roadmaps: future work defaults to
+correctness, diagnostics, security, portability, and concrete data,
+configuration, validation, or transformation workloads.
 
-Roadmap order follows dependency order: editor/package trust first, backend and
-runtime confidence second, application-facing ergonomics third. A milestone moves
-into implementation only when its refusal behavior, support level, and validation
-gate are explicit.
+No optimization is scheduled. The recorded website build/toolchain outlier
+still requires focused profiling before it can justify compiler or runtime
+work.
 
-## Near-term: package-aware editor and diagnostics hardening
+## Investment policy
 
-Package-aware navigation, completion, stable diagnostics, canonical formatting,
-native target portability, and the measured optimization gate are complete. New
-near-term or backend work should be added only with an explicit refusal model,
-validation gate, and workload evidence. No optimization is scheduled: the
-recorded website build/toolchain outlier still requires focused profiling.
+### Maintain by default
 
+- fix correctness, soundness, security, data-loss, and portability defects;
+- preserve documented stable syntax and support-level contracts;
+- improve diagnostics and explicit refusal behavior;
+- improve a demonstrated inert-data, validation, transformation, or
+  serialization workflow.
 
-## Long-term: application ergonomics on the stable core
+### Demand-gated
 
-Goal: prove Zutai can carry real applications without weakening `.zti` inertness,
-purity, typed host effects, or the TLC/Dataflow Core boundary.
+New syntax, host operations, native targets, package source kinds, browser
+abstractions, type-system or metaprogramming capabilities, runtime/collector
+requirements, and standard-library modules require roadmap promotion. Existing
+implementation alone is not evidence for further generalization.
 
-The constraint-backed collection vocabulary and derived first-order data encoding
-milestones are complete. Remaining demand-gated milestone:
+Every proposed milestone must state:
 
-1. **Demand-gated language boundary review.** Revisit reserved boundaries only
-   with a motivating program and a concrete semantic rule. Each proposal must
-   name parser impact, HIR/THIR/TLC impact, Dataflow Core/runtime impact,
-   refusal behavior, and migration risk before it can become a scheduled
-   milestone.
+1. the concrete program and blocked workflow;
+2. how the request serves data, configuration, validation, or transformation;
+3. why a library, tooling change, or host adapter is insufficient;
+4. parser, HIR, THIR, TLC, Dataflow Core, runtime, and compatibility impact;
+5. support levels and refusal behavior for unsupported shapes;
+6. an executable validation gate and the permanent maintenance obligation.
 
+### Frozen without workload evidence
 
-Deferred across these phases: optimizing laziness beyond the current Dataflow
-Core sharing model, general non-tail `yield from`, asynchronous or binary host
-IO, a package registry/version solver, and new surface syntax without a concrete
-program. These are candidates only after the relevant workload and measurement
-gate identifies them as the smallest solution.
+- browser-framework and package-ecosystem expansion;
+- IDE feature completeness beyond correctness of existing operations;
+- generic macro/staging and effectful-generator generalization;
+- higher-rank or higher-kinded backend generalization; and
+- optimization without focused profiling.
+
+### Explicitly deferred
+
+Package registries and version solvers, asynchronous or binary host IO, an
+application HTTP/database framework, a general procedural-macro system, a
+second iterator abstraction, optimizing laziness beyond the current sharing
+model, general non-tail `yield from`, and speculative syntax are not scheduled.
+
+## Demand-gated application qualification
+
+Use concrete downstream applications to identify the smallest missing
+capability in the stable data-transformation core. The existing independent
+qualification application remains the acceptance baseline; a broader
+application feature is not a goal by itself.
+
+The only open milestone is:
+
+1. **Demand-gated language boundary review.** Admit a proposal only when it
+   satisfies the investment-policy template above and defines a concrete
+   semantic rule, refusal model, migration risk, and executable gate.
 
 ## Reserved design boundaries
 

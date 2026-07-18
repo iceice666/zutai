@@ -4,15 +4,21 @@ Guidance for AI coding agents working in this repository.
 
 ## Project overview
 
-Zutai is an experimental two-mode language system:
+Zutai is a typed data-transformation language built around inert input, pure
+computation, structural validation, and explicit host boundaries:
 
 - Immediate mode (`.zti`) is an inert data literal format.
 - General mode (`.zt`) is a pure, lazy, typed computation language over data.
 
-The implementation is an early Rust workspace. The stable language design
-lives under `docs/spec/` and is the implementation source of truth when
-changing parser, AST, type-system, or language behavior. Zutai has no numbered
-language-version buckets; support limits are recorded per feature.
+The core workflow is inert data, followed by typed validation or
+transformation, followed by serializable output. Native compilation, packages,
+editor support, and browser execution support and validate that workflow; they
+are not independent product directions.
+
+The stable language design lives under `docs/spec/` and is the implementation
+source of truth when changing parser, AST, type-system, or language behavior.
+Zutai has no numbered language-version buckets; support limits are recorded per
+feature.
 
 Local skill: use `skill://zutai-language` (project-local `.omp/skills/zutai-language/SKILL.md`) for quick routing to Zutai language facts, source-of-truth docs, implementation support levels, and compiler-layer references before answering language questions or changing language behavior.
 
@@ -35,16 +41,19 @@ Source → HIR → THIR → TLC
 THIR is error-tolerant and source-preserving — the foundation for LSP tooling (diagnostics, hover types, go-to-definition). TLC (Type Lambda Calculus) is the fully-elaborated IR with explicit `TyLam`/`TyApp` and no free type variables; it is the clean input for all compilation stages.
 
 See `docs/compiler/dataflow-core.md` for the Dataflow Core IR specification,
-`docs/project/status.md` for implemented status, and `docs/project/roadmap.md` for the open
-phase plan.
+`docs/project/status.md` for implemented support and subsystem maintenance
+roles, and `docs/project/roadmap.md` for the investment policy and open work.
 
 ## Updating project status, roadmap, and history
 
-- Keep `docs/project/status.md` focused on the current baseline and validation notes.
-- Keep active TODOs and TBD items in `docs/project/roadmap.md`, ordered newest/open work first.
+- Keep `docs/project/status.md` focused on the current baseline, validation
+  notes, and the distinction between core, supported, and maintained surfaces.
+- Keep concrete unfinished work in `docs/project/roadmap.md`; every new
+  milestone must satisfy its investment-policy admission template.
 - Keep closed decisions that remain useful in `docs/project/decisions.md`.
 - When a milestone finishes, move a short summary from the roadmap into the current half-year file under `docs/history/`, newest first, and leave unfinished follow-up in the roadmap.
-- State support levels precisely: check-only, reference-interpreter support, backend rejection, or full compile/runtime support.
+- State support levels precisely: syntax only, check-only, reference-interpreter
+  support, backend rejection, LLVM/native support, or unimplemented/open.
 - Update the relevant "Last updated" note and verification gate when changing implementation status; keep old long-form details compressed unless they explain a current risk.
 
 ## Repository layout
@@ -113,8 +122,19 @@ stdlib from disk, which wasm32 cannot do.
 - Prefer small, focused changes.
 - Do not overwrite user changes you did not make.
 - Read the relevant files in `docs/spec/` before implementing language syntax
-  or semantics.
-- For remaining roadmap work, treat `docs/project/roadmap.md` as the implementation order; completed post-frontend history lives under `docs/history/`.
+  or semantics, and read `docs/project/roadmap.md#investment-policy` before
+  proposing new language, runtime, package, editor, native, or browser scope.
+- Default to correctness, diagnostics, security, portability, and demonstrated
+  data/configuration/validation/transformation workflows.
+- Do not infer an expansion roadmap from an existing subsystem. Browser
+  framework, package ecosystem, IDE completeness, generic macro/staging,
+  effectful-generator, higher-rank/higher-kinded backend, and optimization work
+  are demand-gated.
+- Before adding syntax or a trusted-core node, prove that an ordinary `.zt`
+  library, tooling change, or explicit host adapter is insufficient. Record the
+  motivating program, cross-layer impact, support level, refusal behavior,
+  executable validation gate, migration risk, and maintenance obligation in the
+  roadmap milestone.
 - Do not extend parser syntax until the existing surface forms have HIR/THIR/TLC
   semantics. Prefer check-only support with precise unsupported-feature
   diagnostics before claiming compiler or interpreter support.

@@ -13,7 +13,8 @@ not override it.
 ## Language reference
 
 - [Language specification](spec/00-index.md) — normative stable syntax and semantics
-- [Reserved language boundaries](design/reserved-language-boundaries.md) — demand-gated non-goals and design constraints
+- [Design goals](spec/01-overview/design-goals.md) — core data workflow and language scope discipline
+- [Reserved language boundaries](design/reserved-language-boundaries.md) — demand-gated language/kernel non-goals
 
 ## Compiler contributors
 
@@ -25,9 +26,9 @@ not override it.
 
 ## Project state
 
-- [Implementation status](project/status.md) — current baseline and validation notes
-- [Roadmap](project/roadmap.md) — concrete unfinished work only
-- [Archived decisions](project/decisions.md) — closed decisions that remain useful
+- [Implementation status](project/status.md) — current baseline, support evidence, and subsystem maintenance roles
+- [Roadmap](project/roadmap.md) — concrete unfinished work, investment policy, and milestone admission gates
+- [Archived decisions](project/decisions.md) — implemented contracts and closed decisions that remain useful
 - [Implementation history](history/README.md) — completed milestones grouped by date
 
 ## Compiler layer ownership
@@ -56,3 +57,8 @@ Source → HIR → THIR → TLC
 - **Semantic facade** — `zutai-semantic` wires parse, HIR, THIR, TLC, imports, and stage gates.
 - **Reference evaluators** — `zutai-eval` evaluates only complete typed IR and remains the semantics oracle.
 - **Browser tooling** — `zutai-web` owns browser bundle builds and the local rebuild/reload server; `zutai-cli web` is a compatibility frontend over the same library.
+
+Compiler, package, editor, native, and browser layers support the stable
+data-transformation language. Their presence does not imply independent
+expansion roadmaps; see the project status for maintenance roles and the
+roadmap for the admission policy.

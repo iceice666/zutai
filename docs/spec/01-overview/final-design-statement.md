@@ -26,6 +26,12 @@ The compact core statement is:
 > annotations, and stream generators are all one language surface. The final
 > expression of a `.zt` file is its output; a declaration-only file yields `()`.
 
+Inclusion in this stable surface is a compatibility commitment, not a
+commitment to generalize every feature into a broader subsystem. Support levels
+remain recorded separately for checking, reference evaluation, and native
+execution. New surface forms require a concrete data-oriented program; they are
+not added only to make Zutai resemble a general-purpose language.
+
 See the [language specification index](../00-index.md) and
 [grammar reference](../02-lexical/grammar-reference.md) for the complete stable
 surface.
