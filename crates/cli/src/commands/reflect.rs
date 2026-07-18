@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::path::Path;
 
-use super::*;
-
 pub(super) struct FoldedAotReflection {
     pub(super) module: zutai_tlc::TlcModule,
     pub(super) hir_bindings: Vec<zutai_hir::Binding>,
@@ -48,7 +46,7 @@ pub(super) fn fold_reflection_value_to_source(
                 .map_err(|err| err.to_string())?;
             reflection_value_to_source(&value).ok_or_else(|| {
                 if value_contains_type(&value) {
-                    UNSUPPORTED_TYPE_ENTRY_REASON.to_string()
+                    super::compile::UNSUPPORTED_TYPE_ENTRY_REASON.to_string()
                 } else {
                     "reflection entry did not fold to a backend value".to_string()
                 }
