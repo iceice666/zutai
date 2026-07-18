@@ -501,6 +501,48 @@ value
 }
 
 #[test]
+fn derived_from_data_decodes_nullary_union_from_atom_envelope() {
+    // .zti bare atoms arrive as Data.#atom — union decoder must accept them
+    // for nullary variants and continue to accept #tagged.
+    let atom_ok = run("Mode :: type { #dev; #prod; };\n\
+         FromData @Mode :: derive\n\
+         value :: Validation DecodeIssue Mode = fromData (#atom { value = \"prod\"; });\n\
+         value");
+    assert!(
+        matches!(&atom_ok, Value::TaggedValue { tag, .. } if tag.as_ref() == "valid"),
+        "atom envelope: {atom_ok:?}"
+    );
+
+    let tagged_ok = run("Mode :: type { #dev; #prod; };\n\
+         FromData @Mode :: derive\n\
+         value :: Validation DecodeIssue Mode = fromData (#tagged { tag = \"prod\"; payload = #record { fields = {;}; }; });\n\
+         value");
+    assert!(
+        matches!(&tagged_ok, Value::TaggedValue { tag, .. } if tag.as_ref() == "valid"),
+        "tagged envelope: {tagged_ok:?}"
+    );
+
+    let unknown = run("Mode :: type { #dev; #prod; };\n\
+         FromData @Mode :: derive\n\
+         value :: Validation DecodeIssue Mode = fromData (#atom { value = \"staging\"; });\n\
+         value");
+    assert!(
+        matches!(&unknown, Value::TaggedValue { tag, .. } if tag.as_ref() == "invalid"),
+        "unknown atom: {unknown:?}"
+    );
+
+    // A bare atom must NOT satisfy a payload variant
+    let bad = run("Choice :: type { #off; #count : { value : Int; }; };\n\
+         FromData @Choice :: derive\n\
+         value :: Validation DecodeIssue Choice = fromData (#atom { value = \"count\"; });\n\
+         value");
+    assert!(
+        matches!(&bad, Value::TaggedValue { tag, .. } if tag.as_ref() == "invalid"),
+        "payload via atom: {bad:?}"
+    );
+}
+
+#[test]
 fn fixed_width_int_literal_evaluates_as_int_value() {
     let value = run("255u8");
     assert_eq!(value, Value::Int(255));

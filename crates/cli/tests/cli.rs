@@ -1365,6 +1365,21 @@ fn compile_derived_from_data_nested_record_matches_oracle() {
     );
 }
 
+#[test]
+fn compile_from_data_nullary_union_atom_envelope_matches_oracle() {
+    let src = "Mode :: type { #dev; #prod; };\n\
+               FromData @Mode :: derive\n\
+               decodeMode :: Data -> Validation DecodeIssue Mode = data => decode data;\n\
+               decodeMode (#atom { value = \"prod\"; })\n";
+    let native = compile_bin_stdout("cli_test_from_data_atom_union", src);
+    let interp = run_stdout("cli_test_from_data_atom_union_oracle.zt", src);
+    assert_eq!(native.trim(), interp.trim());
+    assert!(
+        interp.contains("valid"),
+        "expected #valid from interpreter, got: {interp}"
+    );
+}
+
 const STDLIB_VALIDATE_SRC: &str = "v ::= import stdlib.validate;\n\
 missing :: Text? = #none;\n\
 checked ::= v.map3 (\\a b c. a + b + __textLength c) (v.valid 1) (v.intRange \"port\" 0 10 20) (v.required \"host\" missing);\n\

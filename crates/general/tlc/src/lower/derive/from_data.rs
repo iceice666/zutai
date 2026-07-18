@@ -660,32 +660,73 @@ impl<'thir> Lowerer<'thir> {
             body: self.from_data_invalid(result_ty, "known variant", span)?,
         });
         let by_tag = self.alloc_expr(TlcExpr::Case(tag, arms), result_ty, span);
+
+        // Accept Data.#atom { value = "name" } for nullary union variants.
+        // .zti bare atoms arrive as #atom envelopes, not #tagged, so the
+        // existing tagged arm misses them. Payload variants still require #tagged.
+        let nullary_names: Vec<String> = variants
+            .iter()
+            .filter(|v| v.payload.is_none())
+            .map(|v| v.name.clone())
+            .collect();
+        let atom_arm = if nullary_names.is_empty() {
+            None
+        } else {
+            let atom_payload_ty = self.tlc_row_field_type(data_ty, "atom")?;
+            let text_ty = self.tlc_row_field_type(atom_payload_ty, "value")?;
+            let atom_value_binding = self.fresh_synth_binding();
+            let atom_value = self.alloc_expr(TlcExpr::Var(atom_value_binding), text_ty, span);
+            let mut atom_arms: Vec<TlcAlt> = Vec::with_capacity(nullary_names.len() + 1);
+            for name in &nullary_names {
+                let lit =
+                    self.alloc_expr(TlcExpr::Lit(Literal::Atom(name.clone())), target_ty, span);
+                let valid = self.from_data_valid(result_ty, target_ty, lit, span)?;
+                atom_arms.push(TlcAlt {
+                    pat: TlcPat::Lit(Literal::Str(name.clone())),
+                    guard: None,
+                    body: valid,
+                });
+            }
+            atom_arms.push(TlcAlt {
+                pat: TlcPat::Wildcard,
+                guard: None,
+                body: self.from_data_invalid(result_ty, "known variant", span)?,
+            });
+            let by_atom = self.alloc_expr(TlcExpr::Case(atom_value, atom_arms), result_ty, span);
+            Some(TlcAlt {
+                pat: TlcPat::Variant(
+                    "atom".to_string(),
+                    Box::new(TlcPat::Record(vec![(
+                        "value".to_string(),
+                        TlcPat::Bind(atom_value_binding),
+                    )])),
+                ),
+                guard: None,
+                body: by_atom,
+            })
+        };
+
         let wrong = self.from_data_invalid(result_ty, "tagged union", span)?;
-        Some(self.alloc_expr(
-            TlcExpr::Case(
-                data,
-                vec![
-                    TlcAlt {
-                        pat: TlcPat::Variant(
-                            "tagged".to_string(),
-                            Box::new(TlcPat::Record(vec![
-                                ("tag".to_string(), TlcPat::Bind(tag_binding)),
-                                ("payload".to_string(), TlcPat::Bind(payload_binding)),
-                            ])),
-                        ),
-                        guard: None,
-                        body: by_tag,
-                    },
-                    TlcAlt {
-                        pat: TlcPat::Wildcard,
-                        guard: None,
-                        body: wrong,
-                    },
-                ],
+        let mut outer_alts = vec![TlcAlt {
+            pat: TlcPat::Variant(
+                "tagged".to_string(),
+                Box::new(TlcPat::Record(vec![
+                    ("tag".to_string(), TlcPat::Bind(tag_binding)),
+                    ("payload".to_string(), TlcPat::Bind(payload_binding)),
+                ])),
             ),
-            result_ty,
-            span,
-        ))
+            guard: None,
+            body: by_tag,
+        }];
+        if let Some(atom_alt) = atom_arm {
+            outer_alts.push(atom_alt);
+        }
+        outer_alts.push(TlcAlt {
+            pat: TlcPat::Wildcard,
+            guard: None,
+            body: wrong,
+        });
+        Some(self.alloc_expr(TlcExpr::Case(data, outer_alts), result_ty, span))
     }
 
     pub(super) fn derive_record_from_data(
