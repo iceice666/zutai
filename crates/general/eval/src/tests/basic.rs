@@ -248,6 +248,112 @@ result
 }
 
 #[test]
+fn derived_to_data_round_trips_scalars() {
+    let src = r#"
+ToData @Bool :: derive
+ToData @Int :: derive
+ToData @Float :: derive
+ToData @Text :: derive
+FromData @Bool :: derive
+FromData @Int :: derive
+FromData @Float :: derive
+FromData @Text :: derive
+values :: (Validation DecodeIssue Bool, Validation DecodeIssue Int, Validation DecodeIssue Float, Validation DecodeIssue Text) = (
+  decode (encode true),
+  decode (encode 7),
+  decode (encode 1.5),
+  decode (encode "ok")
+);
+values
+"#;
+    let Value::Tuple(values) = run(src) else {
+        panic!("expected scalar validation tuple");
+    };
+    let expected = [
+        Value::Bool(true),
+        Value::Int(7),
+        Value::Float(1.5),
+        Value::Text("ok".into()),
+    ];
+    for (value, expected) in values.iter().zip(expected) {
+        let Some(Value::TaggedValue { tag, payload }) = value.value.peek() else {
+            panic!("expected validation result");
+        };
+        assert_eq!(tag.as_ref(), "valid");
+        assert_eq!(payload[0].1.peek(), Some(expected));
+    }
+}
+
+#[test]
+fn derived_to_data_round_trips_supported_shapes() {
+    let src = r#"
+Mode :: type #prod;
+Choice :: type { #off; #count : { value : Int; }; };
+Point :: type {
+  x : Int;
+  label : Text;
+  flags : List Bool;
+  note : Text?;
+  mode : Mode;
+  choice : Choice;
+};
+ToData @Mode :: derive
+ToData @Choice :: derive
+ToData @Point :: derive
+FromData @Mode :: derive
+FromData @Choice :: derive
+FromData @Point :: derive
+value :: Point = {
+  x = 3;
+  label = "ok";
+  flags = {true; false;};
+  note = #some ("typed");
+  mode = #prod;
+  choice = #count { value = 9; };
+};
+result :: Validation DecodeIssue Point = decode (encode value);
+result
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    let Some(Value::Record(fields)) = payload[0].1.peek() else {
+        panic!("expected decoded point");
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .find(|(name, _)| name.as_ref() == "x")
+            .and_then(|(_, value)| value.peek()),
+        Some(Value::Int(3))
+    );
+    assert!(matches!(
+        fields
+            .iter()
+            .find(|(name, _)| name.as_ref() == "mode")
+            .and_then(|(_, value)| value.peek()),
+        Some(Value::Atom(tag)) if tag.as_ref() == "prod"
+    ));
+}
+
+#[test]
+fn derived_to_data_round_trips_atom_singleton() {
+    let src = r#"
+Mode :: type #prod;
+ToData @Mode :: derive
+FromData @Mode :: derive
+result :: Validation DecodeIssue Mode = decode (encode #prod);
+result
+"#;
+    let Value::TaggedValue { tag, payload } = run(src) else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    assert_eq!(payload[0].1.peek(), Some(Value::Atom("prod".into())));
+}
+
+#[test]
 fn derived_from_data_decodes_record_and_accumulates_errors() {
     let src = r#"
 Point :: type { x : Int; label : Text; };

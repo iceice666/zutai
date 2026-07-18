@@ -131,12 +131,17 @@ impl<'thir> Lowerer<'thir> {
                 Some(self.alloc_expr(TlcExpr::Var(dp), dp_ty, span))
             }
             _ => {
-                if self.thir.binding_names[cst_binding.0 as usize] == "FromData"
-                    && matches!(
-                        thir_kind,
-                        TypeKind::Bool | TypeKind::Int | TypeKind::Float | TypeKind::Text
-                    )
-                {
+                if matches!(
+                    self.thir.binding_names[cst_binding.0 as usize].as_str(),
+                    "FromData" | "ToData"
+                ) && matches!(
+                    thir_kind,
+                    TypeKind::Bool
+                        | TypeKind::Int
+                        | TypeKind::Float
+                        | TypeKind::Text
+                        | TypeKind::Atom(_)
+                ) {
                     let fields = self.synthesize_derive_fields(cst_binding, inst_type_id, span);
                     if !fields.is_empty() {
                         let row = Row::from_fields(

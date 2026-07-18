@@ -308,6 +308,53 @@ fn derive_diagnostic_related_location_suppressed_for_prelude_constraint() {
 }
 
 #[test]
+fn to_data_derive_rejects_unsupported_targets() {
+    let cases = [
+        (
+            "Pair :: type (Int, Int);\nToData @Pair :: derive\n1",
+            "Pair",
+        ),
+        (
+            "Open :: type { x : Int; ...; };\nToData @Open :: derive\n1",
+            "Open",
+        ),
+        (
+            "Tree :: type { value : Int; children : List Tree; };\nToData @Tree :: derive\n1",
+            "Tree",
+        ),
+        (
+            "Wrapped :: type { value : Posit32; };\nToData @Wrapped :: derive\n1",
+            "Wrapped",
+        ),
+        (
+            "Wrapped :: type { value : Reader; };\nToData @Wrapped :: derive\n1",
+            "Wrapped",
+        ),
+        (
+            "Wrapped :: type { value : Int -> Int; };\nToData @Wrapped :: derive\n1",
+            "Wrapped",
+        ),
+        (
+            "Wrapped :: type { value : Type; };\nToData @Wrapped :: derive\n1",
+            "Wrapped",
+        ),
+    ];
+    for (src, target) in cases {
+        let lowered = lower(src);
+        assert!(
+            lowered.diagnostics.iter().any(|diagnostic| matches!(
+                &diagnostic.kind,
+                ThirDiagnosticKind::DeriveRecipeTypeMismatch { constraint, .. }
+                    | ThirDiagnosticKind::DeriveOpenRowTarget { constraint, .. }
+                    if constraint == "ToData"
+            )),
+            "expected ToData refusal for {target}; diagnostics: {:?}",
+            lowered.diagnostics
+        );
+    }
+}
+
+#[test]
 fn derive_witness_requires_component_witness() {
     let lowered = lower(
         "Box :: type { value : Text; };\nPair :: type { box : Box; };\nEq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Pair :: derive\n1",

@@ -4743,6 +4743,18 @@ fn native_value_shapes_match_interpreter_json() {
             }),
         ),
         (
+            "data_encoding",
+            materialize_native_value_shape_fixture("data_encoding.zt"),
+            serde_json::json!({
+                "choice": { "tag": "count", "payload": { "value": 9 } },
+                "flags": [true, false],
+                "label": "native",
+                "mode": "#prod",
+                "note": { "tag": "some", "payload": ["bridge"] },
+                "x": 3,
+            }),
+        ),
+        (
             "effect_boundary",
             materialize_native_value_shape_fixture("effect_boundary.zt"),
             serde_json::json!({

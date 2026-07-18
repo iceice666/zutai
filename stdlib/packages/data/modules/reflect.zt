@@ -33,4 +33,5 @@ schemaReflect :: Type -> Schema
 --   deriveShow      — structural `show : A -> Text`
 --   deriveOrdLex    — lexicographic `compare : A -> A -> Ordering`
 --   deriveFromData  — structural `fromData : Data -> Validation DecodeIssue A`
+--   deriveToData    — structural `toData : A -> Data`
 { FieldDescriptor = FieldDescriptor; VariantDescriptor = VariantDescriptor; SchemaKind = SchemaKind; SchemaField = SchemaField; SchemaVariant = SchemaVariant; Schema = Schema; fields = fieldsReflect; variants = variantsReflect; schema = schemaReflect; }

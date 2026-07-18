@@ -1477,6 +1477,20 @@ mod tests {
     }
 
     #[test]
+    fn stdlib_stream_exports_encode_without_exporting_constraint_values() {
+        let analysis = analyze(
+            "s ::= import stdlib.stream;\nencoded :: s.Data = s.encode {1; 2; 3;};\nencoded",
+        );
+        assert!(!analysis.has_parse_errors());
+        assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
     fn unknown_stdlib_module_is_diagnosed() {
         let analysis = analyze("s ::= import stdlib.nope;\ns");
         assert!(has_import_diagnostic(

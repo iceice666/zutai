@@ -10,6 +10,60 @@ use zutai_browser::{HeadNode, Html, WebBundleV3, decode_program, render_styleshe
 use zutai_eval::TlcSession;
 use zutai_semantic::{AnalysisOptions, StdlibSources};
 
+const DATA_ENCODING_SOURCE: &str = r#"
+Mode :: type #prod;
+Choice :: type { #off; #count : { value : Int; }; };
+Point :: type { x : Int; flags : List Bool; note : Text?; mode : Mode; choice : Choice; };
+ToData @Mode :: derive
+ToData @Choice :: derive
+ToData @Point :: derive
+FromData @Mode :: derive
+FromData @Choice :: derive
+FromData @Point :: derive
+value :: Point = { x = 3; flags = {true; false;}; note = #some ("browser"); mode = #prod; choice = #count { value = 9; }; };
+result :: Validation DecodeIssue Point = decode (encode value);
+result
+"#;
+
+#[test]
+fn derived_data_encoding_round_trips_in_portable_bundle() {
+    let mut bundle = fixture::bundle();
+    bundle.entry = "encode.zt".to_string();
+    bundle
+        .sources
+        .insert(bundle.entry.clone(), DATA_ENCODING_SOURCE.to_string());
+    let json = serde_json::to_string(&bundle).expect("bundle serializes");
+    let bundle: WebBundleV3 = serde_json::from_str(&json).expect("bundle deserializes");
+    let stdlib =
+        StdlibSources::from_memory(bundle.stdlib_compiler_compatibility, bundle.stdlib_sources)
+            .expect("embedded stdlib subset is well-formed");
+    let analysis = zutai_semantic::analyze_sources_with_stdlib_and_packages(
+        &bundle.entry,
+        &bundle.sources,
+        AnalysisOptions::default(),
+        &stdlib,
+        bundle.packages,
+    )
+    .expect("encoded program analyzes against the embedded stdlib subset");
+    let session = TlcSession::from_analysis(&analysis).expect("encoded program type-checks");
+    let value = session.entry().expect("encoded program has an entry value");
+    let zutai_eval::Value::TaggedValue { tag, payload } = value else {
+        panic!("expected validation result");
+    };
+    assert_eq!(tag.as_ref(), "valid");
+    let decoded = payload[0].1.peek().expect("valid payload is forced");
+    let zutai_eval::Value::Record(fields) = decoded else {
+        panic!("expected decoded point");
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .find(|(name, _)| name.as_ref() == "x")
+            .and_then(|(_, value)| value.peek()),
+        Some(zutai_eval::Value::Int(3))
+    );
+}
+
 #[test]
 fn keyed_list_program_round_trips_through_the_bundle_and_analyzes() {
     let bundle = fixture::bundle();

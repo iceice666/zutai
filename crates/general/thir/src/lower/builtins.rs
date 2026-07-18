@@ -53,9 +53,9 @@ impl<'hir> Lowerer<'hir> {
             "fields" => Some(self.fields_builtin_type(span)),
             "variants" => Some(self.variants_builtin_type(span)),
             "schema" => Some(self.schema_builtin_type(span)),
-            "deriveShow" | "deriveOrdLex" | "deriveFromData" => {
+            "deriveShow" | "deriveOrdLex" | "deriveFromData" | "deriveToData" => {
                 // Compile-time derive-recipe builder markers. A recipe body names
-                // one (`<T> => deriveShow`) to route witness synthesis through the
+                // one (`<T> => deriveShow` or `<T> => deriveToData`) to route witness
                 // generic recipe API; the marker is recognized structurally during
                 // TLC derive lowering and never applied or lowered to a runtime
                 // value (constraint decls are filtered before TLC). The bottom

@@ -1,0 +1,36 @@
+Mode :: type #prod;
+Choice :: type { #off; #count : { value : Int; }; };
+Point :: type {
+  x : Int;
+  label : Text;
+  flags : List Bool;
+  note : Text?;
+  mode : Mode;
+  choice : Choice;
+};
+ToData @Mode :: derive
+ToData @Choice :: derive
+ToData @Point :: derive
+FromData @Mode :: derive
+FromData @Choice :: derive
+FromData @Point :: derive
+value :: Point = {
+  x = 3;
+  label = "native";
+  flags = {true; false;};
+  note = #some ("bridge");
+  mode = #prod;
+  choice = #count { value = 9; };
+};
+result :: Validation DecodeIssue Point = decode (encode value);
+match result {
+  | #valid { value = decoded; } => decoded;
+  | #invalid { errors = _; } => {
+      x = 0;
+      label = "decode failed";
+      flags = {;};
+      note = #none;
+      mode = #prod;
+      choice = #off;
+    };
+}

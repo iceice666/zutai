@@ -96,6 +96,15 @@ recording eagerly captures every public module without network access; package
 fixtures cover nested module namespaces, transitive symbols, visibility,
 shadowing, malformed-package fallback, and unsaved overlays.
 
+The 2026-07-17 derived first-order data-encoding baseline adds ambient `ToData`
+and `encode` with a `deriveToData` structural recipe. Supported Bool, Int, Float,
+Text, atom-singleton, List, Optional, closed-record, and closed-union values
+encode to the existing `Data` envelope and round-trip through `FromData` in the
+TLC evaluator, native JSON bridge, and portable browser bundle. Open rows,
+tuples, recursive aliases, fixed-width/posit scalars, opaque handles, functions,
+and runtime `Type` values refuse at the derive request; no `.zti` or tagged-union
+syntax changed.
+
 The 2026-07-17 package-wide editor baseline extends references and rename across
 the root package and transitive dependencies using the same recorded package
 graph and unsaved overlays as checking. Value and type member references follow
@@ -192,7 +201,10 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-17 (host-capability source modules: explicit environment,
+_Last updated: 2026-07-17 (derived first-order data encoding: `ToData`/`encode`
+round-trip supported closed shapes through evaluator, native JSON, and browser
+bundle gates while unsupported targets refuse at derivation); prior baseline
+updates: 2026-07-17 (host-capability source modules: explicit environment,
 clock, randomness, and dynamic-load wrappers now expose composable effect aliases
 with handler mock coverage and interpreter/native application gates); prior
 baseline updates: 2026-07-17 (measured optimization gate: repeatable website,

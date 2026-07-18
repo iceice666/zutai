@@ -306,7 +306,16 @@ impl Lowerer {
             || self
                 .expr_arena
                 .iter()
-                .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)));
+                .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)))
+            || self.decl_arena.iter().any(|(_, decl)| {
+                matches!(
+                    decl.kind,
+                    HirDeclKind::Witness {
+                        constraint: Some(binding),
+                        ..
+                    } if set.contains(&binding)
+                )
+            });
         if referenced {
             for (i, binding) in prelude_decls {
                 decls.push(self.lower_decl(&prelude_ast.decls[*i], *binding));

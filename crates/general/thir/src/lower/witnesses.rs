@@ -42,7 +42,7 @@ impl<'hir> Lowerer<'hir> {
                     .iter()
                     .map(|m| (m.name.clone(), m.params.clone()))
                     .collect();
-                let name = self.hir.bindings[decl.binding.0 as usize].name.clone();
+                let name = self.binding_name(decl.binding).to_string();
                 let code_recipe_type = recipe.as_ref().and_then(|recipe| {
                     let recipe_ty = self.expr(recipe.body).ty;
                     match self.ty(recipe_ty).kind {
@@ -83,11 +83,13 @@ impl<'hir> Lowerer<'hir> {
             constraint: BindingId,
             constraint_name: String,
             methods: Vec<(String, bool, bool, TypeId)>,
+            has_params: bool,
             derivable: bool,
             has_recipe: bool,
             has_code_recipe: bool,
             code_recipe_type: Option<TypeId>,
             definition: Span,
+            is_data_constraint: bool,
         }
         let mut tasks: Vec<WitnessTask> = Vec::new();
         let mut derive_tasks: Vec<DeriveTask> = Vec::new();
@@ -145,10 +147,12 @@ impl<'hir> Lowerer<'hir> {
                         constraint: *cst_binding,
                         constraint_name: cst_info.name.clone(),
                         methods: cst_info.methods.clone(),
+                        has_params: !params.is_empty(),
                         derivable: cst_info.derivable,
                         has_recipe: cst_info.has_recipe,
                         has_code_recipe: cst_info.has_code_recipe,
                         code_recipe_type: cst_info.code_recipe_type,
+                        is_data_constraint: matches!(cst_info.name.as_str(), "FromData" | "ToData"),
                         definition: cst_info.definition,
                     });
                     continue;
@@ -304,16 +308,25 @@ impl<'hir> Lowerer<'hir> {
                 .iter()
                 .any(|(name, _, _, _)| derive_method_is_eq(name));
             let mut unsupported = false;
-            if task.constraint_name == "FromData" {
-                // `FromData` is the first typed structural-code recipe. Its
-                // target-shape validation and component expansion happen at the
-                // staging boundary, not through equality-family method names.
-                if !self.supports_from_data_target(task.target, &mut FxHashSet::default()) {
-                    let found = self.type_name(task.target);
+            if task.is_data_constraint {
+                // Typed structural data recipes validate their complete target
+                // shape at the staging boundary rather than through method names.
+                let supported = self.supports_data_derive_target(
+                    task.target,
+                    &mut FxHashSet::default(),
+                    &mut FxHashSet::default(),
+                    !task.has_params,
+                );
+                if !supported {
+                    let found = self.safe_data_target_name(task.target);
                     self.diagnostics.push(ThirDiagnostic {
                         kind: ThirDiagnosticKind::DeriveRecipeTypeMismatch {
                             constraint: task.constraint_name.clone(),
-                            method: "fromData".to_string(),
+                            method: if task.constraint_name == "FromData" {
+                                "fromData".to_string()
+                            } else {
+                                "toData".to_string()
+                            },
                             expected: "Bool, Int, Float, Text, atom, List, Optional, closed non-recursive record, or closed non-recursive union".to_string(),
                             found,
                             definition: task.definition,
@@ -430,7 +443,10 @@ impl<'hir> Lowerer<'hir> {
                     }
                 }
             }
-            if task.has_code_recipe || task.constraint_name == "FromData" {
+            if task.has_code_recipe
+                || task.constraint_name == "FromData"
+                || task.constraint_name == "ToData"
+            {
                 continue;
             }
             for component in self.derive_components(task.target) {
@@ -472,51 +488,58 @@ impl<'hir> Lowerer<'hir> {
         }
     }
 
-    fn supports_from_data_target(&self, ty: TypeId, seen: &mut FxHashSet<BindingId>) -> bool {
-        match self.type_arena[ty.0 as usize].kind.clone() {
+    fn safe_data_target_name(&self, ty: TypeId) -> String {
+        match self.type_arena[ty.0 as usize].kind {
+            TypeKind::Alias(binding) | TypeKind::AliasApply { binding, .. } => {
+                self.binding_name(binding).to_string()
+            }
+            _ => "unsupported structural target".to_string(),
+        }
+    }
+
+    fn supports_data_derive_target(
+        &self,
+        ty: TypeId,
+        aliases: &mut FxHashSet<BindingId>,
+        types: &mut FxHashSet<TypeId>,
+        reject_type_vars: bool,
+    ) -> bool {
+        if !types.insert(ty) {
+            return false;
+        }
+        let supported = match self.type_arena[ty.0 as usize].kind.clone() {
             TypeKind::Bool
             | TypeKind::Int
             | TypeKind::Float
             | TypeKind::Text
             | TypeKind::Atom(_) => true,
             TypeKind::List(inner) | TypeKind::Optional(inner) => {
-                self.supports_from_data_target(inner, seen)
+                self.supports_data_derive_target(inner, aliases, types, reject_type_vars)
             }
-            TypeKind::Record(fields, RowTail::Closed) => fields
-                .iter()
-                .all(|field| self.supports_from_data_target(field.ty, seen)),
-            TypeKind::Union(variants, RowTail::Closed) => variants.iter().all(|variant| {
-                variant
-                    .payload
-                    .is_none_or(|payload| self.supports_from_data_target(payload, seen))
+            TypeKind::Record(fields, RowTail::Closed) => fields.iter().all(|field| {
+                self.supports_data_derive_target(field.ty, aliases, types, reject_type_vars)
             }),
-            TypeKind::Alias(binding) => {
-                if !seen.insert(binding) {
-                    return false;
+            TypeKind::Union(variants, RowTail::Closed) => variants.iter().all(|variant| {
+                variant.payload.is_none_or(|payload| {
+                    self.supports_data_derive_target(payload, aliases, types, reject_type_vars)
+                })
+            }),
+            TypeKind::Alias(binding) | TypeKind::AliasApply { binding, .. } => {
+                if !aliases.insert(binding) {
+                    false
+                } else {
+                    let supported = self.aliases.get(&binding).is_some_and(|&body| {
+                        self.supports_data_derive_target(body, aliases, types, reject_type_vars)
+                    });
+                    aliases.remove(&binding);
+                    supported
                 }
-                let result = self
-                    .aliases
-                    .get(&binding)
-                    .copied()
-                    .is_some_and(|body| self.supports_from_data_target(body, seen));
-                seen.remove(&binding);
-                result
             }
-            TypeKind::AliasApply { binding, .. } => {
-                if !seen.insert(binding) {
-                    return false;
-                }
-                let result = self
-                    .aliases
-                    .get(&binding)
-                    .copied()
-                    .is_some_and(|body| self.supports_from_data_target(body, seen));
-                seen.remove(&binding);
-                result
-            }
-            TypeKind::TypeVar(_) => true,
+            TypeKind::TypeVar(_) => !reject_type_vars,
             _ => false,
-        }
+        };
+        types.remove(&ty);
+        supported
     }
 
     pub(in crate::lower) fn collect_explicit_witness_keys(

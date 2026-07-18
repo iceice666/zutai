@@ -21,6 +21,7 @@ pub const BUILTIN_VALUE_NAMES: &[&str] = &[
     "deriveShow",
     "deriveOrdLex",
     "deriveFromData",
+    "deriveToData",
     "overlay",
     "overlayDeep",
     "listEmpty",

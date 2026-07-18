@@ -33,19 +33,10 @@ recorded website build/toolchain outlier still requires focused profiling.
 Goal: prove Zutai can carry real applications without weakening `.zti` inertness,
 purity, typed host effects, or the TLC/Dataflow Core boundary.
 
-The constraint-backed collection vocabulary is complete. Remaining milestones,
-in order:
+The constraint-backed collection vocabulary and derived first-order data encoding
+milestones are complete. Remaining demand-gated milestone:
 
-1. **Derived first-order data encoding.** If the qualification workload needs
-   typed interchange back to a host or browser boundary, add a `ToData`-style
-   constraint and structural derive builder mirroring the supported closed
-   `FromData` shapes, without changing `.zti` or tagged-union syntax. Gate:
-   `decode (encode value)` round trips scalars, atom singletons, lists, optionals,
-   closed records, and closed unions through the evaluator, native JSON bridge,
-   and browser bundle; open rows, tuples, recursive targets, fixed-width/posit
-   scalars, opaque handles, functions, and `Type` values refuse at the derive
-   request.
-2. **Demand-gated language boundary review.** Revisit reserved boundaries only
+1. **Demand-gated language boundary review.** Revisit reserved boundaries only
    with a motivating program and a concrete semantic rule. Each proposal must
    name parser impact, HIR/THIR/TLC impact, Dataflow Core/runtime impact,
    refusal behavior, and migration risk before it can become a scheduled

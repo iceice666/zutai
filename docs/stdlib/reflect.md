@@ -35,7 +35,7 @@ field.
 
 ### Compile-time derive builders
 
-`deriveShow`, `deriveOrdLex`, and `deriveFromData` are ambient compile-time
+`deriveShow`, `deriveOrdLex`, `deriveFromData`, and `deriveToData` are ambient compile-time
 markers naming the generic derive recipes. A constraint recipe body names one
 directly — `derive = <T> => deriveShow` — to fold the structural witness
 dictionary at the concrete derive target. They are not runtime values, so they

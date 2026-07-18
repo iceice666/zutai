@@ -35,6 +35,15 @@ DecodePath :: type {
 };
 DecodeIssue :: type { path : List DecodePath; error : DecodeError; };
 FromData :: <A> @A { fromData :: Data -> Validation DecodeIssue A; } derive = <T> => deriveFromData
+ToData :: <A> @A { toData :: A -> Data; } derive = <T> => deriveToData
+ToData @Bool :: derive
+ToData @Int :: derive
+ToData @Float :: derive
+ToData @Text :: derive
+ToData @(List A) :: <A: ToData> derive
+ToData @(Optional A) :: <A: ToData> derive
+encode :: <A: ToData> A -> Data
+  = value => toData value;
 FromData @Bool :: derive
 FromData @Int :: derive
 FromData @Float :: derive
@@ -85,4 +94,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Data = Data; DataField = DataField; Validation = Validation; DecodeError = DecodeError; DecodePath = DecodePath; DecodeIssue = DecodeIssue; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; decode = decode; }
+{ Data = Data; DataField = DataField; Validation = Validation; DecodeError = DecodeError; DecodePath = DecodePath; DecodeIssue = DecodeIssue; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; decode = decode; encode = encode; }

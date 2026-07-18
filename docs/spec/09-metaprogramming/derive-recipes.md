@@ -100,7 +100,7 @@ is the intended surface form for author-defined recipes. It is not yet a parsed
 construct: `@(field.Type)` requires a value-projection witness target the grammar
 does not accept, so adding it is gated by the
 [stable-syntax change policy](../../project/roadmap.md). Until then, the generic
-builders (`deriveShow`, `deriveOrdLex`, `deriveFromData`) realize this fold as
+builders (`deriveShow`, `deriveOrdLex`, `deriveFromData`, `deriveToData`) realize this fold as
 compiler-backed markers — the bare-marker recipe body above routes to the same
 structural, per-component `witness`-delegating derivation.
 
