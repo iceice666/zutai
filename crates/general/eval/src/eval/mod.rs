@@ -16,13 +16,11 @@ use std::sync::Arc;
 
 use zutai_hir::BindingId;
 use zutai_syntax::ast::BinOp;
-use zutai_thir::ir::UnionVariant;
 use zutai_thir::{
     ImportKey, ThirClause, ThirDeclId, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, ThirPatId,
 };
 use zutai_thir::{
-    RowTail, ThirPatKind, ThirTupleItem, ThirTuplePatItem, Type, TypeId, TypeKind, TypeRecordField,
-    TypeTupleItem,
+    RowTail, ThirPatKind, ThirTupleItem, ThirTuplePatItem, Type, TypeId, TypeKind, TypeTupleItem,
 };
 
 use crate::{

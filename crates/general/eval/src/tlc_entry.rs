@@ -46,7 +46,10 @@ fn completed_tlc_inputs_strict(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<(&ThirFile, &zutai_tlc::TlcModule), EvalError> {
     let inputs = completed_tlc_inputs_for_session(analysis)?;
-    if crate::analysis_eval::root_has_runtime_type_values(analysis) {
+    // Gate on the lowered module rather than THIR: a `Type`-typed THIR
+    // subexpression inside a folded `schema` application never reaches TLC, so
+    // only placeholders actually erased during lowering block the TLC path.
+    if inputs.1.residual_type_values {
         return Err(EvalError::ReflectionUnsupported(
             "runtime Type values are not represented in the TLC evaluator yet".to_string(),
         ));

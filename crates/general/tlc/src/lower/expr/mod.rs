@@ -66,6 +66,16 @@ impl<'thir> Lowerer<'thir> {
         let expr = &self.thir.expr_arena[id];
         let span = expr.span;
         let thir_ty = expr.ty;
+        // A runtime `Type` value lowers to a `Nothing` placeholder — record the
+        // loss so evaluation routing and the reflection gates keep such modules
+        // off the TLC/backend paths. Folded `schema` applications never lower
+        // their `Type` argument, so fully-folded modules stay clean.
+        if matches!(
+            self.thir.type_arena[thir_ty.0 as usize].kind,
+            TypeKind::Type(_)
+        ) {
+            self.residual_type_values = true;
+        }
         let tlc_ty = self.lower_type(thir_ty);
 
         match expr.kind.clone() {
@@ -281,6 +291,18 @@ impl<'thir> Lowerer<'thir> {
                             tlc_ty,
                             span,
                         );
+                    }
+
+                    // `schema T` on a concrete type is type-syntax-directed:
+                    // fold it to its data literal here so the `Type` argument
+                    // never reaches TLC. The computation is shared with the
+                    // THIR oracle (`zutai_thir::reflect`), so the folded value
+                    // equals the interpreter's by construction. Anything the
+                    // fold refuses (type variables, open rows, cross-module
+                    // aliases) falls through to the residual lowering below and
+                    // stays gated exactly as before.
+                    if let Some(folded) = self.fold_schema_apply(binding, arg, tlc_ty, span) {
+                        return folded;
                     }
 
                     if self.thir.binding_names[binding.0 as usize] == "decode"
@@ -536,6 +558,86 @@ impl<'thir> Lowerer<'thir> {
             .collect();
         self.code_frames = saved;
         Some(lowered)
+    }
+
+    /// Fold a `schema` builtin application on a concrete `Type` argument into
+    /// its first-order data literal. Returns `None` (leaving the generic
+    /// lowering to emit the residual builtin reference) when the callee is not
+    /// `schema`, the argument is not a literal type value, or the type cannot
+    /// be reflected within this module.
+    fn fold_schema_apply(
+        &mut self,
+        binding: BindingId,
+        arg: ThirExprId,
+        tlc_ty: TlcTypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        if !self
+            .thir
+            .binding_kinds
+            .get(binding.0 as usize)
+            .is_some_and(|kind| *kind == zutai_hir::BindingKind::BuiltinValue)
+            || self.thir.binding_names.get(binding.0 as usize)?.as_str() != "schema"
+        {
+            return None;
+        }
+        let zutai_thir::ThirExprKind::TypeValue(target) = self.thir.expr_arena[arg].kind else {
+            return None;
+        };
+        let data = zutai_thir::reflect::schema_data(
+            &[self.thir],
+            &zutai_thir::reflect::ReflectedType::new(0, target),
+        )
+        .ok()?;
+        self.schema_data_expr(&data, tlc_ty, span)
+    }
+
+    /// Build the TLC expression for a folded `SchemaData` value, deriving each
+    /// child's type structurally from `ty` (the already-lowered schema result
+    /// type). Bails on any shape mismatch so the caller falls back to the
+    /// residual lowering instead of emitting an ill-typed literal.
+    fn schema_data_expr(
+        &mut self,
+        data: &zutai_thir::reflect::SchemaData,
+        ty: TlcTypeId,
+        span: Span,
+    ) -> Option<TlcExprId> {
+        use zutai_thir::reflect::SchemaData;
+        match data {
+            SchemaData::Record(fields) => {
+                let TlcType::Record(row) = self.type_arena[ty].clone() else {
+                    return None;
+                };
+                let mut lowered = Vec::with_capacity(fields.len());
+                for (name, value) in fields {
+                    let (_, field_ty) = row.fields().find(|(label, _)| label == name)?;
+                    lowered.push((
+                        (*name).to_string(),
+                        self.schema_data_expr(value, field_ty, span)?,
+                    ));
+                }
+                Some(self.alloc_expr(TlcExpr::Record(lowered), ty, span))
+            }
+            SchemaData::List(items) => {
+                let TlcType::List(elem_ty) = self.type_arena[ty] else {
+                    return None;
+                };
+                let lowered = items
+                    .iter()
+                    .map(|item| self.schema_data_expr(item, elem_ty, span))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(self.alloc_expr(TlcExpr::List(lowered), ty, span))
+            }
+            SchemaData::Text(text) => {
+                Some(self.alloc_expr(TlcExpr::Lit(Literal::Str(text.clone())), ty, span))
+            }
+            SchemaData::Bool(value) => {
+                Some(self.alloc_expr(TlcExpr::Lit(Literal::Bool(*value)), ty, span))
+            }
+            SchemaData::Atom(name) => {
+                Some(self.alloc_expr(TlcExpr::Lit(Literal::Atom((*name).to_string())), ty, span))
+            }
+        }
     }
 
     fn builtin_effect_op(&self, binding: BindingId) -> Option<&'static str> {

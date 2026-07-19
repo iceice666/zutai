@@ -892,3 +892,27 @@ x
         m.type_arena[value_ty]
     );
 }
+
+#[test]
+fn concrete_schema_application_folds_to_data_literal() {
+    let module = tlc_of("Server :: type { host : Text; port : Int; };\nschema Server\n");
+    assert!(
+        !module.residual_type_values,
+        "folded schema must leave no runtime Type placeholder"
+    );
+    let final_expr = module.final_expr.expect("final expr");
+    assert!(
+        matches!(module.expr_arena[final_expr], TlcExpr::Record(_)),
+        "schema on a concrete type should fold to a record literal, got {:?}",
+        module.expr_arena[final_expr]
+    );
+}
+
+#[test]
+fn unfolded_fields_reflection_records_residual_type_values() {
+    let module = tlc_of("Server :: type { host : Text; };\nfields Server\n");
+    assert!(
+        module.residual_type_values,
+        "`fields` does not fold; its Type argument must mark the module residual"
+    );
+}

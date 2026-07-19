@@ -2876,6 +2876,59 @@ fn check_folds_serializable_reflection() {
 }
 
 #[test]
+fn check_folded_schema_with_host_effect_passes_without_reflection_diagnostic() {
+    // Concrete `schema` folds during THIR→TLC elaboration, so combining it
+    // with a host-effect entry no longer trips the reflection backend gate.
+    let out_path = write_tmp("cli_test_check_schema_host_effect.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+Record :: type {{ value : Int; }};
+main :: {{ write : FsWrite; }} -> fs.WholeWrite Unit
+  = caps => fs.writeAll caps.write "{}" (if (schema Record).kind == #record then "ok" else "bad");
+main
+"#,
+        zt_string_literal(&out_path)
+    );
+    let path = write_tmp("cli_test_check_schema_host_effect.zt", &source);
+    cli()
+        .arg("check")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check passed"))
+        .stderr(predicate::str::contains("reflection_not_foldable").not());
+}
+
+#[test]
+fn compiled_folded_schema_condition_drives_host_effect() {
+    // End-to-end for the folded-reflection milestone program: the schema
+    // condition folds to data, the fs effect lowers to the host boundary, and
+    // both the interpreter and the native binary write the folded result.
+    let out_path = write_tmp("cli_test_compile_schema_host_effect.txt", "");
+    let source = format!(
+        r#"
+fs ::= import stdlib.fs;
+Record :: type {{ value : Int; }};
+main :: {{ write : FsWrite; }} -> fs.WholeWrite Unit
+  = caps => fs.writeAll caps.write "{}" (if (schema Record).kind == #record then "ok" else "bad");
+main
+"#,
+        zt_string_literal(&out_path)
+    );
+
+    std::fs::write(&out_path, "").unwrap();
+    let run_output = run_stdout("cli_test_run_schema_host_effect.zt", &source);
+    assert_eq!(run_output, "()\n");
+    assert_eq!(std::fs::read_to_string(&out_path).unwrap(), "ok");
+
+    std::fs::write(&out_path, "").unwrap();
+    let compiled_output = compile_bin_stdout("cli_test_compile_schema_host_effect", &source);
+    assert_eq!(compiled_output, run_output);
+    assert_eq!(std::fs::read_to_string(&out_path).unwrap(), "ok");
+}
+
+#[test]
 fn check_witness_kind_mismatch_exits_nonzero() {
     // `Functor @Int` — `Int : Type` but `Functor` constrains a `Type -> Type`.
     let src = "Functor :: <F :: Type -> Type> @F { map :: <A, B> (A -> B) -> F A -> F B; }\nFunctor @Int :: { map = \\f x. x; }\n1\n";
@@ -3851,17 +3904,14 @@ fn compile_reflection_schema_empty_record_bin_renders_empty_fields() {
 }
 
 #[test]
-fn compile_reflection_with_effectful_code_is_rejected() {
-    let path = write_tmp(
-        "cli_test_compile_reflection_with_effect.zt",
-        "Server :: type { host : Text; };\n_unused ::= schema Server;\nprint \"hello\"\n",
-    );
-    cli()
-        .arg("compile")
-        .arg(&path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("effectful code"));
+fn compile_folded_schema_with_effectful_code_matches_oracle() {
+    // Concrete `schema` folds to a data literal during THIR→TLC elaboration,
+    // so combining it with effectful code no longer rejects — the effect
+    // lowers through the backend host path and never runs at compile time.
+    let src = "Server :: type { host : Text; };\n_unused ::= schema Server;\nprint \"hello\"\n";
+    let run_output = run_stdout("cli_test_run_folded_schema_with_effect.zt", src);
+    let compiled_output = compile_bin_stdout("cli_test_compile_folded_schema_with_effect", src);
+    assert_eq!(compiled_output, run_output);
 }
 
 #[test]

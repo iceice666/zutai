@@ -174,6 +174,9 @@ struct Lowerer<'thir> {
     /// exhaustion (a source diagnostic) apart from an ordinary non-reducible
     /// recipe (which falls back to the structural synthesizers).
     recipe_fuel_exhausted: std::cell::Cell<bool>,
+    /// True once any lowered expression's THIR type is a runtime `Type` value
+    /// (erased to `Nothing`). Collected into `TlcModule::residual_type_values`.
+    residual_type_values: bool,
 }
 
 impl<'thir> Lowerer<'thir> {
@@ -212,6 +215,7 @@ impl<'thir> Lowerer<'thir> {
             code_frames: Vec::new(),
             diagnostics: Vec::new(),
             recipe_fuel_exhausted: std::cell::Cell::new(false),
+            residual_type_values: false,
         }
     }
 
@@ -256,6 +260,7 @@ impl<'thir> Lowerer<'thir> {
             extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
             diagnostics: std::mem::take(&mut self.diagnostics),
             unresolved_dispatches: std::mem::take(&mut self.unresolved_dispatches),
+            residual_type_values: self.residual_type_values,
         }
     }
 

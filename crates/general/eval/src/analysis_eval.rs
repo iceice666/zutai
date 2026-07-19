@@ -63,6 +63,13 @@ pub(super) fn eval_default_analysis(
     analysis: &zutai_semantic::Analysis,
 ) -> Result<Value, EvalError> {
     if root_has_runtime_type_values(analysis) || analysis.reflection_builtin_program().is_some() {
+        // Concrete `schema` applications fold to data during THIR→TLC
+        // elaboration. When every reflection use folded (here and in imports),
+        // the `Type`-typed THIR subexpressions never reach TLC and the module
+        // runs on the TLC path — including combined with source effects.
+        if analysis.tlc_reflection_folded() && analysis.reflection_builtin_program().is_none() {
+            return eval_tlc_analysis(analysis);
+        }
         if has_tlc_effect_syntax_recursive(analysis) {
             return Err(EvalError::EffectfulNotExecutable(
                 "program combines runtime Type values/reflection with source effect syntax; TLC does not yet represent Type values and the THIR oracle cannot execute source effects"

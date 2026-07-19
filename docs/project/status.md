@@ -207,7 +207,10 @@ warnings — the program is well-typed and the refusal is a backend-only support
 boundary, matching the warning severity `backend_diagnostics()` and the LSP
 already report — while `compile` and `dataflow` keep rejecting before Dataflow
 Core. Unsupported entry types (`zutai::backend::entry_type_unsupported`) still
-fail `check`.
+fail `check`. Also since 2026-07-19, concrete `schema T` applications fold to
+data during THIR→TLC elaboration, so programs whose only reflection is folded
+`schema` no longer trigger the reflection gate at all — they check, run,
+and compile natively, including alongside effectful code.
 
 The 2026-07-16 locked Git package baseline adds manifest format 2 path/Git
 sources, deterministic root-scoped lockfiles, content-addressed package nodes,
@@ -246,7 +249,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-19 (check severity alignment: `check` now reports
+_Last updated: 2026-07-19 (concrete-schema elaboration fold: `schema T` on
+concrete types folds to data literals during THIR→TLC through the shared
+`zutai_thir::reflect` computation the oracle also evaluates; fully-folded
+modules run on the TLC path and compile natively, including with effects,
+gated by TLC/eval/CLI fold tests and interpreter–native parity fixtures);
+prior baseline updates: 2026-07-19 (check severity alignment: `check` now reports
 reflection-fold backend refusals as passing warnings, matching
 `backend_diagnostics()`/LSP severity; `compile`/`dataflow` rejection and
 unsupported-entry-type `check` failures are unchanged, gated by the CLI
@@ -634,19 +642,30 @@ compatibility `zutai-cli web` subcommand), and a pure-Zutai official website; se
   interpreter instead of extending a source handler across a lazy field.
   Unhandled or ungranted residual host effects and unsupported effect rows stay
   gated by `residual_effect_reason` / `zutai_dataflow::try_lower_tlc`.
-- `compile` and `dataflow` still fold renderable compile-time reflection
-  programs through the THIR type-value evaluator before Dataflow Core.
-  Reflection combined with effectful code remains rejected so AOT reflection does
-  not consume host effects at compile time.
+- Concrete `schema T` applications fold to first-order data literals during
+  THIR→TLC elaboration through the shared `zutai_thir::reflect` computation —
+  the same implementation the THIR oracle evaluates, so folded values equal the
+  interpreter's by construction. A fully-folded module carries no runtime
+  `Type` value into TLC (`TlcModule::residual_type_values` is false), runs on
+  the TLC evaluator, and lowers to Dataflow Core and native code — including
+  combined with source or host effects, whose lowering is unchanged and never
+  runs at compile time. `fields`, `variants`, reflection on type variables,
+  and computed `Type` values do not fold; those programs keep the previous
+  routing and gates.
+- `compile` and `dataflow` still fold the remaining renderable compile-time
+  reflection programs (`fields`/`variants`/`witness` entries and unfoldable
+  `schema` uses) through the type-value evaluator before Dataflow Core.
+  Unfolded reflection combined with effectful code remains rejected so the AOT
+  fold does not consume host effects at compile time.
 - Closed-row config-overlay values lower before Dataflow Core: patch-first
   `overlay`/`overlayDeep` applications, including computed and partially applied
   values, become ordinary record updates. Required nested records merge
   recursively; optional nested records merge when present and remain absent when
   no lower record exists.
-- Open-row overlays, deletion semantics, reflection combined with effectful code,
-  unsupported host operations/effect rows, function entries, and `Type` entries
-  still reject before DC. Dynamic `load.zt` also rejects non-first-order final
-  values at the host boundary.
+- Open-row overlays, deletion semantics, unfolded reflection combined with
+  effectful code, unsupported host operations/effect rows, function entries, and
+  `Type` entries still reject before DC. Dynamic `load.zt` also rejects
+  non-first-order final values at the host boundary.
 
 ## Validation notes
 

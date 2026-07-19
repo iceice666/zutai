@@ -400,8 +400,9 @@ impl Analysis {
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             );
         }
-        if self.uses_reflection_builtin(&["fields", "schema"], false)
-            || self.uses_stdlib_reflect_call(&["fields", "schema"])
+        if (self.uses_reflection_builtin(&["fields", "schema"], false)
+            || self.uses_stdlib_reflect_call(&["fields", "schema"]))
+            && !self.tlc_reflection_folded()
         {
             Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
@@ -409,6 +410,35 @@ impl Analysis {
         } else {
             None
         }
+    }
+
+    /// True when every reflection use in this module folded to plain data
+    /// during THIR→TLC elaboration: TLC exists, lowering erased no runtime
+    /// `Type` value to a placeholder, and no residual reflection builtin
+    /// reference survives in the lowered module. Such a module is safe for the
+    /// TLC evaluator and backend lowering despite `Type`-typed THIR
+    /// subexpressions inside the folded applications.
+    pub fn tlc_reflection_folded(&self) -> bool {
+        let Some(module) = self.tlc.as_ref() else {
+            return false;
+        };
+        if module.residual_type_values {
+            return false;
+        }
+        let Some(hir) = self.hir.as_ref().map(|lowered| &lowered.file) else {
+            return false;
+        };
+        let is_reflection_builtin = |binding: zutai_hir::BindingId| {
+            hir.bindings
+                .get(binding.0 as usize)
+                .is_some_and(|hir_binding| {
+                    hir_binding.kind == zutai_hir::BindingKind::BuiltinValue
+                        && matches!(hir_binding.name.as_str(), "fields" | "variants" | "schema")
+                })
+        };
+        !module.expr_arena.iter().any(|(_, expr)| {
+            matches!(expr, zutai_tlc::TlcExpr::Var(binding) if is_reflection_builtin(*binding))
+        })
     }
 
     /// Compile-time reflection that must be AOT-folded to a backend value or
@@ -429,8 +459,13 @@ impl Analysis {
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             );
         }
-        if self.uses_reflection_builtin(&["fields", "variants", "schema"], true)
-            || self.uses_stdlib_reflect_call(&["fields", "variants", "schema"])
+        // `witness C @T` lowers to a dict expression (not a reflection builtin
+        // `Var`), so the fold predicate alone cannot see it — keep witness
+        // programs on the existing AOT-fold path.
+        let fully_folded = self.tlc_reflection_folded() && !self.uses_reflection_builtin(&[], true);
+        if (self.uses_reflection_builtin(&["fields", "variants", "schema"], true)
+            || self.uses_stdlib_reflect_call(&["fields", "variants", "schema"]))
+            && !fully_folded
         {
             Some(
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",

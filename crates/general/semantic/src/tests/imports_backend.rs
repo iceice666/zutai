@@ -374,12 +374,24 @@ fn variants_reflection_is_aot_only_not_run_routing() {
 }
 
 #[test]
-fn schema_reflection_triggers_both_gates() {
-    // `schema`/`fields` need the THIR oracle, so they trigger both gates.
-    let analysis = analyze("Server :: type { host : Text; };\nschema Server");
+fn fields_reflection_triggers_both_gates() {
+    // `fields` does not fold during THIR→TLC elaboration, so it still needs
+    // the THIR oracle and triggers both gates.
+    let analysis = analyze("Server :: type { host : Text; };\nfields Server");
     assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
     assert!(analysis.reflection_builtin_program().is_some());
     assert!(analysis.aot_reflection_program().is_some());
+}
+
+#[test]
+fn folded_schema_reflection_triggers_neither_gate() {
+    // `schema` on a concrete type folds to a data literal during THIR→TLC
+    // elaboration, so it no longer needs the THIR oracle or the AOT-fold
+    // gate — unlike `fields` above, which does not fold.
+    let analysis = analyze("Server :: type { host : Text; };\nschema Server");
+    assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    assert!(analysis.reflection_builtin_program().is_none());
+    assert!(analysis.aot_reflection_program().is_none());
 }
 
 #[test]

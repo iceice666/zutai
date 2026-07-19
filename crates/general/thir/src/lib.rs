@@ -10,6 +10,7 @@ pub mod import;
 pub mod ir;
 pub mod lower;
 pub mod pass;
+pub mod reflect;
 pub mod witness_pattern;
 
 #[cfg(test)]

@@ -91,6 +91,7 @@ pub(super) fn make_module(type_arena: la_arena::Arena<TlcType>) -> TlcModule {
         extern_global_bindings: FxHashMap::default(),
         diagnostics: Vec::new(),
         unresolved_dispatches: Vec::new(),
+        residual_type_values: false,
     }
 }
 
@@ -195,6 +196,7 @@ fn tlc_module_is_constructible() {
         extern_global_bindings: FxHashMap::default(),
         diagnostics: Vec::new(),
         unresolved_dispatches: Vec::new(),
+        residual_type_values: false,
     };
 }
 

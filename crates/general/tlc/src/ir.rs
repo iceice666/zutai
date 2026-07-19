@@ -557,4 +557,10 @@ pub struct TlcModule {
     /// imported + derived); any uncovered entry is the S1 defect and gates
     /// evaluation and compilation.
     pub unresolved_dispatches: Vec<UnresolvedDispatch>,
+    /// True when lowering emitted at least one expression whose THIR type is a
+    /// runtime `Type` value (lowered as a `Nothing` placeholder — TLC has no
+    /// `Type` representation). Concrete `schema T` applications folded to data
+    /// literals never lower their `Type` argument, so a fully-folded module
+    /// stays `false` and is safe for TLC evaluation and backend lowering.
+    pub residual_type_values: bool,
 }
