@@ -333,6 +333,10 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
         );
         std::process::exit(1);
     }
+    // Reflection-fold refusals are backend-only support boundaries, not type
+    // errors: the program is well-typed, so `check` surfaces them as warnings
+    // (matching `backend_diagnostics()` and LSP severity) while `compile` and
+    // `dataflow` keep rejecting.
     if analysis.aot_reflection_program().is_some()
         && let Err(err) = super::compile::fold_aot_reflection_for_cli(&contents, base)
     {
@@ -341,13 +345,12 @@ pub(crate) fn run_check(path: &str) -> Result<(), Box<dyn Error>> {
             &contents,
             &zutai_semantic::BackendDiagnostic {
                 code: zutai_semantic::BACKEND_REFLECTION_FOLD_CODE,
-                severity: zutai_syntax::Severity::Error,
+                severity: zutai_syntax::Severity::Warning,
                 message: err.to_string(),
                 span: super::compile::backend_entry_span(&analysis),
                 related: Vec::new(),
             },
         );
-        std::process::exit(1);
     }
     for diagnostic in analysis.native_import_diagnostics() {
         print_backend_error(path, &contents, &diagnostic);

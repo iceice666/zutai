@@ -201,7 +201,13 @@ into executable fixtures. CLI coverage now exercises higher-kinded witness
 execution, residual reflection, unhandled effects, ungranted capabilities,
 non-principal row inference, non-matchable imported witness exports, and
 non-tail `yield from` through the applicable `check`, reference-interpreter
-`run`, and strict-AOT `compile` paths.
+`run`, and strict-AOT `compile` paths. Since 2026-07-19, `check` surfaces
+reflection-fold refusals (`zutai::backend::reflection_not_foldable`) as passing
+warnings — the program is well-typed and the refusal is a backend-only support
+boundary, matching the warning severity `backend_diagnostics()` and the LSP
+already report — while `compile` and `dataflow` keep rejecting before Dataflow
+Core. Unsupported entry types (`zutai::backend::entry_type_unsupported`) still
+fail `check`.
 
 The 2026-07-16 locked Git package baseline adds manifest format 2 path/Git
 sources, deterministic root-scoped lockfiles, content-addressed package nodes,
@@ -240,7 +246,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-18 (scope classification: the implemented baseline is
+_Last updated: 2026-07-19 (check severity alignment: `check` now reports
+reflection-fold backend refusals as passing warnings, matching
+`backend_diagnostics()`/LSP severity; `compile`/`dataflow` rejection and
+unsupported-entry-type `check` failures are unchanged, gated by the CLI
+refusal-matrix and check reflection tests);
+prior baseline updates: 2026-07-18 (scope classification: the implemented baseline is
 grouped into core language/data workflow, supported deployment/tooling, and
 maintained integration surfaces without changing syntax or support levels);
 prior baseline updates: 2026-07-17 (derived first-order data encoding:

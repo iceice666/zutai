@@ -2798,7 +2798,7 @@ fn check_higher_kinded_constraint_passes() {
         .stdout(predicate::str::contains("check passed"));
 }
 #[test]
-fn check_reflection_fields_union_target_is_rejected() {
+fn check_reflection_fields_union_target_warns_and_passes() {
     let path = write_tmp(
         "cli_test_check_fields_union.zt",
         "U :: type { #ok; #err; };\nfields U\n",
@@ -2807,7 +2807,8 @@ fn check_reflection_fields_union_target_is_rejected() {
         .arg("check")
         .arg(&path)
         .assert()
-        .failure()
+        .success()
+        .stdout(predicate::str::contains("check passed"))
         .stderr(predicate::str::contains(
             "zutai::backend::reflection_not_foldable",
         ))
@@ -2815,7 +2816,7 @@ fn check_reflection_fields_union_target_is_rejected() {
 }
 
 #[test]
-fn check_reflection_fields_type_result_is_rejected() {
+fn check_reflection_fields_type_result_warns_and_passes() {
     let path = write_tmp(
         "cli_test_check_fields_type_result.zt",
         "{ fields; } ::= import stdlib.reflect;\n\
@@ -2826,12 +2827,16 @@ fn check_reflection_fields_type_result_is_rejected() {
         .arg("check")
         .arg(&path)
         .assert()
-        .failure()
+        .success()
+        .stdout(predicate::str::contains("check passed"))
+        .stderr(predicate::str::contains(
+            "zutai::backend::reflection_not_foldable",
+        ))
         .stderr(predicate::str::contains("returns Type"));
 }
 
 #[test]
-fn check_bare_witness_dict_result_is_rejected() {
+fn check_bare_witness_dict_result_warns_and_passes() {
     let path = write_tmp(
         "cli_test_check_bare_witness_dict.zt",
         "Eq :: <A> @A { eq :: A -> A -> Bool; } derive\nEq @Int :: derive\nwitness Eq @Int\n",
@@ -2840,7 +2845,8 @@ fn check_bare_witness_dict_result_is_rejected() {
         .arg("check")
         .arg(&path)
         .assert()
-        .failure()
+        .success()
+        .stdout(predicate::str::contains("check passed"))
         .stderr(predicate::str::contains("did not fold to a backend value"));
 }
 
@@ -6443,6 +6449,8 @@ fn backend_refusal_matrix_matches_documented_support() {
     for fixture in check_passes {
         check_path_passes(&refusal_fixture(fixture));
     }
+    // Reflection-fold refusals are backend-only: `check` passes with a warning
+    // while `compile` (below) keeps rejecting.
     for (fixture, code) in [
         (
             "higher_kinded_execution.zt",
@@ -6452,6 +6460,17 @@ fn backend_refusal_matrix_matches_documented_support() {
             "residual_reflection.zt",
             "zutai::backend::reflection_not_foldable",
         ),
+    ] {
+        cli()
+            .arg("check")
+            .arg(refusal_fixture(fixture))
+            .current_dir(workspace_root())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("check passed"))
+            .stderr(predicate::str::contains(code));
+    }
+    for (fixture, code) in [
         (
             "nonprincipal_inference.zt",
             "zutai::thir::row_annotation_required",
