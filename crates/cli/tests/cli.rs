@@ -6551,14 +6551,37 @@ fn backend_refusal_matrix_matches_documented_support() {
             .failure()
             .stderr(predicate::str::contains(code));
     }
-    assert_eq!(
-        run_path_stdout(&refusal_fixture("higher_kinded_execution.zt")),
-        "{ map = <function/1> }\n"
-    );
-    assert!(run_path_stdout(&refusal_fixture("residual_reflection.zt")).contains("Type = <type>"));
-    for fixture in ["unhandled_host_effect.zt", "ungranted_capability.zt"] {
-        assert_eq!(run_path_stdout(&refusal_fixture(fixture)), "<function/1>\n");
+    // Non-serializable entries now refuse under `run`/`json` with the same
+    // runtime-ABI reason native compilation reports, so the interpreter and
+    // native backend agree: a program that cannot produce first-order data has
+    // no output on either path.
+    for fixture in [
+        "higher_kinded_execution.zt",
+        "unhandled_host_effect.zt",
+        "ungranted_capability.zt",
+    ] {
+        cli()
+            .arg("run")
+            .arg(refusal_fixture(fixture))
+            .current_dir(workspace_root())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "returns a function, which cannot be shown by the runtime ABI",
+            ));
     }
+    cli()
+        .arg("run")
+        .arg(refusal_fixture("residual_reflection.zt"))
+        .current_dir(workspace_root())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "returns Type, which cannot be shown by the runtime ABI",
+        ));
+    // The imported non-matchable witness still evaluates to first-order data in
+    // the interpreter (`1`); only native compilation refuses it (below). That
+    // higher-kinded/imported-witness gap is a separate frozen category.
     assert_eq!(
         run_path_stdout(&refusal_fixture("nonmatchable_witness_export.zt")),
         "1\n"

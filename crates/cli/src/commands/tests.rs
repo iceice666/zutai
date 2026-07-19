@@ -199,7 +199,7 @@ fn run_isolated_propagates_eval_error() {
 #[test]
 fn eval_isolated_evaluates_expression() {
     assert_eq!(
-        eval_isolated("if false then 1 else 2\n", None),
+        eval_isolated("if false then 1 else 2\n", None, true),
         EvalOutcome::Ok("2".to_string())
     );
 }
@@ -207,7 +207,7 @@ fn eval_isolated_evaluates_expression() {
 #[test]
 fn eval_isolated_reports_eval_error_not_panic() {
     assert_eq!(
-        eval_isolated("9223372036854775807 + 1\n", None),
+        eval_isolated("9223372036854775807 + 1\n", None, true),
         EvalOutcome::Err(zutai_eval::EvalError::IntOverflow("+"))
     );
 }

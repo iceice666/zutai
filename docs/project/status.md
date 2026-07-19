@@ -74,6 +74,23 @@ the [roadmap investment policy](roadmap.md#investment-policy).
 
 ## Current baseline
 
+The 2026-07-19 run/compile entry-parity baseline aligns the reference
+interpreter's `run`/`json` output contract with the native runtime ABI. A
+program whose final value is not first-order serializable data — a function,
+a runtime `Type` value, a constraint witness, or an opaque host handle,
+including when nested inside a list, tuple, record, or tagged payload — is now
+refused by `zutai run` and `zutai json` with the same reason string
+`zutai compile` reports, instead of printing `<function/1>` or `<type>`. The
+value-level gate is `zutai_eval::Value::runtime_abi_reason`, mirroring
+`zutai_codegen::unsupported_entry_type_reason`; the interactive REPL keeps
+displaying non-data values for inspection. This closes the interpreter/native
+divergence for the reflection-fold and effectful/capability-function entry
+shapes: neither path can render those entries, so both refuse them. Programs
+that reflect or perform effects but project to first-order data (for example
+`(schema T).kind` or `fields`/`variants` reduced to field/variant records)
+continue to run and compile identically. Gated by CLI backend-refusal-matrix
+`run`/`json` assertions and `zutai-eval` `runtime_abi_reason` unit tests.
+
 The 2026-07-17 collection-constraint baseline adds opt-in `stdlib.collection`
 `Functor` and `Foldable` witnesses for `List`, `Optional`, and `Result E` without
 changing ambient list helpers. Imported bare-constructor and conditional witness
@@ -249,7 +266,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-19 (concrete-schema elaboration fold: `schema T` on
+_Last updated: 2026-07-19 (run/compile entry parity: `run`/`json` refuse
+non-serializable final values — functions, `Type` values, witnesses, opaque
+handles, nested included — with the native runtime-ABI reason via
+`Value::runtime_abi_reason`, while the REPL stays permissive; gated by CLI
+refusal-matrix `run` assertions and `zutai-eval` unit tests);
+prior baseline updates: 2026-07-19 (concrete-schema elaboration fold: `schema T` on
 concrete types folds to data literals during THIR→TLC through the shared
 `zutai_thir::reflect` computation the oracle also evaluates; fully-folded
 modules run on the TLC path and compile natively, including with effects,

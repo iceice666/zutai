@@ -465,6 +465,8 @@ A `.zt` module can return a record containing values, functions, and types. Impo
 
 Rendered `.zti` outputs must be serializable. Functions and `Type` values have no `.zti` representation. Atoms keep their `#` spelling in `.zti`.
 
+A program's *final expression* — the value a run produces — is subject to the same rule on both execution paths. `zutai-cli run app.zt` and `zutai-cli json app.zt` refuse a program whose result is not first-order serializable data (a function, a runtime `Type` value, a constraint witness, or an opaque host handle, including when nested inside a list, tuple, record, or tagged payload), reporting the same runtime-ABI reason `zutai-cli compile` reports. Interpreter and native execution therefore accept and reject exactly the same program entries. The interactive REPL stays permissive: it displays functions and `Type` values for inspection.
+
 ### JSON rendering
 
 `eval_path_to_json` (the Rust evaluator API) serializes tagged union values as follows:

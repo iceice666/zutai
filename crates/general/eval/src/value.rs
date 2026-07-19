@@ -495,6 +495,58 @@ impl Value {
         }
     }
 
+    /// Why this fully-forced value cannot be rendered by the runtime ABI, or
+    /// `None` when it is first-order serializable data.
+    ///
+    /// This mirrors the native backend's entry-value contract
+    /// (`zutai_codegen::unsupported_entry_type_reason`) at the value level so
+    /// the reference interpreter refuses exactly the entries native compilation
+    /// refuses: functions/closures, runtime `Type` values, constraint
+    /// witnesses, and opaque host handles — including when nested inside a
+    /// list, tuple, record, or tagged payload. The returned reason strings match
+    /// the native diagnostics so `run`/`json` and `compile` agree.
+    ///
+    /// Values are deep-forced before this runs, so an unforced nested thunk is
+    /// an interpreter bug and is treated as a non-data value.
+    pub fn runtime_abi_reason(&self) -> Option<&'static str> {
+        fn thunk_reason(thunk: &crate::thunk::Thunk) -> Option<&'static str> {
+            match thunk.peek() {
+                Some(value) => value.runtime_abi_reason(),
+                None => Some(
+                    "compiled entry point returns a function, which cannot be shown by the runtime ABI",
+                ),
+            }
+        }
+        match self {
+            Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Posit(_)
+            | Value::Text(_)
+            | Value::Atom(_)
+            | Value::Nothing => None,
+            Value::List(items) => items.iter().find_map(thunk_reason),
+            Value::Tuple(items) => items.iter().find_map(|field| thunk_reason(&field.value)),
+            Value::Record(fields) => fields.iter().find_map(|(_, thunk)| thunk_reason(thunk)),
+            Value::TaggedValue { payload, .. } => {
+                payload.iter().find_map(|(_, thunk)| thunk_reason(thunk))
+            }
+            Value::TypeValue(_) => {
+                Some("compiled entry point returns Type, which cannot be shown by the runtime ABI")
+            }
+            Value::HostHandle(_) => Some(
+                "compiled entry point returns an opaque host handle, which cannot be shown by the runtime ABI",
+            ),
+            Value::Closure(_)
+            | Value::TlcClosure(_)
+            | Value::WitnessDict(_)
+            | Value::Builtin(_)
+            | Value::BuiltinPartial { .. } => Some(
+                "compiled entry point returns a function, which cannot be shown by the runtime ABI",
+            ),
+        }
+    }
+
     /// Convert a fully `force_deep`'d runtime value into natural JSON.
     ///
     /// Booleans, numbers, text, lists, and records map to their JSON

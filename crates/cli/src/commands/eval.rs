@@ -64,12 +64,22 @@ where
 /// The forced `Value` holds `Rc`s and is not `Send`, so it is rendered to its
 /// `Display` string inside the worker; only the `String` (or the `Send`
 /// `EvalError`, or the caught panic message) crosses the join boundary.
-pub(crate) fn eval_isolated(contents: &str, base: Option<&Path>) -> EvalOutcome {
+///
+/// When `enforce_abi` is set, a result that is not first-order serializable
+/// data (a function, runtime `Type`, witness, or opaque handle — nested
+/// included) is rejected with the same reason native compilation reports, so
+/// `run`/`json` refuse exactly the entries `compile` refuses. The REPL passes
+/// `false` so it can still display such values for interactive inspection.
+pub(crate) fn eval_isolated(contents: &str, base: Option<&Path>, enforce_abi: bool) -> EvalOutcome {
     let contents = contents.to_owned();
     let base = base.map(Path::to_path_buf);
     run_isolated(move || {
         reject_unsupported_render_entry(&contents, base.as_deref())?;
-        zutai_eval::eval_with_base(&contents, base.as_deref()).map(|v| v.to_string())
+        let value = zutai_eval::eval_with_base(&contents, base.as_deref())?;
+        if enforce_abi && let Some(reason) = value.runtime_abi_reason() {
+            return Err(zutai_eval::EvalError::NotRunnable(vec![reason.to_string()]));
+        }
+        Ok(value.to_string())
     })
 }
 
@@ -99,7 +109,7 @@ pub(crate) fn run_file(path: &str) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(path)?;
     // Resolve imports relative to the file's directory.
     let base = Path::new(path).parent();
-    match eval_isolated(&contents, base) {
+    match eval_isolated(&contents, base, true) {
         EvalOutcome::Ok(rendered) => println!("{rendered}"),
         outcome => exit_for_eval_failure(path, &contents, base, outcome),
     }
@@ -266,12 +276,13 @@ pub(crate) fn run_json(path: &str) -> Result<(), Box<dyn Error>> {
             let owned_base = base.map(Path::to_path_buf);
             let outcome = run_isolated(move || {
                 reject_unsupported_render_entry(&owned_contents, owned_base.as_deref())?;
-                zutai_eval::eval_with_base(&owned_contents, owned_base.as_deref())
-                    .and_then(|value| value.to_json())
-                    .map(|json| {
-                        serde_json::to_string_pretty(&json)
-                            .expect("serializing serde_json::Value cannot fail")
-                    })
+                let value = zutai_eval::eval_with_base(&owned_contents, owned_base.as_deref())?;
+                if let Some(reason) = value.runtime_abi_reason() {
+                    return Err(zutai_eval::EvalError::NotRunnable(vec![reason.to_string()]));
+                }
+                let json = value.to_json()?;
+                Ok(serde_json::to_string_pretty(&json)
+                    .expect("serializing serde_json::Value cannot fail"))
             });
             match outcome {
                 EvalOutcome::Ok(rendered) => println!("{rendered}"),
@@ -414,7 +425,7 @@ pub(crate) fn run_repl() -> Result<(), Box<dyn Error>> {
                 // restored before the next prompt so no global state leaks.
                 let prev_hook = std::panic::take_hook();
                 std::panic::set_hook(Box::new(|_| {}));
-                let outcome = eval_isolated(&eval_src, None);
+                let outcome = eval_isolated(&eval_src, None, false);
                 std::panic::set_hook(prev_hook);
                 match outcome {
                     EvalOutcome::Ok(rendered) => println!("{rendered}"),
