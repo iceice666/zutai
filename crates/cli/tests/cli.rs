@@ -2709,6 +2709,10 @@ const COMPILED_SHOW_FIXTURES: &[(&str, &str)] = &[
         "Shape :: type { #square : { side : Int; }; #circle : { radius : Int; }; };\ns :: Shape = #circle { radius = 5; };\ns\n",
     ),
     (
+        "variant_nonalpha_record_payload",
+        "Failure :: type { #bad : { expected : Int; actual : Int; }; };\nf :: Failure = #bad { expected = 48; actual = 49; };\nf\n",
+    ),
+    (
         "variant_in_record",
         "Status :: type { #ok; #err; };\nr :: { tag : Status; n : Int; } = { tag = #err; n = 3; };\nr\n",
     ),

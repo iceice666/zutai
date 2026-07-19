@@ -1130,7 +1130,12 @@ impl fmt::Display for Value {
                         write!(f, ")")?;
                     } else {
                         write!(f, " {{")?;
-                        for (i, (name, t)) in payload.iter().enumerate() {
+                        // Record-style tagged payloads use the same canonical
+                        // name-sorted order as ordinary records and the native
+                        // descriptor layout. Keep tuple payloads positional.
+                        let mut ordered: Vec<_> = payload.iter().collect();
+                        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+                        for (i, (name, t)) in ordered.into_iter().enumerate() {
                             if i > 0 {
                                 write!(f, ";")?;
                             }

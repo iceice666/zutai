@@ -151,6 +151,18 @@ s
 }
 
 #[test]
+fn display_tagged_record_payload_uses_canonical_field_order() {
+    let src = "
+Failure :: type {
+  #bad : { expected : Int; actual : Int; };
+};
+failure :: Failure = #bad { expected = 48; actual = 49; };
+failure
+";
+    assert_eq!(run(src).to_string(), "#bad { actual = 49; expected = 48 }");
+}
+
+#[test]
 fn display_closure_shows_remaining_arity() {
     // A function value displays as <function/N> where N = remaining arity
     let src = "
