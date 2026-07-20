@@ -47,6 +47,23 @@ cfg.server.port
 
 `zutai-cli run app.zt` prints `8080` when both files are in the same directory.
 
+## Model checking
+
+`zutai-cli model-check model.zt [--max-states N]` runs the bounded
+explicit-state model checker over an ordinary pure, typed `.zt` transition
+system. The program's final record exports a non-empty `scenarios` list. Each
+scenario names a model with initial states, a `next` function returning
+`{ action; state; }` transitions, safety predicates, reachability obligations,
+and an expected result: `#safe` or
+`#violates { property = "propertyName"; }`.
+
+The checker explores first-order states breadth-first, reports a shortest
+counterexample when a safety predicate fails, and treats an exhausted state
+budget as inconclusive rather than safe. States and actions containing
+functions or other non-first-order runtime values are rejected. This is a
+host-side analysis tool over existing Zutai values; it adds no language syntax,
+SMT solving, refinement types, or proof terms.
+
 ## Editor integration
 
 `zutai-cli lsp` starts a Language Server Protocol service over standard input
