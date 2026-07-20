@@ -25,6 +25,7 @@ crates/
     tlc/               Type Lambda Calculus lowering with explicit polymorphism/dictionaries
     semantic/          Facade wiring parse -> HIR -> THIR -> TLC analysis
     eval/              THIR and TLC reference evaluators
+    model/             Bounded explicit-state checking over pure typed `.zt` models
     dataflow/          TLC-to-Dataflow Core graph lowering
     anf/ ssa/ codegen/ Downstream LLVM/native compile pipeline stages
   immediate/

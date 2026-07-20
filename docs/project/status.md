@@ -73,6 +73,19 @@ capabilities in these areas require a motivating program and promotion through
 the [roadmap investment policy](roadmap.md#investment-policy).
 
 ## Current baseline
+The 2026-07-20 model-check baseline adds `zutai model-check` and the
+`zutai-model` library for bounded breadth-first exploration of ordinary pure,
+typed `.zt` transition systems. Models export first-order initial states,
+labeled successor functions, safety predicates, reachability obligations, and
+expected safe/violation scenarios. The checker reports shortest safety
+counterexamples, treats the state limit as inconclusive, and rejects runtime
+functions or other unsupported state/action values. This is a host-side
+reference-interpreter tool, not SMT, theorem proving, a native backend path, or
+new language syntax. The Slime OS BootState model validates the demonstrated
+workload with 4,744 reachable states, nine cut witnesses, and three expected
+mutation failures; library/CLI fixtures cover decoding, canonical state keys,
+search behavior, exit codes, and state-limit refusal.
+
 
 The 2026-07-19 run/compile entry-parity baseline aligns the reference
 interpreter's `run`/`json` output contract with the native runtime ABI. A
@@ -266,7 +279,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-19 (run/compile entry parity: `run`/`json` refuse
+_Last updated: 2026-07-20 (bounded explicit-state model checking: `zutai-model`
+and `zutai model-check` explore first-order pure `.zt` transition systems,
+report shortest safety counterexamples, and treat state-budget exhaustion as
+inconclusive; gated by library/CLI tests and the 4,744-state Slime OS BootState
+model with nine reachability witnesses and three expected mutations);
+prior baseline updates: 2026-07-19 (run/compile entry parity: `run`/`json` refuse
 non-serializable final values — functions, `Type` values, witnesses, opaque
 handles, nested included — with the native runtime-ABI reason via
 `Value::runtime_abi_reason`, while the REPL stays permissive; gated by CLI
