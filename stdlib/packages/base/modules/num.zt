@@ -1,5 +1,27 @@
 -- Canonical source for integer numeric helpers (stdlib slice F).
 -- Explicit import only: `n ::= import stdlib.num`; these names are not ambient.
+t ::= import stdlib.text;
+
+digit :: Int -> Text
+  = value => match value {
+    | 0 => "0";
+    | 1 => "1";
+    | 2 => "2";
+    | 3 => "3";
+    | 4 => "4";
+    | 5 => "5";
+    | 6 => "6";
+    | 7 => "7";
+    | 8 => "8";
+    | 9 => "9";
+    | _ => "?";
+  };
+positiveText :: Int -> Text
+  = value => if value < 10 then digit value else t.join "" { positiveText (value / 10); digit (value % 10); };
+negativeDigits :: Int -> Text
+  = value => if value > (0 - 10) then digit (0 - (value % 10)) else t.join "" { negativeDigits (value / 10); digit (0 - (value % 10)); };
+toText :: Int -> Text
+  = value => if value < 0 then t.join "" { "-"; negativeDigits value; } else positiveText value;
 min :: Int -> Int -> Int
   = left right => if left <= right then left else right;
 max :: Int -> Int -> Int
@@ -20,4 +42,4 @@ round :: Float -> Int
   = value => __numRound value;
 truncate :: Float -> Int
   = value => __numTruncate value;
-{ min = min; max = max; abs = abs; clamp = clamp; pow = pow; rem = rem; gcd = gcd; toFloat = toFloat; round = round; truncate = truncate; }
+{ min = min; max = max; abs = abs; clamp = clamp; pow = pow; rem = rem; gcd = gcd; toText = toText; toFloat = toFloat; round = round; truncate = truncate; }

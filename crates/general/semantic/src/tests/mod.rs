@@ -809,6 +809,7 @@ fn recording_bundles_only_used_stdlib_modules_plus_ambient_preludes() {
             "num".to_string(),
             "prelude".to_string(),
             "stream".to_string(),
+            "text".to_string(),
         ]
     );
     assert!(recorded.analysis.is_thir_complete());

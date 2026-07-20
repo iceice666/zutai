@@ -1255,6 +1255,21 @@ fn compile_stdlib_num_pipeline_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+const STDLIB_NUM_TO_TEXT_SRC: &str = "n ::= import stdlib.num;\n\
+t ::= import stdlib.text;\n\
+t.join \",\" { n.toText 0; n.toText 42; n.toText (0 - 7); n.toText (0 - 9223372036854775807 - 1); }\n";
+
+#[test]
+fn compile_stdlib_num_to_text_matches_oracle() {
+    let native = compile_bin_stdout("cli_test_stdlib_num_to_text", STDLIB_NUM_TO_TEXT_SRC);
+    let interp = run_stdout(
+        "cli_test_stdlib_num_to_text_oracle.zt",
+        STDLIB_NUM_TO_TEXT_SRC,
+    );
+    assert_eq!(native.trim(), "\"0,42,-7,-9223372036854775808\"");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 const STDLIB_TEXT_CMP_PIPELINE_SRC: &str = "t ::= import stdlib.text;\n\
 c ::= import stdlib.cmp;\n\
 o ::= import stdlib.optional;\n\

@@ -279,11 +279,15 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-20 (bounded explicit-state model checking: `zutai-model`
-and `zutai model-check` explore first-order pure `.zt` transition systems,
-report shortest safety counterexamples, and treat state-budget exhaustion as
-inconclusive; gated by library/CLI tests and the 4,744-state Slime OS BootState
-model with nine reachability witnesses and three expected mutations);
+_Last updated: 2026-07-21 (`stdlib.num.toText` adds pure source-canonical
+full-range signed `Int` decimal rendering with interpreter/THIR/TLC/native
+parity, including `Int::MIN`, for serialization and code-generation workflows);
+prior baseline updates: 2026-07-20 (bounded explicit-state model checking:
+`zutai-model` and `zutai model-check` explore first-order pure `.zt` transition
+systems, report shortest safety counterexamples, and treat state-budget
+exhaustion as inconclusive; gated by library/CLI tests and the 4,744-state
+Slime OS BootState model with nine reachability witnesses and three expected
+mutations);
 prior baseline updates: 2026-07-19 (run/compile entry parity: `run`/`json` refuse
 non-serializable final values — functions, `Type` values, witnesses, opaque
 handles, nested included — with the native runtime-ABI reason via
@@ -479,8 +483,10 @@ patterns and a strict fold bridge; explicit `stdlib.optional` helpers landed for
 `map`/`andThen`/`filter`/`withDefault`/`isSome`/`toList`; explicit
 `stdlib.result` landed for `Result`/`Validation` errors-as-data helpers;
 explicit `stdlib.num` landed for `min`/`max`/`abs`/`clamp`/`pow`/`rem`/`gcd`/
-`toFloat`/`round`/`truncate` with checked scalar bridge intrinsics and native
-runtime helpers; explicit `stdlib.text` landed for `length`/`split`/`join`/
+`toText`/`toFloat`/`round`/`truncate`, with pure source-canonical full-range
+signed decimal rendering for `toText`, checked scalar bridge intrinsics and
+native runtime helpers for the remaining bridged operations; explicit
+`stdlib.text` landed for `length`/`split`/`join`/
 `trim`/`toUpper`/`toLower`/`contains`/`replace`/`show`/`parseInt`/`parseFloat`
 with text bridge intrinsics and native runtime helpers; explicit `stdlib.cmp`
 landed for `Ordering`, comparator combinators, and concrete Int/Float/Text

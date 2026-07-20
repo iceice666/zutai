@@ -513,14 +513,15 @@ fn stdlib_num_qualified_members_evaluate() {
                i ::= n.round 2.6;\n\
                j ::= n.truncate 2.9;\n\
                k ::= if n.toFloat 3 == 3.0 then 7 else 0;\n\
-               a + b + c + d + e + f + g + h + i + j + k";
+               rendered ::= n.toText 0 == \"0\" && n.toText 42 == \"42\" && n.toText (0 - 7) == \"-7\" && n.toText (0 - 9223372036854775807 - 1) == \"-9223372036854775808\";\n\
+               if rendered then a + b + c + d + e + f + g + h + i + j + k else 0";
     assert_eq!(run(src), Value::Int(83));
 }
 
 #[test]
 fn destructured_stdlib_num_members_evaluate() {
-    let src = "{ pow; gcd; round; truncate; toFloat; } ::= import stdlib.num;\n\
-               pow 3 3 + gcd 270 192 + round (toFloat 2) + truncate 4.9";
+    let src = "{ pow; gcd; round; truncate; toFloat; toText; } ::= import stdlib.num;\n\
+               if toText (0 - 9223372036854775807 - 1) == \"-9223372036854775808\" then pow 3 3 + gcd 270 192 + round (toFloat 2) + truncate 4.9 else 0";
     assert_eq!(run(src), Value::Int(39));
 }
 
@@ -531,6 +532,10 @@ fn stdlib_num_thir_oracle_matches_tlc_path() {
         "n ::= import stdlib.num;\nn.gcd (0 - 54) 24",
         "n ::= import stdlib.num;\nn.round (0.0 - 2.5)",
         "n ::= import stdlib.num;\nif n.toFloat 42 == 42.0 then n.truncate 3.9 else 0",
+        "n ::= import stdlib.num;\nn.toText 0",
+        "n ::= import stdlib.num;\nn.toText 42",
+        "n ::= import stdlib.num;\nn.toText (0 - 7)",
+        "n ::= import stdlib.num;\nn.toText (0 - 9223372036854775807 - 1)",
     ];
     for src in srcs {
         let tlc = eval_file(src).expect("TLC eval failed");
