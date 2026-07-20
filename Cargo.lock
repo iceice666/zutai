@@ -2085,6 +2085,7 @@ dependencies = [
  "zutai-eval",
  "zutai-hir",
  "zutai-im",
+ "zutai-model",
  "zutai-package",
  "zutai-rt",
  "zutai-semantic",
@@ -2176,6 +2177,16 @@ dependencies = [
  "unicode-ident",
  "winnow",
  "zutai-types",
+]
+
+[[package]]
+name = "zutai-model"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash 2.1.2",
+ "thiserror",
+ "zutai-eval",
+ "zutai-semantic",
 ]
 
 [[package]]

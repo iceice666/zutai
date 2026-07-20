@@ -34,6 +34,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             )?;
         }
         Some(Commands::Dataflow { path }) => commands::run_dataflow(&path)?,
+        Some(Commands::ModelCheck { path, max_states }) => {
+            commands::run_model_check(&path, max_states)?
+        }
         Some(Commands::Web { command }) => command.run()?,
         Some(Commands::Package { command }) => command.run()?,
         Some(Commands::Repl) => commands::run_repl()?,
@@ -182,4 +185,12 @@ enum Commands {
     Repl,
     /// Start the Language Server Protocol service on standard input/output
     Lsp,
+    /// Exhaustively check a .zt transition-system model
+    ModelCheck {
+        /// Path to the .zt model file
+        path: String,
+        /// Maximum distinct states to visit per scenario
+        #[arg(long, default_value_t = zutai_model::DEFAULT_MAX_STATES)]
+        max_states: usize,
+    },
 }

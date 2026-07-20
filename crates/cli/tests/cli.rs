@@ -7252,3 +7252,213 @@ fn compile_zt_imported_conditional_digit_suffix_record_matches_oracle() {
         "expected (true, false), got {native:?}"
     );
 }
+
+// ─── `model-check` subcommand ──────────────────────────────────────────────────
+
+/// A counter model: `0 -> 1 -> 2`, safe while `n <= bound`, reaches `2`.
+/// `bound` and the maximum reachable value drive safe/violation fixtures.
+fn model_counter(name: &str, bound: i64, ceiling: i64, expect: &str) -> String {
+    format!(
+        concat!(
+            "next :: Int -> List {{ action : Text; state : Int; }}\n",
+            "  = n => cond {{ n < {ceiling} => {{ {{ action = \"inc\"; state = n + 1; }}; }}; _ => {{;}}; }};\n",
+            "bounded :: {{ name : Text; holds : Int -> Bool; }}\n",
+            "  = {{ name = \"bounded\"; holds = \\n. n <= {bound}; }};\n",
+            "hitsTwo :: {{ name : Text; reached : Int -> Bool; }}\n",
+            "  = {{ name = \"hitsTwo\"; reached = \\n. n == 2; }};\n",
+            "model ::= {{ initial = {{ 0; }}; next = next; safety = {{ bounded; }}; reachability = {{ hitsTwo; }}; }};\n",
+            "{{ scenarios = {{ {{ name = \"{name}\"; model = model; expect = {expect}; }}; }}; }}\n"
+        ),
+        name = name,
+        bound = bound,
+        ceiling = ceiling,
+        expect = expect,
+    )
+}
+
+/// A `zutai-cli model-check <path>` command with the workspace stdlib root set,
+/// since the ambient prelude is loaded even for fixtures that import nothing.
+fn model_check_cli(path: &str) -> Command {
+    let mut command = cli();
+    command
+        .arg("--stdlib-root")
+        .arg(workspace_root().join("stdlib"))
+        .arg("model-check")
+        .arg(path);
+    command
+}
+
+#[test]
+fn model_check_safe_with_reachability_passes() {
+    let path = write_tmp(
+        "cli_test_model_check_safe.zt",
+        &model_counter("safe", 5, 2, "#safe"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scenario \"safe\": ok (3 states)"))
+        .stdout(predicate::str::contains(
+            "model-check: all 1 scenarios passed",
+        ));
+}
+
+#[test]
+fn model_check_invariant_failure_shows_shortest_counterexample() {
+    // Ceiling 3 pushes state to 3, but `bounded` only holds through 2.
+    let path = write_tmp(
+        "cli_test_model_check_bad_invariant.zt",
+        &model_counter("bad", 2, 3, "#safe"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "scenario \"bad\": FAILED invariant \"bounded\"",
+        ))
+        .stdout(predicate::str::contains("counterexample:"))
+        .stdout(predicate::str::contains("initial: 0"))
+        .stdout(predicate::str::contains("\"inc\" -> 3"))
+        .stdout(predicate::str::contains("expected: safe"));
+}
+
+#[test]
+fn model_check_matching_violation_passes() {
+    // Ceiling 3 breaks `bounded` (holds through 2); the scenario expects it.
+    let path = write_tmp(
+        "cli_test_model_check_violates_ok.zt",
+        &model_counter("mut", 2, 3, "#violates { property = \"bounded\"; }"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "scenario \"mut\": ok (violated \"bounded\" as expected)",
+        ))
+        .stdout(predicate::str::contains(
+            "model-check: all 1 scenarios passed",
+        ));
+}
+
+#[test]
+fn model_check_missing_expected_violation_fails() {
+    // `bounded` holds through 5 but the ceiling only reaches 2, so no violation.
+    let path = write_tmp(
+        "cli_test_model_check_violates_missing.zt",
+        &model_counter("mut", 5, 2, "#violates { property = \"bounded\"; }"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "scenario \"mut\": FAILED (expected violation of \"bounded\", none found)",
+        ));
+}
+
+#[test]
+fn model_check_unmet_reachability_fails() {
+    // Ceiling 1 never reaches 2, so the `hitsTwo` obligation is unmet.
+    let path = write_tmp(
+        "cli_test_model_check_unreached.zt",
+        &model_counter("reach", 5, 1, "#safe"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "scenario \"reach\": FAILED reachability \"hitsTwo\" never reached",
+        ));
+}
+
+#[test]
+fn model_check_state_limit_is_inconclusive() {
+    let path = write_tmp(
+        "cli_test_model_check_limit.zt",
+        &model_counter("safe", 5, 2, "#safe"),
+    );
+    model_check_cli(&path)
+        .arg("--max-states")
+        .arg("1")
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains(
+            "model-check: inconclusive: state limit reached (visited 1 states) in scenario \"safe\"",
+        ));
+}
+
+#[test]
+fn model_check_function_in_state_is_rejected() {
+    let src = concat!(
+        "St :: type { f : Int -> Int; };\n",
+        "next :: St -> List { action : Text; state : St; } = s => {;};\n",
+        "ok :: { name : Text; holds : St -> Bool; } = { name = \"ok\"; holds = \\s. true; };\n",
+        "rok :: { name : Text; reached : St -> Bool; } = { name = \"rok\"; reached = \\s. true; };\n",
+        "model ::= { initial = { { f = \\x. x; }; }; next = next; safety = { ok; }; reachability = { rok; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_function_state.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "state contains non-first-order value: Function",
+        ));
+}
+
+#[test]
+fn model_check_empty_initial_is_rejected() {
+    let src = concat!(
+        "I :: type List Int;\n",
+        "next :: Int -> List { action : Text; state : Int; } = s => {;};\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\s. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\s. true; };\n",
+        "empty :: I = {;};\n",
+        "model ::= { initial = empty; next = next; safety = { ok; }; reachability = { rok; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_empty_initial.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("empty initial state list"));
+}
+
+#[test]
+fn model_check_duplicate_property_is_rejected() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = s => {;};\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"dup\"; holds = \\s. true; };\n",
+        "ok2 :: { name : Text; holds : Int -> Bool; } = { name = \"dup\"; holds = \\s. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\s. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; ok2; }; reachability = { rok; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_dup_property.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "duplicate safety property name \"dup\"",
+        ));
+}
+
+#[test]
+fn model_check_violates_absent_property_is_rejected() {
+    let path = write_tmp(
+        "cli_test_model_check_violates_absent.zt",
+        &model_counter("s", 5, 2, "#violates { property = \"ghost\"; }"),
+    );
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "expectation names unknown safety property \"ghost\"",
+        ));
+}

@@ -1,0 +1,11 @@
+[package]
+name = "zutai-model"
+edition.workspace = true
+version.workspace = true
+description = "Bounded explicit-state model checker for pure typed Zutai (.zt) transition systems"
+
+[dependencies]
+rustc-hash = "2.0.0"
+thiserror = "2"
+zutai-eval = { path = "../eval" }
+zutai-semantic = { path = "../semantic" }

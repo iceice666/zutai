@@ -10,6 +10,7 @@ members = [
   "crates/general/eval",
   "crates/general/hir",
   "crates/general/semantic",
+  "crates/general/model",
   "crates/general/runtime",
   "crates/general/ssa",
   "crates/general/syntax",

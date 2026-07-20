@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 mod compile;
 mod eval;
+mod model;
 mod package;
 mod reflect;
 #[cfg(test)]
@@ -27,3 +28,4 @@ pub(crate) use eval::{
     EvalOutcome, count_decls_in, eval_isolated, run_bare_path, run_check, run_file, run_format,
     run_isolated, run_json, run_parse, run_repl,
 };
+pub(crate) use model::run_model_check;
