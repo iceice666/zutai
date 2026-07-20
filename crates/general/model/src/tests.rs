@@ -246,6 +246,44 @@ fn violates_ignores_non_target_safety_failures() {
         }
     );
 }
+#[test]
+fn reachability_only_stops_after_all_obligations_are_met() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"step\"; state = n + 1; }; };\n",
+        "reached :: { name : Text; reached : Int -> Bool; } = { name = \"initial\"; reached = \\n. n == 0; };\n",
+        "noSafety :: List { name : Text; holds : Int -> Bool; } = {;};\n",
+        "model ::= { initial = { 0; }; next = next; safety = noSafety; reachability = { reached; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let analysis = analyze(src);
+    assert!(analysis.is_thir_complete(), "model did not type-check");
+    let scenarios = passed(
+        check_analysis(&analysis, CheckOptions { max_states: 1 })
+            .expect("met reachability should stop before expanding successors"),
+    );
+    assert_eq!(scenarios[0].visited, 1);
+}
+
+#[test]
+fn reports_every_unmet_reachability_obligation() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => {;};\n",
+        "first :: { name : Text; reached : Int -> Bool; } = { name = \"first\"; reached = \\n. n == 1; };\n",
+        "second :: { name : Text; reached : Int -> Bool; } = { name = \"second\"; reached = \\n. n == 2; };\n",
+        "noSafety :: List { name : Text; holds : Int -> Bool; } = {;};\n",
+        "model ::= { initial = { 0; }; next = next; safety = noSafety; reachability = { first; second; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let outcome = check(src).expect("model check should complete");
+    let CheckOutcome::Failed { message, .. } = outcome else {
+        panic!("expected reachability failure, got {outcome:?}");
+    };
+    assert_eq!(
+        message,
+        "scenario \"s\": FAILED reachability obligations never reached:\n  - \"first\"\n  - \"second\""
+    );
+}
+
 // ─── interface validation ───────────────────────────────────────────────────────
 
 #[test]

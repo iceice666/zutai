@@ -47,7 +47,7 @@ pub(crate) enum SearchResult {
         property: String,
     },
     ReachabilityUnmet {
-        property: String,
+        properties: Vec<String>,
     },
     Limit {
         visited: usize,
@@ -133,6 +133,14 @@ pub(crate) fn run_scenario(
                 }
             }
         }
+        // A reachability-only scenario cannot change its verdict once every
+        // obligation has been met. Avoid expanding the remaining frontier;
+        // safety-bearing scenarios must still exhaust it to prove invariants.
+        if model.safety.is_empty() && reachability_complete(&reached) {
+            return Ok(SearchResult::Safe {
+                visited: nodes.len(),
+            });
+        }
 
         // Expand successors in source-list order.
         let transitions = session.force(session.apply(model.next.clone(), state.clone())?)?;
@@ -184,18 +192,29 @@ pub(crate) fn run_scenario(
             property: property.clone(),
         }),
         Expectation::Safe => {
-            for (i, obligation) in model.reachability.iter().enumerate() {
-                if !reached[i] {
-                    return Ok(SearchResult::ReachabilityUnmet {
-                        property: obligation.name.clone(),
-                    });
-                }
+            let properties = unmet_reachability(&model.reachability, &reached);
+            if properties.is_empty() {
+                Ok(SearchResult::Safe {
+                    visited: nodes.len(),
+                })
+            } else {
+                Ok(SearchResult::ReachabilityUnmet { properties })
             }
-            Ok(SearchResult::Safe {
-                visited: nodes.len(),
-            })
         }
     }
+}
+
+fn reachability_complete(reached: &[bool]) -> bool {
+    reached.iter().all(|met| *met)
+}
+
+fn unmet_reachability(obligations: &[Predicate], reached: &[bool]) -> Vec<String> {
+    obligations
+        .iter()
+        .zip(reached)
+        .filter(|(_, met)| !**met)
+        .map(|(obligation, _)| obligation.name.clone())
+        .collect()
 }
 
 /// Resolve a safety failure into the scenario verdict. For a `#violates`

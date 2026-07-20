@@ -187,11 +187,8 @@ pub fn check_analysis(
                 );
                 return Ok(CheckOutcome::Failed { completed, message });
             }
-            search::SearchResult::ReachabilityUnmet { property } => {
-                let message = format!(
-                    "scenario \"{}\": FAILED reachability \"{property}\" never reached",
-                    scenario.name
-                );
+            search::SearchResult::ReachabilityUnmet { properties } => {
+                let message = render_reachability_failure(&scenario.name, &properties);
                 return Ok(CheckOutcome::Failed { completed, message });
             }
             search::SearchResult::Limit { visited } => {
@@ -207,4 +204,23 @@ pub fn check_analysis(
     Ok(CheckOutcome::Passed {
         scenarios: completed,
     })
+}
+
+fn render_reachability_failure(scenario: &str, properties: &[String]) -> String {
+    match properties {
+        [property] => {
+            format!("scenario \"{scenario}\": FAILED reachability \"{property}\" never reached")
+        }
+        [] => unreachable!("reachability failure requires an unmet obligation"),
+        properties => {
+            let obligations = properties
+                .iter()
+                .map(|property| format!("  - \"{property}\""))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "scenario \"{scenario}\": FAILED reachability obligations never reached:\n{obligations}"
+            )
+        }
+    }
 }

@@ -7374,6 +7374,26 @@ fn model_check_unmet_reachability_fails() {
 }
 
 #[test]
+fn model_check_reports_all_unmet_reachability_obligations() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => {;} ;\n",
+        "first :: { name : Text; reached : Int -> Bool; } = { name = \"first\"; reached = \\n. n == 1; };\n",
+        "second :: { name : Text; reached : Int -> Bool; } = { name = \"second\"; reached = \\n. n == 2; };\n",
+        "noSafety :: List { name : Text; holds : Int -> Bool; } = {;};\n",
+        "model ::= { initial = { 0; }; next = next; safety = noSafety; reachability = { first; second; }; };\n",
+        "{ scenarios = { { name = \"reach\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_unreached_multiple.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "scenario \"reach\": FAILED reachability obligations never reached:\n  - \"first\"\n  - \"second\"",
+        ));
+}
+
+#[test]
 fn model_check_state_limit_is_inconclusive() {
     let path = write_tmp(
         "cli_test_model_check_limit.zt",
