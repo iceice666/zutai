@@ -13,6 +13,13 @@ fn parse_expr_str(s: &str) -> Expr {
     parse_expr(&mut input).unwrap_or_else(|e| panic!("parse_expr({s:?}) failed: {e}"))
 }
 
+fn parse_pattern_str(s: &str) -> Pattern {
+    crate::parser::lex::BASE_PTR.with(|c| c.set(s.as_ptr() as usize));
+    let mut input = s;
+    crate::parser::pattern::parse_pattern(&mut input)
+        .unwrap_or_else(|e| panic!("parse_pattern({s:?}) failed: {e}"))
+}
+
 fn parse_str(s: &str) -> File {
     let parsed = parse(s);
     if parsed.ast().is_none() {

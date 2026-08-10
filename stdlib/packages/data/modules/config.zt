@@ -4,4 +4,4 @@ overlayConfig :: <T> Patch T -> T -> T
   = patch base => overlay patch base;
 overlayDeepConfig :: <T> DeepPatch T -> T -> T
   = patch base => overlayDeep patch base;
-{ Patch = Patch; DeepPatch = DeepPatch; overlay = overlayConfig; overlayDeep = overlayDeepConfig; }
+{ Patch =; DeepPatch =; overlay = overlayConfig; overlayDeep = overlayDeepConfig; }

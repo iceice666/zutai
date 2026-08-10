@@ -22,4 +22,4 @@ compareFloat :: Float -> Float -> Ordering
   = left right => if (left < right) then #lt else if (left > right) then #gt else #eq;
 compareText :: Text -> Text -> Ordering
   = left right => if (left < right) then #lt else if (left > right) then #gt else #eq;
-{ Ordering = Ordering; lt = lt; eq = eq; gt = gt; isLt = isLt; isEq = isEq; isGt = isGt; reverse = reverse; then = thenCmp; by = by; compareInt = compareInt; compareFloat = compareFloat; compareText = compareText; }
+{ Ordering =; lt =; eq =; gt =; isLt =; isEq =; isGt =; reverse =; then = thenCmp; by =; compareInt =; compareFloat =; compareText =; }

@@ -29,4 +29,4 @@ withConnection :: <A, e> Net -> Int -> (Int -> A ! { * ReadEffects; * WriteEffec
     conn := accept net listener;
     handle body conn with { finally = close net conn; }
   ];
-{ listen = listen; accept = accept; read = read; write = write; close = close; withConnection = withConnection; }
+{ listen =; accept =; read =; write =; close =; withConnection =; }

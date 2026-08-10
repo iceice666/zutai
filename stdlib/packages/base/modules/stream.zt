@@ -94,4 +94,4 @@ fromList :: <A> List A -> Stream A
   = xs _ => if listIsNil xs then #nil else #cons { head = listHead xs; tail = fromList (listTail xs); };
 takeList :: <A> Int -> Stream A -> List A
   = k s => toList (take k s);
-{ Data = Data; DataField = DataField; Validation = Validation; DecodeError = DecodeError; DecodePath = DecodePath; DecodeIssue = DecodeIssue; Stream = Stream; StreamEff = StreamEff; Step = Step; empty = empty; cons = cons; singleton = singleton; unfold = unfold; map = streamMap; filter = streamFilter; take = take; drop = drop; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList = toList; fromList = fromList; takeList = takeList; decode = decode; encode = encode; }
+{ Data =; DataField =; Validation =; DecodeError =; DecodePath =; DecodeIssue =; Stream =; StreamEff =; Step =; empty =; cons =; singleton =; unfold =; map = streamMap; filter = streamFilter; take =; drop =; fold = streamFold; uncons = streamUncons; find = streamFind; findMap = streamFindMap; toList =; fromList =; takeList =; decode =; encode =; }

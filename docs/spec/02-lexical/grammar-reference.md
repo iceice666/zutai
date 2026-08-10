@@ -405,7 +405,11 @@ TuplePatternItem
    | Pattern
 
 RecordPattern
-  ::= "{" (FieldName "=" Pattern ";")* "}"
+  ::= "{" RecordPatternField* "}"
+
+RecordPatternField
+  ::= FieldName "=" Pattern ";"
+   | FieldName "=" ";"
 
 ListPattern
   ::= "{;}"
@@ -466,7 +470,7 @@ grammar positions that introduce those forms.
 - The scope picks the binding operator: top-level (the parallel/letrec scope) uses `::=` (inferred) and `:: T =` (typed); a local binding inside a `[ … ]` do-block uses `:=` (inferred) and `: T =` (typed). Mnemonic: `::` is top-level, `:` is local.
 - `:` is type binding; `=` is value or pattern binding. Type record fields, type tuple fields, and union payload annotations use `:`. Value records, tuples, witness fields, and patterns use `=`.
 - In expression position, `{}` is the empty value record and `{;}` is the empty list. A non-empty `{ ... }` is a value record when its non-spread items start as `FieldName =`; otherwise it is a list of `;`-terminated expressions. Value records and lists accept spread items (`* record;`, `* list;`) in item order. A spread-only literal (`{ * x; }`) requires an expected record/list type. A `[ ... ]` is a do-block; an empty `[]` is the empty do-block.
-- A value-record field written `name =;` is field-pun shorthand for `name = name;`: the omitted value is the identifier `name`. It applies to record literals and record-update (`with`) fields.
+- A field written `name =;` is field-pun shorthand for `name = name;`: the omitted right-hand side is the identifier `name`. In expression position it applies to record literals and record-update (`with`) fields, where the omitted value is the identifier expression `name`. In pattern position it applies to record patterns and tagged-record payload patterns, where the omitted pattern is the binding pattern `name`. Bare `name;` is never punning: in expression position it is a list item, and in pattern position it is a list-pattern element.
 - In type position, `{ field : Type; }` is a record type and `{ #tag; }` is a union type.
 - Record row tails (`...;`, `...Rest;`) are final and unique. Named/qualified row spreads use explicit `* Shape;` / `* m.Shape;`; union row spreads may appear among variants.
 - Effect rows accept named or qualified effect-type spreads (`* Name;`, `* m.Name;`) before the final row tail. Anonymous tails and row-variable tails (`...;`, `...e;`) are final.

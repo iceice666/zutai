@@ -78,22 +78,22 @@ Document :: <Msg> type {
 
 document :: <Msg> Text -> Text -> List Head -> List StaticAttribute -> List (Html Msg) -> Document Msg
   = language title head bodyAttributes body => {
-      language = language;
-      title = title;
-      head = head;
-      bodyAttributes = bodyAttributes;
-      body = body;
+      language =;
+      title =;
+      head =;
+      bodyAttributes =;
+      body =;
     };
 
 meta :: MetaName -> Text -> Head
-  = name content => #metaName { name = name; content = content; };
+  = name content => #metaName { name =; content =; };
 description :: Text -> Head = content => meta #description content;
 viewport :: Text -> Head = content => meta #viewport content;
 author :: Text -> Head = content => meta #author content;
 robots :: Text -> Head = content => meta #robots content;
 themeColor :: Text -> Head = content => meta #themeColor content;
 openGraph :: Text -> Text -> Head
-  = property content => #metaProperty { property = property; content = content; };
+  = property content => #metaProperty { property =; content =; };
 ogTitle :: Text -> Head = content => openGraph "og:title" content;
 ogType :: Text -> Head = content => openGraph "og:type" content;
 ogDescription :: Text -> Head = content => openGraph "og:description" content;
@@ -101,8 +101,8 @@ ogImage :: Text -> Head = content => openGraph "og:image" content;
 ogUrl :: Text -> Head = content => openGraph "og:url" content;
 link :: LinkRel -> Text -> Text? -> Text? -> Text? -> CrossOrigin? -> Head
   = rel href mime media sizes crossOrigin => #link {
-      rel = rel; href = href; mime = mime; media = media; sizes = sizes;
-      crossOrigin = crossOrigin;
+      rel =; href =; mime =; media =; sizes =;
+      crossOrigin =;
     };
 stylesheetLink :: Text -> Head
   = href => link #stylesheet href #none #none #none #none;
@@ -111,22 +111,22 @@ iconLink :: Text -> Text -> Head
 canonicalLink :: Text -> Head
   = href => link #canonical href #none #none #none #none;
 base :: Text -> Text? -> Head
-  = href target => #base { href = href; target = target; };
-style :: css.Stylesheet -> Head = sheet => #style { sheet = sheet; };
+  = href target => #base { href =; target =; };
+style :: css.Stylesheet -> Head = sheet => #style { sheet =; };
 
 staticText :: AttributeName -> Text -> StaticAttribute
-  = name value => #textAttribute { name = name; value = value; };
+  = name value => #textAttribute { name =; value =; };
 staticBool :: AttributeName -> Bool -> StaticAttribute
-  = name value => #boolAttribute { name = name; value = value; };
+  = name value => #boolAttribute { name =; value =; };
 bodyId :: Text -> StaticAttribute = value => staticText #id value;
 bodyClass :: Text -> StaticAttribute = value => staticText #class value;
 bodyStyles :: List css.Declaration -> StaticAttribute
-  = declarations => #styles { declarations = declarations; };
+  = declarations => #styles { declarations =; };
 
 attribute :: <Msg> AttributeName -> Text -> Attribute Msg
-  = name value => #textAttribute { name = name; value = value; };
+  = name value => #textAttribute { name =; value =; };
 boolAttribute :: <Msg> AttributeName -> Bool -> Attribute Msg
-  = name value => #boolAttribute { name = name; value = value; };
+  = name value => #boolAttribute { name =; value =; };
 static :: <Msg> StaticAttribute -> Attribute Msg
   = attributeValue => #static { attribute = attributeValue; };
 idAttr :: <Msg> Text -> Attribute Msg = value => attribute #id value;
@@ -143,9 +143,9 @@ forId :: <Msg> Text -> Attribute Msg = value => attribute #forId value;
 target :: <Msg> Text -> Attribute Msg = value => attribute #target value;
 rel :: <Msg> Text -> Attribute Msg = value => attribute #rel value;
 aria :: <Msg> Text -> Text -> Attribute Msg
-  = name value => attribute (#aria { name = name; }) value;
+  = name value => attribute (#aria { name =; }) value;
 dataAttribute :: <Msg> Text -> Text -> Attribute Msg
-  = name value => attribute (#data { name = name; }) value;
+  = name value => attribute (#data { name =; }) value;
 disabledAttr :: <Msg> Bool -> Attribute Msg = value => boolAttribute #disabled value;
 required :: <Msg> Bool -> Attribute Msg = value => boolAttribute #required value;
 readOnly :: <Msg> Bool -> Attribute Msg = value => boolAttribute #readOnly value;
@@ -156,50 +156,50 @@ value :: <Msg> Text -> Attribute Msg
 checked :: <Msg> Bool -> Attribute Msg
   = propertyValue => #boolProperty { name = #checked; value = propertyValue; };
 styles :: <Msg> List css.Declaration -> Attribute Msg
-  = declarations => #styles { declarations = declarations; };
-key :: <Msg> Text -> Attribute Msg = value => #key { value = value; };
+  = declarations => #styles { declarations =; };
+key :: <Msg> Text -> Attribute Msg = value => #key { value =; };
 
 eventOptions :: Bool -> Bool -> EventOptions
   = preventDefault stopPropagation => {
-      preventDefault = preventDefault;
-      stopPropagation = stopPropagation;
+      preventDefault =;
+      stopPropagation =;
     };
 defaultEventOptions :: EventOptions = eventOptions false false;
 preventDefault :: EventOptions = eventOptions true false;
 stopPropagation :: EventOptions = eventOptions false true;
 preventDefaultAndStopPropagation :: EventOptions = eventOptions true true;
 onClickWith :: <Msg> EventOptions -> Msg -> Attribute Msg
-  = options message => #event { handler = #click { message = message; options = options; }; };
+  = options message => #event { handler = #click { message =; options =; }; };
 onClick :: <Msg> Msg -> Attribute Msg = message => onClickWith defaultEventOptions message;
 onInputWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
-  = options toMessage => #event { handler = #input { toMessage = toMessage; options = options; }; };
+  = options toMessage => #event { handler = #input { toMessage =; options =; }; };
 onInput :: <Msg> (Text -> Msg) -> Attribute Msg
   = toMessage => onInputWith defaultEventOptions toMessage;
 onChangeWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
-  = options toMessage => #event { handler = #change { toMessage = toMessage; options = options; }; };
+  = options toMessage => #event { handler = #change { toMessage =; options =; }; };
 onChange :: <Msg> (Text -> Msg) -> Attribute Msg
   = toMessage => onChangeWith defaultEventOptions toMessage;
 onSubmitWith :: <Msg> EventOptions -> Msg -> Attribute Msg
-  = options message => #event { handler = #submit { message = message; options = options; }; };
+  = options message => #event { handler = #submit { message =; options =; }; };
 onSubmit :: <Msg> Msg -> Attribute Msg = message => onSubmitWith defaultEventOptions message;
 onBlurWith :: <Msg> EventOptions -> Msg -> Attribute Msg
-  = options message => #event { handler = #blur { message = message; options = options; }; };
+  = options message => #event { handler = #blur { message =; options =; }; };
 onBlur :: <Msg> Msg -> Attribute Msg = message => onBlurWith defaultEventOptions message;
 onFocusWith :: <Msg> EventOptions -> Msg -> Attribute Msg
-  = options message => #event { handler = #focus { message = message; options = options; }; };
+  = options message => #event { handler = #focus { message =; options =; }; };
 onFocus :: <Msg> Msg -> Attribute Msg = message => onFocusWith defaultEventOptions message;
 onKeyDownWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
-  = options toMessage => #event { handler = #keyDown { toMessage = toMessage; options = options; }; };
+  = options toMessage => #event { handler = #keyDown { toMessage =; options =; }; };
 onKeyDown :: <Msg> (Text -> Msg) -> Attribute Msg
   = toMessage => onKeyDownWith defaultEventOptions toMessage;
 onKeyUpWith :: <Msg> EventOptions -> (Text -> Msg) -> Attribute Msg
-  = options toMessage => #event { handler = #keyUp { toMessage = toMessage; options = options; }; };
+  = options toMessage => #event { handler = #keyUp { toMessage =; options =; }; };
 onKeyUp :: <Msg> (Text -> Msg) -> Attribute Msg
   = toMessage => onKeyUpWith defaultEventOptions toMessage;
 
-text :: <Msg> Text -> Html Msg = value => #text { value = value; };
+text :: <Msg> Text -> Html Msg = value => #text { value =; };
 element :: <Msg> Tag -> List (Attribute Msg) -> List (Html Msg) -> Html Msg
-  = tag attributes children => #element { tag = tag; attributes = attributes; children = children; };
+  = tag attributes children => #element { tag =; attributes =; children =; };
 a :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #a attributes children;
 article :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #article attributes children;
 aside :: <Msg> List (Attribute Msg) -> List (Html Msg) -> Html Msg = attributes children => element #aside attributes children;
@@ -250,46 +250,46 @@ img :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #img attri
 input :: <Msg> List (Attribute Msg) -> Html Msg = attributes => element #input attributes {;};
 
 {
-  Tag = Tag; AttributeName = AttributeName; StaticAttribute = StaticAttribute;
-  EventOptions = EventOptions; EventHandler = EventHandler; Attribute = Attribute;
-  Html = Html; MetaName = MetaName; LinkRel = LinkRel; CrossOrigin = CrossOrigin;
-  Head = Head; Document = Document; document = document;
-  meta = meta; description = description; viewport = viewport; author = author;
-  robots = robots; themeColor = themeColor; openGraph = openGraph;
-  ogTitle = ogTitle; ogType = ogType; ogDescription = ogDescription;
-  ogImage = ogImage; ogUrl = ogUrl; link = link;
-  stylesheetLink = stylesheetLink; iconLink = iconLink;
-  canonicalLink = canonicalLink; base = base; style = style;
-  staticText = staticText; staticBool = staticBool; bodyId = bodyId;
-  bodyClass = bodyClass; bodyStyles = bodyStyles; attribute = attribute;
-  boolAttribute = boolAttribute; static = static; idAttr = idAttr;
-  classAttr = classAttr; href = href; src = src; alt = alt;
-  nameAttr = nameAttr; placeholder = placeholder; inputType = inputType;
-  role = role; titleAttr = titleAttr; forId = forId; target = target;
-  rel = rel; aria = aria; dataAttribute = dataAttribute;
-  disabledAttr = disabledAttr; required = required; readOnly = readOnly;
-  valueAttribute = valueAttribute; checkedAttribute = checkedAttribute;
-  value = value; checked = checked; styles = styles; key = key;
-  eventOptions = eventOptions; defaultEventOptions = defaultEventOptions;
-  preventDefault = preventDefault; stopPropagation = stopPropagation;
-  preventDefaultAndStopPropagation = preventDefaultAndStopPropagation;
-  onClickWith = onClickWith; onClick = onClick;
-  onInputWith = onInputWith; onInput = onInput;
-  onChangeWith = onChangeWith; onChange = onChange;
-  onSubmitWith = onSubmitWith; onSubmit = onSubmit;
-  onBlurWith = onBlurWith; onBlur = onBlur;
-  onFocusWith = onFocusWith; onFocus = onFocus;
-  onKeyDownWith = onKeyDownWith; onKeyDown = onKeyDown;
-  onKeyUpWith = onKeyUpWith; onKeyUp = onKeyUp;
-  text = text; a = a; article = article; aside = aside;
-  blockquote = blockquote; button = button; code = code; details = details;
-  div = div; em = em; fieldset = fieldset; figcaption = figcaption;
-  figure = figure; footer = footer; form = form; h1 = h1; h2 = h2;
-  h3 = h3; h4 = h4; h5 = h5; h6 = h6; header = header;
-  label = label; legend = legend; li = li; main = main; nav = nav;
-  ol = ol; option = option; p = p; pre = pre; section = section;
-  selectElement = selectElement; small = small; span = span; strong = strong;
-  summary = summary; table = table; tbody = tbody; td = td;
-  textarea = textarea; tfoot = tfoot; th = th; thead = thead; tr = tr;
-  ul = ul; br = br; img = img; input = input;
+  Tag =; AttributeName =; StaticAttribute =;
+  EventOptions =; EventHandler =; Attribute =;
+  Html =; MetaName =; LinkRel =; CrossOrigin =;
+  Head =; Document =; document =;
+  meta =; description =; viewport =; author =;
+  robots =; themeColor =; openGraph =;
+  ogTitle =; ogType =; ogDescription =;
+  ogImage =; ogUrl =; link =;
+  stylesheetLink =; iconLink =;
+  canonicalLink =; base =; style =;
+  staticText =; staticBool =; bodyId =;
+  bodyClass =; bodyStyles =; attribute =;
+  boolAttribute =; static =; idAttr =;
+  classAttr =; href =; src =; alt =;
+  nameAttr =; placeholder =; inputType =;
+  role =; titleAttr =; forId =; target =;
+  rel =; aria =; dataAttribute =;
+  disabledAttr =; required =; readOnly =;
+  valueAttribute =; checkedAttribute =;
+  value =; checked =; styles =; key =;
+  eventOptions =; defaultEventOptions =;
+  preventDefault =; stopPropagation =;
+  preventDefaultAndStopPropagation =;
+  onClickWith =; onClick =;
+  onInputWith =; onInput =;
+  onChangeWith =; onChange =;
+  onSubmitWith =; onSubmit =;
+  onBlurWith =; onBlur =;
+  onFocusWith =; onFocus =;
+  onKeyDownWith =; onKeyDown =;
+  onKeyUpWith =; onKeyUp =;
+  text =; a =; article =; aside =;
+  blockquote =; button =; code =; details =;
+  div =; em =; fieldset =; figcaption =;
+  figure =; footer =; form =; h1 =; h2 =;
+  h3 =; h4 =; h5 =; h6 =; header =;
+  label =; legend =; li =; main =; nav =;
+  ol =; option =; p =; pre =; section =;
+  selectElement =; small =; span =; strong =;
+  summary =; table =; tbody =; td =;
+  textarea =; tfoot =; th =; thead =; tr =;
+  ul =; br =; img =; input =;
 }

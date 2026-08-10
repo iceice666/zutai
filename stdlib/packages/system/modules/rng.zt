@@ -4,4 +4,4 @@ NextEffects :: type Unit ! { rng.next : Unit -> Int; };
 Next :: <A> type A ! { * NextEffects; };
 next :: Rng -> Next Int
   = rng => perform rng.next ();
-{ next = next; }
+{ next =; }

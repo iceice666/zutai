@@ -14,7 +14,7 @@ optionalFold :: <A, B> (B -> A -> B) -> B -> A? -> B
 resultMap :: <E, A, B> (A -> B) -> r.Result E A -> r.Result E B
   = f result => r.map f result;
 resultFold :: <E, A, B> (B -> A -> B) -> B -> r.Result E A -> B
-  = f initial result => match result { | #ok { value = value; } => f initial value; | #err { error = _; } => initial; };
+  = f initial result => match result { | #ok { value =; } => f initial value; | #err { error = _; } => initial; };
 
 Functor :: <F :: Type -> Type> @F {
   map :: <A, B> (A -> B) -> F A -> F B;

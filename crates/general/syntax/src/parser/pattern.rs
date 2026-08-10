@@ -294,7 +294,7 @@ fn parse_record_pattern_inner(input: &mut &str) -> Result<Vec<RecordPatternField
         if input.starts_with('}') {
             break;
         }
-        let name = parse_value_field_name(input)?;
+        let (name, name_span) = spanned(parse_value_field_name).parse_next(input)?;
         ws(input)?;
         // Must be `=` (not `==`)
         if input.starts_with('=') && !input.starts_with("==") {
@@ -303,8 +303,16 @@ fn parse_record_pattern_inner(input: &mut &str) -> Result<Vec<RecordPatternField
             return fail.parse_next(input);
         }
         ws(input)?;
-        let pat = parse_pattern(input)?;
-        let span = pat.span();
+        let pat = if input.starts_with(';') {
+            // Field-pun shorthand: `name =;` is sugar for `name = name;`.
+            Pattern::Ident {
+                name: name.clone(),
+                span: name_span,
+            }
+        } else {
+            parse_pattern(input)?
+        };
+        let span = name_span.merge(pat.span());
         ws(input)?;
         ';'.parse_next(input)?;
         fields.push(RecordPatternField {

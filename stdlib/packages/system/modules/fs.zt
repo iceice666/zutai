@@ -3,9 +3,9 @@
 WriteTextRequest :: type { contents : Text; writer : Writer; };
 WriteAllRequest :: type { contents : Text; path : Path; };
 writeTextRequest :: Writer -> Text -> WriteTextRequest
-  = writer contents => { contents = contents; writer = writer; };
+  = writer contents => { contents =; writer =; };
 writeAllRequest :: Path -> Text -> WriteAllRequest
-  = path contents => { contents = contents; path = path; };
+  = path contents => { contents =; path =; };
 ReadLineEffects :: type Unit ! { fs.readLine : Reader -> Text?; };
 ScopedReadEffects :: type Unit ! { fs.openRead : Path -> Reader; * ReadLineEffects; fs.closeRead : Reader -> Unit; };
 WriteTextEffects :: type Unit ! { fs.writeText : WriteTextRequest -> Unit; };
@@ -50,4 +50,4 @@ readAll :: FsRead -> Path -> WholeRead Text
   = fs path => perform fs.read path;
 writeAll :: FsWrite -> Path -> Text -> WholeWrite Unit
   = fs path contents => perform fs.write (writeAllRequest path contents);
-{ openRead = openRead; readLine = readLine; closeRead = closeRead; openWrite = openWrite; writeText = writeText; flush = flush; closeWrite = closeWrite; withReader = withReader; withWriter = withWriter; readAll = readAll; writeAll = writeAll; }
+{ openRead =; readLine =; closeRead =; openWrite =; writeText =; flush =; closeWrite =; withReader =; withWriter =; readAll =; writeAll =; }

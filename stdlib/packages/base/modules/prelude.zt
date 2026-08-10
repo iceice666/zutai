@@ -42,4 +42,4 @@ map :: <A, B> (A -> B) -> List A -> List B
   = f xs => match xs { | {;} => listEmpty (); | {h; ...t} => listCons (f h) (map f t); };
 filter :: <A> (A -> Bool) -> List A -> List A
   = p xs => match xs { | {;} => listEmpty (); | {h; ...t} => if p h then listCons h (filter p t) else filter p t; };
-{ id = id; const = const; compose = compose; flip = flip; not = not; fold = fold; foldl' = foldl'; map = map; filter = filter; length = length; append = append; uncons = uncons; head? = head?; tail? = tail?; }
+{ id =; const =; compose =; flip =; not =; fold =; foldl' =; map =; filter =; length =; append =; uncons =; head? =; tail? =; }

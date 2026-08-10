@@ -42,4 +42,4 @@ round :: Float -> Int
   = value => __numRound value;
 truncate :: Float -> Int
   = value => __numTruncate value;
-{ min = min; max = max; abs = abs; clamp = clamp; pow = pow; rem = rem; gcd = gcd; toText = toText; toFloat = toFloat; round = round; truncate = truncate; }
+{ min =; max =; abs =; clamp =; pow =; rem =; gcd =; toText =; toFloat =; round =; truncate =; }

@@ -67,31 +67,31 @@ Value :: type {
 };
 
 stylesheet :: List Rule -> Stylesheet
-  = rules => { rules = rules; };
+  = rules => { rules =; };
 rule :: List Selector -> List Declaration -> Rule
-  = selectors declarations => #style { selectors = selectors; declarations = declarations; };
+  = selectors declarations => #style { selectors =; declarations =; };
 media :: MediaQuery -> List Rule -> Rule
-  = query rules => #media { query = query; rules = rules; };
+  = query rules => #media { query =; rules =; };
 keyframes :: Text -> List Keyframe -> Rule
-  = name frames => #keyframes { name = name; frames = frames; };
+  = name frames => #keyframes { name =; frames =; };
 keyframe :: KeyframeStop -> List Declaration -> Keyframe
-  = stop declarations => { stop = stop; declarations = declarations; };
+  = stop declarations => { stop =; declarations =; };
 from :: KeyframeStop = #from;
 to :: KeyframeStop = #to;
 atPercent :: Float -> KeyframeStop
-  = value => #percent { value = value; };
+  = value => #percent { value =; };
 
 all :: Selector = #all;
-tag :: Text -> Selector = name => #tag { name = name; };
-class :: Text -> Selector = name => #class { name = name; };
-id :: Text -> Selector = name => #id { name = name; };
-compound :: List Selector -> Selector = parts => #compound { parts = parts; };
+tag :: Text -> Selector = name => #tag { name =; };
+class :: Text -> Selector = name => #class { name =; };
+id :: Text -> Selector = name => #id { name =; };
+compound :: List Selector -> Selector = parts => #compound { parts =; };
 descendant :: Selector -> Selector -> Selector
-  = ancestor descendantSelector => #descendant { ancestor = ancestor; descendant = descendantSelector; };
+  = ancestor descendantSelector => #descendant { ancestor =; descendant = descendantSelector; };
 child :: Selector -> Selector -> Selector
-  = parent childSelector => #child { parent = parent; child = childSelector; };
+  = parent childSelector => #child { parent =; child = childSelector; };
 pseudo :: Pseudo -> Selector -> Selector
-  = pseudoSelector base => #pseudo { base = base; pseudo = pseudoSelector; };
+  = pseudoSelector base => #pseudo { base =; pseudo = pseudoSelector; };
 hover :: Selector -> Selector = base => pseudo #hover base;
 focus :: Selector -> Selector = base => pseudo #focus base;
 focusVisible :: Selector -> Selector = base => pseudo #focusVisible base;
@@ -99,18 +99,18 @@ disabled :: Selector -> Selector = base => pseudo #disabled base;
 firstChild :: Selector -> Selector = base => pseudo #firstChild base;
 lastChild :: Selector -> Selector = base => pseudo #lastChild base;
 
-minWidthQuery :: Int -> MediaQuery = pixels => #minWidth { pixels = pixels; };
-maxWidthQuery :: Int -> MediaQuery = pixels => #maxWidth { pixels = pixels; };
+minWidthQuery :: Int -> MediaQuery = pixels => #minWidth { pixels =; };
+maxWidthQuery :: Int -> MediaQuery = pixels => #maxWidth { pixels =; };
 prefersDark :: MediaQuery = #prefersDark;
 prefersLight :: MediaQuery = #prefersLight;
 prefersReducedMotion :: MediaQuery = #prefersReducedMotion;
-andQueries :: List MediaQuery -> MediaQuery = queries => #and { queries = queries; };
+andQueries :: List MediaQuery -> MediaQuery = queries => #and { queries =; };
 reducedMotion :: List Rule -> Rule = rules => media prefersReducedMotion rules;
 
-keyword :: Text -> Value = value => #keyword { value = value; };
-number :: Float -> Value = value => #number { value = value; };
+keyword :: Text -> Value = value => #keyword { value =; };
+number :: Float -> Value = value => #number { value =; };
 length :: LengthUnit -> Float -> Value
-  = unit value => #length { value = value; unit = unit; };
+  = unit value => #length { value =; unit =; };
 px :: Float -> Value = value => length #px value;
 rem :: Float -> Value = value => length #rem value;
 em :: Float -> Value = value => length #em value;
@@ -122,24 +122,24 @@ ch :: Float -> Value = value => length #ch value;
 vmin :: Float -> Value = value => length #vmin value;
 vmax :: Float -> Value = value => length #vmax value;
 duration :: DurationUnit -> Float -> Value
-  = unit value => #duration { value = value; unit = unit; };
+  = unit value => #duration { value =; unit =; };
 milliseconds :: Float -> Value = value => duration #ms value;
 seconds :: Float -> Value = value => duration #s value;
-colorValue :: Text -> Value = value => #color { value = value; };
+colorValue :: Text -> Value = value => #color { value =; };
 hex :: Text -> Value = value => colorValue value;
 namedColor :: Text -> Value = value => colorValue value;
-cssString :: Text -> Value = value => #string { value = value; };
-space :: List Value -> Value = values => #sequence { separator = #space; values = values; };
-comma :: List Value -> Value = values => #sequence { separator = #comma; values = values; };
-slash :: List Value -> Value = values => #sequence { separator = #slash; values = values; };
+cssString :: Text -> Value = value => #string { value =; };
+space :: List Value -> Value = values => #sequence { separator = #space; values =; };
+comma :: List Value -> Value = values => #sequence { separator = #comma; values =; };
+slash :: List Value -> Value = values => #sequence { separator = #slash; values =; };
 function :: Text -> List Value -> Value
-  = name arguments => #function { name = name; arguments = arguments; };
-variable :: Text -> Value = name => #variable { name = name; fallback = #none; };
+  = name arguments => #function { name =; arguments =; };
+variable :: Text -> Value = name => #variable { name =; fallback = #none; };
 variableOr :: Text -> Value -> Value
-  = name fallback => #variable { name = name; fallback = #some (fallback); };
+  = name fallback => #variable { name =; fallback = #some (fallback); };
 
 declaration :: Property -> Value -> Declaration
-  = property value => { property = property; value = value; important = false; };
+  = property value => { property =; value =; important = false; };
 important :: Declaration -> Declaration
   = declarationValue => {
       property = declarationValue.property;
@@ -147,7 +147,7 @@ important :: Declaration -> Declaration
       important = true;
     };
 customProperty :: Text -> Value -> Declaration
-  = name value => declaration (#custom { name = name; }) value;
+  = name value => declaration (#custom { name =; }) value;
 defineVariable :: Text -> Value -> Declaration = name value => customProperty name value;
 display :: Value -> Declaration = value => declaration #display value;
 position :: Value -> Declaration = value => declaration #position value;
@@ -191,50 +191,50 @@ transition :: Value -> Declaration = value => declaration #transition value;
 animation :: Value -> Declaration = value => declaration #animation value;
 outline :: Value -> Declaration = value => declaration #outline value;
 
-unsafeRawRule :: Text -> Rule = css => #unsafeRaw { css = css; };
-unsafeRawSelector :: Text -> Selector = css => #unsafeRaw { css = css; };
-unsafeRawMedia :: Text -> MediaQuery = css => #unsafeRaw { css = css; };
-unsafeRawValue :: Text -> Value = css => #unsafeRaw { css = css; };
+unsafeRawRule :: Text -> Rule = css => #unsafeRaw { css =; };
+unsafeRawSelector :: Text -> Selector = css => #unsafeRaw { css =; };
+unsafeRawMedia :: Text -> MediaQuery = css => #unsafeRaw { css =; };
+unsafeRawValue :: Text -> Value = css => #unsafeRaw { css =; };
 unsafeRawDeclaration :: Text -> Value -> Declaration
-  = name value => declaration (#unsafeRaw { name = name; }) value;
+  = name value => declaration (#unsafeRaw { name =; }) value;
 
 {
-  Stylesheet = Stylesheet; Rule = Rule; Selector = Selector; Pseudo = Pseudo;
-  MediaQuery = MediaQuery; KeyframeStop = KeyframeStop; Keyframe = Keyframe;
-  Property = Property; Declaration = Declaration; LengthUnit = LengthUnit;
-  DurationUnit = DurationUnit; Separator = Separator; Value = Value;
-  stylesheet = stylesheet; rule = rule; media = media; keyframes = keyframes;
-  keyframe = keyframe; from = from; to = to; atPercent = atPercent;
-  all = all; tag = tag; class = class; id = id; compound = compound;
-  descendant = descendant; child = child; pseudo = pseudo; hover = hover;
-  focus = focus; focusVisible = focusVisible; disabled = disabled;
-  firstChild = firstChild; lastChild = lastChild;
-  minWidthQuery = minWidthQuery; maxWidthQuery = maxWidthQuery;
-  prefersDark = prefersDark; prefersLight = prefersLight;
-  prefersReducedMotion = prefersReducedMotion; andQueries = andQueries;
-  reducedMotion = reducedMotion;
-  keyword = keyword; number = number; length = length; px = px; rem = rem;
-  em = em; percent = percent; vw = vw; vh = vh; fr = fr; ch = ch;
-  vmin = vmin; vmax = vmax; duration = duration; milliseconds = milliseconds;
-  seconds = seconds; colorValue = colorValue; hex = hex; namedColor = namedColor;
-  cssString = cssString; space = space; comma = comma; slash = slash;
-  function = function; variable = variable; variableOr = variableOr;
-  declaration = declaration; important = important; customProperty = customProperty;
-  defineVariable = defineVariable; display = display; position = position;
-  top = top; right = right; bottom = bottom; left = left; width = width;
-  minWidth = minWidth; maxWidth = maxWidth; height = height;
-  minHeight = minHeight; maxHeight = maxHeight; margin = margin;
-  padding = padding; gap = gap; gridTemplateColumns = gridTemplateColumns;
-  gridColumn = gridColumn; alignItems = alignItems;
-  justifyContent = justifyContent; flexDirection = flexDirection;
-  flexWrap = flexWrap; color = color; background = background;
-  border = border; borderRadius = borderRadius; boxShadow = boxShadow;
-  fontFamily = fontFamily; fontSize = fontSize; fontWeight = fontWeight;
-  lineHeight = lineHeight; letterSpacing = letterSpacing; textAlign = textAlign;
-  textTransform = textTransform; textDecoration = textDecoration;
-  cursor = cursor; overflow = overflow; opacity = opacity;
-  transform = transform; transition = transition; animation = animation;
-  outline = outline; unsafeRawRule = unsafeRawRule;
-  unsafeRawSelector = unsafeRawSelector; unsafeRawMedia = unsafeRawMedia;
-  unsafeRawValue = unsafeRawValue; unsafeRawDeclaration = unsafeRawDeclaration;
+  Stylesheet =; Rule =; Selector =; Pseudo =;
+  MediaQuery =; KeyframeStop =; Keyframe =;
+  Property =; Declaration =; LengthUnit =;
+  DurationUnit =; Separator =; Value =;
+  stylesheet =; rule =; media =; keyframes =;
+  keyframe =; from =; to =; atPercent =;
+  all =; tag =; class =; id =; compound =;
+  descendant =; child =; pseudo =; hover =;
+  focus =; focusVisible =; disabled =;
+  firstChild =; lastChild =;
+  minWidthQuery =; maxWidthQuery =;
+  prefersDark =; prefersLight =;
+  prefersReducedMotion =; andQueries =;
+  reducedMotion =;
+  keyword =; number =; length =; px =; rem =;
+  em =; percent =; vw =; vh =; fr =; ch =;
+  vmin =; vmax =; duration =; milliseconds =;
+  seconds =; colorValue =; hex =; namedColor =;
+  cssString =; space =; comma =; slash =;
+  function =; variable =; variableOr =;
+  declaration =; important =; customProperty =;
+  defineVariable =; display =; position =;
+  top =; right =; bottom =; left =; width =;
+  minWidth =; maxWidth =; height =;
+  minHeight =; maxHeight =; margin =;
+  padding =; gap =; gridTemplateColumns =;
+  gridColumn =; alignItems =;
+  justifyContent =; flexDirection =;
+  flexWrap =; color =; background =;
+  border =; borderRadius =; boxShadow =;
+  fontFamily =; fontSize =; fontWeight =;
+  lineHeight =; letterSpacing =; textAlign =;
+  textTransform =; textDecoration =;
+  cursor =; overflow =; opacity =;
+  transform =; transition =; animation =;
+  outline =; unsafeRawRule =;
+  unsafeRawSelector =; unsafeRawMedia =;
+  unsafeRawValue =; unsafeRawDeclaration =;
 }

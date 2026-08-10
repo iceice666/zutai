@@ -95,6 +95,24 @@ is equivalent to:
 
 The shorthand also applies to record-update fields, so `cfg with { port =; }` means `cfg with { port = port; }`.
 
+The same shorthand applies in pattern position, where the omitted right-hand side is the binding pattern of the same name. A record pattern field `name =;` is shorthand for `name = name;`, and it applies to tagged-record payload patterns too:
+
+```zt
+match request {
+  | #get { path =; headers =; } => respond path headers;
+}
+```
+
+is equivalent to:
+
+```zt
+match request {
+  | #get { path = path; headers = headers; } => respond path headers;
+}
+```
+
+Punning always keeps the `=`. A bare `name;` inside `{ … }` is a list item in expression position and a list-pattern element in pattern position, never a punned field.
+
 ### Tagged union values
 
 A tag with no payload is a bare atom:

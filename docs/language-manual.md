@@ -325,7 +325,7 @@ profile ::= #prod;
 }
 ```
 
-Records use semicolon-terminated `field = value;` items. A field whose value is the identifier with the same name may omit the value: `{ host =; port =; }` is shorthand for `{ host = host; port = port; }`, and the same form works in record updates such as `cfg with { port =; }`. Lists are a `{ … }` parallel container of bare `;`-terminated items, distinguished from a record because the items have no `=`. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
+Records use semicolon-terminated `field = value;` items. A field whose value is the identifier with the same name may omit the value: `{ host =; port =; }` is shorthand for `{ host = host; port = port; }`, and the same form works in record updates such as `cfg with { port =; }` and in record patterns such as `| #get { path =; }`. Lists are a `{ … }` parallel container of bare `;`-terminated items, distinguished from a record because the items have no `=`. Tuples use parentheses and comma-separated items; `(1, 2)` is a tuple, while `(x)` is grouping.
 
 Tagged union values are atoms with optional payloads. A no-payload tag is a bare atom such as `#prod`. A record payload is written as an atom followed by a record, such as `#circle { radius = 5.0; }`.
 
@@ -468,7 +468,7 @@ match profile {
 }
 ```
 
-Patterns can nest through records, tuples, tagged union payloads, and ordinary bindings. Function-clause pattern matching uses the same pattern language after a function signature:
+Patterns can nest through records, tuples, tagged union payloads, and ordinary bindings. Record patterns accept the same field-pun shorthand as record values, so `| #get { path =; headers =; }` binds `path` and `headers` exactly as `| #get { path = path; headers = headers; }` does. Function-clause pattern matching uses the same pattern language after a function signature:
 
 ```text
 name :: TypeSignature

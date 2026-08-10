@@ -306,6 +306,47 @@ fn parse_record_update_field_pun() {
     assert_eq!(as_ident(&fields[0].value), "port");
 }
 
+fn record_pattern_fields(src: &str) -> Vec<crate::ast::RecordPatternField> {
+    match parse_pattern_str(src) {
+        Pattern::Record { fields, .. } => fields,
+        other => panic!("expected record pattern, got {other:?}"),
+    }
+}
+
+fn as_pat_ident(pattern: &Pattern) -> &str {
+    match pattern {
+        Pattern::Ident { name, .. } => name,
+        other => panic!("expected identifier pattern, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_record_pattern_field_pun() {
+    let fields = record_pattern_fields("{ host =; port =; }");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "host");
+    assert_eq!(as_pat_ident(&fields[0].pattern), "host");
+    assert_eq!(fields[1].name, "port");
+    assert_eq!(as_pat_ident(&fields[1].pattern), "port");
+}
+
+#[test]
+fn parse_record_pattern_field_pun_mixed_with_explicit() {
+    let fields = record_pattern_fields("{ host =; port = p; }");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(as_pat_ident(&fields[0].pattern), "host");
+    assert_eq!(as_pat_ident(&fields[1].pattern), "p");
+}
+
+#[test]
+fn parse_record_pattern_field_pun_spans_cover_name() {
+    let fields = record_pattern_fields("{ host =; }");
+    assert_eq!(fields[0].pattern.span(), fields[0].span);
+
+    let explicit = record_pattern_fields("{ host = host; }");
+    assert_ne!(explicit[0].pattern.span(), explicit[0].span);
+}
+
 #[test]
 fn parse_access_over_grouped_record_update() {
     let e = parse_expr_str("(cfg with { port = 8080; }).port");

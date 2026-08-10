@@ -14,4 +14,4 @@ isNone :: <A> A? -> Bool
   = opt => match opt { | #none => true; | #some (_) => false; };
 toList :: <A> A? -> List A
   = opt => match opt { | #none => listEmpty (); | #some (x) => listCons x (listEmpty ()); };
-{ map = map; andThen = andThen; filter = filter; withDefault = withDefault; isSome = isSome; isNone = isNone; toList = toList; }
+{ map =; andThen =; filter =; withDefault =; isSome =; isNone =; toList =; }

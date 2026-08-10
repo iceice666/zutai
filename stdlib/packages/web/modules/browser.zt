@@ -19,15 +19,15 @@ application :: <Model, Msg>
   (Msg -> Model -> Browser Model) ->
   (Model -> html.Document Msg) ->
   Program Model Msg
-  = init update view => { init = init; update = update; view = view; };
+  = init update view => { init =; update =; view =; };
 
 focus :: Text -> Browser Unit
   = targetId => perform browser.focus targetId;
 
 {
-  BrowserEffects = BrowserEffects;
-  Browser = Browser;
-  Program = Program;
-  application = application;
-  focus = focus;
+  BrowserEffects =;
+  Browser =;
+  Program =;
+  application =;
+  focus =;
 }

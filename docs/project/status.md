@@ -279,7 +279,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-07-21 (`stdlib.num.toText` adds pure source-canonical
+_Last updated: 2026-08-10 (record field-pun shorthand `name =;` extends
+to pattern position, covering record patterns and tagged-record payloads as
+pure parser sugar; all 654 stdlib `x = x;` fields migrated with byte-identical
+evaluation output);
+prior baseline updates: 2026-07-21 (`stdlib.num.toText` adds pure source-canonical
 full-range signed `Int` decimal rendering with interpreter/THIR/TLC/native
 parity, including `Int::MIN`, for serialization and code-generation workflows);
 prior baseline updates: 2026-07-20 (bounded explicit-state model checking:
