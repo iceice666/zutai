@@ -279,7 +279,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-08-10 (record field-pun shorthand `name =;` extends
+_Last updated: 2026-08-10 (`stdlib.reflect.schemaFields` adds the erased
+`(schema T).fields ?? {;}` accessor, answering `{;}` for unions and refusing
+open rows unchanged; the reflection oracle/AOT gates now match `stdlib.reflect`
+export fields through named constants, fixing a name-based gap that let a new
+wrapper reach the backend unfolded and crash the produced binary);
+prior baseline updates: 2026-08-10 (record field-pun shorthand `name =;` extends
 to pattern position, covering record patterns and tagged-record payloads as
 pure parser sugar; all 654 stdlib `x = x;` fields migrated with byte-identical
 evaluation output);

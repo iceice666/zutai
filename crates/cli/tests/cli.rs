@@ -1445,6 +1445,29 @@ fn compile_stdlib_reflect_schema_folds_matches_oracle() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
 }
 
+/// `schemaFields` must AOT-fold like the spelling it replaces. Before the
+/// reflection gates learned this export name, the wrapper was neither folded
+/// nor rejected: `check` and the interpreter passed while the produced binary
+/// segfaulted on a residual `Type` value.
+const STDLIB_REFLECT_SCHEMA_FIELDS_SRC: &str = "refl ::= import stdlib.reflect;\n\
+Server :: type { host : Text; port : Int; };\n\
+Action :: type { #quit; #spawn : { command : Text; }; };\n\
+length (refl.schemaFields Server) + length (refl.schemaFields Action)\n";
+
+#[test]
+fn compile_stdlib_reflect_schema_fields_matches_oracle() {
+    let native = compile_bin_stdout(
+        "cli_test_stdlib_reflect_schema_fields",
+        STDLIB_REFLECT_SCHEMA_FIELDS_SRC,
+    );
+    let interp = run_stdout(
+        "cli_test_stdlib_reflect_schema_fields_oracle.zt",
+        STDLIB_REFLECT_SCHEMA_FIELDS_SRC,
+    );
+    assert_eq!(native.trim(), "2");
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+}
+
 const STDLIB_CONFIG_REFLECT_UNUSED_SRC: &str =
     "cfg ::= import stdlib.config;\nrefl ::= import stdlib.reflect;\n1\n";
 

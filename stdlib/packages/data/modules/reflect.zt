@@ -25,6 +25,15 @@ variantsReflect :: Type -> List VariantDescriptor
 schemaReflect :: Type -> Schema
   = ty => schema ty;
 
+-- Erased field access without the dead `??` at every serialization boundary.
+-- `fields` is non-optional but type-carrying, while `Schema.fields` is erased
+-- but optional because unions have no record fields; a caller needing erased
+-- fields would otherwise write `(schema T).fields ?? {;}` and handle an
+-- unreachable `#none` for every record type. A union answers `{;}`, which is
+-- its correct "no record fields" answer rather than a refusal.
+schemaFieldsReflect :: Type -> List SchemaField
+  = ty => (schemaReflect ty).fields ?? {;};
+
 -- Compile-time derive builders. Each names a generic derive recipe: as a
 -- constraint recipe body (`derive = <T> => deriveShow`) it folds the structural
 -- witness dictionary at the concrete derive target. They are ambient
@@ -34,4 +43,4 @@ schemaReflect :: Type -> Schema
 --   deriveOrdLex    — lexicographic `compare : A -> A -> Ordering`
 --   deriveFromData  — structural `fromData : Data -> Validation DecodeIssue A`
 --   deriveToData    — structural `toData : A -> Data`
-{ FieldDescriptor =; VariantDescriptor =; SchemaKind =; SchemaField =; SchemaVariant =; Schema =; fields = fieldsReflect; variants = variantsReflect; schema = schemaReflect; }
+{ FieldDescriptor =; VariantDescriptor =; SchemaKind =; SchemaField =; SchemaVariant =; Schema =; fields = fieldsReflect; variants = variantsReflect; schema = schemaReflect; schemaFields = schemaFieldsReflect; }

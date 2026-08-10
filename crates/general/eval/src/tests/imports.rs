@@ -665,6 +665,26 @@ fn stdlib_reflect_alias_evaluates() {
     assert_eq!(run(src), Value::Int(6));
 }
 
+/// `schemaFields` is definitionally the `(schema T).fields ?? {;}` spelling it
+/// replaces, so assert the equality rather than a bare count.
+#[test]
+fn stdlib_reflect_schema_fields_matches_optional_spelling() {
+    let src = "refl ::= import stdlib.reflect;\n\
+               Server :: type { host : Text; port : Int; };\n\
+               refl.schemaFields Server == ((refl.schema Server).fields ?? {;})";
+    assert_eq!(run(src), Value::Bool(true));
+}
+
+/// A union has no record fields, so the helper answers with the empty list
+/// rather than refusing — matching the `?? {;}` behavior it replaces.
+#[test]
+fn stdlib_reflect_schema_fields_on_union_is_empty() {
+    let src = "refl ::= import stdlib.reflect;\n\
+               Action :: type { #quit; #spawn : { command : Text; }; };\n\
+               length (refl.schemaFields Action)";
+    assert_eq!(run(src), Value::Int(0));
+}
+
 // ─── imported parametric type constructors ────────────────────────────────────
 
 #[test]

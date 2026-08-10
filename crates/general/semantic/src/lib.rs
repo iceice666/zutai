@@ -52,6 +52,19 @@ pub const BACKEND_RESIDUAL_EFFECT_CODE: &str = "zutai::backend::residual_effect"
 pub const BACKEND_DATAFLOW_CODE: &str = "zutai::backend::dataflow_lowering";
 pub const BACKEND_CONFIG_OVERLAY_CODE: &str = "zutai::backend::config_overlay";
 
+/// Ambient reflection intrinsics whose results the TLC evaluator cannot build,
+/// so they route through the THIR oracle.
+const THIR_ORACLE_REFLECTION_BUILTINS: &[&str] = &["fields", "schema"];
+/// Ambient reflection intrinsics that must AOT-fold to a backend value or be
+/// rejected before Dataflow Core.
+const AOT_REFLECTION_BUILTINS: &[&str] = &["fields", "variants", "schema"];
+/// `stdlib.reflect` export fields that reach a reflection intrinsic. Every
+/// exported wrapper must appear here: the gate is name-based, so an unlisted
+/// export is neither folded nor rejected and reaches the backend as a residual
+/// `Type` value.
+const STDLIB_REFLECT_ORACLE_FIELDS: &[&str] = &["fields", "schema", "schemaFields"];
+const STDLIB_REFLECT_AOT_FIELDS: &[&str] = &["fields", "variants", "schema", "schemaFields"];
+
 pub const IMPORT_WITNESS_REASON: &str = "native backend does not support importing higher-kinded or otherwise non-matchable typeclass instances yet. Use `zutai run` (interpreter)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -400,8 +413,8 @@ impl Analysis {
                 "reflection builtins are compile-time evaluator intrinsics and do not lower to pure backend IR yet",
             );
         }
-        if (self.uses_reflection_builtin(&["fields", "schema"], false)
-            || self.uses_stdlib_reflect_call(&["fields", "schema"]))
+        if (self.uses_reflection_builtin(THIR_ORACLE_REFLECTION_BUILTINS, false)
+            || self.uses_stdlib_reflect_call(STDLIB_REFLECT_ORACLE_FIELDS))
             && !self.tlc_reflection_folded()
         {
             Some(
@@ -463,8 +476,8 @@ impl Analysis {
         // `Var`), so the fold predicate alone cannot see it — keep witness
         // programs on the existing AOT-fold path.
         let fully_folded = self.tlc_reflection_folded() && !self.uses_reflection_builtin(&[], true);
-        if (self.uses_reflection_builtin(&["fields", "variants", "schema"], true)
-            || self.uses_stdlib_reflect_call(&["fields", "variants", "schema"]))
+        if (self.uses_reflection_builtin(AOT_REFLECTION_BUILTINS, true)
+            || self.uses_stdlib_reflect_call(STDLIB_REFLECT_AOT_FIELDS))
             && !fully_folded
         {
             Some(

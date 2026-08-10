@@ -606,6 +606,23 @@ schema OpenServer
     );
 }
 
+/// The `stdlib.reflect` wrapper inherits the reflection support level: an open
+/// row refuses with the same diagnostic rather than silently answering `{;}`.
+#[test]
+fn stdlib_reflect_schema_fields_rejects_open_rows() {
+    let err = run_err(
+        r#"
+refl ::= import stdlib.reflect;
+OpenServer :: type { host : Text; ...; };
+refl.schemaFields OpenServer
+"#,
+    );
+    assert!(
+        matches!(&err, EvalError::ReflectionUnsupported(message) if message.contains("open record rows")),
+        "got {err:?}"
+    );
+}
+
 // ─── Bool and Float equality (values_equal arms) ─────────────────────────────
 
 #[test]

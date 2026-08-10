@@ -554,6 +554,36 @@ fn destructured_stdlib_reflect_alias_use_triggers_reflection_gate() {
     assert!(analysis.aot_reflection_program().is_some());
 }
 
+/// Every `stdlib.reflect` export that reaches a reflection intrinsic must trip
+/// the backend gates. The gates match export fields by name, so an unlisted
+/// wrapper is neither AOT-folded nor rejected and reaches the backend as a
+/// residual `Type` value — which crashed the produced binary.
+#[test]
+fn stdlib_reflect_schema_fields_wrapper_triggers_reflection_gate() {
+    let analysis = analyze(
+        "refl ::= import stdlib.reflect;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             length (refl.schemaFields Server)",
+    );
+    assert!(!analysis.has_parse_errors());
+    assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    assert!(analysis.reflection_builtin_program().is_some());
+    assert!(analysis.aot_reflection_program().is_some());
+}
+
+#[test]
+fn destructured_stdlib_reflect_schema_fields_triggers_reflection_gate() {
+    let analysis = analyze(
+        "{ schemaFields; } ::= import stdlib.reflect;\n\
+             Server :: type { host : Text; port : Int; };\n\
+             length (schemaFields Server)",
+    );
+    assert!(!analysis.has_parse_errors());
+    assert!(analysis.is_thir_complete(), "{:?}", analysis.diagnostics);
+    assert!(analysis.reflection_builtin_program().is_some());
+    assert!(analysis.aot_reflection_program().is_some());
+}
+
 #[test]
 fn unused_destructured_stdlib_reflect_import_does_not_trip_backend_gate() {
     let analysis = analyze("{ schema; } ::= import stdlib.reflect;\n1");
