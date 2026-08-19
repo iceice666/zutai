@@ -46,6 +46,10 @@ cfg.server.port
 ```
 
 `zutai-cli run app.zt` prints `8080` when both files are in the same directory.
+`zutai-cli check app.zt` type-checks the same program without evaluating it,
+`zutai-cli format app.zt` rewrites a `.zt` or `.zti` file into canonical form
+(`--check` reports instead of writing), and `zutai-cli repl` starts an
+interactive session.
 
 ## Model checking
 
@@ -69,7 +73,7 @@ SMT solving, refinement types, or proof terms.
 `zutai-cli lsp` starts a Language Server Protocol service over standard input
 and output. It supports `.zt` diagnostics, hover types, go-to-definition,
 same-document references and rename, document symbols, identifier completion,
-signature help, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
+signature help, document formatting, and parser quick fixes. It uses UTF-16 positions and incremental document changes,
 and resolves relative imports from the edited file's directory plus local
 package aliases from the nearest `zutai.zti`. When an open
 `.zt` root checks imported `.zti` data against a type and finds a structural
@@ -111,7 +115,8 @@ data workflows use `s ::= import stdlib.stream;`,
 `v ::= import stdlib.validate;`, and `cfg ::= import stdlib.config;`.
 `_ ::= import stdlib.collection;` opts into shared collection witnesses.
 
-`refl ::= import stdlib.reflect;` exposes advanced compile-time facilities.
+`refl ::= import stdlib.reflect;` exposes advanced compile-time facilities
+(`fields`, `variants`, `schema`, and `schemaFields`).
 Filesystem, network, environment, clock, randomness, dynamic-load, HTML, CSS,
 and browser modules are explicit host or platform integrations rather than the
 default data workflow. Prefer typed helper functions when the logic is
@@ -537,7 +542,7 @@ level is an implementation boundary, not a provisional syntax version.
 | [Row tails/open records/open unions](spec/06-polymorphism/row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
 | [Selective projection](spec/06-polymorphism/row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
 | [Constraints/witnesses/derive](spec/06-polymorphism/constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; native support covers direct/bounded/conditional/operator/method-level witnesses plus imported concrete, bare first-order constructor, and structurally matchable conditional witnesses. Higher-order-kind targets and otherwise non-matchable cross-module witness exports remain check-only/native-gated |
-| [Reflection](spec/09-metaprogramming/reflection.md) | `fields T`, `variants T`, `schema T`, `witness C @T`, or explicit `refl.fields T` / `refl.schema T` through `import stdlib.reflect` | THIR/TLC/evaluator support; `schema T` on a concrete type folds to a data literal during THIR→TLC elaboration and runs/compiles natively, including alongside effectful code; compile/dataflow fold the remaining supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
+| [Reflection](spec/09-metaprogramming/reflection.md) | `fields T`, `variants T`, `schema T`, `schemaFields T`, `witness C @T`, or the explicit `refl.fields T` / `refl.variants T` / `refl.schema T` / `refl.schemaFields T` spellings through `import stdlib.reflect` | THIR/TLC/evaluator support; `schema T` on a concrete type folds to a data literal during THIR→TLC elaboration and runs/compiles natively, including alongside effectful code; `schemaFields T` is the erased `(schema T).fields ?? {;}` wrapper and routes exactly like `schema T`, answering `{;}` for a union and refusing an open row with the same reflection diagnostic; compile/dataflow fold the remaining supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
 | Typed expression code | `Code A`, `quote(expr)`, `splice(expr)` | hygienic expression-only staging; splices erase before TLC and escaped `Code` is rejected |
 | Derived runtime data decoding | `FromData @T :: derive`, `decode data` | TLC/evaluator/backend-shaped structural decoding for supported closed data shapes; accumulates path-aware issues |
 | Derived runtime data encoding | `ToData @T :: derive`, `encode value` | TLC/evaluator/native/browser structural encoding for Bool, Int, Float, Text, atom singletons, lists, optionals, closed non-recursive records, and closed non-recursive unions; unsupported first-order shapes refuse at the derive request |
@@ -595,5 +600,9 @@ Common parse-diagnostic mistakes should receive specific messages when the parse
 - [language specification](spec/00-index.md)
 - [grammar reference](spec/02-lexical/grammar-reference.md)
 - [standard library](stdlib/00-index.md)
+- [documentation index and compiler-layer ownership](README.md)
 - [implementation status](project/status.md)
+- [open work and investment policy](project/roadmap.md)
+- [closed design decisions](project/decisions.md)
+- [reserved language boundaries](design/reserved-language-boundaries.md)
 - [implementation history](history/README.md)
