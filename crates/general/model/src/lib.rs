@@ -2,9 +2,10 @@
 //!
 //! `zutai model-check PATH` evaluates `PATH` through [`zutai_eval::TlcSession`]
 //! and decodes the final value record's `scenarios` field into transition-system
-//! models. Each model is explored with bounded breadth-first search over
-//! first-order runtime states; safety predicates, reachability obligations, and
-//! `#violates` expectations produce a per-scenario verdict.
+//! models. Models may opt into terminal/deadlock semantics, transition
+//! invariants, and universal `leadsTo` obligations. Each model is explored with
+//! bounded breadth-first search over first-order runtime states; complete graphs
+//! receive SCC analysis and deterministic finite or lasso counterexamples.
 //!
 //! This crate adds no syntax, HIR, THIR, TLC IR, SMT, refinement-type, or
 //! proof-term capability. It is a host-side reference tool over ordinary pure
@@ -21,7 +22,8 @@ mod tests;
 use zutai_eval::TlcSession;
 
 /// Default per-scenario distinct-state budget. Far above the demonstrated
-/// BootState workload (1,424 states); hitting it is inconclusive, never safe.
+/// Zutai BootState workload (5,416 states); hitting it is inconclusive, never
+/// safe.
 pub const DEFAULT_MAX_STATES: usize = 1_000_000;
 
 /// Options controlling a model-check run.
@@ -50,11 +52,50 @@ pub enum PassedKind {
     ExpectedViolation { property: String },
 }
 
+/// Deterministic counters for the graph explored in one scenario.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GraphStats {
+    /// Collision-safe distinct states admitted to the explored graph.
+    pub distinct_states: usize,
+    /// Every transition produced by `next`, including duplicate targets.
+    pub generated_transitions: usize,
+    /// Repeated initial states plus transitions to already known states.
+    pub duplicates: usize,
+    /// Greatest shortest-path depth from an initial state.
+    pub max_depth: usize,
+    /// Reachable states accepted by the optional terminal predicate.
+    pub terminal_states: usize,
+    /// Reachable non-terminal states that generated no successors.
+    pub unexpected_deadlocks: usize,
+    /// Strongly connected components in the explored graph.
+    pub scc_count: usize,
+    /// Number of states in the largest strongly connected component.
+    pub largest_scc: usize,
+}
+
+impl std::fmt::Display for GraphStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "graph: states={} transitions={} duplicates={} max-depth={} terminals={} deadlocks={} sccs={} largest-scc={}",
+            self.distinct_states,
+            self.generated_transitions,
+            self.duplicates,
+            self.max_depth,
+            self.terminal_states,
+            self.unexpected_deadlocks,
+            self.scc_count,
+            self.largest_scc,
+        )
+    }
+}
+
 /// A completed passing scenario.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScenarioReport {
     pub name: String,
     pub visited: usize,
+    pub stats: GraphStats,
     pub kind: PassedKind,
 }
 
@@ -78,6 +119,7 @@ pub enum CheckOutcome {
         completed: Vec<ScenarioReport>,
         scenario: String,
         visited: usize,
+        stats: GraphStats,
     },
 }
 
@@ -116,6 +158,15 @@ pub enum ModelError {
     /// Two reachability obligations within one model share a name.
     #[error("duplicate reachability name \"{0}\"")]
     DuplicateReachability(String),
+    /// Two action-safety properties within one model share a name.
+    #[error("duplicate action safety property name \"{0}\"")]
+    DuplicateActionSafety(String),
+    /// Two temporal obligations within one model share a name.
+    #[error("duplicate leadsTo property name \"{0}\"")]
+    DuplicateLeadsTo(String),
+    /// Temporal checking needs explicit finite-path semantics.
+    #[error("a non-empty `leadsTo` list requires callable `terminal`")]
+    LeadsToRequiresTerminal,
     /// The model exported no scenarios.
     #[error("`scenarios` must be non-empty")]
     EmptyScenarios,
@@ -158,44 +209,93 @@ pub fn check_analysis(
     let mut completed: Vec<ScenarioReport> = Vec::new();
     for scenario in &scenarios {
         match search::run_scenario(&session, scenario, options.max_states)? {
-            search::SearchResult::Safe { visited } => completed.push(ScenarioReport {
+            search::SearchResult::Safe { stats } => completed.push(ScenarioReport {
                 name: scenario.name.clone(),
-                visited,
+                visited: stats.distinct_states,
+                stats,
                 kind: PassedKind::Safe,
             }),
-            search::SearchResult::ExpectedViolation { property, visited } => {
+            search::SearchResult::ExpectedViolation { property, stats } => {
                 completed.push(ScenarioReport {
                     name: scenario.name.clone(),
-                    visited,
+                    visited: stats.distinct_states,
+                    stats,
                     kind: PassedKind::ExpectedViolation { property },
                 })
             }
             search::SearchResult::InvariantFailure {
                 property,
                 counterexample,
+                stats,
             } => {
                 let message = format!(
-                    "scenario \"{}\": FAILED invariant \"{property}\"\n{counterexample}expected: safe",
+                    "scenario \"{}\": FAILED invariant \"{property}\"\n{stats}\n{counterexample}expected: safe",
                     scenario.name
                 );
                 return Ok(CheckOutcome::Failed { completed, message });
             }
-            search::SearchResult::MissingViolation { property } => {
+            search::SearchResult::Deadlock {
+                counterexample,
+                stats,
+            } => {
                 let message = format!(
-                    "scenario \"{}\": FAILED (expected violation of \"{property}\", none found)",
+                    "scenario \"{}\": FAILED unexpected deadlock\n{stats}\n{counterexample}expected: safe",
                     scenario.name
                 );
                 return Ok(CheckOutcome::Failed { completed, message });
             }
-            search::SearchResult::ReachabilityUnmet { properties } => {
-                let message = render_reachability_failure(&scenario.name, &properties);
+            search::SearchResult::TerminalSuccessors {
+                counterexample,
+                stats,
+            } => {
+                let message = format!(
+                    "scenario \"{}\": FAILED terminal state generated successors\n{stats}\n{counterexample}expected: terminal states have no successors",
+                    scenario.name
+                );
                 return Ok(CheckOutcome::Failed { completed, message });
             }
-            search::SearchResult::Limit { visited } => {
+            search::SearchResult::ActionInvariantFailure {
+                property,
+                counterexample,
+                stats,
+            } => {
+                let message = format!(
+                    "scenario \"{}\": FAILED action invariant \"{property}\"\n{stats}\n{counterexample}expected: safe",
+                    scenario.name
+                );
+                return Ok(CheckOutcome::Failed { completed, message });
+            }
+            search::SearchResult::LeadsToFailure {
+                property,
+                counterexample,
+                stats,
+            } => {
+                let message = format!(
+                    "scenario \"{}\": FAILED leadsTo \"{property}\"\n{stats}\n{counterexample}expected: every premise eventually reaches its consequence",
+                    scenario.name
+                );
+                return Ok(CheckOutcome::Failed { completed, message });
+            }
+            search::SearchResult::MissingViolation { property, stats } => {
+                let message = format!(
+                    "scenario \"{}\": FAILED (expected violation of \"{property}\", none found)\n{stats}",
+                    scenario.name
+                );
+                return Ok(CheckOutcome::Failed { completed, message });
+            }
+            search::SearchResult::ReachabilityUnmet { properties, stats } => {
+                let message = format!(
+                    "{}\n{stats}",
+                    render_reachability_failure(&scenario.name, &properties)
+                );
+                return Ok(CheckOutcome::Failed { completed, message });
+            }
+            search::SearchResult::Limit { stats } => {
                 return Ok(CheckOutcome::Inconclusive {
                     completed,
                     scenario: scenario.name.clone(),
-                    visited,
+                    visited: stats.distinct_states,
+                    stats,
                 });
             }
         }

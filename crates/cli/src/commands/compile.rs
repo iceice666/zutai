@@ -671,6 +671,7 @@ pub(crate) fn run_compile_analysis(
                 &intermediates.object,
                 preflight.runtime.as_ref().unwrap(),
                 pending,
+                &out,
                 target,
             )?;
             fs::rename(pending, out)?;

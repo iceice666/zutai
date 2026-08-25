@@ -7520,3 +7520,72 @@ fn model_check_violates_absent_property_is_rejected() {
             "expectation names unknown safety property \"ghost\"",
         ));
 }
+
+#[test]
+fn model_check_temporal_cycle_reports_lasso_and_stats() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n == 0 => { { action = \"enter\"; state = 1; }; }; _ => { { action = \"retry\"; state = n; }; }; };\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. n == 0; consequence = \\n. n == 2; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"temporal\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_temporal_cycle.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "scenario \"temporal\": FAILED leadsTo \"resolves\"",
+        ))
+        .stdout(predicate::str::contains("graph: states=2 transitions=2"))
+        .stdout(predicate::str::contains("temporal prefix:"))
+        .stdout(predicate::str::contains("cycle:"))
+        .stdout(predicate::str::contains("\"retry\" -> 1"));
+}
+
+#[test]
+fn model_check_action_invariant_reports_transition() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"transfer\"; state = n; }; };\n",
+        "authority :: { name : Text; holds : Int -> Text -> Int -> Bool; } = { name = \"transfer authority\"; holds = \\before action after. false; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; actionSafety = { authority; }; };\n",
+        "{ scenarios = { { name = \"action\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_action_invariant.zt", src);
+    model_check_cli(&path)
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "FAILED action invariant \"transfer authority\"",
+        ))
+        .stdout(predicate::str::contains("\"transfer\" -> 0"));
+}
+
+#[test]
+fn model_check_temporal_limit_stays_inconclusive() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"inc\"; state = n + 1; }; };\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"progress\"; premise = \\n. true; consequence = \\n. false; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"limit\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let path = write_tmp("cli_test_model_check_temporal_limit.zt", src);
+    model_check_cli(&path)
+        .arg("--max-states")
+        .arg("2")
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains(
+            "state limit reached (visited 2 states)",
+        ))
+        .stdout(predicate::str::contains("graph: states=2 transitions=2"));
+}

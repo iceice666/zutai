@@ -349,7 +349,8 @@ pub(super) fn link_binary(
 pub(super) fn link_shared_library(
     obj: &Path,
     runtime: &Path,
-    out: &Path,
+    pending: &Path,
+    installed: &Path,
     target: zutai_codegen::NativeTarget,
 ) -> Result<(), Box<dyn Error>> {
     let clang = tool_name("ZUTAI_CLANG", "CLANG", "clang");
@@ -357,7 +358,9 @@ pub(super) fn link_shared_library(
     command.arg(format!("--target={}", target.triple()));
     match target.os() {
         zutai_codegen::NativeOs::Macos => {
-            command.arg("-dynamiclib");
+            command
+                .arg("-dynamiclib")
+                .arg(format!("-Wl,-install_name,{}", installed.display()));
         }
         zutai_codegen::NativeOs::Linux => {
             command.arg("-shared");
@@ -378,6 +381,6 @@ pub(super) fn link_shared_library(
     for flag in shared_runtime_link_flags(target) {
         command.arg(flag);
     }
-    command.arg("-o").arg(out);
+    command.arg("-o").arg(pending);
     run_tool(&mut command, &clang, "linking native library")
 }

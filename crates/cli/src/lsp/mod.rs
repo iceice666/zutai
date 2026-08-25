@@ -96,7 +96,7 @@ impl ProjectAnalysis {
         let source = analysis.source_path.as_ref()?;
         self.source_paths
             .get(source)
-            .cloned()
+            .map(|path| self.filesystem_path(path))
             .or_else(|| Some(self.filesystem_path(source)))
     }
 
@@ -222,7 +222,7 @@ impl ProjectAnalysis {
 
     fn filesystem_path(&self, path: &Path) -> PathBuf {
         if path.is_absolute() {
-            return path.to_path_buf();
+            return path_via_alias(path, &self.root_path).unwrap_or_else(|| path.to_path_buf());
         }
         self.source_paths.get(path).cloned().unwrap_or_else(|| {
             self.root_path
@@ -706,11 +706,31 @@ impl Server {
     }
 
     fn uri_for_path(&self, path: &std::path::Path) -> String {
-        self.documents
+        let canonical = std::fs::canonicalize(path).ok();
+        if let Some(uri) = self.documents.keys().find(|uri| {
+            let Some(document_path) = file_path(uri) else {
+                return false;
+            };
+            document_path == path
+                || canonical.as_deref().is_some_and(|canonical| {
+                    std::fs::canonicalize(&document_path)
+                        .is_ok_and(|document_path| document_path == canonical)
+                })
+        }) {
+            return uri.clone();
+        }
+
+        if let Some(root) = self
+            .documents
             .keys()
-            .find(|uri| file_path(uri).as_deref() == Some(path))
-            .cloned()
-            .unwrap_or_else(|| file_uri(path))
+            .filter_map(|uri| file_path(uri))
+            .next()
+            && let Some(candidate) = path_via_alias(path, &root)
+        {
+            return file_uri(&candidate);
+        }
+
+        file_uri(path)
     }
 
     fn apply_changes(&mut self, params: &Value) -> Option<String> {
@@ -801,4 +821,18 @@ impl Server {
             .or_else(|| project.recorded_source(analysis).map(str::to_owned))?;
         Some((uri, source))
     }
+}
+fn path_via_alias(path: &Path, anchor: &Path) -> Option<PathBuf> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    for alias_root in anchor.ancestors() {
+        let canonical_root = std::fs::canonicalize(alias_root).ok()?;
+        let Ok(relative) = canonical.strip_prefix(canonical_root) else {
+            continue;
+        };
+        let candidate = alias_root.join(relative);
+        if std::fs::canonicalize(&candidate).is_ok_and(|candidate| candidate == canonical) {
+            return Some(candidate);
+        }
+    }
+    None
 }

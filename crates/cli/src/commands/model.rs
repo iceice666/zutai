@@ -37,12 +37,13 @@ pub(crate) fn run_model_check(path: &str, max_states: usize) -> Result<(), Box<d
             completed,
             scenario,
             visited,
+            stats,
         }) => {
             for report in &completed {
                 println!("{}", render_report(report));
             }
             println!(
-                "model-check: inconclusive: state limit reached (visited {visited} states) in scenario \"{scenario}\""
+                "model-check: inconclusive: state limit reached (visited {visited} states) in scenario \"{scenario}\"\n{stats}"
             );
             std::process::exit(2);
         }
@@ -53,20 +54,19 @@ pub(crate) fn run_model_check(path: &str, max_states: usize) -> Result<(), Box<d
     }
     Ok(())
 }
-
-/// Render a completed passing scenario's fixed one-line summary.
+/// Render a completed scenario's deterministic summary and graph statistics.
 fn render_report(report: &ScenarioReport) -> String {
     match &report.kind {
         PassedKind::Safe => {
             format!(
-                "scenario \"{}\": ok ({} states)",
-                report.name, report.visited
+                "scenario \"{}\": ok ({} states)\n{}",
+                report.name, report.visited, report.stats
             )
         }
         PassedKind::ExpectedViolation { property } => {
             format!(
-                "scenario \"{}\": ok (violated \"{property}\" as expected)",
-                report.name
+                "scenario \"{}\": ok (violated \"{property}\" as expected)\n{}",
+                report.name, report.stats
             )
         }
     }

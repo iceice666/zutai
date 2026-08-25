@@ -73,18 +73,20 @@ capabilities in these areas require a motivating program and promotion through
 the [roadmap investment policy](roadmap.md#investment-policy).
 
 ## Current baseline
-The 2026-07-20 model-check baseline adds `zutai model-check` and the
-`zutai-model` library for bounded breadth-first exploration of ordinary pure,
-typed `.zt` transition systems. Models export first-order initial states,
-labeled successor functions, safety predicates, reachability obligations, and
-expected safe/violation scenarios. The checker reports shortest safety
-counterexamples, treats the state limit as inconclusive, and rejects runtime
-functions or other unsupported state/action values. This is a host-side
-reference-interpreter tool, not SMT, theorem proving, a native backend path, or
-new language syntax. The Slime OS BootState model validates the demonstrated
-workload with 4,744 reachable states, nine cut witnesses, and three expected
-mutation failures; library/CLI fixtures cover decoding, canonical state keys,
-search behavior, exit codes, and state-limit refusal.
+The 2026-08-25 model-check baseline extends `zutai model-check` and the
+`zutai-model` library with typed concurrency and temporal graph checking over
+ordinary pure `.zt` values. Models may opt into terminal/deadlock semantics,
+named action invariants, and universal `leadsTo` obligations. The checker
+retains ordered reachable edges, reports SCC and state-space statistics, checks
+every generated transition before duplicate-state elimination, and produces
+deterministic shortest-prefix or prefix-plus-cycle lasso counterexamples.
+Existing safety, existential reachability, expected-violation, first-order
+refusal, and state-budget-inconclusive contracts remain compatible. This is a
+host-side reference-interpreter tool, not SMT, theorem proving, a native backend
+path, or new language syntax. The Slime OS BootState gate remains the downstream
+compatibility workload; the graph-retaining engine currently explores 5,416
+reachable states in its main scenario and preserves all expected mutation
+verdicts.
 
 
 The 2026-07-19 run/compile entry-parity baseline aligns the reference
@@ -279,7 +281,11 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-08-10 (`stdlib.reflect.schemaFields` adds the erased
+_Last updated: 2026-08-25 (typed concurrency and temporal model checking adds
+terminal/deadlock semantics, transition invariants, SCC statistics, universal
+`leadsTo`, and deterministic finite/lasso counterexamples while preserving the
+host-only, bounded, first-order refusal boundary);
+prior baseline updates: 2026-08-10 (`stdlib.reflect.schemaFields` adds the erased
 `(schema T).fields ?? {;}` accessor, answering `{;}` for unions and refusing
 open rows unchanged; the reflection oracle/AOT gates now match `stdlib.reflect`
 export fields through named constants, fixing a name-based gap that let a new

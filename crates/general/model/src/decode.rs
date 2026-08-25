@@ -2,10 +2,10 @@
 //!
 //! Reuses the established browser-kernel decoder pattern (`force_field`,
 //! `decode_list`, `expect_record`, `expect_tagged`, `is_callable`). Ordinary
-//! fields are forced through the session; `next`, `holds`, and `reached` are
-//! retained as callable `Value`s. Extra fields on the final record and on
-//! individual scenario records are ignored so a model module may export query
-//! helpers beside `scenarios`.
+//! fields are forced through the session; `next`, state predicates,
+//! `actionSafety` callables, and `leadsTo` premise/consequence callables are
+//! retained as `Value`s. Extra final/scenario/model fields remain ignored for
+//! forward-compatible host tooling.
 
 use std::rc::Rc;
 
@@ -15,11 +15,23 @@ use crate::ModelError;
 
 type ValueFields<'a> = &'a [(Rc<str>, Thunk)];
 
-/// A model-defined safety predicate or reachability obligation: a name plus the
-/// retained callable that maps a state to `Bool`.
+/// A model-defined unary state predicate: a name plus a retained callable.
 pub(crate) struct Predicate {
     pub name: String,
     pub callable: Value,
+}
+
+/// A named invariant over one generated `(before, action, after)` transition.
+pub(crate) struct ActionPredicate {
+    pub name: String,
+    pub callable: Value,
+}
+
+/// A named universal temporal obligation over state predicates.
+pub(crate) struct LeadsTo {
+    pub name: String,
+    pub premise: Value,
+    pub consequence: Value,
 }
 
 /// A decoded transition-system model.
@@ -28,6 +40,9 @@ pub(crate) struct Model {
     pub next: Value,
     pub safety: Vec<Predicate>,
     pub reachability: Vec<Predicate>,
+    pub terminal: Option<Value>,
+    pub action_safety: Vec<ActionPredicate>,
+    pub leads_to: Vec<LeadsTo>,
 }
 
 /// What a scenario expects the checker to conclude.
@@ -111,15 +126,51 @@ fn decode_model(session: &TlcSession, value: Value) -> Result<Model, ModelError>
         force_field(session, fields, "reachability")?,
         |value| decode_predicate(session, value, "reached"),
     )?;
+    let terminal = force_optional_field(session, fields, "terminal")?;
+    if terminal.as_ref().is_some_and(|value| !is_callable(value)) {
+        return Err(ModelError::NonCallable("terminal".to_owned()));
+    }
+    let action_safety = match force_optional_field(session, fields, "actionSafety")? {
+        Some(value) => decode_list(session, value, |value| {
+            decode_action_predicate(session, value)
+        })?,
+        None => Vec::new(),
+    };
+    let leads_to = match force_optional_field(session, fields, "leadsTo")? {
+        Some(value) => decode_list(session, value, |value| decode_leads_to(session, value))?,
+        None => Vec::new(),
+    };
 
-    ensure_unique(&safety, ModelError::DuplicateSafety)?;
-    ensure_unique(&reachability, ModelError::DuplicateReachability)?;
+    ensure_unique(
+        safety.iter().map(|predicate| predicate.name.as_str()),
+        ModelError::DuplicateSafety,
+    )?;
+    ensure_unique(
+        reachability.iter().map(|predicate| predicate.name.as_str()),
+        ModelError::DuplicateReachability,
+    )?;
+    ensure_unique(
+        action_safety
+            .iter()
+            .map(|predicate| predicate.name.as_str()),
+        ModelError::DuplicateActionSafety,
+    )?;
+    ensure_unique(
+        leads_to.iter().map(|property| property.name.as_str()),
+        ModelError::DuplicateLeadsTo,
+    )?;
+    if !leads_to.is_empty() && terminal.is_none() {
+        return Err(ModelError::LeadsToRequiresTerminal);
+    }
 
     Ok(Model {
         initial,
         next,
         safety,
         reachability,
+        terminal,
+        action_safety,
+        leads_to,
     })
 }
 
@@ -142,6 +193,47 @@ fn decode_predicate(
     Ok(Predicate { name, callable })
 }
 
+fn decode_action_predicate(
+    session: &TlcSession,
+    value: Value,
+) -> Result<ActionPredicate, ModelError> {
+    let value = session.force(value)?;
+    let fields = expect_record(&value, "action safety predicate")?;
+    let name = text(
+        session,
+        force_field(session, fields, "name")?,
+        "action safety name",
+    )?;
+    let callable = force_field(session, fields, "holds")?;
+    if !is_callable(&callable) {
+        return Err(ModelError::NonCallable("holds".to_owned()));
+    }
+    Ok(ActionPredicate { name, callable })
+}
+
+fn decode_leads_to(session: &TlcSession, value: Value) -> Result<LeadsTo, ModelError> {
+    let value = session.force(value)?;
+    let fields = expect_record(&value, "leadsTo property")?;
+    let name = text(
+        session,
+        force_field(session, fields, "name")?,
+        "leadsTo name",
+    )?;
+    let premise = force_field(session, fields, "premise")?;
+    if !is_callable(&premise) {
+        return Err(ModelError::NonCallable("premise".to_owned()));
+    }
+    let consequence = force_field(session, fields, "consequence")?;
+    if !is_callable(&consequence) {
+        return Err(ModelError::NonCallable("consequence".to_owned()));
+    }
+    Ok(LeadsTo {
+        name,
+        premise,
+        consequence,
+    })
+}
+
 fn decode_expectation(session: &TlcSession, value: Value) -> Result<Expectation, ModelError> {
     let value = session.force(value)?;
     let (tag, payload) = expect_tagged(&value)?;
@@ -159,16 +251,16 @@ fn decode_expectation(session: &TlcSession, value: Value) -> Result<Expectation,
     }
 }
 
-fn ensure_unique(
-    predicates: &[Predicate],
+fn ensure_unique<'a>(
+    names: impl IntoIterator<Item = &'a str>,
     make_error: impl Fn(String) -> ModelError,
 ) -> Result<(), ModelError> {
-    let mut seen: Vec<&str> = Vec::with_capacity(predicates.len());
-    for predicate in predicates {
-        if seen.contains(&predicate.name.as_str()) {
-            return Err(make_error(predicate.name.clone()));
+    let mut seen: Vec<&str> = Vec::new();
+    for name in names {
+        if seen.contains(&name) {
+            return Err(make_error(name.to_owned()));
         }
-        seen.push(&predicate.name);
+        seen.push(name);
     }
     Ok(())
 }
@@ -201,6 +293,18 @@ fn force_field(
         .find(|(field, _)| field.as_ref() == name)
         .ok_or_else(|| ModelError::MissingField(name.to_owned()))?;
     Ok(session.force_thunk(value)?)
+}
+
+fn force_optional_field(
+    session: &TlcSession,
+    fields: ValueFields<'_>,
+    name: &str,
+) -> Result<Option<Value>, ModelError> {
+    fields
+        .iter()
+        .find(|(field, _)| field.as_ref() == name)
+        .map(|(_, value)| session.force_thunk(value).map_err(ModelError::from))
+        .transpose()
 }
 
 fn text(session: &TlcSession, value: Value, context: &'static str) -> Result<String, ModelError> {

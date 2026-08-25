@@ -406,12 +406,17 @@ impl FilesystemPackageGraph {
                     alias: alias.to_owned(),
                     module: module.to_owned(),
                 })?;
+        let canonical_root =
+            fs::canonicalize(&target.root).map_err(|error| PackageResolveError::Read {
+                path: target.root.display().to_string(),
+                message: error.to_string(),
+            })?;
         let unresolved = target.root.join(relative);
         let path = fs::canonicalize(&unresolved).map_err(|error| PackageResolveError::Read {
             path: unresolved.display().to_string(),
             message: error.to_string(),
         })?;
-        if !path.starts_with(&target.root) {
+        if !path.starts_with(&canonical_root) {
             return Err(PackageResolveError::Read {
                 path: path.display().to_string(),
                 message: "module escapes package root".to_owned(),

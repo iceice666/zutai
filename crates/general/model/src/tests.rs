@@ -278,10 +278,10 @@ fn reports_every_unmet_reachability_obligation() {
     let CheckOutcome::Failed { message, .. } = outcome else {
         panic!("expected reachability failure, got {outcome:?}");
     };
-    assert_eq!(
-        message,
-        "scenario \"s\": FAILED reachability obligations never reached:\n  - \"first\"\n  - \"second\""
-    );
+    assert!(message.starts_with(
+        "scenario \"s\": FAILED reachability obligations never reached:\n  - \"first\"\n  - \"second\"\n"
+    ));
+    assert!(message.contains("graph: states=1 transitions=0"));
 }
 
 // ─── interface validation ───────────────────────────────────────────────────────
@@ -333,4 +333,227 @@ fn zero_state_limit_is_rejected() {
         check_analysis(&analysis, CheckOptions { max_states: 0 }),
         Err(ModelError::ZeroStateLimit)
     ));
+}
+
+// ─── terminal, transition, and temporal graph checking ───────────────────────
+
+#[test]
+fn terminal_leaf_passes_and_reports_graph_stats() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n < 2 => { { action = \"inc\"; state = n + 1; }; }; _ => {;}; };\n",
+        "terminal :: Int -> Bool = \\n. n == 2;\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let reports = passed(check(src).expect("terminal model should pass"));
+    assert_eq!(reports[0].visited, 3);
+    assert_eq!(reports[0].stats.generated_transitions, 2);
+    assert_eq!(reports[0].stats.max_depth, 2);
+    assert_eq!(reports[0].stats.terminal_states, 1);
+    assert_eq!(reports[0].stats.unexpected_deadlocks, 0);
+    assert_eq!(reports[0].stats.scc_count, 3);
+    assert_eq!(reports[0].stats.largest_scc, 1);
+}
+
+#[test]
+fn nonterminal_leaf_is_an_unexpected_deadlock() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => {;};\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("deadlock should be a verdict")
+    else {
+        panic!("expected deadlock failure");
+    };
+    assert!(message.contains("FAILED unexpected deadlock"));
+    assert!(message.contains("initial: 0"));
+}
+
+#[test]
+fn terminal_state_with_successors_fails() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"loop\"; state = n; }; };\n",
+        "terminal :: Int -> Bool = \\n. true;\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("terminal misuse is a verdict")
+    else {
+        panic!("expected terminal successor failure");
+    };
+    assert!(message.contains("FAILED terminal state generated successors"));
+}
+
+#[test]
+fn action_invariant_checks_duplicate_transition_before_dedup() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"forbidden\"; state = n; }; };\n",
+        "allowed :: { name : Text; holds : Int -> Text -> Int -> Bool; } = { name = \"authority\"; holds = \\before action after. action != \"forbidden\"; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; actionSafety = { allowed; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("action failure is a verdict")
+    else {
+        panic!("expected action invariant failure");
+    };
+    assert!(message.contains("FAILED action invariant \"authority\""));
+    assert!(message.contains("\"forbidden\" -> 0"));
+}
+
+#[test]
+fn leads_to_terminal_failure_has_finite_counterexample() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n == 0 => { { action = \"stop\"; state = 1; }; }; _ => {;}; };\n",
+        "terminal :: Int -> Bool = \\n. n == 1;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. n == 0; consequence = \\n. n == 2; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("temporal failure is a verdict")
+    else {
+        panic!("expected leadsTo failure");
+    };
+    assert!(message.contains("FAILED leadsTo \"resolves\""));
+    assert!(message.contains("temporal suffix:"));
+    assert!(message.contains("\"stop\" -> 1"));
+}
+
+#[test]
+fn leads_to_cycle_failure_renders_lasso() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n == 0 => { { action = \"enter\"; state = 1; }; }; n == 1 => { { action = \"retry\"; state = 2; }; }; _ => { { action = \"park\"; state = 1; }; }; };\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. n == 0; consequence = \\n. n == 3; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("temporal cycle is a verdict")
+    else {
+        panic!("expected cyclic leadsTo failure");
+    };
+    assert!(message.contains("temporal prefix:"));
+    assert!(message.contains("cycle:"));
+    assert!(message.contains("\"retry\" -> 2"));
+    assert!(message.contains("\"park\" -> 1"));
+}
+
+#[test]
+fn leads_to_accepts_all_paths_reaching_consequence() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n == 0 => { { action = \"left\"; state = 1; }; { action = \"right\"; state = 2; }; }; n < 3 => { { action = \"done\"; state = 3; }; }; _ => {;}; };\n",
+        "terminal :: Int -> Bool = \\n. n == 3;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. n == 0; consequence = \\n. n == 3; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let reports = passed(check(src).expect("every path reaches consequence"));
+    assert_eq!(reports[0].visited, 4);
+    assert_eq!(reports[0].stats.generated_transitions, 4);
+    assert_eq!(reports[0].stats.duplicates, 1);
+}
+
+#[test]
+fn leads_to_requires_terminal() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => {;};\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"p\"; premise = \\n. true; consequence = \\n. true; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    assert!(matches!(
+        check_err(src),
+        ModelError::LeadsToRequiresTerminal
+    ));
+}
+
+#[test]
+fn temporal_state_limit_remains_inconclusive() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"inc\"; state = n + 1; }; };\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"p\"; premise = \\n. true; consequence = \\n. false; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let analysis = analyze(src);
+    let outcome = check_analysis(&analysis, CheckOptions { max_states: 2 })
+        .expect("bounded temporal model should be inconclusive");
+    assert!(matches!(
+        outcome,
+        CheckOutcome::Inconclusive { visited: 2, .. }
+    ));
+}
+
+#[test]
+fn leads_to_detects_avoiding_cycle_inside_mixed_scc() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => cond { n == 0 => { { action = \"enter\"; state = 1; }; }; n == 1 => { { action = \"loop\"; state = 1; }; { action = \"success\"; state = 2; }; }; _ => { { action = \"return\"; state = 1; }; }; };\n",
+        "terminal :: Int -> Bool = \\n. false;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. n == 0; consequence = \\n. n == 2; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("mixed SCC must fail") else {
+        panic!("expected leadsTo failure");
+    };
+    assert!(message.contains("FAILED leadsTo \"resolves\""));
+    assert!(message.contains("\"loop\" -> 1"));
+}
+
+#[test]
+fn terminal_premise_temporal_witness_names_state() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => {;};\n",
+        "terminal :: Int -> Bool = \\n. true;\n",
+        "progress :: { name : Text; premise : Int -> Bool; consequence : Int -> Bool; } = { name = \"resolves\"; premise = \\n. true; consequence = \\n. false; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; terminal = terminal; leadsTo = { progress; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("terminal premise must fail")
+    else {
+        panic!("expected leadsTo failure");
+    };
+    assert!(message.contains("temporal suffix:\n  premise: 0"));
+}
+
+#[test]
+fn action_failure_stats_exclude_unexplored_successor() {
+    let src = concat!(
+        "next :: Int -> List { action : Text; state : Int; } = n => { { action = \"jump\"; state = 99; }; };\n",
+        "allowed :: { name : Text; holds : Int -> Text -> Int -> Bool; } = { name = \"authority\"; holds = \\before action after. false; };\n",
+        "ok :: { name : Text; holds : Int -> Bool; } = { name = \"ok\"; holds = \\n. true; };\n",
+        "rok :: { name : Text; reached : Int -> Bool; } = { name = \"rok\"; reached = \\n. true; };\n",
+        "model ::= { initial = { 0; }; next = next; safety = { ok; }; reachability = { rok; }; actionSafety = { allowed; }; };\n",
+        "{ scenarios = { { name = \"s\"; model = model; expect = #safe; }; }; }\n",
+    );
+    let CheckOutcome::Failed { message, .. } = check(src).expect("action failure is a verdict")
+    else {
+        panic!("expected action invariant failure");
+    };
+    assert!(message.contains("graph: states=1 transitions=1"));
+    assert!(!message.contains("graph: states=2"));
 }

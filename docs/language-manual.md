@@ -57,16 +57,37 @@ interactive session.
 explicit-state model checker over an ordinary pure, typed `.zt` transition
 system. The program's final record exports a non-empty `scenarios` list. Each
 scenario names a model with initial states, a `next` function returning
-`{ action; state; }` transitions, safety predicates, reachability obligations,
-and an expected result: `#safe` or
+`{ action; state; }` transitions, safety predicates, existential reachability
+obligations, and an expected result: `#safe` or
 `#violates { property = "propertyName"; }`.
 
-The checker explores first-order states breadth-first, reports a shortest
-counterexample when a safety predicate fails, and treats an exhausted state
-budget as inconclusive rather than safe. States and actions containing
-functions or other non-first-order runtime values are rejected. This is a
-host-side analysis tool over existing Zutai values; it adds no language syntax,
-SMT solving, refinement types, or proof terms.
+Models may also export three host-decoded fields without adding language syntax:
+`terminal` maps a state to `Bool`; `actionSafety` contains named curried
+predicates applied as `holds before action after`; and `leadsTo` contains named
+`premise` and `consequence` state predicates. A non-empty
+`leadsTo` list requires `terminal`. With terminal semantics enabled, a
+non-terminal state with no successors is an unexpected deadlock and a terminal
+state that generates successors is invalid. `leadsTo` checks every reachable
+premise occurrence and every maximal path, without fairness assumptions.
+`#violates` remains a targeted mutation expectation for one named state-safety
+predicate; it skips reachability and temporal verdicts, while terminal and
+action invariants still apply.
+
+The checker explores first-order states breadth-first, retains the reachable
+graph for SCC analysis, and reports deterministic shortest safety, deadlock,
+and action counterexamples. A cyclic temporal failure reports a deterministic
+prefix-plus-cycle lasso; a finite temporal failure ends at its declared
+terminal state. Completed graphs report distinct states, generated transitions,
+duplicates, maximum depth, terminal and deadlock counts, SCC count, and largest
+SCC. State safety remains the existing graph-wide state invariant mechanism,
+and `reachability` remains existential.
+
+An exhausted state budget is inconclusive rather than safe. States and actions
+containing functions or other non-first-order runtime values, malformed model
+records, non-callable fields, and non-Boolean predicate results are rejected.
+This is a host-side analysis tool over existing Zutai values; it adds no
+language syntax, native-backend capability, SMT solving, refinement types, or
+proof terms.
 
 ## Editor integration
 
