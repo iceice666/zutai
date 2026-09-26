@@ -243,3 +243,27 @@ Implementations are not required to infer:
 * complex row constraints involving record update or field absence beyond duplicate-field checks
 
 When inference is not principal or not obvious, implementations should ask for an explicit type annotation instead of guessing.
+
+### Field access on a contextually typed lambda parameter
+
+A lambda checked against an expected function type may project a field from a
+parameter whose type is not yet known. The projection `p.field` constrains that
+parameter to the open record `{ field : α; ...ρ; }`; a later projection
+`p.other` extends the same row with `other : β`. Nested projections open each
+intermediate record the same way. An argument checked afterwards solves the
+row by ordinary first-order unification:
+
+```zt
+Service :: type { name : Text; port : Int; };
+services :: List Service = { { name = "api"; port = 8080; }; };
+
+map (\s. s.port + 1) (filter (\s. s.name == "api") services)
+```
+
+The constrained field is required. A receiver that declares it optional
+(`field? : T`) does not satisfy the constraint, because projecting it would
+yield `T` where the value may have no field; project such a field through an
+annotated helper so the result is `Maybe T`. The rule applies only to bare-name
+parameters of a lambda checked against a function type, and field sections
+(`_.field`) are such lambdas. An unannotated binding such as `g ::= \s. s.name;`
+has no expected type to be solved from and still requires an annotation.

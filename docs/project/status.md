@@ -281,7 +281,15 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-08-25 (typed concurrency and temporal model checking adds
+_Last updated: 2026-09-26 (checked lambdas infer field access on a
+contextually typed parameter as a required open-record row, so
+`map (\s. s.port) services` and `fold (\acc s. acc + s.port) 0 services` need no
+helper; required-field rows now refuse a `field? : T` receiver instead of
+yielding `T` for `#absent`, closing an unsound `map _.field` acceptance; and a
+destructuring lambda parameter (`\(a, b). …`, `\{ x =; }. …`) now binds under
+TLC lowering instead of passing `check` and failing `run` with an unbound
+binding);
+prior baseline updates: 2026-08-25 (typed concurrency and temporal model checking adds
 terminal/deadlock semantics, transition invariants, SCC statistics, universal
 `leadsTo`, and deterministic finite/lasso counterexamples while preserving the
 host-only, bounded, first-order refusal boundary);

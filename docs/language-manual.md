@@ -382,6 +382,17 @@ ordinary bindings, for example `n ::= import stdlib.num;` and
 
 Function application uses whitespace and is left-associative: `f x y` means `(f x) y`. Functions are curried by default, so `add :: Int -> Int -> Int` takes one `Int` and returns a function `Int -> Int`. Lambdas use `\` and a spaced dot, for example `\x. x * 2`. Field sections are parser sugar for ordinary lambdas, so `filter _.enabled services` means `filter (\x. x.enabled) services`, while `_?.field` uses optional chaining on the receiver.
 
+A lambda passed where a function is expected may project fields from a
+parameter whose type is only known from a later argument:
+`map (\s. s.port + 1) services` and `fold (\acc s. acc + s.port) 0 services`
+check without annotations, as does `\s. { n = s.name; p = s.port; }`. Each
+projection requires the field to be present, so a `field? : T` receiver is
+refused; use an annotated helper returning `Maybe T` for it. An unannotated
+binding (`g ::= \s. s.name;`) still needs a type annotation. See
+[row polymorphism](spec/06-polymorphism/row-polymorphism.md#field-access-on-a-contextually-typed-lambda-parameter).
+Lambda parameters may also be patterns — `\(a, b). a + b`,
+`\{ name =; port =; }. port` — which bind exactly like a one-clause function.
+
 Pipelines are syntax for ordinary function application. `x |> f` means `f x`, and `f <| x` also means `f x`. Because functions are curried, `x |> f a` means `(f a) x`.
 
 `x.f` is field or module access only; it is not method-call syntax.
@@ -560,7 +571,7 @@ level is an implementation boundary, not a provisional syntax version.
 
 | Feature | User syntax | Support level |
 | --- | --- | --- |
-| [Row tails/open records/open unions](spec/06-polymorphism/row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; non-principal row inference requires explicit annotations |
+| [Row tails/open records/open unions](spec/06-polymorphism/row-polymorphism.md) | `...` and `...Rest` in record/union types | parser, HIR, THIR, and TLC support row variables; field access on a lambda parameter checked against a function type infers a required open-record row; other non-principal row inference requires explicit annotations |
 | [Selective projection](spec/06-polymorphism/row-polymorphism.md#selective-projection) | `select value { field; }`, `value >>= { field; }`, `select TypeValue { field; }`, and `TypeValue >>= { field; }` | source-located checking; concrete value-level select lowers through Dataflow Core, ANF, SSA, and LLVM IR text |
 | [Constraints/witnesses/derive](spec/06-polymorphism/constraints.md) | `Constraint :: <A> @A { ... }`, `Constraint @Type :: { ... }`, and `derive` | THIR/TLC dictionary passing and the default evaluator support direct, bounded, conditional, imported, operator, method-level, and higher-kinded witnesses; native support covers direct/bounded/conditional/operator/method-level witnesses plus imported concrete, bare first-order constructor, and structurally matchable conditional witnesses. Higher-order-kind targets and otherwise non-matchable cross-module witness exports remain check-only/native-gated |
 | [Reflection](spec/09-metaprogramming/reflection.md) | `fields T`, `variants T`, `schema T`, `schemaFields T`, `witness C @T`, or the explicit `refl.fields T` / `refl.variants T` / `refl.schema T` / `refl.schemaFields T` spellings through `import stdlib.reflect` | THIR/TLC/evaluator support; `schema T` on a concrete type folds to a data literal during THIR→TLC elaboration and runs/compiles natively, including alongside effectful code; `schemaFields T` is the erased `(schema T).fields ?? {;}` wrapper and routes exactly like `schema T`, answering `{;}` for a union and refusing an open row with the same reflection diagnostic; compile/dataflow fold the remaining supported reflection to backend values or reject residual reflection before lowering; importing `stdlib.reflect` alone does not trigger the backend gate |
