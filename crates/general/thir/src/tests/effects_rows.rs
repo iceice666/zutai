@@ -829,12 +829,64 @@ fn field_access_on_uninferred_value_requires_annotation() {
     )));
 }
 
+const LAMBDA_ROWS_PRELUDE: &str =
+    "F :: type { name : Text; width : Int; };\nfs :: List F = { { name = \"a\"; width = 4; }; };\n";
+
+#[test]
+fn checked_lambda_field_access_constrains_parameter_to_open_record() {
+    completed_file(&format!("{LAMBDA_ROWS_PRELUDE}map (\\f. f.name) fs"));
+    completed_file(&format!(
+        "{LAMBDA_ROWS_PRELUDE}fold (\\acc f. acc + f.width) 0 fs"
+    ));
+    completed_file(&format!(
+        "{LAMBDA_ROWS_PRELUDE}map (\\f. {{ n = f.name; w = f.width; }}) fs"
+    ));
+}
+
+#[test]
+fn inferred_lambda_field_access_still_requires_annotation() {
+    // Only a lambda checked against an expected function type may open its
+    // parameter; an unannotated binding has no context to be solved from.
+    let lowered = lower(&format!(
+        "{LAMBDA_ROWS_PRELUDE}g ::= \\f. f.name;\nmap g fs"
+    ));
+    assert!(lowered.diagnostics.iter().any(|d| matches!(
+        &d.kind,
+        ThirDiagnosticKind::RowAnnotationRequired { field: Some(field) }
+            if field == "name"
+    )));
+}
+
+#[test]
+fn checked_lambda_field_access_refuses_missing_field() {
+    let lowered = lower(&format!(
+        "{LAMBDA_ROWS_PRELUDE}map (\\f. f.width + f.nope) fs"
+    ));
+    assert!(lowered.file.is_none());
+    assert!(
+        lowered
+            .diagnostics
+            .iter()
+            .any(|d| matches!(&d.kind, ThirDiagnosticKind::TypeMismatch { .. }))
+    );
+}
+
+#[test]
+fn checked_lambda_field_access_refuses_field_type_conflict() {
+    let lowered = lower(&format!("{LAMBDA_ROWS_PRELUDE}map (\\f. f.name + 1) fs"));
+    assert!(lowered.file.is_none());
+}
+
 #[test]
 fn required_field_projection_refuses_possibly_absent_field() {
-    // `_.name` demands a present `name`; a `name? : Text` receiver may lack
-    // it, so accepting it would yield `Text` for `#absent`.
-    let lowered = lower("G :: type { name? : Text; };\ngs :: List G = { {}; };\nmap _.name gs");
-    assert!(lowered.file.is_none());
+    // `_.name` and `\g. g.name` demand a present `name`; a `name? : Text`
+    // receiver may lack it, so accepting it would yield `Text` for `#absent`.
+    for body in ["map _.name gs", "map (\\g. g.name) gs"] {
+        let lowered = lower(&format!(
+            "G :: type {{ name? : Text; }};\ngs :: List G = {{ {{}}; }};\n{body}"
+        ));
+        assert!(lowered.file.is_none(), "{body} should be refused");
+    }
     let lowered = lower("h :: { x : Int; } -> Int = r => r.x;\ng :: { x? : Int; } = {};\nh g");
     assert!(lowered.file.is_none());
 }

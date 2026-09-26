@@ -729,6 +729,111 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
+    /// `{ field : field_ty; ...ρ; }` with a fresh flexible tail: the weakest
+    /// record type that supports projecting `field`. The field is required, so
+    /// a receiver whose `field` is declared optional (`field? : T`) refuses to
+    /// match rather than yielding a present `T` for an absent field.
+    pub(super) fn open_record_with_field(
+        &mut self,
+        field: &str,
+        field_ty: TypeId,
+        span: Span,
+    ) -> TypeId {
+        let tail = self.fresh_row_var();
+        self.alloc_type(Type {
+            kind: TypeKind::Record(
+                vec![TypeRecordField {
+                    name: field.to_string(),
+                    optional: false,
+                    ty: field_ty,
+                    span,
+                }],
+                tail,
+            ),
+            span,
+        })
+    }
+
+    /// Extend a record whose row tail is an unsolved flexible variable with one
+    /// more required field, returning the new field's type. This is the second
+    /// and later projection on an open-record lambda parameter (`\f. f.a + f.b`):
+    /// solving `ρ := { field : β; ...ρ'; }` is ordinary row unification, and the
+    /// eventual argument either provides `field` or is refused.
+    fn extend_open_record_row(
+        &mut self,
+        receiver_ty: TypeId,
+        field: &str,
+        span: Span,
+    ) -> Option<TypeId> {
+        let (_, tail) = self.record_row(receiver_ty, span)?;
+        let RowTail::Infer(row) = tail else {
+            return None;
+        };
+        let field_ty = self.fresh_infer_var(span);
+        let next = self.fresh_row_var();
+        self.row_subst.insert(
+            row,
+            RowSolution::Record {
+                fields: vec![TypeRecordField {
+                    name: field.to_string(),
+                    optional: false,
+                    ty: field_ty,
+                    span,
+                }],
+                tail: next,
+            },
+        );
+        Some(field_ty)
+    }
+
+    /// The type of `receiver.field`, or `None` after reporting why it has none.
+    /// `open` marks a receiver rooted in an open-record lambda parameter, whose
+    /// unsolved row may still gain `field`.
+    fn project_field_type(
+        &mut self,
+        receiver_ty: TypeId,
+        field: &str,
+        open: bool,
+        span: Span,
+    ) -> Option<TypeId> {
+        let Some(fields) = self.record_fields(receiver_ty, span) else {
+            let resolved = self.resolve(receiver_ty);
+            let kind = if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
+                // Outside a checked lambda parameter, row-polymorphic inference
+                // is not principal, so an explicit annotation is required.
+                ThirDiagnosticKind::RowAnnotationRequired {
+                    field: Some(field.to_string()),
+                }
+            } else {
+                ThirDiagnosticKind::ExpectedRecord {
+                    found: self.type_name(receiver_ty),
+                }
+            };
+            self.diagnostics.push(ThirDiagnostic { kind, span });
+            return None;
+        };
+        match fields.iter().find(|candidate| candidate.name == field) {
+            Some(record_field) if record_field.optional => {
+                Some(self.maybe_type(record_field.ty, record_field.span))
+            }
+            Some(record_field) => Some(record_field.ty),
+            None => {
+                let extended = open
+                    .then(|| self.extend_open_record_row(receiver_ty, field, span))
+                    .flatten();
+                if extended.is_none() {
+                    self.diagnostics.push(ThirDiagnostic {
+                        kind: ThirDiagnosticKind::UnknownField {
+                            name: field.to_string(),
+                        },
+                        span,
+                    });
+                }
+                extended
+            }
+        }
+    }
+
     pub(super) fn lower_access_expr(
         &mut self,
         id: HirExprId,
@@ -736,122 +841,20 @@ impl<'hir> Lowerer<'hir> {
         field: &str,
         span: Span,
     ) -> ThirExprId {
+        let open = self.access_roots_in_open_record_param(receiver);
         let receiver = self.infer_expr(receiver);
         let receiver_ty = self.expr(receiver).ty;
-        let Some(fields) = self.record_fields(receiver_ty, span) else {
+        if open {
             let resolved = self.resolve(receiver_ty);
             if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
-                // Field access on an un-inferred value: row-polymorphic inference
-                // is not principal here, so an explicit annotation is required.
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::RowAnnotationRequired {
-                        field: Some(field.to_string()),
-                    },
-                    span,
-                });
-            } else {
-                let found = self.type_name(receiver_ty);
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::ExpectedRecord { found },
-                    span,
-                });
+                let field_ty = self.fresh_infer_var(span);
+                let open_record = self.open_record_with_field(field, field_ty, span);
+                self.type_matches(open_record, receiver_ty);
             }
-            return self.error_expr(id, span);
-        };
-        let Some(record_field) = fields.iter().find(|candidate| candidate.name == field) else {
-            self.diagnostics.push(ThirDiagnostic {
-                kind: ThirDiagnosticKind::UnknownField {
-                    name: field.to_string(),
-                },
-                span,
-            });
-            return self.error_expr(id, span);
-        };
-        let ty = if record_field.optional {
-            self.maybe_type(record_field.ty, record_field.span)
-        } else {
-            record_field.ty
-        };
-        self.alloc_expr(ThirExpr {
-            source: id,
-            ty,
-            kind: ThirExprKind::Access {
-                receiver,
-                field: field.to_string(),
-            },
-            span,
-        })
-    }
-
-    pub(super) fn check_access_expr(
-        &mut self,
-        id: HirExprId,
-        receiver: HirExprId,
-        field: &str,
-        expected: TypeId,
-        span: Span,
-    ) -> ThirExprId {
-        let receiver_tail = self.fresh_row_var();
-        let receiver_expected = self.alloc_type(Type {
-            kind: TypeKind::Record(
-                vec![TypeRecordField {
-                    name: field.to_string(),
-                    optional: false,
-                    ty: expected,
-                    span,
-                }],
-                receiver_tail,
-            ),
-            span,
-        });
-
-        let receiver = if matches!(self.hir_expr(receiver).kind, HirExprKind::Access { .. }) {
-            self.check_expr(receiver, receiver_expected)
-        } else {
-            let receiver = self.infer_expr(receiver);
-            let receiver_ty = self.expr(receiver).ty;
-            let resolved = self.resolve(receiver_ty);
-            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
-                self.type_matches(receiver_expected, receiver_ty);
-            }
-            receiver
-        };
-        let receiver_ty = self.expr(receiver).ty;
-        let Some(fields) = self.record_fields(receiver_ty, span) else {
-            let resolved = self.resolve(receiver_ty);
-            if matches!(self.ty(resolved).kind, TypeKind::InferVar(_)) {
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::RowAnnotationRequired {
-                        field: Some(field.to_string()),
-                    },
-                    span,
-                });
-            } else {
-                let found = self.type_name(receiver_ty);
-                self.diagnostics.push(ThirDiagnostic {
-                    kind: ThirDiagnosticKind::ExpectedRecord { found },
-                    span,
-                });
-            }
-            return self.error_expr(id, span);
-        };
-        let Some(record_field) = fields.iter().find(|candidate| candidate.name == field) else {
-            self.diagnostics.push(ThirDiagnostic {
-                kind: ThirDiagnosticKind::UnknownField {
-                    name: field.to_string(),
-                },
-                span,
-            });
-            return self.error_expr(id, span);
-        };
-        let ty = if record_field.optional {
-            self.maybe_type(record_field.ty, record_field.span)
-        } else {
-            record_field.ty
-        };
-        if !self.type_matches(expected, ty) {
-            self.type_mismatch(expected, ty, span);
         }
+        let Some(ty) = self.project_field_type(receiver_ty, field, open, span) else {
+            return self.error_expr(id, span);
+        };
         self.alloc_expr(ThirExpr {
             source: id,
             ty,

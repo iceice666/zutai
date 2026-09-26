@@ -203,32 +203,34 @@ impl<'hir> Lowerer<'hir> {
         })
     }
 
-    fn field_section_binding(&self, params: &[zutai_hir::HirPatId]) -> Option<BindingId> {
-        let [param] = params else {
-            return None;
-        };
-        let zutai_hir::HirPatKind::Bind(binding) = self.hir_pat(*param).kind else {
-            return None;
-        };
-        (self.hir.bindings[binding.0 as usize].name == super::super::FIELD_SECTION_PARAM)
-            .then_some(binding)
+    /// Bare-name parameters of a lambda checked against `param_types` whose
+    /// expected type is still an unsolved inference variable. A field access
+    /// rooted in one of them may constrain it to an open record instead of
+    /// demanding an annotation: the constraint is first-order row unification,
+    /// and a later argument either satisfies or refutes it.
+    fn open_record_param_candidates(
+        &mut self,
+        params: &[zutai_hir::HirPatId],
+        param_types: &[TypeId],
+    ) -> Vec<BindingId> {
+        params
+            .iter()
+            .zip(param_types)
+            .filter_map(|(&param, &param_ty)| {
+                let zutai_hir::HirPatKind::Bind(binding) = self.hir_pat(param).kind else {
+                    return None;
+                };
+                let resolved = self.resolve(param_ty);
+                matches!(self.ty(resolved).kind, TypeKind::InferVar(_)).then_some(binding)
+            })
+            .collect()
     }
 
-    pub(super) fn access_roots_in_active_field_section(&self, id: HirExprId) -> bool {
+    pub(super) fn access_roots_in_open_record_param(&self, id: HirExprId) -> bool {
         match &self.hir_expr(id).kind {
-            HirExprKind::BindingRef(binding) => self.field_section_params.contains(binding),
+            HirExprKind::BindingRef(binding) => self.open_record_params.contains(binding),
             HirExprKind::Access { receiver, .. } | HirExprKind::OptAccess { receiver, .. } => {
-                self.access_roots_in_active_field_section(*receiver)
-            }
-            _ => false,
-        }
-    }
-
-    fn expr_roots_in_binding(&self, id: HirExprId, binding: BindingId) -> bool {
-        match &self.hir_expr(id).kind {
-            HirExprKind::BindingRef(candidate) => *candidate == binding,
-            HirExprKind::Access { receiver, .. } | HirExprKind::OptAccess { receiver, .. } => {
-                self.expr_roots_in_binding(*receiver, binding)
+                self.access_roots_in_open_record_param(*receiver)
             }
             _ => false,
         }
@@ -581,14 +583,14 @@ impl<'hir> Lowerer<'hir> {
             .collect();
 
         let (body_ty, saved_effect_ambient) = self.enter_effectful_result(return_type);
-        let field_section_binding = self
-            .field_section_binding(params)
-            .filter(|binding| self.expr_roots_in_binding(body, *binding));
-        let inserted_field_section_binding =
-            field_section_binding.is_some_and(|binding| self.field_section_params.insert(binding));
+        let open_record_params: Vec<BindingId> = self
+            .open_record_param_candidates(params, &param_types)
+            .into_iter()
+            .filter(|binding| self.open_record_params.insert(*binding))
+            .collect();
         let body = self.check_expr(body, body_ty);
-        if inserted_field_section_binding && let Some(binding) = field_section_binding {
-            self.field_section_params.remove(&binding);
+        for binding in &open_record_params {
+            self.open_record_params.remove(binding);
         }
         self.exit_effectful_result(saved_effect_ambient);
         self.clear_scoped_value_types(&scoped_bindings);

@@ -42,11 +42,6 @@ impl<'hir> Lowerer<'hir> {
             HirExprKind::Lambda { params, body } => {
                 self.check_lambda_expr(id, params, *body, expected)
             }
-            HirExprKind::Access { receiver, field }
-                if self.access_roots_in_active_field_section(id) =>
-            {
-                self.check_access_expr(id, *receiver, field, expected, expr.span)
-            }
             HirExprKind::Access { .. } => {
                 let lowered = self.infer_expr(id);
                 let found = self.expr(lowered).ty;

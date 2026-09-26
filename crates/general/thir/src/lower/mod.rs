@@ -33,7 +33,6 @@ mod witnesses;
 
 use types::WrapperKind;
 
-const FIELD_SECTION_PARAM: &str = "__zt_field_section";
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoweredThir {
     pub file: Option<ThirFile>,
@@ -192,11 +191,13 @@ struct Lowerer<'hir> {
     /// function), keyed by binding. Presence marks the binding as a parametric
     /// constructor applied via `AliasApply` at use sites.
     alias_params: FxHashMap<BindingId, Vec<BindingId>>,
-    /// Generated field-section lambda params currently being checked. While one
-    /// is active, `_.field` bodies may constrain an unknown receiver into an open
-    /// record; ordinary `\x. x.field` and no-signature functions keep the
-    /// annotation-required diagnostic.
-    field_section_params: FxHashSet<BindingId>,
+    /// Parameters of lambdas currently being checked against an expected
+    /// function type (including generated `_.field` sections). While one is
+    /// active, a field access rooted in it may constrain a still-unknown
+    /// parameter type into an open record `{ field : α; ...ρ; }` that a later
+    /// argument solves. Inferred lambdas and no-signature functions are not
+    /// registered and keep the annotation-required diagnostic.
+    open_record_params: FxHashSet<BindingId>,
     /// Bindings currently in scope as type-variable substitution targets while
     /// lowering a type-level function's body. Populated transiently during
     /// `lower_decl` for type-level functions so that `Param` bindings used in

@@ -92,6 +92,39 @@ map g fs
     assert_eq!(list_item(&value, 1), Value::Int(16));
 }
 
+// ─── lambda field access on a contextually-typed parameter ───────────────────
+
+#[test]
+fn lambda_field_access_solved_by_later_list_argument() {
+    let src = "
+F :: type { name : Text; width : Int; };
+fs :: List F = { { name = \"a\"; width = 4; }; { name = \"b\"; width = 8; }; };
+{
+  names = map (\\f. f.name) fs;
+  total = fold (\\acc f. acc + f.width) 0 fs;
+  wide = length (filter (\\f. f.width > 4) fs);
+  both = map (\\f. { n = f.name; w = f.width + 1; }) fs;
+}
+";
+    let value = run_both(src);
+    let names = record_field_value(&value, "names");
+    assert_eq!(list_item(&names, 1), Value::Text("b".into()));
+    assert_eq!(record_field_value(&value, "total"), Value::Int(12));
+    assert_eq!(record_field_value(&value, "wide"), Value::Int(1));
+    let both = record_field_value(&value, "both");
+    assert_eq!(record_field_value(&list_item(&both, 0), "w"), Value::Int(5));
+}
+
+#[test]
+fn lambda_nested_field_access_extends_open_rows() {
+    let src = "
+H :: type { a : { b : Int; c : Int; }; };
+hs :: List H = { { a = { b = 1; c = 2; }; }; };
+map (\\h. h.a.b + h.a.c) hs
+";
+    assert_eq!(list_item(&run_both(src), 0), Value::Int(3));
+}
+
 // ─── match expressions ────────────────────────────────────────────────────────
 
 #[test]
