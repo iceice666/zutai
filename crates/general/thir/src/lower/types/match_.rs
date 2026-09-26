@@ -619,6 +619,11 @@ impl<'hir> Lowerer<'hir> {
         for e in &ef {
             match found_by_name.get(e.name.as_str()) {
                 Some(f) => {
+                    // A possibly-absent field never satisfies a required one:
+                    // projecting it would yield `T` for a value with no field.
+                    if f.optional && !e.optional {
+                        return false;
+                    }
                     if !self.type_matches(e.ty, f.ty) {
                         return false;
                     }

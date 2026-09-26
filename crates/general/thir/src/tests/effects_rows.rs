@@ -830,6 +830,26 @@ fn field_access_on_uninferred_value_requires_annotation() {
 }
 
 #[test]
+fn required_field_projection_refuses_possibly_absent_field() {
+    // `_.name` demands a present `name`; a `name? : Text` receiver may lack
+    // it, so accepting it would yield `Text` for `#absent`.
+    let lowered = lower("G :: type { name? : Text; };\ngs :: List G = { {}; };\nmap _.name gs");
+    assert!(lowered.file.is_none());
+    let lowered = lower("h :: { x : Int; } -> Int = r => r.x;\ng :: { x? : Int; } = {};\nh g");
+    assert!(lowered.file.is_none());
+}
+
+#[test]
+fn optional_field_projection_through_signature_stays_maybe() {
+    completed_file(
+        "G :: type { name? : Text; };\ngs :: List G = { {}; };\ng :: G -> Maybe Text = x => x.name;\nmap g gs",
+    );
+    completed_file(
+        "h :: { x? : Int; } -> Maybe Int = r => r.x;\ng :: { x : Int; } = { x = 1; };\nh g",
+    );
+}
+
+#[test]
 fn named_tail_result_field_is_accessible() {
     // The `port` preserved by the named tail must be visible to a later field
     // access, even before final zonking (record_fields flattens the solved tail).
