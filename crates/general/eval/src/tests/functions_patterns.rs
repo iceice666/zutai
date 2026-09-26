@@ -37,6 +37,61 @@ fn lambda_partial_application() {
     );
 }
 
+// ─── destructuring lambda parameters ─────────────────────────────────────────
+//
+// A non-variable lambda parameter binds through a one-alternative case on a
+// synthetic parameter, like a one-clause function. Both evaluators must agree.
+
+fn run_both(src: &str) -> Value {
+    let tlc = run(src);
+    let thir = eval_thir_file(src)
+        .unwrap_or_else(|e| panic!("THIR oracle failed for:\n{src}\nerror: {e}"));
+    assert_eq!(tlc, thir, "TLC and THIR oracle disagree for:\n{src}");
+    tlc
+}
+
+#[test]
+fn lambda_tuple_parameter_binds_components() {
+    assert_eq!(run_both(r"(\(a, b). a + b) (1, 2)"), Value::Int(3));
+}
+
+#[test]
+fn lambda_record_parameter_binds_fields() {
+    let src = r#"
+F :: type { name : Text; width : Int; };
+g :: F -> Int = \{ name = n; width =; }. width;
+g { name = "a"; width = 4; }
+"#;
+    assert_eq!(run_both(src), Value::Int(4));
+}
+
+#[test]
+fn lambda_list_cons_parameter_binds_head() {
+    assert_eq!(
+        run_both("g :: List Int -> Int = \\{ h; ...t }. h;\ng { 7; 8; }"),
+        Value::Int(7)
+    );
+}
+
+#[test]
+fn lambda_mixed_parameters_bind_in_order() {
+    let src = "g :: (Int, Int) -> Int -> { x : Int; } -> Int\n  = \\(a, b) c { x =; }. a * 1000 + b * 100 + c * 10 + x;\ng (1, 2) 3 { x = 4; }";
+    assert_eq!(run_both(src), Value::Int(1234));
+}
+
+#[test]
+fn lambda_record_parameter_in_higher_order_call() {
+    let src = "
+F :: type { name : Text; width : Int; };
+fs :: List F = { { name = \"a\"; width = 4; }; { name = \"b\"; width = 8; }; };
+g :: F -> Int = \\{ width =; }. width * 2;
+map g fs
+";
+    let value = run_both(src);
+    assert_eq!(list_item(&value, 0), Value::Int(8));
+    assert_eq!(list_item(&value, 1), Value::Int(16));
+}
+
 // ─── match expressions ────────────────────────────────────────────────────────
 
 #[test]

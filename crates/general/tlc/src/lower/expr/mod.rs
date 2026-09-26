@@ -981,14 +981,33 @@ impl<'thir> Lowerer<'thir> {
             };
         }
 
+        // A destructuring parameter binds through a single-alternative `Case`
+        // on a synthetic parameter, exactly like a one-clause function; without
+        // it the pattern's variables would be unbound in the body.
         let mut expr = body_expr;
         for (i, &pat_id) in params.iter().enumerate().rev() {
             let pat = &self.thir.pat_arena[pat_id];
+            let pat_thir_ty = pat.ty;
             let (param_binding, param_ty) = match pat.kind {
-                ThirPatKind::Bind(b) => (b, self.lower_type(pat.ty)),
+                ThirPatKind::Bind(b) => (b, self.lower_type(pat_thir_ty)),
                 _ => {
                     let fresh = self.fresh_synth_binding();
-                    let ty = self.lower_type(pat.ty);
+                    let ty = self.lower_type(pat_thir_ty);
+                    let scrutinee = self.alloc_expr(TlcExpr::Var(fresh), ty, span);
+                    let tlc_pat = self.lower_pat(pat_id);
+                    let body_ty = self.expr_types[&expr];
+                    expr = self.alloc_expr(
+                        TlcExpr::Case(
+                            scrutinee,
+                            vec![TlcAlt {
+                                pat: tlc_pat,
+                                guard: None,
+                                body: expr,
+                            }],
+                        ),
+                        body_ty,
+                        span,
+                    );
                     (fresh, ty)
                 }
             };
