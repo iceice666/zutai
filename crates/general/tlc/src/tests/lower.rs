@@ -916,3 +916,23 @@ fn unfolded_fields_reflection_records_residual_type_values() {
         "`fields` does not fold; its Type argument must mark the module residual"
     );
 }
+
+fn optional_heavy_record_src(optional_fields: usize) -> String {
+    let fields: String = (0..optional_fields)
+        .map(|index| format!("  f{index}? : Int;\n"))
+        .collect();
+    format!("R :: type {{\n  id : Int;\n{fields}}};\nFromData @R :: derive\n1\n")
+}
+
+/// A derived `FromData` grows linearly with the record's optional fields; one
+/// record literal per presence combination would need 2^24 leaves here.
+#[test]
+fn derived_from_data_is_linear_in_optional_fields() {
+    let small = tlc_of(&optional_heavy_record_src(4)).expr_arena.len();
+    let large = tlc_of(&optional_heavy_record_src(24)).expr_arena.len();
+    let per_field = (large - small) / 20;
+    assert!(
+        per_field < 400,
+        "each optional field should add a bounded number of nodes, got {per_field} ({small} -> {large})"
+    );
+}

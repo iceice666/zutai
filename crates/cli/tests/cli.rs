@@ -1380,6 +1380,37 @@ fn compile_derived_from_data_nested_record_matches_oracle() {
     );
 }
 
+/// A derived `FromData` over optional fields, including an optional field of an
+/// `Optional` type, decodes presence natively exactly as the interpreter does.
+#[test]
+fn compile_derived_from_data_optional_fields_matches_oracle() {
+    let data_path = write_tmp(
+        "cli_test_derived_from_data_optional.zti",
+        "{\n  id = 7;\n  label = \"edge\";\n  items = [ { a = 1; }; { a = 2; b = 5; }; ];\n}\n",
+    );
+    let source = format!(
+        "Item :: type {{ a : Int; b? : Int; }};\n\
+         Config :: type {{ note? : Text; id : Int; label? : Text; limit? : Int?; items : List Item; port? : Int; }};\n\
+         FromData @Item :: derive\n\
+         FromData @Config :: derive\n\
+         decodeConfig :: Data -> Validation DecodeIssue Config = data => decode data;\n\
+         decodeConfig (loadZti \"{}\")\n",
+        zt_string_literal(&data_path)
+    );
+    let native = compile_bin_stdout("cli_test_derived_from_data_optional", &source);
+    let interp = run_stdout("cli_test_derived_from_data_optional_oracle.zt", &source);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.contains("#valid")
+            && native.contains("label = \"edge\"")
+            && !native.contains("limit")
+            && native.contains("b = 5")
+            && !native.contains("note")
+            && !native.contains("port"),
+        "unexpected decode output: {native}"
+    );
+}
+
 /// Updating an optional field whose type is itself `Optional` stores the value
 /// as the field's payload; it is not mistaken for a presence wrapper.
 #[test]

@@ -1222,3 +1222,38 @@ showBoth (\x. show x)
         r#"{ left = "int";  right = "bool" }"#
     );
 }
+
+/// A derived `FromData` keeps declaration order and physical presence for
+/// optional fields, including when a module's residual effects make record
+/// construction strict.
+#[test]
+fn derived_from_data_decodes_optional_fields() {
+    let src = r#"
+R :: type { b? : Int; a : Int; c? : Text; d : Int; };
+FromData @R :: derive
+f :: Text -> Data -> { name : Text; value : Data; } = n v => { name = n; value = v; };
+x ::= handle (perform tick ()) with { tick = \_. resume 1; };
+d :: Data = #record { fields = { f "d" (#int { value = 4; }); f "c" (#text { value = "x"; }); f "a" (#int { value = 1; }); }; };
+r :: Validation DecodeIssue R = fromData d;
+{ r =; x =; ok = match r { | #valid { value = v; } => v == { a = 1; c = "x"; d = 4; }; | _ => false; }; }
+"#;
+    let Value::Record(fields) = eval_tlc_file(src).unwrap() else {
+        panic!("expected record");
+    };
+    let get = |name: &str| {
+        fields
+            .iter()
+            .find(|(field, _)| field.as_ref() == name)
+            .and_then(|(_, thunk)| thunk.peek())
+            .unwrap()
+    };
+    assert_eq!(get("ok"), Value::Bool(true));
+    let Value::TaggedValue { payload, .. } = get("r") else {
+        panic!("expected #valid");
+    };
+    let Value::Record(decoded) = payload[0].1.peek().unwrap() else {
+        panic!("expected decoded record");
+    };
+    let names: Vec<&str> = decoded.iter().map(|(name, _)| name.as_ref()).collect();
+    assert_eq!(names, ["a", "c", "d"]);
+}

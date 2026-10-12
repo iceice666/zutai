@@ -314,6 +314,12 @@ impl<'thir> Lowerer<'thir> {
         ))
     }
 
+    /// Build `valid` for a decoded record from its per-field results.
+    ///
+    /// Required fields form one record literal; each present optional field is
+    /// then added by a record update. The output therefore grows linearly with
+    /// the field count: enumerating presence combinations as distinct record
+    /// literals is exponential in the number of optional fields.
     pub(super) fn record_valid_from_results(
         &mut self,
         target_ty: crate::ir::TlcTypeId,
@@ -323,99 +329,89 @@ impl<'thir> Lowerer<'thir> {
         fallback: TlcExprId,
         span: zutai_syntax::Span,
     ) -> Option<TlcExprId> {
-        #[allow(clippy::too_many_arguments)]
-        fn build(
-            lowerer: &mut Lowerer<'_>,
-            index: usize,
-            target_ty: crate::ir::TlcTypeId,
-            result_ty: crate::ir::TlcTypeId,
-            decoded: &[DecodedRecordField],
-            bindings: &[BindingId],
-            values: &mut Vec<(String, TlcExprId)>,
-            fallback: TlcExprId,
-            span: zutai_syntax::Span,
-        ) -> Option<TlcExprId> {
-            if index == decoded.len() {
-                let record = lowerer.alloc_expr(TlcExpr::Record(values.clone()), target_ty, span);
-                return lowerer.from_data_valid(result_ty, target_ty, record, span);
+        let value_bindings: Vec<BindingId> =
+            decoded.iter().map(|_| self.fresh_synth_binding()).collect();
+
+        let required = decoded
+            .iter()
+            .zip(&value_bindings)
+            .filter(|(field, _)| !field.optional)
+            .map(|(field, binding)| {
+                let value = self.alloc_expr(TlcExpr::Var(*binding), field.field_ty, span);
+                (field.name.clone(), value)
+            })
+            .collect();
+        let mut record = self.alloc_expr(TlcExpr::Record(required), target_ty, span);
+
+        // Each step binds the accumulated record so the absent branch shares it
+        // instead of duplicating the remaining construction.
+        let mut steps = Vec::new();
+        for (field, value_binding) in decoded.iter().zip(&value_bindings) {
+            if !field.optional {
+                continue;
             }
-            let field = &decoded[index];
-            let result_var =
-                lowerer.alloc_expr(TlcExpr::Var(bindings[index]), field.result_ty, span);
-            let value_binding = lowerer.fresh_synth_binding();
-            let valid_body = if field.optional {
-                let optional_value =
-                    lowerer.alloc_expr(TlcExpr::Var(value_binding), field.value_ty, span);
-                let absent = build(
-                    lowerer,
-                    index + 1,
-                    target_ty,
-                    result_ty,
-                    decoded,
-                    bindings,
-                    values,
-                    fallback,
-                    span,
-                )?;
-                let present_binding = lowerer.fresh_synth_binding();
-                let present_value =
-                    lowerer.alloc_expr(TlcExpr::Var(present_binding), field.field_ty, span);
-                values.push((field.name.clone(), present_value));
-                let present = build(
-                    lowerer,
-                    index + 1,
-                    target_ty,
-                    result_ty,
-                    decoded,
-                    bindings,
-                    values,
-                    fallback,
-                    span,
-                )?;
-                values.pop();
-                lowerer.alloc_expr(
-                    TlcExpr::Case(
-                        optional_value,
-                        vec![
-                            TlcAlt {
-                                pat: TlcPat::Atom("none".to_string()),
-                                guard: None,
-                                body: absent,
-                            },
-                            TlcAlt {
-                                pat: TlcPat::Variant(
-                                    "some".to_string(),
-                                    Box::new(TlcPat::Record(vec![(
-                                        "0".to_string(),
-                                        TlcPat::Bind(present_binding),
-                                    )])),
-                                ),
-                                guard: None,
-                                body: present,
-                            },
-                        ],
-                    ),
-                    result_ty,
-                    span,
-                )
-            } else {
-                let value = lowerer.alloc_expr(TlcExpr::Var(value_binding), field.field_ty, span);
-                values.push((field.name.clone(), value));
-                let next = build(
-                    lowerer,
-                    index + 1,
-                    target_ty,
-                    result_ty,
-                    decoded,
-                    bindings,
-                    values,
-                    fallback,
-                    span,
-                )?;
-                values.pop();
-                next
-            };
-            Some(lowerer.alloc_expr(
+            let acc_binding = self.fresh_synth_binding();
+            steps.push((acc_binding, record));
+            let acc = self.alloc_expr(TlcExpr::Var(acc_binding), target_ty, span);
+            let optional_value =
+                self.alloc_expr(TlcExpr::Var(*value_binding), field.value_ty, span);
+            let present_binding = self.fresh_synth_binding();
+            let present_value =
+                self.alloc_expr(TlcExpr::Var(present_binding), field.field_ty, span);
+            let updated = self.alloc_expr(
+                TlcExpr::RecordUpdate {
+                    receiver: acc,
+                    fields: vec![(field.name.clone(), present_value)],
+                },
+                target_ty,
+                span,
+            );
+            record = self.alloc_expr(
+                TlcExpr::Case(
+                    optional_value,
+                    vec![
+                        TlcAlt {
+                            pat: TlcPat::Atom("none".to_string()),
+                            guard: None,
+                            body: acc,
+                        },
+                        TlcAlt {
+                            pat: TlcPat::Variant(
+                                "some".to_string(),
+                                Box::new(TlcPat::Record(vec![(
+                                    "0".to_string(),
+                                    TlcPat::Bind(present_binding),
+                                )])),
+                            ),
+                            guard: None,
+                            body: updated,
+                        },
+                    ],
+                ),
+                target_ty,
+                span,
+            );
+        }
+
+        let mut body = self.from_data_valid(result_ty, target_ty, record, span)?;
+        for (binding, value) in steps.into_iter().rev() {
+            body = self.alloc_expr(
+                TlcExpr::Let {
+                    binding,
+                    ty: target_ty,
+                    value,
+                    body,
+                },
+                result_ty,
+                span,
+            );
+        }
+
+        for ((field, result_binding), value_binding) in
+            decoded.iter().zip(bindings).zip(&value_bindings).rev()
+        {
+            let result_var = self.alloc_expr(TlcExpr::Var(*result_binding), field.result_ty, span);
+            body = self.alloc_expr(
                 TlcExpr::Case(
                     result_var,
                     vec![
@@ -424,11 +420,11 @@ impl<'thir> Lowerer<'thir> {
                                 "valid".to_string(),
                                 Box::new(TlcPat::Record(vec![(
                                     "value".to_string(),
-                                    TlcPat::Bind(value_binding),
+                                    TlcPat::Bind(*value_binding),
                                 )])),
                             ),
                             guard: None,
-                            body: valid_body,
+                            body,
                         },
                         TlcAlt {
                             pat: TlcPat::Wildcard,
@@ -439,19 +435,9 @@ impl<'thir> Lowerer<'thir> {
                 ),
                 result_ty,
                 span,
-            ))
+            );
         }
-        build(
-            self,
-            0,
-            target_ty,
-            result_ty,
-            decoded,
-            bindings,
-            &mut Vec::new(),
-            fallback,
-            span,
-        )
+        Some(body)
     }
 
     pub(super) fn find_data_field(
