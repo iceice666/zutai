@@ -336,11 +336,21 @@ impl<'hir> Lowerer<'hir> {
         };
         let method_sigs = self.witness_method_sigs(constraint, target);
         if method_sigs.is_empty() {
+            // An error type must carry a diagnostic, or later stages would
+            // receive an incomplete program as if it were checked.
+            self.diagnostics.push(ThirDiagnostic {
+                kind: ThirDiagnosticKind::UnsupportedFeature {
+                    feature: "witness reflection for a constraint without one type parameter and methods",
+                },
+                span,
+            });
             return self.error_expr(id, span);
         }
 
         let target_key = self.witness_target_key(target);
-        if !self.source_has_witness_for(constraint, target, &target_key) {
+        if !self.source_has_witness_for(constraint, target, &target_key)
+            && !self.has_ambient_data_witness(constraint, target, span)
+        {
             let constraint_name = self.hir.bindings[constraint.0 as usize].name.clone();
             let target_name = self.type_name(target);
             self.diagnostics.push(ThirDiagnostic {
@@ -375,6 +385,26 @@ impl<'hir> Lowerer<'hir> {
             },
             span,
         })
+    }
+
+    /// `FromData`/`ToData` at a scalar target need no declared witness: TLC
+    /// lowering synthesizes that dictionary wherever one is requested
+    /// (`Lowerer::try_get_dict_expr`), so reflection accepts the same targets.
+    fn has_ambient_data_witness(
+        &mut self,
+        constraint: BindingId,
+        target: TypeId,
+        span: Span,
+    ) -> bool {
+        let name = self.hir.bindings[constraint.0 as usize].name.as_str();
+        if !matches!(name, "FromData" | "ToData") {
+            return false;
+        }
+        let resolved = self.resolve_alias(target, &mut FxHashSet::default(), span);
+        matches!(
+            self.ty(resolved).kind,
+            TypeKind::Bool | TypeKind::Int | TypeKind::Float | TypeKind::Text | TypeKind::Atom(_)
+        )
     }
 
     fn source_has_witness_for(

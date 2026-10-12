@@ -366,6 +366,46 @@ impl<'hir> Lowerer<'hir> {
     /// substituted by the witness target. Requires the constraint decl to be
     /// already lowered (constraints are lowered before witnesses). Returns an
     /// empty map for multi-param constraints (handled elsewhere).
+    /// A constraint's params and method signatures straight from its HIR decl,
+    /// for use before the constraint decl itself has been lowered.
+    #[allow(clippy::type_complexity)]
+    fn hir_constraint_method_sigs(
+        &mut self,
+        constraint: zutai_hir::BindingId,
+    ) -> Option<(
+        Vec<zutai_hir::BindingId>,
+        Vec<(String, TypeId, Vec<zutai_hir::BindingId>)>,
+    )> {
+        let decl_id = self.hir.decls.iter().copied().find(|&id| {
+            let decl = self.hir_decl(id);
+            decl.binding == constraint && matches!(decl.kind, HirDeclKind::Constraint { .. })
+        })?;
+        let HirDeclKind::Constraint {
+            params, methods, ..
+        } = self.hir_decl(decl_id).kind.clone()
+        else {
+            return None;
+        };
+        let sigs = methods
+            .iter()
+            .map(|method| {
+                let sig = match method
+                    .binding
+                    .and_then(|b| self.value_types.get(&b).copied())
+                {
+                    Some(sig) => sig,
+                    None => self.lower_type(method.sig),
+                };
+                (
+                    method.name.clone(),
+                    sig,
+                    method.params.iter().map(|p| p.binding).collect(),
+                )
+            })
+            .collect();
+        Some((params.iter().map(|p| p.binding).collect(), sigs))
+    }
+
     pub(super) fn witness_method_sigs(
         &mut self,
         constraint: zutai_hir::BindingId,
@@ -385,6 +425,9 @@ impl<'hir> Lowerer<'hir> {
             }
             None
         });
+        // Ordinary decls are lowered before constraint decls, so a `witness`
+        // expression inside one reads the method signatures from HIR.
+        let info = info.or_else(|| self.hir_constraint_method_sigs(constraint));
         let Some((params, sigs)) = info else {
             return rustc_hash::FxHashMap::default();
         };

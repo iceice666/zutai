@@ -1300,3 +1300,46 @@ roundTrip :: R -> Bool = r => match back (toData r) { | #valid { value = w; } =>
          showY = \"{a = n}\";  uv = #lt;  xy = #gt;  yx = #lt }"
     );
 }
+
+/// `witness C @T` works inside function and value bodies, which are checked
+/// before constraint declarations are lowered.
+#[test]
+fn witness_reflection_inside_function_bodies() {
+    let src = r#"
+Eq :: <A> @A { eq :: A -> A -> Bool; }
+Eq @Int :: { eq = \a b. a == b; }
+R :: type { a : Int; };
+FromData @R :: derive
+d :: Data = #record { fields = { { name = "a"; value = #int { value = 1; }; }; }; };
+same :: Int -> Bool = n => (witness Eq @Int).eq n 1;
+decoded :: Int -> Validation DecodeIssue R = _ => (witness FromData @R).fromData d;
+{ same = same 1; decoded = decoded 0; }
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        "{ decoded = #valid { value = { a = 1 } };  same = true }"
+    );
+}
+
+/// The ambient scalar `FromData`/`ToData` dictionaries are reflectable, and a
+/// program that names only `witness FromData @Int` still includes the prelude.
+#[test]
+fn ambient_scalar_data_witnesses_are_reflectable() {
+    let src = r#"
+w ::= witness FromData @Int;
+d :: Data = #int { value = 3; };
+{ decoded = w.fromData d; encoded = (witness ToData @Text).toData "x"; }
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        "{ decoded = #valid { value = 3 };  encoded = #text { value = \"x\" } }"
+    );
+}
+
+/// A non-scalar target without a declared witness is refused, not run.
+#[test]
+fn witness_reflection_without_witness_is_refused() {
+    let src = "R :: type { a : Int; };\nr :: R = { a = 1; };\n(witness ToData @R).toData r\n";
+    let err = eval_tlc_file(src).unwrap_err().to_string();
+    assert!(err.contains("no witness in scope"), "{err}");
+}

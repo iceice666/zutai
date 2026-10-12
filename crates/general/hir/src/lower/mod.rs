@@ -303,10 +303,14 @@ impl Lowerer {
                 .type_arena
                 .iter()
                 .any(|(_, ty)| matches!(ty.kind, HirTypeKind::BindingRef(b) if set.contains(&b)))
-            || self
-                .expr_arena
-                .iter()
-                .any(|(_, e)| matches!(e.kind, HirExprKind::BindingRef(b) if set.contains(&b)))
+            || self.expr_arena.iter().any(|(_, e)| match e.kind {
+                HirExprKind::BindingRef(b)
+                | HirExprKind::WitnessReflect {
+                    constraint: Some(b),
+                    ..
+                } => set.contains(&b),
+                _ => false,
+            })
             || self.decl_arena.iter().any(|(_, decl)| {
                 matches!(
                     decl.kind,
