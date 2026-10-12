@@ -171,7 +171,9 @@ The 2026-07-17 derived first-order data-encoding baseline adds ambient `ToData`
 and `encode` with a `deriveToData` structural recipe. Supported Bool, Int, Float,
 Text, atom-singleton, List, Optional, closed-record, and closed-union values
 encode to the existing `Data` envelope and round-trip through `FromData` in the
-TLC evaluator, native JSON bridge, and portable browser bundle. Open rows,
+TLC evaluator, native JSON bridge, and portable browser bundle. An absent
+optional record field has no entry, which `FromData` decodes as absent; a
+derived decoder's size is linear in the record's optional fields. Open rows,
 tuples, recursive aliases, fixed-width/posit scalars, opaque handles, functions,
 and runtime `Type` values refuse at the derive request; no `.zti` or tagged-union
 syntax changed.
@@ -281,7 +283,14 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-09-26 (checked lambdas infer field access on a
+_Last updated: 2026-10-12 (derived `FromData` stays linear in a record's
+optional fields; optional record fields are stored canonically by `with` and
+`overlay`; structural derives handle optional fields; ambiguous constraint
+calls are refused at check time; imported witness dictionaries reach the
+interpreter and imported constrained functions receive call-site dictionaries;
+native records widen to types adding optional fields; and `witness C @T` works
+inside declaration bodies);
+prior baseline updates: 2026-09-26 (checked lambdas infer field access on a
 contextually typed parameter as a required open-record row, so
 `map (\s. s.port) services` and `fold (\acc s. acc + s.port) 0 services` need no
 helper; required-field rows now refuse a `field? : T` receiver instead of
@@ -730,7 +739,17 @@ compatibility `zutai-cli web` subcommand), and a pure-Zutai official website; se
   `overlay`/`overlayDeep` applications, including computed and partially applied
   values, become ordinary record updates. Required nested records merge
   recursively; optional nested records merge when present and remain absent when
-  no lower record exists.
+  no lower record exists. An overlaid or `with`-updated optional field is stored
+  as a record literal stores it, so the result equals that literal.
+- Native records hold one slot per declared field. A value typed with fewer
+  fields is rebuilt at a type adding optional fields when passed, bound,
+  returned, matched, listed, or stored; widening inside lists, tuples, or
+  optional fields of other values is not performed.
+- A module that exports an unapplied constrained function exports its bounds;
+  each importer call site passes dictionaries, resolving imported witnesses in
+  both evaluators, and refuses missing or ambiguous targets at check time. Such
+  an import is a bounded quantifier, so it must be applied (directly or inside a
+  lambda) rather than passed as a bare value.
 - Open-row overlays, deletion semantics, unfolded reflection combined with
   effectful code, unsupported host operations/effect rows, function entries, and
   `Type` entries still reject before DC. Dynamic `load.zt` also rejects
