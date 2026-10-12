@@ -277,9 +277,10 @@ impl<'m> Lowerer<'m> {
                     if field.optional
                         && !matches!(self.types[self.nodes[value].ty], DfTy::Maybe(_)) =>
                 {
+                    let value = self.widen_record(value, field.ty, span);
                     self.make_maybe_present(value, field.ty, span)
                 }
-                Some(value) => value,
+                Some(value) => self.widen_record(value, field.ty, span),
                 None if field.optional => self.make_maybe_absent(field.ty, span),
                 None => self.alloc_node(DfNodeKind::Error, field.ty, span),
             };
@@ -357,6 +358,89 @@ impl<'m> Lowerer<'m> {
         } else {
             value
         }
+    }
+
+    /// Convert a record value to a wider record type that adds optional fields.
+    ///
+    /// Native records hold one slot per declared field, an optional one as
+    /// `Maybe`, so a value typed with fewer fields has a different layout and
+    /// must be rebuilt before it is used at the wider type. Any other pair of
+    /// types is returned unchanged.
+    pub(super) fn widen_record(&mut self, value: NodeId, to: DfTyId, span: Option<Span>) -> NodeId {
+        let from = self.nodes[value].ty;
+        if from == to {
+            return value;
+        }
+        let (DfTy::Record(from_fields), DfTy::Record(to_fields)) =
+            (self.types[from].clone(), self.types[to].clone())
+        else {
+            return value;
+        };
+        let compatible = from_fields.iter().all(|field| {
+            to_fields
+                .iter()
+                .any(|target| target.name == field.name && (target.optional || !field.optional))
+        }) && to_fields.iter().all(|target| {
+            target.optional || from_fields.iter().any(|field| field.name == target.name)
+        });
+        if !compatible || !self.record_needs_widening(from, to, 0) {
+            return value;
+        }
+        let mut fields = Vec::with_capacity(to_fields.len());
+        for target in &to_fields {
+            let slot_value = match from_fields.iter().find(|field| field.name == target.name) {
+                Some(field) => {
+                    let slot = record_slot(&from_fields, &field.name);
+                    let selected_ty = if field.optional {
+                        self.types.alloc(DfTy::Maybe(field.ty))
+                    } else {
+                        field.ty
+                    };
+                    let selected = self.alloc_node(
+                        DfNodeKind::Select {
+                            base: value,
+                            field: field.name.clone(),
+                            slot,
+                        },
+                        selected_ty,
+                        span,
+                    );
+                    if field.optional {
+                        selected
+                    } else {
+                        let widened = self.widen_record(selected, target.ty, span);
+                        if target.optional {
+                            self.make_maybe_present(widened, target.ty, span)
+                        } else {
+                            widened
+                        }
+                    }
+                }
+                None => self.make_maybe_absent(target.ty, span),
+            };
+            fields.push((target.name.clone(), slot_value));
+        }
+        self.alloc_node(DfNodeKind::Record(fields), to, span)
+    }
+
+    /// Whether a `from` record differs from `to` in its field set or optionality,
+    /// directly or in a required nested record field.
+    fn record_needs_widening(&self, from: DfTyId, to: DfTyId, depth: usize) -> bool {
+        if from == to || depth > 32 {
+            return false;
+        }
+        let (DfTy::Record(from_fields), DfTy::Record(to_fields)) =
+            (&self.types[from], &self.types[to])
+        else {
+            return false;
+        };
+        from_fields.len() != to_fields.len()
+            || from_fields.iter().zip(to_fields).any(|(field, target)| {
+                field.name != target.name
+                    || field.optional != target.optional
+                    || (!field.optional
+                        && self.record_needs_widening(field.ty, target.ty, depth + 1))
+            })
     }
 
     fn make_maybe_absent(&mut self, inner_ty: DfTyId, span: Option<Span>) -> NodeId {
@@ -542,21 +626,23 @@ impl<'m> Lowerer<'m> {
         self.collect_globals();
 
         // Collect (name, body) to avoid borrowing self while lowering.
-        let decls: Vec<(String, TlcExprId)> = self
+        let decls: Vec<(String, TlcExprId, zutai_tlc::TlcTypeId)> = self
             .module
             .decls
             .iter()
             .filter_map(|&decl_id| match &self.module.decl_arena[decl_id] {
-                TlcDecl::Value { binding, body, .. } => {
+                TlcDecl::Value { binding, body, ty } => {
                     let name = self.global_names.get(binding)?.clone();
-                    Some((name, *body))
+                    Some((name, *body, *ty))
                 }
                 TlcDecl::TypeAlias { .. } => None,
             })
             .collect();
 
-        for (name, body_id) in decls {
+        for (name, body_id, declared) in decls {
             let node_id = self.lower_expr(body_id);
+            let declared = self.lower_type(declared);
+            let node_id = self.widen_record(node_id, declared, None);
             self.insert_global(name, node_id);
         }
     }

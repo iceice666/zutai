@@ -47,6 +47,10 @@ impl<'m> Lowerer<'m> {
                 let bind_node = self.alloc_node(DfNodeKind::Bind, param_df_ty, None);
                 self.local_env.insert(param_binding, bind_node);
                 let body_node = self.lower_expr(body);
+                let body_node = match self.types[df_ty].clone() {
+                    crate::DfTy::Fun(_, result_ty) => self.widen_record(body_node, result_ty, span),
+                    _ => body_node,
+                };
                 self.local_env.remove(&param_binding);
                 self.alloc_node(
                     DfNodeKind::Lambda {
@@ -73,6 +77,10 @@ impl<'m> Lowerer<'m> {
                 }
                 let func_node = self.lower_expr(func);
                 let arg_node = self.lower_expr(arg);
+                let arg_node = match self.types[self.nodes[func_node].ty].clone() {
+                    crate::DfTy::Fun(param_ty, _) => self.widen_record(arg_node, param_ty, span),
+                    _ => arg_node,
+                };
                 self.alloc_node(
                     DfNodeKind::Apply {
                         func: func_node,
@@ -110,13 +118,15 @@ impl<'m> Lowerer<'m> {
 
             TlcExpr::Let {
                 binding,
-                ty: _,
+                ty,
                 value,
                 body,
             } => {
                 // Tree-to-graph: lower value once, register its NodeId.
                 // All references to `binding` in `body` will reuse this NodeId directly.
                 let value_node = self.lower_expr(value);
+                let bound_ty = self.lower_type(ty);
+                let value_node = self.widen_record(value_node, bound_ty, span);
                 self.local_env.insert(binding, value_node);
                 let body_node = self.lower_expr(body);
                 self.local_env.remove(&binding);
@@ -171,9 +181,19 @@ impl<'m> Lowerer<'m> {
                     .map(|t| self.lower_type(t))
                     .unwrap_or(self.error_ty);
                 let scrutinee_node = self.lower_expr(scrutinee);
+                // Function-clause lowering types this match with the whole
+                // function type, so its arms produce the innermost result.
+                let mut arm_ty = df_ty;
+                while let crate::DfTy::Fun(_, result) = self.types[arm_ty] {
+                    arm_ty = result;
+                }
                 let arms: Vec<DfArm> = alts
                     .iter()
-                    .map(|alt| self.lower_alt(alt, scrutinee_df_ty))
+                    .map(|alt| {
+                        let mut arm = self.lower_alt(alt, scrutinee_df_ty);
+                        arm.body = self.widen_record(arm.body, arm_ty, span);
+                        arm
+                    })
                     .collect();
                 self.alloc_node(
                     DfNodeKind::Match {
@@ -260,7 +280,20 @@ impl<'m> Lowerer<'m> {
             }
 
             TlcExpr::List(items) => {
-                let df_items: Vec<NodeId> = items.iter().map(|&e| self.lower_expr(e)).collect();
+                let element_ty = match self.types[df_ty] {
+                    crate::DfTy::List(element) => Some(element),
+                    _ => None,
+                };
+                let df_items: Vec<NodeId> = items
+                    .iter()
+                    .map(|&e| {
+                        let item = self.lower_expr(e);
+                        match element_ty {
+                            Some(element) => self.widen_record(item, element, span),
+                            None => item,
+                        }
+                    })
+                    .collect();
                 self.alloc_node(DfNodeKind::List(df_items), df_ty, span)
             }
 

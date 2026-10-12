@@ -7786,3 +7786,29 @@ fn local_constrained_function_uses_imported_witnesses() {
     assert_eq!(native, interp, "native must match the interpreter oracle");
     assert_eq!(interp.trim(), "(true, false, false)");
 }
+
+/// Native records hold a slot per declared field, so a value typed with fewer
+/// fields is widened wherever it is used at a type adding optional fields:
+/// argument, binding, return, branch, list element, and overlay receiver.
+#[test]
+fn narrower_records_widen_to_optional_field_types_natively() {
+    let src = "Inner :: type { q : Text; };\n\
+               R :: type { c? : Int; a : Int; z : Int; inner? : Inner; };\n\
+               f :: R -> Int = r => (r.c ?? 90) + r.a + r.z;\n\
+               mk :: Int -> R = n => [ b := { a = n; z = 0; }; b ];\n\
+               pick :: Bool -> R = flag => [ b := { a = 1; z = 0; }; if flag then b else { a = 2; z = 0; c = 3; } ];\n\
+               b ::= { a = 1; z = 7; };\n\
+               r :: R = b;\n\
+               xs :: List R = { b; { a = 6; z = 0; c = 1; }; };\n\
+               o :: R = { a = 1; z = 2; } |> overlayDeep { a = 4; };\n\
+               { arg = f b; bound = r.c ?? 0; made = (mk 3).a; picked = (pick true).c ?? 9; listed = map f xs; overlaid = o.a; }\n";
+    let native = compile_bin_stdout("cli_test_record_widening", src);
+    let interp = run_stdout("cli_test_record_widening_oracle.zt", src);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        interp.contains("arg = 98")
+            && interp.contains("listed = [98; 7]")
+            && interp.contains("picked = 9"),
+        "{interp}"
+    );
+}
