@@ -338,6 +338,7 @@ pub(crate) fn imported_type_key(ty: &ImportedType) -> String {
         ImportedType::Function { from, to } => {
             format!("({}->{})", imported_type_key(from), imported_type_key(to))
         }
+        ImportedType::Constrained { body, .. } => imported_type_key(body),
         ImportedType::Effect { base, ops, tail } => {
             let ops = ops
                 .iter()

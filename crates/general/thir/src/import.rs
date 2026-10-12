@@ -131,6 +131,22 @@ pub enum ImportedType {
     /// interned as a fresh inference variable so it unifies with whatever the
     /// consumer needs.
     Unknown,
+    /// A constrained polymorphic function exported unapplied. Its value takes
+    /// one dictionary per bound, in `params` order, before its first argument,
+    /// so the importer interns it as a quantifier whose bounds each call site
+    /// resolves (`TyVar`s in `body` name the parameters).
+    Constrained {
+        params: Vec<ImportedTypeParam>,
+        body: Box<ImportedType>,
+    },
+}
+
+/// One type parameter of an [`ImportedType::Constrained`] export: its `TyVar`
+/// id in the body and the names of the constraints it requires.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedTypeParam {
+    pub tyvar: u32,
+    pub bounds: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

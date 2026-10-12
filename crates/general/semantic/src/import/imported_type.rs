@@ -147,6 +147,52 @@ pub(crate) fn enrich_with_type_denotations(ty: ImportedType, file: &ThirFile) ->
     }
 }
 
+/// Mark exported, unapplied constrained polymorphic functions with their
+/// bounds, so the importer passes their dictionaries at each call site; the
+/// exporting module's TLC leaves these references unapplied to match.
+pub(crate) fn attach_constrained_exports(ty: ImportedType, file: &ThirFile) -> ImportedType {
+    let constrained = |expr| {
+        zutai_thir::constrained_export_params(file, expr).map(|params| {
+            params
+                .into_iter()
+                .map(|(tyvar, bounds)| zutai_thir::ImportedTypeParam {
+                    tyvar,
+                    bounds: bounds
+                        .iter()
+                        .map(|binding| file.binding_names[binding.0 as usize].clone())
+                        .collect(),
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    let wrap = |params, body| ImportedType::Constrained {
+        params,
+        body: Box::new(body),
+    };
+    let exported = zutai_thir::exported_value_exprs(file);
+    match ty {
+        ImportedType::Record(mut fields) => {
+            for (name, expr) in exported {
+                let (Some(name), Some(params)) = (name, constrained(expr)) else {
+                    continue;
+                };
+                if let Some(field) = fields.iter_mut().find(|field| field.name == name) {
+                    let body = std::mem::replace(&mut field.ty, ImportedType::Unknown);
+                    field.ty = wrap(params, body);
+                }
+            }
+            ImportedType::Record(fields)
+        }
+        other => match exported.as_slice() {
+            [(None, expr)] => match constrained(*expr) {
+                Some(params) => wrap(params, other),
+                None => other,
+            },
+            _ => other,
+        },
+    }
+}
+
 /// Attach top-level type aliases to a module import as annotation-only exports.
 /// These names are intentionally not added to the runtime value's record type,
 /// so importing a module for effectful functions does not force the evaluator

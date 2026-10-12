@@ -614,6 +614,7 @@ pub(crate) use diagnostics::{
     local_witness_exports, merge_witness_exports, witness_registry_covers,
 };
 pub(crate) use imported_type::{
-    attach_type_only_exports, block_provenance, enrich_with_type_denotations, imported_type,
+    attach_constrained_exports, attach_type_only_exports, block_provenance,
+    enrich_with_type_denotations, imported_type,
 };
 pub(crate) use resolve::{binding_name, resolve_imports};

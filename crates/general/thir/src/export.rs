@@ -19,7 +19,72 @@ use crate::import::{
     ImportedEffectOp, ImportedField, ImportedRowTail, ImportedTupleItem, ImportedType,
     ImportedUnionVariant,
 };
-use crate::ir::{EffectRow, RowTail, ThirDeclKind, ThirFile, TypeId, TypeKind, TypeTupleItem};
+use crate::ir::{
+    EffectRow, RowTail, ThirDeclKind, ThirExprId, ThirExprKind, ThirFile, TypeId, TypeKind,
+    TypeTupleItem,
+};
+
+/// The value expressions a module exports: its final expression, or each field
+/// value when the final expression is a record literal.
+pub fn exported_value_exprs(file: &ThirFile) -> Vec<(Option<String>, ThirExprId)> {
+    match &file.expr_arena[file.final_expr].kind {
+        ThirExprKind::Record(fields) => fields
+            .iter()
+            .map(|field| (Some(field.name.clone()), field.value))
+            .collect(),
+        _ => vec![(None, file.final_expr)],
+    }
+}
+
+/// If `expr` is an exported reference to a constrained polymorphic function
+/// whose type parameters all stay generalized, return each parameter (in the
+/// function's binding-id order, the order its dictionaries are taken) as its
+/// exported `TyVar` id with its constraint bounds.
+///
+/// Such a reference is exported unapplied: no call site in the exporting
+/// module fixes its types, so the importer supplies the dictionaries.
+pub fn constrained_export_params(
+    file: &ThirFile,
+    expr: ThirExprId,
+) -> Option<Vec<(u32, Vec<BindingId>)>> {
+    let ThirExprKind::BindingRef {
+        binding,
+        instantiation,
+        ..
+    } = &file.expr_arena[expr].kind
+    else {
+        return None;
+    };
+    let (params, param_bounds) = file.decls.iter().find_map(|&decl_id| {
+        let decl = &file.decl_arena[decl_id];
+        match &decl.kind {
+            ThirDeclKind::Function {
+                params,
+                param_bounds,
+                ..
+            } if decl.binding == *binding => Some((params, param_bounds)),
+            _ => None,
+        }
+    })?;
+    if param_bounds.iter().all(Vec::is_empty) || params.len() != instantiation.len() {
+        return None;
+    }
+    let mut ordered: Vec<(BindingId, &Vec<BindingId>)> =
+        params.iter().copied().zip(param_bounds.iter()).collect();
+    ordered.sort_by_key(|(param, _)| param.0);
+    let mut seen = FxHashSet::default();
+    let mut out = Vec::with_capacity(ordered.len());
+    for ((_, bounds), &inst) in ordered.into_iter().zip(instantiation) {
+        let TypeKind::InferVar(var) = file.type_arena[inst.0 as usize].kind else {
+            return None;
+        };
+        if !seen.insert(var) {
+            return None;
+        }
+        out.push((var | TYVAR_INFER_TAG, bounds.clone()));
+    }
+    Some(out)
+}
 
 /// A type that cannot be exported across a module import in this phase.
 #[derive(Debug, Clone, PartialEq, Eq)]

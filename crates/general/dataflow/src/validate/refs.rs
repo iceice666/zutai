@@ -13,19 +13,22 @@ pub(super) fn type_exists(graph: &DataflowGraph, id: DfTyId) -> bool {
 }
 
 pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId) -> bool {
+    /// Quantified variables are compared up to renaming: `bound` pairs the
+    /// binders of enclosing `TyFun`s on both sides, innermost last.
     fn go(
         graph: &DataflowGraph,
         expected: DfTyId,
         actual: DfTyId,
-        seen: &mut FxHashSet<(DfTyId, DfTyId)>,
+        seen: &mut FxHashSet<(DfTyId, DfTyId, usize)>,
+        bound: &mut Vec<(DfTyVar, DfTyVar)>,
     ) -> bool {
-        if expected == actual {
+        if expected == actual && bound.is_empty() {
             return true;
         }
         if !type_exists(graph, expected) || !type_exists(graph, actual) {
             return false;
         }
-        if !seen.insert((expected, actual)) {
+        if !seen.insert((expected, actual, bound.len())) {
             return true;
         }
 
@@ -42,24 +45,36 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
             (DfTy::Opaque(a), DfTy::Opaque(b)) => a == b,
             (DfTy::Posit(a), DfTy::Posit(b)) => a == b,
             (DfTy::Bool, DfTy::True | DfTy::False) | (DfTy::True | DfTy::False, DfTy::Bool) => true,
-            (DfTy::TyVar(a), DfTy::TyVar(b)) => a == b,
+            (DfTy::TyVar(a), DfTy::TyVar(b)) => {
+                match bound
+                    .iter()
+                    .rev()
+                    .find(|(left, right)| left == a || right == b)
+                {
+                    Some((left, right)) => left == a && right == b,
+                    None => a == b,
+                }
+            }
             (DfTy::List(a), DfTy::List(b))
             | (DfTy::Optional(a), DfTy::Optional(b))
-            | (DfTy::Maybe(a), DfTy::Maybe(b)) => go(graph, *a, *b, seen),
+            | (DfTy::Maybe(a), DfTy::Maybe(b)) => go(graph, *a, *b, seen, bound),
             (DfTy::Fun(a_arg, a_result), DfTy::Fun(b_arg, b_result)) => {
-                go(graph, *a_arg, *b_arg, seen) && go(graph, *a_result, *b_result, seen)
+                go(graph, *a_arg, *b_arg, seen, bound)
+                    && go(graph, *a_result, *b_result, seen, bound)
             }
             (DfTy::Record(a), DfTy::Record(b)) => {
                 a.len() == b.len()
                     && a.iter().zip(b).all(|(a, b)| {
-                        a.name == b.name && a.optional == b.optional && go(graph, a.ty, b.ty, seen)
+                        a.name == b.name
+                            && a.optional == b.optional
+                            && go(graph, a.ty, b.ty, seen, bound)
                     })
             }
             (DfTy::Union(a), DfTy::Union(b)) => {
                 a.len() == b.len()
                     && a.iter()
                         .zip(b)
-                        .all(|(a, b)| a.tag == b.tag && go(graph, a.ty, b.ty, seen))
+                        .all(|(a, b)| a.tag == b.tag && go(graph, a.ty, b.ty, seen, bound))
             }
             (DfTy::Tuple(a), DfTy::Tuple(b)) => {
                 a.len() == b.len()
@@ -73,29 +88,42 @@ pub(super) fn same_type(graph: &DataflowGraph, expected: DfTyId, actual: DfTyId)
                                 name: b_name,
                                 ty: b_ty,
                             },
-                        ) => a_name == b_name && go(graph, *a_ty, *b_ty, seen),
+                        ) => a_name == b_name && go(graph, *a_ty, *b_ty, seen, bound),
                         (DfTupleField::Positional(a_ty), DfTupleField::Positional(b_ty)) => {
-                            go(graph, *a_ty, *b_ty, seen)
+                            go(graph, *a_ty, *b_ty, seen, bound)
                         }
                         _ => false,
                     })
             }
             (DfTy::TyFun(a_params, a_body), DfTy::TyFun(b_params, b_body)) => {
-                a_params == b_params && go(graph, *a_body, *b_body, seen)
+                if a_params.len() != b_params.len() {
+                    return false;
+                }
+                let depth = bound.len();
+                bound.extend(a_params.iter().cloned().zip(b_params.iter().cloned()));
+                let equal = go(graph, *a_body, *b_body, seen, bound);
+                bound.truncate(depth);
+                equal
             }
             (DfTy::TyApp(a_func, a_args), DfTy::TyApp(b_func, b_args)) => {
-                go(graph, *a_func, *b_func, seen)
+                go(graph, *a_func, *b_func, seen, bound)
                     && a_args.len() == b_args.len()
                     && a_args
                         .iter()
                         .zip(b_args)
-                        .all(|(a, b)| go(graph, *a, *b, seen))
+                        .all(|(a, b)| go(graph, *a, *b, seen, bound))
             }
             _ => false,
         }
     }
 
-    go(graph, expected, actual, &mut FxHashSet::default())
+    go(
+        graph,
+        expected,
+        actual,
+        &mut FxHashSet::default(),
+        &mut Vec::new(),
+    )
 }
 
 /// Whether a cross-module global reference is type-compatible with the
@@ -186,8 +214,11 @@ pub(super) fn is_instantiation_of(graph: &DataflowGraph, def: DfTyId, actual: Df
                         .zip(b_args)
                         .all(|(a, b)| go(graph, *a, *b, seen))
             }
+            // Each module names its quantified variables with its own binding
+            // ids, and a `TyVar` already matches any subterm here, so only the
+            // quantifier's arity has to agree.
             (DfTy::TyFun(a_params, a_body), DfTy::TyFun(b_params, b_body)) => {
-                a_params == b_params && go(graph, *a_body, *b_body, seen)
+                a_params.len() == b_params.len() && go(graph, *a_body, *b_body, seen)
             }
             // Leaves / mismatched constructors: require exact equality.
             _ => same_type(graph, def, actual),

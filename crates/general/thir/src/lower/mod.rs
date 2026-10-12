@@ -143,6 +143,9 @@ struct Lowerer<'hir> {
     /// occurrences of one exported variable share a var (`∀A. A -> A` stays
     /// `?a -> ?a`). Cleared before interning each import binding's type.
     import_tyvar_cache: FxHashMap<u32, TypeId>,
+    /// Synthetic constraint bindings for imported bounds naming a constraint
+    /// this module does not declare, one per name.
+    imported_constraint_bindings: FxHashMap<String, BindingId>,
     /// Per-import row-parameter cache for exported row variables (`...e`).
     /// Shared row tails in one imported signature must map to one synthetic
     /// rigid parameter so call-site instantiation preserves sharing.

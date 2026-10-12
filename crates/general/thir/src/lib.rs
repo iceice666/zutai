@@ -18,13 +18,13 @@ mod tests;
 
 pub use diagnostic::{RowOverlapItem, ThirDiagnostic, ThirDiagnosticKind};
 pub use export::{
-    ExportUnsupported, export_type, export_type_alias_value, export_type_value,
-    export_witness_target,
+    ExportUnsupported, constrained_export_params, export_type, export_type_alias_value,
+    export_type_value, export_witness_target, exported_value_exprs,
 };
 pub use import::{
     ImportKey, ImportedEffectOp, ImportedField, ImportedFieldProvenance, ImportedProvenance,
     ImportedProvenanceChildren, ImportedRowTail, ImportedTupleItem, ImportedType,
-    ImportedTypeOrigin,
+    ImportedTypeOrigin, ImportedTypeParam,
 };
 pub use ir::{
     EffectOp, EffectRow, FixedWidth, Kind, RowTail, ThirClause, ThirConstraintMethod, ThirDecl,

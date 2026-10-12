@@ -152,7 +152,7 @@ impl<'thir> Lowerer<'thir> {
                     for &cst_b in constraint_bindings.iter() {
                         let dict = self.get_dict_expr(cst_b, inst_ty_id, span);
                         if arg_thir_ty.is_some() {
-                            self.refuse_ambiguous_dispatch(dict, cst_b, inst_ty_id, span);
+                            self.gate_unresolved_dict(dict, cst_b, inst_ty_id, span);
                         }
                         cur = self.alloc_expr(TlcExpr::App(cur, dict), tlc_ty, span);
                     }
@@ -163,6 +163,46 @@ impl<'thir> Lowerer<'thir> {
 
         None
     }
+    /// Gate a dictionary passed at a call: an ambiguous target is refused here,
+    /// and a concrete one is recorded so the semantic layer refuses it unless an
+    /// imported witness covers it.
+    pub(super) fn gate_unresolved_dict(
+        &mut self,
+        dict: TlcExprId,
+        constraint: BindingId,
+        target: TypeId,
+        span: Span,
+    ) {
+        if !matches!(self.expr_arena[dict], TlcExpr::Lit(Literal::Nothing)) {
+            return;
+        }
+        if self.type_has_unsolved_infer_var(target, &mut rustc_hash::FxHashSet::default()) {
+            self.refuse_ambiguous_dispatch(dict, constraint, target, span);
+            return;
+        }
+        let Some(target_key) =
+            self.structural_witness_key(target, &mut rustc_hash::FxHashSet::default())
+        else {
+            return;
+        };
+        if target_key.is_empty() || target_key.contains('@') || target_key.contains('?') {
+            return;
+        }
+        let constraint = self
+            .thir
+            .binding_names
+            .get(constraint.0 as usize)
+            .cloned()
+            .unwrap_or_default();
+        let target_display = self.thir_type_display(target);
+        self.unresolved_dispatches.push(UnresolvedDispatch {
+            constraint,
+            target_key,
+            target_display,
+            span,
+        });
+    }
+
     /// A dictionary that fell back to `Lit(Nothing)` at a call whose target still
     /// holds an unsolved inference variable can never be selected, at compile
     /// time or by runtime dispatch; refuse the program instead of running a

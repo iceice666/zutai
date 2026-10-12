@@ -479,6 +479,7 @@ impl Resolver<'_> {
             let final_ty = file.expr_arena[file.final_expr].ty;
             zutai_thir::export_type(file, final_ty)
                 .map(|ty| enrich_with_type_denotations(ty, file))
+                .map(|ty| attach_constrained_exports(ty, file))
                 .map(|ty| attach_type_only_exports(ty, file))
         };
 

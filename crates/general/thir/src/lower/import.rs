@@ -358,6 +358,45 @@ impl<'hir> Lowerer<'hir> {
                     ty
                 }
             }
+            ImportedType::Constrained { params, body } => {
+                // Each parameter becomes a rigid quantified variable, so a call
+                // site instantiates it and passes the bound dictionaries.
+                let mut forall_params = Vec::with_capacity(params.len());
+                let mut forall_bounds = Vec::with_capacity(params.len());
+                let mut shadowed = Vec::with_capacity(params.len());
+                for (index, param) in params.iter().enumerate() {
+                    let binding = self
+                        .alloc_synthetic_binding(format!("$import{index}"), BindingKind::TypeParam);
+                    self.type_param_kinds.insert(binding, Kind::ground());
+                    shadowed.push((
+                        param.tyvar,
+                        self.ctor_param_map.insert(param.tyvar, binding),
+                    ));
+                    forall_params.push(binding);
+                    forall_bounds.push(
+                        param
+                            .bounds
+                            .iter()
+                            .map(|name| self.imported_constraint_binding(name))
+                            .collect(),
+                    );
+                }
+                let body_ty = self.intern_imported_type_with_source(body, source, span, None);
+                for (tyvar, previous) in shadowed {
+                    match previous {
+                        Some(binding) => self.ctor_param_map.insert(tyvar, binding),
+                        None => self.ctor_param_map.remove(&tyvar),
+                    };
+                }
+                self.alloc_type(Type {
+                    kind: TypeKind::ForAll {
+                        params: forall_params,
+                        param_bounds: forall_bounds,
+                        body: body_ty,
+                    },
+                    span,
+                })
+            }
             ImportedType::ConApply { ctor, args } => {
                 let arg_tys: Vec<TypeId> = args
                     .iter()
@@ -491,6 +530,26 @@ impl<'hir> Lowerer<'hir> {
     /// register the constructor's arity (`alias_params`) and its lookup key
     /// (`import_type_constructors`). Returns the export-id → param-binding map
     /// used while interning the body so its `TyVar`s map to these params.
+    /// The importer's constraint named `name`, or a synthetic binding of that
+    /// name when the constraint is not declared here; witnesses are matched by
+    /// constraint name across modules, so either resolves imported witnesses.
+    fn imported_constraint_binding(&mut self, name: &str) -> BindingId {
+        if let Some(index) =
+            self.hir.bindings.iter().position(|binding| {
+                binding.kind == BindingKind::TopConstraint && binding.name == name
+            })
+        {
+            return BindingId(index as u32);
+        }
+        if let Some(&binding) = self.imported_constraint_bindings.get(name) {
+            return binding;
+        }
+        let binding = self.alloc_synthetic_binding(name.to_string(), BindingKind::TopConstraint);
+        self.imported_constraint_bindings
+            .insert(name.to_string(), binding);
+        binding
+    }
+
     fn predeclare_imported_constructor(
         &mut self,
         source: &HirImportSource,

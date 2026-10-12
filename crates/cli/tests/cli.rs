@@ -7668,6 +7668,93 @@ fn model_check_temporal_limit_stays_inconclusive() {
 
 // ── Cross-module constrained functions and imported dictionaries ─────────────
 
+const CONSTRAINED_LIB: &str = concat!(
+    "Sh :: <A> @A { sh :: A -> Text; }\n",
+    "Sh @Int :: { sh = \\n. \"int\"; }\n",
+    "Sh @Text :: { sh = \\t. \"text\"; }\n",
+    "twice :: <A: Sh> A -> Text = x => sh x;\n",
+    "dec :: <A: FromData> Data -> Validation DecodeIssue A = d => fromData d;\n",
+    "{ twice =; dec =; }\n",
+);
+
+/// A constrained polymorphic function exported from a module receives the
+/// importer's dictionaries at each call site, at several types, including a
+/// constraint the importer does not declare and an ambient one.
+#[test]
+fn imported_constrained_function_receives_call_site_dictionaries() {
+    let (interp, native) = import_run_vs_compile(
+        "constrained_export",
+        "main.zt",
+        &[
+            ("lib.zt", CONSTRAINED_LIB),
+            (
+                "main.zt",
+                concat!(
+                    "lib ::= import \"lib.zt\";\n",
+                    "d :: Data = #int { value = 1; };\n",
+                    "r :: Validation DecodeIssue Int = lib.dec d;\n",
+                    "{ a = lib.twice 1; b = lib.twice \"x\"; r =; }\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        interp.contains("a = \"int\"")
+            && interp.contains("b = \"text\"")
+            && interp.contains("#valid { value = 1 }"),
+        "{interp}"
+    );
+}
+
+/// The stdlib's explicitly imported `decode`/`encode` are constrained exports.
+#[test]
+fn stdlib_stream_decode_and_encode_run_when_imported() {
+    let src = "stream ::= import stdlib.stream;\n\
+               d :: Data = #int { value = 1; };\n\
+               r :: Validation DecodeIssue Int = stream.decode d;\n\
+               e :: Data = stream.encode 5;\n\
+               { r =; e =; }\n";
+    let native = compile_bin_stdout("cli_test_stream_decode_import", src);
+    let interp = run_stdout("cli_test_stream_decode_import_oracle.zt", src);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(interp.contains("#valid { value = 1 }") && interp.contains("#int { value = 5 }"));
+}
+
+/// A call to an imported constrained function is refused at check time when
+/// no witness covers the target or the target is undetermined.
+#[test]
+fn imported_constrained_function_refuses_missing_or_ambiguous_witness() {
+    let dir = std::env::temp_dir().join("zutai_constrained_export_refusals");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("lib.zt"), CONSTRAINED_LIB).unwrap();
+    std::fs::write(
+        dir.join("missing.zt"),
+        "lib ::= import \"lib.zt\";\nlib.twice 1.5\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("ambiguous.zt"),
+        "lib ::= import \"lib.zt\";\nr ::= lib.dec (#int { value = 1; });\nr\n",
+    )
+    .unwrap();
+    cli()
+        .arg("check")
+        .arg(dir.join("missing.zt"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no witness in scope for `Sh @Float`",
+        ));
+    cli()
+        .arg("check")
+        .arg(dir.join("ambiguous.zt"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ambiguous_constraint_target"));
+}
+
 /// A local constrained function called at a type whose witness is imported,
 /// concrete or conditional, receives that dictionary in the interpreter too.
 #[test]

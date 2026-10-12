@@ -109,6 +109,11 @@ impl<'thir> Lowerer<'thir> {
                     self.lower_overlay_function(binding, thir_ty, span)
                 } else if let Some(replacement) = self.code_substitution(binding) {
                     self.lower_expr(replacement)
+                } else if self.is_unapplied_constrained_export(id) {
+                    // The importer passes this function's dictionaries itself
+                    // (see `zutai_thir::constrained_export_params`).
+                    let ty = self.constrained_export_type(binding).unwrap_or(tlc_ty);
+                    self.alloc_expr(TlcExpr::Var(binding), ty, span)
                 } else {
                     self.lower_binding_ref(binding, &instantiation, tlc_ty, thir_ty, span)
                 }
@@ -118,6 +123,23 @@ impl<'thir> Lowerer<'thir> {
                     .iter()
                     .map(|f| (f.name.clone(), self.lower_expr(f.value)))
                     .collect();
+                // An unapplied constrained export's value takes its dictionaries,
+                // so its field type is the quantified one rather than THIR's
+                // instantiated view.
+                let tlc_ty = if fields
+                    .iter()
+                    .any(|f| self.is_unapplied_constrained_export(f.value))
+                {
+                    let overrides: Vec<(String, TlcTypeId)> = fields
+                        .iter()
+                        .zip(&tlc_fields)
+                        .filter(|(f, _)| self.is_unapplied_constrained_export(f.value))
+                        .map(|(f, (_, value))| (f.name.clone(), self.expr_types[value]))
+                        .collect();
+                    self.override_record_field_types(tlc_ty, &overrides)
+                } else {
+                    tlc_ty
+                };
                 self.alloc_expr(TlcExpr::Record(tlc_fields), tlc_ty, span)
             }
             ThirExprKind::RecordUpdate { receiver, fields } => {
@@ -402,6 +424,7 @@ impl<'thir> Lowerer<'thir> {
                                 self.alloc_expr(TlcExpr::TyApp(func_tlc, ty_arg), cur_ty, span);
                             for &bound in &param_bounds[i] {
                                 let dict = self.get_dict_expr(bound, inst_ty, span);
+                                self.gate_unresolved_dict(dict, bound, inst_ty, span);
                                 let after_dict_ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
                                 func_tlc = self.alloc_expr(
                                     TlcExpr::App(func_tlc, dict),
@@ -1066,6 +1089,67 @@ impl<'thir> Lowerer<'thir> {
                 _ => return layers,
             }
         }
+    }
+}
+
+impl Lowerer<'_> {
+    /// The type of a constrained function value before its dictionaries are
+    /// applied: `∀A. {dict} -> ... -> sig`, as a bounded THIR `ForAll` lowers.
+    fn constrained_export_type(&mut self, binding: BindingId) -> Option<TlcTypeId> {
+        let sig = self.decl_thir_types.get(&binding).copied()?;
+        let params = self.fn_explicit_params.get(&binding).cloned()?;
+        let mut ty = self.lower_type(sig);
+        for (param, bounds) in params.iter().rev() {
+            for _ in bounds.iter().rev() {
+                let dict_ty = self.alloc_type(TlcType::Record(crate::ir::Row::REmpty));
+                ty = self.alloc_type(TlcType::Fun(dict_ty, ty, crate::ir::Row::REmpty));
+            }
+            let tyvar = self.named_tyvar(*param);
+            let kind = self.kind_for_type_param(*param);
+            ty = self.alloc_type(TlcType::ForAll(tyvar, kind, ty));
+        }
+        Some(ty)
+    }
+
+    /// `record_ty` with the named fields' types replaced.
+    fn override_record_field_types(
+        &mut self,
+        record_ty: TlcTypeId,
+        overrides: &[(String, TlcTypeId)],
+    ) -> TlcTypeId {
+        fn rewrite(row: &crate::ir::Row, overrides: &[(String, TlcTypeId)]) -> crate::ir::Row {
+            match row {
+                crate::ir::Row::RExtend {
+                    label,
+                    ty,
+                    optional,
+                    tail,
+                } => crate::ir::Row::RExtend {
+                    label: label.clone(),
+                    ty: overrides
+                        .iter()
+                        .find(|(name, _)| name == label)
+                        .map_or(*ty, |(_, ty)| *ty),
+                    optional: *optional,
+                    tail: Box::new(rewrite(tail, overrides)),
+                },
+                other => other.clone(),
+            }
+        }
+        match self.type_arena[record_ty].clone() {
+            TlcType::Record(row) => {
+                let row = rewrite(&row, overrides);
+                self.alloc_type(TlcType::Record(row))
+            }
+            _ => record_ty,
+        }
+    }
+
+    fn is_unapplied_constrained_export(&self, expr: ThirExprId) -> bool {
+        zutai_thir::exported_value_exprs(self.thir)
+            .iter()
+            .any(|(_, exported)| *exported == expr)
+            && zutai_thir::constrained_export_params(self.thir, expr).is_some()
     }
 }
 
