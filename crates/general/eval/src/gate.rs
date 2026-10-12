@@ -58,6 +58,7 @@ pub fn check_well_typed(analysis: &zutai_semantic::Analysis) -> Result<&ThirFile
                         zutai_thir::ThirDiagnosticKind::DeriveRecipeFuelExhausted { .. }
                             | zutai_thir::ThirDiagnosticKind::DeriveRecipeIrreducible { .. }
                             | zutai_thir::ThirDiagnosticKind::WitnessReflectNotInScope { .. }
+                            | zutai_thir::ThirDiagnosticKind::AmbiguousConstraintTarget { .. }
                     )
                 })
                 .map(describe_thir_diagnostic)
@@ -178,6 +179,11 @@ pub fn describe_thir_diagnostic(d: &zutai_thir::ThirDiagnostic) -> String {
         }
         WitnessReflectNotInScope { constraint, target } => {
             format!("no witness in scope for `{constraint} @{target}`")
+        }
+        AmbiguousConstraintTarget { constraint, target } => {
+            format!(
+                "cannot determine the type at which `{constraint}` is used (inferred `{target}`); add a type annotation"
+            )
         }
         DeriveRecipeFuelExhausted { constraint, .. } => {
             format!("derive recipe for `{constraint}` exhausted type-level fuel")

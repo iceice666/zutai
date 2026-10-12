@@ -153,6 +153,12 @@ pub enum ThirDiagnosticKind {
         constraint: String,
         target: String,
     },
+    /// A constraint is used at a type inference left undetermined, so no
+    /// witness can be selected; the program needs an annotation.
+    AmbiguousConstraintTarget {
+        constraint: String,
+        target: String,
+    },
     DeriveRecipeFuelExhausted {
         constraint: String,
         definition: Span,
@@ -292,6 +298,7 @@ impl ThirDiagnosticKind {
             }
             Self::DeriveUnsupportedMethod { .. } => "zutai::thir::derive_unsupported_method",
             Self::WitnessReflectNotInScope { .. } => "zutai::thir::witness_reflect_not_in_scope",
+            Self::AmbiguousConstraintTarget { .. } => "zutai::thir::ambiguous_constraint_target",
             Self::DeriveRecipeFuelExhausted { .. } => "zutai::thir::derive_recipe_fuel_exhausted",
             Self::DeriveRecipeIrreducible { .. } => "zutai::thir::derive_recipe_irreducible",
             Self::DeriveOpenRowTarget { .. } => "zutai::thir::derive_open_row_target",

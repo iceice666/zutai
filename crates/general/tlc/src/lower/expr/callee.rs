@@ -105,6 +105,9 @@ impl<'thir> Lowerer<'thir> {
             // import — which this pure, import-agnostic lowering cannot see.
             // Record the dispatch so the semantic layer can check it against the
             // merged witness registry and refuse a genuinely-unwitnessed call.
+            if arg_thir_ty.is_some() {
+                self.refuse_ambiguous_dispatch(dict_expr, info.constraint, extern_inst, span);
+            }
             if matches!(self.expr_arena[dict_expr], TlcExpr::Lit(Literal::Nothing))
                 && !dispatch_key.is_empty()
                 && !dispatch_key.contains('?')
@@ -148,6 +151,9 @@ impl<'thir> Lowerer<'thir> {
                     cur = self.alloc_expr(TlcExpr::TyApp(cur, ty_arg), tlc_ty, span);
                     for &cst_b in constraint_bindings.iter() {
                         let dict = self.get_dict_expr(cst_b, inst_ty_id, span);
+                        if arg_thir_ty.is_some() {
+                            self.refuse_ambiguous_dispatch(dict, cst_b, inst_ty_id, span);
+                        }
                         cur = self.alloc_expr(TlcExpr::App(cur, dict), tlc_ty, span);
                     }
                 }
@@ -157,6 +163,74 @@ impl<'thir> Lowerer<'thir> {
 
         None
     }
+    /// A dictionary that fell back to `Lit(Nothing)` at a call whose target still
+    /// holds an unsolved inference variable can never be selected, at compile
+    /// time or by runtime dispatch; refuse the program instead of running a
+    /// placeholder. Callers apply this only in call position: a bare reference
+    /// (such as a module exporting a constrained function) stays polymorphic.
+    fn refuse_ambiguous_dispatch(
+        &mut self,
+        dict: TlcExprId,
+        constraint: BindingId,
+        target: TypeId,
+        span: Span,
+    ) {
+        if !matches!(self.expr_arena[dict], TlcExpr::Lit(Literal::Nothing)) {
+            return;
+        }
+        if !self.type_has_unsolved_infer_var(target, &mut rustc_hash::FxHashSet::default()) {
+            return;
+        }
+        let constraint = self
+            .thir
+            .binding_names
+            .get(constraint.0 as usize)
+            .cloned()
+            .unwrap_or_default();
+        let target = self.thir_type_display(target);
+        self.diagnostics.push(zutai_thir::ThirDiagnostic {
+            kind: zutai_thir::ThirDiagnosticKind::AmbiguousConstraintTarget { constraint, target },
+            span,
+        });
+    }
+
+    /// Whether `ty` still mentions an inference variable that THIR left unsolved.
+    fn type_has_unsolved_infer_var(
+        &self,
+        ty: TypeId,
+        seen: &mut rustc_hash::FxHashSet<TypeId>,
+    ) -> bool {
+        if !seen.insert(ty) {
+            return false;
+        }
+        let any = |ty: TypeId, seen: &mut rustc_hash::FxHashSet<TypeId>| {
+            self.type_has_unsolved_infer_var(ty, seen)
+        };
+        match &self.thir.type_arena[ty.0 as usize].kind {
+            TypeKind::InferVar(_) => true,
+            TypeKind::List(inner)
+            | TypeKind::Optional(inner)
+            | TypeKind::Maybe(inner)
+            | TypeKind::Code(inner)
+            | TypeKind::Patch { target: inner, .. }
+            | TypeKind::Effect { base: inner, .. }
+            | TypeKind::ForAll { body: inner, .. } => any(*inner, seen),
+            TypeKind::Function { from, to } => any(*from, seen) || any(*to, seen),
+            TypeKind::Apply { func, arg } => any(*func, seen) || any(*arg, seen),
+            TypeKind::AliasApply { args, .. } => args.iter().any(|arg| any(*arg, seen)),
+            TypeKind::Record(fields, _) => fields.iter().any(|field| any(field.ty, seen)),
+            TypeKind::Union(variants, _) => variants
+                .iter()
+                .filter_map(|variant| variant.payload)
+                .any(|payload| any(payload, seen)),
+            TypeKind::Tuple(items) => items.iter().any(|item| match item {
+                zutai_thir::TypeTupleItem::Named { ty, .. }
+                | zutai_thir::TypeTupleItem::Positional(ty) => any(*ty, seen),
+            }),
+            _ => false,
+        }
+    }
+
     pub(super) fn constraint_dispatch_target(
         &self,
         info: &crate::lower::witness::ConstraintMethodInfo,

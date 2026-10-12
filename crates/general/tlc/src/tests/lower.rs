@@ -936,3 +936,38 @@ fn derived_from_data_is_linear_in_optional_fields() {
         "each optional field should add a bounded number of nodes, got {per_field} ({small} -> {large})"
     );
 }
+
+fn ambiguous_targets(module: &TlcModule) -> Vec<String> {
+    module
+        .diagnostics
+        .iter()
+        .filter_map(|diagnostic| match &diagnostic.kind {
+            zutai_thir::ThirDiagnosticKind::AmbiguousConstraintTarget { constraint, .. } => {
+                Some(constraint.clone())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Nothing fixes the target of this `fromData`, so no witness can be chosen;
+/// lowering must refuse it rather than leave a placeholder dictionary to run.
+#[test]
+fn ambiguous_constraint_call_is_refused() {
+    let module = tlc_of("d :: Data = #int { value = 1; };\nfromData d\n");
+    assert_eq!(ambiguous_targets(&module), vec!["FromData".to_string()]);
+}
+
+/// An annotated call selects its witness, and exporting a constrained function
+/// as a value keeps it polymorphic; neither is ambiguous.
+#[test]
+fn determined_or_exported_constraint_uses_are_not_ambiguous() {
+    let annotated = tlc_of(
+        "d :: Data = #int { value = 1; };\nr :: Validation DecodeIssue Int = fromData d;\nr\n",
+    );
+    assert!(ambiguous_targets(&annotated).is_empty());
+    let exported = tlc_of(
+        "dec :: <A: FromData> Data -> Validation DecodeIssue A = d => fromData d;\n{ dec =; }\n",
+    );
+    assert!(ambiguous_targets(&exported).is_empty());
+}
