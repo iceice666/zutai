@@ -350,12 +350,9 @@ impl<'m> Lowerer<'m> {
         else {
             return value;
         };
-        if field.optional
-            && !matches!(
-                self.types[self.nodes[value].ty],
-                DfTy::Maybe(_) | DfTy::Optional(_)
-            )
-        {
+        // Only `Maybe` carries field presence; an `Optional` value is the payload
+        // of a `field? : T?` field and must be wrapped like any other value.
+        if field.optional && !matches!(self.types[self.nodes[value].ty], DfTy::Maybe(_)) {
             self.make_maybe_present(value, field.ty, span)
         } else {
             value

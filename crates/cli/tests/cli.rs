@@ -1380,6 +1380,20 @@ fn compile_derived_from_data_nested_record_matches_oracle() {
     );
 }
 
+/// Updating an optional field whose type is itself `Optional` stores the value
+/// as the field's payload; it is not mistaken for a presence wrapper.
+#[test]
+fn compile_update_of_optional_optional_field_matches_oracle() {
+    let src = "R :: type { a : Int; x? : Int?; };\n\
+               base :: R = { a = 1; };\n\
+               w :: R = base with { x = #some (5); };\n\
+               { x = w.x; w =; }\n";
+    let native = compile_bin_stdout("cli_test_update_optional_optional", src);
+    let interp = run_stdout("cli_test_update_optional_optional_oracle.zt", src);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(native.contains("x = #present (#some (5))"), "{native}");
+}
+
 #[test]
 fn compile_from_data_nullary_union_atom_envelope_matches_oracle() {
     let src = "Mode :: type { #dev; #prod; };\n\

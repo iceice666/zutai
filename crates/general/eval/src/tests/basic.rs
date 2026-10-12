@@ -1385,3 +1385,51 @@ fn u64_max_evaluates_as_bit_faithful_int() {
 fn u64_above_i64_max_evaluates_as_bit_faithful_int() {
     assert_eq!(run("9223372036854775808u64"), Value::Int(i64::MIN));
 }
+
+/// Overlaying optional fields stores what a record literal stores: an absent
+/// field is omitted and a present one holds its payload, so the result equals
+/// the literal it denotes.
+#[test]
+fn overlay_optional_fields_store_canonical_records() {
+    let src = r#"
+R :: type { a : Int; b? : Int; c? : Text; };
+base :: R = { a = 1; b = 2; };
+patched :: R = base |> overlay { c = "x"; };
+cleared :: R = { a = 1; } |> overlay { a = 5; };
+{ patched =; eqP = patched == { a = 1; b = 2; c = "x"; }; eqC = cleared == { a = 5; }; }
+"#;
+    let expected = "{ eqC = true;  eqP = true;  patched = { a = 1;  b = 2;  c = \"x\" } }";
+    assert_eq!(eval_file(src).unwrap().to_string(), expected);
+    assert_eq!(eval_tlc_file(src).unwrap().to_string(), expected);
+    assert_eq!(eval_thir_file(src).unwrap().to_string(), expected);
+}
+
+/// Projecting an untouched optional field's presence must not force its payload.
+#[test]
+fn overlay_does_not_force_unchanged_optional_fields() {
+    let src = r#"
+Config :: type { host? : Text; port : Int; };
+bad :: Text = bad;
+base :: Config = { host = bad; port = 80; };
+patch :: Patch Config = { port = 8080; };
+(overlay patch base).port
+"#;
+    assert_eq!(eval_tlc_file(src).unwrap(), Value::Int(8080));
+}
+
+/// `with` sets an optional field to its payload in strict (effectful) modules
+/// as well as lazy ones.
+#[test]
+fn record_update_of_optional_field_stores_payload_in_effectful_module() {
+    let src = r#"
+R :: type { a : Int; b? : Int; };
+x ::= handle (perform tick ()) with { tick = \_. resume 1; };
+base :: R = { a = 1; };
+w :: R = base with { b = 2; };
+{ w =; eq = w == { a = 1; b = 2; }; x =; }
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        "{ eq = true;  w = { a = 1;  b = 2 };  x = 1 }"
+    );
+}

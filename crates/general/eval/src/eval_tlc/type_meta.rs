@@ -192,16 +192,18 @@ impl<'a> TlcEvaluator<'a> {
         let Some((_, thunk)) = fields.iter().find(|(name, _)| name.as_ref() == field) else {
             return Ok(Value::Atom(Rc::from("absent")));
         };
-        match thunk.force_tlc(self)? {
-            Value::Atom(tag) if tag.as_ref() == "absent" => Ok(Value::Atom(tag)),
-            Value::TaggedValue { tag, payload }
+        // Record construction stores an optional field's payload unwrapped and
+        // omits an absent one, so presence is known without forcing the payload.
+        match thunk.peek() {
+            Some(Value::Atom(tag)) if tag.as_ref() == "absent" => Ok(Value::Atom(tag)),
+            Some(Value::TaggedValue { tag, payload })
                 if tag.as_ref() == "absent" || tag.as_ref() == "present" =>
             {
                 Ok(Value::TaggedValue { tag, payload })
             }
-            value => Ok(Value::TaggedValue {
+            _ => Ok(Value::TaggedValue {
                 tag: Rc::from("present"),
-                payload: Rc::new(vec![(Rc::from("0"), Thunk::ready(value))]),
+                payload: Rc::new(vec![(Rc::from("0"), thunk.clone())]),
             }),
         }
     }
