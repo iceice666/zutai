@@ -110,23 +110,60 @@ impl<'thir> Lowerer<'thir> {
         result_ty: TypeId,
         lhs: TlcExprId,
         rhs: TlcExprId,
-        fields: Vec<(String, TypeId)>,
+        fields: Vec<DeriveField>,
     ) -> TlcExprId {
         let mut expr = self.ordering_atom("eq", result_ty);
-        for (name, field_ty) in fields.into_iter().rev() {
-            let left = self.derive_get_field(lhs, name.as_str(), field_ty);
-            let right = self.derive_get_field(rhs, name.as_str(), field_ty);
-            let cmp = self.derive_component_ord(
-                constraint,
-                method_name,
-                field_ty,
-                result_ty,
-                left,
-                right,
-            );
+        for field in fields.into_iter().rev() {
+            let cmp = if field.optional {
+                self.derive_optional_field_ord(constraint, method_name, result_ty, lhs, rhs, &field)
+            } else {
+                let left = self.derive_get_field(lhs, field.name.as_str(), field.ty);
+                let right = self.derive_get_field(rhs, field.name.as_str(), field.ty);
+                self.derive_component_ord(constraint, method_name, field.ty, result_ty, left, right)
+            };
             expr = self.if_ordering_eq(cmp, expr, cmp, result_ty);
         }
         expr
+    }
+
+    /// Order an optional field as its `Maybe` union: `#absent` precedes
+    /// `#present`, and two present payloads compare through the field's witness.
+    fn derive_optional_field_ord(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        result_ty: TypeId,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        field: &DeriveField,
+    ) -> TlcExprId {
+        let result_tlc_ty = self.lower_type(result_ty);
+        let left = self.derive_get_optional_field(lhs, field.name.as_str(), field.ty);
+        let right_absent = self.derive_get_optional_field(rhs, field.name.as_str(), field.ty);
+        let eq = self.ordering_atom("eq", result_ty);
+        let lt = self.ordering_atom("lt", result_ty);
+        let absent_left =
+            self.derive_maybe_case(right_absent, field.ty, result_tlc_ty, eq, |_, _| lt);
+        self.derive_maybe_case(
+            left,
+            field.ty,
+            result_tlc_ty,
+            absent_left,
+            |this, left_value| {
+                let right = this.derive_get_optional_field(rhs, field.name.as_str(), field.ty);
+                let gt = this.ordering_atom("gt", result_ty);
+                this.derive_maybe_case(right, field.ty, result_tlc_ty, gt, |this, right_value| {
+                    this.derive_component_ord(
+                        constraint,
+                        method_name,
+                        field.ty,
+                        result_ty,
+                        left_value,
+                        right_value,
+                    )
+                })
+            },
+        )
     }
 
     pub(super) fn derive_ord_union(
@@ -208,6 +245,13 @@ impl<'thir> Lowerer<'thir> {
         result_ty: TypeId,
         variant: &DeriveVariant,
     ) -> (TlcPat, TlcPat, TlcExprId) {
+        if let Some((payload_ty, fields)) = variant.optional_payload.clone() {
+            let (left_pat, left) = self.variant_payload_pat(&variant.name, payload_ty);
+            let (right_pat, right) = self.variant_payload_pat(&variant.name, payload_ty);
+            let body =
+                self.derive_ord_record(constraint, method_name, result_ty, left, right, fields);
+            return (left_pat, right_pat, body);
+        }
         let span = zutai_syntax::Span::default();
         let mut left_fields = Vec::with_capacity(variant.payload_fields.len());
         let mut right_fields = Vec::with_capacity(variant.payload_fields.len());
@@ -346,20 +390,7 @@ impl<'thir> Lowerer<'thir> {
                 self.derive_leaf_compare(constraint, method_name, op, ty, lhs, rhs)
             }
             DeriveShape::Record(fields) => {
-                let mut parts = Vec::with_capacity(fields.len());
-                for (name, field_ty) in fields {
-                    let left = self.derive_get_field(lhs, name.as_str(), field_ty);
-                    let right = self.derive_get_field(rhs, name.as_str(), field_ty);
-                    parts.push(self.derive_component_compare(
-                        constraint,
-                        method_name,
-                        op,
-                        field_ty,
-                        left,
-                        right,
-                    ));
-                }
-                self.fold_bool_parts(parts)
+                self.derive_compare_record(constraint, method_name, op, fields, lhs, rhs)
             }
             DeriveShape::Tuple(items) => {
                 self.derive_tuple_compare(constraint, method_name, op, items, lhs, rhs)
@@ -368,6 +399,78 @@ impl<'thir> Lowerer<'thir> {
                 self.derive_union_compare(constraint, method_name, op, variants, lhs, rhs)
             }
         }
+    }
+
+    /// Field-wise equality of two records of the same type.
+    fn derive_compare_record(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        op: BuiltinOp,
+        fields: Vec<DeriveField>,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+    ) -> TlcExprId {
+        let mut parts = Vec::with_capacity(fields.len());
+        for field in fields {
+            if field.optional {
+                parts.push(self.derive_optional_field_compare(
+                    constraint,
+                    method_name,
+                    op,
+                    lhs,
+                    rhs,
+                    &field,
+                ));
+                continue;
+            }
+            let left = self.derive_get_field(lhs, field.name.as_str(), field.ty);
+            let right = self.derive_get_field(rhs, field.name.as_str(), field.ty);
+            parts.push(self.derive_component_compare(
+                constraint,
+                method_name,
+                op,
+                field.ty,
+                left,
+                right,
+            ));
+        }
+        self.fold_bool_parts(parts)
+    }
+
+    /// Equality of an optional field: equal presence, and equal payloads when
+    /// both are present.
+    fn derive_optional_field_compare(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        op: BuiltinOp,
+        lhs: TlcExprId,
+        rhs: TlcExprId,
+        field: &DeriveField,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let bool_ty = self.alloc_type(TlcType::Prim(crate::ir::PrimTy::Bool));
+        let left = self.derive_get_optional_field(lhs, field.name.as_str(), field.ty);
+        let right_absent = self.derive_get_optional_field(rhs, field.name.as_str(), field.ty);
+        let truth = self.alloc_expr(TlcExpr::Lit(Literal::Bool(true)), bool_ty, span);
+        let falsity = self.alloc_expr(TlcExpr::Lit(Literal::Bool(false)), bool_ty, span);
+        let absent_left =
+            self.derive_maybe_case(right_absent, field.ty, bool_ty, truth, |_, _| falsity);
+        self.derive_maybe_case(left, field.ty, bool_ty, absent_left, |this, left_value| {
+            let right = this.derive_get_optional_field(rhs, field.name.as_str(), field.ty);
+            let falsity = this.alloc_expr(TlcExpr::Lit(Literal::Bool(false)), bool_ty, span);
+            this.derive_maybe_case(right, field.ty, bool_ty, falsity, |this, right_value| {
+                this.derive_component_compare(
+                    constraint,
+                    method_name,
+                    op,
+                    field.ty,
+                    left_value,
+                    right_value,
+                )
+            })
+        })
     }
 
     pub(super) fn derive_component_compare(
@@ -520,6 +623,21 @@ impl<'thir> Lowerer<'thir> {
 
         let mut alts = Vec::with_capacity(variants.len() + 1);
         for variant in variants {
+            if let Some((payload_ty, fields)) = variant.optional_payload.clone() {
+                let (left_pat, left) = self.variant_payload_pat(&variant.name, payload_ty);
+                let (right_pat, right) = self.variant_payload_pat(&variant.name, payload_ty);
+                let body =
+                    self.derive_compare_record(constraint, method_name, op, fields, left, right);
+                alts.push(TlcAlt {
+                    pat: TlcPat::Tuple(vec![
+                        TlcPatItem::Positional(left_pat),
+                        TlcPatItem::Positional(right_pat),
+                    ]),
+                    guard: None,
+                    body,
+                });
+                continue;
+            }
             let mut left_fields = Vec::new();
             let mut right_fields = Vec::new();
             let mut parts = Vec::with_capacity(variant.payload_fields.len());

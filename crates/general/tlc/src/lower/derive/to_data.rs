@@ -246,8 +246,67 @@ impl<'thir> Lowerer<'thir> {
             _ => return None,
         };
         let name_ty = self.tlc_row_field_type(field_ty, "name")?;
+        let has_optional = fields.iter().any(|field| field.optional);
         let mut encoded = Vec::with_capacity(fields.len());
+        // With optional fields the entry list is built at runtime: an absent
+        // field has no entry, which `FromData` reads back as absent.
+        let mut dynamic = self.alloc_expr(TlcExpr::List(Vec::new()), fields_ty, span);
         for field in fields {
+            let name = self.alloc_expr(
+                TlcExpr::Lit(Literal::Str(field.name.clone())),
+                name_ty,
+                span,
+            );
+            if field.optional {
+                let maybe = self.derive_get_optional_field(value, field.name.as_str(), field.ty);
+                let payload_binding = self.fresh_synth_binding();
+                let payload_ty = self.lower_type(field.ty);
+                let payload = self.alloc_expr(TlcExpr::Var(payload_binding), payload_ty, span);
+                let data = self.synthesize_data_component(
+                    constraint,
+                    method_name,
+                    field.ty,
+                    payload,
+                    data_ty,
+                    span,
+                )?;
+                let entry = self.alloc_expr(
+                    TlcExpr::Record(vec![
+                        ("name".to_string(), name),
+                        ("value".to_string(), data),
+                    ]),
+                    field_ty,
+                    span,
+                );
+                let present = self.alloc_expr(TlcExpr::List(vec![entry]), fields_ty, span);
+                let absent = self.alloc_expr(TlcExpr::List(Vec::new()), fields_ty, span);
+                let entries = self.alloc_expr(
+                    TlcExpr::Case(
+                        maybe,
+                        vec![
+                            TlcAlt {
+                                pat: TlcPat::Atom("absent".to_string()),
+                                guard: None,
+                                body: absent,
+                            },
+                            TlcAlt {
+                                pat: TlcPat::Variant(
+                                    "present".to_string(),
+                                    Box::new(TlcPat::Tuple(vec![TlcPatItem::Positional(
+                                        TlcPat::Bind(payload_binding),
+                                    )])),
+                                ),
+                                guard: None,
+                                body: present,
+                            },
+                        ],
+                    ),
+                    fields_ty,
+                    span,
+                );
+                dynamic = self.alloc_expr(TlcExpr::ListAppend(dynamic, entries), fields_ty, span);
+                continue;
+            }
             let field_value = self.derive_get_field(value, field.name.as_str(), field.ty);
             let data = self.synthesize_data_component(
                 constraint,
@@ -257,21 +316,26 @@ impl<'thir> Lowerer<'thir> {
                 data_ty,
                 span,
             )?;
-            let name = self.alloc_expr(
-                TlcExpr::Lit(Literal::Str(field.name.clone())),
-                name_ty,
-                span,
-            );
-            encoded.push(self.alloc_expr(
+            let entry = self.alloc_expr(
                 TlcExpr::Record(vec![
                     ("name".to_string(), name),
                     ("value".to_string(), data),
                 ]),
                 field_ty,
                 span,
-            ));
+            );
+            if has_optional {
+                let one = self.alloc_expr(TlcExpr::List(vec![entry]), fields_ty, span);
+                dynamic = self.alloc_expr(TlcExpr::ListAppend(dynamic, one), fields_ty, span);
+            } else {
+                encoded.push(entry);
+            }
         }
-        let fields = self.alloc_expr(TlcExpr::List(encoded), fields_ty, span);
+        let fields = if has_optional {
+            dynamic
+        } else {
+            self.alloc_expr(TlcExpr::List(encoded), fields_ty, span)
+        };
         let payload = self.alloc_expr(
             TlcExpr::Record(vec![("fields".to_string(), fields)]),
             payload_ty,

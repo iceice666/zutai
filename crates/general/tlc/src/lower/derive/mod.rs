@@ -1,22 +1,38 @@
 use zutai_hir::BindingId;
 use zutai_thir::{RowTail, ThirConstraintMethod, ThirDeclKind, TypeId, TypeKind, TypeTupleItem};
 
-use crate::ir::{BuiltinOp, Literal, PrimTy, Row, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcType};
+use crate::ir::{
+    BuiltinOp, Literal, PrimTy, Row, TlcAlt, TlcExpr, TlcExprId, TlcPat, TlcPatItem, TlcType,
+};
 
 use crate::lower::Lowerer;
 
 #[derive(Clone)]
 enum DeriveShape {
     Leaf,
-    Record(Vec<(String, TypeId)>),
+    Record(Vec<DeriveField>),
     Tuple(Vec<(Option<String>, TypeId)>),
     Union(Vec<DeriveVariant>),
+}
+
+/// A record field as the structural derives see it. An optional field reads as
+/// `Maybe T`, so each derive must branch on its presence before using `T`.
+#[derive(Clone)]
+struct DeriveField {
+    name: String,
+    ty: TypeId,
+    optional: bool,
 }
 
 #[derive(Clone)]
 struct DeriveVariant {
     name: String,
     payload_fields: Vec<(String, TypeId)>,
+    /// The payload record type and its fields when any field is optional. Such
+    /// a payload is bound whole and read through `Maybe` field projections,
+    /// because a record pattern binding an optional field cannot match its
+    /// absence.
+    optional_payload: Option<(TypeId, Vec<DeriveField>)>,
 }
 
 #[derive(Clone)]
@@ -367,7 +383,19 @@ impl<'thir> Lowerer<'thir> {
         let text_ty = self.alloc_type(TlcType::Prim(PrimTy::Str));
         let list_ty = self.alloc_type(TlcType::List(text_ty));
         let list = self.alloc_expr(TlcExpr::List(pieces), list_ty, span);
-        let sep = self.alloc_expr(TlcExpr::Lit(Literal::Str(String::new())), text_ty, span);
+        self.text_join_list("", list)
+    }
+
+    /// Join a `List Text` expression with `separator` through `__textJoin`.
+    fn text_join_list(&mut self, separator: &str, list: TlcExprId) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let text_ty = self.alloc_type(TlcType::Prim(PrimTy::Str));
+        let list_ty = self.alloc_type(TlcType::List(text_ty));
+        let sep = self.alloc_expr(
+            TlcExpr::Lit(Literal::Str(separator.to_string())),
+            text_ty,
+            span,
+        );
         let join_binding = self.text_join_binding();
         let after_sep_ty = self.alloc_type(TlcType::Fun(list_ty, text_ty, Row::REmpty));
         let join_ty = self.alloc_type(TlcType::Fun(text_ty, after_sep_ty, Row::REmpty));
@@ -384,6 +412,18 @@ impl<'thir> Lowerer<'thir> {
             .position(|name| name == "__textJoin")
             .expect("__textJoin builtin binding is always seeded");
         BindingId(index as u32)
+    }
+
+    /// `#name payload`, binding a variant's whole payload record.
+    fn variant_payload_pat(&mut self, name: &str, payload_ty: TypeId) -> (TlcPat, TlcExprId) {
+        let span = zutai_syntax::Span::default();
+        let binding = self.fresh_synth_binding();
+        let ty = self.lower_type(payload_ty);
+        let value = self.alloc_expr(TlcExpr::Var(binding), ty, span);
+        (
+            TlcPat::Variant(name.to_string(), Box::new(TlcPat::Bind(binding))),
+            value,
+        )
     }
 
     fn variant_wildcard_pat(&self, variant: &DeriveVariant) -> TlcPat {
@@ -476,6 +516,60 @@ impl<'thir> Lowerer<'thir> {
         self.alloc_expr(TlcExpr::GetField(base, field.to_string()), ty, span)
     }
 
+    /// Project an optional field, which reads as `Maybe T` rather than `T`.
+    fn derive_get_optional_field(
+        &mut self,
+        base: TlcExprId,
+        field: &str,
+        field_ty: TypeId,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let inner = self.lower_type(field_ty);
+        let ty = self.alloc_type(TlcType::Maybe(inner));
+        self.alloc_expr(TlcExpr::GetField(base, field.to_string()), ty, span)
+    }
+
+    /// `match maybe { | #absent => absent; | #present (x) => present x; }`,
+    /// where `present` receives the bound payload of type `field_ty`.
+    fn derive_maybe_case(
+        &mut self,
+        maybe: TlcExprId,
+        field_ty: TypeId,
+        result_ty: crate::ir::TlcTypeId,
+        absent: TlcExprId,
+        present: impl FnOnce(&mut Self, TlcExprId) -> TlcExprId,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let binding = self.fresh_synth_binding();
+        let inner_ty = self.lower_type(field_ty);
+        let payload = self.alloc_expr(TlcExpr::Var(binding), inner_ty, span);
+        let present = present(self, payload);
+        self.alloc_expr(
+            TlcExpr::Case(
+                maybe,
+                vec![
+                    TlcAlt {
+                        pat: TlcPat::Atom("absent".to_string()),
+                        guard: None,
+                        body: absent,
+                    },
+                    TlcAlt {
+                        pat: TlcPat::Variant(
+                            "present".to_string(),
+                            Box::new(TlcPat::Tuple(vec![TlcPatItem::Positional(TlcPat::Bind(
+                                binding,
+                            ))])),
+                        ),
+                        guard: None,
+                        body: present,
+                    },
+                ],
+            ),
+            result_ty,
+            span,
+        )
+    }
+
     fn fold_bool_parts(&mut self, parts: impl IntoIterator<Item = TlcExprId>) -> TlcExprId {
         let span = zutai_syntax::Span::default();
         let bool_ty = self.alloc_type(TlcType::Prim(crate::ir::PrimTy::Bool));
@@ -493,7 +587,11 @@ impl<'thir> Lowerer<'thir> {
             TypeKind::Record(fields, RowTail::Closed) => DeriveShape::Record(
                 fields
                     .into_iter()
-                    .map(|field| (field.name, field.ty))
+                    .map(|field| DeriveField {
+                        name: field.name,
+                        ty: field.ty,
+                        optional: field.optional,
+                    })
                     .collect(),
             ),
             TypeKind::Tuple(items) => DeriveShape::Tuple(
@@ -509,21 +607,40 @@ impl<'thir> Lowerer<'thir> {
                 variants
                     .into_iter()
                     .map(|variant| {
-                        let payload_fields = variant
-                            .payload
-                            .and_then(|payload| match self.resolve_alias_shape(payload) {
-                                TypeKind::Record(fields, RowTail::Closed) => Some(
-                                    fields
-                                        .into_iter()
-                                        .map(|field| (field.name, field.ty))
-                                        .collect(),
-                                ),
+                        let payload_record = variant.payload.and_then(|payload| {
+                            match self.resolve_alias_shape(payload) {
+                                TypeKind::Record(fields, RowTail::Closed) => {
+                                    Some((payload, fields))
+                                }
                                 _ => None,
+                            }
+                        });
+                        let payload_fields = payload_record
+                            .as_ref()
+                            .map(|(_, fields)| {
+                                fields
+                                    .iter()
+                                    .map(|field| (field.name.clone(), field.ty))
+                                    .collect()
                             })
                             .unwrap_or_default();
+                        let optional_payload = payload_record
+                            .filter(|(_, fields)| fields.iter().any(|field| field.optional))
+                            .map(|(payload, fields)| {
+                                let fields = fields
+                                    .into_iter()
+                                    .map(|field| DeriveField {
+                                        name: field.name,
+                                        ty: field.ty,
+                                        optional: field.optional,
+                                    })
+                                    .collect();
+                                (payload, fields)
+                            });
                         DeriveVariant {
                             name: variant.name,
                             payload_fields,
+                            optional_payload,
                         }
                     })
                     .collect(),

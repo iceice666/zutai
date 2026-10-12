@@ -1257,3 +1257,46 @@ r :: Validation DecodeIssue R = fromData d;
     let names: Vec<&str> = decoded.iter().map(|(name, _)| name.as_ref()).collect();
     assert_eq!(names, ["a", "c", "d"]);
 }
+
+/// Structural derives see an optional field as `Maybe T`: `Show` and `ToData`
+/// omit an absent field, `Ord` orders absence first, and equality compares
+/// presence — for records and for union payload records.
+#[test]
+fn structural_derives_handle_optional_fields() {
+    let src = r#"
+Ordering :: type { #lt; #eq; #gt; };
+Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow
+Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex
+Same :: <A> @A { eq :: A -> A -> Bool; } derive
+Show @Int :: { show = \n. "n"; }
+Same @Int :: derive
+R :: type { a : Int; b? : Int; };
+U :: type { #p : { x : Int; y? : Int; }; #q; };
+Show @R :: derive
+Ord @R :: derive
+Same @R :: derive
+ToData @R :: derive
+FromData @R :: derive
+Show @U :: derive
+Ord @U :: derive
+Same @U :: derive
+x :: R = { a = 1; b = 2; };
+y :: R = { a = 1; };
+u :: U = #p { x = 1; };
+v :: U = #p { x = 1; y = 2; };
+back :: Data -> Validation DecodeIssue R = d => fromData d;
+roundTrip :: R -> Bool = r => match back (toData r) { | #valid { value = w; } => w == r; | _ => false; };
+{
+  showX = show x; showY = show y; showU = show u; showV = show v;
+  xy = compare x y; yx = compare y x; uv = compare u v;
+  sameXY = eq x y; sameYY = eq y y; sameUU = eq u u; sameUV = eq u v;
+  rtX = roundTrip x; rtY = roundTrip y;
+}
+"#;
+    assert_eq!(
+        eval_tlc_file(src).unwrap().to_string(),
+        "{ rtX = true;  rtY = true;  sameUU = true;  sameUV = false;  sameXY = false;  sameYY = true;  \
+         showU = \"#p {x = n}\";  showV = \"#p {x = n, y = n}\";  showX = \"{a = n, b = n}\";  \
+         showY = \"{a = n}\";  uv = #lt;  xy = #gt;  yx = #lt }"
+    );
+}

@@ -39,7 +39,15 @@ impl<'thir> Lowerer<'thir> {
             DeriveShape::Union(variants) => {
                 let mut alts = Vec::with_capacity(variants.len() + 1);
                 for variant in variants {
-                    let (pat, body) = if variant.payload_fields.is_empty() {
+                    let (pat, body) = if let Some((payload_ty, fields)) =
+                        variant.optional_payload.clone()
+                    {
+                        let (pat, payload) = self.variant_payload_pat(&variant.name, payload_ty);
+                        let label = self.str_lit(&format!("#{} ", variant.name));
+                        let record =
+                            self.derive_show_record(constraint, method_name, fields, payload);
+                        (pat, self.text_join(vec![label, record]))
+                    } else if variant.payload_fields.is_empty() {
                         (
                             TlcPat::Atom(variant.name.clone()),
                             self.str_lit(&format!("#{}", variant.name)),
@@ -92,20 +100,7 @@ impl<'thir> Lowerer<'thir> {
                 self.alloc_expr(TlcExpr::Case(arg, alts), text_ty, span)
             }
             DeriveShape::Record(fields) => {
-                let mut pieces = Vec::new();
-                pieces.push(self.str_lit("{"));
-                for (index, (name, field_ty)) in fields.into_iter().enumerate() {
-                    if index > 0 {
-                        pieces.push(self.str_lit(", "));
-                    }
-                    pieces.push(self.str_lit(&format!("{name} = ")));
-                    let field = self.derive_get_field(arg, name.as_str(), field_ty);
-                    let shown =
-                        self.derive_component_show(constraint, method_name, field_ty, field);
-                    pieces.push(shown);
-                }
-                pieces.push(self.str_lit("}"));
-                self.text_join(pieces)
+                self.derive_show_record(constraint, method_name, fields, arg)
             }
             DeriveShape::Tuple(items) => {
                 let mut item_pats = Vec::with_capacity(items.len());
@@ -156,6 +151,62 @@ impl<'thir> Lowerer<'thir> {
                 span,
             ),
         }
+    }
+
+    /// Render `{name = value, ...}`; an absent optional field is omitted.
+    fn derive_show_record(
+        &mut self,
+        constraint: BindingId,
+        method_name: &str,
+        fields: Vec<DeriveField>,
+        arg: TlcExprId,
+    ) -> TlcExprId {
+        let span = zutai_syntax::Span::default();
+        let text_ty = self.alloc_type(TlcType::Prim(PrimTy::Str));
+        if fields.iter().any(|field| field.optional) {
+            // An absent optional field is omitted, as a record literal omits
+            // it, so the separators are chosen at runtime by joining the
+            // rendered entries that are present.
+            let list_ty = self.alloc_type(TlcType::List(text_ty));
+            let mut entries = self.alloc_expr(TlcExpr::List(Vec::new()), list_ty, span);
+            for field in fields {
+                let label = self.str_lit(&format!("{} = ", field.name));
+                let entry = if field.optional {
+                    let maybe = self.derive_get_optional_field(arg, field.name.as_str(), field.ty);
+                    let empty = self.alloc_expr(TlcExpr::List(Vec::new()), list_ty, span);
+                    self.derive_maybe_case(maybe, field.ty, list_ty, empty, |this, value| {
+                        let shown =
+                            this.derive_component_show(constraint, method_name, field.ty, value);
+                        let text = this.text_join(vec![label, shown]);
+                        this.alloc_expr(TlcExpr::List(vec![text]), list_ty, span)
+                    })
+                } else {
+                    let value = self.derive_get_field(arg, field.name.as_str(), field.ty);
+                    let shown =
+                        self.derive_component_show(constraint, method_name, field.ty, value);
+                    let text = self.text_join(vec![label, shown]);
+                    self.alloc_expr(TlcExpr::List(vec![text]), list_ty, span)
+                };
+                entries = self.alloc_expr(TlcExpr::ListAppend(entries, entry), list_ty, span);
+            }
+            let open = self.str_lit("{");
+            let body = self.text_join_list(", ", entries);
+            let close = self.str_lit("}");
+            return self.text_join(vec![open, body, close]);
+        }
+        let mut pieces = Vec::new();
+        pieces.push(self.str_lit("{"));
+        for (index, field) in fields.into_iter().enumerate() {
+            if index > 0 {
+                pieces.push(self.str_lit(", "));
+            }
+            pieces.push(self.str_lit(&format!("{} = ", field.name)));
+            let value = self.derive_get_field(arg, field.name.as_str(), field.ty);
+            let shown = self.derive_component_show(constraint, method_name, field.ty, value);
+            pieces.push(shown);
+        }
+        pieces.push(self.str_lit("}"));
+        self.text_join(pieces)
     }
 
     /// Render one component under `Show` by delegating to its witness's `show`

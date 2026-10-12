@@ -1425,6 +1425,37 @@ fn compile_update_of_optional_optional_field_matches_oracle() {
     assert!(native.contains("x = #present (#some (5))"), "{native}");
 }
 
+/// Structural derives over optional fields agree natively with the interpreter.
+#[test]
+fn compile_structural_derives_over_optional_fields_match_oracle() {
+    let src = "Ordering :: type { #lt; #eq; #gt; };\n\
+               Show :: <A> @A { show :: A -> Text; } derive = <T> => deriveShow\n\
+               Ord :: <A> @A { compare :: A -> A -> Ordering; } derive = <T> => deriveOrdLex\n\
+               Show @Int :: { show = \\n. \"n\"; }\n\
+               R :: type { a : Int; b? : Int; };\n\
+               U :: type { #p : { x : Int; y? : Int; }; #q; };\n\
+               Show @R :: derive\n\
+               Ord @R :: derive\n\
+               ToData @R :: derive\n\
+               Show @U :: derive\n\
+               Ord @U :: derive\n\
+               x :: R = { a = 1; b = 2; };\n\
+               y :: R = { a = 1; };\n\
+               u :: U = #p { x = 1; };\n\
+               v :: U = #p { x = 1; y = 2; };\n\
+               { showX = show x; showY = show y; showU = show u; xy = compare x y; uv = compare u v; dataY = toData y; }\n";
+    let native = compile_bin_stdout("cli_test_structural_optional_derives", src);
+    let interp = run_stdout("cli_test_structural_optional_derives_oracle.zt", src);
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert!(
+        native.contains("showY = \"{a = n}\"")
+            && native.contains("showU = \"#p {x = n}\"")
+            && native.contains("xy = #gt")
+            && native.contains("uv = #lt"),
+        "{native}"
+    );
+}
+
 #[test]
 fn compile_from_data_nullary_union_atom_envelope_matches_oracle() {
     let src = "Mode :: type { #dev; #prod; };\n\
