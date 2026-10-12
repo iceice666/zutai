@@ -990,6 +990,9 @@ impl<'thir> Lowerer<'thir> {
             let pat_thir_ty = pat.ty;
             let (param_binding, param_ty) = match pat.kind {
                 ThirPatKind::Bind(b) => (b, self.lower_type(pat_thir_ty)),
+                // A wildcard binds nothing; keeping the bare parameter preserves
+                // the `Lam` shape handler clauses (`\_. resume …`) are lowered from.
+                ThirPatKind::Wildcard => (self.fresh_synth_binding(), self.lower_type(pat_thir_ty)),
                 _ => {
                     let fresh = self.fresh_synth_binding();
                     let ty = self.lower_type(pat_thir_ty);
