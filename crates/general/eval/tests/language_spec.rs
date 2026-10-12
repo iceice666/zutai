@@ -103,6 +103,7 @@ const EXPECTED_ZT_CHECK: &[&str] = &[
     "docs/spec/06-polymorphism/row-polymorphism.md#15",
     "docs/spec/06-polymorphism/row-polymorphism.md#17",
     "docs/spec/06-polymorphism/row-polymorphism.md#20",
+    "docs/spec/06-polymorphism/row-polymorphism.md#21",
     "docs/spec/07-modules/modules.md#01",
     "docs/spec/07-modules/serialization-boundary.md#04",
     "docs/spec/07-modules/serialization-boundary.md#06",
@@ -207,6 +208,7 @@ const EXPECTED_ZT_RUN: &[(&str, &str)] = &[
     ("docs/spec/06-polymorphism/row-polymorphism.md#15", "<type>"),
     ("docs/spec/06-polymorphism/row-polymorphism.md#17", "()"),
     ("docs/spec/06-polymorphism/row-polymorphism.md#20", "()"),
+    ("docs/spec/06-polymorphism/row-polymorphism.md#21", "[8081]"),
     (
         "docs/spec/07-modules/modules.md#01",
         "{ RawServer = <type>;  Server = <type>;  normalize = <function/1> }",
