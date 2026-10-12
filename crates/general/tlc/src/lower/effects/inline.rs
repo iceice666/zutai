@@ -733,7 +733,11 @@ impl<'m> EffectInliner<'m> {
         let span = self.module.spans.get(&source).copied();
         let slot = self.module.dict_field_slots.get(&source).copied();
         let key = self.module.dict_dispatch_keys.get(&source).cloned();
+        let request = self.module.extern_dict_keys.get(&source).cloned();
         let id = self.module.expr_arena.alloc(expr);
+        if let Some(request) = request {
+            self.module.extern_dict_keys.insert(id, request);
+        }
         if let Some(ty) = ty {
             self.module.expr_types.insert(id, ty);
         }

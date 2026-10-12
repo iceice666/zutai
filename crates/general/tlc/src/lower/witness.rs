@@ -184,7 +184,15 @@ impl<'thir> Lowerer<'thir> {
         }
         use crate::ir::{Literal, PrimTy};
         let ty = self.alloc_type(TlcType::Prim(PrimTy::Nothing));
-        self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span)
+        let dict = self.alloc_expr(TlcExpr::Lit(Literal::Nothing), ty, span);
+        if let Some(key) = self.thir_type_to_extern_key(inst_type_id)
+            && !key.contains('@')
+            && let Some(constraint) = self.thir.binding_names.get(cst_binding.0 as usize)
+        {
+            self.extern_dict_keys
+                .insert(dict, (constraint.clone(), key));
+        }
+        dict
     }
 
     /// Try to build a TLC expression for a witness dict from an imported dep module.

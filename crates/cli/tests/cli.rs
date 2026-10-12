@@ -7665,3 +7665,37 @@ fn model_check_temporal_limit_stays_inconclusive() {
         ))
         .stdout(predicate::str::contains("graph: states=2 transitions=2"));
 }
+
+// ── Cross-module constrained functions and imported dictionaries ─────────────
+
+/// A local constrained function called at a type whose witness is imported,
+/// concrete or conditional, receives that dictionary in the interpreter too.
+#[test]
+fn local_constrained_function_uses_imported_witnesses() {
+    let (interp, native) = import_run_vs_compile(
+        "local_constrained_imported_witness",
+        "main.zt",
+        &[
+            (
+                "eq_lib.zt",
+                concat!(
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "Eq @Int :: { eq = \\a b. a == b; }\n",
+                    "Eq @(List A) :: <A: Eq> { eq = \\xs ys. false; }\n",
+                    "1\n",
+                ),
+            ),
+            (
+                "main.zt",
+                concat!(
+                    "_ ::= import \"eq_lib.zt\";\n",
+                    "Eq :: <A> @A { eq :: A -> A -> Bool; }\n",
+                    "both :: <A: Eq> A -> A -> Bool = x y => eq x y;\n",
+                    "(both 1 1, both 1 2, both { 1; } { 1; })\n",
+                ),
+            ),
+        ],
+    );
+    assert_eq!(native, interp, "native must match the interpreter oracle");
+    assert_eq!(interp.trim(), "(true, false, false)");
+}

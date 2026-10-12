@@ -27,7 +27,14 @@ impl<'a> TlcEvaluator<'a> {
         'a: 'eval,
     {
         match self.module.expr_arena[id].clone() {
-            TlcExpr::Lit(lit) => Ok(EvalControl::Value(eval_literal(&lit))),
+            TlcExpr::Lit(lit) => {
+                if let Some(request) = self.module.extern_dict_keys.get(&id)
+                    && let Some(dict) = self.witness_dicts.and_then(|dicts| dicts.get(request))
+                {
+                    return Ok(EvalControl::Value(dict.clone()));
+                }
+                Ok(EvalControl::Value(eval_literal(&lit)))
+            }
 
             TlcExpr::Var(b) => {
                 let thunk = env.lookup(b)?;

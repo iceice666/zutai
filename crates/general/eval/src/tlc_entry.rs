@@ -100,6 +100,7 @@ pub struct TlcSession {
     root: ModuleId,
     imports: FxHashMap<ImportKey, Value>,
     operator_witnesses: FxHashMap<(String, String), Value>,
+    witness_dicts: FxHashMap<(String, String), Value>,
     entry: thunk::Thunk,
 }
 
@@ -130,7 +131,7 @@ impl TlcSession {
         // Instantiate imported conditional and bare constructor witnesses for
         // the concrete dispatch keys needed by the root module.
         if !tables.conditionals.is_empty() || !tables.concrete_dicts.is_empty() {
-            let mat_ev = evaluator_with_handler(&registry, root, &imports, None, handler)?;
+            let mat_ev = evaluator_with_handler(&registry, root, &imports, None, None, handler)?;
             let needed: Vec<String> = root_module.dict_dispatch_keys.values().cloned().collect();
             let WitnessTables {
                 operators,
@@ -171,8 +172,34 @@ impl TlcSession {
             }
         }
 
-        let ev =
-            evaluator_with_handler(&registry, root, &imports, Some(&tables.operators), handler)?;
+        // Instantiate every imported dictionary a module passes as a value
+        // (`TlcModule::extern_dict_keys`), including conditional witnesses.
+        let requested: Vec<(String, String)> = registry
+            .iter()
+            .flat_map(|module| module.extern_dict_keys.values().cloned())
+            .collect();
+        if !requested.is_empty() {
+            let mat_ev = evaluator_with_handler(&registry, root, &imports, None, None, handler)?;
+            for (constraint, key) in requested {
+                materialize_conditional_dict(
+                    &mat_ev,
+                    &constraint,
+                    &key,
+                    &tables.conditionals,
+                    &mut tables.concrete_dicts,
+                    0,
+                );
+            }
+        }
+
+        let ev = evaluator_with_handler(
+            &registry,
+            root,
+            &imports,
+            Some(&tables.operators),
+            Some(&tables.concrete_dicts),
+            handler,
+        )?;
         let top = seed_tlc_prelude(thir_file, env::Env::empty());
         let top = ev.build_top_env_from(top)?;
         let final_id = root_module
@@ -185,6 +212,7 @@ impl TlcSession {
             root,
             imports,
             operator_witnesses: tables.operators,
+            witness_dicts: tables.concrete_dicts,
             entry,
         })
     }
@@ -242,6 +270,7 @@ impl TlcSession {
             self.root,
             &self.imports,
             Some(&self.operator_witnesses),
+            Some(&self.witness_dicts),
             handler,
         )?;
         ev.apply_to_value(function, argument)
@@ -271,6 +300,7 @@ impl TlcSession {
             self.root,
             &self.imports,
             Some(&self.operator_witnesses),
+            Some(&self.witness_dicts),
             handler,
         )?;
         eval_tlc::tlc_force_deep(value, &ev)
@@ -300,6 +330,7 @@ impl TlcSession {
             self.root,
             &self.imports,
             Some(&self.operator_witnesses),
+            Some(&self.witness_dicts),
             handler,
         )?;
         value.force_tlc(&ev)
@@ -344,7 +375,11 @@ fn build_tlc_session_into(
         let (dep_thir_file, dep_module) =
             completed_tlc_inputs_for_session(imported_analysis.as_ref())?;
         let registry: Vec<&zutai_tlc::TlcModule> = modules.iter().map(Rc::as_ref).collect();
-        let dep_ev = evaluator_with_handler(&registry, dep_id, imports, None, handler)?;
+        // A dependency's own imports are already collected, so its dictionaries
+        // passed as values resolve while it is evaluated here.
+        let dep_dicts = tables.concrete_dicts.clone();
+        let dep_ev =
+            evaluator_with_handler(&registry, dep_id, imports, None, Some(&dep_dicts), handler)?;
         let dep_top = seed_tlc_prelude(dep_thir_file, env::Env::empty());
         let dep_top = dep_ev.build_top_env_from(dep_top)?;
         let final_id = dep_module
@@ -373,6 +408,7 @@ fn evaluator_with_handler<'a>(
     active_module: ModuleId,
     imports: &'a FxHashMap<ImportKey, Value>,
     operator_witnesses: Option<&'a FxHashMap<(String, String), Value>>,
+    witness_dicts: Option<&'a FxHashMap<(String, String), Value>>,
     handler: Option<&'a dyn EffectHandler>,
 ) -> Result<eval_tlc::TlcEvaluator<'a>, EvalError> {
     let mut evaluator = match operator_witnesses {
@@ -384,6 +420,9 @@ fn evaluator_with_handler<'a>(
         )?,
         None => eval_tlc::TlcEvaluator::new_in_registry(registry, active_module, imports)?,
     };
+    if let Some(dicts) = witness_dicts {
+        evaluator = evaluator.with_witness_dicts(dicts);
+    }
     if let Some(handler) = handler {
         evaluator = evaluator.with_effect_handler(handler);
     }

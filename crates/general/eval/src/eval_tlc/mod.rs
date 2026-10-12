@@ -96,6 +96,9 @@ pub struct TlcEvaluator<'a> {
     active_module: ModuleId,
     imports: Option<&'a FxHashMap<ImportKey, Value>>,
     operator_witnesses: Option<&'a FxHashMap<(String, String), Value>>,
+    /// Imported witness dictionaries keyed by `(constraint, target_key)`,
+    /// supplied for the dictionaries listed in `TlcModule::extern_dict_keys`.
+    witness_dicts: Option<&'a FxHashMap<(String, String), Value>>,
     effect_handler: Option<&'a dyn EffectHandler>,
     defer_aggregates: bool,
 }
@@ -122,6 +125,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: ModuleId(0),
             imports: None,
             operator_witnesses: None,
+            witness_dicts: None,
             effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
@@ -137,6 +141,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: ModuleId(0),
             imports: Some(imports),
             operator_witnesses: None,
+            witness_dicts: None,
             effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         }
@@ -157,6 +162,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module,
             imports: Some(imports),
             operator_witnesses: None,
+            witness_dicts: None,
             effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
@@ -178,9 +184,16 @@ impl<'a> TlcEvaluator<'a> {
             active_module,
             imports: Some(imports),
             operator_witnesses: Some(operator_witnesses),
+            witness_dicts: None,
             effect_handler: None,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })
+    }
+
+    /// Supply imported witness dictionaries for `TlcModule::extern_dict_keys`.
+    pub fn with_witness_dicts(mut self, dicts: &'a FxHashMap<(String, String), Value>) -> Self {
+        self.witness_dicts = Some(dicts);
+        self
     }
 
     /// Route residual effects through `handler` instead of the native host.
@@ -197,6 +210,7 @@ impl<'a> TlcEvaluator<'a> {
                 active_module: self.active_module,
                 imports: self.imports,
                 operator_witnesses: self.operator_witnesses,
+                witness_dicts: self.witness_dicts,
                 effect_handler: self.effect_handler,
                 defer_aggregates: self.defer_aggregates,
             });
@@ -214,6 +228,7 @@ impl<'a> TlcEvaluator<'a> {
             active_module: home,
             imports: self.imports,
             operator_witnesses: self.operator_witnesses,
+            witness_dicts: self.witness_dicts,
             effect_handler: self.effect_handler,
             defer_aggregates: tlc_module_can_defer_aggregates(module),
         })

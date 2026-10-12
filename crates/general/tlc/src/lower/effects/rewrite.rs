@@ -694,6 +694,9 @@ impl<'module> EffectElaborator<'module> {
         if let Some(key) = self.module.dict_dispatch_keys.get(&source).cloned() {
             self.module.dict_dispatch_keys.insert(id, key);
         }
+        if let Some(request) = self.module.extern_dict_keys.get(&source).cloned() {
+            self.module.extern_dict_keys.insert(id, request);
+        }
         let span = self.module.spans.get(&source).copied().unwrap_or_default();
         self.module.spans.insert(id, span);
         id

@@ -536,6 +536,12 @@ pub struct TlcModule {
     /// empty string marks an abstract/unkeyable operand (never matches a witness,
     /// so dispatch refuses rather than guessing).
     pub dict_dispatch_keys: FxHashMap<TlcExprId, String>,
+    /// `(constraint, target_key)` for each dictionary that lowering could not
+    /// resolve locally at a concrete target and left as `Lit(Nothing)`. The
+    /// witness may come from an import this import-agnostic lowering cannot
+    /// see; the interpreter supplies the imported dictionary for these nodes.
+    /// Backends resolve imported witnesses through their own extern tables.
+    pub extern_dict_keys: FxHashMap<TlcExprId, (String, String)>,
     pub spans: FxHashMap<TlcExprId, Span>,
     /// The module's final expression — evaluated to produce the module's value.
     pub final_expr: Option<TlcExprId>,

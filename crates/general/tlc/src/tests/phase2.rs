@@ -155,6 +155,7 @@ fn nbe_fuel_exhaustion_is_clean_error() {
         expr_types: FxHashMap::default(),
         dict_field_slots: FxHashMap::default(),
         dict_dispatch_keys: FxHashMap::default(),
+        extern_dict_keys: Default::default(),
         spans: FxHashMap::default(),
         final_expr: None,
         extern_global_bindings: FxHashMap::default(),

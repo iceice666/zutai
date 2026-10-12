@@ -101,6 +101,8 @@ struct Lowerer<'thir> {
     /// (operand type's `target_key` string). Collected into
     /// `TlcModule::dict_dispatch_keys` for runtime imported-witness dispatch.
     dict_dispatch_keys: FxHashMap<TlcExprId, String>,
+    /// See `TlcModule::extern_dict_keys`.
+    extern_dict_keys: FxHashMap<TlcExprId, (String, String)>,
     /// Concrete constraint-method dispatches whose dict resolved to `Lit(Nothing)`
     /// (no local/derivable witness, not an abstract dict param). Collected into
     /// `TlcModule::unresolved_dispatches` for the semantic witness-coverage gate.
@@ -191,6 +193,7 @@ impl<'thir> Lowerer<'thir> {
             spans: FxHashMap::default(),
             dict_field_slots: FxHashMap::default(),
             dict_dispatch_keys: FxHashMap::default(),
+            extern_dict_keys: FxHashMap::default(),
             unresolved_dispatches: Vec::new(),
             type_cache: FxHashMap::default(),
             infer_to_tyvar: FxHashMap::default(),
@@ -256,6 +259,7 @@ impl<'thir> Lowerer<'thir> {
             expr_types: std::mem::take(&mut self.expr_types),
             dict_field_slots: std::mem::take(&mut self.dict_field_slots),
             dict_dispatch_keys: std::mem::take(&mut self.dict_dispatch_keys),
+            extern_dict_keys: std::mem::take(&mut self.extern_dict_keys),
             spans: std::mem::take(&mut self.spans),
             extern_global_bindings: std::mem::take(&mut self.extern_global_bindings),
             diagnostics: std::mem::take(&mut self.diagnostics),

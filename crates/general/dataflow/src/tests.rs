@@ -1290,6 +1290,7 @@ fn module_import_is_rejected_before_dataflow_core() {
         extern_global_bindings: rustc_hash::FxHashMap::default(),
         diagnostics: Vec::new(),
         unresolved_dispatches: Vec::new(),
+        extern_dict_keys: Default::default(),
         residual_type_values: false,
     };
 

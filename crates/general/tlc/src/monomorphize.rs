@@ -589,7 +589,11 @@ fn clone_expr(
     let span = module.spans.get(&orig).copied();
     let slot = module.dict_field_slots.get(&orig).copied();
     let key = module.dict_dispatch_keys.get(&orig).cloned();
+    let request = module.extern_dict_keys.get(&orig).cloned();
     let id = module.expr_arena.alloc(new_expr);
+    if let Some(request) = request {
+        module.extern_dict_keys.insert(id, request);
+    }
     if let Some(t) = new_ty {
         module.expr_types.insert(id, t);
     }
