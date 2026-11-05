@@ -3,6 +3,7 @@ name = "zutai-syntax"
 description = "Parser and AST definitions for Zutai general mode (.zt)."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 rowan = "0.16.1"

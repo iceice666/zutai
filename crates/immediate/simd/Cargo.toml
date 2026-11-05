@@ -3,6 +3,7 @@ name = "zutai-im-simd"
 description = "The SIMD-accelerated parser for Zutai immediate mode."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "2"

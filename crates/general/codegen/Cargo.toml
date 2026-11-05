@@ -3,6 +3,7 @@ name = "zutai-codegen"
 description = "LLVM IR code generation from SSA for Zutai."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 zutai-ssa = { path = "../ssa" }

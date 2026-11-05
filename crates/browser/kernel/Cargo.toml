@@ -2,6 +2,7 @@
 name = "zutai-browser"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 description = "Zutai browser kernel, prerenderer, and WebAssembly runtime"
 
 [lib]

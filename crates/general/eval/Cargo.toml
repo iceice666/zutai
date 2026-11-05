@@ -3,6 +3,7 @@ name = "zutai-eval"
 description = "TLC-first reference evaluator and THIR regression oracle for Zutai general mode (.zt)."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [features]
 default = ["native-host"]

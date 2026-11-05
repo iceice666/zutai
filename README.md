@@ -140,3 +140,7 @@ The implementation is organized by role:
 
 See the [implementation status](docs/project/status.md) for exact support levels
 and the [roadmap](docs/project/roadmap.md) for the investment policy.
+
+## License
+
+Zutai is released under the [MIT License](LICENSE).

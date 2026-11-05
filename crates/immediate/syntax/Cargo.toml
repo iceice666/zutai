@@ -3,6 +3,7 @@ name = "zutai-im-syntax"
 description = "Parser definitions for Zutai immediate mode (.zti)."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 zutai-types = { path = "../types" }

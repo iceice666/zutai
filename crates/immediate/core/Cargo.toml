@@ -3,6 +3,7 @@ name = "zutai-im"
 description = "Immediate-mode (`.zti`) facade: unified parse over feature-selected backends."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 thiserror = "2"

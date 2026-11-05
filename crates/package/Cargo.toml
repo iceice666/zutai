@@ -3,6 +3,7 @@ name = "zutai-package"
 description = "Portable package manifests, lock graphs, and native locked Git acquisition for Zutai."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 pathdiff = "0.2"

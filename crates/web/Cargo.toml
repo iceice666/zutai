@@ -2,6 +2,7 @@
 name = "zutai-web"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 description = "Build and serve Zutai browser applications"
 
 [dependencies]

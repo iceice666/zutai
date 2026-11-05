@@ -3,6 +3,7 @@ name = "zutai-ssa"
 description = "SSA IR and ANF→SSA lowering for Zutai."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 zutai-anf = { path = "../anf" }

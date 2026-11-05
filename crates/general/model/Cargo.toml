@@ -2,6 +2,7 @@
 name = "zutai-model"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 description = "Bounded explicit-state model checker for pure typed Zutai (.zt) transition systems"
 
 [dependencies]

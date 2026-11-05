@@ -3,6 +3,7 @@ name = "zutai-hir"
 description = "Resolved high-level IR for Zutai general mode (.zt)."
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 la-arena = "0.3"
