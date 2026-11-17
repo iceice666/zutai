@@ -51,6 +51,16 @@ cfg.server.port
 (`--check` reports instead of writing), and `zutai-cli repl` starts an
 interactive session.
 
+`zutai-cli json app.zt` prints the final value as JSON. `zutai-cli zti app.zt`
+prints it as a canonical `.zti` document, in the layout `format` writes. The
+final value must be a record. Every nested value must be in the
+[immediate-mode data model](spec/03-immediate-mode/immediate-mode.md#immediate-mode-data-model):
+booleans, `Int`, finite floats, text, atoms (including payload-free tags),
+lists, and records. `zti` refuses tuples, tagged values with a payload, posits,
+and non-finite floats, and names the refused value's path, for example
+`` `outer.pair` is a tuple``. Given a `.zti` file, `zti` prints its canonical
+form to standard output.
+
 ## Model checking
 
 `zutai-cli model-check model.zt [--max-states N]` runs the bounded
@@ -519,7 +529,7 @@ A `.zt` module can return a record containing values, functions, and types. Impo
 
 Rendered `.zti` outputs must be serializable. Functions and `Type` values have no `.zti` representation. Atoms keep their `#` spelling in `.zti`.
 
-A program's *final expression* — the value a run produces — is subject to the same rule on both execution paths. `zutai-cli run app.zt` and `zutai-cli json app.zt` refuse a program whose result is not first-order serializable data (a function, a runtime `Type` value, a constraint witness, or an opaque host handle, including when nested inside a list, tuple, record, or tagged payload), reporting the same runtime-ABI reason `zutai-cli compile` reports. Interpreter and native execution therefore accept and reject exactly the same program entries. The interactive REPL stays permissive: it displays functions and `Type` values for inspection.
+A program's *final expression* — the value a run produces — is subject to the same rule on both execution paths. `zutai-cli run app.zt`, `zutai-cli json app.zt`, and `zutai-cli zti app.zt` refuse a program whose result is not first-order serializable data (a function, a runtime `Type` value, a constraint witness, or an opaque host handle, including when nested inside a list, tuple, record, or tagged payload), reporting the same runtime-ABI reason `zutai-cli compile` reports. Interpreter and native execution therefore accept and reject exactly the same program entries. The interactive REPL stays permissive: it displays functions and `Type` values for inspection.
 
 ### JSON rendering
 

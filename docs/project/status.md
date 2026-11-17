@@ -283,7 +283,12 @@ LLVM/native execution is verified for primitive, flat-record, and nested-record
 decoders, the last via a native oracle test that decodes a nested record with a
 list-of-records against the interpreter.
 
-_Last updated: 2026-10-12 (derived `FromData` stays linear in a record's
+_Last updated: 2026-11-18 (`zutai zti` prints a `.zt` program's final record
+as a canonical `.zti` document through `Value::to_immediate_document` and
+`zutai_im::format_block`, refusing values outside the immediate-mode data model
+with their path and re-parsing its output before printing; gated by
+`zutai-eval` `to_immediate_document` unit tests and CLI `zti_*` tests);
+prior baseline updates: 2026-10-12 (derived `FromData` stays linear in a record's
 optional fields; optional record fields are stored canonically by `with` and
 `overlay`; structural derives handle optional fields; ambiguous constraint
 calls are refused at check time; imported witness dictionaries reach the
