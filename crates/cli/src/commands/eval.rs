@@ -294,6 +294,56 @@ pub(crate) fn run_json(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Parse a `.zti` or evaluate a `.zt` file and print the final result as a
+/// canonical `.zti` document.
+///
+/// `.zt` programs are evaluated under the same isolated worker and runtime-ABI
+/// refusal as `run` and `json`. The final value must be a record whose every
+/// nested value is in the `.zti` data model; anything else is refused rather
+/// than approximated. The rendered text is parsed back and compared with the
+/// converted block, so printed output always imports as the evaluated value.
+pub(crate) fn run_zti(path: &str) -> Result<(), Box<dyn Error>> {
+    match extension_or_error(path)?.as_str() {
+        "zti" => {
+            let contents = fs::read_to_string(path)?;
+            let block =
+                zutai_im::parse(&contents).map_err(|e| format!("Failed to parse .zti: {e}"))?;
+            print!("{}", zutai_im::format_block(&block));
+        }
+        "zt" => {
+            let contents = fs::read_to_string(path)?;
+            let base = Path::new(path).parent();
+            let owned_contents = contents.clone();
+            let owned_base = base.map(Path::to_path_buf);
+            let outcome = run_isolated(move || {
+                reject_unsupported_render_entry(&owned_contents, owned_base.as_deref())?;
+                let value = zutai_eval::eval_with_base(&owned_contents, owned_base.as_deref())?;
+                if let Some(reason) = value.runtime_abi_reason() {
+                    return Err(zutai_eval::EvalError::NotRunnable(vec![reason.to_string()]));
+                }
+                let block = value.to_immediate_document()?;
+                let rendered = zutai_im::format_block(&block);
+                if zutai_im::parse(&rendered).ok().as_ref() != Some(&block) {
+                    return Err(zutai_eval::EvalError::ImmediateUnsupported(
+                        "a field name or atom is outside the .zti identifier grammar".to_string(),
+                    ));
+                }
+                Ok(rendered)
+            });
+            match outcome {
+                EvalOutcome::Ok(rendered) => print!("{rendered}"),
+                EvalOutcome::Err(error @ zutai_eval::EvalError::ImmediateUnsupported(_)) => {
+                    eprintln!("error: {error}");
+                    std::process::exit(1);
+                }
+                outcome => exit_for_eval_failure(path, &contents, base, outcome),
+            }
+        }
+        other => return Err(format!("Unsupported extension: {other}").into()),
+    }
+    Ok(())
+}
+
 /// Convert a parsed `.zti` block into a natural JSON object.
 fn zti_block_to_json(block: &zutai_im::Block) -> serde_json::Value {
     let mut map = serde_json::Map::with_capacity(block.len());

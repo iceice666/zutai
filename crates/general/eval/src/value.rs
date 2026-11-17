@@ -639,6 +639,103 @@ impl Value {
     }
 }
 
+impl Value {
+    /// Convert a fully `force_deep`'d record into a `.zti` document block.
+    ///
+    /// This is the inverse of [`Value::from_immediate`] on the immediate-mode
+    /// data model: a `.zti` document is a block, so the value must be a record.
+    pub fn to_immediate_document(&self) -> Result<zutai_im::Block, EvalError> {
+        match self {
+            Value::Record(fields) => immediate_block(fields, ""),
+            other => Err(EvalError::ImmediateUnsupported(format!(
+                "a .zti document must be a record, but the final value is {}",
+                runtime_value_type_name(other)
+            ))),
+        }
+    }
+
+    /// Convert a fully `force_deep`'d runtime value into an immediate value.
+    ///
+    /// Booleans, integers, finite floats, text, atoms, lists, and records map
+    /// to their `.zti` counterparts. Every other value is refused, because the
+    /// `.zti` data model has no form that imports back as the same value:
+    /// tuples, tagged values with a payload, posits, non-finite floats, the
+    /// internal missing-field sentinel, and non-data values. `path` is the
+    /// dotted field and `[index]` path that names the value in a refusal.
+    fn to_immediate_at(&self, path: &str) -> Result<zutai_im::Value, EvalError> {
+        use zutai_im::Value as Im;
+        let refuse = |what: &str| {
+            Err(EvalError::ImmediateUnsupported(format!(
+                "`{path}` is {what}, which has no .zti form"
+            )))
+        };
+        match self {
+            Value::Bool(true) => Ok(Im::True),
+            Value::Bool(false) => Ok(Im::False),
+            Value::Int(n) => Ok(Im::Integer(*n)),
+            Value::Float(x) if x.is_finite() => Ok(Im::Float(*x)),
+            Value::Float(_) => refuse("a non-finite float"),
+            Value::Text(s) => Ok(Im::String(s.to_string())),
+            Value::Atom(a) => Ok(Im::Atom(a.to_string())),
+            Value::List(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| forced_immediate_value(item, &format!("{path}[{index}]")))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Im::Array),
+            Value::Record(fields) => immediate_block(fields, path).map(Im::Block),
+            Value::Tuple(_) => refuse("a tuple"),
+            Value::TaggedValue { tag, .. } => {
+                refuse(&format!("the tagged value `#{tag}` with a payload"))
+            }
+            Value::Posit(_) => refuse("a posit"),
+            Value::Nothing => refuse("an absent value"),
+            Value::HostHandle(_) => refuse("an opaque host handle"),
+            Value::TypeValue(_) => refuse("a `Type` value"),
+            Value::Closure(_)
+            | Value::TlcClosure(_)
+            | Value::WitnessDict(_)
+            | Value::Builtin(_)
+            | Value::BuiltinPartial { .. } => refuse("a function"),
+        }
+    }
+}
+
+fn immediate_block(
+    fields: &[(Rc<str>, crate::thunk::Thunk)],
+    path: &str,
+) -> Result<zutai_im::Block, EvalError> {
+    fields
+        .iter()
+        .map(|(name, thunk)| {
+            let field_path = if path.is_empty() {
+                name.to_string()
+            } else {
+                format!("{path}.{name}")
+            };
+            Ok(zutai_im::Pair {
+                field_name: name.to_string(),
+                value: forced_immediate_value(thunk, &field_path)?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(zutai_im::Block)
+}
+
+/// Convert an already-forced thunk to an immediate value, rejecting unforced
+/// thunks the same way [`forced_json_value`] does.
+fn forced_immediate_value(
+    thunk: &crate::thunk::Thunk,
+    path: &str,
+) -> Result<zutai_im::Value, EvalError> {
+    match thunk.peek() {
+        Some(value) => value.to_immediate_at(path),
+        None => Err(EvalError::Internal(
+            "cannot serialize unforced thunk to .zti",
+        )),
+    }
+}
+
 /// Convert an already-forced thunk to JSON, rejecting unforced thunks.
 ///
 /// Eval entry points deep-force their result, so a `None` peek here means an

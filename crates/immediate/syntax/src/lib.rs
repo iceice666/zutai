@@ -6,7 +6,7 @@
 pub mod format;
 pub mod parser;
 
-pub use format::format_source;
+pub use format::{format_block, format_source};
 
 #[cfg(test)]
 mod tests;

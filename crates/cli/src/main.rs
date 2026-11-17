@@ -15,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Run { path }) => commands::run_file(&path)?,
         Some(Commands::Parse { path }) => commands::run_parse(&path)?,
         Some(Commands::Json { path }) => commands::run_json(&path)?,
+        Some(Commands::Zti { path }) => commands::run_zti(&path)?,
         Some(Commands::Format { path, check }) => commands::run_format(&path, check)?,
         Some(Commands::Check { path }) => commands::run_check(&path)?,
         Some(Commands::Compile {
@@ -132,6 +133,11 @@ enum Commands {
     },
     /// Parse .zti or evaluate .zt and print the final result as JSON
     Json {
+        /// Path to the .zt or .zti file
+        path: String,
+    },
+    /// Parse .zti or evaluate .zt and print the final result as a canonical .zti document
+    Zti {
         /// Path to the .zt or .zti file
         path: String,
     },

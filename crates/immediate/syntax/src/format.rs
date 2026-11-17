@@ -14,10 +14,18 @@ pub fn format_source(input: &str) -> Result<String, String> {
         return Err("trailing data after parsed document".to_owned());
     }
 
+    Ok(format_block(&block))
+}
+
+/// Render an immediate-mode block as a canonical `.zti` document.
+///
+/// The output is the same canonical, order-preserving form `format_source`
+/// produces, terminated by one newline.
+pub fn format_block(block: &Block) -> String {
     let mut output = String::new();
-    write_block(&mut output, &block, 0);
+    write_block(&mut output, block, 0);
     output.push('\n');
-    Ok(output)
+    output
 }
 
 fn write_block(output: &mut String, block: &Block, depth: usize) {

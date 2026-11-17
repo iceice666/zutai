@@ -2002,6 +2002,89 @@ fn json_unsupported_extension_exits_nonzero() {
         .stderr(predicate::str::contains("Unsupported"));
 }
 
+// ─── `zti` subcommand ─────────────────────────────────────────────────────────
+
+#[test]
+fn zti_zt_file_prints_canonical_document_that_reparses() {
+    let path = write_tmp(
+        "cli_test_zti_eval.zt",
+        "cfg ::= { host = \"localhost\"; port = 8000 + 80; mode = #prod; ports = { 80; 443; }; };\ncfg\n",
+    );
+    let output = cli().arg("zti").arg(&path).assert().success();
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert_eq!(
+        stdout,
+        concat!(
+            "{\n",
+            "  host = \"localhost\";\n",
+            "  port = 8080;\n",
+            "  mode = #prod;\n",
+            "  ports = [\n",
+            "    80;\n",
+            "    443;\n",
+            "  ];\n",
+            "}\n",
+        )
+    );
+    let rendered = write_tmp("cli_test_zti_eval_out.zti", &stdout);
+    cli()
+        .arg("zti")
+        .arg(&rendered)
+        .assert()
+        .success()
+        .stdout(stdout);
+}
+
+#[test]
+fn zti_zti_file_prints_canonical_form() {
+    let path = write_tmp("cli_test_zti_canonical.zti", "{b=[#x;];a=1;}");
+    cli()
+        .arg("zti")
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout("{\n  b = [\n    #x;\n  ];\n  a = 1;\n}\n");
+}
+
+#[test]
+fn zti_refuses_non_record_result() {
+    let path = write_tmp("cli_test_zti_non_record.zt", "42\n");
+    cli()
+        .arg("zti")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains(
+            "cannot render as .zti: a .zti document must be a record",
+        ));
+}
+
+#[test]
+fn zti_refuses_nested_tuple_with_its_path() {
+    let path = write_tmp("cli_test_zti_tuple.zt", "{ outer = { pair = (1, 2); }; }\n");
+    cli()
+        .arg("zti")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("`outer.pair` is a tuple"));
+}
+
+#[test]
+fn zti_refuses_function_result_like_json() {
+    let path = write_tmp("cli_test_zti_function.zt", "{ f = \\x. x; }\n");
+    cli()
+        .arg("zti")
+        .arg(&path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "cannot be shown by the runtime ABI",
+        ));
+}
+
 // ─── `parse` subcommand ───────────────────────────────────────────────────────
 
 #[test]

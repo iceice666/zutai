@@ -65,6 +65,11 @@ pub enum EvalError {
     /// Internal invariant violated (always a bug in the interpreter).
     #[error("internal error: {0}")]
     Internal(&'static str),
+    /// The final value has no `.zti` immediate-mode form.
+    ///
+    /// The message names the offending value's path from the document root.
+    #[error("cannot render as .zti: {0}")]
+    ImmediateUnsupported(String),
     /// A constraint method was called inside a polymorphic function but no
     /// witness could be resolved — the function was likely called indirectly,
     /// where witness injection via env is not yet supported.

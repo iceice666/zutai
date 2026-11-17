@@ -38,6 +38,59 @@ s";
     );
 }
 
+// ─── immediate-mode (.zti) serialization ────────────────────────────────────
+
+#[test]
+fn to_immediate_document_round_trips_through_from_immediate() {
+    let value = run(
+        "{ host = \"localhost\"; port = 8080; ratio = 0.5; mode = #prod; flags = {true; false;}; nested = { ok = true; }; }",
+    );
+    let block = value.to_immediate_document().unwrap();
+    let text = zutai_im::format_block(&block);
+    assert_eq!(zutai_im::parse(&text).unwrap(), block);
+    let reimported = Value::from_immediate(&zutai_im::Value::Block(block.clone()));
+    assert_eq!(reimported.to_immediate_document().unwrap(), block);
+}
+
+#[test]
+fn to_immediate_document_requires_a_record() {
+    assert_eq!(
+        run("{1; 2;}").to_immediate_document().unwrap_err(),
+        EvalError::ImmediateUnsupported(
+            "a .zti document must be a record, but the final value is List".to_string()
+        ),
+    );
+}
+
+#[test]
+fn to_immediate_document_refuses_values_outside_the_data_model() {
+    let cases = [
+        ("{ t = (1, 2); }", "`t` is a tuple"),
+        (
+            "{ r = { xs = {1.0 / 0.0;}; }; }",
+            "`r.xs[0]` is a non-finite float",
+        ),
+        (
+            "Status :: type { #ok: { code : Int; }; #idle; };\ns :: Status = #ok { code = 1; };\n{ s = s; }",
+            "`s` is the tagged value `#ok` with a payload",
+        ),
+    ];
+    for (src, expected) in cases {
+        let err = run(src).to_immediate_document().unwrap_err();
+        let EvalError::ImmediateUnsupported(message) = &err else {
+            panic!("expected ImmediateUnsupported for {src:?}, got {err:?}");
+        };
+        assert!(message.starts_with(expected), "{src:?}: {message}");
+    }
+}
+
+#[test]
+fn to_immediate_document_keeps_payload_free_tags_as_atoms() {
+    let src = "Status :: type { #ok: { code : Int; }; #idle; };\ns :: Status = #idle;\n{ s = s; }";
+    let block = run(src).to_immediate_document().unwrap();
+    assert_eq!(block[0].value, zutai_im::Value::Atom("idle".to_string()));
+}
+
 // ─── runtime-ABI renderability (interpreter/native parity) ──────────────────
 
 #[test]
